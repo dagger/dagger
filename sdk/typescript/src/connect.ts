@@ -1,7 +1,10 @@
 import * as opentelemetry from "@opentelemetry/api"
+import { GraphQLClient } from "graphql-request"
 
 import { Client } from "./api/client.gen.js"
-import { Context, defaultContext } from "./common/context/context.js"
+import { Context } from "./common/context/context.js"
+import { withGQLClient } from "./common/graphql/connect.js"
+import { Connection, globalConnection } from "./common/graphql/connection.js"
 import { ConnectOpts } from "./connectOpts.js"
 import * as telemetry from "./telemetry/telemetry.js"
 
@@ -34,22 +37,19 @@ export async function connection(
     // Wrap connection into the opentelemetry context for propagation
     await opentelemetry.context.with(telemetry.getContext(), async () => {
       try {
-        await defaultContext.connection(cfg)
-        await fct()
+        await withGQLClient(cfg, async (gqlClient) => {
+          // Set the GQL client inside the global dagger client
+          globalConnection.setGQLClient(gqlClient)
+
+          await fct()
+        })
       } finally {
-        close()
+        globalConnection.resetClient()
       }
     })
   } finally {
     await telemetry.close()
   }
-}
-
-/**
- * Close global client connection
- */
-export function close() {
-  defaultContext.close()
 }
 
 /**
@@ -61,20 +61,18 @@ export async function connect(
   cb: CallbackFct,
   config: ConnectOpts = {},
 ): Promise<void> {
-  const ctx = new Context()
-  const client = new Client({ ctx: ctx })
+  await withGQLClient(config, async (gqlClient: GraphQLClient) => {
+    const connection = new Connection(gqlClient)
+    const ctx = new Context([], connection)
+    const client = new Client(ctx)
 
-  // Initialize connection
-  await ctx.connection(config)
+    // Warning shall be throw if versions are not compatible
+    try {
+      await client.version()
+    } catch (e) {
+      console.error("failed to check version compatibility:", e)
+    }
 
-  // Warning shall be throw if versions are not compatible
-  try {
-    await client.version()
-  } catch (e) {
-    console.error("failed to check version compatibility:", e)
-  }
-
-  await cb(client).finally(() => {
-    ctx.close()
+    return await cb(client)
   })
 }

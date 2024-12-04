@@ -6,6 +6,7 @@ import {
   ExecError,
   TooManyNestedObjectsError,
 } from "../../common/errors/index.js"
+import { buildQuery, queryFlatten } from "../../common/graphql/compute_query.js"
 import {
   Client,
   ClientContainerOpts,
@@ -14,7 +15,6 @@ import {
   Directory,
   NetworkProtocol,
 } from "../../index.js"
-import { buildQuery, queryFlatten } from "../utils.js"
 
 const querySanitizer = (query: string) => query.replace(/\s+/g, " ")
 
@@ -23,7 +23,7 @@ describe("TypeScript SDK api", function () {
     const tree = new Client().container().from("alpine:3.16.2")
 
     assert.strictEqual(
-      querySanitizer(buildQuery(tree.queryTree)),
+      querySanitizer(buildQuery(tree["_ctx"]["_queryTree"])),
       `{ container { from (address: "alpine:3.16.2") } }`,
     )
   })
@@ -32,14 +32,14 @@ describe("TypeScript SDK api", function () {
     const tree = new Client().container().from("alpine:3.16.2")
 
     assert.strictEqual(
-      querySanitizer(buildQuery(tree.queryTree)),
+      querySanitizer(buildQuery(tree["_ctx"]["_queryTree"])),
       `{ container { from (address: "alpine:3.16.2") } }`,
     )
 
     const tree2 = new Client().git("fake_url", { keepGitDir: true })
 
     assert.strictEqual(
-      querySanitizer(buildQuery(tree2.queryTree)),
+      querySanitizer(buildQuery(tree2["_ctx"]["_queryTree"])),
       `{ git (url: "fake_url",keepGitDir: true) }`,
     )
 
@@ -69,7 +69,7 @@ describe("TypeScript SDK api", function () {
       .withExec(["apk", "add", "curl"])
 
     assert.strictEqual(
-      querySanitizer(buildQuery(tree.queryTree)),
+      querySanitizer(buildQuery(tree["_ctx"]["_queryTree"])),
       `{ container { from (address: "alpine:3.16.2") { withExec (args: ["apk","add","curl"]) }} }`,
     )
   })
@@ -79,7 +79,7 @@ describe("TypeScript SDK api", function () {
     const pkg = image.withExec(["echo", "foo bar"])
 
     assert.strictEqual(
-      querySanitizer(buildQuery(pkg.queryTree)),
+      querySanitizer(buildQuery(pkg["_ctx"]["_queryTree"])),
       `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","foo bar"]) }} }`,
     )
   })
@@ -126,7 +126,7 @@ describe("TypeScript SDK api", function () {
     })
 
     assert.strictEqual(
-      querySanitizer(buildQuery(pkg.queryTree)),
+      querySanitizer(buildQuery(pkg["_ctx"]["_queryTree"])),
       `{ container { from (address: "alpine:3.16.2") { withExec (args: ["apk","add","curl"],experimentalPrivilegedNesting: true) }} }`,
     )
   })
@@ -135,12 +135,12 @@ describe("TypeScript SDK api", function () {
     const image = new Client().container().from("alpine:3.16.2")
     const a = image.withExec(["echo", "hello", "world"])
     assert.strictEqual(
-      querySanitizer(buildQuery(a.queryTree)),
+      querySanitizer(buildQuery(a["_ctx"]["_queryTree"])),
       `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","hello","world"]) }} }`,
     )
     const b = image.withExec(["echo", "foo", "bar"])
     assert.strictEqual(
-      querySanitizer(buildQuery(b.queryTree)),
+      querySanitizer(buildQuery(b["_ctx"]["_queryTree"])),
       `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","foo","bar"]) }} }`,
     )
   })
@@ -304,8 +304,8 @@ describe("TypeScript SDK api", function () {
       .build(new Directory(), { buildArgs: [{ value: "foo", name: "test" }] })
 
     assert.strictEqual(
-      querySanitizer(buildQuery(tree.queryTree)),
-      `{ container { build (context: {"_queryTree":[],"_ctx":{}},buildArgs: [{value:"foo",name:"test"}]) } }`,
+      querySanitizer(buildQuery(tree["_ctx"]["_queryTree"])),
+      `{ container { build (context: {"_ctx":{"_queryTree":[],"_connection":{}}},buildArgs: [{value:"foo",name:"test"}]) } }`,
     )
   })
 
@@ -333,7 +333,7 @@ describe("TypeScript SDK api", function () {
 
     await connect(
       async (client) => {
-        const seededPlatformVariants = []
+        const seededPlatformVariants: Container[] = []
 
         for (const platform in platforms) {
           const name = platforms[platform]

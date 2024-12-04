@@ -9,9 +9,9 @@ import * as tar from "tar"
 
 import { dag } from "../api/client.gen.js"
 import { GraphQLRequestError } from "../common/errors/index.js"
-import { connect, close, connection } from "../connect.js"
+import { connect, connection } from "../connect.js"
+import * as bin from "../provisioning/bin.js"
 import { CLI_VERSION } from "../provisioning/default.js"
-import * as bin from "../provisioning/library/bin.js"
 
 describe("TypeScript default client", function () {
   it("Should allow using the GQL client", async function () {
@@ -40,30 +40,30 @@ describe("TypeScript default client", function () {
 
     // Check if the connection is actually not set before calling an execution
     // We verify the lazy evaluation that way
-    assert.equal(dag["_ctx"]["_client"], undefined)
+    assert.equal(dag["_ctx"]["_connection"]["_gqlClient"], undefined)
 
-    const out = await dag
+    const ctr = dag
       .container()
       .from("alpine:3.16.2")
       .withExec(["echo", "hello", "world"])
-      .stdout()
 
-    assert.equal(out, "hello world\n")
+    await connection(async () => {
+      const out = await ctr.stdout()
 
-    // Check if the connection is still up
-    assert.notEqual(dag["_ctx"]["_client"], undefined)
+      assert.equal(out, "hello world\n")
 
-    close()
+      // Check if the connection is still up
+      assert.notEqual(dag["_ctx"]["_connection"]["_gqlClient"], undefined)
+    })
 
-    // Check if the connection has been correctly reset
-    assert.equal(dag["_ctx"]["_client"], undefined)
+    assert.equal(dag["_ctx"]["_connection"]["_gqlClient"], undefined)
   })
 
   it("Should automatically close connection", async function () {
     this.timeout(60000)
 
     // Check if the connection is actually not set before calling connection
-    assert.equal(dag["_ctx"]["_client"], undefined)
+    assert.equal(dag["_ctx"]["_connection"]["_gqlClient"], undefined)
 
     await connection(async () => {
       const out = await dag
@@ -75,23 +75,23 @@ describe("TypeScript default client", function () {
       assert.equal(out, "hello world\n")
 
       // Check if the connection is still up
-      assert.notEqual(dag["_ctx"]["_client"], undefined)
+      assert.notEqual(dag["_ctx"]["_connection"]["_gqlClient"], undefined)
     })
 
     // Check if the connection has been correctly reset
-    assert.equal(dag["_ctx"]["_client"], undefined)
+    assert.equal(dag["_ctx"]["_connection"]["_gqlClient"], undefined)
   })
 
   it("Should automatically close connection with config", async function () {
     this.timeout(60000)
 
     // Check if the connection is actually not set before calling connection
-    assert.equal(dag["_ctx"]["_client"], undefined)
+    assert.equal(dag["_ctx"]["_connection"]["_gqlClient"], undefined)
 
     await connection(
       async () => {
         // Check if the connection is up
-        assert.notEqual(dag["_ctx"]["_client"], undefined)
+        assert.notEqual(dag["_ctx"]["_connection"]["_gqlClient"], undefined)
 
         const out = await dag
           .container()
@@ -105,7 +105,7 @@ describe("TypeScript default client", function () {
     )
 
     // Check if the connection has been correctly reset
-    assert.equal(dag["_ctx"]["_client"], undefined)
+    assert.equal(dag["_ctx"]["_connection"]["_gqlClient"], undefined)
   })
 })
 
@@ -125,13 +125,13 @@ describe("TypeScript sdk Connect", function () {
       await connect(
         async (client) => {
           const authorization = JSON.stringify(
-            client["_ctx"]["_client"]?.requestConfig.headers,
+            client["_ctx"]["_connection"]["_gqlClient"]?.requestConfig.headers,
           )
 
           assert.equal(
             // eslint-disable-next-line @typescript-eslint/ban-ts-comment
             // @ts-ignore
-            client["_ctx"]["_client"]["url"],
+            client["_ctx"]["_connection"]["_gqlClient"]["url"],
             "http://127.0.0.1:1234/query",
           )
           assert.equal(authorization, `{"Authorization":"Basic Zm9vOg=="}`)

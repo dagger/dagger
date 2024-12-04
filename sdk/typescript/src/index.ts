@@ -9,7 +9,7 @@ export * from "./common/errors/index.js"
 
 // Connection for library
 export type { CallbackFct } from "./connect.js"
-export { connect, close } from "./connect.js"
+export { connect, connection } from "./connect.js"
 export type { ConnectOpts } from "./connectOpts.js"
 
 // Module library

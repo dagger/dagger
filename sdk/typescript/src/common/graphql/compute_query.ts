@@ -7,8 +7,18 @@ import {
   UnknownDaggerError,
   NotAwaitedRequestError,
   ExecError,
-} from "../common/errors/index.js"
-import { Metadata, QueryTree } from "./client.gen.js"
+} from "../errors/index.js"
+
+export type QueryTree = {
+  operation: string
+  args?: Record<string, unknown>
+}
+
+export type Metadata = {
+  [key: string]: {
+    is_enum?: boolean
+  }
+}
 
 /**
  * Format argument into GraphQL query format.
@@ -67,7 +77,7 @@ async function computeNestedQuery(
   client: GraphQLClient,
 ): Promise<void> {
   // Check if there is a nested queryTree to be executed
-  const isQueryTree = (value: any) => value["_queryTree"] !== undefined
+  const isQueryTree = (value: any) => value["_ctx"] !== undefined
 
   // Check if there is a nested array of queryTree to be executed
   const isArrayQueryTree = (value: any[]) =>
@@ -77,13 +87,13 @@ async function computeNestedQuery(
   // and building it with their results.
   const computeQueryTree = async (value: any): Promise<string> => {
     // Resolve sub queries if operation's args is a subquery
-    for (const op of value["_queryTree"]) {
+    for (const op of value["_ctx"]["_queryTree"]) {
       await computeNestedQuery([op], client)
     }
 
     // push an id that will be used by the container
     return buildQuery([
-      ...value["_queryTree"],
+      ...value["_ctx"]["_queryTree"],
       {
         operation: "id",
       },

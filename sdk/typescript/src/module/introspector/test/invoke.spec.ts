@@ -120,68 +120,65 @@ describe("Invoke typescript function", function () {
     const executor = new Executor(modules, scanResult)
 
     // We wrap the execution into a Dagger connection
-    await connection(
-      async () => {
-        // Mocking the fetch from the dagger API
-        const inputBase = {
-          parentName: "State",
-          fnName: "base",
-          parentArgs: {
-            version: "3.16.2",
-            user: "root",
-            packages: [],
-          },
-          fnArgs: { version: "3.16.0" },
-        }
+    await connection(async () => {
+      // Mocking the fetch from the dagger API
+      const inputBase = {
+        parentName: "State",
+        fnName: "base",
+        parentArgs: {
+          version: "3.16.2",
+          user: "root",
+          packages: [],
+        },
+        fnArgs: { version: "3.16.0" },
+      }
 
-        const inputBaseResult = await invoke(executor, scanResult, inputBase)
+      const inputBaseResult = await invoke(executor, scanResult, inputBase)
 
-        // Assert state has been updated by the function
-        assert.equal("3.16.0", inputBaseResult.version)
-        assert.equal("root", inputBaseResult.user)
-        assert.deepEqual([], inputBaseResult.packages)
-        assert.notEqual(undefined, inputBaseResult.ctr)
+      // Assert state has been updated by the function
+      assert.equal("3.16.0", inputBaseResult.version)
+      assert.equal("root", inputBaseResult.user)
+      assert.deepEqual([], inputBaseResult.packages)
+      assert.notEqual(undefined, inputBaseResult.ctr)
 
-        const inputInstall = {
-          parentName: "State",
-          fnName: "install",
-          // Would be fetched from dagger and parsed from dagger entrypoint
-          parentArgs: JSON.parse(JSON.stringify(inputBaseResult)),
-          fnArgs: {
-            pkgs: ["jq"],
-          },
-        }
+      const inputInstall = {
+        parentName: "State",
+        fnName: "install",
+        // Would be fetched from dagger and parsed from dagger entrypoint
+        parentArgs: JSON.parse(JSON.stringify(inputBaseResult)),
+        fnArgs: {
+          pkgs: ["jq"],
+        },
+      }
 
-        const inputInstallResult = await invoke(
-          executor,
-          scanResult,
-          inputInstall,
-        )
+      const inputInstallResult = await invoke(
+        executor,
+        scanResult,
+        inputInstall,
+      )
 
-        // Verify state conservation
-        assert.equal("3.16.0", inputInstallResult.version)
-        assert.equal("root", inputInstallResult.user)
-        assert.deepEqual(["jq"], inputInstallResult.packages)
-        assert.notEqual(undefined, inputInstallResult.ctr)
+      // Verify state conservation
+      assert.equal("3.16.0", inputInstallResult.version)
+      assert.equal("root", inputInstallResult.user)
+      assert.deepEqual(["jq"], inputInstallResult.packages)
+      assert.notEqual(undefined, inputInstallResult.ctr)
 
-        const inputExec = {
-          parentName: "State",
-          fnName: "exec",
-          // Would be fetched from dagger and parsed from dagger entrypoint
-          parentArgs: JSON.parse(JSON.stringify(inputInstallResult)),
-          fnArgs: {
-            cmd: ["jq", "-h"],
-          },
-        }
+      const inputExec = {
+        parentName: "State",
+        fnName: "exec",
+        // Would be fetched from dagger and parsed from dagger entrypoint
+        parentArgs: JSON.parse(JSON.stringify(inputInstallResult)),
+        fnArgs: {
+          cmd: ["jq", "-h"],
+        },
+      }
 
-        const result = await invoke(executor, scanResult, inputExec)
+      const result = await invoke(executor, scanResult, inputExec)
 
-        // We verify the result, this could be serialized and set using `dag.ReturnValue` as a response
-        // In that case, we verify it's not failing and that it returned a value
-        assert.notEqual("", result)
-      },
-      { LogOutput: process.stderr },
-    )
+      // We verify the result, this could be serialized and set using `dag.ReturnValue` as a response
+      // In that case, we verify it's not failing and that it returned a value
+      assert.notEqual("", result)
+    })
   })
 
   it("Should correctly handle multiple objects as fields", async function () {

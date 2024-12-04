@@ -84,7 +84,7 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 			"**/test",
 			"**/*.spec.ts",
 			"dev",
-			"src/provisioning/library",
+			"src/provisioning",
 		},
 	})
 

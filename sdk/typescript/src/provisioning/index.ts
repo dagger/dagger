@@ -1,20 +1,22 @@
-import { EngineConn } from "./engineconn.js"
+import { GraphQLClient } from "graphql-request"
 
-export * from "./default.js"
-export * from "./engineconn.js"
+import { ConnectOpts } from "../connectOpts.js"
+import { Bin } from "./bin.js"
+import { CLI_VERSION } from "./default.js"
 
-/**
- * Provision first tries to load the library provisioning, if it fails because we're in the context of a module
- * it tries to load the module provisioning.
- */
-export async function loadProvioningLibrary(): Promise<EngineConn> {
+export async function withEngineSession<T>(
+  connectOpts: ConnectOpts,
+  cb: (gqlClient: GraphQLClient) => Promise<T>,
+): Promise<T> {
+  const cliBin = process.env["_EXPERIMENTAL_DAGGER_CLI_BIN"]
+  const engineConn = new Bin(cliBin, CLI_VERSION)
+  const gqlClient = await engineConn.Connect(connectOpts)
+
   try {
-    const { LibraryProvisioning } = await import("./library/index.js")
+    const res = await cb(gqlClient)
 
-    return new LibraryProvisioning()
-  } catch {
-    const { ModuleProvisioning } = await import("./module/index.js")
-
-    return new ModuleProvisioning()
+    return res
+  } finally {
+    await engineConn.Close()
   }
 }
