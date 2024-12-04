@@ -7,6 +7,7 @@ import TabItem from "@theme/TabItem";
 import CodeBlock from '@theme/CodeBlock';
 import PartialInstallCli from './partials/_install-cli.mdx';
 import { daggerVersion } from './partials/version';
+import { version } from './partials/version';
 
 # Installation
 
@@ -75,6 +76,6 @@ The paths listed above are defaults and may require adjustment for your specific
 
 The Dagger CLI is released in tandem with the Dagger Engine and thus shares a version number with it. Dagger SDKs automatically provision a Dagger Engine at a compatible version.
 
-The Dagger Engine runner is distributed as a container image at `registry.dagger.io/engine`. Tags are made for the version of each release. For example, the <CodeBlock language="jsx">{`${daggerVersion}`}</CodeBlock> release has a corresponding image at `registry.dagger.io/engine:v<daggerVersion />`.
+The Dagger Engine runner is distributed as a container image at `registry.dagger.io/engine`. Tags are made for the version of each release. For example, the {daggerVersion} release has a corresponding image at `registry.dagger.io/engine:v<version />`.
 
 Each release notes the compatible Dagger Engine version in its release notes.
