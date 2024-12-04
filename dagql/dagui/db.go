@@ -613,7 +613,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	if span.Call != nil && span.Call.ReceiverDigest != "" {
 		parentCall, ok := db.Calls[span.Call.ReceiverDigest]
 		if ok {
-			span.Base = db.Simplify(parentCall)
+			span.Base = db.Simplify(parentCall, span.Internal)
 		}
 	}
 
@@ -698,7 +698,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 }
 
 func (db *DB) HighLevelSpan(call *callpbv1.Call) *Span {
-	return db.MostInterestingSpan(db.Simplify(call).Digest)
+	return db.MostInterestingSpan(db.Simplify(call, false).Digest)
 }
 
 func (db *DB) MostInterestingSpan(dig string) *Span {
@@ -785,7 +785,7 @@ func (db *DB) MustCall(dig string) *callpbv1.Call {
 	return call
 }
 
-func (db *DB) Simplify(call *callpbv1.Call) (smallest *callpbv1.Call) {
+func (db *DB) Simplify(call *callpbv1.Call, force bool) (smallest *callpbv1.Call) {
 	creators, ok := db.OutputOf[call.Digest]
 	if !ok {
 		return call
