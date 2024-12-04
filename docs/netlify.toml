@@ -1197,6 +1197,18 @@
   to = "/quickstart/428201/custom-function"
   status = 301
 
+[[redirects]]
+  # redirect
+  from = "/configuration/custom-registry"
+  to = "/configuration/engine#configuring-custom-registries"
+  status = 301
+
+[[redirects]]
+  # redirect
+  from = "/configuration/cache"
+  to = "/api/engine#caching"
+  status = 301
+
 ###### end: redirects for specific v0.9 pages ######
 
 

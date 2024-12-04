@@ -1,0 +1,392 @@
+---
+slug: /configuration/engine
+---
+
+import CodeBlock from '@theme/CodeBlock';
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+import { daggerVersion } from "../partials/version";
+
+# Engine
+
+Dagger is designed to be run out-of-the-box with sensible defaults.
+However, even with these defaults, it may sometimes be necessary to modify various
+settings.
+
+To do so, there are two configuration mechanisms: using Dagger's `engine.json`
+file (introduced in v0.15.0), or using the legacy BuildKit-style `engine.toml`
+file. The `engine.json` file is a configuration file that follows the [Engine configuration file schema](https://docs.dagger.io/reference/engine.schema.json),
+while the legacy `engine.toml` file uses [BuildKit's configuration syntax](https://github.com/moby/buildkit/blob/v0.17.0/docs/buildkitd.toml.md)).
+
+:::note
+Some options are not yet supported by the newer `engine.json`, so the legacy
+`engine.toml` will need to be used for those.
+:::
+
+If an option is specified in both `engine.json` and in `engine.toml`, then
+the `engine.json` settings will take precedence.
+
+## Configuration
+
+<Tabs>
+<TabItem value="engine.json">
+To configure `engine.json` when using an automatically provisioned Dagger
+Engine (the default), you should write your desired JSON config to
+`~/.config/dagger/engine.json` (or to `$XDG_CONFIG_HOME/dagger/engine.json` if
+set).
+
+Then, when the Dagger Engine is automatically started from a `dagger` command,
+it will pull in that configuration. Changes after the Dagger Engine has already
+been created and is running will not automatically apply to the new Engine. To
+reapply the config after changing it, you'll need to manually stop the Engine.
+
+```shell
+docker rm -f $(docker ps -q --filter "name=dagger-engine-*")
+```
+
+If you are not using an automatically provisioned Dagger Engine, and have
+followed the steps to setup a [custom runner](./custom-runner.mdx), then you'll
+need to manually mount your `engine.json` to the engine container's filesystem
+at `/etc/dagger/engine.json`. For example:
+
+<CodeBlock language="shell">
+{`docker run --rm \\\n`}
+{`    -v /var/lib/dagger \\\n`}
+{`    -v $HOME/.config/dagger/engine.json:/etc/dagger/engine.json \\\n`}
+{`    --name dagger-engine-custom \\\n`}
+{`    --privileged \\\n`}
+{`    registry.dagger.io/engine:${daggerVersion}`}
+</CodeBlock>
+
+</TabItem>
+<TabItem value="engine.toml">
+To configure `engine.toml`, a [custom runner](./custom-runner.mdx) is required -
+unlike with `engine.json`, the configuration is not automatically mounted to the
+engine.
+
+To configure with `engine.toml`, the `engine.toml` file needs to be manually
+mounted to `/etc/dagger/engine.toml`. For example:
+
+<CodeBlock language="shell">
+{`docker run --rm \\\n`}
+{`    -v /var/lib/dagger \\\n`}
+{`    -v $PWD/engine.toml:/etc/dagger/engine.toml \\\n`}
+{`    --name dagger-engine-custom \\\n`}
+{`    --privileged \\\n`}
+{`    registry.dagger.io/engine:${daggerVersion}`}
+</CodeBlock>
+
+:::note
+The `registry.dagger.io/engine` container itself contains a default
+`engine.toml` configuration. When mounting `engine.toml`, you may
+want to extend the default configuration:
+
+<CodeBlock language="shell">
+{`docker run --rm --entrypoint sh registry.dagger.io/engine:${daggerVersion} cat /etc/dagger/engine.toml`}
+</CodeBlock>
+:::
+
+</TabItem>
+</Tabs>
+
+## Options
+
+### Logging
+
+Dagger supports various log verbosity levels. The default level is to enable `debug`.
+
+<Tabs>
+<TabItem value="engine.json">
+The supported levels are (in ascending levels of verbosity, with the quietest
+first, and the noisiest last):
+- `error`
+- `warn`
+- `info`
+- `debug`
+- `debugextra`
+- `trace`
+
+For example, to only show logs of level `warn` and above:
+
+```json
+{
+  "logLevel": "error"
+}
+```
+
+</TabItem>
+<TabItem value="engine.toml">
+To explicitly enable debug logging (the default):
+
+```toml
+debug = true
+```
+
+Conversely, to disable debug logging:
+
+```toml
+debug = false
+```
+
+To enable trace logging:
+
+```toml
+trace = true
+```
+
+Conversely, to explicitly disable debug logging (the default):
+
+```toml
+trace = false
+```
+
+</TabItem>
+</Tabs>
+
+### Security
+
+By default, Dagger has an open security policy. This policy allows exec
+operations to access the `insecureRootCapabilities` options, which effectively
+allows all operations root access (similar to [`docker run`'s --privileged` flag](https://docs.docker.com/reference/cli/docker/container/run/#privileged).
+
+This capability can be disabled to lock down a Dagger installation.
+
+<Tabs>
+<TabItem value="engine.json">
+To explicitly enable the use of `insecureRootCapabilities` (the default):
+
+```json
+{
+  "security": {
+    "insecureRootCapabilities": "false"
+  }
+}
+```
+
+To disable the use of `insecureRootCapabilities`:
+
+```json
+{
+  "security": {
+    "insecureRootCapabilities": "false"
+  }
+}
+```
+
+</TabItem>
+<TabItem value="engine.toml">
+To explicitly enable the use of `insecureRootCapabilities`:
+
+```toml
+insecure-entitlements = ["security.insecure"]
+```
+
+To disable the use of `insecureRootCapabilities`:
+
+```toml
+insecure-entitlements = []
+```
+
+</TabItem>
+</Tabs>
+
+### Garbage collection
+
+The Dagger Engine [caches various operations](./cache.mdx) to improve speed on
+subsequent runs of the same pipeline.
+
+The Dagger garbage collector runs in the background,
+looking for unused layers and artifacts, and clears them up once they exceed
+the storage allowed by the cache policy. This prevents the cache from getting
+too large and consuming too much of the available disk space.
+
+:::warning
+Take care when configuring the garbage collector manually, and ensure not to
+accidentally configure it to clean up *all* cache, since this will severely
+impact performance.
+:::
+
+<Tabs>
+
+<TabItem value="engine.json">
+To disable the garbage collector:
+
+```json
+{
+    "gc": {
+        "enabled": false
+    }
+}
+```
+
+</TabItem>
+<TabItem value="engine.toml">
+To disable the garbage collector:
+
+```toml
+[worker.oci]
+gc = false
+```
+
+</TabItem>
+</Tabs>
+
+The default cache policy attempts to keep the long-term cache storage under 75%
+of the total disk, while also ensuring that at least 20% of the disk remains
+free for other applications and tools. The cache policy can be further tweaked
+to allow more fine-grained policies.
+
+Each policy defines the amount of space if can consume using the following
+parameters:
+- `maxUsedSpace` is the maximum amount of disk space that may be used by
+  this buildkit worker - any usage above this threshold will be reclaimed
+  during garbage collection.
+- `reservedSpace` is the minimum amount of disk space guaranteed to be
+  retained by this buildkit worker - any usage below this threshold will not
+  be reclaimed during garbage collection.
+- `minFreeSpace` is the target amount of free disk space that the garbage
+  collector will attempt to leave empty - however, it will never be bought
+  below `reservedSpace`.
+
+All disk space parameters can be an integer number of bytes (e.g. `512000000`), a
+string with a unit (e.g. `"512MB"`), or a string percentage
+of the total disk space (e.g. `"10%"`)
+
+<Tabs>
+<TabItem value="engine.json">
+To adjust the garbage collector default parameters:
+
+```json
+{
+  "gc": {
+    "maxUsedSpace": "200GB",
+    "reservedSpace": "10GB",
+    "minFreeSpace": "20%"
+  },
+}
+```
+
+</TabItem>
+<TabItem value="engine.toml">
+To adjust the garbage collector default parameters:
+
+```toml
+[worker.oci]
+maxUsedSpace = "200GB"
+reservedSpace = "10GB"
+minFreeSpace = "20%"
+```
+
+</TabItem>
+</Tabs>
+
+The top level configuration fields (as defined above) for the garbage collector
+set the default policy - more specific fine-grained policies are then
+generated from this. These more fine-grained policies can also be specified;
+however, the defaults for this are generally reasonable for most use-cases.
+
+Each policy takes the same disk space parameters as above, as well as the
+following filtering tools:
+- `all` is a boolean, that when set to `true` matches every cache record.
+- `keepDuration` is a duration, that matches cache records older than the given
+  amount (e.g. `30s`, `5m`, `4h`).
+
+<Tabs>
+<TabItem value="engine.json">
+To adjust the garbage collector's fine-grained policies:
+
+```json
+{
+  "gc": {
+    "policies": [
+      {
+        "keepDuration": "6h",
+        "maxUsedSpace": "200GB",
+        "reservedSpace": "10GB",
+        "minFreeSpace": "20%"
+      },
+      {
+        "all": true,
+        "maxUsedSpace": "50GB",
+        "reservedSpace": "10GB",
+        "minFreeSpace": "20%"
+      }
+    ]
+  },
+}
+```
+
+</TabItem>
+<TabItem value="engine.toml">
+To adjust the garbage collector's fine-grained policies:
+
+```toml
+[worker.oci]
+  keepDuration = "6h"
+  maxUsedSpace = "200GB"
+  reservedSpace = "10GB"
+  minFreeSpace = "20%"
+
+  [[worker.oci.gcpolicy]]
+  keepDuration = "6h"
+  maxUsedSpace = "50GB"
+  reservedSpace = "10GB"
+  minFreeSpace = "20%"
+```
+
+</TabItem>
+</Tabs>
+
+### Custom registries
+
+Dagger can be configured to use container registry mirrors for any registry
+URL. This allows container images that refer to one registry to instead be
+redirected to a different one.
+
+<Tabs>
+<TabItem value="engine.json">
+
+:::warning
+Custom registries cannot currently be configured from `engine.json`.
+:::
+
+</TabItem>
+<TabItem value="engine.toml">
+For example, to mirror the default Docker Hub `docker.io` registry to `mirror.gcr.io`:
+
+```toml
+[registry."docker.io"]
+  mirrors = ["mirror.gcr.io"]
+```
+
+The configuration can be repeated for multiple registries and mirrors if needed:
+
+```toml
+[registry."docker.io"]
+  mirrors = ["mirror.a.com", "mirror.b.com"]
+
+[registry."some.other.registry.com"]
+  mirrors = ["mirror.foo.com", "mirror.bar.com"]
+```
+
+To test the configuration:
+
+```shell
+dagger query --progress=plain <<< '{ container { from(address:"hello-world") { stdout } } }'
+```
+
+The specified `hello-world` container will now be pulled from the mirror
+instead of from Docker Hub.
+
+</TabItem>
+</Tabs>
+
+### Custom proxy
+
+Currently, custom proxies cannot be configured through `engine.json` or
+`engine.toml`, and must be configured [separately](./proxy.mdx).
+
+### Custom certificate authorities
+
+Currently, custom certificate authorities cannot be configured through
+`engine.json` or `engine.toml`, and must be configured [separately](./custom-ca.mdx).
