@@ -380,18 +380,20 @@ func (span *Span) IsRunning() bool {
 }
 
 func (span *Span) CausalSpans(f func(*Span) bool) {
-	if len(span.causesViaLinks.Order) > 0 {
-		for _, span := range span.causesViaLinks.Order {
-			if !f(span) {
-				return
-			}
+	for _, cause := range span.causesViaLinks.Order {
+		if !f(cause) {
+			return
 		}
-		return
 	}
 	if span.causesViaAttrs != nil {
-		for _, span := range span.causesViaAttrs.Order {
-			f(span)
-			return
+		for _, cause := range span.causesViaAttrs.Order {
+			if span.StartTime.Before(cause.StartTime) {
+				// cannot possibly be "caused" by it, since it came after
+				continue
+			}
+			if !f(cause) {
+				return
+			}
 		}
 	}
 }
