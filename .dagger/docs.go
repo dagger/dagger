@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"go.opentelemetry.io/otel/codes"
@@ -16,10 +17,12 @@ type Docs struct {
 }
 
 const (
-	generatedSchemaPath           = "docs/docs-graphql/schema.graphqls"
-	generatedCliZenPath           = "docs/current_docs/reference/cli.mdx"
-	generatedAPIReferencePath     = "docs/static/api/reference/index.html"
-	generatedDaggerJSONSchemaPath = "docs/static/reference/dagger.schema.json"
+	generatedSchemaPath       = "docs/docs-graphql/schema.graphqls"
+	generatedCliZenPath       = "docs/current_docs/reference/cli.mdx"
+	generatedAPIReferencePath = "docs/static/api/reference/index.html"
+
+	generatedJSONSchemaDirectory  = "docs/static/reference/schema/"
+	generatedDaggerJSONSchemaFile = "dagger.schema.json"
 )
 
 const cliZenFrontmatter = `---
@@ -102,7 +105,17 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 		if err != nil {
 			return err
 		}
-		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{generatedSchemaPath, generatedCliZenPath, generatedAPIReferencePath})
+
+		generateJSONSchemaDir, err := d.jsonSchemaDir(ctx)
+		if err != nil {
+			return err
+		}
+		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{
+			generatedSchemaPath,
+			generatedCliZenPath,
+			generatedAPIReferencePath,
+			generateJSONSchemaDir,
+		})
 	})
 
 	eg.Go(func() (rerr error) {
@@ -166,8 +179,9 @@ func (d Docs) Generate(ctx context.Context) (*dagger.Directory, error) {
 	})
 	var configSchemas *dagger.Directory
 	eg.Go(func() error {
-		configSchemas = d.GenerateConfigSchemas()
-		return nil
+		var err error
+		configSchemas, err = d.GenerateConfigSchemas(ctx)
+		return err
 	})
 
 	if err := eg.Wait(); err != nil {
@@ -219,17 +233,31 @@ func (d Docs) GenerateSchemaReference() *dagger.Directory {
 }
 
 // Regenerate the config schemas
-func (d Docs) GenerateConfigSchemas() *dagger.Directory {
+func (d Docs) GenerateConfigSchemas(ctx context.Context) (*dagger.Directory, error) {
 	daggerJSONSchema := dag.
 		Go(d.Dagger.Source()).
 		Env().
 		WithExec([]string{"go", "run", "./cmd/json-schema", "dagger.json"}, dagger.ContainerWithExecOpts{
-			RedirectStdout: "dagger.schema.json",
+			RedirectStdout: generatedDaggerJSONSchemaFile,
 		}).
-		File("dagger.schema.json")
+		File(generatedDaggerJSONSchemaFile)
+
+	schemaDir, err := d.jsonSchemaDir(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	return dag.
 		Directory().
-		WithFile(generatedDaggerJSONSchemaPath, daggerJSONSchema)
+		WithFile(filepath.Join(schemaDir, generatedDaggerJSONSchemaFile), daggerJSONSchema), nil
+}
+
+func (d Docs) jsonSchemaDir(ctx context.Context) (string, error) {
+	nextVersion, err := dag.Version().NextReleaseVersion(ctx)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(generatedJSONSchemaDirectory, nextVersion), nil
 }
 
 // Bump the Go SDK's Engine dependency
