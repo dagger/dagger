@@ -410,13 +410,12 @@ type Interval struct {
 }
 
 func (activity *Activity) Add(span *Span) bool {
+	var changed bool
+
 	if span.IsRunning() {
 		if activity.AllRunning == nil {
 			activity.AllRunning = map[SpanID]time.Time{}
 		}
-
-		var changed bool
-		// written a little awkwardly to avoid short-circuiting
 		if _, found := activity.AllRunning[span.ID]; !found {
 			activity.AllRunning[span.ID] = span.StartTime
 			changed = true
@@ -428,7 +427,9 @@ func (activity *Activity) Add(span *Span) bool {
 	}
 
 	delete(activity.AllRunning, span.ID)
-	activity.updateEarliest()
+	if activity.updateEarliest() {
+		changed = true
+	}
 
 	ival := Interval{
 		Start: span.StartTime,
@@ -437,7 +438,8 @@ func (activity *Activity) Add(span *Span) bool {
 
 	if len(activity.CompletedIntervals) == 0 {
 		activity.CompletedIntervals = append(activity.CompletedIntervals, ival)
-		return true
+		changed = true
+		return changed
 	}
 
 	idx, _ := slices.BinarySearchFunc(activity.CompletedIntervals, ival, func(a, b Interval) int {
@@ -455,13 +457,14 @@ func (activity *Activity) Add(span *Span) bool {
 	// but it's harder to return false after the fact.
 	for _, existing := range activity.CompletedIntervals {
 		if ival.Start.After(existing.Start) && ival.End.Before(existing.End) {
-			return false
+			return changed
 		}
 	}
 
 	activity.CompletedIntervals = slices.Insert(activity.CompletedIntervals, idx, ival)
 	activity.mergeIntervals()
-	return true
+	changed = true
+	return changed
 }
 
 func (activity *Activity) IsRunning() bool {
