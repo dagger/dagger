@@ -132,6 +132,7 @@ func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
 	for _, snapshot := range snapshots {
 		span := db.findOrAllocSpan(snapshot.ID)
 		span.Received = true
+		snapshot.Version += span.Version // don't reset the version
 		span.SpanSnapshot = snapshot
 		db.integrateSpan(span)
 	}
