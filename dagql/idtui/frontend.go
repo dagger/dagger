@@ -169,8 +169,13 @@ func (r *renderer) renderCall(
 	internal bool,
 	focused bool,
 ) error {
+	if simple := r.db.Simplify(call); !r.rendering[simple.Digest] {
+		// avoid loops which can happen when a function returns one of its arguments
+		call = simple
+	}
+
 	if r.rendering[call.Digest] {
-		slog.Warn("cycle detected while rendering call", "span", span.Name, "call", call.String())
+		slog.Warn("cycle detected while rendering call", "call", call.String())
 		return nil
 	}
 	r.rendering[call.Digest] = true
@@ -214,18 +219,15 @@ func (r *renderer) renderCall(
 				val := arg.GetValue()
 				fmt.Fprint(out, " ")
 				if argDig := val.GetCallDigest(); argDig != "" {
-					forceSimplify := false
 					internal := internal
 					argSpan := r.db.MostInterestingSpan(argDig)
 					if argSpan != nil {
-						forceSimplify = argSpan.Internal && !internal // only for the first internal call (not it's children)
 						internal = internal || argSpan.Internal
 						if span == nil {
 							argSpan = nil
 						}
 					}
-					argCall := r.db.Simplify(r.db.MustCall(argDig), forceSimplify)
-					if err := r.renderCall(out, argSpan, argCall, prefix, false, depth-1, true, internal, false); err != nil {
+					if err := r.renderCall(out, argSpan, r.db.MustCall(argDig), prefix, false, depth-1, true, internal, false); err != nil {
 						return err
 					}
 				} else {
