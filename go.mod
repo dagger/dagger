@@ -277,6 +277,7 @@ require (
 require (
 	dagger.io/dagger v0.13.6
 	github.com/dagger/dagger/engine/distconsts v0.13.6
+	gopkg.in/fsnotify.v1 v1.4.7
 )
 
 replace (

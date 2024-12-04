@@ -10,9 +10,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"golang.org/x/sync/errgroup"
+	"gopkg.in/fsnotify.v1"
 	"gopkg.in/yaml.v3"
 
 	"dagger.io/dagger"
@@ -29,6 +35,8 @@ var (
 
 	// outputPath is the parsed value of the `--output` flag.
 	outputPath string
+
+	watchMode bool
 )
 
 const (
@@ -163,6 +171,19 @@ func (fc *FuncCommand) Command() *cobra.Command {
 					c.SetContext(idtui.WithPrintTraceLink(c.Context(), true))
 				}
 
+				if watchMode {
+					if err := fc.watch(c, a); err != nil {
+						// Return the same ExecError exit code.
+						var ex *dagger.ExecError
+						if errors.As(err, &ex) {
+							return ExitError{Code: ex.ExitCode}
+						}
+						return Fail
+					}
+
+					return nil
+				}
+
 				return withEngine(c.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
 					fc.q = querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
@@ -206,8 +227,156 @@ func (fc *FuncCommand) Command() *cobra.Command {
 		fc.cmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "Save the result to a local file or directory")
 
 		fc.cmd.PersistentFlags().BoolVarP(&jsonOutput, "json", "j", false, "Present result as JSON")
+
+		fc.cmd.PersistentFlags().BoolVar(&watchMode, "watch", false, "Watch the module")
 	}
 	return fc.cmd
+}
+
+func (fc *FuncCommand) watch(c *cobra.Command, a []string) error {
+	ctx := c.Context()
+	log, err := os.OpenFile("/tmp/dagger.log", os.O_APPEND|os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer log.Close()
+
+	var (
+		executeCtx    context.Context
+		executeCancel context.CancelFunc
+		mod           *moduleDef
+		triggerCh     = make(chan struct{})
+		initDoneCh    = make(chan struct{})
+	)
+	defer close(triggerCh)
+	go func() {
+		defer func() {
+			if initDoneCh != nil {
+				close(initDoneCh)
+			}
+		}()
+
+		for range triggerCh {
+			c := *c
+
+			executeCtx, executeCancel = context.WithCancel(ctx)
+			err = withEngine(executeCtx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (rerr error) {
+				fc.c = engineClient
+				fc.q = querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
+
+				mod, err = initializeModule(ctx, fc.c.Dagger(), true)
+				if err != nil {
+					return err
+				}
+				fc.mod = mod
+
+				c.SetContext(ctx)
+				if initDoneCh != nil {
+					close(initDoneCh)
+					initDoneCh = nil
+				}
+				return fc.execute(&c, a)
+			})
+		}
+	}()
+	triggerCh <- struct{}{}
+	<-initDoneCh
+
+	kind, err := mod.Source.Kind(ctx)
+	if err != nil {
+		return err
+	}
+
+	switch kind {
+	case dagger.GitSource:
+		var lastCommit = ""
+
+		eg := errgroup.Group{}
+		eg.Go(func() error {
+			ref, err := fc.mod.Source.AsGitSource().CloneRef(ctx)
+			if err != nil {
+				return err
+			}
+			ver, err := fc.mod.Source.AsGitSource().Version(ctx)
+			if err != nil {
+				return err
+			}
+
+			fmt.Fprintf(log, "Git Module: %s\n", ref)
+
+			for {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				default:
+				}
+
+				rem := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
+					URLs: []string{"https://" + ref},
+				})
+
+				refs, err := rem.List(&git.ListOptions{})
+				if err != nil {
+					return err
+				}
+				for _, r := range refs {
+					if r.Name().String() != fmt.Sprintf("refs/heads/%s", ver) {
+						continue
+					}
+					if r.Hash().String() != lastCommit && lastCommit != "" {
+						fmt.Fprintf(log, "git change detected for %s@%s: %s -> %s\n", ref, ver, r.Hash(), lastCommit)
+
+						executeCancel()
+						triggerCh <- struct{}{}
+					}
+					lastCommit = r.Hash().String()
+				}
+				time.Sleep(1 * time.Second)
+			}
+		})
+
+		if err := eg.Wait(); err != nil {
+			fmt.Fprintf(log, "main error: %s\n", err)
+			return err
+		}
+		return nil
+	case dagger.LocalSource:
+		ref, err := fc.mod.Source.AsLocalSource().RootSubpath(ctx)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(log, "Local Module: %s\n", ref)
+
+		watcher, err := fsnotify.NewWatcher()
+		if err != nil {
+			return err
+		}
+		go func() {
+			for {
+				select {
+				case event, ok := <-watcher.Events:
+					if !ok {
+						return
+					}
+					fmt.Fprintf(log, "file changed: %s\n", event.String())
+					executeCancel()
+					triggerCh <- struct{}{}
+				case err, ok := <-watcher.Errors:
+					if !ok {
+						return
+					}
+					fmt.Fprintln(log, "error:", err)
+				}
+			}
+		}()
+
+		watcher.Add(ref)
+
+		<-ctx.Done()
+		return ctx.Err()
+	default:
+		return fmt.Errorf("unknown source kind")
+	}
 }
 
 func (fc *FuncCommand) Help(cmd *cobra.Command) error {
