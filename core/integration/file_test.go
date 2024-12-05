@@ -77,63 +77,96 @@ func (FileSuite) TestFile(ctx context.Context, t *testctx.T) {
 }
 
 func (FileSuite) TestDirectoryFile(ctx context.Context, t *testctx.T) {
-	var res struct {
-		Directory struct {
-			WithNewFile struct {
-				Directory struct {
-					File struct {
-						ID       core.FileID
-						Contents string
-					}
-				}
-			}
-		}
-	}
+	c := connect(ctx, t)
 
-	err := testutil.Query(t,
-		`{
-			directory {
-				withNewFile(path: "some-dir/some-file", contents: "some-content") {
-					directory(path: "some-dir") {
-						file(path: "some-file") {
-							id
-							contents
+	t.Run("create file through directory (SDK)", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("some-dir/some-file", "some-content")
+
+		file := dir.Directory("some-dir").File("some-file")
+
+		id, err := file.ID(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, id)
+
+		contents, err := file.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "some-content", contents)
+	})
+
+	t.Run("create file through directory (legacy GraphQL)", func(ctx context.Context, t *testctx.T) {
+		var res struct {
+			Directory struct {
+				WithNewFile struct {
+					Directory struct {
+						File struct {
+							ID       core.FileID
+							Contents string
 						}
 					}
 				}
 			}
-		}`, &res, nil)
-	require.NoError(t, err)
-	require.NotEmpty(t, res.Directory.WithNewFile.Directory.File.ID)
-	require.Equal(t, "some-content", res.Directory.WithNewFile.Directory.File.Contents)
+		}
+
+		err := testutil.Query(t,
+			`{
+				directory {
+					withNewFile(path: "some-dir/some-file", contents: "some-content") {
+						directory(path: "some-dir") {
+							file(path: "some-file") {
+								id
+								contents
+							}
+						}
+					}
+				}
+			}`, &res, nil)
+		require.NoError(t, err)
+		require.NotEmpty(t, res.Directory.WithNewFile.Directory.File.ID)
+		require.Equal(t, "some-content", res.Directory.WithNewFile.Directory.File.Contents)
+	})
 }
 
 func (FileSuite) TestSize(ctx context.Context, t *testctx.T) {
-	var res struct {
-		Directory struct {
-			WithNewFile struct {
-				File struct {
-					ID   core.FileID
-					Size int
-				}
-			}
-		}
-	}
+	c := connect(ctx, t)
 
-	err := testutil.Query(t,
-		`{
-			directory {
-				withNewFile(path: "some-file", contents: "some-content") {
-					file(path: "some-file") {
-						id
-						size
+	t.Run("get file size (SDK)", func(ctx context.Context, t *testctx.T) {
+		file := c.Directory().
+			WithNewFile("some-file", "some-content").
+			File("some-file")
+
+		size, err := file.Size(ctx)
+		require.NoError(t, err)
+		require.Equal(t, len("some-content"), size)
+	})
+
+	t.Run("get file size (legacy GraphQL)", func(ctx context.Context, t *testctx.T) {
+		var res struct {
+			Directory struct {
+				WithNewFile struct {
+					File struct {
+						ID   core.FileID
+						Size int
 					}
 				}
 			}
-		}`, &res, nil)
-	require.NoError(t, err)
-	require.NotEmpty(t, res.Directory.WithNewFile.File.ID)
-	require.Equal(t, len("some-content"), res.Directory.WithNewFile.File.Size)
+		}
+
+		err := testutil.Query(t,
+			`{
+				directory {
+					withNewFile(path: "some-file", contents: "some-content") {
+						file(path: "some-file") {
+							id
+							size
+						}
+					}
+				}
+			}`, &res, nil)
+		require.NoError(t, err)
+		require.NotEmpty(t, res.Directory.WithNewFile.File.ID)
+		require.Equal(t, len("some-content"), res.Directory.WithNewFile.File.Size)
+	})
 }
 
 func (FileSuite) TestName(ctx context.Context, t *testctx.T) {
