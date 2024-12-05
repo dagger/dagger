@@ -44,8 +44,7 @@ type Span struct {
 	db *DB
 }
 
-// Snapshot returns a snapshot of the span's current state, incrementing its
-// Version with every call.
+// Snapshot returns a snapshot of the span's current state.
 func (span *Span) Snapshot() SpanSnapshot {
 	span.ChildCount = countChildren(span.ChildSpans)
 	span.Failed_, span.FailedReason_ = span.FailedReason()
@@ -53,7 +52,7 @@ func (span *Span) Snapshot() SpanSnapshot {
 	span.Pending_, span.PendingReason_ = span.PendingReason()
 	span.Canceled_, span.CanceledReason_ = span.CanceledReason()
 	snapshot := span.SpanSnapshot
-	snapshot.Remote = true // NOTE: applied to copy
+	snapshot.Final = true // NOTE: applied to copy
 	return snapshot
 }
 
@@ -73,9 +72,10 @@ type SpanSnapshot struct {
 	// Monotonically increasing number for each update seen for this span.
 	Version int
 
-	// Indicates that this snapshot came from a remote server and that its state
-	// should be trusted over any state derived from the local state.
-	Remote bool
+	// Indicates that this snapshot is in its final state and should be trusted
+	// over any state derived from the local state.
+	// This is used for snapshots that come from a remote server.
+	Final bool
 
 	ID        SpanID
 	Name      string
@@ -292,7 +292,7 @@ func (span *Span) Errors() SpanSet {
 }
 
 func (span *Span) IsFailedOrCausedFailure() bool {
-	if span.Remote {
+	if span.Final {
 		return span.Failed_
 	}
 	if span.Status.Code == codes.Error ||
@@ -308,7 +308,7 @@ func (span *Span) IsFailedOrCausedFailure() bool {
 }
 
 func (span *Span) FailedReason() (bool, []string) {
-	if span.Remote {
+	if span.Final {
 		return span.Failed_, span.FailedReason_
 	}
 	var reasons []string
@@ -417,7 +417,7 @@ func (span *Span) EffectSpans(f func(*Span) bool) {
 }
 
 func (span *Span) IsRunningOrEffectsRunning() bool {
-	if span.Remote {
+	if span.Final {
 		return span.Activity.IsRunning()
 	}
 	if span.IsRunning() {
@@ -437,7 +437,7 @@ func (span *Span) IsPending() bool {
 }
 
 func (span *Span) PendingReason() (bool, []string) {
-	if span.Remote {
+	if span.Final {
 		return span.Pending_, span.PendingReason_
 	}
 	if span.IsRunningOrEffectsRunning() {
@@ -478,7 +478,7 @@ func (span *Span) IsCached() bool {
 }
 
 func (span *Span) CachedReason() (bool, []string) {
-	if span.Remote {
+	if span.Final {
 		return span.Cached_, span.CachedReason_
 	}
 	if span.Cached {
@@ -555,7 +555,7 @@ func (span *Span) IsCanceled() bool {
 }
 
 func (span *Span) CanceledReason() (bool, []string) {
-	if span.Remote {
+	if span.Final {
 		return span.Canceled_, span.CanceledReason_
 	}
 	var reasons []string

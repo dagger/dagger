@@ -139,8 +139,8 @@ func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
 }
 
 func (db *DB) update(span *Span) {
-	if span.Remote {
-		// don't bump versions for remotely acquired spans; leave the remote as the
+	if span.Final {
+		// don't bump versions for final spans; leave the remote as the
 		// source of truth, lest we stray forward and miss an actual version bump
 		return
 	}
