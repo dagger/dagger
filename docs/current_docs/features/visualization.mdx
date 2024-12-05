@@ -27,6 +27,7 @@ The TUI also provides real-time telemetry to give you a complete view of your pi
 - CPU resource usage: Identify when CPU contention occurs, such as when all threads are blocked waiting for CPU access, and diagnose performance bottlenecks related to CPU resource constraints.
 - Network activity: See how much data is sent and received and track packet drop rates to identify potential bottlenecks in your pipelines.
 - Memory usage: Keep an eye on current and peak memory consumption, helping you optimize resource utilization.
+- State and duration: Get visual cues for cached and pending states, and see exactly how long each step of your pipeline takes (including accounting for lazy effects installed by a Dagger Function).
 
 The CLI has tiered verbosity: `-v`, `-vv`, `-vvv` (just like `curl`):
 - `-v` keeps spans visible after they complete, rather than disappearing after a brief pause;
