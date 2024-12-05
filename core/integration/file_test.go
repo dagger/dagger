@@ -29,31 +29,48 @@ func TestFile(t *testing.T) {
 }
 
 func (FileSuite) TestFile(ctx context.Context, t *testctx.T) {
-	var res struct {
-		Directory struct {
-			WithNewFile struct {
-				File struct {
-					ID       core.FileID
-					Contents string
-				}
+	t.Run("create file directly", func(ctx context.Context, t *testctx.T) {
+		var res struct {
+			File struct {
+				ID       core.FileID
+				Contents string
+				Name     string
 			}
 		}
-	}
 
-	err := testutil.Query(t,
-		`{
-			directory {
-				withNewFile(path: "some-file", contents: "some-content") {
-					file(path: "some-file") {
-						id
-						contents
-					}
+		err := testutil.Query(t,
+			`{
+				file(path: "test.txt", contents: "Hello, World!") {
+					id
+					contents
+					name
 				}
+			}`, &res, nil)
+		require.NoError(t, err)
+		require.NotEmpty(t, res.File.ID)
+		require.Equal(t, "Hello, World!", res.File.Contents)
+		require.Equal(t, "test.txt", res.File.Name)
+	})
+
+	t.Run("create file with custom permissions", func(ctx context.Context, t *testctx.T) {
+		var res struct {
+			File struct {
+				ID       core.FileID
+				Contents string
 			}
-		}`, &res, nil)
-	require.NoError(t, err)
-	require.NotEmpty(t, res.Directory.WithNewFile.File.ID)
-	require.Equal(t, "some-content", res.Directory.WithNewFile.File.Contents)
+		}
+
+		err := testutil.Query(t,
+			`{
+				file(path: "exec.sh", contents: "#!/bin/sh\necho hello", permissions: 0755) {
+					id
+					contents
+				}
+			}`, &res, nil)
+		require.NoError(t, err)
+		require.NotEmpty(t, res.File.ID)
+		require.Equal(t, "#!/bin/sh\necho hello", res.File.Contents)
+	})
 }
 
 func (FileSuite) TestDirectoryFile(ctx context.Context, t *testctx.T) {

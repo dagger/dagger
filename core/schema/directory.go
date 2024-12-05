@@ -19,11 +19,6 @@ func (s *directorySchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("directory", s.directory).
 			Doc(`Creates an empty directory.`),
-		dagql.Func("newFile", s.getFile).
-			Doc(`Creates a new file with the given contents.`).
-			ArgDoc("path", `Name of the file to create (e.g., "file.txt").`).
-			ArgDoc("contents", `Content of the file (e.g., "Hello world!").`).
-			ArgDoc("permissions", `Permission for the file (e.g., 0600).`),
 	}.Install(s.srv)
 	dagql.Fields[*core.Directory]{
 		Syncer[*core.Directory]().

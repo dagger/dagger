@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 
 	"github.com/dagger/dagger/core"
@@ -16,6 +17,14 @@ type fileSchema struct {
 var _ SchemaResolvers = &fileSchema{}
 
 func (s *fileSchema) Install() {
+	dagql.Fields[*core.Query]{
+		dagql.Func("file", s.createFile).
+			Doc(`Creates a new file with the given contents.`).
+			ArgDoc("path", `Name of the file to create (e.g., "file.txt").`).
+			ArgDoc("contents", `Content of the file (e.g., "Hello world!").`).
+			ArgDoc("permissions", `Permission for the file (e.g., 0600).`),
+	}.Install(s.srv)
+
 	dagql.Fields[*core.File]{
 		Syncer[*core.File]().
 			Doc(`Force evaluation in the engine.`),
@@ -51,6 +60,20 @@ func (s *fileSchema) Install() {
 			ArgDoc("timestamp", `Timestamp to set dir/files in.`,
 				`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
 	}.Install(s.srv)
+}
+
+type createFileArgs struct {
+	Path        string
+	Contents    string
+	Permissions *int `default:"0644"`
+}
+
+func (s *fileSchema) createFile(ctx context.Context, parent *core.Query, args createFileArgs) (*core.File, error) {
+	perms := fs.FileMode(0644)
+	if args.Permissions != nil {
+		perms = fs.FileMode(*args.Permissions)
+	}
+	return core.NewFileWithContents(ctx, parent, args.Path, []byte(args.Contents), perms, nil, parent.Platform())
 }
 
 func (s *fileSchema) contents(ctx context.Context, file *core.File, args struct{}) (dagql.String, error) {
