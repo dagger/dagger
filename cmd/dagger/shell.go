@@ -1617,7 +1617,7 @@ func shellModuleDoc(m *moduleDef) string {
 	return doc.String()
 }
 
-func shellTypeDoc(m *moduleDef, t *modTypeDef) string {
+func shellTypeDoc(t *modTypeDef) string {
 	var doc ShellDoc
 
 	fp := t.AsFunctionProvider()
@@ -1907,7 +1907,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 				// Document type
 				// Example: `container | .doc`
 				if len(args) == 0 {
-					return cmd.Println(shellTypeDoc(def, t))
+					return cmd.Println(shellTypeDoc(t))
 				}
 
 				fp := t.AsFunctionProvider()
