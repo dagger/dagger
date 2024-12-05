@@ -207,29 +207,31 @@ func (m *Alpine) withPkgs(
 				WithMountedFile(mntPath, dag.HTTP(url)).
 				WithMountedDirectory(outDir, dag.Directory()).
 				WithWorkdir(outDir).
-				WithExec([]string{"tar", "-xf", mntPath})
+				WithExec([]string{"tar", "-xvf", mntPath})
+
+			tarOut, err := unpacked.Stdout(ctx)
+			if err != nil {
+				return err
+			}
+			entries := strings.Split(strings.TrimSpace(tarOut), "\n")
 
 			alpinePkg := &apkPkg{
 				name: pkg.PackageName(),
 				dir:  unpacked.Directory(outDir),
 			}
 
-			entries, err := alpinePkg.dir.Entries(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get alpine package entries: %w", err)
-			}
-
 			// HACK: /lib64 is a link, so don't overwrite it
 			// - wolfi-baselayout links /lib64 -> /lib
 			// - ld-linux installs to /lib64
-			// TODO: this should *probably* apply to /usr/lib64/ and
-			// /usr/local/lib64/ as well
-			if m.Distro == DistroWolfi && pkg.PackageName() != "wolfi-baselayout" && slices.Contains(entries, "lib64") {
-				alpinePkg.dir = alpinePkg.dir.
-					WithDirectory("/lib", alpinePkg.dir.Directory("/lib64")).
-					WithoutDirectory("/lib64")
+			if m.Distro == DistroWolfi && pkg.PackageName() != "wolfi-baselayout" {
+				for _, lib64 := range []string{"lib64", "usr/lib64", "usr/local/lib64"} {
+					if slices.Contains(entries, lib64) || slices.Contains(entries, lib64+"/") {
+						alpinePkg.dir = alpinePkg.dir.
+							WithDirectory(strings.ReplaceAll(lib64, "64", ""), alpinePkg.dir.Directory(lib64)).
+							WithoutDirectory(lib64)
+					}
+				}
 			}
-
 			for _, entry := range entries {
 				if !strings.HasPrefix(entry, ".") {
 					continue
