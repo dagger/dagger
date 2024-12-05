@@ -16,7 +16,6 @@ Expected stderr:
 ✔ .useCachedExecService: Void X.Xs
 │ ✔ container: Container! X.Xs
 │ $ .from(address: "busybox"): Container! X.Xs CACHED
-│ │ ✔ resolving docker.io/library/busybox:latest X.Xs
 │ ✔ .withExec(args: ["echo", "exec-service cached for good"]): Container! X.Xs
 │ ┃ exec-service cached for good
 │ ✔ .withExec(args: ["echo", "im also cached for good"]): Container! X.Xs
@@ -33,7 +32,6 @@ Expected stderr:
 │ ┃ [::ffff:10.XX.XX.XX]:XXXXX: response:200
 │
 │ $ Container.from(address: "alpine"): Container! X.Xs CACHED
-│ │ ✔ resolving docker.io/library/alpine:latest X.Xs
 │ ✔ .withServiceBinding(
 │ │ │ alias: "exec-service"
 │ │ │ service: ✔ Container.asService: Service! X.Xs

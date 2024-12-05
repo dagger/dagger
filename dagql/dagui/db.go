@@ -132,9 +132,20 @@ func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
 	for _, snapshot := range snapshots {
 		span := db.findOrAllocSpan(snapshot.ID)
 		span.Received = true
+		snapshot.Version += span.Version // don't reset the version
 		span.SpanSnapshot = snapshot
 		db.integrateSpan(span)
 	}
+}
+
+func (db *DB) update(span *Span) {
+	if span.Final {
+		// don't bump versions for final spans; leave the remote as the
+		// source of truth, lest we stray forward and miss an actual version bump
+		return
+	}
+	span.Version++
+	db.updatedSpans.Add(span)
 }
 
 // Matches returns true if the span matches the filter, looking through
@@ -175,6 +186,12 @@ func (db *DB) SpanSnapshots(id SpanID) []SpanSnapshot {
 		db.seen(snapshot.ID)
 	}
 	return snaps
+}
+
+func (db *DB) RemainingSnapshots() []SpanSnapshot {
+	return snapshotSpans(db.Spans.Order, func(span *Span) bool {
+		return !db.hasSeen(span.ID)
+	})
 }
 
 var _ sdktrace.SpanExporter = (*DB)(nil)
@@ -297,12 +314,13 @@ func (db *DB) newSpan(spanID SpanID) *Span {
 		SpanSnapshot: SpanSnapshot{
 			ID: spanID,
 		},
-		ChildSpans:   NewSpanSet(),
-		LinkedFrom:   NewSpanSet(),
-		LinksTo:      NewSpanSet(),
-		RunningSpans: NewSpanSet(),
-		FailedLinks:  NewSpanSet(),
-		db:           db,
+		ChildSpans:      NewSpanSet(),
+		RunningSpans:    NewSpanSet(),
+		FailedLinks:     NewSpanSet(),
+		causesViaLinks:  NewSpanSet(),
+		effectsViaLinks: NewSpanSet(),
+		effectsViaAttrs: map[string]SpanSet{},
+		db:              db,
 	}
 }
 
@@ -351,8 +369,15 @@ func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) {
 type Activity struct {
 	CompletedIntervals []Interval
 	EarliestRunning    time.Time
-	EarliestRunningID  SpanID
-	allRunning         SpanSet
+
+	// Keep track of the full set of running spans so we can update
+	// EarliestRunning as they complete.
+	//
+	// This needs to be synced to the frontend so it doesn't lose track of the
+	// running status in updateEarliest. We exclude from JSON marshalling since
+	// the map key is incompatible. Syncing to the frontend uses encoding/gob,
+	// which accepts the map key type.
+	AllRunning map[SpanID]time.Time `json:"-"`
 }
 
 func (activity *Activity) Intervals(now time.Time) iter.Seq[Interval] {
@@ -390,29 +415,15 @@ type Interval struct {
 	End   time.Time
 }
 
-func (activity *Activity) updateEarliest() (changed bool) {
-	if len(activity.allRunning.Order) > 0 {
-		earliest := activity.allRunning.Order[0]
-		activity.EarliestRunning = earliest.StartTime
-		activity.EarliestRunningID = earliest.ID
-		changed = true
-	} else if activity.EarliestRunningID.IsValid() {
-		activity.EarliestRunning = time.Time{}
-		activity.EarliestRunningID = SpanID{}
-		changed = true
-	}
-	return
-}
-
 func (activity *Activity) Add(span *Span) bool {
-	if activity.allRunning == nil {
-		activity.allRunning = NewSpanSet()
-	}
+	var changed bool
 
 	if span.IsRunning() {
-		var changed bool
-		// written a little awkwardly to avoid short-circuiting
-		if activity.allRunning.Add(span) {
+		if activity.AllRunning == nil {
+			activity.AllRunning = map[SpanID]time.Time{}
+		}
+		if _, found := activity.AllRunning[span.ID]; !found {
+			activity.AllRunning[span.ID] = span.StartTime
 			changed = true
 		}
 		if activity.updateEarliest() {
@@ -421,8 +432,10 @@ func (activity *Activity) Add(span *Span) bool {
 		return changed
 	}
 
-	activity.allRunning.Remove(span)
-	activity.updateEarliest()
+	delete(activity.AllRunning, span.ID)
+	if activity.updateEarliest() {
+		changed = true
+	}
 
 	ival := Interval{
 		Start: span.StartTime,
@@ -431,7 +444,8 @@ func (activity *Activity) Add(span *Span) bool {
 
 	if len(activity.CompletedIntervals) == 0 {
 		activity.CompletedIntervals = append(activity.CompletedIntervals, ival)
-		return true
+		changed = true
+		return changed
 	}
 
 	idx, _ := slices.BinarySearchFunc(activity.CompletedIntervals, ival, func(a, b Interval) int {
@@ -449,13 +463,43 @@ func (activity *Activity) Add(span *Span) bool {
 	// but it's harder to return false after the fact.
 	for _, existing := range activity.CompletedIntervals {
 		if ival.Start.After(existing.Start) && ival.End.Before(existing.End) {
-			return false
+			return changed
 		}
 	}
 
 	activity.CompletedIntervals = slices.Insert(activity.CompletedIntervals, idx, ival)
 	activity.mergeIntervals()
-	return true
+	changed = true
+	return changed
+}
+
+func (activity *Activity) IsRunning() bool {
+	return !activity.EarliestRunning.IsZero()
+}
+
+func (activity *Activity) EndTimeOrFallback(now time.Time) time.Time {
+	if !activity.EarliestRunning.IsZero() {
+		return now
+	}
+	if len(activity.CompletedIntervals) == 0 {
+		return time.Time{}
+	}
+	return activity.CompletedIntervals[len(activity.CompletedIntervals)-1].End
+}
+
+func (activity *Activity) updateEarliest() (changed bool) {
+	if len(activity.AllRunning) > 0 {
+		for _, t := range activity.AllRunning {
+			if activity.EarliestRunning.IsZero() || t.Before(activity.EarliestRunning) {
+				activity.EarliestRunning = t
+				changed = true
+			}
+		}
+	} else if !activity.EarliestRunning.IsZero() {
+		activity.EarliestRunning = time.Time{}
+		changed = true
+	}
+	return
 }
 
 // mergeIntervals merges overlapping intervals in the activity.
@@ -490,7 +534,7 @@ func (activity *Activity) mergeIntervals() {
 func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	// track the span's own interval
 	span.Activity.Add(span)
-	db.updatedSpans.Add(span)
+	db.update(span)
 
 	// keep track of the time boundary
 	if db.Epoch.IsZero() ||
@@ -509,17 +553,17 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		// "unlazying" point), but no use case right now.
 		len(span.Links) == 0 {
 		span.ParentSpan = db.initSpan(span.ParentID)
-		span.ParentSpan.ChildSpans.Add(span)
+		if span.ParentSpan.ChildSpans.Add(span) {
+			// if we're a new child, take a new snapshot for ChildCount
+			db.update(span.ParentSpan)
+		}
 	}
 	for _, linkedCtx := range span.Links {
 		linked := db.initSpan(linkedCtx.SpanID)
 		linked.ChildSpans.Add(span)
-		linked.LinkedFrom.Add(span)
-		span.LinksTo.Add(linked)
+		linked.effectsViaLinks.Add(span)
+		span.causesViaLinks.Add(linked)
 	}
-
-	// update span states, propagating them up through parents, too
-	span.PropagateStatusToParentsAndLinks()
 
 	// keep track of intervals seen for a digest
 	if span.CallDigest != "" {
@@ -536,29 +580,31 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		} else {
 			span.Call = &call
 
-			// Seeing loadFooFromID is only really interesting if it actually
-			// resulted in evaluating the ID, so we set Passthrough, which will only
-			// show its children.
-			if call.Field == fmt.Sprintf("load%sFromID", call.Type.ToAST().Name()) {
-				span.Passthrough = true
-			}
-
-			// We also don't care about seeing the id field selection itself, since
-			// it's more noisy and confusing than helpful. We'll still show all the
-			// spans leading up to it, just not the ID selection.
-			if call.Field == "id" {
-				span.Ignore = true
-			}
-
-			// We don't care about seeing the sync span itself - all relevant info
-			// should show up somewhere more familiar.
-			if call.Field == "sync" {
-				span.Passthrough = true
-			}
-
 			if span.CallDigest != "" {
 				db.Calls[span.CallDigest] = &call
 			}
+		}
+	}
+
+	if call := span.Call; call != nil {
+		// Seeing loadFooFromID is only really interesting if it actually
+		// resulted in evaluating the ID, so we set Passthrough, which will only
+		// show its children.
+		if call.Field == fmt.Sprintf("load%sFromID", call.Type.ToAST().Name()) {
+			span.Passthrough = true
+		}
+
+		// We also don't care about seeing the id field selection itself, since
+		// it's more noisy and confusing than helpful. We'll still show all the
+		// spans leading up to it, just not the ID selection.
+		if call.Field == "id" {
+			span.Ignore = true
+		}
+
+		// We don't care about seeing the sync span itself - all relevant info
+		// should show up somewhere more familiar.
+		if call.Field == "sync" {
+			span.Passthrough = true
 		}
 	}
 
@@ -596,12 +642,20 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			db.FailedEffects[span.EffectID] = true
 		}
 		causes := db.CauseSpans[span.EffectID]
-		if causes != nil {
-			for _, cause := range causes.Order {
-				// update any causal spans
-				db.updatedSpans.Add(cause)
-			}
+		if causes == nil {
+			causes = NewSpanSet()
+			db.CauseSpans[span.EffectID] = causes
 		}
+		span.causesViaAttrs = causes
+	}
+
+	for _, id := range span.EffectIDs {
+		effects := db.EffectSpans[id]
+		if effects == nil {
+			effects = NewSpanSet()
+			db.EffectSpans[id] = effects
+		}
+		span.effectsViaAttrs[id] = effects
 	}
 
 	for _, dig := range span.EffectsCompleted {
@@ -628,6 +682,9 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		}
 		db.CauseSpans[id].Add(span)
 	}
+
+	// update span states, propagating them up through parents, too
+	span.PropagateStatusToParentsAndLinks()
 
 	// finally, install the span if we don't already have it
 	//
@@ -657,7 +714,7 @@ func (db *DB) MostInterestingSpan(dig string) *Span {
 	for _, span := range db.Intervals[dig] {
 		// a running vertex is always most interesting, and these are already in
 		// order
-		if span.IsRunningOrLinksRunning() {
+		if span.IsRunningOrEffectsRunning() {
 			return span
 		}
 		switch {

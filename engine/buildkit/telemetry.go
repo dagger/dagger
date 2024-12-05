@@ -144,18 +144,17 @@ func (sp *SpanProcessor) OnStart(ctx context.Context, span sdktrace.ReadWriteSpa
 		return
 	}
 
-	// remap vertex attr to standard effect ID attr
 	if vertex != "" {
 		sp.setupVertex(span, vertex)
-	}
-
-	// silence noisy registry lookups
-	if span.Name() == "remotes.docker.resolver.HTTPRequest" {
-		span.SetAttributes(attribute.Bool(telemetry.UIEncapsulatedAttr, true))
-	}
-	if span.Name() == "HTTP GET" {
-		// HACK: resolver.do is wrapped with a new span, resolver.authorize isn't :)
-		// so we need this special case, to make sure to catch the auth requests
+	} else {
+		// encapsulate all other spans produced by buildkit
+		//
+		// by default, we only want to show the user their high level API calls,
+		// which are correlated to these encapsulated spans via links and/or
+		// attributes.
+		//
+		// we use Encapsulated and not Internal here so that the span will be
+		// revealed if its parent fails.
 		span.SetAttributes(attribute.Bool(telemetry.UIEncapsulatedAttr, true))
 	}
 }
@@ -172,8 +171,16 @@ func (sp *SpanProcessor) setupVertex(span sdktrace.ReadWriteSpan, vertex digest.
 		causeCtx = opCauseCtx
 	}
 
-	if llbOp.Metadata.Description[telemetry.UIPassthroughAttr] != "" {
-		span.SetAttributes(attribute.Bool(telemetry.UIPassthroughAttr, true))
+	// support setting span attributes via op metadata
+	for _, attrFromMeta := range []string{
+		telemetry.UIEncapsulateAttr,
+		telemetry.UIEncapsulatedAttr,
+		telemetry.UIInternalAttr,
+		telemetry.UIPassthroughAttr,
+	} {
+		if llbOp.Metadata.Description[attrFromMeta] != "" {
+			span.SetAttributes(attribute.Bool(attrFromMeta, true))
+		}
 	}
 
 	if causeCtx.IsValid() {

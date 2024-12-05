@@ -345,7 +345,7 @@ func (r *renderer) renderStatus(out *termenv.Output, span *dagui.Span, focused b
 	var symbol string
 	var color termenv.Color
 	switch {
-	case span.IsRunningOrLinksRunning():
+	case span.IsRunningOrEffectsRunning():
 		symbol = DotFilled
 		color = termenv.ANSIYellow
 	case span.IsCached():
@@ -381,7 +381,7 @@ func (r *renderer) renderStatus(out *termenv.Output, span *dagui.Span, focused b
 func (r *renderer) renderDuration(out *termenv.Output, span *dagui.Span) {
 	fmt.Fprint(out, " ")
 	duration := out.String(dagui.FormatDuration(span.Activity.Duration(r.now)))
-	if span.IsRunningOrLinksRunning() {
+	if span.IsRunningOrEffectsRunning() {
 		duration = duration.Foreground(termenv.ANSIYellow)
 	} else {
 		duration = duration.Faint()
@@ -390,7 +390,7 @@ func (r *renderer) renderDuration(out *termenv.Output, span *dagui.Span) {
 }
 
 func (r *renderer) renderCached(out *termenv.Output, span *dagui.Span) {
-	if !span.IsRunningOrLinksRunning() && span.IsCached() {
+	if !span.IsRunningOrEffectsRunning() && span.IsCached() {
 		fmt.Fprintf(out, " %s", out.String("CACHED").
 			Foreground(termenv.ANSIBlue))
 	}

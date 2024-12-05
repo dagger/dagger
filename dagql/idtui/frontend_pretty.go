@@ -1043,6 +1043,10 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, r *renderer, span *dag
 
 	if span.ID == fe.debugged {
 		r.indent(out, depth+1)
+		fmt.Fprintf(out, prefix+"? version: %d\n", span.Version)
+		r.indent(out, depth+1)
+		fmt.Fprintf(out, prefix+"? earliest running: %s\n", span.Activity.EarliestRunning)
+		r.indent(out, depth+1)
 		fmt.Fprintf(out, prefix+"? encapsulate: %v\n", span.Encapsulate)
 		r.indent(out, depth+1)
 		fmt.Fprintf(out, prefix+"? encapsulated: %v\n", span.Encapsulated)

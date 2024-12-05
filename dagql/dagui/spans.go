@@ -19,15 +19,19 @@ type SpanSet = *OrderedSet[SpanID, *Span]
 type Span struct {
 	SpanSnapshot
 
-	// populated by wireUpSpan
 	ParentSpan   *Span          `json:"-"`
 	ChildSpans   SpanSet        `json:"-"`
-	LinkedFrom   SpanSet        `json:"-"`
-	LinksTo      SpanSet        `json:"-"`
 	RunningSpans SpanSet        `json:"-"`
 	FailedLinks  SpanSet        `json:"-"`
 	Call         *callpbv1.Call `json:"-"`
 	Base         *callpbv1.Call `json:"-"`
+
+	// v0.15+
+	causesViaLinks  SpanSet `json:"-"`
+	effectsViaLinks SpanSet `json:"-"`
+	// v0.14 and below
+	causesViaAttrs  SpanSet            `json:"-"`
+	effectsViaAttrs map[string]SpanSet `json:"-"`
 
 	// NOTE: this is hard coded for Gauge int64 metricdata essentially right now,
 	// needs generalization as more metric types get added
@@ -40,15 +44,16 @@ type Span struct {
 	db *DB
 }
 
-// Snapshot returns a snapshot of the span's current state, incrementing its
-// Version with every call.
+// Snapshot returns a snapshot of the span's current state.
 func (span *Span) Snapshot() SpanSnapshot {
-	span.Version++
 	span.ChildCount = countChildren(span.ChildSpans)
-	span.Failed = span.IsFailedOrCausedFailure()
-	span.Cached = span.IsCached()
-	span.Pending = span.IsPending()
-	return span.SpanSnapshot
+	span.Failed_, span.FailedReason_ = span.FailedReason()
+	span.Cached_, span.CachedReason_ = span.CachedReason()
+	span.Pending_, span.PendingReason_ = span.PendingReason()
+	span.Canceled_, span.CanceledReason_ = span.CanceledReason()
+	snapshot := span.SpanSnapshot
+	snapshot.Final = true // NOTE: applied to copy
+	return snapshot
 }
 
 func countChildren(set SpanSet) int {
@@ -56,10 +61,7 @@ func countChildren(set SpanSet) int {
 	for _, child := range set.Order {
 		if child.Passthrough {
 			count += countChildren(child.ChildSpans)
-		} else if !child.Hidden(FrontendOpts{
-			// TODO: this should reflect the client side setting
-			Verbosity: ShowInternalVerbosity - 1,
-		}) {
+		} else {
 			count += 1
 		}
 	}
@@ -69,6 +71,11 @@ func countChildren(set SpanSet) int {
 type SpanSnapshot struct {
 	// Monotonically increasing number for each update seen for this span.
 	Version int
+
+	// Indicates that this snapshot is in its final state and should be trusted
+	// over any state derived from the local state.
+	// This is used for snapshots that come from a remote server.
+	Final bool
 
 	ID        SpanID
 	Name      string
@@ -82,12 +89,22 @@ type SpanSnapshot struct {
 
 	Status sdktrace.Status `json:",omitempty"`
 
-	Failed   bool `json:",omitempty"` // includes links/caused failures
-	Internal bool `json:",omitempty"`
-	Cached   bool `json:",omitempty"`
-	Pending  bool `json:",omitempty"`
-	Canceled bool `json:",omitempty"`
+	// statuses derived from span and its effects
+	Failed_         bool     `json:",omitempty"`
+	FailedReason_   []string `json:",omitempty"`
+	Cached_         bool     `json:",omitempty"`
+	CachedReason_   []string `json:",omitempty"`
+	Pending_        bool     `json:",omitempty"`
+	PendingReason_  []string `json:",omitempty"`
+	Canceled_       bool     `json:",omitempty"`
+	CanceledReason_ []string `json:",omitempty"`
 
+	// statuses reported by the span via attributes
+	Canceled bool `json:",omitempty"`
+	Cached   bool `json:",omitempty"`
+
+	// UI preferences reported by the span, or applied to it (sync=>passthrough)
+	Internal     bool `json:",omitempty"`
 	Encapsulate  bool `json:",omitempty"`
 	Encapsulated bool `json:",omitempty"`
 	Mask         bool `json:",omitempty"`
@@ -137,10 +154,6 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 	case telemetry.UIEncapsulatedAttr:
 		snapshot.Encapsulated = val.(bool)
 
-	// encapsulate any gRPC activity by default
-	case "rpc.service":
-		snapshot.Encapsulated = true
-
 	case telemetry.UIInternalAttr:
 		snapshot.Internal = val.(bool)
 
@@ -161,6 +174,11 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 
 	case telemetry.EffectIDAttr:
 		snapshot.EffectID = val.(string)
+
+	case "rpc.service":
+		// encapsulate these by default; we only maybe want to see these if their
+		// parent failed, since some happy paths might involve _expected_ failures
+		snapshot.Encapsulated = true
 	}
 }
 
@@ -184,37 +202,37 @@ func sliceOf[T any](val any) []T {
 func (span *Span) PropagateStatusToParentsAndLinks() {
 	for parent := range span.Parents {
 		var changed bool
-		if span.IsRunningOrLinksRunning() {
+		if span.IsRunningOrEffectsRunning() {
 			changed = parent.RunningSpans.Add(span)
 		} else {
 			changed = parent.RunningSpans.Remove(span)
 		}
 		if changed {
-			span.db.updatedSpans.Add(parent)
+			span.db.update(parent)
 		}
 	}
 
-	for _, linked := range span.LinksTo.Order {
+	for causal := range span.CausalSpans {
 		var changed bool
 		if span.IsRunning() {
-			changed = linked.RunningSpans.Add(span)
+			changed = causal.RunningSpans.Add(span)
 		} else {
-			changed = linked.RunningSpans.Remove(span)
+			changed = causal.RunningSpans.Remove(span)
 		}
 
 		if span.IsFailed() {
-			linked.FailedLinks.Add(span)
+			causal.FailedLinks.Add(span)
 		}
 
-		if linked.Activity.Add(span) {
+		if causal.Activity.Add(span) {
 			changed = true
 		}
 
 		if changed {
-			span.db.updatedSpans.Add(linked)
+			span.db.update(causal)
 		}
 
-		for parent := range linked.Parents {
+		for parent := range causal.Parents {
 			var changed bool
 			if span.IsRunning() {
 				changed = parent.RunningSpans.Add(span)
@@ -225,7 +243,7 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 				changed = true
 			}
 			if changed {
-				span.db.updatedSpans.Add(parent)
+				span.db.update(parent)
 			}
 		}
 	}
@@ -241,23 +259,6 @@ func (span *Span) IsFailed() bool {
 
 func (span *Span) IsUnset() bool {
 	return span.Status.Code == codes.Unset
-}
-
-func (span *Span) IsFailedOrCausedFailure() bool {
-	if span.Failed {
-		// snapshotted, likely based on the following checks
-		return true
-	}
-	if span.Status.Code == codes.Error ||
-		len(span.FailedLinks.Order) > 0 {
-		return true
-	}
-	for _, effect := range span.EffectIDs {
-		if span.db.FailedEffects[effect] {
-			return true
-		}
-	}
-	return false
 }
 
 // Errors returns the individual errored spans contributing to the span's
@@ -290,7 +291,26 @@ func (span *Span) Errors() SpanSet {
 	return errs
 }
 
+func (span *Span) IsFailedOrCausedFailure() bool {
+	if span.Final {
+		return span.Failed_
+	}
+	if span.Status.Code == codes.Error ||
+		len(span.FailedLinks.Order) > 0 {
+		return true
+	}
+	for _, effect := range span.EffectIDs {
+		if span.db.FailedEffects[effect] {
+			return true
+		}
+	}
+	return false
+}
+
 func (span *Span) FailedReason() (bool, []string) {
+	if span.Final {
+		return span.Failed_, span.FailedReason_
+	}
 	var reasons []string
 	if span.Status.Code == codes.Error {
 		reasons = append(reasons, "span itself errored")
@@ -333,10 +353,9 @@ func (span *Span) VisibleParent(opts FrontendOpts) *Span {
 	if span.ParentSpan.Passthrough {
 		return span.ParentSpan.VisibleParent(opts)
 	}
-	links := span.LinksTo.Order
-	if len(links) > 0 {
+	for link := range span.CausalSpans {
 		// prioritize causal spans over the unlazier
-		return links[0]
+		return link
 	}
 	return span.ParentSpan
 }
@@ -360,12 +379,52 @@ func (span *Span) IsRunning() bool {
 	return span.EndTime.Before(span.StartTime)
 }
 
-func (span *Span) IsRunningOrLinksRunning() bool {
+func (span *Span) CausalSpans(f func(*Span) bool) {
+	for _, cause := range span.causesViaLinks.Order {
+		if !f(cause) {
+			return
+		}
+	}
+	if span.causesViaAttrs != nil {
+		for _, cause := range span.causesViaAttrs.Order {
+			if span.StartTime.Before(cause.StartTime) {
+				// cannot possibly be "caused" by it, since it came after
+				continue
+			}
+			if !f(cause) {
+				return
+			}
+		}
+	}
+}
+
+func (span *Span) EffectSpans(f func(*Span) bool) {
+	if len(span.effectsViaLinks.Order) > 0 {
+		for _, span := range span.effectsViaLinks.Order {
+			if !f(span) {
+				return
+			}
+		}
+		return
+	}
+	for _, set := range span.effectsViaAttrs {
+		for _, span := range set.Order {
+			if !f(span) {
+				return
+			}
+		}
+	}
+}
+
+func (span *Span) IsRunningOrEffectsRunning() bool {
+	if span.Final {
+		return span.Activity.IsRunning()
+	}
 	if span.IsRunning() {
 		return true
 	}
-	for _, link := range span.LinkedFrom.Order {
-		if link.IsRunning() {
+	for effect := range span.EffectSpans {
+		if effect.IsRunning() {
 			return true
 		}
 	}
@@ -378,7 +437,10 @@ func (span *Span) IsPending() bool {
 }
 
 func (span *Span) PendingReason() (bool, []string) {
-	if span.IsRunningOrLinksRunning() {
+	if span.Final {
+		return span.Pending_, span.PendingReason_
+	}
+	if span.IsRunningOrEffectsRunning() {
 		var reasons []string
 		if span.IsRunning() {
 			reasons = append(reasons, "span is running")
@@ -416,8 +478,17 @@ func (span *Span) IsCached() bool {
 }
 
 func (span *Span) CachedReason() (bool, []string) {
+	if span.Final {
+		return span.Cached_, span.CachedReason_
+	}
 	if span.Cached {
-		return true, []string{"span is cached"}
+		return true, []string{"span says it is cached"}
+	}
+	if span.ChildCount > 0 {
+		return false, []string{"span has children"}
+	}
+	if span.HasLogs {
+		return false, []string{"span has logs"}
 	}
 	states := map[bool]int{}
 	reasons := []string{}
@@ -478,24 +549,27 @@ func (span *Span) IsInternal() bool {
 	return span.Internal
 }
 
-func (span *Span) SelfDuration(fallbackEnd time.Time) time.Duration {
-	if span.IsRunningOrLinksRunning() {
-		return fallbackEnd.Sub(span.StartTime)
+func (span *Span) IsCanceled() bool {
+	canceled, _ := span.CanceledReason()
+	return canceled
+}
+
+func (span *Span) CanceledReason() (bool, []string) {
+	if span.Final {
+		return span.Canceled_, span.CanceledReason_
 	}
-	return span.EndTimeOrFallback(fallbackEnd).Sub(span.StartTime)
+	var reasons []string
+	if span.Canceled {
+		reasons = append(reasons, "span says it is canceled")
+	}
+	if !span.db.RootSpan.IsRunning() && span.IsRunningOrEffectsRunning() {
+		reasons = append(reasons, "root span completed, leaving span running")
+	}
+	return len(reasons) > 0, reasons
 }
 
 func (span *Span) EndTimeOrFallback(fallbackEnd time.Time) time.Time {
-	if span.IsRunningOrLinksRunning() {
-		return fallbackEnd
-	}
-	maxTime := span.EndTime
-	for _, effect := range span.LinkedFrom.Order {
-		if effect.EndTime.After(maxTime) {
-			maxTime = effect.EndTime
-		}
-	}
-	return maxTime
+	return span.Activity.EndTimeOrFallback(fallbackEnd)
 }
 
 func (span *Span) EndTimeOrNow() time.Time {
