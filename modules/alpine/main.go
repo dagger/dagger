@@ -224,10 +224,12 @@ func (m *Alpine) withPkgs(
 			// - ld-linux installs to /lib64
 			// TODO: this should *probably* apply to /usr/lib64/ and
 			// /usr/local/lib64/ as well
-			if m.Distro == DistroWolfi && pkg.PackageName() != "wolfi-baselayout" && slices.Contains(entries, "lib64") {
-				alpinePkg.dir = alpinePkg.dir.
-					WithDirectory("/lib", alpinePkg.dir.Directory("/lib64")).
-					WithoutDirectory("/lib64")
+			if m.Distro == DistroWolfi && pkg.PackageName() != "wolfi-baselayout" {
+				if slices.Contains(entries, "lib64/") || slices.Contains(entries, "lib64") {
+					alpinePkg.dir = alpinePkg.dir.
+						WithDirectory("/lib", alpinePkg.dir.Directory("/lib64")).
+						WithoutDirectory("/lib64")
+				}
 			}
 
 			for _, entry := range entries {
