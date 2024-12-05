@@ -232,7 +232,7 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 
 		parentEntries, err := generated.Entries(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{".git", "child", "foo.go", "go.mod", "go.sum"}, parentEntries)
+		require.Equal(t, []string{".git/", "child/", "foo.go", "go.mod", "go.sum"}, parentEntries)
 
 		childEntries, err := generated.Directory("child").Entries(ctx)
 		require.NoError(t, err)
@@ -266,7 +266,7 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 		parentEntries, err := generated.Entries(ctx)
 		require.NoError(t, err)
 		// no go.sum
-		require.Equal(t, []string{".git", "child", "foo.go", "go.mod"}, parentEntries)
+		require.Equal(t, []string{".git/", "child/", "foo.go", "go.mod"}, parentEntries)
 
 		childEntries, err := generated.Directory("child").Entries(ctx)
 		require.NoError(t, err)
