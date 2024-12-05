@@ -19,7 +19,7 @@ func (s *directorySchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("directory", s.directory).
 			Doc(`Creates an empty directory.`),
-		dagql.Func("file", s.getFile).
+		dagql.Func("createFile", s.createFile).
 			Doc(`Creates a new file with the given contents.`).
 			ArgDoc("path", `Name of the file to create (e.g., "file.txt").`).
 			ArgDoc("contents", `Content of the file (e.g., "Hello world!").`).
@@ -137,7 +137,7 @@ type queryFileArgs struct {
 	Permissions *int `default:"0644"`
 }
 
-func (s *directorySchema) file(ctx context.Context, parent *core.Query, args queryFileArgs) (*core.File, error) {
+func (s *directorySchema) createFile(ctx context.Context, parent *core.Query, args queryFileArgs) (*core.File, error) {
     perms := fs.FileMode(0644)
     if args.Permissions != nil {
         perms = fs.FileMode(*args.Permissions)
