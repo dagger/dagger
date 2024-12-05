@@ -174,11 +174,11 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 
 		sourceSubdirEnts, err := modGen.Directory("/work/some/subdir").Entries(ctx)
 		require.NoError(t, err)
-		require.Contains(t, sourceSubdirEnts, "src")
+		require.Contains(t, sourceSubdirEnts, "src/")
 
 		sourceRootEnts, err := modGen.Directory("/work").Entries(ctx)
 		require.NoError(t, err)
-		require.NotContains(t, sourceRootEnts, "src")
+		require.NotContains(t, sourceRootEnts, "src/")
 	})
 
 	t.Run("ignore parent directory package manager", func(ctx context.Context, t *testctx.T) {
