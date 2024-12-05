@@ -71,6 +71,29 @@ func (FileSuite) TestFile(ctx context.Context, t *testctx.T) {
 		require.NotEmpty(t, res.File.ID)
 		require.Equal(t, "#!/bin/sh\necho hello", res.File.Contents)
 	})
+
+	t.Run("create json file", func(ctx context.Context, t *testctx.T) {
+		var res struct {
+			File struct {
+				ID       core.FileID
+				Contents string
+				Name     string
+			}
+		}
+
+		err := testutil.Query(t,
+			`{
+				file(path: "data.json", contents: "{\"key\": \"value\"}") {
+					id
+					contents
+					name
+				}
+			}`, &res, nil)
+		require.NoError(t, err)
+		require.NotEmpty(t, res.File.ID)
+		require.Equal(t, "{\"key\": \"value\"}", res.File.Contents)
+		require.Equal(t, "data.json", res.File.Name)
+	})
 }
 
 func (FileSuite) TestDirectoryFile(ctx context.Context, t *testctx.T) {

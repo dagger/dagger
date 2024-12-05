@@ -126,26 +126,11 @@ func (s *directorySchema) Install() {
 	}.Install(s.srv)
 }
 
-type queryFileArgs struct {
-	Path        string
-	Contents    string
-	Permissions *int `default:"0644"`
-}
-
-func (s *directorySchema) getFile(ctx context.Context, parent *core.Query, args queryFileArgs) (*core.File, error) {
-    perms := fs.FileMode(0644)
-    if args.Permissions != nil {
-        perms = fs.FileMode(*args.Permissions)
-    }
-    return core.NewFileWithContents(ctx, parent, args.Path, []byte(args.Contents), perms, nil, parent.Platform())
-}
-
 type directoryPipelineArgs struct {
 	Name        string
 	Description string                             `default:""`
 	Labels      []dagql.InputObject[PipelineLabel] `default:"[]"`
 }
-
 func (s *directorySchema) pipeline(ctx context.Context, parent *core.Directory, args directoryPipelineArgs) (*core.Directory, error) {
 	return parent.WithPipeline(ctx, args.Name, args.Description)
 }
