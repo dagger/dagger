@@ -268,7 +268,7 @@ func (HostSuite) TestDirectoryExcludeInclude(ctx context.Context, t *testctx.T) 
 			Exclude: []string{"*.rar"},
 		}).Entries(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{"a.txt", "b.txt", "subdir"}, entries)
+		require.Equal(t, []string{"a.txt", "b.txt", "subdir/"}, entries)
 	})
 
 	t.Run("include", func(ctx context.Context, t *testctx.T) {
