@@ -1,6 +1,8 @@
 package main
 
-import "main/internal/dagger"
+import (
+	"dagger/my-module/internal/dagger"
+)
 
 type MyModule struct{}
 

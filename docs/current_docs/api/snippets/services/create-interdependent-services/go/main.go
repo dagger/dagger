@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"main/internal/dagger"
+	"dagger/my-module/internal/dagger"
 )
 
 type MyModule struct{}
@@ -12,7 +12,7 @@ func (m *MyModule) Services(ctx context.Context) (*dagger.Service, error) {
 
 	svcA := dag.Container().From("nginx").
 		WithExposedPort(80).
-		WithExec([]string{"sh", "-c", `
+		WithDefaultArgs([]string{"sh", "-c", `
 	nginx & while true; do curl svcb:80 && sleep 1; done
 			`}).
 		AsService().WithHostname("svca")
@@ -24,7 +24,7 @@ func (m *MyModule) Services(ctx context.Context) (*dagger.Service, error) {
 
 	svcB := dag.Container().From("nginx").
 		WithExposedPort(80).
-		WithExec([]string{"sh", "-c", `
+		WithDefaultArgs([]string{"sh", "-c", `
 nginx & while true; do curl svca:80 && sleep 1; done
 			`}).
 		AsService().WithHostname("svcb")

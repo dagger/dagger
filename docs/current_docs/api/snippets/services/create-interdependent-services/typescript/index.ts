@@ -9,7 +9,7 @@ class MyModule {
       .container()
       .from("nginx")
       .withExposedPort(80)
-      .withExec([
+      .withDefaultArgs([
         "sh",
         "-c",
         `nginx & while true; do curl svcb:80 && sleep 1; done`,
@@ -23,7 +23,7 @@ class MyModule {
       .container()
       .from("nginx")
       .withExposedPort(80)
-      .withExec([
+      .withDefaultArgs([
         "sh",
         "-c",
         `nginx & while true; do curl svca:80 && sleep 1; done`,
