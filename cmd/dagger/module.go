@@ -1286,14 +1286,20 @@ func (m *moduleDef) GetCoreFunctions() []*modFunction {
 	return fns
 }
 
-// HasCoreFunction checks if there's a core function with the given name.
-func (m *moduleDef) HasCoreFunction(name string) bool {
+// GetCoreFunction returns a core function with the given name.
+func (m *moduleDef) GetCoreFunction(name string) *modFunction {
 	for _, fn := range m.GetCoreFunctions() {
 		if fn.Name == name || fn.CmdName() == name {
-			return true
+			return fn
 		}
 	}
-	return false
+	return nil
+}
+
+// HasCoreFunction checks if there's a core function with the given name.
+func (m *moduleDef) HasCoreFunction(name string) bool {
+	fn := m.GetCoreFunction(name)
+	return fn != nil
 }
 
 func (m *moduleDef) HasMainFunction(name string) bool {
