@@ -270,7 +270,7 @@ func (m *Test) DirectoryID(ctx context.Context) (string, error) {
 	return string(id), err
 }
 `
-	script := ".core load-directory-from-id $(directory-id) | file foo | contents"
+	script := ".core | load-directory-from-id $(directory-id) | file foo | contents"
 
 	out, err := modInit(t, c, "go", source).
 		With(daggerShell(script)).
