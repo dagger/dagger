@@ -1277,7 +1277,7 @@ func (m *moduleDef) GetCoreFunctions() []*modFunction {
 	fns := make([]*modFunction, 0, len(all))
 
 	for _, fn := range all {
-		if fn.ReturnType.AsObject != nil && !fn.ReturnType.AsObject.IsCore() {
+		if fn.ReturnType.AsObject != nil && !fn.ReturnType.AsObject.IsCore() || fn.Name == "" {
 			continue
 		}
 		fns = append(fns, fn)
