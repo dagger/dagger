@@ -29,70 +29,50 @@ func TestFile(t *testing.T) {
 }
 
 func (FileSuite) TestFile(ctx context.Context, t *testctx.T) {
-	t.Run("create file directly", func(ctx context.Context, t *testctx.T) {
-		var res struct {
-			File struct {
-				ID       core.FileID
-				Contents string
-				Name     string
-			}
-		}
+	c := connect(ctx, t)
 
-		err := testutil.Query(t,
-			`{
-				file(path: "test.txt", contents: "Hello, World!") {
-					id
-					contents
-					name
-				}
-			}`, &res, nil)
+	t.Run("create file directly", func(ctx context.Context, t *testctx.T) {
+		file := c.File("test.txt", "Hello, World!")
+
+		id, err := file.ID(ctx)
 		require.NoError(t, err)
-		require.NotEmpty(t, res.File.ID)
-		require.Equal(t, "Hello, World!", res.File.Contents)
-		require.Equal(t, "test.txt", res.File.Name)
+		require.NotEmpty(t, id)
+
+		contents, err := file.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello, World!", contents)
+
+		name, err := file.Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "test.txt", name)
 	})
 
 	t.Run("create file with custom permissions", func(ctx context.Context, t *testctx.T) {
-		var res struct {
-			File struct {
-				ID       core.FileID
-				Contents string
-			}
-		}
+		file := c.File("exec.sh", "#!/bin/sh\necho hello").WithPermissions(0755)
 
-		err := testutil.Query(t,
-			`{
-				file(path: "exec.sh", contents: "#!/bin/sh\necho hello", permissions: 0755) {
-					id
-					contents
-				}
-			}`, &res, nil)
+		id, err := file.ID(ctx)
 		require.NoError(t, err)
-		require.NotEmpty(t, res.File.ID)
-		require.Equal(t, "#!/bin/sh\necho hello", res.File.Contents)
+		require.NotEmpty(t, id)
+
+		contents, err := file.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "#!/bin/sh\necho hello", contents)
 	})
 
 	t.Run("create json file", func(ctx context.Context, t *testctx.T) {
-		var res struct {
-			File struct {
-				ID       core.FileID
-				Contents string
-				Name     string
-			}
-		}
+		file := c.File("data.json", "{\"key\": \"value\"}")
 
-		err := testutil.Query(t,
-			`{
-				file(path: "data.json", contents: "{\"key\": \"value\"}") {
-					id
-					contents
-					name
-				}
-			}`, &res, nil)
+		id, err := file.ID(ctx)
 		require.NoError(t, err)
-		require.NotEmpty(t, res.File.ID)
-		require.Equal(t, "{\"key\": \"value\"}", res.File.Contents)
-		require.Equal(t, "data.json", res.File.Name)
+		require.NotEmpty(t, id)
+
+		contents, err := file.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "{\"key\": \"value\"}", contents)
+
+		name, err := file.Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "data.json", name)
 	})
 }
 
