@@ -41,9 +41,9 @@ func Close() error {
 }
 
 // Retrieves a content-addressed blob.
-func Blob(digest string) *dagger.Directory {
+func Blob(digest string, size int, mediaType string, uncompressed string) *dagger.Directory {
 	client := initClient()
-	return client.Blob(digest)
+	return client.Blob(digest, size, mediaType, uncompressed)
 }
 
 // Retrieves a container builtin to the engine.
@@ -102,12 +102,6 @@ func Directory() *dagger.Directory {
 func Engine() *dagger.Engine {
 	client := initClient()
 	return client.Engine()
-}
-
-// Create a new error.
-func Error(message string) *dagger.Error {
-	client := initClient()
-	return client.Error(message)
 }
 
 // Creates a function.
@@ -204,12 +198,6 @@ func LoadEnumValueTypeDefFromID(id dagger.EnumValueTypeDefID) *dagger.EnumValueT
 func LoadEnvVariableFromID(id dagger.EnvVariableID) *dagger.EnvVariable {
 	client := initClient()
 	return client.LoadEnvVariableFromID(id)
-}
-
-// Load a Error from its ID.
-func LoadErrorFromID(id dagger.ErrorID) *dagger.Error {
-	client := initClient()
-	return client.LoadErrorFromID(id)
 }
 
 // Load a FieldTypeDef from its ID.
