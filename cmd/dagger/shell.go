@@ -426,8 +426,8 @@ func (h *shellCallHandler) loadReadlineConfig(prompt string) (*readline.Config, 
 func (h *shellCallHandler) Prompt(out *termenv.Output, fg termenv.Color) string {
 	sb := new(strings.Builder)
 
-	if md := h.modDef(nil); md.ModRef != "" {
-		sb.WriteString(out.String(md.ModRef).Bold().Foreground(termenv.ANSICyan).String())
+	if h.modRef != "" {
+		sb.WriteString(out.String(h.modRef).Bold().Foreground(termenv.ANSICyan).String())
 		sb.WriteString(" ")
 	}
 
