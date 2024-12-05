@@ -30,6 +30,8 @@ type SDK struct {
 	PHP *PHPSDK
 	// Develop the Dagger Java SDK (experimental)
 	Java *JavaSDK
+	// Develop th Dagger Ruby SDK (experimental)
+	Ruby *RubySDK
 }
 
 func (sdk *SDK) All() *AllSDK {
@@ -54,6 +56,7 @@ func (sdk *SDK) allSDKs() []sdkBase {
 		sdk.Elixir,
 		sdk.Rust,
 		sdk.PHP,
+		sdk.Ruby,
 		// java isn't properly integrated to our release process yet
 		// sdk.Java,
 	}

@@ -18,6 +18,7 @@ const (
 	CheckJavaSDK       = "sdk/java"
 	CheckRustSDK       = "sdk/rust"
 	CheckElixirSDK     = "sdk/elixir"
+	CheckRubySDK       = "sdk/ruby"
 )
 
 // Check that everything works. Use this as CI entrypoint.
@@ -35,6 +36,7 @@ func (dev *DaggerDev) Check(ctx context.Context,
 	routes.Add(dev.checksForSDK(CheckJavaSDK, dev.SDK().Java)...)
 	routes.Add(dev.checksForSDK(CheckRustSDK, dev.SDK().Rust)...)
 	routes.Add(dev.checksForSDK(CheckElixirSDK, dev.SDK().Elixir)...)
+	routes.Add(dev.checksForSDK(CheckRubySDK, dev.SDK().Ruby)...)
 
 	eg, ctx := errgroup.WithContext(ctx)
 	for _, check := range routes.Get(targets...) {
