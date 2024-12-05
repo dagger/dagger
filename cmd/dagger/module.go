@@ -906,7 +906,7 @@ func initializeModule(ctx context.Context, dag *dagger.Client, srcRef string) (r
 }
 
 // maybeInitializeModule optionally loads the module's type definitions.
-func maybeInitializeModule(ctx context.Context, dag *dagger.Client, srcRef string) (rdef *moduleDef, modRef string, rerr error) {
+func maybeInitializeModule(ctx context.Context, dag *dagger.Client, srcRef string) (*moduleDef, string, error) {
 	if def, err := tryInitializeModule(ctx, dag, srcRef); def != nil || err != nil {
 		return def, srcRef, err
 	}
