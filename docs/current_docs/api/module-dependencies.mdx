@@ -6,6 +6,8 @@ import TabItem from '@theme/TabItem';
 
 # Module Dependencies
 
+## Installation
+
 You can call Dagger Functions from any other Dagger module in your own Dagger module simply by adding it as a module dependency with `dagger install`, as in the following example:
 
 ```sh
@@ -107,3 +109,39 @@ dagger install ./path/to/module
 :::note
 Installing a module using a local path (relative or absolute) is only possible if your module is within the repository root (for Git repositories) or the directory containing the `dagger.json` file (for all other cases).
 :::
+
+## Uninstallation
+
+To remove a dependency from your Dagger module, use the `dagger uninstall` command, as in the following example:
+
+```sh
+dagger uninstall github.com/shykes/daggerverse/hello
+```
+
+The `dagger uninstall` command can be passed either a remote repository reference or a local module name. If a version number is specified, only the specified version of the dependency is uninstalled.
+
+Assuming the following `dagger.json`:
+
+```json
+{
+  "name": "my-module",
+  "engineVersion": "v0.14.0",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "hello",
+      "source": "github.com/shykes/daggerverse/hello@hello/v0.3.0",
+      "pin": "54d86c6002d954167796e41886a47c47d95a626d"
+    }
+  ],
+  "source": "."
+}
+```
+
+The commands below are equivalent:
+
+```sh
+dagger uninstall github.com/shykes/daggerverse/hello@v0.3.0
+dagger uninstall github.com/shykes/daggerverse/hello
+dagger uninstall hello
+```
