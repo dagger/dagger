@@ -19,8 +19,12 @@ func (s *directorySchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("directory", s.directory).
 			Doc(`Creates an empty directory.`),
+		dagql.Func("file", s.file).
+			Doc(`Creates a new file with the given contents.`).
+			ArgDoc("path", `Name of the file to create (e.g., "file.txt").`).
+			ArgDoc("contents", `Content of the file (e.g., "Hello world!").`).
+			ArgDoc("permissions", `Permission for the file (e.g., 0600).`),
 	}.Install(s.srv)
-
 	dagql.Fields[*core.Directory]{
 		Syncer[*core.Directory]().
 			Doc(`Force evaluation in the engine.`),
@@ -125,6 +129,20 @@ func (s *directorySchema) Install() {
 			guarantees when using this option. It should only be used when
 			absolutely necessary and only with trusted commands.`),
 	}.Install(s.srv)
+}
+
+type queryFileArgs struct {
+	Path        string
+	Contents    string
+	Permissions *int `default:"0644"`
+}
+
+func (s *directorySchema) file(ctx context.Context, parent *core.Query, args queryFileArgs) (*core.File, error) {
+	perms := fs.FileMode(0644)
+	if args.Permissions != nil {
+		perms = fs.FileMode(*args.Permissions)
+	}
+	return core.NewFileWithContents(ctx, parent, args.Path, []byte(args.Contents), perms, nil, parent.Platform())
 }
 
 type directoryPipelineArgs struct {
