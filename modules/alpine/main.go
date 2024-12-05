@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -136,26 +137,47 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 	pkgResolver := goapk.NewPkgResolver(ctx, indexes)
 
 	ctr := dag.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + m.GoArch)})
-	ctr, err = m.withPkgs(ctx, ctr, pkgResolver, basePkgs)
+	ctr, baseApkPkgs, err := m.withPkgs(ctx, ctr, pkgResolver, basePkgs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create base container: %w", err)
 	}
-	ctr, err = m.withPkgs(ctx, ctr, pkgResolver, m.Packages)
+	ctr, apkPkgs, err := m.withPkgs(ctx, ctr, pkgResolver, m.Packages)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create package container: %w", err)
 	}
 
-	// NOTE: "apk add" will not work in this container. Generally this is a good
-	// thing since it's more efficient to install all packages here and keep
-	// the output container immutable.
-	//
-	// However, if the need to support that arises the following would be needed:
-	// * /etc/apk/arch with the architecture written
-	// * /etc/apk/repositories with the list of repo urls
-	// * /etc/apk/world with each top level installed package name written
-	// * /etc/apk/keys/ with a file for each key
-	// * /lib/apk/db/installed with package metadata for each installed pkg
-	//   * the goapk.PackageToInstalled + AddInstalledPackage code helps here
+	pkgNames := append(append([]string{}, basePkgs...), m.Packages...)
+	slices.Sort(pkgNames)
+
+	// metadata on installed packages
+	ctr = ctr.
+		WithNewFile("/etc/apk/arch", m.Arch+"\n").
+		WithNewFile("/etc/apk/repositories", strings.Join(repos, "\n")+"\n").
+		WithNewFile("/etc/apk/world", strings.Join(pkgNames, "\n")+"\n")
+
+	// key data for release branch
+	// NOTE: on alpine, these are already present from alpine-keys (dependency of alpine-release)
+	for key, keydata := range keys {
+		key, err := url.PathUnescape(key)
+		if err != nil {
+			return nil, err
+		}
+		ctr = ctr.WithNewFile(filepath.Join("/etc/apk/keys/", key), string(keydata))
+	}
+
+	// create the package database
+	// TODO: use logic from APK.AddInstalledPackage instead (which handles
+	// installed files as well)
+	var pkgDatabase []string
+	for _, pkg := range baseApkPkgs {
+		pkgDatabase = append(pkgDatabase, goapk.PackageToInstalled(pkg)...)
+		pkgDatabase = append(pkgDatabase, "")
+	}
+	for _, pkg := range apkPkgs {
+		pkgDatabase = append(pkgDatabase, goapk.PackageToInstalled(pkg)...)
+		pkgDatabase = append(pkgDatabase, "")
+	}
+	ctr = ctr.WithNewFile("/lib/apk/db/installed", strings.Join(pkgDatabase, "\n")+"\n")
 
 	ctr = ctr.WithEnvVariable("PATH", strings.Join([]string{
 		"/usr/local/sbin",
@@ -174,10 +196,10 @@ func (m *Alpine) withPkgs(
 	ctr *dagger.Container,
 	pkgResolver *goapk.PkgResolver,
 	pkgs []string,
-) (*dagger.Container, error) {
+) (*dagger.Container, []*goapk.Package, error) {
 	repoPkgs, conflicts, err := pkgResolver.GetPackagesWithDependencies(ctx, pkgs, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get packages: %w", err)
+		return nil, nil, fmt.Errorf("failed to get packages: %w", err)
 	}
 	if len(conflicts) > 0 {
 		// TODO: confirm that ignoring also matches apk add behavior (seems like it does)
@@ -252,7 +274,7 @@ func (m *Alpine) withPkgs(
 		})
 	}
 	if err := eg.Wait(); err != nil {
-		return nil, fmt.Errorf("failed to get alpine packages: %w", err)
+		return nil, nil, fmt.Errorf("failed to get alpine packages: %w", err)
 	}
 
 	for _, pkg := range alpinePkgs {
@@ -266,7 +288,11 @@ func (m *Alpine) withPkgs(
 		ctr = ctr.With(pkgscript("trigger", pkg.name, pkg.trigger))
 	}
 
-	return ctr, nil
+	apkpkgs := make([]*goapk.Package, 0, len(repoPkgs))
+	for _, pkg := range repoPkgs {
+		apkpkgs = append(apkpkgs, pkg.Package)
+	}
+	return ctr, apkpkgs, nil
 }
 
 func fetchKeys(branch goapk.ReleaseBranch, arch string) (map[string][]byte, error) {
