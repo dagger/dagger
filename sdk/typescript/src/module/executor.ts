@@ -1,13 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import Module from "node:module"
 
-<<<<<<<< HEAD:sdk/typescript/src/module/executor.ts
 import { FunctionNotFound } from "../common/errors/index.js"
 import { DaggerModule } from "./introspector/dagger_module/index.js"
-========
-import { FunctionNotFound } from "../../common/errors/index.js"
-import { DaggerModule } from "../introspector/dagger_module/index.js"
->>>>>>>> cb4a2c412 (feat: decouple provisioning & refactor ts sdk architecture):sdk/typescript/src/module/executor/index.ts
 
 export type State = { [property: string]: any }
 

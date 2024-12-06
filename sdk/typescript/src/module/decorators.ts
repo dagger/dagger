@@ -1,11 +1,7 @@
 /**
  * Expose the decorator publicly, so they insert data into the global registry.
  */
-<<<<<<<< HEAD:sdk/typescript/src/module/decorators.ts
 import { registry } from "./registry.js"
-========
-import { registry } from "../registry/index.js"
->>>>>>>> cb4a2c412 (feat: decouple provisioning & refactor ts sdk architecture):sdk/typescript/src/module/decorators/index.ts
 
 /**
  * The definition of the `@object` decorator that should be on top of any

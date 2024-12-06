@@ -9,14 +9,9 @@ import * as tar from "tar"
 
 import { dag } from "../api/client.gen.js"
 import { GraphQLRequestError } from "../common/errors/index.js"
-<<<<<<< HEAD
 import { connect, connection } from "../connect.js"
 import * as bin from "../provisioning/bin.js"
-=======
-import { connect, close, connection } from "../connect.js"
->>>>>>> cb4a2c412 (feat: decouple provisioning & refactor ts sdk architecture)
 import { CLI_VERSION } from "../provisioning/default.js"
-import * as bin from "../provisioning/library/bin.js"
 
 describe("TypeScript default client", function () {
   it("Should allow using the GQL client", async function () {
