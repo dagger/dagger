@@ -24,6 +24,7 @@ import (
 	"dagger.io/dagger/querybuilder"
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/ast"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/client"
@@ -1473,7 +1474,7 @@ func (o *modObject) HasFunction(f *modFunction) bool {
 // Type returns the GraphQL type of the value
 func (o *modObject) Type() *ast.Type {
 	return &ast.Type{
-		NamedType: o.Name,
+		NamedType: &ast.Name{Value: o.Name},
 		NonNull:   true,
 	}
 }
@@ -1492,27 +1493,27 @@ func (o *modObject) ObjectType() dagql.ObjectType {
 func (o *modObject) IDFor(ctx context.Context, sel dagql.Selector) (*call.ID, error) {
 	functions := o.GetFunctions()
 	for _, fn := range functions {
-		if fn.Name == sel.Field.Name {
-			return fn.ID(), nil
+		if fn.Name == sel.Field.Name.Value {
+			return fn.id, nil
 		}
 	}
-	return nil, fmt.Errorf("field %q not found", sel.Field.Name)
+	return nil, fmt.Errorf("field %q not found", sel.Field.Name.Value)
 }
 
 // Select evaluates the selected field and returns the result
 func (o *modObject) Select(ctx context.Context, sel dagql.Selector) (dagql.Typed, error) {
 	functions := o.GetFunctions()
 	for _, fn := range functions {
-		if fn.Name == sel.Field.Name {
+		if fn.Name == sel.Field.Name.Value {
 			// Convert selector arguments to input map
 			inputs := make(map[string]dagql.Input)
 			for _, arg := range sel.Field.Arguments {
-				inputs[arg.Name] = arg.Value
+				inputs[arg.Name.Value] = arg.Value
 			}
 			return fn.Call(ctx, inputs)
 		}
 	}
-	return nil, fmt.Errorf("field %q not found", sel.Field.Name)
+	return nil, fmt.Errorf("field %q not found", sel.Field.Name.Value)
 }
 
 type modInterface struct {
@@ -1584,6 +1585,8 @@ func (f *modField) AsFunction() *modFunction {
 		Name:        f.Name,
 		Description: f.Description,
 		ReturnType:  f.TypeDef,
+		id:          &call.ID{}, // Initialize ID field
+		Call:        func(ctx context.Context, inputs map[string]dagql.Input) (dagql.Typed, error) { return nil, nil }, // Placeholder implementation
 	}
 }
 
@@ -1594,6 +1597,8 @@ type modFunction struct {
 	ReturnType  *modTypeDef
 	Args        []*modFunctionArg
 	cmdName     string
+	id          *call.ID
+	Call        func(ctx context.Context, inputs map[string]dagql.Input) (dagql.Typed, error)
 }
 
 func (f *modFunction) CmdName() string {
