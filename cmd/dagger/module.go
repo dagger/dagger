@@ -368,18 +368,15 @@ var moduleUnInstallCmd = &cobra.Command{
 			}
 
             // Convert dependency name to ModuleDependency instance and remove it
-            dep := &core.ModuleDependency{Name: extraArgs[0]}
-            // Create a proper dagql.Instance using the Self field
-            depInstance := dagql.Instance[*core.ModuleDependency]{Self: dep}
-            // ModuleSource is a concrete type, no need for type assertion
             if modConf.Source == nil {
                 return fmt.Errorf("invalid module source: nil")
             }
-            // Use the GraphQL API to remove the dependency by name
-            q := modConf.Source.query.Select("withoutDependencies").Arg("names", []string{extraArgs[0]})
-            modConf.Source = &dagger.ModuleSource{
-                query: q,
-            }
+            // Use WithGraphQLQuery to construct the withoutDependencies query
+            q := querybuilder.New().Select("withoutDependencies").Arg("names", []string{extraArgs[0]})
+            modConf.Source = modConf.Source.WithGraphQLQuery(q)
+
+            _, err = modConf.Source.AsModule().
+                Dependencies(ctx)
 
 			_, err = modSrc.
 				AsModule().
