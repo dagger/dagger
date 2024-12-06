@@ -375,18 +375,16 @@ var moduleUnInstallCmd = &cobra.Command{
             q := querybuilder.New().Select("withoutDependencies").Arg("names", []string{extraArgs[0]})
             modConf.Source = modConf.Source.WithGraphQLQuery(q)
 
-            _, err = modConf.Source.AsModule().
-                Dependencies(ctx)
+            // Export the updated module configuration
+            _, err = modConf.Source.
+                AsModule().
+                GeneratedContextDiff().
+                Export(ctx, modConf.LocalContextPath)
+            if err != nil {
+                return fmt.Errorf("failed to generate code: %w", err)
+            }
 
-			_, err = modSrc.
-				AsModule().
-				GeneratedContextDiff().
-				Export(ctx, modConf.LocalContextPath)
-			if err != nil {
-				return fmt.Errorf("failed to generate code: %w", err)
-			}
-
-			return nil
+            return nil
 		})
 	},
 }
