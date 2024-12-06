@@ -372,8 +372,8 @@ var moduleUnInstallCmd = &cobra.Command{
             if modConf.Source == nil {
                 return fmt.Errorf("invalid module source: nil")
             }
-            // Use WithGraphQLQuery to construct the withoutDependencies query
-            q := querybuilder.New().Select("withoutDependencies").Arg("names", []string{extraArgs[0]})
+            // Use Query().Select() to construct the withoutDependencies query
+            q := querybuilder.Query().Select("withoutDependencies").Arg("names", []string{extraArgs[0]})
             modConf.Source = modConf.Source.WithGraphQLQuery(q)
 
             // Export the updated module configuration
