@@ -2,9 +2,10 @@ import { TypeDefKind } from "../../../api/client.gen.js"
 import { TypeDef } from "../typedef.js"
 import { DaggerConstructor } from "./constructor.js"
 import { DaggerFunctions } from "./function.js"
+import { Locatable } from "./locatable.js"
 import { References } from "./reference.js"
 
-export interface DaggerObjectPropertyBase {
+export interface DaggerObjectPropertyBase extends Locatable {
   name: string
   description: string
   alias?: string
@@ -18,7 +19,7 @@ export type DaggerObjectPropertiesBase = {
   [name: string]: DaggerObjectPropertyBase
 }
 
-export interface DaggerObjectBase {
+export interface DaggerObjectBase extends Locatable {
   name: string
   description: string
   _constructor: DaggerConstructor | undefined
