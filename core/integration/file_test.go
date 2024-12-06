@@ -94,6 +94,18 @@ func (FileSuite) TestDirectoryFile(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "some-content", contents)
 	})
 
+	t.Run("create file through directory (direct File API)", func(ctx context.Context, t *testctx.T) {
+		file := c.File("some-file", "some-content")
+
+		id, err := file.ID(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, id)
+
+		contents, err := file.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "some-content", contents)
+	})
+
 	t.Run("create file through directory (legacy GraphQL)", func(ctx context.Context, t *testctx.T) {
 		var res struct {
 			Directory struct {
@@ -134,6 +146,14 @@ func (FileSuite) TestSize(ctx context.Context, t *testctx.T) {
 		file := c.Directory().
 			WithNewFile("some-file", "some-content").
 			File("some-file")
+
+		size, err := file.Size(ctx)
+		require.NoError(t, err)
+		require.Equal(t, len("some-content"), size)
+	})
+
+	t.Run("get file size (direct File API)", func(ctx context.Context, t *testctx.T) {
+		file := c.File("some-file", "some-content")
 
 		size, err := file.Size(ctx)
 		require.NoError(t, err)
