@@ -1324,9 +1324,79 @@ func (f *Foo) ContainerEcho(ctx context.Context, input string) (string, error) {
 }
 
 func (CLISuite) TestDaggerUpdate(ctx context.Context, t *testctx.T) {
+	const (
+		// pins from github.com/shykes/daggerverse/docker module
+		// to facilitate testing that pins are updated to expected
+		// values when we run dagger update
+		randomMainPin  = "b20176e68d27edc9660960ec27f323d33dba633b"
+		randomWolfiPin = "3d608cb5e6b4b18036a471400bc4e6c753f229d7"
+		v041DockerPin  = "5c8b312cd7c8493966d28c118834d4e9565c7c62"
+		v042DockerPin  = "7f2dcf2dbfb24af68c4c83a6da94dd5d885e58b8"
+		v013WolfiPin   = "3338120927f8e291c4780de691ef63a7c9d825c0"
+	)
+
+	noDeps := `{
+		"name": "foo", 
+		"sdk": "go"
+	}`
+
+	// pin a random old commit to verify pin is changed
+	depHasOldVersion := `{
+		"name": "foo", 
+		"sdk": "go", 
+		"dependencies": [
+			{ 
+				"name": "docker", 
+				"source": "github.com/shykes/daggerverse/docker@docker/v0.4.1",
+				"pin": "` + randomMainPin + `"
+			}
+		]
+	}`
+
+	depHasBranch := `{
+		"name": "foo", 
+		"sdk": "go", 
+		"dependencies": [
+			{ 
+				"name": "docker", 
+				"source": "github.com/shykes/daggerverse/docker@main",
+				"pin": "` + randomMainPin + `"
+			}
+		]
+	}`
+
+	depHasNoVersion := `{
+		"name": "foo", 
+		"sdk": "go", 
+		"dependencies": [
+			{ 
+				"name": "docker", 
+				"source": "github.com/shykes/daggerverse/docker",
+				"pin": "` + randomMainPin + `"
+			}
+		]
+	}`
+
+	multipleDeps := `{
+		"name": "foo", 
+		"sdk": "go", 
+		"dependencies": [
+			{ 
+				"name": "docker", 
+				"source": "github.com/shykes/daggerverse/docker@v0.4.1",
+				"pin": "` + randomMainPin + `"
+			},
+			{ 
+				"name": "wolfi", 
+				"source": "github.com/shykes/daggerverse/wolfi@v0.1.3",
+				"pin": "` + randomWolfiPin + `"
+			}
+		]
+	}`
+
 	testcases := []struct {
 		name          string
-		installCmds   [][]string
+		setup         func() dagger.WithContainerFunc
 		updateCmd     []string
 		contains      []string
 		notContains   []string
@@ -1334,127 +1404,153 @@ func (CLISuite) TestDaggerUpdate(ctx context.Context, t *testctx.T) {
 	}{
 		{
 			name: "existing dep has version, update cmd has version",
-			installCmds: [][]string{
-				{"install", "github.com/shykes/daggerverse/docker@v0.4.1"},
+			setup: func() dagger.WithContainerFunc {
+				return func(c *dagger.Container) *dagger.Container {
+					return c.WithNewFile("dagger.json", depHasOldVersion)
+				}
 			},
 			updateCmd:   []string{"update", "github.com/shykes/daggerverse/docker@v0.4.2"},
-			contains:    []string{`"github.com/shykes/daggerverse/docker@docker/v0.4.2"`},
+			contains:    []string{`"github.com/shykes/daggerverse/docker@docker/v0.4.2"`, v042DockerPin},
 			notContains: []string{`github.com/shykes/daggerverse/docker@docker/v0.4.1`},
 		},
 		{
 			name: "existing dep has branch, update cmd has version",
-			installCmds: [][]string{
-				{"install", "github.com/shykes/daggerverse/docker@main"},
+			setup: func() dagger.WithContainerFunc {
+				return func(c *dagger.Container) *dagger.Container {
+					return c.WithNewFile("dagger.json", depHasBranch)
+				}
 			},
 			updateCmd:   []string{"update", "github.com/shykes/daggerverse/docker@v0.4.2"},
-			contains:    []string{`"github.com/shykes/daggerverse/docker@docker/v0.4.2"`},
-			notContains: []string{`github.com/shykes/daggerverse/docker@main`},
+			contains:    []string{`"github.com/shykes/daggerverse/docker@docker/v0.4.2"`, v042DockerPin},
+			notContains: []string{`github.com/shykes/daggerverse/docker@main`, randomMainPin},
 		},
 		{
 			name: "existing dep dont have version, update cmd has version",
-			installCmds: [][]string{
-				{"install", "github.com/shykes/daggerverse/docker"},
+			setup: func() dagger.WithContainerFunc {
+				return func(c *dagger.Container) *dagger.Container {
+					return c.WithNewFile("dagger.json", depHasNoVersion)
+				}
 			},
 			updateCmd:   []string{"update", "github.com/shykes/daggerverse/docker@v0.4.2"},
-			contains:    []string{`github.com/shykes/daggerverse/docker@docker/v0.4.2`},
+			contains:    []string{`github.com/shykes/daggerverse/docker@docker/v0.4.2`, v042DockerPin},
 			notContains: []string{`"github.com/shykes/daggerverse/docker"`},
 		},
 		{
 			name: "existing dep dont have version, update cmd dont have version",
-			installCmds: [][]string{
-				{"install", "github.com/shykes/daggerverse/docker"},
+			setup: func() dagger.WithContainerFunc {
+				return func(c *dagger.Container) *dagger.Container {
+					return c.WithNewFile("dagger.json", depHasNoVersion)
+				}
 			},
-			updateCmd: []string{"update", "github.com/shykes/daggerverse/docker"},
-			contains:  []string{`"github.com/shykes/daggerverse/docker"`},
+			updateCmd:   []string{"update", "github.com/shykes/daggerverse/docker"},
+			notContains: []string{randomMainPin},
 		},
 		{
 			name: "existing dep use branch, update cmd dont have version",
-			installCmds: [][]string{
-				{"install", "github.com/shykes/daggerverse/docker@main"},
+			setup: func() dagger.WithContainerFunc {
+				return func(c *dagger.Container) *dagger.Container {
+					return c.WithNewFile("dagger.json", depHasBranch)
+				}
 			},
 			updateCmd:   []string{"update", "github.com/shykes/daggerverse/docker"},
 			contains:    []string{`"github.com/shykes/daggerverse/docker@main`},
-			notContains: []string{`"github.com/shykes/daggerverse/docker"`},
+			notContains: []string{`"github.com/shykes/daggerverse/docker"`, randomMainPin},
 		},
 		{
 			name: "existing dep have version, update cmd dont have version",
-			installCmds: [][]string{
-				{"install", "github.com/shykes/daggerverse/docker@v0.4.2"},
+			setup: func() dagger.WithContainerFunc {
+				return func(c *dagger.Container) *dagger.Container {
+					return c.WithNewFile("dagger.json", depHasOldVersion)
+				}
 			},
 			updateCmd:   []string{"update", "github.com/shykes/daggerverse/docker"},
-			contains:    []string{`github.com/shykes/daggerverse/docker@docker/v0.4.2`},
+			contains:    []string{`github.com/shykes/daggerverse/docker@docker/v0.4.1`, v041DockerPin},
 			notContains: []string{`"github.com/shykes/daggerverse/docker"`},
 		},
 		{
 			name: "existing dep dont have version, update cmd use name without version",
-			installCmds: [][]string{
-				{"install", "github.com/shykes/daggerverse/docker"},
+			setup: func() dagger.WithContainerFunc {
+				return func(c *dagger.Container) *dagger.Container {
+					return c.WithNewFile("dagger.json", depHasNoVersion)
+				}
 			},
-			updateCmd: []string{"update", "docker"},
-			contains:  []string{`"github.com/shykes/daggerverse/docker"`},
+			updateCmd:   []string{"update", "docker"},
+			contains:    []string{`"github.com/shykes/daggerverse/docker"`},
+			notContains: []string{randomMainPin},
 		},
 		{
 			name: "existing dep use branch, update cmd use name without version",
-			installCmds: [][]string{
-				{"install", "github.com/shykes/daggerverse/docker@main"},
+			setup: func() dagger.WithContainerFunc {
+				return func(c *dagger.Container) *dagger.Container {
+					return c.WithNewFile("dagger.json", depHasBranch)
+				}
 			},
 			updateCmd:   []string{"update", "docker"},
 			contains:    []string{`"github.com/shykes/daggerverse/docker@main`},
-			notContains: []string{`"github.com/shykes/daggerverse/docker"`},
+			notContains: []string{`"github.com/shykes/daggerverse/docker"`, randomMainPin},
 		},
 		{
 			name: "existing dep have version, update cmd use name without version",
-			installCmds: [][]string{
-				{"install", "github.com/shykes/daggerverse/docker@v0.4.2"},
+			setup: func() dagger.WithContainerFunc {
+				return func(c *dagger.Container) *dagger.Container {
+					return c.WithNewFile("dagger.json", depHasOldVersion)
+				}
 			},
 			updateCmd:   []string{"update", "docker"},
-			contains:    []string{`github.com/shykes/daggerverse/docker@docker/v0.4.2`},
+			contains:    []string{`github.com/shykes/daggerverse/docker@docker/v0.4.1`, v041DockerPin},
 			notContains: []string{`"github.com/shykes/daggerverse/docker"`},
 		},
 		{
 			name: "existing dep dont have version, update cmd use name with version",
-			installCmds: [][]string{
-				{"install", "github.com/shykes/daggerverse/docker"},
+			setup: func() dagger.WithContainerFunc {
+				return func(c *dagger.Container) *dagger.Container {
+					return c.WithNewFile("dagger.json", depHasNoVersion)
+				}
 			},
 			updateCmd: []string{"update", "docker@v0.4.2"},
-			contains:  []string{`"github.com/shykes/daggerverse/docker@docker/v0.4.2"`},
+			contains:  []string{`"github.com/shykes/daggerverse/docker@docker/v0.4.2"`, v042DockerPin},
 		},
 		{
 			name: "existing dep use branch, update cmd use name with version",
-			installCmds: [][]string{
-				{"install", "github.com/shykes/daggerverse/docker@main"},
+			setup: func() dagger.WithContainerFunc {
+				return func(c *dagger.Container) *dagger.Container {
+					return c.WithNewFile("dagger.json", depHasBranch)
+				}
 			},
 			updateCmd:   []string{"update", "docker@v0.4.2"},
-			contains:    []string{`"github.com/shykes/daggerverse/docker@docker/v0.4.2`},
+			contains:    []string{`"github.com/shykes/daggerverse/docker@docker/v0.4.2`, v042DockerPin},
 			notContains: []string{`"github.com/shykes/daggerverse/docker@main"`},
 		},
 		{
 			name: "existing dep have version, update cmd use name with version",
-			installCmds: [][]string{
-				{"install", "github.com/shykes/daggerverse/docker@v0.4.1"},
+			setup: func() dagger.WithContainerFunc {
+				return func(c *dagger.Container) *dagger.Container {
+					return c.WithNewFile("dagger.json", depHasOldVersion)
+				}
 			},
 			updateCmd:   []string{"update", "docker@v0.4.2"},
-			contains:    []string{`github.com/shykes/daggerverse/docker@docker/v0.4.2`},
-			notContains: []string{`"github.com/shykes/daggerverse/docker@docker/v0.4.1"`},
+			contains:    []string{`github.com/shykes/daggerverse/docker@docker/v0.4.2`, v042DockerPin},
+			notContains: []string{`"github.com/shykes/daggerverse/docker@docker/v0.4.1"`, v041DockerPin},
 		},
 		{
-			name:          "update a dependency not configured in dagger.json",
-			installCmds:   [][]string{},
+			name: "update a dependency not configured in dagger.json",
+			setup: func() dagger.WithContainerFunc {
+				return func(c *dagger.Container) *dagger.Container {
+					return c.WithNewFile("dagger.json", noDeps)
+				}
+			},
 			updateCmd:     []string{"update", "github.com/shykes/daggerverse/docker@v0.4.2"},
 			expectedError: `dependency "github.com/shykes/daggerverse/docker@v0.4.2" was requested to be updated, but it is not found in the dependencies list`,
 		},
 		{
 			name: "can update all dependencies",
-			installCmds: [][]string{
-				{"install", "github.com/shykes/daggerverse/docker@v0.4.1"},
-				{"install", "github.com/shykes/daggerverse/wolfi@v0.1.3"},
+			setup: func() dagger.WithContainerFunc {
+				return func(c *dagger.Container) *dagger.Container {
+					return c.WithNewFile("dagger.json", multipleDeps)
+				}
 			},
 			updateCmd: []string{"update"},
-			// Before and after contents are same as we are not moving the tags here.
-			// In real world, this will get re-pinnned if the tags have moved.
-			// This command essentially verifies that the version from source field is not
-			// removed.
-			contains: []string{`"github.com/shykes/daggerverse/docker@docker/v0.4.1"`, `"github.com/shykes/daggerverse/wolfi@wolfi/v0.1.3"`},
+			contains:  []string{`"github.com/shykes/daggerverse/docker@docker/v0.4.1"`, v041DockerPin, `"github.com/shykes/daggerverse/wolfi@wolfi/v0.1.3"`, v013WolfiPin},
 		},
 	}
 
@@ -1468,14 +1564,11 @@ func (CLISuite) TestDaggerUpdate(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/work").
 				With(daggerExec("init", "--sdk=go", "--name=foo", "--source=."))
 
-			for _, instcmd := range tc.installCmds {
-				ctr = ctr.With(daggerExec(instcmd...))
+			if tc.setup != nil {
+				ctr = ctr.With(tc.setup())
 			}
 
-			daggerjson, err := ctr.File("dagger.json").Contents(ctx)
-			require.NoError(t, err)
-
-			daggerjson, err = ctr.
+			daggerjson, err := ctr.
 				With(daggerExec(tc.updateCmd...)).
 				File("dagger.json").
 				Contents(ctx)

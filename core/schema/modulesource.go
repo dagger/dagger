@@ -1267,7 +1267,6 @@ func (s *moduleSchema) normalizeCallerLoadedSource(
 				Field: "withUpdateDependencies",
 				Args: []dagql.NamedInput{
 					{Name: "dependencies", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(src.WithUpdateDependencies...))},
-					{Name: "all", Value: dagql.NewBoolean(src.WithUpdateAllDependencies)},
 				},
 			},
 		)
