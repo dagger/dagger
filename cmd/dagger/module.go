@@ -19,12 +19,12 @@ import (
 	"github.com/moby/buildkit/util/gitutil"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"github.com/vektah/gqlparser/v2/ast"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/ast"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/client"
@@ -1493,27 +1493,27 @@ func (o *modObject) ObjectType() dagql.ObjectType {
 func (o *modObject) IDFor(ctx context.Context, sel dagql.Selector) (*call.ID, error) {
 	functions := o.GetFunctions()
 	for _, fn := range functions {
-		if fn.Name == sel.Field.Name.Value {
-			return fn.id, nil
+		if fn.Name == sel.Field.Name {
+			return fn.ID(), nil
 		}
 	}
-	return nil, fmt.Errorf("field %q not found", sel.Field.Name.Value)
+	return nil, fmt.Errorf("field %q not found", sel.Field.Name)
 }
 
 // Select evaluates the selected field and returns the result
 func (o *modObject) Select(ctx context.Context, sel dagql.Selector) (dagql.Typed, error) {
 	functions := o.GetFunctions()
 	for _, fn := range functions {
-		if fn.Name == sel.Field.Name.Value {
+		if fn.Name == sel.Field.Name {
 			// Convert selector arguments to input map
 			inputs := make(map[string]dagql.Input)
 			for _, arg := range sel.Field.Arguments {
-				inputs[arg.Name.Value] = arg.Value
+				inputs[arg.Name] = arg.Value
 			}
 			return fn.Call(ctx, inputs)
 		}
 	}
-	return nil, fmt.Errorf("field %q not found", sel.Field.Name.Value)
+	return nil, fmt.Errorf("field %q not found", sel.Field.Name)
 }
 
 type modInterface struct {
@@ -1599,6 +1599,11 @@ type modFunction struct {
 	cmdName     string
 	id          *call.ID
 	Call        func(ctx context.Context, inputs map[string]dagql.Input) (dagql.Typed, error)
+}
+
+// ID returns the function's ID
+func (f *modFunction) ID() *call.ID {
+	return f.id
 }
 
 func (f *modFunction) CmdName() string {
