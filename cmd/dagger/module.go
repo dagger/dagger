@@ -26,6 +26,7 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/core/modules/call"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
@@ -1472,11 +1473,8 @@ func (o *modObject) HasFunction(f *modFunction) bool {
 }
 
 // Type returns the GraphQL type of the value
-func (o *modObject) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: &ast.Name{Value: o.Name},
-		NonNull:   true,
-	}
+func (o *modObject) Type() string {
+	return o.Name
 }
 
 // ID returns the ID of the value
@@ -1536,6 +1534,14 @@ func (o *modInterface) IsCore() bool {
 
 func (o *modInterface) GetFunctions() []*modFunction {
 	return o.Functions
+}
+
+func (o *modInterface) Interface() dagql.Interface {
+	return o
+}
+
+func (o *modInterface) Type() string {
+	return o.Name
 }
 
 type modScalar struct {
