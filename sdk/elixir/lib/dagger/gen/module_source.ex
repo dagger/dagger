@@ -342,14 +342,12 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc "Update one or more module dependencies."
-  @spec with_update_dependencies(t(), [String.t()], [{:all, boolean() | nil}]) ::
-          Dagger.ModuleSource.t()
-  def with_update_dependencies(%__MODULE__{} = module_source, dependencies, optional_args \\ []) do
+  @spec with_update_dependencies(t(), [String.t()]) :: Dagger.ModuleSource.t()
+  def with_update_dependencies(%__MODULE__{} = module_source, dependencies) do
     query_builder =
       module_source.query_builder
       |> QB.select("withUpdateDependencies")
       |> QB.put_arg("dependencies", dependencies)
-      |> QB.maybe_put_arg("all", optional_args[:all])
 
     %Dagger.ModuleSource{
       query_builder: query_builder,

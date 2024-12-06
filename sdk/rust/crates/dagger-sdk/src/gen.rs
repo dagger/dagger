@@ -6266,12 +6266,6 @@ pub struct ModuleSourceWithInitOpts {
     #[builder(setter(into, strip_option), default)]
     pub merge: Option<bool>,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct ModuleSourceWithUpdateDependenciesOpts {
-    /// Update all dependencies
-    #[builder(setter(into, strip_option), default)]
-    pub all: Option<bool>,
-}
 impl ModuleSource {
     /// If the source is a of kind git, the git source representation of it.
     pub fn as_git_source(&self) -> GitModuleSource {
@@ -6604,7 +6598,6 @@ impl ModuleSource {
     /// # Arguments
     ///
     /// * `dependencies` - The dependencies to update.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_update_dependencies(&self, dependencies: Vec<impl Into<String>>) -> ModuleSource {
         let mut query = self.selection.select("withUpdateDependencies");
         query = query.arg(
@@ -6614,34 +6607,6 @@ impl ModuleSource {
                 .map(|i| i.into())
                 .collect::<Vec<String>>(),
         );
-        ModuleSource {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Update one or more module dependencies.
-    ///
-    /// # Arguments
-    ///
-    /// * `dependencies` - The dependencies to update.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_update_dependencies_opts(
-        &self,
-        dependencies: Vec<impl Into<String>>,
-        opts: ModuleSourceWithUpdateDependenciesOpts,
-    ) -> ModuleSource {
-        let mut query = self.selection.select("withUpdateDependencies");
-        query = query.arg(
-            "dependencies",
-            dependencies
-                .into_iter()
-                .map(|i| i.into())
-                .collect::<Vec<String>>(),
-        );
-        if let Some(all) = opts.all {
-            query = query.arg("all", all);
-        }
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,

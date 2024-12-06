@@ -1028,13 +1028,6 @@ export type ModuleSourceWithInitOpts = {
   merge?: boolean
 }
 
-export type ModuleSourceWithUpdateDependenciesOpts = {
-  /**
-   * Update all dependencies
-   */
-  all?: boolean
-}
-
 /**
  * The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
  */
@@ -8155,18 +8148,14 @@ export class ModuleSource extends BaseClient {
   /**
    * Update one or more module dependencies.
    * @param dependencies The dependencies to update.
-   * @param opts.all Update all dependencies
    */
-  withUpdateDependencies = (
-    dependencies: string[],
-    opts?: ModuleSourceWithUpdateDependenciesOpts,
-  ): ModuleSource => {
+  withUpdateDependencies = (dependencies: string[]): ModuleSource => {
     return new ModuleSource({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withUpdateDependencies",
-          args: { dependencies, ...opts },
+          args: { dependencies },
         },
       ],
       ctx: this._ctx,

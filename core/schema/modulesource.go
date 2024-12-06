@@ -769,17 +769,14 @@ func (s *moduleSchema) moduleSourceWithUpdateDependencies(
 	src *core.ModuleSource,
 	args struct {
 		Dependencies []string
-		All          bool `default:"false"`
 	},
 ) (*core.ModuleSource, error) {
 	src = src.Clone()
 
-	if len(args.Dependencies) > 0 && args.All {
-		return nil, fmt.Errorf("cannot update all dependencies when a list of dependencies to update has been provided")
-	}
-
 	src.WithUpdateDependencies = args.Dependencies
-	src.WithUpdateAllDependencies = args.All
+	if len(src.WithUpdateDependencies) == 0 {
+		src.WithUpdateAllDependencies = true
+	}
 
 	return src, nil
 }

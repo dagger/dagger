@@ -368,17 +368,9 @@ var moduleUpdateCmd = &cobra.Command{
 				return fmt.Errorf("module must be fully initialized")
 			}
 
-			modSrc := modConf.Source
-			if len(extraArgs) > 0 {
-				modSrc = modSrc.WithUpdateDependencies(extraArgs)
-			} else {
-				//move this logic to api
-				modSrc = modSrc.WithUpdateDependencies([]string{}, dagger.ModuleSourceWithUpdateDependenciesOpts{All: true})
-			}
-
-			modSrc = modSrc.ResolveFromCaller()
-
-			_, err = modSrc.
+			_, err = modConf.
+				Source.WithUpdateDependencies(extraArgs).
+				ResolveFromCaller().
 				AsModule().
 				GeneratedContextDiff().
 				Export(ctx, modConf.LocalContextPath)

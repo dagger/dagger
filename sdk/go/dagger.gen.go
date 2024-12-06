@@ -6298,21 +6298,9 @@ func (r *ModuleSource) WithSourceSubpath(path string) *ModuleSource {
 	}
 }
 
-// ModuleSourceWithUpdateDependenciesOpts contains options for ModuleSource.WithUpdateDependencies
-type ModuleSourceWithUpdateDependenciesOpts struct {
-	// Update all dependencies
-	All bool
-}
-
 // Update one or more module dependencies.
-func (r *ModuleSource) WithUpdateDependencies(dependencies []string, opts ...ModuleSourceWithUpdateDependenciesOpts) *ModuleSource {
+func (r *ModuleSource) WithUpdateDependencies(dependencies []string) *ModuleSource {
 	q := r.query.Select("withUpdateDependencies")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `all` optional argument
-		if !querybuilder.IsZeroValue(opts[i].All) {
-			q = q.Arg("all", opts[i].All)
-		}
-	}
 	q = q.Arg("dependencies", dependencies)
 
 	return &ModuleSource{

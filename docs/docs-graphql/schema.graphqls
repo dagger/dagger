@@ -2423,9 +2423,6 @@ type ModuleSource {
 
   """Update one or more module dependencies."""
   withUpdateDependencies(
-    """Update all dependencies"""
-    all: Boolean = false
-
     """The dependencies to update."""
     dependencies: [String!]!
   ): ModuleSource!
