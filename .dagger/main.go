@@ -16,10 +16,9 @@ import (
 type DaggerDev struct {
 	Src *dagger.Directory // +private
 
-	EngineVersion string
-	Version       string
-	Tag           string
-	Git           *dagger.VersionGit // +private
+	Version string
+	Tag     string
+	Git     *dagger.VersionGit // +private
 
 	// When set, module codegen is automatically applied when retrieving the Dagger source code
 	ModCodegen        bool
