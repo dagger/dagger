@@ -3,6 +3,7 @@ import ts from "typescript"
 import { IntrospectionError } from "../../../common/errors/index.js"
 import { AST } from "../typescript_module/index.js"
 import { DaggerEnumBase, DaggerEnumBaseValue } from "./enumBase.js"
+import { Locatable } from "./locatable.js"
 
 export type DaggerEnums = { [name: string]: DaggerEnum }
 export type DaggerEnumValues = { [name: string]: DaggerEnumValue }
@@ -40,7 +41,7 @@ export class DaggerEnumValue implements DaggerEnumBaseValue {
   }
 }
 
-export class DaggerEnum implements DaggerEnumBase {
+export class DaggerEnum extends Locatable implements DaggerEnumBase {
   public name: string
   public description: string
   public values: DaggerEnumValues = {}
@@ -51,6 +52,8 @@ export class DaggerEnum implements DaggerEnumBase {
     private readonly node: ts.EnumDeclaration,
     private readonly ast: AST,
   ) {
+    super(node)
+
     this.name = this.node.name.getText()
     this.symbol = this.ast.getSymbolOrThrow(this.node.name)
     this.description = this.ast.getDocFromSymbol(this.symbol)

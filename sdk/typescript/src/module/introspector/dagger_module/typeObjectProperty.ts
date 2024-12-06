@@ -8,6 +8,7 @@ import {
   isTypeDefResolved,
   resolveTypeDef,
 } from "../typescript_module/index.js"
+import { Locatable } from "./locatable.js"
 import { DaggerObjectPropertyBase } from "./objectBase.js"
 import { References } from "./reference.js"
 
@@ -15,7 +16,10 @@ export type DaggerObjectTypeProperties = {
   [name: string]: DaggerObjectTypeProperty
 }
 
-export class DaggerObjectTypeProperty implements DaggerObjectPropertyBase {
+export class DaggerObjectTypeProperty
+  extends Locatable
+  implements DaggerObjectPropertyBase
+{
   public name: string
   public description: string
   public alias = undefined
@@ -29,6 +33,8 @@ export class DaggerObjectTypeProperty implements DaggerObjectPropertyBase {
     private readonly symbol: ts.Symbol,
     private readonly ast: AST,
   ) {
+    super(node)
+
     this.name = symbol.name
     this.description = this.ast.getDocFromSymbol(this.symbol)
 
