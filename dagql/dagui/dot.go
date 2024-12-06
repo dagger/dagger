@@ -7,7 +7,9 @@ import (
 	"os"
 	"time"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"github.com/dustin/go-humanize"
 )
 
 func (db *DB) WriteDot(
@@ -235,6 +237,16 @@ func (dag *dotDag) writeTo(out io.Writer) {
 		if thicc {
 			border = 10.0
 			color = "red"
+		}
+
+		if readBytes := vtx.span.MetricsByName[telemetry.IOStatDiskReadBytes]; len(readBytes) > 0 {
+			lastPoint := readBytes[len(readBytes)-1]
+			label += fmt.Sprintf("\nRead: %s", humanize.Bytes(uint64(lastPoint.Value)))
+		}
+
+		if writeBytes := vtx.span.MetricsByName[telemetry.IOStatDiskWriteBytes]; len(writeBytes) > 0 {
+			lastPoint := writeBytes[len(writeBytes)-1]
+			label += fmt.Sprintf("\nWrite: %s", humanize.Bytes(uint64(lastPoint.Value)))
 		}
 
 		fmt.Fprintf(out, "  %q [label=%q shape=ellipse penwidth=%f color=%s];\n", vtxDgst, label, border, color)

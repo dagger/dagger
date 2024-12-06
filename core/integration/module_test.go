@@ -21,6 +21,7 @@ import (
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/cenkalti/backoff/v4"
+	"github.com/google/uuid"
 	"github.com/iancoleman/strcase"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
@@ -1739,6 +1740,7 @@ func (ModuleSuite) TestLotsOfFunctions(ctx context.Context, t *testctx.T) {
 			}
 			eg.Go(func() error {
 				_, err := modGen.
+					WithEnvVariable("CACHE_BUST", uuid.NewString()).
 					With(daggerCall(fmt.Sprintf("potato-%d", i))).
 					Sync(ctx)
 				return err
@@ -1780,6 +1782,7 @@ class PotatoSack:
 			}
 			eg.Go(func() error {
 				_, err := modGen.
+					WithEnvVariable("CACHE_BUST", uuid.NewString()).
 					With(daggerCall(fmt.Sprintf("potato-%d", i))).
 					Sync(ctx)
 				return err
@@ -1826,6 +1829,7 @@ export class PotatoSack {
 			}
 			eg.Go(func() error {
 				_, err := modGen.
+					WithEnvVariable("CACHE_BUST", uuid.NewString()).
 					With(daggerCall(fmt.Sprintf("potato-%d", i))).
 					Sync(ctx)
 				return err
@@ -1887,6 +1891,7 @@ func (ModuleSuite) TestLotsOfDeps(ctx context.Context, t *testctx.T) {
 			newModNames = append(newModNames, name)
 			modGen = modGen.
 				WithWorkdir("/work/"+name).
+				WithEnvVariable("CACHE_BUST", uuid.NewString()).
 				WithNewFile("./main.go", getModMainSrc(name, depNames))
 
 			var depCfgs []*modules.ModuleConfigDependency

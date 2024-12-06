@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/felixge/fgprof"
 	"github.com/mackerelio/go-osstat/cpu"
 	"github.com/mackerelio/go-osstat/loadavg"
 	"github.com/mackerelio/go-osstat/memory"
@@ -35,6 +36,7 @@ func setupDebugHandlers(addr string) error {
 	m.Handle("/debug/pprof/trace", http.HandlerFunc(pprof.Trace))
 	m.Handle("/debug/pprof/heap", pprof.Handler("heap"))
 	m.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
+	m.Handle("/debug/fgprof", fgprof.Handler())
 	m.Handle("/debug/requests", http.HandlerFunc(trace.Traces))
 	m.Handle("/debug/events", http.HandlerFunc(trace.Events))
 	// m.Handle("/debug/fgtrace", fgtrace.Config{})
