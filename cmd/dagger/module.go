@@ -21,11 +21,11 @@ import (
 	"github.com/spf13/pflag"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/querybuilder"
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/sdk/go/querybuilder"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
 )
