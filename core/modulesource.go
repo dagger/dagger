@@ -300,6 +300,25 @@ func (src *ModuleSource) SDK(ctx context.Context) (string, error) {
 func (src *ModuleSource) WithRemovedDependencies(deps []dagql.Instance[*ModuleDependency]) *ModuleSource {
 	cp := src.Clone()
 	cp.WithoutDependencies = deps
+
+	// Filter out the specified dependencies from the existing dependencies
+	if len(cp.WithDependencies) > 0 && len(deps) > 0 {
+		remaining := make([]dagql.Instance[*ModuleDependency], 0, len(cp.WithDependencies))
+		for _, dep := range cp.WithDependencies {
+			shouldKeep := true
+			for _, removeDep := range deps {
+				if dep.ID() == removeDep.ID() {
+					shouldKeep = false
+					break
+				}
+			}
+			if shouldKeep {
+				remaining = append(remaining, dep)
+			}
+		}
+		cp.WithDependencies = remaining
+	}
+
 	return cp
 }
 
