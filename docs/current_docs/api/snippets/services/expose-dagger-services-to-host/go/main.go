@@ -1,6 +1,8 @@
 package main
 
-import "main/internal/dagger"
+import (
+	"dagger/my-module/internal/dagger"
+)
 
 type MyModule struct{}
 
@@ -10,7 +12,6 @@ func (m *MyModule) HttpService() *dagger.Service {
 		From("python").
 		WithWorkdir("/srv").
 		WithNewFile("index.html", "Hello, world!").
-		WithExec([]string{"python", "-m", "http.server", "8080"}).
 		WithExposedPort(8080).
-		AsService()
+		AsService(dagger.ContainerAsServiceOpts{Args: []string{"python", "-m", "http.server", "8080"}})
 }
