@@ -108,7 +108,24 @@ func (FileSuite) TestDirectoryFile(ctx context.Context, t *testctx.T) {
 }
 
 func (FileSuite) TestLegacyDirectoryFileBackwardCompatibility(ctx context.Context, t *testctx.T) {
-	t.Run("create file through directory (legacy GraphQL, testing backward compatibility)", func(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("create file through directory (legacy GraphQL)", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("some-dir/some-file", "some-content")
+
+		file := dir.Directory("some-dir").File("some-file")
+
+		id, err := file.ID(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, id)
+
+		contents, err := file.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "some-content", contents)
+	})
+
+	t.Run("create file through directory (legacy raw GraphQL)", func(ctx context.Context, t *testctx.T) {
 		var res struct {
 			Directory struct {
 				WithNewFile struct {
