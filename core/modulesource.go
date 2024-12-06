@@ -297,7 +297,7 @@ func (src *ModuleSource) SDK(ctx context.Context) (string, error) {
 }
 
 // WithRemovedDependencies returns a new ModuleSource with the specified dependencies removed.
-func (src *ModuleSource) WithRemovedDependencies(deps []string) *ModuleSource {
+func (src *ModuleSource) WithRemovedDependencies(deps []dagql.Instance[*ModuleDependency]) *ModuleSource {
 	cp := src.Clone()
 	cp.WithoutDependencies = deps
 	return cp
