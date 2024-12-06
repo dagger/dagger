@@ -1490,34 +1490,29 @@ func (o *modObject) ObjectType() dagql.ObjectType {
 
 // IDFor returns the ID representing the return value of the given field
 func (o *modObject) IDFor(ctx context.Context, sel dagql.Selector) (*call.ID, error) {
-	field, ok := o.GetFunctions()[sel.Field.Name]
-	if !ok {
-		return nil, fmt.Errorf("field %q not found", sel.Field.Name)
+	functions := o.GetFunctions()
+	for _, fn := range functions {
+		if fn.Name == sel.Field.Name {
+			return fn.ID(), nil
+		}
 	}
-
-	// Return the field's ID if it's a function
-	if field != nil {
-		return field.ID(), nil
-	}
-
-	return o.id, nil
+	return nil, fmt.Errorf("field %q not found", sel.Field.Name)
 }
 
 // Select evaluates the selected field and returns the result
 func (o *modObject) Select(ctx context.Context, sel dagql.Selector) (dagql.Typed, error) {
-	field, ok := o.GetFunctions()[sel.Field.Name]
-	if !ok {
-		return nil, fmt.Errorf("field %q not found", sel.Field.Name)
+	functions := o.GetFunctions()
+	for _, fn := range functions {
+		if fn.Name == sel.Field.Name {
+			// Convert selector arguments to input map
+			inputs := make(map[string]dagql.Input)
+			for _, arg := range sel.Field.Arguments {
+				inputs[arg.Name] = arg.Value
+			}
+			return fn.Call(ctx, inputs)
+		}
 	}
-
-	// Convert selector arguments to input map
-	inputs := make(map[string]dagql.Input)
-	for _, arg := range sel.Field.Arguments {
-		inputs[arg.Name] = arg.Value
-	}
-
-	// Call the field function with the inputs
-	return field.Call(ctx, inputs)
+	return nil, fmt.Errorf("field %q not found", sel.Field.Name)
 }
 
 type modInterface struct {
