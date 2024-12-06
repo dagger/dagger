@@ -92,10 +92,6 @@ func (m *PythonSdk) IndexURL() string {
 			return cfg.URL
 		}
 	}
-	// deprecated
-	if len(m.Discovery.UvConfig().Index) == 0 {
-		return m.Discovery.UvConfig().IndexURL
-	}
 	return ""
 }
 
@@ -108,9 +104,6 @@ func (m *PythonSdk) ExtraIndexURL() string {
 		if !cfg.Default {
 			return cfg.URL
 		}
-	}
-	if len(m.Discovery.UvConfig().Index) == 0 {
-		return m.Discovery.UvConfig().ExtraIndexURL
 	}
 	return ""
 }
