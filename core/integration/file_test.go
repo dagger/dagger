@@ -105,7 +105,9 @@ func (FileSuite) TestDirectoryFile(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "some-content", contents)
 	})
+}
 
+func (FileSuite) TestLegacyDirectoryFile(ctx context.Context, t *testctx.T) {
 	t.Run("create file through directory (legacy GraphQL)", func(ctx context.Context, t *testctx.T) {
 		var res struct {
 			Directory struct {
