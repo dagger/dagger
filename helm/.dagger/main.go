@@ -122,7 +122,6 @@ func (h *Helm) SetVersion(
 
 	version = strings.TrimPrefix(version, "v")
 	meta.Version = version
-	meta.AppVersion = version
 
 	err = meta.Validate()
 	if err != nil {
@@ -141,7 +140,7 @@ func (h *Helm) SetVersion(
 	return updatedChartYaml, nil
 }
 
-// Package & publish chart to our registry + github releae
+// Package & publish chart to our registry + github release
 func (h *Helm) Publish(
 	ctx context.Context,
 	// The git ref to publish
@@ -172,7 +171,7 @@ func (h *Helm) Publish(
 			script := strings.Join([]string{
 				"helm registry login ghcr.io/dagger --username dagger --password $GITHUB_TOKEN",
 				"helm package .",
-				"helm push dagger-helm-" + version + ".tgz oci://ghcr.io/dagger",
+				"helm push dagger-helm-" + strings.TrimPrefix(version, "v") + ".tgz oci://ghcr.io/dagger",
 				"helm registry logout ghcr.io/dagger",
 			}, " && \\")
 			return c.WithExec([]string{"sh", "-c", script})

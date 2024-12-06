@@ -25,9 +25,8 @@ require (
 	sigs.k8s.io/yaml v1.4.0
 )
 
-require github.com/Masterminds/semver/v3 v3.3.0 // indirect
-
 require (
+	github.com/Masterminds/semver/v3 v3.3.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
