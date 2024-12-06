@@ -44,7 +44,7 @@ func TestSplitRequiredOptionalArgs(t *testing.T) {
 		execField := getField(container, "asTarball")
 
 		t.Log(container)
-		required, optional := splitRequiredOptionalArgs(execField.Args)
+		required, optional := typescriptTemplateFuncs{}.splitRequiredOptionalArgs(execField.Args)
 		require.Equal(t, execField.Args[:0], required)
 		require.Equal(t, execField.Args, optional)
 	})
@@ -54,7 +54,7 @@ func TestSplitRequiredOptionalArgs(t *testing.T) {
 		execField := getField(container, "export")
 
 		t.Log(container)
-		required, optional := splitRequiredOptionalArgs(execField.Args)
+		required, optional := typescriptTemplateFuncs{}.splitRequiredOptionalArgs(execField.Args)
 		require.Equal(t, execField.Args[:1], required)
 		require.Equal(t, execField.Args[1:], optional)
 	})
@@ -79,7 +79,7 @@ func TestSortInputFields(t *testing.T) {
 		want := make([]introspection.InputValue, len(iv))
 		copy(want, iv)
 
-		got := sortInputFields(want)
+		got := typescriptTemplateFuncs{}.sortInputFields(want)
 		require.Equal(t, want, got)
 	})
 	t.Run("value, name", func(t *testing.T) {
@@ -88,7 +88,7 @@ func TestSortInputFields(t *testing.T) {
 
 		want := genInput([]string{"name", "value"})
 
-		got := sortInputFields(iv)
+		got := typescriptTemplateFuncs{}.sortInputFields(iv)
 		require.Equal(t, want, got)
 	})
 
@@ -98,7 +98,7 @@ func TestSortInputFields(t *testing.T) {
 
 		want := genInput([]string{"a", "b", "l", "t", "z"})
 
-		got := sortInputFields(iv)
+		got := typescriptTemplateFuncs{}.sortInputFields(iv)
 		require.Equal(t, want, got)
 	})
 }
