@@ -9,7 +9,7 @@ import { listFiles } from "../../utils/files.js"
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const expectedFilename = "expected.json"
-const diffExpectedFileName = "expected.diffon"
+const diffExpectedFileName = "expected.diff.json"
 
 async function generateExpectedScan() {
   console.info(`Generating expected scan file from directory: ${__dirname}`)

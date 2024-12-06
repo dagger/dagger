@@ -3,6 +3,10 @@ import { GraphQLClient } from "graphql-request"
 import { ConnectOpts } from "../../connectOpts.js"
 import { createGQLClient } from "./client.js"
 
+/**
+ * Execute the callback with a GraphQL client connected to the Dagger engine.
+ * It automatically provisions the engine if needed.
+ */
 export async function withGQLClient<T>(
   connectOpts: ConnectOpts,
   cb: (gqlClient: GraphQLClient) => Promise<T>,
@@ -18,15 +22,15 @@ export async function withGQLClient<T>(
     const token = process.env["DAGGER_SESSION_TOKEN"]
 
     return await cb(createGQLClient(Number(port), token))
-  } else {
-    try {
-      const provisioning = await import("../../provisioning/index.js")
+  }
 
-      return await provisioning.withEngineSession(connectOpts, cb)
-    } catch (e) {
-      throw new Error(
-        `failed to execute function with automatic provisioning: ${e}`,
-      )
-    }
+  try {
+    const provisioning = await import("../../provisioning/index.js")
+
+    return await provisioning.withEngineSession(connectOpts, cb)
+  } catch (e) {
+    throw new Error(
+      `failed to execute function with automatic provisioning: ${e}`,
+    )
   }
 }
