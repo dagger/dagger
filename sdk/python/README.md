@@ -53,11 +53,10 @@ async def main(args: list[str]):
             dag.container()
             .from_("python:alpine")
             .with_exec(["pip", "install", "cowsay"])
-            .with_entrypoint(["cowsay"])
         )
 
         # run cowsay with requested message
-        result = await ctr.with_exec(args).stdout()
+        result = await ctr.with_exec(["cowsay", *args]).stdout()
 
     print(result)
 
