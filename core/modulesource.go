@@ -296,8 +296,8 @@ func (src *ModuleSource) SDK(ctx context.Context) (string, error) {
 	return modCfg.SDK, nil
 }
 
-// WithoutDependencies returns a new ModuleSource with the specified dependencies removed.
-func (src *ModuleSource) WithoutDependencies(deps []string) *ModuleSource {
+// WithRemovedDependencies returns a new ModuleSource with the specified dependencies removed.
+func (src *ModuleSource) WithRemovedDependencies(deps []string) *ModuleSource {
 	cp := src.Clone()
 	cp.WithoutDependencies = deps
 	return cp

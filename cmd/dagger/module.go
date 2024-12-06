@@ -366,7 +366,7 @@ var moduleUnInstallCmd = &cobra.Command{
 			}
 
 			modSrc := modConf.Source.
-				WithoutDependencies([]string{extraArgs[0]}).
+				WithRemovedDependencies([]string{extraArgs[0]}).
 				ResolveFromCaller()
 
 			_, err = modSrc.
