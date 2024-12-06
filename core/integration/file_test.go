@@ -139,14 +139,13 @@ func (FileSuite) TestLegacyDirectoryFileSDK(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (FileSuite) TestLegacyDirectoryFileGraphQL(ctx context.Context, t *testctx.T) {
+func (FileSuite) TestFileBackwardCompatibility(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	t.Run("create file through directory (legacy raw GraphQL)", func(ctx context.Context, t *testctx.T) {
-		// Create file using new File API
+	t.Run("verify both new File API and legacy GraphQL API", func(ctx context.Context, t *testctx.T) {
+		// Create and verify using new File API
 		file := c.File("some-dir/some-file", "some-content")
 
-		// Verify using new File API
 		id, err := file.ID(ctx)
 		require.NoError(t, err)
 		require.NotEmpty(t, id)
@@ -154,6 +153,16 @@ func (FileSuite) TestLegacyDirectoryFileGraphQL(ctx context.Context, t *testctx.
 		contents, err := file.Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "some-content", contents)
+
+		// Also verify using legacy Directory API with Go SDK
+		dirFile := c.Directory().
+			WithNewFile("some-dir/some-file", "some-content").
+			Directory("some-dir").
+			File("some-file")
+
+		dirFileContents, err := dirFile.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "some-content", dirFileContents)
 
 		// Also verify using raw GraphQL for backward compatibility
 		var res struct {

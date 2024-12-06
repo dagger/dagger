@@ -1430,10 +1430,12 @@ type modObject struct {
 	Fields           []*modField
 	Constructor      *modFunction
 	SourceModuleName string
+	id               *call.ID
+	objType          dagql.ObjectType
 }
 
-// Verify that modObject implements core.Object
-var _ core.Object = (*modObject)(nil)
+// Verify that modObject implements dagql.Object
+var _ dagql.Object = (*modObject)(nil)
 
 var _ functionProvider = (*modObject)(nil)
 
@@ -1466,6 +1468,146 @@ func (o *modObject) HasFunction(f *modFunction) bool {
 		}
 	}
 	return false
+}
+
+// Type returns the GraphQL type of the value
+func (o *modObject) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: o.Name,
+		NonNull:   true,
+	}
+}
+
+// ID returns the ID of the value
+func (o *modObject) ID() *call.ID {
+	return o.id
+}
+
+// ObjectType returns the type of the object
+func (o *modObject) ObjectType() dagql.ObjectType {
+	return o.objType
+}
+
+// IDFor returns the ID representing the return value of the given field
+func (o *modObject) IDFor(ctx context.Context, sel dagql.Selector) (*call.ID, error) {
+	field, ok := o.GetFunctions()[sel.Field.Name]
+	if !ok {
+		return nil, fmt.Errorf("field %q not found", sel.Field.Name)
+	}
+
+	// Return the field's ID if it's a function
+	if field != nil {
+		return field.ID(), nil
+	}
+
+	return o.id, nil
+}
+
+// Select evaluates the selected field and returns the result
+func (o *modObject) Select(ctx context.Context, sel dagql.Selector) (dagql.Typed, error) {
+	field, ok := o.GetFunctions()[sel.Field.Name]
+	if !ok {
+		return nil, fmt.Errorf("field %q not found", sel.Field.Name)
+	}
+
+	// Convert selector arguments to input map
+	inputs := make(map[string]dagql.Input)
+	for _, arg := range sel.Field.Arguments {
+		inputs[arg.Name] = arg.Value
+	}
+
+	// Call the field function with the inputs
+	return field.Call(ctx, inputs)
+}
+
+// Type returns the GraphQL type of the value
+func (o *modObject) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: o.Name,
+		NonNull:   true,
+	}
+}
+
+// ID returns the ID of the value
+func (o *modObject) ID() *call.ID {
+	return o.id
+}
+
+// ObjectType returns the type of the object
+func (o *modObject) ObjectType() dagql.ObjectType {
+	return o.objType
+}
+
+// IDFor returns the ID representing the return value of the given field
+func (o *modObject) IDFor(ctx context.Context, sel dagql.Selector) (*call.ID, error) {
+	// For now, return nil since we don't have field-specific ID generation
+	return nil, fmt.Errorf("IDFor not implemented for %s", o.Name)
+}
+
+// Select evaluates the selected field and returns the result
+func (o *modObject) Select(ctx context.Context, sel dagql.Selector) (dagql.Typed, error) {
+	// For now, return error since we don't have field selection implemented
+	return nil, fmt.Errorf("Select not implemented for %s", o.Name)
+}
+
+// Type returns the GraphQL type of the value
+func (o *modObject) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: o.Name,
+		NonNull:   true,
+	}
+}
+
+// ID returns the ID of the value
+func (o *modObject) ID() *call.ID {
+	return o.id
+}
+
+// ObjectType returns the type of the object
+func (o *modObject) ObjectType() dagql.ObjectType {
+	return o.objType
+}
+
+// IDFor returns the ID representing the return value of the given field
+func (o *modObject) IDFor(ctx context.Context, sel dagql.Selector) (*call.ID, error) {
+	// For now, return nil since we're not implementing field-specific IDs yet
+	return nil, fmt.Errorf("not implemented")
+}
+
+// Select evaluates the selected field and returns the result
+func (o *modObject) Select(ctx context.Context, sel dagql.Selector) (dagql.Typed, error) {
+	// For now, return error since we're not implementing field selection yet
+	return nil, fmt.Errorf("not implemented")
+}
+
+// Type returns the GraphQL type of the value
+func (o *modObject) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: o.Name,
+		NonNull:   true,
+	}
+}
+
+// ID returns the ID of the value
+func (o *modObject) ID() *call.ID {
+	return o.id
+}
+
+// ObjectType returns the type of the object
+func (o *modObject) ObjectType() dagql.ObjectType {
+	return o.objType
+}
+
+// IDFor returns the ID representing the return value of the given field
+func (o *modObject) IDFor(ctx context.Context, sel dagql.Selector) (*call.ID, error) {
+	// TODO: Implement proper ID generation for field
+	return nil, fmt.Errorf("not implemented")
+}
+
+// Select evaluates the selected field and returns the result
+func (o *modObject) Select(ctx context.Context, sel dagql.Selector) (dagql.Typed, error) {
+	// TODO: Implement field selection
+	return nil, fmt.Errorf("not implemented")
 }
 
 type modInterface struct {
