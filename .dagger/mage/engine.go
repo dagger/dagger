@@ -109,7 +109,7 @@ func (t Engine) Dev(ctx context.Context) error {
 		"-e", "DAGGER_CLOUD_URL",
 		"-e", util.GPUSupportEnvName,
 		"-v", volumeName + ":" + distconsts.EngineDefaultStateDir,
-		// "-p", "6060:6060",
+		"-p", "6060:6060",
 		"--name", containerName,
 		"--privileged",
 	}...)
