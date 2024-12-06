@@ -11,7 +11,7 @@ class TypescriptSdkDev {
   project: Container
 
   constructor(source: Directory) {
-    // Extract packageon and yarn.lock to a temporary directory
+    // Extract package.json and yarn.lock to a temporary directory
     const dependencyFiles = dag
       .directory()
       .withFile("package.json", source.file("package.json"))
@@ -21,11 +21,11 @@ class TypescriptSdkDev {
     const sourceCode = dag.directory().withDirectory("/", source, {
       include: [
         "src/**/*.ts",
-        "tsconfig.jsgon",
+        "tsconfig.json",
         "package.json",
         "yarn.lock",
         ".mocharc.json",
-        "eslint.config",
+        "eslint.config.js",
         ".prettierrc.cjs",
       ],
     })

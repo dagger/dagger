@@ -143,7 +143,7 @@ export class Bin implements EngineConn {
   }
 
   /**
-   * Traverse up the directory tree to find the packageon file and return the
+   * Traverse up the directory tree to find the package.json file and return the
    * SDK version.
    * @returns the SDK version or "n/a" if the version cannot be found.
    */
