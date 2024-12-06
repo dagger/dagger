@@ -369,10 +369,10 @@ var moduleUnInstallCmd = &cobra.Command{
 
             // Convert dependency name to ModuleDependency instance
             dep := &core.ModuleDependency{Name: extraArgs[0]}
-            depInstance := dagql.InstanceOf(dep)
-            modSrc := modConf.Source
-            modSrc.WithoutDependencies = []dagql.Instance[*core.ModuleDependency]{depInstance}
-            modSrc = modSrc.ResolveFromCaller()
+            depInstance := dagql.NonNull(dep)
+            modSrc := modConf.Source.
+                WithRemovedDependencies([]dagql.Instance[*core.ModuleDependency]{depInstance}).
+                ResolveFromCaller()
 
 			_, err = modSrc.
 				AsModule().
