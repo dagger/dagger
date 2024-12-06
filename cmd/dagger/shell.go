@@ -1808,7 +1808,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 					doc.Add(
 						group.Title,
 						nameShortWrapped(cmds, func(c *ShellCommand) (string, string) {
-							return c.Name(), c.Description
+							return c.Name(), c.Short()
 						}),
 					)
 				}
@@ -1819,7 +1819,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 			},
 		},
 		&ShellCommand{
-			Use:         ".doc [function]",
+			Use:         ".doc [module]\n<function> | .doc [function]",
 			Description: "Show documentation for a module, a type, or a function",
 			Args:        MaximumArgs(1),
 			RunState: func(cmd *ShellCommand, args []string, st *ShellState) error {
@@ -1892,9 +1892,12 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 						}
 						return cmd.Println(shellFunctionDoc(def, fn))
 
-					case len(args) == 0 && def.HasModule():
+					case len(args) == 0:
+						if !def.HasModule() {
+							return fmt.Errorf("module not loaded.\nUse %q to see what's available", shellStdlibCmdName)
+						}
 						// Document module
-						// Example: `.doc [module | dependency]`
+						// Example: `.doc [module]`
 						return cmd.Println(shellModuleDoc(def))
 					}
 				}
