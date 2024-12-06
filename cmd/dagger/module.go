@@ -22,7 +22,9 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/analytics"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -368,9 +370,9 @@ var moduleUnInstallCmd = &cobra.Command{
             // Convert dependency name to ModuleDependency instance
             dep := &core.ModuleDependency{Name: extraArgs[0]}
             depInstance := dagql.InstanceOf(dep)
-            modSrc := modConf.Source.
-                WithRemovedDependencies([]dagql.Instance[*core.ModuleDependency]{depInstance}).
-                ResolveFromCaller()
+            modSrc := modConf.Source
+            modSrc.WithoutDependencies = []dagql.Instance[*core.ModuleDependency]{depInstance}
+            modSrc = modSrc.ResolveFromCaller()
 
 			_, err = modSrc.
 				AsModule().
