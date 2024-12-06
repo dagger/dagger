@@ -24,9 +24,9 @@ func daggerShell(script string) dagger.WithContainerFunc {
 	}
 }
 
-func daggerShellNoLoad(script string) dagger.WithContainerFunc {
+func daggerShellNoMod(script string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec([]string{"dagger", "shell", "--no-load", "-c", script}, dagger.ContainerWithExecOpts{
+		return c.WithExec([]string{"dagger", "shell", "--no-mod", "-c", script}, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
@@ -104,7 +104,7 @@ func (ShellSuite) TestNoLoadModule(ctx context.Context, t *testctx.T) {
 	t.Run("forced no load", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		_, err := modInit(t, c, "go", "").
-			With(daggerShellNoLoad(".deps")).
+			With(daggerShellNoMod(".deps")).
 			Sync(ctx)
 		requireErrOut(t, err, "module not loaded")
 	})
@@ -112,7 +112,7 @@ func (ShellSuite) TestNoLoadModule(ctx context.Context, t *testctx.T) {
 	t.Run("dynamically loaded", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := modInit(t, c, "go", "").
-			With(daggerShellNoLoad(".use .; .doc")).
+			With(daggerShellNoMod(".use .; .doc")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "container-echo")
@@ -121,7 +121,7 @@ func (ShellSuite) TestNoLoadModule(ctx context.Context, t *testctx.T) {
 	t.Run("stateless load", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := modInit(t, c, "go", "").
-			With(daggerShellNoLoad(". | .doc container-echo")).
+			With(daggerShellNoMod(". | .doc container-echo")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "echoes whatever string argument")
@@ -130,7 +130,7 @@ func (ShellSuite) TestNoLoadModule(ctx context.Context, t *testctx.T) {
 	t.Run("stateless .doc load", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := modInit(t, c, "go", "").
-			With(daggerShellNoLoad(".doc .")).
+			With(daggerShellNoMod(".doc .")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "container-echo")

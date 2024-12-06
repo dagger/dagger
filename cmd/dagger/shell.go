@@ -73,8 +73,9 @@ var (
 )
 
 func init() {
-	shellCmd.Flags().StringVarP(&shellCode, "code", "c", "", "command to be executed")
-	shellCmd.Flags().BoolVar(&shellNoLoadModule, "no-load", false, "don't load module during shell startup")
+	shellCmd.Flags().StringVarP(&shellCode, "code", "c", "", "Command to be executed")
+	shellCmd.Flags().BoolVar(&shellNoLoadModule, "no-mod", false, "Don't load module during shell startup (mutually exclusive with --mod)")
+	shellCmd.MarkFlagsMutuallyExclusive("mod", "no-mod")
 }
 
 var shellCmd = &cobra.Command{
