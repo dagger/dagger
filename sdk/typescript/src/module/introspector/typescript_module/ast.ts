@@ -110,28 +110,40 @@ export class AST {
     return `${sourceFile.fileName}:${position.line}:${position.character}`
   }
 
-  public static getNodeLocation(node: ts.Node): Location {
+  /**
+   * Returns the location of the node in the source file.
+   *
+   * The filepath is relative to the module root directory.
+   * Ideally, we use the identifier of the node accessible by node.name but fallback
+   * to node itself if it's not available.
+   *
+   * The TypeScript SDK based it's line and column on index 0 but editors starts
+   * at 1 so we always add 1 to fix that difference.
+   */
+  public static getNodeLocation(
+    node: ts.Node & { name?: ts.Identifier },
+  ): Location {
     const sourceFile = node.getSourceFile()
+
+    // Use the identifier of the node if available.
+    const targetNode = node.name ?? node
 
     const position = ts.getLineAndCharacterOfPosition(
       sourceFile,
-      node.getStart(),
+      targetNode.getStart(sourceFile),
     )
 
     // sourcile.filaname is the absolute path to the file, we need to get the relative path
-    // from the module path so we exclude the module path from the given path
+    // from the module path so we exclude the module path from the given path.
     // But since root will always start with `/src`, we want to catch the second `src`
-    // inside the module
+    // inside the module.
     const pathParts = sourceFile.fileName.split(path.sep)
     const srcIndex = pathParts.indexOf("src", 2)
 
-    console.log(pathParts)
-    console.log(srcIndex)
-
     return {
       filepath: pathParts.slice(srcIndex).join(path.sep),
-      line: position.line,
-      column: position.character,
+      line: position.line + 1,
+      column: position.character + 1,
     }
   }
 
