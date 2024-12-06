@@ -17,15 +17,9 @@ import {
   EngineSessionConnectParamsParseError,
   EngineSessionError,
   InitEngineSessionBinaryError,
-<<<<<<<< HEAD:sdk/typescript/src/provisioning/bin.ts
 } from "../common/errors/index.js"
 import { createGQLClient } from "../common/graphql/client.js"
 import { ConnectOpts, EngineConn, ConnectParams } from "./engineconn.js"
-========
-} from "../../common/errors/index.js"
-import { createGQLClient } from "../../common/graphql/client.js"
-import { ConnectOpts, EngineConn, ConnectParams } from "../engineconn.js"
->>>>>>>> cb4a2c412 (feat: decouple provisioning & refactor ts sdk architecture):sdk/typescript/src/provisioning/library/bin.ts
 
 const CLI_HOST = "dl.dagger.io"
 let OVERRIDE_CLI_URL: string

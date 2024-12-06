@@ -5,11 +5,7 @@
 // @emitDecoratorMetadata
 import "reflect-metadata"
 
-<<<<<<<< HEAD:sdk/typescript/src/module/registry.ts
 import { UnknownDaggerError } from "../common/errors/index.js"
-========
-import { UnknownDaggerError } from "../../common/errors/index.js"
->>>>>>>> cb4a2c412 (feat: decouple provisioning & refactor ts sdk architecture):sdk/typescript/src/module/registry/index.ts
 
 export type Class = { new (...args: any[]): any }
 
