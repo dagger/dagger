@@ -11,8 +11,6 @@ type Release struct {
 	// +private
 	SDK *SDK
 	// +private
-	Helm *Helm
-	// +private
 	Docs *Docs
 }
 
@@ -37,9 +35,8 @@ func (r *Release) Bump(ctx context.Context, version string) (*dagger.Directory, 
 	})
 
 	eg.Go(func() error {
-		var err error
-		helmFile, err = r.Helm.SetVersion(ctx, version)
-		return err
+		helmFile = dag.Helm().SetVersion(version)
+		return nil
 	})
 
 	if err := eg.Wait(); err != nil {

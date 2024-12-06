@@ -22,13 +22,21 @@ type CI struct {
 	// +private
 	Workflows *dagger.Gha
 
-	// DaggerRunner is a set of utility helpers that provides defaults for all
-	// of our general checks.
-	// +private
-	DaggerRunner *dagger.Gha
+	GithubRunner *dagger.Gha // +private
+	DaggerRunner *dagger.Gha // +private
 }
 
 func New() *CI {
+	workflow := dag.Gha().Workflow("", dagger.GhaWorkflowOpts{
+		PullRequestConcurrency:      "preempt",
+		Permissions:                 []dagger.GhaPermission{dagger.GhaPermissionReadContents},
+		OnPushBranches:              []string{"main"},
+		OnPullRequestOpened:         true,
+		OnPullRequestReopened:       true,
+		OnPullRequestSynchronize:    true,
+		OnPullRequestReadyForReview: true,
+	})
+
 	ci := &CI{
 		Workflows: dag.Gha(dagger.GhaOpts{
 			JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
@@ -37,20 +45,19 @@ func New() *CI {
 			}),
 		}),
 
+		GithubRunner: dag.Gha(dagger.GhaOpts{
+			JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
+				Runner:         []string{"ubuntu-latest"},
+				TimeoutMinutes: timeoutMinutes,
+			}),
+			WorkflowDefaults: workflow,
+		}),
 		DaggerRunner: dag.Gha(dagger.GhaOpts{
 			JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
 				Runner:         []string{BronzeRunner(false)},
 				TimeoutMinutes: timeoutMinutes,
 			}),
-			WorkflowDefaults: dag.Gha().Workflow("", dagger.GhaWorkflowOpts{
-				PullRequestConcurrency:      "preempt",
-				Permissions:                 []dagger.GhaPermission{dagger.GhaPermissionReadContents},
-				OnPushBranches:              []string{"main"},
-				OnPullRequestOpened:         true,
-				OnPullRequestReopened:       true,
-				OnPullRequestSynchronize:    true,
-				OnPullRequestReadyForReview: true,
-			}),
+			WorkflowDefaults: workflow,
 		}),
 	}
 
@@ -66,6 +73,12 @@ func New() *CI {
 			false,
 			"Docs",
 			"docs lint",
+		).
+		withWorkflow(
+			ci.GithubRunner,
+			false,
+			"Helm",
+			"check --targets=helm",
 		).
 		withSDKWorkflows(
 			ci.DaggerRunner,

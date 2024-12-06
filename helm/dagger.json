@@ -1,0 +1,28 @@
+{
+  "name": "helm",
+  "engineVersion": "v0.14.0",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "dagger-cli",
+      "source": "../cmd/dagger",
+      "pin": ""
+    },
+    {
+      "name": "k3s",
+      "source": "github.com/marcosnils/daggerverse/k3s@f4851a9c308410d58c5199dfd1b65e4f3ccae813",
+      "pin": "f4851a9c308410d58c5199dfd1b65e4f3ccae813"
+    },
+    {
+      "name": "releaser",
+      "source": "../releaser",
+      "pin": ""
+    },
+    {
+      "name": "wolfi",
+      "source": "../modules/wolfi",
+      "pin": ""
+    }
+  ],
+  "source": ".dagger"
+}

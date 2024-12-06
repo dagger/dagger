@@ -9,17 +9,6 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const (
-	CheckDocs          = "docs"
-	CheckGoSDK         = "sdk/go"
-	CheckPythonSDK     = "sdk/python"
-	CheckTypescriptSDK = "sdk/typescript"
-	CheckPHPSDK        = "sdk/php"
-	CheckJavaSDK       = "sdk/java"
-	CheckRustSDK       = "sdk/rust"
-	CheckElixirSDK     = "sdk/elixir"
-)
-
 // Check that everything works. Use this as CI entrypoint.
 func (dev *DaggerDev) Check(ctx context.Context,
 	// Directories to check
@@ -28,13 +17,18 @@ func (dev *DaggerDev) Check(ctx context.Context,
 ) error {
 	var routes checkRouter
 	routes.Add(Check{"docs", (&Docs{Dagger: dev}).Lint})
-	routes.Add(dev.checksForSDK(CheckGoSDK, dev.SDK().Go)...)
-	routes.Add(dev.checksForSDK(CheckPythonSDK, dev.SDK().Python)...)
-	routes.Add(dev.checksForSDK(CheckTypescriptSDK, dev.SDK().Typescript)...)
-	routes.Add(dev.checksForSDK(CheckPHPSDK, dev.SDK().PHP)...)
-	routes.Add(dev.checksForSDK(CheckJavaSDK, dev.SDK().Java)...)
-	routes.Add(dev.checksForSDK(CheckRustSDK, dev.SDK().Rust)...)
-	routes.Add(dev.checksForSDK(CheckElixirSDK, dev.SDK().Elixir)...)
+	routes.Add(Check{"helm/lint", dag.Helm().Lint})
+	routes.Add(Check{"helm/test", dag.Helm().Test})
+	routes.Add(Check{"helm/test-publish", func(ctx context.Context) error {
+		return dag.Helm().Publish(ctx, "main", dagger.HelmPublishOpts{DryRun: true})
+	}})
+	routes.Add(dev.checksForSDK("sdk/go", dev.SDK().Go)...)
+	routes.Add(dev.checksForSDK("sdk/python", dev.SDK().Python)...)
+	routes.Add(dev.checksForSDK("sdk/typescript", dev.SDK().Typescript)...)
+	routes.Add(dev.checksForSDK("sdk/php", dev.SDK().PHP)...)
+	routes.Add(dev.checksForSDK("sdk/java", dev.SDK().Java)...)
+	routes.Add(dev.checksForSDK("sdk/rust", dev.SDK().Rust)...)
+	routes.Add(dev.checksForSDK("sdk/elixir", dev.SDK().Elixir)...)
 
 	eg, ctx := errgroup.WithContext(ctx)
 	for _, check := range routes.Get(targets...) {

@@ -145,7 +145,6 @@ jobs:
           message: "⬢ TypeScript SDK: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
           discord-webhook: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
 
-
   publish-sdk-elixir:
     needs: publish
     if: github.ref_name != 'main'
@@ -176,7 +175,8 @@ jobs:
         env:
           RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
         with:
-          function: helm publish --tag=${{ github.ref_name }} --github-token=env:RELEASE_DAGGER_CI_TOKEN
+          function: publish --tag=${{ github.ref_name }} --github-token=env:RELEASE_DAGGER_CI_TOKEN
+          module: ./helm
       - name: "notify"
         uses: ./.github/actions/notify
         with:

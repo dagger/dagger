@@ -210,14 +210,9 @@ func (dev *DaggerDev) SDK() *SDK {
 	}
 }
 
-// Develop the Dagger helm chart
-func (dev *DaggerDev) Helm() *Helm {
-	return &Helm{Dagger: dev, Source: dev.Source().Directory("helm/dagger")}
-}
-
 // Run Dagger release-related tasks
 func (dev *DaggerDev) Release() *Release {
-	return &Release{SDK: dev.SDK(), Helm: dev.Helm(), Docs: dev.Docs()}
+	return &Release{SDK: dev.SDK(), Docs: dev.Docs()}
 }
 
 // Creates a dev container that has a running CLI connected to a dagger engine
