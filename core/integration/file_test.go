@@ -31,7 +31,7 @@ func TestFile(t *testing.T) {
 func (FileSuite) TestFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	t.Run("create file directly", func(ctx context.Context, t *testctx.T) {
+	t.Run("create file directly using File API", func(ctx context.Context, t *testctx.T) {
 		file := c.File("test.txt", "Hello, World!")
 
 		id, err := file.ID(ctx)
@@ -47,7 +47,7 @@ func (FileSuite) TestFile(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "test.txt", name)
 	})
 
-	t.Run("create file with custom permissions", func(ctx context.Context, t *testctx.T) {
+	t.Run("create file with custom permissions using File API", func(ctx context.Context, t *testctx.T) {
 		file := c.File("exec.sh", "#!/bin/sh\necho hello").WithPermissions(0755)
 
 		id, err := file.ID(ctx)
@@ -59,7 +59,7 @@ func (FileSuite) TestFile(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "#!/bin/sh\necho hello", contents)
 	})
 
-	t.Run("create json file", func(ctx context.Context, t *testctx.T) {
+	t.Run("create json file using File API", func(ctx context.Context, t *testctx.T) {
 		file := c.File("data.json", "{\"key\": \"value\"}")
 
 		id, err := file.ID(ctx)
@@ -107,8 +107,8 @@ func (FileSuite) TestDirectoryFile(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (FileSuite) TestLegacyDirectoryFile(ctx context.Context, t *testctx.T) {
-	t.Run("create file through directory (legacy GraphQL)", func(ctx context.Context, t *testctx.T) {
+func (FileSuite) TestLegacyDirectoryFileBackwardCompatibility(ctx context.Context, t *testctx.T) {
+	t.Run("create file through directory (legacy GraphQL, testing backward compatibility)", func(ctx context.Context, t *testctx.T) {
 		var res struct {
 			Directory struct {
 				WithNewFile struct {
