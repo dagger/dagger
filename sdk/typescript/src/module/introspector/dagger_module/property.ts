@@ -9,12 +9,16 @@ import {
   resolveTypeDef,
 } from "../typescript_module/index.js"
 import { FIELD_DECORATOR, FUNCTION_DECORATOR } from "./decorator.js"
+import { Locatable } from "./locatable.js"
 import { DaggerObjectPropertyBase } from "./objectBase.js"
 import { References } from "./reference.js"
 
 export type DaggerProperties = { [name: string]: DaggerProperty }
 
-export class DaggerProperty implements DaggerObjectPropertyBase {
+export class DaggerProperty
+  extends Locatable
+  implements DaggerObjectPropertyBase
+{
   public name: string
   public description: string
   public alias: string | undefined
@@ -28,6 +32,8 @@ export class DaggerProperty implements DaggerObjectPropertyBase {
     private readonly node: ts.PropertyDeclaration,
     private readonly ast: AST,
   ) {
+    super(node)
+
     if (!this.node.name) {
       throw new IntrospectionError(
         `could not resolve name of class at ${AST.getNodePosition(node)}.`,
