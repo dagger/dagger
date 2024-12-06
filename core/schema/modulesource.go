@@ -456,18 +456,27 @@ func (s *moduleSchema) moduleSourceWithName(
 	return src, nil
 }
 
-func (s *moduleSchema) filterUnInstalledDeps(ctx context.Context, bk *buildkit.Client, currentDeps []*modules.ModuleConfigDependency, filterDeps []string) ([]*modules.ModuleConfigDependency, error) {
+func (s *moduleSchema) filterUnInstalledDeps(
+	ctx context.Context,
+	bk *buildkit.Client,
+	currentDeps []*modules.ModuleConfigDependency,
+	filterDeps []dagql.Instance[*core.ModuleDependency],
+) ([]*modules.ModuleConfigDependency, error) {
 	if len(filterDeps) == 0 {
 		return currentDeps, nil
 	}
 
 	filterDepsMap := map[string]parsedRefString{}
 	for _, filterDep := range filterDeps {
-		filterDepParsed := parseRefString(ctx, bk, filterDep)
+		// Get the source string from the dependency
+		sourcePath, err := filterDep.Self.Source.Self.RefString()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get ref string for dependency: %w", err)
+		}
+		filterDepParsed := parseRefString(ctx, bk, sourcePath)
 
 		// for scenario where user tries to uninstall using relative path
 		var cleanDepPath = filepath.Clean(filterDepParsed.modPath)
-
 		filterDepsMap[cleanDepPath] = filterDepParsed
 	}
 
@@ -1138,7 +1147,7 @@ func (s *moduleSchema) normalizeCallerLoadedSource(
 			dagql.Selector{
 				Field: "withoutDependencies",
 				Args: []dagql.NamedInput{
-					{Name: "dependencies", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(src.WithoutDependencies...))},
+					{Name: "dependencies", Value: dagql.ArrayInput[dagql.Instance[*core.ModuleDependency]](src.WithoutDependencies)},
 				},
 			},
 		)
@@ -1279,15 +1288,17 @@ func (s *moduleSchema) collectCallerLocalDeps(
 			if parsed.kind != core.ModuleSourceKindLocal {
 				continue
 			}
-
 			// dont load dependency module source during uninstallation
 			// as it may have been removed before calling the uninstall
 			uninstallRequested := false
 			for _, removedDep := range src.WithoutDependencies {
-				var cleanPath = filepath.Clean(removedDep)
+				sourcePath, err := removedDep.Self.Source.Self.RefString()
+				if err != nil {
+					return nil, fmt.Errorf("failed to get ref string for dependency: %w", err)
+				}
 
 				// ignore the dependency that we are currently uninstalling
-				if depCfg.Source == cleanPath || depCfg.Name == cleanPath {
+				if depCfg.Source == sourcePath || depCfg.Name == removedDep.Self.Name {
 					uninstallRequested = true
 					break
 				}
