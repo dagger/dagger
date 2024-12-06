@@ -67,7 +67,7 @@ type ModuleSource struct {
 	// Settings that can be used to initialize or override the source's configuration
 	WithName            string                              `field:"true" doc:"Override the name of the module"`
 	WithDependencies    []dagql.Instance[*ModuleDependency] `field:"true" doc:"Add or override dependencies for the module"`
-	WithoutDependencies []string                            `field:"true" doc:"Remove dependencies from the module"`
+	WithoutDependencies []dagql.Instance[*ModuleDependency] `field:"true" doc:"Remove dependencies from the module"`
 	WithSDK             string                              `field:"true" doc:"Override the SDK used by the module"`
 	WithInitConfig      *ModuleInitConfig                   `field:"true" doc:"Configuration for initializing the module"`
 	WithSourceSubpath   string                              `field:"true" doc:"Override the source subpath of the module"`
