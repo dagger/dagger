@@ -107,15 +107,14 @@ func (FileSuite) TestDirectoryFile(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (FileSuite) TestLegacyDirectoryFileBackwardCompatibility(ctx context.Context, t *testctx.T) {
+func (FileSuite) TestLegacyDirectoryFileSDK(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	t.Run("create file through directory (legacy GraphQL)", func(ctx context.Context, t *testctx.T) {
-		dir := c.Directory().
-			WithNewFile("some-dir/some-file", "some-content")
+	t.Run("create file through directory (legacy SDK)", func(ctx context.Context, t *testctx.T) {
+		// Create file using new File API
+		file := c.File("some-dir/some-file", "some-content")
 
-		file := dir.Directory("some-dir").File("some-file")
-
+		// Verify using new File API
 		id, err := file.ID(ctx)
 		require.NoError(t, err)
 		require.NotEmpty(t, id)
@@ -123,9 +122,40 @@ func (FileSuite) TestLegacyDirectoryFileBackwardCompatibility(ctx context.Contex
 		contents, err := file.Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "some-content", contents)
+
+		// Also verify using legacy SDK approach for backward compatibility
+		dir := c.Directory().
+			WithNewFile("some-dir/some-file", "some-content")
+
+		legacyFile := dir.Directory("some-dir").File("some-file")
+
+		legacyID, err := legacyFile.ID(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, legacyID)
+
+		legacyContents, err := legacyFile.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "some-content", legacyContents)
 	})
+}
+
+func (FileSuite) TestLegacyDirectoryFileGraphQL(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	t.Run("create file through directory (legacy raw GraphQL)", func(ctx context.Context, t *testctx.T) {
+		// Create file using new File API
+		file := c.File("some-dir/some-file", "some-content")
+
+		// Verify using new File API
+		id, err := file.ID(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, id)
+
+		contents, err := file.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "some-content", contents)
+
+		// Also verify using raw GraphQL for backward compatibility
 		var res struct {
 			Directory struct {
 				WithNewFile struct {
@@ -139,7 +169,7 @@ func (FileSuite) TestLegacyDirectoryFileBackwardCompatibility(ctx context.Contex
 			}
 		}
 
-		err := testutil.Query(t,
+		err = testutil.Query(t,
 			`{
 				directory {
 					withNewFile(path: "some-dir/some-file", contents: "some-content") {
