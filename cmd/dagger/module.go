@@ -725,7 +725,7 @@ func getModuleConfigurationForSourceRef(
 			if err != nil {
 				return nil, fmt.Errorf("failed to read %s: %w", configPath, err)
 			}
-			var modCfg modules.ModuleConfig
+			var modCfg core.ModuleConfig
 			if err := json.Unmarshal(contents, &modCfg); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal %s: %w", configPath, err)
 			}
@@ -1125,8 +1125,9 @@ func (m *moduleDef) IsModuleConstructor(fn *modFunction) bool {
 }
 
 // LoadTypeDef attempts to replace a function's return object type or argument's
-// object type with with one from the module's object type definitions, to
+// object type with one from the module's object type definitions, to
 // recover missing function definitions in those places when chaining functions.
+// It processes both core.Object and dagql.Interface types.
 func (m *moduleDef) LoadTypeDef(typeDef *modTypeDef) {
 	if typeDef.AsObject != nil && typeDef.AsObject.Functions == nil && typeDef.AsObject.Fields == nil {
 		obj := m.GetObject(typeDef.AsObject.Name)
@@ -1431,6 +1432,9 @@ type modObject struct {
 	SourceModuleName string
 }
 
+// Verify that modObject implements core.Object
+var _ core.Object = (*modObject)(nil)
+
 var _ functionProvider = (*modObject)(nil)
 
 func (o *modObject) ProviderName() string {
@@ -1471,7 +1475,9 @@ type modInterface struct {
 	SourceModuleName string
 }
 
-var _ functionProvider = (*modInterface)(nil)
+// Verify type system interface implementations
+var _ dagql.Interface = (*modInterface)(nil)    // Verify modInterface implements dagql.Interface
+var _ functionProvider = (*modInterface)(nil)    // Verify modInterface implements functionProvider
 
 func (o *modInterface) ProviderName() string {
 	return o.Name
