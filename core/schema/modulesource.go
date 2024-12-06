@@ -682,7 +682,7 @@ func (s *moduleSchema) moduleSourceWithoutDependencies(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct {
-		Dependencies []dagql.Instance[*ModuleDependency]
+		Dependencies []dagql.Instance[*core.ModuleDependency]
 	},
 ) (*core.ModuleSource, error) {
 	src = src.Clone()
@@ -1143,11 +1143,16 @@ func (s *moduleSchema) normalizeCallerLoadedSource(
 	}
 
 	if len(src.WithoutDependencies) > 0 {
+		depIDs := make([]core.ModuleDependencyID, len(src.WithoutDependencies))
+		for i, dep := range src.WithoutDependencies {
+			depIDs[i] = dagql.NewID[*core.ModuleDependency](dep.ID())
+		}
+
 		err = s.dag.Select(ctx, inst, &inst,
 			dagql.Selector{
 				Field: "withoutDependencies",
 				Args: []dagql.NamedInput{
-					{Name: "dependencies", Value: dagql.ArrayInput[dagql.Instance[*core.ModuleDependency]](src.WithoutDependencies)},
+					{Name: "dependencies", Value: dagql.ArrayInput[core.ModuleDependencyID](depIDs)},
 				},
 			},
 		)
