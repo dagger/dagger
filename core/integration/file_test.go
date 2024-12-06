@@ -139,7 +139,7 @@ func (FileSuite) TestLegacyDirectoryFileSDK(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (FileSuite) TestFileBackwardCompatibility(ctx context.Context, t *testctx.T) {
+func (FileSuite) TestLegacyGraphQLFileBackwardCompatibility(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("verify both new File API and legacy GraphQL API", func(ctx context.Context, t *testctx.T) {
@@ -201,17 +201,17 @@ func (FileSuite) TestSize(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("get file size (SDK)", func(ctx context.Context, t *testctx.T) {
-		file := c.Directory().
-			WithNewFile("some-file", "some-content").
-			File("some-file")
+		file := c.File("some-file", "some-content")
 
 		size, err := file.Size(ctx)
 		require.NoError(t, err)
 		require.Equal(t, len("some-content"), size)
 	})
 
-	t.Run("get file size (direct File API)", func(ctx context.Context, t *testctx.T) {
-		file := c.File("some-file", "some-content")
+	t.Run("get file size (legacy Directory API)", func(ctx context.Context, t *testctx.T) {
+		file := c.Directory().
+			WithNewFile("some-file", "some-content").
+			File("some-file")
 
 		size, err := file.Size(ctx)
 		require.NoError(t, err)
