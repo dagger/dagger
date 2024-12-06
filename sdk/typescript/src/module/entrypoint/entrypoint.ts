@@ -1,6 +1,6 @@
 import { dag } from "../../api/client.gen.js"
 import { connection } from "../../connect.js"
-import { Executor, Args } from "../executor/index.js"
+import { Executor, Args } from "../executor.js"
 import { scan } from "../introspector/index.js"
 import { invoke } from "./invoke.js"
 import { load } from "./load.js"

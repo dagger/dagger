@@ -3,7 +3,7 @@ import assert from "assert"
 
 import { dag, Container } from "../../../api/client.gen.js"
 import { connection } from "../../../connect.js"
-import { Registry } from "../../registry/index.js"
+import { Registry } from "../../registry.js"
 
 describe("Registry", function () {
   it("Should support function", async function () {

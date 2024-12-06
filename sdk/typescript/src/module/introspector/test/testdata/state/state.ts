@@ -4,7 +4,7 @@
  * Warning: Do not reproduce in production.
  */
 import { dag, Container } from "../../../../../api/client.gen.js"
-import { func, object } from "../../../../decorators/index.js"
+import { func, object } from "../../../../decorators.js"
 
 /**
  * State module

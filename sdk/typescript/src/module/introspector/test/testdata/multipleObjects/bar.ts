@@ -2,7 +2,7 @@
  * Should be ignored
  */
 import { dag } from "../../../../../api/client.gen.js"
-import { func, object } from "../../../../decorators/index.js"
+import { func, object } from "../../../../decorators.js"
 
 /**
  * Bar class

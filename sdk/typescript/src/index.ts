@@ -13,5 +13,5 @@ export { connect, connection } from "./connect.js"
 export type { ConnectOpts } from "./connectOpts.js"
 
 // Module library
-export * from "./module/decorators/index.js"
+export * from "./module/decorators.js"
 export { entrypoint } from "./module/entrypoint/entrypoint.js"

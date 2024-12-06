@@ -8,7 +8,7 @@ import { connection } from "../../../connect.js"
 import { InvokeCtx } from "../../entrypoint/context.js"
 import { invoke } from "../../entrypoint/invoke.js"
 import { load } from "../../entrypoint/load.js"
-import { Executor } from "../../executor/index.js"
+import { Executor } from "../../executor.js"
 import { scan } from "../index.js"
 import { listFiles } from "../utils/files.js"
 

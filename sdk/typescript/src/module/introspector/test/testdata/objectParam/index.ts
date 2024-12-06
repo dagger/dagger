@@ -1,4 +1,4 @@
-import { func, object } from "../../../../decorators/index.js"
+import { func, object } from "../../../../decorators.js"
 
 @object()
 export class Message {

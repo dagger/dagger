@@ -1,4 +1,4 @@
-import { enumType, field, func, object } from "../../../../decorators/index.js"
+import { enumType, field, func, object } from "../../../../decorators.js"
 
 /**
  * Enum for Status

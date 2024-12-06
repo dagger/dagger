@@ -3,7 +3,7 @@ import ts from "typescript"
 
 import { TypeDefKind } from "../../../api/client.gen.js"
 import { IntrospectionError } from "../../../common/errors/index.js"
-import { ArgumentOptions } from "../../registry/index.js"
+import { ArgumentOptions } from "../../registry.js"
 import { TypeDef } from "../typedef.js"
 import {
   AST,

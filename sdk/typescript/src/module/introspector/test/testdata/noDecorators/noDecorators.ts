@@ -1,4 +1,4 @@
-import { func } from "../../../../decorators/index.js"
+import { func } from "../../../../decorators.js"
 
 /**
  * HelloWorld class

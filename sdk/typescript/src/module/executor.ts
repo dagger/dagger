@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import Module from "node:module"
 
-import { FunctionNotFound } from "../../common/errors/index.js"
-import { DaggerModule } from "../introspector/dagger_module/index.js"
+import { FunctionNotFound } from "../common/errors/index.js"
+import { DaggerModule } from "./introspector/dagger_module/index.js"
 
 export type State = { [property: string]: any }
 

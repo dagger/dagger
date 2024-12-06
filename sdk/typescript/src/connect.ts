@@ -2,7 +2,7 @@ import * as opentelemetry from "@opentelemetry/api"
 import { GraphQLClient } from "graphql-request"
 
 import { Client } from "./api/client.gen.js"
-import { Context } from "./common/context/context.js"
+import { Context } from "./common/context.js"
 import { withGQLClient } from "./common/graphql/connect.js"
 import { Connection, globalConnection } from "./common/graphql/connection.js"
 import { ConnectOpts } from "./connectOpts.js"

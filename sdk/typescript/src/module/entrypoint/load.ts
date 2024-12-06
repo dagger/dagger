@@ -2,7 +2,7 @@
 import Module from "node:module"
 
 import { dag, TypeDefKind } from "../../api/client.gen.js"
-import { Executor, Args } from "../executor/index.js"
+import { Executor, Args } from "../executor.js"
 import {
   DaggerConstructor as Constructor,
   DaggerFunction as Method,

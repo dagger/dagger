@@ -1,7 +1,7 @@
 /**
  * Constructor module
  */
-import { func, object } from "../../../../decorators/index.js"
+import { func, object } from "../../../../decorators.js"
 
 /**
  * Constructor class

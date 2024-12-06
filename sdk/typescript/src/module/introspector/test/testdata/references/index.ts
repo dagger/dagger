@@ -1,4 +1,4 @@
-import { func, object } from "../../../../decorators/index.js"
+import { func, object } from "../../../../decorators.js"
 import { defaultEnum, TestEnum } from "./types.js"
 import type { STR, Data } from "./types.js"
 

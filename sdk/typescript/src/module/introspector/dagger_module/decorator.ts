@@ -1,10 +1,4 @@
-import {
-  argument,
-  func,
-  object,
-  enumType,
-  field,
-} from "../../decorators/index.js"
+import { argument, func, object, enumType, field } from "../../decorators.js"
 
 export type DaggerDecorators =
   | "object"

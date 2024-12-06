@@ -1,5 +1,5 @@
 import { Directory } from "../../../../../api/client.gen.js"
-import { func, object, argument } from "../../../../decorators/index.js"
+import { func, object, argument } from "../../../../decorators.js"
 
 @object()
 export class Context {

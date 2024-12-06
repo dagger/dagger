@@ -1,5 +1,5 @@
 import { FunctionNotFound } from "../../common/errors/index.js"
-import { Executor } from "../executor/index.js"
+import { Executor } from "../executor.js"
 import {
   DaggerConstructor as Constructor,
   DaggerFunction as Method,
@@ -7,7 +7,7 @@ import {
   DaggerModule,
   DaggerObjectBase,
 } from "../introspector/dagger_module/index.js"
-import { registry } from "../registry/index.js"
+import { registry } from "../registry.js"
 import { InvokeCtx } from "./context.js"
 import {
   loadResult,

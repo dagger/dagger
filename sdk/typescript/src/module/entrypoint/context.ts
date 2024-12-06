@@ -1,4 +1,4 @@
-import { Args } from "../executor/index.js"
+import { Args } from "../executor.js"
 
 export type InvokeCtx = {
   parentName: string

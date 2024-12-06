@@ -1,7 +1,7 @@
 import { GraphQLClient } from "graphql-request"
 
-import { computeQuery, QueryTree } from "../graphql/compute_query.js"
-import { globalConnection } from "../graphql/connection.js"
+import { computeQuery, QueryTree } from "./graphql/compute_query.js"
+import { globalConnection } from "./graphql/connection.js"
 
 export class Context {
   constructor(
