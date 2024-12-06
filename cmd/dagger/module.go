@@ -725,7 +725,7 @@ func getModuleConfigurationForSourceRef(
 			if err != nil {
 				return nil, fmt.Errorf("failed to read %s: %w", configPath, err)
 			}
-			var modCfg core.ModuleConfig
+			var modCfg modules.ModuleConfig
 			if err := json.Unmarshal(contents, &modCfg); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal %s: %w", configPath, err)
 			}
@@ -1475,9 +1475,8 @@ type modInterface struct {
 	SourceModuleName string
 }
 
-// Verify type system interface implementations
-var _ dagql.Interface = (*modInterface)(nil)    // Verify modInterface implements dagql.Interface
-var _ functionProvider = (*modInterface)(nil)    // Verify modInterface implements functionProvider
+var _ dagql.Interface = (*modInterface)(nil)
+var _ functionProvider = (*modInterface)(nil)
 
 func (o *modInterface) ProviderName() string {
 	return o.Name
