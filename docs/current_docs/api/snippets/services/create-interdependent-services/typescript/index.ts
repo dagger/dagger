@@ -1,4 +1,4 @@
-import { object, func, Service } from "@dagger.io/dagger"
+import { dag, object, func, Service } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
@@ -9,12 +9,11 @@ class MyModule {
       .container()
       .from("nginx")
       .withExposedPort(80)
-      .withDefaultArgs([
+      .asService({args: [
         "sh",
         "-c",
         `nginx & while true; do curl svcb:80 && sleep 1; done`,
-      ])
-      .asService()
+      ]})
       .withHostname("svca")
 
     await svcA.start()
@@ -23,12 +22,11 @@ class MyModule {
       .container()
       .from("nginx")
       .withExposedPort(80)
-      .withDefaultArgs([
+      .asService({args: [
         "sh",
         "-c",
         `nginx & while true; do curl svca:80 && sleep 1; done`,
-      ])
-      .asService()
+      ]})
       .withHostname("svcb")
 
     await svcB.start()

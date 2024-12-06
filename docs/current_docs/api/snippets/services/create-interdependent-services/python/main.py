@@ -11,10 +11,13 @@ class MyModule:
             dag.container()
             .from_("nginx")
             .with_exposed_port(80)
-            .with_default_args(
-                ["sh", "-c", "nginx & while true; do curl svcb:80 && sleep 1; done"]
+            .as_service(
+                args=[
+                    "sh",
+                    "-c",
+                    "nginx & while true; do curl svcb:80 && sleep 1; done",
+                ]
             )
-            .as_service()
             .with_hostname("svca")
         )
 
@@ -24,10 +27,13 @@ class MyModule:
             dag.container()
             .from_("nginx")
             .with_exposed_port(80)
-            .with_default_args(
-                ["sh", "-c", "nginx & while true; do curl svca:80 && sleep 1; done"]
+            .as_service(
+                args=[
+                    "sh",
+                    "-c",
+                    "nginx & while true; do curl svca:80 && sleep 1; done",
+                ]
             )
-            .as_service()
             .with_hostname("svcb")
         )
 
