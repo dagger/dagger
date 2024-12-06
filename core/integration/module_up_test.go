@@ -191,7 +191,7 @@ func daggerUpInitModFn(ctx context.Context, t *testctx.T, defaultPort string) st
 				).
 				WithWorkdir("/srv/www").
 				WithExposedPort(port).
-				WithExec([]string{"python", "-m", "http.server", strconv.Itoa(port)}),
+				WithDefaultArgs([]string{"python", "-m", "http.server", strconv.Itoa(port)}),
 		}
 	}
 	

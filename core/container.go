@@ -1675,7 +1675,28 @@ func (container *Container) ImageRefOrErr(ctx context.Context) (string, error) {
 	return "", errors.Errorf("Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
 }
 
-func (container *Container) AsService(ctx context.Context) (*Service, error) {
+type ContainerAsServiceArgs struct {
+	// Command to run instead of the container's default command
+	Args []string `default:"[]"`
+
+	// If the container has an entrypoint, prepend it to this exec's args
+	UseEntrypoint bool `default:"false"`
+
+	// Provide the executed command access back to the Dagger API
+	ExperimentalPrivilegedNesting bool `default:"false"`
+
+	// Grant the process all root capabilities
+	InsecureRootCapabilities bool `default:"false"`
+
+	// Expand the environment variables in args
+	Expand bool `default:"false"`
+
+	// Skip the init process injected into containers by default so that the
+	// user's process is PID 1
+	NoInit bool `default:"false"`
+}
+
+func (container *Container) AsServiceLegacy(ctx context.Context) (*Service, error) {
 	if container.Meta == nil {
 		var err error
 		container, err = container.WithExec(ctx, ContainerExecOpts{
@@ -1685,6 +1706,27 @@ func (container *Container) AsService(ctx context.Context) (*Service, error) {
 			return nil, err
 		}
 	}
+	return container.Query.NewContainerService(ctx, container), nil
+}
+
+func (container *Container) AsService(ctx context.Context, args ContainerAsServiceArgs) (*Service, error) {
+	var cmdargs = container.Config.Cmd
+	if len(args.Args) > 0 {
+		cmdargs = args.Args
+	}
+
+	container, err := container.WithExec(ctx, ContainerExecOpts{
+		Args:                          cmdargs,
+		UseEntrypoint:                 args.UseEntrypoint,
+		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
+		InsecureRootCapabilities:      args.InsecureRootCapabilities,
+		Expand:                        args.Expand,
+		NoInit:                        args.NoInit,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	return container.Query.NewContainerService(ctx, container), nil
 }
 

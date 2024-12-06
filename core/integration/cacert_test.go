@@ -546,9 +546,9 @@ func customCACertTests(
 			WithMountedFile("/usr/local/share/ca-certificates/dagger-test-custom-ca.crt", certGen.caRootCert).
 			WithServiceBinding("server", serverCtr.AsService())
 	})
-	engineSvc, err := c.Host().Tunnel(devEngine.AsService()).Start(ctx)
+	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
 	require.NoError(t, err)
-	t.Cleanup(func() { engineSvc.Stop(ctx) })
+	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx) })
 	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
 	require.NoError(t, err)
 	c2, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
@@ -756,5 +756,5 @@ ssl_dhparam /etc/ssl/certs/dhparam.pem;
 		WithExec([]string{"nginx", "-t"}).
 		WithExposedPort(80).
 		WithExposedPort(443).
-		WithExec([]string{"nginx", "-g", "daemon off;"})
+		WithDefaultArgs([]string{"nginx", "-g", "daemon off;"})
 }

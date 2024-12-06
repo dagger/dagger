@@ -18,9 +18,40 @@ var _ SchemaResolvers = &serviceSchema{}
 
 func (s *serviceSchema) Install() {
 	dagql.Fields[*core.Container]{
-		dagql.Func("asService", s.containerAsService).
+		dagql.Func("asService", s.containerAsServiceLegacy).
+			View(BeforeVersion("v0.15.0")).
 			Doc(`Turn the container into a Service.`,
 				`Be sure to set any exposed ports before this conversion.`),
+
+		dagql.Func("asService", s.containerAsService).
+			View(AfterVersion("v0.15.0")).
+			Doc(`Turn the container into a Service.`,
+				`Be sure to set any exposed ports before this conversion.`).
+			ArgDoc("args",
+				`Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).`,
+				`If empty, the container's default command is used.`).
+			ArgDoc("useEntrypoint",
+				`If the container has an entrypoint, prepend it to the args.`).
+			ArgDoc("experimentalPrivilegedNesting",
+				`Provides Dagger access to the executed command.`,
+				`Do not use this option unless you trust the command being executed;
+				the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
+				FILESYSTEM.`).
+			ArgDoc("insecureRootCapabilities",
+				`Execute the command with all root capabilities. This is similar to
+				running a command with "sudo" or executing "docker run" with the
+				"--privileged" flag. Containerization does not provide any security
+				guarantees when using this option. It should only be used when
+				absolutely necessary and only with trusted commands.`).
+			ArgDoc("expand",
+				`Replace "${VAR}" or "$VAR" in the args according to the current `+
+					`environment variables defined in the container (e.g. "/$VAR/foo").`).
+			ArgDoc("noInit",
+				`If set, skip the automatic init process injected into containers by default.`,
+				`This should only be used if the user requires that their exec process be the
+				pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
+			),
+
 		dagql.NodeFunc("up", s.containerUp).
 			Doc(`Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.`,
 				`Be sure to set any exposed ports before calling this api.`).
@@ -68,8 +99,23 @@ func (s *serviceSchema) Install() {
 	}.Install(s.srv)
 }
 
-func (s *serviceSchema) containerAsService(ctx context.Context, parent *core.Container, args struct{}) (*core.Service, error) {
-	return parent.AsService(ctx)
+func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent *core.Container, args struct{}) (*core.Service, error) {
+	return parent.AsServiceLegacy(ctx)
+}
+
+func (s *serviceSchema) containerAsService(ctx context.Context, parent *core.Container, args core.ContainerAsServiceArgs) (*core.Service, error) {
+	expandedArgs := make([]string, len(args.Args))
+	for i, arg := range args.Args {
+		expandedArg, err := expandEnvVar(ctx, parent, arg, args.Expand)
+		if err != nil {
+			return nil, err
+		}
+
+		expandedArgs[i] = expandedArg
+	}
+	args.Args = expandedArgs
+
+	return parent.AsService(ctx, args)
 }
 
 func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.Instance[*core.Container], args upArgs) (dagql.Nullable[core.Void], error) {

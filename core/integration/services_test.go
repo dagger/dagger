@@ -64,7 +64,7 @@ func (ServiceSuite) TestHostnamesAreStable(ctx context.Context, t *testctx.T) {
 			WithEnvVariable("FOO", "123").
 			WithEnvVariable("BAR", "456").
 			WithExposedPort(8000).
-			WithExec([]string{"python", "-m", "http.server"}).
+			WithDefaultArgs([]string{"python", "-m", "http.server"}).
 			AsService()
 
 		hostname, err := srv.Hostname(ctx)
@@ -79,13 +79,13 @@ func (ServiceSuite) TestHostnamesAreStable(ctx context.Context, t *testctx.T) {
 		srv1 := c.Container().
 			From("python").
 			WithExposedPort(8000).
-			WithExec([]string{"python", "-m", "http.server"}).
+			WithDefaultArgs([]string{"python", "-m", "http.server"}).
 			AsService()
 
 		srv2 := c.Container().
 			From("python").
 			WithExposedPort(8001).
-			WithExec([]string{"python", "-m", "http.server", "8081"}).
+			WithDefaultArgs([]string{"python", "-m", "http.server", "8081"}).
 			AsService()
 
 		hn1, err := srv1.Hostname(ctx)
@@ -126,7 +126,7 @@ func (ServiceSuite) TestHostnameEndpoint(ctx context.Context, t *testctx.T) {
 		srv := c.Container().
 			From("python").
 			WithExposedPort(8000).
-			WithExec([]string{"python", "-m", "http.server"}).
+			WithDefaultArgs([]string{"python", "-m", "http.server"}).
 			AsService()
 
 		hn, err := srv.Hostname(ctx)
@@ -141,7 +141,7 @@ func (ServiceSuite) TestHostnameEndpoint(ctx context.Context, t *testctx.T) {
 	t.Run("endpoint can specify arbitrary port", func(ctx context.Context, t *testctx.T) {
 		srv := c.Container().
 			From("python").
-			WithExec([]string{"python", "-m", "http.server"}).
+			WithDefaultArgs([]string{"python", "-m", "http.server"}).
 			AsService()
 
 		hn, err := srv.Hostname(ctx)
@@ -158,7 +158,7 @@ func (ServiceSuite) TestHostnameEndpoint(ctx context.Context, t *testctx.T) {
 	t.Run("endpoint with no port errors if no exposed port", func(ctx context.Context, t *testctx.T) {
 		srv := c.Container().
 			From("python").
-			WithExec([]string{"python", "-m", "http.server"}).
+			WithDefaultArgs([]string{"python", "-m", "http.server"}).
 			AsService()
 
 		_, err := srv.Endpoint(ctx)
@@ -173,7 +173,7 @@ func (ServiceSuite) TestWithHostname(ctx context.Context, t *testctx.T) {
 		From(busyboxImage).
 		WithWorkdir("/srv").
 		WithNewFile("index.html", "Hello, world!").
-		WithExec([]string{"httpd", "-v", "-f"}).
+		WithDefaultArgs([]string{"httpd", "-v", "-f"}).
 		WithExposedPort(80).
 		AsService().
 		WithHostname("wwwhatsup")
@@ -223,7 +223,7 @@ func (m *Hoster) Run(ctx context.Context) error {
 		From("`+busyboxImage+`").
 		WithWorkdir("/srv").
 		WithNewFile("index.html", "I am the one who hosts.").
-		WithExec([]string{"httpd", "-v", "-f"}).
+		WithDefaultArgs([]string{"httpd", "-v", "-f"}).
 		WithExposedPort(80).
 		AsService()
 	
@@ -319,7 +319,7 @@ func (m *Hoster) Run(ctx context.Context) error {
 		From("`+golangImage+`").
 		WithWorkdir("/srv").
 		WithNewFile("main.go", counterMain).
-		WithExec([]string{"go", "run", "main.go"}).
+		WithDefaultArgs([]string{"go", "run", "main.go"}).
 		WithExposedPort(80).
 		AsService()
 
@@ -397,7 +397,7 @@ func (m *Hoster) Run(ctx context.Context) error {
 		From("`+busyboxImage+`").
 		WithWorkdir("/srv").
 		WithNewFile("index.html", "I am the one who hosts.").
-		WithExec([]string{"httpd", "-v", "-f"}).
+		WithDefaultArgs([]string{"httpd", "-v", "-f"}).
 		WithExposedPort(80).
 		AsService().
 		WithHostname("wwwhatsup0")
@@ -458,7 +458,7 @@ func (m *Caller) Run(ctx context.Context) error {
 		From("`+busyboxImage+`").
 		WithWorkdir("/srv").
 		WithNewFile("index.html", "I am within the called module.").
-		WithExec([]string{"httpd", "-v", "-f"}).
+		WithDefaultArgs([]string{"httpd", "-v", "-f"}).
 		WithExposedPort(80).
 		AsService().
 		WithHostname("wwwhatsup1")
@@ -501,7 +501,7 @@ func (m *Hoster) Run(ctx context.Context) error {
 		From("`+busyboxImage+`").
 		WithWorkdir("/srv").
 		WithNewFile("index.html", "I am the one who hosts.").
-		WithExec([]string{"httpd", "-v", "-f"}).
+		WithDefaultArgs([]string{"httpd", "-v", "-f"}).
 		WithExposedPort(80).
 		AsService().
 		WithHostname("wwwhatsup1")
@@ -567,7 +567,7 @@ func (m *Relayer) Service() *dagger.Service {
 		From("`+golangImage+`").
 		WithWorkdir("/srv").
 		WithNewFile("main.go", relayMain).
-		WithExec([]string{"go", "run", "main.go"}).
+		WithDefaultArgs([]string{"go", "run", "main.go"}).
 		WithExposedPort(80).
 		AsService()
 }
@@ -655,7 +655,7 @@ func (ServiceSuite) TestPorts(ctx context.Context, t *testctx.T) {
 			Description: "nine thousand",
 			Protocol:    dagger.NetworkProtocolUdp,
 		}).
-		WithExec([]string{"python", "-m", "http.server"}).
+		WithDefaultArgs([]string{"python", "-m", "http.server"}).
 		AsService()
 
 	portCfgs, err := srv.Ports(ctx)
@@ -696,7 +696,7 @@ func (ServiceSuite) TestPortsSkipHealthCheck(ctx context.Context, t *testctx.T) 
 			WithExposedPort(6215, dagger.ContainerWithExposedPortOpts{
 				ExperimentalSkipHealthcheck: true,
 			}).
-			WithExec([]string{"python", "-m", "http.server"}).
+			WithDefaultArgs([]string{"python", "-m", "http.server"}).
 			AsService()
 
 		_, err := srv.Start(ctx)
@@ -715,7 +715,7 @@ func (ServiceSuite) TestPortsSkipHealthCheck(ctx context.Context, t *testctx.T) 
 			WithExposedPort(6215, dagger.ContainerWithExposedPortOpts{
 				ExperimentalSkipHealthcheck: true,
 			}).
-			WithExec([]string{"python", "-m", "http.server", "8000"}).
+			WithDefaultArgs([]string{"python", "-m", "http.server", "8000"}).
 			AsService()
 
 		_, err := srv.Start(ctx)
@@ -931,7 +931,7 @@ func (ContainerSuite) TestExecServicesError(ctx context.Context, t *testctx.T) {
 	srv := c.Container().
 		From(alpineImage).
 		WithExposedPort(8080).
-		WithExec([]string{"sh", "-c", "echo nope; exit 42"}).
+		WithDefaultArgs([]string{"sh", "-c", "echo nope; exit 42"}).
 		AsService()
 
 	host, err := srv.Hostname(ctx)
@@ -986,7 +986,7 @@ func (ContainerSuite) TestExecUDPServices(ctx context.Context, t *testctx.T) {
 		// use TCP :4322 for health-check to avoid test flakiness, since UDP dial
 		// health-checks aren't really a thing
 		WithExposedPort(4322).
-		WithExec([]string{"go", "run", "/src/main.go"}).
+		WithDefaultArgs([]string{"go", "run", "/src/main.go"}).
 		AsService()
 
 	client := c.Container().
@@ -1039,7 +1039,7 @@ func (ContainerSuite) TestExecServicesDeduping(ctx context.Context, t *testctx.T
 		WithMountedFile("/src/main.go",
 			c.Directory().WithNewFile("main.go", pipeSrc).File("main.go")).
 		WithExposedPort(8080).
-		WithExec([]string{"go", "run", "/src/main.go"}).
+		WithDefaultArgs([]string{"go", "run", "/src/main.go"}).
 		AsService()
 
 	client := c.Container().
@@ -1087,7 +1087,7 @@ func (ContainerSuite) TestExecServicesChained(ctx context.Context, t *testctx.T)
 			WithExec([]string{"sh", "-c", "echo $0 >> /srv/www/index.html", strconv.Itoa(i)}).
 			WithWorkdir("/srv/www").
 			WithExposedPort(8000).
-			WithExec([]string{"python", "-m", "http.server"}).
+			WithDefaultArgs([]string{"python", "-m", "http.server"}).
 			AsService()
 	}
 
@@ -1761,7 +1761,7 @@ func (ServiceSuite) TestHostToContainer(ctx context.Context, t *testctx.T) {
 			).
 			WithWorkdir("/srv/www").
 			WithExposedPort(8000).
-			WithExec([]string{"python", "-m", "http.server"}).
+			WithDefaultArgs([]string{"python", "-m", "http.server"}).
 			AsService()
 
 		tunnel, err := c.Host().Tunnel(srv).Start(ctx)
@@ -1794,7 +1794,7 @@ func (ServiceSuite) TestHostToContainer(ctx context.Context, t *testctx.T) {
 				c.Directory().WithNewFile("index.html", content+"-1")).
 			WithMountedDirectory("/srv/www2",
 				c.Directory().WithNewFile("index.html", content+"-2")).
-			WithExec([]string{
+			WithDefaultArgs([]string{
 				"sh", "-c",
 				`( cd /srv/www1 && python -m http.server 8000 ) &
 				 ( cd /srv/www2 && python -m http.server 9000 ) &
@@ -1840,7 +1840,7 @@ func (ServiceSuite) TestHostToContainer(ctx context.Context, t *testctx.T) {
 				c.Directory().WithNewFile("index.html", content+"-1")).
 			WithMountedDirectory("/srv/www2",
 				c.Directory().WithNewFile("index.html", content+"-2")).
-			WithExec([]string{
+			WithDefaultArgs([]string{
 				"sh", "-c",
 				`( cd /srv/www1 && python -m http.server 32767 ) &
 				 ( cd /srv/www2 && python -m http.server 32766 ) &
@@ -1890,7 +1890,7 @@ func (ServiceSuite) TestHostToContainer(ctx context.Context, t *testctx.T) {
 				c.Directory().WithNewFile("index.html", content+"-1")).
 			WithMountedDirectory("/srv/www2",
 				c.Directory().WithNewFile("index.html", content+"-2")).
-			WithExec([]string{
+			WithDefaultArgs([]string{
 				"sh", "-c",
 				`( cd /srv/www1 && python -m http.server 32765 ) &
 				 ( cd /srv/www2 && python -m http.server 32764 ) &
@@ -1944,7 +1944,7 @@ func (ServiceSuite) TestHostToContainer(ctx context.Context, t *testctx.T) {
 			).
 			WithWorkdir("/srv/www").
 			// WithExposedPort(8000). // INTENTIONAL
-			WithExec([]string{"python", "-m", "http.server"}).
+			WithDefaultArgs([]string{"python", "-m", "http.server"}).
 			AsService()
 
 		_, err := c.Host().Tunnel(srv).ID(ctx)
@@ -2087,12 +2087,13 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 
 	devEngine := devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
 		return ctr.WithMountedFile("/etc/resolv.conf", newResolvConf)
-	}).AsService()
+	})
+	devEngineSvc := devEngineContainerAsService(devEngine)
 	t.Cleanup(func() {
-		devEngine.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+		devEngineSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
 	})
 
-	hostSvc, err := c.Host().Tunnel(devEngine, dagger.HostTunnelOpts{
+	hostSvc, err := c.Host().Tunnel(devEngineSvc, dagger.HostTunnelOpts{
 		Ports: []dagger.PortForward{{
 			Backend:  1234,
 			Frontend: 32132,
@@ -2134,7 +2135,7 @@ func httpService(ctx context.Context, t *testctx.T, c *dagger.Client, content st
 		).
 		WithWorkdir("/srv/www").
 		WithExposedPort(8000).
-		WithExec([]string{"python", "-m", "http.server"}).
+		WithDefaultArgs([]string{"python", "-m", "http.server"}).
 		AsService()
 
 	httpURL, err := srv.Endpoint(ctx, dagger.ServiceEndpointOpts{
@@ -2159,7 +2160,7 @@ func gitServiceWithBranch(ctx context.Context, t *testctx.T, c *dagger.Client, c
 		WithExec([]string{"apk", "add", "git", "git-daemon"}).
 		WithDirectory("/root/srv", makeGitDir(c, content, branchName)).
 		WithExposedPort(gitPort).
-		WithExec([]string{"sh", "-c", "git daemon --verbose --export-all --base-path=/root/srv"}).
+		WithDefaultArgs([]string{"sh", "-c", "git daemon --verbose --export-all --base-path=/root/srv"}).
 		AsService()
 
 	gitHost, err := gitDaemon.Hostname(ctx)
@@ -2214,7 +2215,7 @@ server {
 			Owner: "nginx",
 		}).
 		WithExposedPort(80).
-		AsService()
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
 
 	gitHost, err := gitDaemon.Hostname(ctx)
 	require.NoError(t, err)
@@ -2286,7 +2287,7 @@ with socketserver.TCPServer(("", 8000), http.server.SimpleHTTPRequestHandler) as
 		WithWorkdir("/srv/www").
 		WithNewFile("signals.txt", "").
 		WithExposedPort(8000).
-		WithExec([]string{"python", "/signals.py"}).
+		WithDefaultArgs([]string{"python", "/signals.py"}).
 		AsService()
 
 	httpURL, err := srv.Endpoint(ctx, dagger.ServiceEndpointOpts{

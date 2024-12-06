@@ -120,14 +120,16 @@ func dockerService(t *testctx.T, dag *dagger.Client, dockerVersion string, f fun
 			Sharing: dagger.CacheSharingModePrivate,
 		}).
 		WithExposedPort(port).
-		WithExec([]string{
-			"dockerd",
-			"--host=tcp://0.0.0.0:" + strconv.Itoa(port),
-			"--tls=false",
-		}, dagger.ContainerWithExecOpts{
-			InsecureRootCapabilities: true,
-		}).
-		AsService()
+		AsService(
+			dagger.ContainerAsServiceOpts{
+				Args: []string{
+					"dockerd",
+					"--host=tcp://0.0.0.0:" + strconv.Itoa(port),
+					"--tls=false",
+				},
+				InsecureRootCapabilities: true,
+			},
+		)
 
 	return dockerd
 }

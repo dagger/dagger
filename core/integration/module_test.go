@@ -3621,7 +3621,7 @@ func (ModuleSuite) TestStartServices(ctx context.Context, t *testctx.T) {
 			).
 			WithWorkdir("/srv/www").
 			WithExposedPort(23457).
-			WithExec([]string{"python", "-m", "http.server", "23457"}).
+			WithDefaultArgs([]string{"python", "-m", "http.server", "23457"}).
 			AsService()
 
 		ctr := dag.Container().

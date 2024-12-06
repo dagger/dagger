@@ -155,7 +155,7 @@ func httpService(ctx context.Context, c *dagger.Client, dir *dagger.Directory) (
 		WithMountedDirectory("/srv/www", dir).
 		WithWorkdir("/srv/www").
 		WithExposedPort(8000).
-		WithExec([]string{"python", "-m", "http.server"}).
+		WithDefaultArgs([]string{"python", "-m", "http.server"}).
 		AsService()
 
 	httpURL, err := srv.Endpoint(ctx, dagger.ServiceEndpointOpts{
@@ -202,7 +202,7 @@ git daemon --verbose --export-all --base-path=/root/srv
 `).
 				File("start.sh")).
 		WithExposedPort(gitPort).
-		WithExec([]string{"sh", "/root/start.sh"}).
+		WithDefaultArgs([]string{"sh", "/root/start.sh"}).
 		AsService()
 
 	gitHost, err := gitDaemon.Hostname(ctx)
