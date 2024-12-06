@@ -673,7 +673,7 @@ func (s *moduleSchema) moduleSourceWithoutDependencies(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct {
-		Dependencies []string
+		Dependencies []dagql.Instance[*ModuleDependency]
 	},
 ) (*core.ModuleSource, error) {
 	src = src.Clone()
