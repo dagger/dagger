@@ -1205,6 +1205,10 @@ func (m *moduleDef) GetObjectFunction(objectName, functionName string) (*modFunc
 }
 
 func (m *moduleDef) GetFunction(fp functionProvider, functionName string) (*modFunction, error) {
+	// This avoids an issue with module constructors overriding core functions
+	if m.HasModule() && fp.ProviderName() == "Query" && m.MainObject.AsObject.Constructor.CmdName() == functionName {
+		return m.MainObject.AsObject.Constructor, nil
+	}
 	for _, fn := range fp.GetFunctions() {
 		if fn.Name == functionName || fn.CmdName() == functionName {
 			m.LoadFunctionTypeDefs(fn)
@@ -1313,11 +1317,6 @@ func (m *moduleDef) HasFunction(fp functionProvider, name string) bool {
 	}
 	fn, _ := m.GetFunction(fp, name)
 	return fn != nil
-}
-
-func (m *moduleDef) IsModuleConstructor(fn *modFunction) bool {
-	fp := fn.ReturnType.AsFunctionProvider()
-	return fp != nil && !fp.IsCore()
 }
 
 // LoadTypeDef attempts to replace a function's return object type or argument's
