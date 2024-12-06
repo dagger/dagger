@@ -369,8 +369,12 @@ var moduleUnInstallCmd = &cobra.Command{
 
             // Convert dependency name to ModuleDependency instance and remove it
             dep := &core.ModuleDependency{Name: extraArgs[0]}
-            depInstance := dagql.NonNull(dep)
-            modSrc := modConf.Source.WithRemovedDependencies([]dagql.Instance[*core.ModuleDependency]{depInstance})
+            depInstance := dagql.Instance[*core.ModuleDependency](dagql.NonNull(dep))
+            coreSrc, ok := modConf.Source.(*core.ModuleSource)
+            if !ok {
+                return fmt.Errorf("invalid module source type: expected *core.ModuleSource")
+            }
+            modSrc := coreSrc.WithoutDependencies([]dagql.Instance[*core.ModuleDependency]{depInstance})
 
 			_, err = modSrc.
 				AsModule().
