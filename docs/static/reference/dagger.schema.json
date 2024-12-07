@@ -91,8 +91,7 @@
       "type": "object",
       "required": [
         "name",
-        "source",
-        "pin"
+        "source"
       ]
     },
     "ModuleConfigView": {
