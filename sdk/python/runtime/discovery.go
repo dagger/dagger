@@ -29,12 +29,6 @@ type UvConfig struct {
 	// Index is a list of uv index configurations.
 	// Ssee [uv v0.4.23](https://github.com/astral-sh/uv/releases/tag/0.4.23)
 	Index []UvIndexConfig `toml:"index"`
-
-	// Deprecated: use "Index" instead
-	IndexURL string `toml:"index-url"`
-	//
-	// Deprecated: use "Index" instead
-	ExtraIndexURL string `toml:"extra-index-url"`
 }
 
 type UvIndexConfig struct {
