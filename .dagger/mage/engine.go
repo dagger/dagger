@@ -21,6 +21,11 @@ var (
 	EngineContainerName = distconsts.EngineContainerName
 )
 
+func shouldLeaveOldEngine() bool {
+	val := os.Getenv("DAGGER_LEAVE_OLD_ENGINE")
+	return val != "" && val != "0" && strings.ToLower(val) != "false"
+}
+
 func init() {
 	if v, ok := os.LookupEnv(util.DevContainerEnvName); ok {
 		EngineContainerName = v
@@ -86,12 +91,14 @@ func (t Engine) Dev(ctx context.Context) error {
 		return fmt.Errorf("docker tag %s %s: %w: %s", imageID, imageName, err, output)
 	}
 
-	if output, err := exec.CommandContext(ctx, "docker",
-		"rm",
-		"-fv",
-		containerName,
-	).CombinedOutput(); err != nil {
-		return fmt.Errorf("docker rm: %w: %s", err, output)
+	if !shouldLeaveOldEngine() {
+		if output, err := exec.CommandContext(ctx, "docker",
+			"rm",
+			"-fv",
+			containerName,
+		).CombinedOutput(); err != nil {
+			return fmt.Errorf("docker rm: %w: %s", err, output)
+		}
 	}
 
 	runArgs := []string{
