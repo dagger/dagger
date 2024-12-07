@@ -82,9 +82,9 @@ const config: Config = {
         id: "current-generation",
         plugin: ["typedoc-plugin-markdown", "typedoc-plugin-frontmatter"],
         entryPoints: [
-          "../sdk/typescript/connect.ts",
-          "../sdk/typescript/api/client.gen.ts",
-          "../sdk/typescript/common/errors/index.ts",
+          "../sdk/typescript/src/connect.ts",
+          "../sdk/typescript/src/api/client.gen.ts",
+          "../sdk/typescript/src/common/errors/index.ts",
         ],
         tsconfig: "../sdk/typescript/tsconfig.json",
         out: "current_docs/reference/typescript/",

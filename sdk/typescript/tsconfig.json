@@ -1,11 +1,8 @@
 {
-  "include": ["./**/*"],
+  "include": ["./src/**/*"],
   "exclude": [
-    "./**/*.spec.ts",
-    "./dist/**/*",
-    "./**/testdata/*",
-    "./runtime/",
-    "./dev"
+    "**/testdata/*",
+    "./src/**/*.spec.ts",
   ],
   "compilerOptions": {
     "target": "ES2022",
@@ -14,10 +11,10 @@
     "rootDir": ".",
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "module": "Node16",
+    "module": "ES2022",
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "moduleResolution": "Node16",
+    "moduleResolution": "bundler",
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "declaration": true,

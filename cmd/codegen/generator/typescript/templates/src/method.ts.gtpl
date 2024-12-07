@@ -23,15 +23,15 @@
 	{{- if $optionals }}
 		{{- /* Insert a comma if there was previous required arguments. */ -}}
 		{{- if $required }}, {{ end }}
-		{{- "" }}opts?: {{ $parentName | PascalCase }}{{ .Name | PascalCase }}Opts
+		{{- "" }}opts?: {{ $parentName | PascalCase }}{{ .Name | PascalCase }}Opts {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 	{{- end }}
 
 	{{- /* Write return type. */ -}}
-	{{- "" }}){{- "" }}: {{ .TypeRef | FormatOutputType }} => {
+	{{- "" }}){{- "" }}: {{ .TypeRef | FormatOutputType }} => { {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 
 	{{- $enums := GetEnumValues .Args }}
 	{{- if gt (len $enums) 0 }}
-	const metadata: Metadata = {
+	const metadata = {
 	    {{- range $v := $enums }}
 	    {{ $v.Name | FormatName -}}: { is_enum: true },
 	    {{- end }}
@@ -39,31 +39,25 @@
 {{ "" -}}
 	{{- end }}
 
-	{{- if .TypeRef }}
-    return new {{ .TypeRef | FormatOutputType }}({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "{{ .Name }}",
-
-		{{- /* Insert arguments. */ -}}
-		{{- if or $required $optionals }}
-          args: { {{""}}
+	const ctx = this._ctx.select(
+		"{{ .Name }}",
+{{- if or $required $optionals }}
+    { {{""}}
       		{{- with $required }}
 				{{- template "call_args" $required }}
 			{{- end }}
 
       		{{- with $optionals }}
       			{{- if $required }}, {{ end -}}
-        ...opts
+      ...opts
 			{{- end -}}
 			{{- if gt (len $enums) 0 -}}, __metadata: metadata{{- end -}}
-{{""}} },
-		{{- end }}
-        },
-      ],
-      ctx: this._ctx,
-    })
+{{""}}  },
+		{{- end }}		
+	)
+
+	{{- if .TypeRef }}
+    return new {{ .TypeRef | FormatOutputType }}(ctx)
 	{{- end }}
   }
 {{- end }}
