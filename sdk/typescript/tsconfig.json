@@ -1,11 +1,8 @@
 {
-  "include": ["./**/*"],
+  "include": ["./src/**/*"],
   "exclude": [
-    "./**/*.spec.ts",
-    "./dist/**/*",
-    "./**/testdata/*",
-    "./runtime/",
-    "./dev"
+    "**/testdata/*",
+    "./src/**/*.spec.ts",
   ],
   "compilerOptions": {
     "target": "ES2022",

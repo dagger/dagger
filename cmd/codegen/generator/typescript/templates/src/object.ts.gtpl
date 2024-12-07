@@ -31,14 +31,14 @@ export class {{ .Name | QueryToClient | FormatName }} extends BaseClient {
    * Constructor is used for internal usage only, do not create object from it.
    */
    constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
+    ctx?: Context,
             {{- range $i, $field := .Fields }}
                {{- if $field.TypeRef.IsScalar }}
      _{{ $field.Name }}?: {{ $field.TypeRef | FormatOutputType }},
                {{- end }}
             {{- end }}
    ) {
-     super(parent)
+     super(ctx)
 {{ "" }}
             {{- range $i, $field := .Fields }}
                {{- if $field.TypeRef.IsScalar }}

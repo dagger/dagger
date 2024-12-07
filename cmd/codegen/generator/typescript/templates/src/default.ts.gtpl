@@ -1,5 +1,5 @@
 {{ define "default" }}
-export const dag = new Client({ ctx: defaultContext })
+export const dag = new Client()
 {{ "" }}
 
 {{- end }}

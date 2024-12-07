@@ -1,10 +1,4 @@
-import {
-  dag,
-  Container,
-  object,
-  func,
-  Directory,
-} from "@dagger.io/dagger"
+import { dag, Container, object, func, Directory } from "@dagger.io/dagger"
 
 @object()
 class TypescriptSdkDev {
@@ -26,7 +20,7 @@ class TypescriptSdkDev {
     // Get source without generated files nor useless files.
     const sourceCode = dag.directory().withDirectory("/", source, {
       include: [
-        "**/*.ts",
+        "src/**/*.ts",
         "tsconfig.json",
         "package.json",
         "yarn.lock",
@@ -34,7 +28,6 @@ class TypescriptSdkDev {
         "eslint.config.js",
         ".prettierrc.cjs",
       ],
-      exclude: ["node_modules", "dist", "dev"],
     })
 
     // Install dependencies and add source code.
