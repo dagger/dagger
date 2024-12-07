@@ -34,6 +34,12 @@ func init() {
 	register("docker-image", &dockerDriver{})
 }
 
+// shouldCleanupEngines returns true if old engines should be cleaned up
+func shouldCleanupEngines() bool {
+	val := os.Getenv("DAGGER_LEAVE_OLD_ENGINE")
+	return val == "" || val == "0" || strings.ToLower(val) == "false"
+}
+
 // dockerDriver creates and manages a container, then connects to it
 type dockerDriver struct{}
 
@@ -72,6 +78,11 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 	defer telemetry.End(span, func() error { return rerr })
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
+	// Log environment variable state at creation
+	slog.Info("checking engine environment",
+		"DAGGER_LEAVE_OLD_ENGINE", os.Getenv("DAGGER_LEAVE_OLD_ENGINE"),
+		"shouldCleanup", shouldCleanupEngines())
+
 	id, err := resolveImageID(imageRef)
 	if err != nil {
 		return nil, err
@@ -92,11 +103,17 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 	for i, leftoverEngine := range leftoverEngines {
 		// if we already have a container with that name, attempt to start it
 		if leftoverEngine == containerName {
+			slog.Info("found existing container", "name", containerName)
 			cmd := exec.CommandContext(ctx, "docker", "start", leftoverEngine)
 			if output, err := traceExec(ctx, cmd); err != nil {
 				return nil, errors.Wrapf(err, "failed to start container: %s", output)
 			}
-			garbageCollectEngines(ctx, slog, append(leftoverEngines[:i], leftoverEngines[i+1:]...))
+			slog.Info("cleaning up other engines after starting existing container",
+				"current", containerName,
+				"leftover_count", len(leftoverEngines)-1)
+			if shouldCleanupEngines() {
+				garbageCollectEngines(ctx, slog, append(leftoverEngines[:i], leftoverEngines[i+1:]...))
+			}
 			return connhDocker.Helper(&url.URL{
 				Scheme: "docker-container",
 				Host:   containerName,
@@ -134,6 +151,7 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 	// explicitly pass current env vars; if we append more below existing ones like DOCKER_HOST
 	// won't be passed to the cmd
 	cmd.Env = os.Environ()
+
 	if opts.DaggerCloudToken != "" {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", EnvDaggerCloudToken, opts.DaggerCloudToken))
 		cmd.Args = append(cmd.Args, "-e", EnvDaggerCloudToken)
@@ -151,10 +169,12 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 		}
 	}
 
-	// garbage collect any other containers with the same name pattern, which
-	// we assume to be leftover from previous runs of the engine using an older
-	// version
-	garbageCollectEngines(ctx, slog, leftoverEngines)
+	if shouldCleanupEngines() {
+		slog.Info("cleaning up old engines after creating new container",
+			"current", containerName,
+			"leftover_count", len(leftoverEngines))
+		garbageCollectEngines(ctx, slog, leftoverEngines)
+	}
 
 	return connhDocker.Helper(&url.URL{
 		Scheme: "docker-container",
@@ -185,19 +205,35 @@ func resolveImageID(imageRef string) (string, error) {
 }
 
 func garbageCollectEngines(ctx context.Context, log *slog.Logger, engines []string) {
+	val := os.Getenv("DAGGER_LEAVE_OLD_ENGINE")
+
+	// Enhanced logging for debugging
+	log.Info("evaluating engine cleanup",
+		"raw_env_value", val,
+		"engineCount", len(engines))
+
+	// Log each engine being considered
+	for i, engine := range engines {
+		log.Info("found engine",
+			"index", i,
+			"name", engine)
+	}
+
 	for _, engine := range engines {
 		if engine == "" {
 			continue
 		}
+		log.Info("removing engine",
+			"name", engine,
+			"env_value", val)
+
 		if output, err := traceExec(ctx, exec.CommandContext(ctx,
 			"docker", "rm", "-fv", engine,
 		)); err != nil {
-			if errors.Is(err, context.Canceled) {
-				return
-			}
-			if !strings.Contains(output, "already in progress") {
-				log.Warn("failed to remove old container", "container", engine, "error", err)
-			}
+			log.Warn("failed to remove container",
+				"name", engine,
+				"error", err,
+				"output", output)
 		}
 	}
 }
@@ -217,6 +253,10 @@ func traceExec(ctx context.Context, cmd *exec.Cmd, opts ...trace.SpanStartOption
 }
 
 func collectLeftoverEngines(ctx context.Context) ([]string, error) {
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
+	slog.Info("collecting leftover engines",
+		"DAGGER_LEAVE_OLD_ENGINE", os.Getenv("DAGGER_LEAVE_OLD_ENGINE"))
+
 	cmd := exec.CommandContext(ctx,
 		"docker", "ps",
 		"-a",
@@ -226,11 +266,19 @@ func collectLeftoverEngines(ctx context.Context) ([]string, error) {
 	)
 	output, err := traceExec(ctx, cmd)
 	if err != nil {
+		slog.Error("failed to list containers",
+			"error", err,
+			"output", output)
 		return nil, errors.Wrapf(err, "failed to list containers: %s", output)
 	}
 
 	output = strings.TrimSpace(output)
 	engineNames := strings.Split(output, "\n")
+
+	slog.Info("found engines",
+		"count", len(engineNames),
+		"names", engineNames)
+
 	return engineNames, err
 }
 
