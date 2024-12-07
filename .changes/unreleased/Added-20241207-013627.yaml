@@ -1,0 +1,6 @@
+kind: Added
+body: Added DAGGER_LEAVE_OLD_ENGINE environment variable to optionally prevent removal of old engine containers during upgrades
+time: 2024-12-07T01:36:27.59938702Z
+custom:
+    Author: devin
+    PR: "8195"
