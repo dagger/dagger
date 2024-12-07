@@ -13,6 +13,7 @@ const (
 	GolangImage   = distconsts.GolangImage
 
 	AlpineVersion = distconsts.AlpineVersion
+	AlpineImage   = "alpine:" + AlpineVersion
 	UbuntuVersion = "22.04"
 
 	RuncVersion     = "v1.1.14"
