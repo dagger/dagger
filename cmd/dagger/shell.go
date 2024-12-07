@@ -676,14 +676,10 @@ func (h *shellCallHandler) getOrInitDefState(ref string, fn func() (*moduleDef, 
 
 func (h *shellCallHandler) constructorCall(ctx context.Context, md *moduleDef, st *ShellState, args []string) (*ShellState, error) {
 	fn := md.MainObject.AsObject.Constructor
-	if err := ExactArgs(len(fn.RequiredArgs()))(args); err != nil {
-		usage := shellFunctionUseLine(md, fn)
-		return nil, fmt.Errorf("constructor: %w\nusage: %s", err, usage)
-	}
 
 	values, err := h.parseArgumentValues(ctx, md, fn, args)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("constructor: %w", err)
 	}
 
 	return st.WithCall(fn, values), nil
@@ -2007,7 +2003,6 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 			&ShellCommand{
 				Use:         shellFunctionUseLine(def, fn),
 				Description: fn.Description,
-				Args:        ExactArgs(len(fn.RequiredArgs())),
 				HelpFunc: func(cmd *ShellCommand) string {
 					return shellFunctionDoc(def, fn)
 				},
