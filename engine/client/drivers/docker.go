@@ -37,7 +37,7 @@ func init() {
 
 // shouldCleanupEngines returns true if old engines should be cleaned up
 func shouldCleanupEngines() bool {
-	val := os.Getenv("DAGGER_LEAVE_OLD_ENGINE")
+	val := os.Getenv("_EXPERIMENTAL_DAGGER_LEAVE_OLD_ENGINE")
 	b, _ := strconv.ParseBool(val)
 	return !b
 }

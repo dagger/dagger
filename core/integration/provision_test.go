@@ -147,7 +147,7 @@ func (ProvisionSuite) TestDockerDriverGarbageCollectEngines(ctx context.Context,
 		dockerd := dockerService(t, c, "", nil)
 		dockerc := dockerClient(ctx, t, c, dockerd, "", nil)
 		dockerc = dockerc.WithMountedFile("/bin/dagger", daggerCliFile(t, c))
-		dockerc = dockerc.WithEnvVariable("DAGGER_LEAVE_OLD_ENGINE", "true")
+		dockerc = dockerc.WithEnvVariable("_EXPERIMENTAL_DAGGER_LEAVE_OLD_ENGINE", "true")
 
 		require.Len(t, dockerPs(ctx, t, dockerc), 0)
 
