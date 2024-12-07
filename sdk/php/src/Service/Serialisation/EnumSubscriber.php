@@ -4,17 +4,16 @@ declare(strict_types=1);
 
 namespace Dagger\Service\Serialisation;
 
-use Dagger\Client\AbstractScalar;
 use JMS\Serializer\EventDispatcher\EventSubscriberInterface;
 use JMS\Serializer\EventDispatcher\PreDeserializeEvent;
 use JMS\Serializer\EventDispatcher\PreSerializeEvent;
 
-final readonly class AbstractScalarSubscriber implements EventSubscriberInterface
+final readonly class EnumSubscriber implements EventSubscriberInterface
 {
-    public const ORIGINAL_CLASS_NAME =
+    public const ORIGINAL_CLASS =
         'The original class name before ' .
         'being changed to ' .
-        AbstractScalar::class;
+        \BackedEnum::class;
 
     public static function getSubscribedEvents(): array
     {
@@ -22,7 +21,7 @@ final readonly class AbstractScalarSubscriber implements EventSubscriberInterfac
             [
                 'event' => 'serializer.pre_serialize',
                 'method' => 'onPreSerialize',
-                'interface' => AbstractScalar::class,
+                'interface' => \UnitEnum::class,
             ],
             [
                 'event' => 'serializer.pre_deserialize',
@@ -33,8 +32,8 @@ final readonly class AbstractScalarSubscriber implements EventSubscriberInterfac
 
     public function onPreSerialize(PreSerializeEvent $event): void
     {
-        if ($event->getObject() instanceof AbstractScalar) {
-            $event->setType(AbstractScalar::class);
+        if ($event->getObject() instanceof \UnitEnum) {
+            $event->setType(\UnitEnum::class);
         }
     }
 
@@ -42,16 +41,13 @@ final readonly class AbstractScalarSubscriber implements EventSubscriberInterfac
     {
         $className = $event->getType()['name'];
 
-        if (
-            !class_exists($className)
-            || !in_array(AbstractScalar::class, class_parents($className))
-        ) {
+        if (!enum_exists($className)) {
             return;
         }
 
-        $event->setType(AbstractScalar::class, array_merge_recursive(
+        $event->setType(\UnitEnum::class, array_merge_recursive(
             $event->getType()['params'],
-            [self::ORIGINAL_CLASS_NAME => $className]
+            [self::ORIGINAL_CLASS => $className]
         ));
     }
 }
