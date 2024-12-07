@@ -95,7 +95,7 @@ func (DirectorySuite) TestEntries(ctx context.Context, t *testctx.T) {
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"some-file", "some-dir"}, res.Directory.WithNewFile.WithNewFile.Entries)
+	require.ElementsMatch(t, []string{"some-file", "some-dir/"}, res.Directory.WithNewFile.WithNewFile.Entries)
 }
 
 func (DirectorySuite) TestEntriesOfPath(ctx context.Context, t *testctx.T) {
@@ -258,7 +258,7 @@ func (DirectorySuite) TestWithDirectoryIncludeExclude(ctx context.Context, t *te
 			Exclude: []string{"*.rar"},
 		}).Entries(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{"a.txt", "b.txt", "subdir"}, entries)
+		require.Equal(t, []string{"a.txt", "b.txt", "subdir/"}, entries)
 	})
 
 	t.Run("include", func(ctx context.Context, t *testctx.T) {
@@ -315,7 +315,7 @@ func (DirectorySuite) TestWithNewDirectory(ctx context.Context, t *testctx.T) {
 
 	entries, err := dir.Entries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{"a", "b"}, entries)
+	require.Equal(t, []string{"a/", "b/"}, entries)
 
 	entries, err = dir.Entries(ctx, dagger.DirectoryEntriesOpts{
 		Path: "b",
@@ -504,7 +504,7 @@ func (DirectorySuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
 		Entries(ctx)
 
 	require.NoError(t, err)
-	require.Equal(t, []string{"some-dir", "some-file"}, entries)
+	require.Equal(t, []string{"some-dir/", "some-file"}, entries)
 
 	dir := c.Directory().
 		WithNewFile("foo.txt", "foo").
@@ -1088,9 +1088,9 @@ func (DirectorySuite) TestGlob(ctx context.Context, t *testctx.T) {
 				require.NoError(t, err)
 				require.ElementsMatch(t, entries, []string{
 					"func.go", "main.go", "test.md", "foo.txt", "README.txt",
-					"subdir", "subdir/foo.txt", "subdir/README.md",
-					"subdir2", "subdir2/subsubdir", "subdir2/baz.txt", "subdir2/TESTING.md",
-					"subdir/subsubdir", "subdir/subsubdir/package.json",
+					"subdir/", "subdir/foo.txt", "subdir/README.md",
+					"subdir2/", "subdir2/subsubdir/", "subdir2/baz.txt", "subdir2/TESTING.md",
+					"subdir/subsubdir/", "subdir/subsubdir/package.json",
 					"subdir/subsubdir/index.mts", "subdir/subsubdir/JS.md",
 				})
 			})
@@ -1127,7 +1127,7 @@ func (DirectorySuite) TestGlob(ctx context.Context, t *testctx.T) {
 
 		require.NoError(t, err)
 		require.ElementsMatch(t, entries, []string{
-			"foo/bar.md",
+			"foo/bar.md/",
 			"foo/bar.md/w.md",
 			"foo/baz.go/y.md",
 		})

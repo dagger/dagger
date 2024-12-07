@@ -613,7 +613,7 @@ func (m *Coolsdk) RequiredPaths() []string {
 				With(daggerCall("fn", "directory", "--path", "subdir", "entries")).
 				Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "keepdir", strings.TrimSpace(out))
+			require.Equal(t, "keepdir/", strings.TrimSpace(out))
 
 			out, err = ctr.
 				With(daggerCall("fn", "directory", "--path", "subdir/keepdir", "entries")).
@@ -1104,7 +1104,7 @@ func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
 
 	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:nice-view", "entries")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "nice-file\nsubdir", strings.TrimSpace(out))
+	require.Equal(t, "nice-file\nsubdir\n", strings.TrimSpace(out))
 
 	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:nice-view", "directory", "--path=subdir", "entries")).Stdout(ctx)
 	require.NoError(t, err)
