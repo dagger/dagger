@@ -2,7 +2,7 @@ package core
 
 import (
 	"context"
-	"fmt"
+	"regexp"
 	"testing"
 
 	"dagger.io/dagger"
@@ -54,26 +54,329 @@ func (m *Test) Container() *dagger.Container {
 	require.Contains(t, out, "Alpine Linux")
 }
 
-func (ShellSuite) TestForceCore(ctx context.Context, t *testctx.T) {
+func (ShellSuite) TestModuleLookup(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	out, err := modInit(t, c, "go", `package main
+	setup := modInit(t, c, "go", `// Main module
+
+package main
 
 import (
 	"dagger/test/internal/dagger"
 )
 
-type Test struct{}
-
-func (m *Test) Container() *dagger.Container {
-	return dag.Container().From("`+golangImage+`")
+func New(
+	// +defaultPath=.
+	source *dagger.Directory,
+) *Test {
+	return &Test{Source: source}
 }
+
+// Test main object
+type Test struct{
+	Source *dagger.Directory
+}
+
+// Test version
+func (Test) Version() string {
+	return "test function"
+}
+
+// Encouragement
+func (Test) Go() string {
+	return "Let's go!"
+} 
 `,
 	).
-		With(daggerShell(fmt.Sprintf(".stdlib | container | from %s | with-exec cat,/etc/os-release | stdout", alpineImage))).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, out, "Alpine Linux")
+		With(withModInitAt("modules/dep", "go", `// Dependency module
+
+package main
+
+type Dep struct{}
+
+// Dep version
+func (Dep) Version() string {
+	return "dep function"
+} 
+`,
+		)).
+		With(withModInitAt("modules/git", "go", `// A git helper
+
+package main
+
+func New(url string) *Git {
+	return &Git{URL: url}
+}
+
+type Git struct{
+	URL string
+}
+`,
+		)).
+		With(withModInitAt("modules/go", "go", `// A go helper
+
+package main
+
+type Go struct{}
+
+// Go version
+func (Go) Version() string {
+	return "go version"
+} 
+`,
+		)).
+		With(withModInitAt("other", "go", `// A local module
+
+package main
+
+type Other struct{}
+
+func (Other) Version() string {
+	return "other function"
+} 
+`,
+		)).
+		With(daggerExec("install", "./modules/dep")).
+		With(daggerExec("install", "./modules/git")).
+		With(daggerExec("install", "./modules/go"))
+
+	t.Run("current module doc", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".doc")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "MODULE")
+		require.Contains(t, out, "Main module")
+		require.Contains(t, out, "ENTRYPOINT")
+		require.Contains(t, out, "Usage: ./. [options]")
+		require.Contains(t, out, "AVAILABLE FUNCTIONS")
+		require.Contains(t, out, "Encouragement")
+	})
+
+	t.Run("current module function takes precedence over dependency", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell("go")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Let's go!", out)
+	})
+
+	t.Run("current module function doc takes precedence over dependency", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".doc go")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Encouragement")
+		require.Contains(t, out, "RETURNS")
+	})
+
+	t.Run("disambiguate dependency function", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".deps | go | version")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "go version", out)
+	})
+
+	t.Run("disambiguate dependency function doc", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".deps | .doc go")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "MODULE")
+		require.Contains(t, out, "A go helper")
+	})
+
+	t.Run("current module function takes precedence over stdlib", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell("version")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "test function")
+	})
+
+	t.Run("current module function doc takes precedence over stdlib", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".doc version")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Test version")
+	})
+
+	t.Run("disambiguate stdlib command", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".stdlib | version")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, regexp.MustCompile(`^v0.\d+`), out)
+	})
+
+	t.Run("disambiguate stdlib command doc", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".stdlib | .doc version")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Get the current Dagger Engine version.")
+		require.Contains(t, out, "RETURNS")
+	})
+
+	t.Run("dependency module function takes precedence over stdlib", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell("git acme.org | url")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "acme.org", out)
+	})
+
+	t.Run("dependency module function doc takes precedence over stdlib", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".doc git")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "A git helper")
+		require.Contains(t, out, "ENTRYPOINT")
+		require.NotContains(t, out, "AVAILABLE FUNCTIONS")
+	})
+
+	t.Run("other module function", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell("other | version")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "other function", out)
+	})
+
+	t.Run("other module doc", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".doc other")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "A local module")
+		require.NotContains(t, out, "ENTRYPOINT")
+		require.NotContains(t, out, "AVAILABLE FUNCTIONS")
+	})
+
+	t.Run("current module required constructor arg error", func(ctx context.Context, t *testctx.T) {
+		_, err := setup.
+			WithWorkdir("modules/git").
+			With(daggerShell("url")).
+			Sync(ctx)
+		requireErrOut(t, err, "constructor: missing 1 positional argument")
+	})
+
+	t.Run("current module required constructor arg function", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			WithWorkdir("modules/git").
+			With(daggerShell(". acme.org | url")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "acme.org", out)
+	})
+
+	t.Run("dep result", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell("dep")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"_type": "Dep"}`, out)
+	})
+
+	t.Run("dep doc type", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell("dep | .doc")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "OBJECT")
+		require.Contains(t, out, "\n  Dep\n")
+		require.Regexp(t, regexp.MustCompile("\n  version +Dep version"), out)
+	})
+
+	t.Run("deps result", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".deps")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "- dep")
+		require.Contains(t, out, "- git")
+		require.Contains(t, out, "- go")
+	})
+
+	t.Run("deps doc", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".deps | .doc")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, regexp.MustCompile(`\n  dep +Dependency module`), out)
+		require.Regexp(t, regexp.MustCompile(`\n  git +A git helper`), out)
+		require.Regexp(t, regexp.MustCompile(`\n  go +A go helper`), out)
+	})
+
+	t.Run("deps doc module", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".deps | .doc go")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "MODULE")
+		require.Contains(t, out, "A go helper")
+	})
+
+	t.Run("stdlib result", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".stdlib")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "version")
+		require.NotContains(t, out, "Get the current Dagger Engine version")
+		require.NotContains(t, out, "load-container-from-id")
+	})
+
+	t.Run("stdlib doc", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".stdlib | .doc")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "version")
+		require.Contains(t, out, "Get the current Dagger Engine version")
+		require.NotContains(t, out, "load-container-from-id")
+	})
+
+	t.Run("stdlib doc function", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".stdlib | .doc git")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, regexp.MustCompile(`^Queries a Git repository`), out)
+		require.Contains(t, out, "git <url> [options]")
+		require.Contains(t, out, "RETURNS")
+	})
+
+	t.Run("core result", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".core")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "- load-container-from-id")
+		require.NotContains(t, out, "Load a Container")
+	})
+
+	t.Run("core doc", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".core | .doc")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "load-container-from-id")
+		require.Contains(t, out, "Load a Container from its ID")
+	})
+
+	t.Run("core doc function", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".core | .doc load-container-from-id")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, regexp.MustCompile(`^Load a Container from its ID`), out)
+		require.Contains(t, out, "load-container-from-id <id>")
+		require.Contains(t, out, "RETURNS")
+	})
 }
 
 func (ShellSuite) TestNoModule(ctx context.Context, t *testctx.T) {
@@ -86,8 +389,8 @@ func (ShellSuite) TestNoModule(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("no default module doc", func(ctx context.Context, t *testctx.T) {
-		_, err := modGen.With(daggerShell(".doc .")).Sync(ctx)
-		requireErrOut(t, err, "not found")
+		_, err := modGen.With(daggerShell(".doc")).Sync(ctx)
+		requireErrOut(t, err, "module not loaded")
 	})
 }
 
@@ -133,7 +436,8 @@ func (ShellSuite) TestNoLoadModule(ctx context.Context, t *testctx.T) {
 			With(daggerShellNoMod(".doc .")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "container-echo")
+		require.Contains(t, out, "MODULE")
+		require.Contains(t, out, "A generated module for Test functions")
 	})
 }
 
@@ -232,18 +536,6 @@ func (ShellSuite) TestExport(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "bar", out)
 }
 
-func (ShellSuite) TestBasicGit(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	script := "git https://github.com/dagger/dagger | head | tree | file README.md | contents"
-	out, err := daggerCliBase(t, c).
-		With(withModInit("go", "")).
-		With(daggerShell(script)).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, out, "What is Dagger?")
-}
-
 func (ShellSuite) TestBasicModule(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -278,40 +570,6 @@ func (m *Test) DirectoryID(ctx context.Context) (string, error) {
 
 	require.NoError(t, err)
 	require.Equal(t, "bar", out)
-}
-
-func (ShellSuite) TestModuleDoc(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	source := `// This is a test module
-
-package main
-
-// The entrypoint for the module
-func New(foo string, bar string) *Test {
-	return &Test{
-		Foo: foo,
-		Bar: bar,
-	}
-}
-
-type Test struct{
-	Foo string 
-	Bar string
-}
-
-// Some function
-func (m *Test) FooBar() string {
-	return m.Foo+m.Bar
-}
-`
-	out, err := modInit(t, c, "go", source).
-		With(daggerShell(".doc")).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, out, "\n  test\n  \n  This is a test module")
-	require.Contains(t, out, "Usage: ./. <foo> <bar>\n  \n  The entrypoint for the module")
-	require.Regexp(t, "foo-bar +Some function", out)
 }
 
 func (ShellSuite) TestInstall(ctx context.Context, t *testctx.T) {
