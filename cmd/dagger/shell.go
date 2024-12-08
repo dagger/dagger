@@ -1557,7 +1557,7 @@ func (d ShellDoc) String() string {
 	return sb.String()
 }
 
-func shellModuleDoc(m *moduleDef) string {
+func shellModuleDoc(st *ShellState, m *moduleDef) string {
 	var doc ShellDoc
 
 	meta := new(strings.Builder)
@@ -1601,14 +1601,18 @@ func shellModuleDoc(m *moduleDef) string {
 		}
 	}
 
-	if fns := m.MainObject.AsFunctionProvider().GetFunctions(); len(fns) > 0 {
-		doc.Add(
-			"Available Functions",
-			nameShortWrapped(fns, func(f *modFunction) (string, string) {
-				return f.CmdName(), f.Short()
-			}),
-		)
-		doc.Add("", `Use ".doc <function>" for more information on a function.`)
+	// If it's just `.doc` and the current module doesn't have required args,
+	// can use the default constructor and show available functions.
+	if st.IsEmpty() && st.ModRef == "" && !fn.HasRequiredArgs() {
+		if fns := m.MainObject.AsFunctionProvider().GetFunctions(); len(fns) > 0 {
+			doc.Add(
+				"Available Functions",
+				nameShortWrapped(fns, func(f *modFunction) (string, string) {
+					return f.CmdName(), f.Short()
+				}),
+			)
+			doc.Add("", `Use ".doc <function>" for more information on a function.`)
+		}
 	}
 
 	return doc.String()
@@ -1870,11 +1874,11 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 							return cmd.Println(h.DepsHelp())
 						}
 						// Example: `.deps | .doc <dependency>`
-						_, depDef, err := h.GetDependency(ctx, args[0])
+						depSt, depDef, err := h.GetDependency(ctx, args[0])
 						if err != nil {
 							return err
 						}
-						return cmd.Println(shellModuleDoc(depDef))
+						return cmd.Println(shellModuleDoc(depSt, depDef))
 
 					case st.IsCore():
 						// Document core
@@ -1895,7 +1899,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 						}
 						// Document module
 						// Example: `.doc [module]`
-						return cmd.Println(shellModuleDoc(def))
+						return cmd.Println(shellModuleDoc(st, def))
 					}
 				}
 
