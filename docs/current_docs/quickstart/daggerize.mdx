@@ -25,10 +25,6 @@ The example application is a skeleton Vue framework application that returns a "
 git clone https://github.com/dagger/hello-dagger
 cd hello-dagger
 ```
-:::tip Develop
-1. By default the `internal` directory and the `dagger.gen.go` are created during `dagger init` are added to a `.gitignore` in your dagger directory
-2. To regenerate these files on a fresh checkout simply call `dagger develop` in the root of your project
-:::
 
 ### Visualize in Dagger Cloud (optional)
 
@@ -88,6 +84,14 @@ dagger init --sdk=typescript --source=./dagger
 This will generate a `dagger.json` module metadata file, initial `dagger/src/index.ts` source code template, `dagger/package.json` and `dagger/tsconfig.json` files, as well as a generated `dagger/sdk` folder for local development.
 </TabItem>
 </Tabs>
+
+:::tip dagger develop
+1. By default there are several files and directories that are addd to a `.gitignore` contained within your dagger sdk source directory
+2. To regenerate these files on a fresh checkout simply run [dagger develop](https://docs.dagger.io/reference/cli/#dagger-develop)
+
+`dagger develop` can also update your engine version, install missing sdks, regenerate dependacy bindings and ensure your IDE autocomplete settings are up to date 
+:::
+
 
 ### Construct a pipeline using Dagger Functions
 
