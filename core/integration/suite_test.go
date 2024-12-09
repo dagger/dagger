@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -244,12 +245,24 @@ func daggerCliPath(t testing.TB) string {
 	return cliPath
 }
 
+func daggerLinuxCliPath(t testing.TB) string {
+	if runtime.GOOS == "linux" {
+		return daggerCliPath(t)
+	}
+	cliPath := os.Getenv("_TEST_DAGGER_CLI_LINUX_BIN")
+	if cliPath == "" {
+		t.Log("missing _TEST_DAGGER_CLI_LINUX_BIN")
+		t.FailNow()
+	}
+	return cliPath
+}
+
 func daggerCliFile(t testing.TB, c *dagger.Client) *dagger.File {
 	// This loads the dagger-cli binary from the host into the container, that
 	// was set up by the test caller. This is used to communicate with the dev
 	// engine.
 	t.Helper()
-	return c.Host().File(daggerCliPath(t))
+	return c.Host().File(daggerLinuxCliPath(t))
 }
 
 func daggerCliBase(t testing.TB, c *dagger.Client) *dagger.Container {

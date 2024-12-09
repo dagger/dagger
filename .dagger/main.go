@@ -300,13 +300,19 @@ func (dev *DaggerDev) DevExport(
 	})
 
 	// FIXME: get path from the cli file (windows is already handled)
-	cliPath := "dagger"
+	hostCliPath := "dagger"
 	if platformSpec.OS == "windows" {
-		cliPath += ".exe"
+		hostCliPath += ".exe"
 	}
 	dir := dag.Directory().
 		WithFile("engine.tar", engineTar).
-		WithFile(cliPath, dag.DaggerCli().Binary(dagger.DaggerCliBinaryOpts{Platform: platform}))
+		WithFile(hostCliPath, dag.DaggerCli().Binary(dagger.DaggerCliBinaryOpts{Platform: platform}))
+
+	// this allows our integration tests to plumb built cli binaries into containers when the host OS doesn't match
+	if platformSpec.OS != "linux" {
+		linuxCliPath := "dagger-linux"
+		dir = dir.WithFile(linuxCliPath, engineCtr.File(cliPath))
+	}
 	return dir, nil
 }
 
