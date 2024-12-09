@@ -9,7 +9,7 @@ use Dagger\File;
 use Dagger\Json;
 use Dagger\Tests\Unit\Fixture\DaggerObjectWithDaggerFunctions;
 use Dagger\ValueObject\Argument;
-use Dagger\ValueObject\Type;
+use Dagger\ValueObject\TypeHint\Type;
 use Generator;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;

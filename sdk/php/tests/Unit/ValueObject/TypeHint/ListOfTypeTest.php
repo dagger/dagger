@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Tests\Unit\ValueObject;
+namespace Dagger\Tests\Unit\ValueObject\TypeHint;
 
 use Closure;
 use Countable;
@@ -10,11 +10,9 @@ use Dagger;
 use Dagger\Attribute;
 use Dagger\Container;
 use Dagger\File;
-use Dagger\ListTypeDef;
 use Dagger\TypeDefKind;
-use Dagger\ValueObject\ListOfType;
-use Dagger\ValueObject\Type;
-use DateTimeImmutable;
+use Dagger\ValueObject\TypeHint\ListOfType;
+use Dagger\ValueObject\TypeHint\Type;
 use Generator;
 use Iterator;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -22,7 +20,6 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
-use ReflectionClass;
 use ReflectionFunction;
 use ReflectionNamedType;
 use ReflectionType;
@@ -73,7 +70,7 @@ class ListOfTypeTest extends TestCase
     public function itIsListTypeDefKind(): void {
         self::assertEquals(
             TypeDefKind::LIST_KIND,
-            (new ListOfType(new Type('string')))->typeDefKind
+            (new ListOfType(new Type('string')))->getTypeDefKind(),
         );
     }
 
