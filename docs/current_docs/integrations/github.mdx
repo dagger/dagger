@@ -8,15 +8,9 @@ slug: /integrations/github
 
 When working with private repositories in GitHub Actions, see our [Git Credential Helpers Guide](/guides/ci/git-credential-helpers#github) for authentication patterns. For private modules, refer to the [Remote Repositories documentation](/manuals/user/remote-repositories).
 
-## Best Practices
-
-When working with private repositories:
-1. Start with a draft PR
-2. Wait for confirmation before making the PR "ready for review"
-3. Ignore CI and focus on local testing
-4. Always rebase on main and force-push to the branch after each change
-
 ## Examples
+
+Given a Dagger Function called `foo` that accepts a `Directory` as argument, you can pass it a GitHub pull request URL as argument like this:
 
 dagger call foo --directory=https://github.com/ORGANIZATION/REPOSITORY#pull/NUMBER/merge
 

@@ -8,18 +8,11 @@ slug: /integrations/gitlab
 
 When working with private repositories in GitLab CI, see our [Git Credential Helpers Guide](/guides/ci/git-credential-helpers#gitlab) for authentication patterns. For private modules, refer to the [Remote Repositories documentation](/manuals/user/remote-repositories).
 
-## Best Practices
-
-When working with private repositories:
-1. Start with a draft PR
-2. Wait for confirmation before making the PR "ready for review"
-3. Ignore CI and focus on local testing
-4. Always rebase on main and force-push to the branch after each change
-
 ## Examples
 
 ```yaml title=".gitlab-ci.yml" file=./snippets/gitlab-docker-hello.yml
 ```
+
 
 The following is a more complex example demonstrating how to create a GitLab pipeline that checks out source code, calls a Dagger Function to test the project, and then calls another Dagger Function to build and publish a container image of the project. This example uses a simple [Go application](https://github.com/kpenfound/greetings-api) and assumes that you have already forked it in your own GitLab repository.
 
