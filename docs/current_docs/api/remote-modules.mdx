@@ -8,12 +8,12 @@ Dagger supports the use of HTTP and SSH protocols for accessing remote repositor
 
 Dagger supports various reference schemes for Dagger modules, as below:
 
-| Protocol | Scheme            | Authentication | Example |
-|----------|-------------------|----------------|---------|
-| HTTP(S)  | Go-like ref style | Git credential manager | `github.com/username/repo[/subdir][@version]`  |
-| HTTP(S)  | Git HTTP style    | Git credential manager | `https://github.com/username/repo.git[/subdir][@version]` |
-| SSH      | SCP-like          | SSH keys | `git@github.com:username/repo.git[/subdir][@version]`     |
-| SSH      | Explicit SSH      | SSH keys | `ssh://git@github.com/username/repo.git[/subdir][@version]` |
+| Protocol | Scheme            | Authentication         | Example                                                    |
+|----------|-------------------|------------------------|------------------------------------------------------------|
+| HTTP(S)  | Go-like ref style | Git credential manager | `github.com/username/repo[/subdir][@version]`              |
+| HTTP(S)  | Git HTTP style    | Git credential manager | `https://github.com/username/repo.git[/subdir][@version]`  |
+| SSH      | SCP-like          | SSH keys               | `git@github.com:username/repo.git[/subdir][@version]`      |
+| SSH      | Explicit SSH      | SSH keys               | `ssh://git@github.com:username/repo.git[/subdir][@version]`|
 
 Dagger provides additional flexibility in referencing modules through the following options:
 
@@ -66,6 +66,96 @@ If this works, Dagger will be able to use the same credentials to access your pr
 - Azure DevOps: Use [Git Credential Manager](https://learn.microsoft.com/en-us/azure/devops/repos/git/set-up-credential-managers)
 - BitBucket: Configure credentials using the [Git credential system](https://git-scm.com/book/en/v2/Git-Tools-Credential-Storage) (the widely-adopted implementation is [Git Credential Manager](https://github.com/git-ecosystem/git-credential-manager))
 
+### Using credentials in CI environments
+
+When running Dagger inside CI systems, you often have tokens provided by the CI provider. Instead of writing a custom helper script, you can directly store credentials in an ephemeral credentials file and configure Git to use it. Below are examples for GitLab, GitHub, and BitBucket, each shown in separate tabs. These approaches are minimal and avoid persistent storage of credentials.
+
+:::tabs
+
+:::tab[GitLab]
+
+For GitLab's `CI_JOB_TOKEN`, use `gitlab-ci-token` as the username.
+
+```yaml
+image: alpine:latest
+
+stages:
+  - build
+
+build_job:
+  stage: build
+  variables:
+    GIT_USERNAME: "gitlab-ci-token"
+  before_script:
+    - apk add --no-cache git
+    # Store credentials in .git-credentials
+    - echo "https://${GIT_USERNAME}:${CI_JOB_TOKEN}@gitlab.com" > .git-credentials
+    - git config credential.helper "store --file=.git-credentials"
+  script:
+    - git clone https://gitlab.com/USER/PRIVATE_REPOSITORY.git
+    - dagger -m https://gitlab.com/USER/PRIVATE_REPOSITORY.git call some-function
+```
+:::
+
+:::tab[GitHub]
+
+For GitHub tokens, use `x-access-token` as the username.
+
+```yaml
+name: build
+
+on: [push]
+
+jobs:
+  build_job:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Git credentials
+        run: |
+          echo "https://x-access-token:${GITHUB_TOKEN}@github.com" > .git-credentials
+          git config credential.helper "store --file=.git-credentials"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Test clone
+        run: git clone https://github.com/USER/PRIVATE_REPOSITORY.git
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Dagger command
+        run: dagger -m https://github.com/USER/PRIVATE_REPOSITORY.git call some-function
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+:::
+
+:::tab[BitBucket]
+
+For BitBucket App Passwords, use your actual BitBucket username.
+
+```yaml
+image: alpine:latest
+
+stages:
+  - build
+
+build_job:
+  stage: build
+  variables:
+    BB_USERNAME: "your-bitbucket-username"
+    BB_APP_PASSWORD: "${BB_APP_PASSWORD}"
+  before_script:
+    - apk add --no-cache git
+    - echo "https://${BB_USERNAME}:${BB_APP_PASSWORD}@bitbucket.org" > .git-credentials
+    - git config credential.helper "store --file=.git-credentials"
+  script:
+    - git clone https://bitbucket.org/USER/PRIVATE_REPOSITORY.git
+    - dagger -m https://bitbucket.org/USER/PRIVATE_REPOSITORY.git call some-function
+```
+:::
+
+:::
+
 ### SSH authentication
 
 Dagger mounts the socket specified by your host's `SSH_AUTH_SOCK` environment variable to the Dagger Engine. This is essential for SSH refs, as most Git servers use your SSH key for authentication and tracking purposes, even when cloning public repositories.
@@ -82,6 +172,9 @@ For quick and easy referencing:
 - To target a specific directory within the repository, use the format `#version:subpath` (for directory arguments) or add a `/subpath` (for modules). Remember that the version is mandatory when specifying a subpath.
 - For private repositories:
   - HTTPS: Ensure your Git credentials are properly configured using your provider's recommended method.
+    - GitLab `CI_JOB_TOKEN` -> username: `gitlab-ci-token`
+    - GitHub tokens -> username: `x-access-token`
+    - BitBucket App Passwords -> username: your BitBucket username
   - SSH: Make sure your SSH keys are properly set up and added to the SSH agent.
 
 
@@ -99,3 +192,7 @@ SSH forwarding may fail when multiple keys are loaded in your SSH agent. This is
 
 1. Clear all loaded keys: `ssh-add -D`
 2. Add back only the required key: `ssh-add /path/to/key`
+
+### GitLab CI_JOB_TOKEN limitations
+
+Some tokens, like GitLab's `CI_JOB_TOKEN`, require specifying a particular username (`gitlab-ci-token`) to be recognized correctly. Using other usernames or token formats may result in authentication failures. Until this is improved in Dagger's integration, ensure that the correct username is always set when using CI-provided tokens.
