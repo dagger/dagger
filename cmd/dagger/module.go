@@ -19,10 +19,15 @@ import (
 	"github.com/moby/buildkit/util/gitutil"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"github.com/vektah/gqlparser/v2/ast"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/querybuilder"
 	"github.com/dagger/dagger/analytics"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/core/modules/call"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -365,19 +370,24 @@ var moduleUnInstallCmd = &cobra.Command{
 				return fmt.Errorf("module must be local")
 			}
 
-			modSrc := modConf.Source.
-				WithoutDependencies([]string{extraArgs[0]}).
-				ResolveFromCaller()
+            // Convert dependency name to ModuleDependency instance and remove it
+            if modConf.Source == nil {
+                return fmt.Errorf("invalid module source: nil")
+            }
+            // Use Query().Select() to construct the withoutDependencies query
+            q := querybuilder.Query().Select("withoutDependencies").Arg("names", []string{extraArgs[0]})
+            modConf.Source = modConf.Source.WithGraphQLQuery(q)
 
-			_, err = modSrc.
-				AsModule().
-				GeneratedContextDiff().
-				Export(ctx, modConf.LocalContextPath)
-			if err != nil {
-				return fmt.Errorf("failed to generate code: %w", err)
-			}
+            // Export the updated module configuration
+            _, err = modConf.Source.
+                AsModule().
+                GeneratedContextDiff().
+                Export(ctx, modConf.LocalContextPath)
+            if err != nil {
+                return fmt.Errorf("failed to generate code: %w", err)
+            }
 
-			return nil
+            return nil
 		})
 	},
 }
@@ -1117,8 +1127,9 @@ func (m *moduleDef) IsModuleConstructor(fn *modFunction) bool {
 }
 
 // LoadTypeDef attempts to replace a function's return object type or argument's
-// object type with with one from the module's object type definitions, to
+// object type with one from the module's object type definitions, to
 // recover missing function definitions in those places when chaining functions.
+// It processes both core.Object and dagql.Interface types.
 func (m *moduleDef) LoadTypeDef(typeDef *modTypeDef) {
 	if typeDef.AsObject != nil && typeDef.AsObject.Functions == nil && typeDef.AsObject.Fields == nil {
 		obj := m.GetObject(typeDef.AsObject.Name)
@@ -1421,7 +1432,12 @@ type modObject struct {
 	Fields           []*modField
 	Constructor      *modFunction
 	SourceModuleName string
+	id               *call.ID
+	objType          dagql.ObjectType
 }
+
+// Verify that modObject implements dagql.Object
+var _ dagql.Object = (*modObject)(nil)
 
 var _ functionProvider = (*modObject)(nil)
 
@@ -1456,6 +1472,48 @@ func (o *modObject) HasFunction(f *modFunction) bool {
 	return false
 }
 
+// Type returns the GraphQL type of the value
+func (o *modObject) Type() string {
+	return o.Name
+}
+
+// ID returns the ID of the value
+func (o *modObject) ID() *call.ID {
+	return o.id
+}
+
+// ObjectType returns the type of the object
+func (o *modObject) ObjectType() dagql.ObjectType {
+	return o.objType
+}
+
+// IDFor returns the ID representing the return value of the given field
+func (o *modObject) IDFor(ctx context.Context, sel dagql.Selector) (*call.ID, error) {
+	functions := o.GetFunctions()
+	for _, fn := range functions {
+		if fn.Name == sel.Field.Name {
+			return fn.ID(), nil
+		}
+	}
+	return nil, fmt.Errorf("field %q not found", sel.Field.Name)
+}
+
+// Select evaluates the selected field and returns the result
+func (o *modObject) Select(ctx context.Context, sel dagql.Selector) (dagql.Typed, error) {
+	functions := o.GetFunctions()
+	for _, fn := range functions {
+		if fn.Name == sel.Field.Name {
+			// Convert selector arguments to input map
+			inputs := make(map[string]dagql.Input)
+			for _, arg := range sel.Field.Arguments {
+				inputs[arg.Name] = arg.Value
+			}
+			return fn.Call(ctx, inputs)
+		}
+	}
+	return nil, fmt.Errorf("field %q not found", sel.Field.Name)
+}
+
 type modInterface struct {
 	Name             string
 	Description      string
@@ -1463,6 +1521,7 @@ type modInterface struct {
 	SourceModuleName string
 }
 
+var _ dagql.Interface = (*modInterface)(nil)
 var _ functionProvider = (*modInterface)(nil)
 
 func (o *modInterface) ProviderName() string {
@@ -1475,6 +1534,14 @@ func (o *modInterface) IsCore() bool {
 
 func (o *modInterface) GetFunctions() []*modFunction {
 	return o.Functions
+}
+
+func (o *modInterface) Interface() dagql.Interface {
+	return o
+}
+
+func (o *modInterface) Type() string {
+	return o.Name
 }
 
 type modScalar struct {
@@ -1524,6 +1591,8 @@ func (f *modField) AsFunction() *modFunction {
 		Name:        f.Name,
 		Description: f.Description,
 		ReturnType:  f.TypeDef,
+		id:          &call.ID{}, // Initialize ID field
+		Call:        func(ctx context.Context, inputs map[string]dagql.Input) (dagql.Typed, error) { return nil, nil }, // Placeholder implementation
 	}
 }
 
@@ -1534,6 +1603,13 @@ type modFunction struct {
 	ReturnType  *modTypeDef
 	Args        []*modFunctionArg
 	cmdName     string
+	id          *call.ID
+	Call        func(ctx context.Context, inputs map[string]dagql.Input) (dagql.Typed, error)
+}
+
+// ID returns the function's ID
+func (f *modFunction) ID() *call.ID {
+	return f.id
 }
 
 func (f *modFunction) CmdName() string {

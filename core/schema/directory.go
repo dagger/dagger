@@ -20,7 +20,6 @@ func (s *directorySchema) Install() {
 		dagql.Func("directory", s.directory).
 			Doc(`Creates an empty directory.`),
 	}.Install(s.srv)
-
 	dagql.Fields[*core.Directory]{
 		Syncer[*core.Directory]().
 			Doc(`Force evaluation in the engine.`),
@@ -132,7 +131,6 @@ type directoryPipelineArgs struct {
 	Description string                             `default:""`
 	Labels      []dagql.InputObject[PipelineLabel] `default:"[]"`
 }
-
 func (s *directorySchema) pipeline(ctx context.Context, parent *core.Directory, args directoryPipelineArgs) (*core.Directory, error) {
 	return parent.WithPipeline(ctx, args.Name, args.Description)
 }

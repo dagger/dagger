@@ -65,13 +65,13 @@ type ModuleSource struct {
 	AsGitSource dagql.Nullable[*GitModuleSource] `field:"true" doc:"If the source is a of kind git, the git source representation of it."`
 
 	// Settings that can be used to initialize or override the source's configuration
-	WithName            string
-	WithDependencies    []dagql.Instance[*ModuleDependency]
-	WithoutDependencies []string
-	WithSDK             string
-	WithInitConfig      *ModuleInitConfig
-	WithSourceSubpath   string
-	WithViews           []*ModuleSourceView
+	WithName            string                              `field:"true" doc:"Override the name of the module"`
+	WithDependencies    []dagql.Instance[*ModuleDependency] `field:"true" doc:"Add or override dependencies for the module"`
+	WithoutDependencies []dagql.Instance[*ModuleDependency] `field:"true" doc:"Remove dependencies from the module"`
+	WithSDK             string                              `field:"true" doc:"Override the SDK used by the module"`
+	WithInitConfig      *ModuleInitConfig                   `field:"true" doc:"Configuration for initializing the module"`
+	WithSourceSubpath   string                              `field:"true" doc:"Override the source subpath of the module"`
+	WithViews           []*ModuleSourceView                 `field:"true" doc:"Views to apply to the module source"`
 }
 
 func (src *ModuleSource) Type() *ast.Type {
@@ -294,6 +294,32 @@ func (src *ModuleSource) SDK(ctx context.Context) (string, error) {
 		return "", nil
 	}
 	return modCfg.SDK, nil
+}
+
+// WithRemovedDependencies returns a new ModuleSource with the specified dependencies removed.
+func (src *ModuleSource) WithRemovedDependencies(deps []dagql.Instance[*ModuleDependency]) *ModuleSource {
+	cp := src.Clone()
+	cp.WithoutDependencies = deps
+
+	// Filter out the specified dependencies from the existing dependencies
+	if len(cp.WithDependencies) > 0 && len(deps) > 0 {
+		remaining := make([]dagql.Instance[*ModuleDependency], 0, len(cp.WithDependencies))
+		for _, dep := range cp.WithDependencies {
+			shouldKeep := true
+			for _, removeDep := range deps {
+				if dep.ID() == removeDep.ID() {
+					shouldKeep = false
+					break
+				}
+			}
+			if shouldKeep {
+				remaining = append(remaining, dep)
+			}
+		}
+		cp.WithDependencies = remaining
+	}
+
+	return cp
 }
 
 func (src *ModuleSource) AutomaticGitignore(ctx context.Context) (*bool, error) {
