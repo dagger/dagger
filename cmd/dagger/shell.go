@@ -1980,8 +1980,10 @@ to the currently loaded module.
 		},
 		cobraToShellCommand(loginCmd),
 		cobraToShellCommand(logoutCmd),
-		// TODO: Add uninstall command when available.
 		cobraToShellCommand(moduleInstallCmd),
+		cobraToShellCommand(moduleUnInstallCmd),
+		// TODO: Add update command when available:
+		// - https://github.com/dagger/dagger/pull/8839
 	)
 
 	def := h.modDef(nil)
