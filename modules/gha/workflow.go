@@ -384,10 +384,16 @@ func (w *Workflow) asWorkflow() api.Workflow {
 	jobs := map[string]api.Job{}
 	for _, job := range w.Jobs {
 		steps := []api.JobStep{}
-		// TODO: make checkout configurable
-		steps = append(steps, job.checkoutStep())
+		steps = append(steps, job.checkoutStep()) // TODO: make checkout configurable
 		steps = append(steps, job.installDaggerSteps()...)
-		steps = append(steps, job.warmEngineStep(), job.callDaggerStep())
+		steps = append(steps, job.warmEngineStep())
+
+		callStep := job.callDaggerStep()
+		steps = append(steps, callStep)
+		if job.UploadLogs {
+			steps = append(steps, job.uploadJobOutputStep(callStep, "stderr_file"))
+			steps = append(steps, job.uploadEngineLogsStep()...)
+		}
 		if job.StopEngine {
 			steps = append(steps, job.stopEngineStep())
 		}

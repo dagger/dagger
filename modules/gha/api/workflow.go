@@ -73,6 +73,7 @@ type JobStep struct {
 	Env            map[string]string `json:"env,omitempty" yaml:"env,omitempty"`
 	TimeoutMinutes int               `json:"timeout-minutes,omitempty" yaml:"timeout-minutes,omitempty"`
 	Shell          string            `json:"shell,omitempty" yaml:"shell,omitempty"`
+	If             string            `json:"if,omitempty" yaml:"if,omitempty"`
 	// Other step-specific fields can be added here...
 }
 
