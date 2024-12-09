@@ -862,7 +862,7 @@ func optionalModCmdWrapper(
 	}
 }
 
-// initializeCore loads the core type definitions.
+// initializeCore loads the core type definitions only
 func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, rerr error) {
 	def := &moduleDef{}
 
@@ -873,7 +873,10 @@ func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, r
 	return def, nil
 }
 
-// initializeDefaultModule loads the module's type definitions.
+// initializeDefaultModule loads the module referenced by the -m,--mod flag
+//
+// By default, looks for a module in the current directory, or above.
+// Returns an error if the module is not found or invalid.
 func initializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDef, error) {
 	modRef, _ := getExplicitModuleSourceRef()
 	if modRef == "" {
@@ -882,6 +885,8 @@ func initializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDe
 	return initializeModule(ctx, dag, modRef, true)
 }
 
+// maybeInitializeDefaultModule optionally loads the module referenced by the -m,--mod flag,
+// falling back to the core definitions
 func maybeInitializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDef, string, error) {
 	modRef, _ := getExplicitModuleSourceRef()
 	if modRef == "" {
@@ -890,6 +895,9 @@ func maybeInitializeDefaultModule(ctx context.Context, dag *dagger.Client) (*mod
 	return maybeInitializeModule(ctx, dag, modRef)
 }
 
+// initializeModule loads the module at the given source ref
+//
+// Returns an error if the module is not found or invalid.
 func initializeModule(
 	ctx context.Context,
 	dag *dagger.Client,
@@ -914,7 +922,8 @@ func initializeModule(
 	return initializeModuleConfig(ctx, dag, conf)
 }
 
-// maybeInitializeModule optionally loads the module's type definitions.
+// maybeInitializeModule optionally loads the module at the given source ref,
+// falling back to the core definitions if the module isn't found
 func maybeInitializeModule(ctx context.Context, dag *dagger.Client, srcRef string) (*moduleDef, string, error) {
 	if def, err := tryInitializeModule(ctx, dag, srcRef); def != nil || err != nil {
 		return def, srcRef, err
@@ -924,6 +933,10 @@ func maybeInitializeModule(ctx context.Context, dag *dagger.Client, srcRef strin
 	return def, "", err
 }
 
+// tryInitializeModule tries to load a module if it exists
+//
+// Returns an error if the module is invalid or couldn't be loaded, but not
+// if the module wasn't found.
 func tryInitializeModule(ctx context.Context, dag *dagger.Client, srcRef string) (rdef *moduleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "looking for module")
 	defer telemetry.End(span, func() error { return rerr })
@@ -941,6 +954,7 @@ func tryInitializeModule(ctx context.Context, dag *dagger.Client, srcRef string)
 	return initializeModuleConfig(ctx, dag, conf)
 }
 
+// initializeModuleConfig loads a module using a detected module configuration
 func initializeModuleConfig(ctx context.Context, dag *dagger.Client, conf *configuredModule) (rdef *moduleDef, rerr error) {
 	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())
 	err := conf.Source.AsModule().Initialize().Serve(serveCtx)
@@ -971,6 +985,7 @@ type moduleDef struct {
 	// applying module-specific configs to the arg value.
 	Source *dagger.ModuleSource
 
+	// ModRef is the human readable module source reference as returned by the API
 	ModRef string
 
 	Dependencies []*moduleDependency
@@ -981,7 +996,10 @@ type moduleDependency struct {
 	Description string
 	Source      *dagger.ModuleSource
 
+	// ModRef is the human readable module source reference as returned by the API
 	ModRef string
+
+	// RefPin is the module source pin for this dependency, if any
 	RefPin string
 }
 
@@ -1218,7 +1236,8 @@ func (m *moduleDef) GetObjectFunction(objectName, functionName string) (*modFunc
 }
 
 func (m *moduleDef) GetFunction(fp functionProvider, functionName string) (*modFunction, error) {
-	// This avoids an issue with module constructors overriding core functions
+	// This avoids an issue with module constructors overriding core functions.
+	// See https://github.com/dagger/dagger/issues/9122
 	if m.HasModule() && fp.ProviderName() == "Query" && m.MainObject.AsObject.Constructor.CmdName() == functionName {
 		return m.MainObject.AsObject.Constructor, nil
 	}

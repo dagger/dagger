@@ -109,10 +109,12 @@ type shellCallHandler struct {
 	stdout io.Writer
 	stderr io.Writer
 
-	// modRef is the module reference for the default module to use
+	// modRef is a key from modDefs, to set the corresponding module as the default
+	// when no state is present, or when the state's ModRef is empty
 	modRef string
 
-	// modDefs has the module type definitions from introspection, keyed by module ref
+	// modDefs has the cached module definitions, after loading, and keyed by
+	// module reference as inputed by the user
 	modDefs map[string]*moduleDef
 
 	// switch to Frontend.Background for rendering output while the TUI is
@@ -995,6 +997,8 @@ type ShellState struct {
 	// ModRef is the module reference for the current state
 	//
 	// If empty, it must fall back to the default context.
+	// It matches a key in the modDefs map in the handler, which comes from
+	// user input, not from the API.
 	ModRef string `json:"modRef"`
 
 	// Cmd is non-empty if next command comes from a builtin instead of an API object
