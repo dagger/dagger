@@ -20,8 +20,8 @@
     },
     {
       "name": "docusaurus",
-      "source": "github.com/levlaz/daggerverse/docusaurus@e494cec1aa8f9faab1e0f12b2e5eea4a2321f2de",
-      "pin": "e494cec1aa8f9faab1e0f12b2e5eea4a2321f2de"
+      "source": "github.com/levlaz/daggerverse/docusaurus@main",
+      "pin": "47f5206067011dad0f581d4e7db7afddda32acd0"
     },
     {
       "name": "elixir-sdk-dev",
