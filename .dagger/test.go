@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/moby/buildkit/identity"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
@@ -191,7 +194,7 @@ func (t *Test) test(
 	if err != nil {
 		return err
 	}
-	_, err = t.goTest(
+	ctr, err := t.goTest(
 		cmd,
 		runTestRegex,
 		skipTestRegex,
@@ -204,6 +207,90 @@ func (t *Test) test(
 		false, // -update
 		testVerbose,
 	).Sync(ctx)
+	if err != nil {
+		return err
+	}
+
+	// TODO(rajatjindal): make it optional
+	return t.publishTestResults(ctx, ctr)
+}
+
+func (t *Test) publishTestResults(ctx context.Context, ctr *dagger.Container) error {
+	raw, err := t.Dagger.GithubEventFile.Contents(ctx)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("event payload is ", raw)
+	payload := struct {
+		Repository string `json:"repository"`
+		Event      struct {
+			CommitSha string `json:"after"`
+		} `json:"event"`
+		Job       string `json:"job"`
+		Workflow  string `json:"workflow"`
+		RunID     string `json:"run_id"`
+		RunNumber string `json:"run_number"`
+		Branch    string `json:"head_ref"`
+	}{}
+
+	err = json.Unmarshal([]byte(raw), &payload)
+	if err != nil {
+		return err
+	}
+
+	metadata := struct {
+		RunID     string            `json:"runId" db:"run_id"`
+		Repo      string            `json:"repo" db:"repo"`
+		Branch    string            `json:"branch" db:"branch"`
+		CommitSha string            `json:"commitSha" db:"commit_sha"`
+		JobName   string            `json:"jobName" db:"job_name"`
+		Format    string            `json:"format" db:"format"`
+		Link      string            `json:"link" db:"link"`
+		Tags      map[string]string `json:"tags" db:"tags"`
+		CreatedAt string            `json:"createdAt" db:"created_at"`
+	}{
+		RunID:     uuid.NewString(), // a unique identifier per run
+		Repo:      payload.Repository,
+		Branch:    payload.Branch,
+		CommitSha: payload.Event.CommitSha,
+		JobName:   payload.Workflow,
+		Format:    "gojson",
+		Link:      "https://github.com/dagger/dagger/actions/runs/" + payload.RunID,
+		Tags: map[string]string{
+			"workflow": payload.Workflow,
+			"job":      payload.Job,
+		},
+		CreatedAt: time.Now().Format(time.RFC3339),
+	}
+
+	for _, tag := range t.Dagger.Tags {
+		var parts = strings.Split(tag, "=")
+
+		if len(parts) > 1 {
+			metadata.Tags[parts[0]] = parts[1]
+		} else {
+			metadata.Tags[parts[0]] = ""
+		}
+	}
+
+	metadatajson, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+
+	_, err = ctr.WithNewFile("/publish.sh", fmt.Sprintf(`
+#!/bin/sh
+
+## commit buster 1
+curl -vXPOST https://tests-dashboard.rajatjindal.com/api/run/%s \
+ 	-H "Content-Type: multipart/mixed" \
+ 	-F "results=@testresults.json" \
+ 	-F 'metadata=%s;type=application/json'
+`, metadata.RunID, string(metadatajson)), dagger.ContainerWithNewFileOpts{Permissions: 0755}).
+		WithExec([]string{"sh", "-c", "/publish.sh"}).
+		Sync(ctx)
+
 	return err
 }
 
@@ -222,8 +309,10 @@ func (t *Test) goTest(
 ) *dagger.Container {
 	cgoEnabledEnv := "0"
 	args := []string{
-		"go",
-		"test",
+		"gotestsum",
+		"--format=testname",
+		"--jsonfile=testresults.json",
+		"--",
 	}
 
 	// allow verbose
@@ -279,7 +368,7 @@ func (t *Test) goTest(
 
 	return cmd.
 		WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
-		WithExec(args)
+		WithExec(args, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny})
 }
 
 func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
@@ -351,6 +440,7 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		With(t.Dagger.withDockerCfg) // this avoids rate limiting in our ci tests
+
 	return tests, nil
 }
 
