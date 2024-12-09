@@ -554,7 +554,7 @@ func (src *ModuleSource) ContextDirectory() (inst dagql.Instance[*Directory], er
 	}
 }
 
-func (src *ModuleSource) ModuleConfig(ctx context.Context) (*modules.ModuleConfig, bool, error) {
+func (src *ModuleSource) ModuleConfigWithUserFields(ctx context.Context) (*modules.ModuleConfigWithUserFields, bool, error) {
 	contextDir, err := src.ContextDirectory()
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to get context directory: %w", err)
@@ -568,7 +568,7 @@ func (src *ModuleSource) ModuleConfig(ctx context.Context) (*modules.ModuleConfi
 		return nil, false, fmt.Errorf("failed to get source root subpath: %w", err)
 	}
 
-	var modCfg modules.ModuleConfig
+	var modCfgWithUserFields modules.ModuleConfigWithUserFields
 	configFile, err := contextDir.Self.File(ctx, filepath.Join(rootSubpath, modules.Filename))
 	if err != nil {
 		// no configuration for this module yet, so no name
@@ -579,11 +579,20 @@ func (src *ModuleSource) ModuleConfig(ctx context.Context) (*modules.ModuleConfi
 		return nil, false, fmt.Errorf("failed to read module config file: %w", err)
 	}
 
-	if err := json.Unmarshal(configBytes, &modCfg); err != nil {
+	if err := json.Unmarshal(configBytes, &modCfgWithUserFields); err != nil {
 		return nil, false, fmt.Errorf("failed to decode module config: %w", err)
 	}
 
-	return &modCfg, true, nil
+	return &modCfgWithUserFields, true, nil
+}
+
+func (src *ModuleSource) ModuleConfig(ctx context.Context) (*modules.ModuleConfig, bool, error) {
+	moduleConfigWithUserFields, exists, err := src.ModuleConfigWithUserFields(ctx)
+
+	if moduleConfigWithUserFields != nil {
+		return &moduleConfigWithUserFields.ModuleConfig, exists, err
+	}
+	return nil, exists, err
 }
 
 func (src *ModuleSource) Views(ctx context.Context) ([]*ModuleSourceView, error) {
