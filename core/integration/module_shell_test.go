@@ -148,7 +148,7 @@ func (Other) Version() string {
 		require.Contains(t, out, "MODULE")
 		require.Contains(t, out, "Main module")
 		require.Contains(t, out, "ENTRYPOINT")
-		require.Contains(t, out, "Usage: ./. [options]")
+		require.Contains(t, out, "Usage: . [options]")
 		require.Contains(t, out, "AVAILABLE FUNCTIONS")
 		require.Contains(t, out, "Encouragement")
 	})

@@ -377,6 +377,10 @@ func (s *moduleSchema) moduleSourceAsString(ctx context.Context, src *core.Modul
 	return src.RefString()
 }
 
+func (s *moduleSchema) moduleSourcePin(ctx context.Context, src *core.ModuleSource, args struct{}) (string, error) {
+	return src.Pin()
+}
+
 func (s *moduleSchema) gitModuleSourceHTMLURL(
 	ctx context.Context,
 	ref *core.GitModuleSource,
@@ -897,7 +901,9 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 	// ensure sourceRootRelPath has a local path structure
 	// even when subdir relative to git source has ref structure
 	// (cf. test TestRefFormat)
-	sourceRootRelPath = "./" + sourceRootRelPath
+	if sourceRootRelPath != "." {
+		sourceRootRelPath = "./" + sourceRootRelPath
+	}
 
 	collectedDeps := dagql.NewCacheMap[string, *callerLocalDep]()
 	if err := s.collectCallerLocalDeps(ctx, src.Query, contextAbsPath, sourceRootAbsPath, true, src, collectedDeps); err != nil {

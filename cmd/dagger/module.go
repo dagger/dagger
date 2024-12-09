@@ -688,10 +688,11 @@ func getModuleConfigurationForSourceRef(
 	srcRefStr string,
 	doFindUp bool,
 	resolveFromCaller bool,
+	srcOpts ...dagger.ModuleSourceOpts,
 ) (*configuredModule, error) {
 	conf := &configuredModule{}
 
-	conf.Source = dag.ModuleSource(srcRefStr)
+	conf.Source = dag.ModuleSource(srcRefStr, srcOpts...)
 	var err error
 	conf.SourceKind, err = conf.Source.Kind(ctx)
 	if err != nil {
@@ -725,7 +726,8 @@ func getModuleConfigurationForSourceRef(
 
 			namedDep, ok := modCfg.DependencyByName(srcRefStr)
 			if ok {
-				depSrc := dag.ModuleSource(namedDep.Source)
+				opts := dagger.ModuleSourceOpts{RefPin: namedDep.Pin}
+				depSrc := dag.ModuleSource(namedDep.Source, opts)
 				depKind, err := depSrc.Kind(ctx)
 				if err != nil {
 					return nil, err
@@ -734,7 +736,7 @@ func getModuleConfigurationForSourceRef(
 				if depKind == dagger.ModuleSourceKindLocalSource {
 					depSrcRef = filepath.Join(defaultFindupConfigDir, namedDep.Source)
 				}
-				return getModuleConfigurationForSourceRef(ctx, dag, depSrcRef, false, resolveFromCaller)
+				return getModuleConfigurationForSourceRef(ctx, dag, depSrcRef, false, resolveFromCaller, opts)
 			}
 		}
 
@@ -765,6 +767,7 @@ func getModuleConfigurationForSourceRef(
 	if err := os.MkdirAll(srcRefStr, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create directory for %s: %w", srcRefStr, err)
 	}
+
 	conf.Source = dag.ModuleSource(srcRefStr)
 
 	conf.LocalContextPath, err = conf.Source.ResolveContextPathFromCaller(ctx)
@@ -876,7 +879,7 @@ func initializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDe
 	if modRef == "" {
 		modRef = moduleURLDefault
 	}
-	return initializeModule(ctx, dag, modRef)
+	return initializeModule(ctx, dag, modRef, true)
 }
 
 func maybeInitializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDef, string, error) {
@@ -887,12 +890,18 @@ func maybeInitializeDefaultModule(ctx context.Context, dag *dagger.Client) (*mod
 	return maybeInitializeModule(ctx, dag, modRef)
 }
 
-func initializeModule(ctx context.Context, dag *dagger.Client, srcRef string) (rdef *moduleDef, rerr error) {
+func initializeModule(
+	ctx context.Context,
+	dag *dagger.Client,
+	srcRef string,
+	doFindUp bool,
+	srcOpts ...dagger.ModuleSourceOpts,
+) (rdef *moduleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "load module")
 	defer telemetry.End(span, func() error { return rerr })
 
 	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
-	conf, err := getModuleConfigurationForSourceRef(findCtx, dag, srcRef, true, true)
+	conf, err := getModuleConfigurationForSourceRef(findCtx, dag, srcRef, doFindUp, true, srcOpts...)
 	defer telemetry.End(findSpan, func() error { return err })
 
 	if err != nil {
@@ -971,7 +980,9 @@ type moduleDependency struct {
 	Name        string
 	Description string
 	Source      *dagger.ModuleSource
-	ModRef      string
+
+	ModRef string
+	RefPin string
 }
 
 func (m *moduleDependency) Short() string {
@@ -1011,6 +1022,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 					Description string
 					Source      struct {
 						AsString string
+						Pin      string
 					}
 				}
 			}
@@ -1040,6 +1052,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 			Name:        dep.Name,
 			Description: dep.Description,
 			ModRef:      dep.Source.AsString,
+			RefPin:      dep.Source.Pin,
 		})
 	}
 

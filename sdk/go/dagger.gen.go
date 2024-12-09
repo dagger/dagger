@@ -5916,6 +5916,7 @@ type ModuleSource struct {
 	kind                         *ModuleSourceKind
 	moduleName                   *string
 	moduleOriginalName           *string
+	pin                          *string
 	resolveContextPathFromCaller *string
 	sourceRootSubpath            *string
 	sourceSubpath                *string
@@ -6137,6 +6138,19 @@ func (r *ModuleSource) ModuleOriginalName(ctx context.Context) (string, error) {
 		return *r.moduleOriginalName, nil
 	}
 	q := r.query.Select("moduleOriginalName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The pinned version of this module source.
+func (r *ModuleSource) Pin(ctx context.Context) (string, error) {
+	if r.pin != nil {
+		return *r.pin, nil
+	}
+	q := r.query.Select("pin")
 
 	var response string
 
