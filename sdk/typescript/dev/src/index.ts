@@ -14,7 +14,7 @@ class TypescriptSdkDev {
     // Extract packageon and yarn.lock to a temporary directory
     const dependencyFiles = dag
       .directory()
-      .withFile("packageon", source.file("packageon"))
+      .withFile("package.json", source.file("package.json"))
       .withFile("yarn.lock", source.file("yarn.lock"))
 
     // Get source without generated files nor useless files.
@@ -24,7 +24,7 @@ class TypescriptSdkDev {
         "tsconfig.json",
         "package.json",
         "yarn.lock",
-        ".mocharcon",
+        ".mocharc.json",
         "eslint.config",
         ".prettierrc.cjs",
       ],

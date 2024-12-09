@@ -153,7 +153,7 @@ export class Bin implements EngineConn {
     let currentPath = path.dirname(currentFilePath)
 
     while (currentPath !== path.parse(currentPath).root) {
-      const packageJsonPath = path.join(currentPath, "packageon")
+      const packageJsonPath = path.join(currentPath, "package.json")
       if (fs.existsSync(packageJsonPath)) {
         try {
           const packageJsonContent = fs.readFileSync(packageJsonPath, "utf8")
