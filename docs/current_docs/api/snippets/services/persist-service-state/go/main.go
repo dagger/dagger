@@ -15,7 +15,7 @@ func (m *MyModule) Redis(ctx context.Context) *dagger.Container {
 		WithExposedPort(6379).
 		WithMountedCache("/data", dag.CacheVolume("my-redis")).
 		WithWorkdir("/data").
-		AsService()
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
 
 	redisCLI := dag.Container().
 		From("redis").

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+
+	"dagger/my-module/internal/dagger"
 )
 
 type MyModule struct{}
@@ -11,7 +13,7 @@ func (m *MyModule) RedisService(ctx context.Context) (string, error) {
 	redisSrv := dag.Container().
 		From("redis").
 		WithExposedPort(6379).
-		AsService()
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
 
 	// start Redis ahead of time so it stays up for the duration of the test
 	redisSrv, err := redisSrv.Start(ctx)
