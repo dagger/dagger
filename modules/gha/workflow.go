@@ -386,8 +386,17 @@ func (w *Workflow) asWorkflow() api.Workflow {
 		steps := []api.JobStep{}
 		// TODO: make checkout configurable
 		steps = append(steps, job.checkoutStep())
-		steps = append(steps, job.installDaggerSteps()...)
-		steps = append(steps, job.warmEngineStep(), job.callDaggerStep())
+		// XXX: bleh this is messy
+		setupSteps, teardownSteps := job.installDaggerSteps()
+		steps = append(steps, setupSteps...)
+		steps = append(steps, job.warmEngineStep())
+
+		callStep := job.callDaggerStep()
+		steps = append(steps, callStep)
+		if job.UploadLogs {
+			steps = append(steps, job.uploadJobOutputStep(callStep, "stderr_file"))
+		}
+		steps = append(steps, teardownSteps...)
 		if job.StopEngine {
 			steps = append(steps, job.stopEngineStep())
 		}

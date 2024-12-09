@@ -36,14 +36,17 @@ func (j *Job) warmEngineStep() api.JobStep {
 	return j.bashStep("warm-engine", nil)
 }
 
-func (j *Job) installDaggerSteps() []api.JobStep {
+func (j *Job) installDaggerSteps() ([]api.JobStep, []api.JobStep) {
 	if v := j.DaggerVersion; (v == "latest") || (semver.IsValid(v)) {
 		return []api.JobStep{
 			j.bashStep("install-dagger", map[string]string{"DAGGER_VERSION": v}),
-		}
+		}, nil
 	}
+
 	// Interpret dagger version as a local source, and build it (dev engine)
-	return []api.JobStep{
+	engineCLI := "./bin/dev-${{ github.run_id }}-${{ github.job }}"
+	engineCtr := "dagger-engine.dev-${{ github.run_id }}-${{ github.job }}"
+	startup := []api.JobStep{
 		// Install latest dagger to bootstrap dev dagger
 		// FIXME: let's daggerize this, using dagger in dagger :)
 		j.bashStep("install-dagger", map[string]string{"DAGGER_VERSION": "latest"}),
@@ -59,10 +62,32 @@ func (j *Job) installDaggerSteps() []api.JobStep {
 			"DAGGER_SOURCE": j.DaggerVersion,
 			// create separate outputs and containers for each job run (to prevent
 			// collisions with shared docker containers).
-			"_EXPERIMENTAL_DAGGER_DEV_OUTPUT":    "./bin/dev-${{ github.run_id }}-${{ github.job }}",
-			"_EXPERIMENTAL_DAGGER_DEV_CONTAINER": "dagger-engine.dev-${{ github.run_id }}-${{ github.job }}",
+			"_EXPERIMENTAL_DAGGER_DEV_OUTPUT":    engineCLI,
+			"_EXPERIMENTAL_DAGGER_DEV_CONTAINER": engineCtr,
 		}),
 	}
+	if j.UploadLogs {
+		return startup, nil
+	}
+	teardown := []api.JobStep{
+		{
+			Name:  "Capture dev engine logs",
+			If:    "always()",
+			Shell: "bash",
+			Run:   `docker logs "` + engineCtr + `" &> /tmp/actions-call-engine.log`,
+		},
+		{
+			Name: "Upload dev engine logs",
+			If:   "always()",
+			Uses: "actions/upload-artifact@v4",
+			With: map[string]string{
+				"name":      "call-logs-${{ runner.name }}-${{ github.job }}",
+				"path":      "/tmp/actions-call-engine.log",
+				"overwrite": "true",
+			},
+		},
+	}
+	return startup, teardown
 }
 
 // Analyze the pipeline command, and return a list of env variables it references
@@ -122,6 +147,11 @@ func (j *Job) callDaggerStep() api.JobStep {
 			env[key] = fmt.Sprintf("${{ runner.%s }}", strings.ToLower(key))
 		}
 	}
+
+	if j.UploadLogs {
+		env["NO_OUTPUT"] = "true"
+	}
+
 	return j.bashStep("exec", env)
 }
 
@@ -149,5 +179,21 @@ func (j *Job) bashStep(id string, env map[string]string) api.JobStep {
 		Shell: "bash",
 		Run:   script,
 		Env:   env,
+	}
+}
+
+func (j *Job) uploadJobOutputStep(target api.JobStep, output string) api.JobStep {
+	if target.ID == "" {
+		panic("target for uploading logs must have id")
+	}
+	return api.JobStep{
+		Name: "Upload call logs",
+		If:   "always()",
+		Uses: "actions/upload-artifact@v4",
+		With: map[string]string{
+			"name":      "call-logs-${{ runner.name }}-${{ github.job }}" + target.ID,
+			"path":      "${{ steps." + target.ID + ".outputs." + output + " }}",
+			"overwrite": "true",
+		},
 	}
 }

@@ -36,6 +36,8 @@ type Job struct {
 	// This is for a special "public" token which can safely be shared publicly.
 	// To get one, contact support@dagger.io
 	PublicToken string
+	// Redirect logs to an artifact
+	UploadLogs bool
 	// Explicitly stop the dagger engine after completing the workflow.
 	StopEngine bool
 }
@@ -80,6 +82,9 @@ func (gha *Gha) Job(
 	// Dagger version to run this workflow
 	// +optional
 	daggerVersion string,
+	// Redirect logs to an artifact
+	// +optional
+	uploadLogs bool,
 ) *Job {
 	j := &Job{
 		Name:           name,
@@ -94,6 +99,7 @@ func (gha *Gha) Job(
 		Runner:         runner,
 		Module:         module,
 		DaggerVersion:  daggerVersion,
+		UploadLogs:     uploadLogs,
 	}
 	j.applyDefaults(gha.JobDefaults)
 	return j
@@ -142,5 +148,6 @@ func (j *Job) applyDefaults(other *Job) *Job {
 	mergeDefault(&j.Runner, other.Runner)
 	setDefault(&j.Module, other.Module)
 	setDefault(&j.DaggerVersion, other.DaggerVersion)
+	setDefault(&j.UploadLogs, other.UploadLogs)
 	return j
 }
