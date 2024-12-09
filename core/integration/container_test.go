@@ -480,6 +480,35 @@ func (ContainerSuite) TestExecStdin(ctx context.Context, t *testctx.T) {
 	require.Equal(t, res.Container.From.WithExec.Stdout, "hello")
 }
 
+func (ContainerSuite) TestExecStdinFile(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	content := "hello from file"
+	container := c.Container().
+		From("alpine:latest").
+		WithNewFile("/input.txt", content)
+
+	// Test stdinFile functionality
+	execContainer, err := container.WithExec(ctx, core.ContainerExecOpts{
+		Args:      []string{"cat"},
+		StdinFile: "/input.txt",
+	})
+	require.NoError(t, err)
+
+	out, err := execContainer.Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, content, out)
+
+	// Test mutual exclusivity
+	_, err = container.WithExec(ctx, core.ContainerExecOpts{
+		Args:      []string{"cat"},
+		Stdin:     "hello",
+		StdinFile: "/input.txt",
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cannot set both stdin and stdinFile")
+}
+
 func (ContainerSuite) TestExecRedirectStdoutStderr(ctx context.Context, t *testctx.T) {
 	res := struct {
 		Container struct {

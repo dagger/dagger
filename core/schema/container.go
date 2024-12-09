@@ -384,6 +384,9 @@ func (s *containerSchema) Install() {
 			ArgDoc("stdin",
 				`Content to write to the command's standard input before closing (e.g.,
 				"Hello world").`).
+			ArgDoc("stdinFile",
+				`Path to file to read as standard input (e.g., "/tmp/input.txt").`,
+				`Cannot be used together with stdin.`).
 			ArgDoc("redirectStdout",
 				`Redirect the command's standard output to a file in the container (e.g.,
 			"/tmp/stdout").`).
@@ -423,6 +426,9 @@ func (s *containerSchema) Install() {
 			ArgDoc("stdin",
 				`Content to write to the command's standard input before closing (e.g.,
 				"Hello world").`).
+			ArgDoc("stdinFile",
+				`Path to file to read as standard input (e.g., "/tmp/input.txt").`,
+				`Cannot be used together with stdin.`).
 			ArgDoc("redirectStdout",
 				`Redirect the command's standard output to a file in the container (e.g.,
 			"/tmp/stdout").`).
@@ -453,6 +459,9 @@ func (s *containerSchema) Install() {
 			ArgDoc("stdin",
 				`Content to write to the command's standard input before closing (e.g.,
 				"Hello world").`).
+			ArgDoc("stdinFile",
+				`Path to file to read as standard input (e.g., "/tmp/input.txt").`,
+				`Cannot be used together with stdin.`).
 			ArgDoc("redirectStdout",
 				`Redirect the command's standard output to a file in the container (e.g.,
 			"/tmp/stdout").`).

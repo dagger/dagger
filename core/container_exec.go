@@ -30,6 +30,9 @@ type ContainerExecOpts struct {
 	// Content to write to the command's standard input before closing
 	Stdin string `default:""`
 
+	// Path to file to read as standard input. Cannot be used with stdin.
+	StdinFile string `default:""`
+
 	// Redirect the command's standard output to a file in the container
 	RedirectStdout string `default:""`
 
@@ -58,6 +61,24 @@ type ContainerExecOpts struct {
 
 func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
 	container = container.Clone()
+
+	// Validate mutual exclusivity of stdin and stdinFile
+	if opts.Stdin != "" && opts.StdinFile != "" {
+		return nil, fmt.Errorf("cannot set both stdin and stdinFile")
+	}
+
+	// Handle stdinFile by reading contents into stdin
+	if opts.StdinFile != "" {
+		file, err := container.File(ctx, opts.StdinFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read stdinFile: %w", err)
+		}
+		contents, err := file.Contents(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read stdinFile contents: %w", err)
+		}
+		opts.Stdin = string(contents)
+	}
 
 	cfg := container.Config
 	mounts := container.Mounts
