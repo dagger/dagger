@@ -85,6 +85,14 @@ This will generate a `dagger.json` module metadata file, initial `dagger/src/ind
 </TabItem>
 </Tabs>
 
+:::tip dagger develop
+1. By default there are several files and directories that are addd to a `.gitignore` contained within your dagger sdk source directory
+2. To regenerate these files on a fresh checkout simply run [dagger develop](https://docs.dagger.io/reference/cli/#dagger-develop)
+
+`dagger develop` can also update your engine version, install missing sdks, regenerate dependacy bindings and ensure your IDE autocomplete settings are up to date 
+:::
+
+
 ### Construct a pipeline using Dagger Functions
 
 Dagger Functions are regular code, written in Go, Python or TypeScript using the corresponding Dagger SDK. They consist of a series of method/function calls, such as "pull a container image", "copy a file", "forward a TCP port", and so on, which can be chained together.
