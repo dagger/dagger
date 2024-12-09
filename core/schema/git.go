@@ -82,6 +82,8 @@ func (s *gitSchema) Install() {
 		dagql.Func("withAuthHeader", s.withAuthHeader).
 			Doc(`Header to authenticate the remote with.`).
 			ArgDoc("header", `Secret used to populate the Authorization HTTP header`),
+		dagql.Func("__internalwithSSHSocket", s.withSSHSocket).
+			Doc(`(Internal-only) Socket used to authenticate the remote with.`),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.GitRef]{
@@ -135,7 +137,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 	}
 
 	// 3. Setup authentication
-	var authSock *core.Socket = nil
+	var authSock dagql.Instance[*core.Socket]
 	var authToken dagql.Instance[*core.Secret]
 
 	// First parse the ref scheme to determine auth strategy
@@ -153,41 +155,26 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 		if err != nil {
 			return inst, err
 		}
-		authSock = sock.Self
+		authSock = sock
 	} else if remote.Scheme == "ssh" && clientMetadata != nil && clientMetadata.SSHAuthSocketPath != "" {
-		// For SSH refs, try to load client's SSH socket if no explicit socket was provided
-		socketStore, err := parent.Self.Sockets(ctx)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get socket store: %w", err)
-		}
-
-		accessor, err := core.GetClientResourceAccessor(ctx, parent.Self, clientMetadata.SSHAuthSocketPath)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get client resource name: %w", err)
-		}
-
 		var sockInst dagql.Instance[*core.Socket]
 		if err := s.srv.Select(ctx, s.srv.Root(), &sockInst,
 			dagql.Selector{
 				Field: "host",
 			},
 			dagql.Selector{
-				Field: "__internalSocket",
+				Field: "unixSocket",
 				Args: []dagql.NamedInput{
 					{
-						Name:  "accessor",
-						Value: dagql.NewString(accessor),
+						Name:  "path",
+						Value: dagql.NewString(clientMetadata.SSHAuthSocketPath),
 					},
 				},
 			},
 		); err != nil {
 			return inst, fmt.Errorf("failed to select internal socket: %w", err)
 		}
-
-		if err := socketStore.AddUnixSocket(sockInst.Self, clientMetadata.ClientID, clientMetadata.SSHAuthSocketPath); err != nil {
-			return inst, fmt.Errorf("failed to add unix socket to store: %w", err)
-		}
-		authSock = sockInst.Self
+		authSock = sockInst
 	}
 
 	// For HTTP(S) refs, handle PAT auth if we're the main client
@@ -256,9 +243,10 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 		URL:           args.URL,
 		DiscardGitDir: discardGitDir,
 		SSHKnownHosts: args.SSHKnownHosts,
-		SSHAuthSocket: authSock,
+		SSHAuthSocket: authSock.Self,
 		Services:      svcs,
 		Platform:      parent.Self.Platform(),
+		AuthToken:     authToken.Self,
 	})
 	if err != nil {
 		return inst, fmt.Errorf("failed to create GitRepository instance: %w", err)
@@ -283,6 +271,27 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 			return inst, fmt.Errorf("failed to set auth token: %w", err)
 		}
 		inst = instWithToken
+	}
+
+	// set the auth socket by selecting __internalwithSSHSocket so that it shows up in the dagql call
+	// as a socket and can thus be passed to functions
+	if authSock.Self != nil {
+		var instWithSocket dagql.Instance[*core.GitRepository]
+		err := s.srv.Select(ctx, inst, &instWithSocket,
+			dagql.Selector{
+				Field: "__internalwithSSHSocket",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "socket",
+						Value: dagql.NewID[*core.Socket](authSock.ID()),
+					},
+				},
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to set auth token: %w", err)
+		}
+		inst = instWithSocket
 	}
 
 	return inst, nil
@@ -487,6 +496,20 @@ func (s *gitSchema) withAuthToken(ctx context.Context, parent *core.GitRepositor
 	}
 	repo := *parent
 	repo.AuthToken = token.Self
+	return &repo, nil
+}
+
+type withSSHSocketArgs struct {
+	Socket core.SocketID
+}
+
+func (s *gitSchema) withSSHSocket(ctx context.Context, parent *core.GitRepository, args withSSHSocketArgs) (*core.GitRepository, error) {
+	sock, err := args.Socket.Load(ctx, s.srv)
+	if err != nil {
+		return nil, err
+	}
+	repo := *parent
+	repo.SSHAuthSocket = sock.Self
 	return &repo, nil
 }
 
