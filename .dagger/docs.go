@@ -38,7 +38,8 @@ func (d Docs) Site() *dagger.Directory {
 		Docusaurus(
 			d.Dagger.Source(),
 			dagger.DocusaurusOpts{
-				Dir: "/src/docs",
+				Dir:  "/src/docs",
+				Yarn: true,
 				// HACK: cache seems to cause weird ephemeral errors occasionally -
 				// probably because of cache sharing
 				DisableCache: true,
