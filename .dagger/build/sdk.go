@@ -71,7 +71,7 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, error) {
 	rootfs := dag.Directory().WithDirectory("/", build.source.Directory("sdk/typescript"), dagger.DirectoryWithDirectoryOpts{
 		Include: []string{
-			"**/*.ts",
+			"src/**/*.ts",
 			"LICENSE",
 			"README.md",
 			"runtime",
@@ -79,13 +79,12 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 			"dagger.json",
 		},
 		Exclude: []string{
-			"node_modules",
-			"dist",
-			"**/test",
-			"**/*.spec.ts",
-			"dev",
+			"src/**/test/*",
+			"src/**/*.spec.ts",
+			"src/provisioning",
 		},
 	})
+
 	sdkCtrTarball := dag.Container().
 		WithRootfs(rootfs).
 		WithFile("/codegen", build.CodegenBinary()).
