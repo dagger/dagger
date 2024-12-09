@@ -1,3 +1,5 @@
+import { Locatable } from "./locatable.js"
+
 export interface DaggerEnumBaseValue {
   name: string
   value: string
@@ -6,7 +8,7 @@ export interface DaggerEnumBaseValue {
 
 export type DaggerEnumBaseValues = { [name: string]: DaggerEnumBaseValue }
 
-export interface DaggerEnumBase {
+export interface DaggerEnumBase extends Locatable {
   name: string
   description: string
   values: DaggerEnumBaseValues

@@ -11,11 +11,12 @@ import {
   resolveTypeDef,
 } from "../typescript_module/index.js"
 import { ARGUMENT_DECORATOR } from "./decorator.js"
+import { Locatable } from "./locatable.js"
 import { References } from "./reference.js"
 
 export type DaggerArguments = { [name: string]: DaggerArgument }
 
-export class DaggerArgument {
+export class DaggerArgument extends Locatable {
   public name: string
   public description: string
   private _typeRef?: string
@@ -33,6 +34,8 @@ export class DaggerArgument {
     private readonly node: ts.ParameterDeclaration,
     private readonly ast: AST,
   ) {
+    super(node)
+
     this.symbol = this.ast.getSymbolOrThrow(node.name)
     this.name = this.node.name.getText()
     this.description = this.ast.getDocFromSymbol(this.symbol)
