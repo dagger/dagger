@@ -6,7 +6,7 @@ dependencies = ["dagger-io"]
 
 [tool.dagger]
 # Ensure the dev module works both with released and dev engine.
-uv-version = "0.5.4"
+uv-version = "0.5.7"
 
 [tool.uv.sources]
 dagger-io = { path = "sdk", editable = true }
