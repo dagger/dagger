@@ -32,8 +32,13 @@ tmp=$(mktemp -d)
     mkfifo stdout.fifo stderr.fifo
 
     # Set up tee to capture and display stdout and stderr
-    tee stdout.txt < stdout.fifo &
-    tee stderr.txt < stderr.fifo >&2 &
+    if [ -n "$NO_OUTPUT" ]; then
+        tee stdout.txt < stdout.fifo > /dev/null &
+        tee stderr.txt < stderr.fifo > /dev/null &
+    else
+        tee stdout.txt < stdout.fifo &
+        tee stderr.txt < stderr.fifo >&2 &
+    fi
 )
 
 # Run the command, capturing stdout and stderr in the FIFOs
@@ -114,5 +119,8 @@ cat <<'.'
 .
 
 } >"${GITHUB_STEP_SUMMARY}"
+
+echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
 
 exit $EXIT_CODE
