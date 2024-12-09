@@ -14,7 +14,7 @@ on:
       # run tests in a PR when an SDK is modified...
       - ./sdk
       # ...or when we are
-      - ./.github/workflows/engine-and-cli-publish.yml
+      - ./.github/workflows/publish.yml
 
 jobs:
   publish:
@@ -72,7 +72,7 @@ jobs:
 
   publish-sdk-go:
     needs: publish
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-4c' || 'ubuntu-latest' }}"
+    runs-on: dagger-g2-v0-14-0-4c
     steps:
       - uses: actions/checkout@v4
       - name: "go publish"
@@ -90,7 +90,7 @@ jobs:
 
   publish-sdk-php:
     needs: publish
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-4c' || 'ubuntu-latest' }}"
+    runs-on: dagger-g2-v0-14-0-4c
     steps:
       - uses: actions/checkout@v4
       - name: "php publish"
@@ -109,7 +109,7 @@ jobs:
   publish-sdk-python:
     needs: publish
     if: github.ref_name != 'main'
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-4c' || 'ubuntu-latest' }}"
+    runs-on: dagger-g2-v0-14-0-4c
     steps:
       - uses: actions/checkout@v4
       - name: "python publish"
@@ -129,7 +129,7 @@ jobs:
   publish-sdk-typescript:
     needs: publish
     if: github.ref_name != 'main'
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-4c' || 'ubuntu-latest' }}"
+    runs-on: dagger-g2-v0-14-0-4c
     steps:
       - uses: actions/checkout@v4
       - name: "typescript publish"
@@ -148,7 +148,7 @@ jobs:
   publish-sdk-elixir:
     needs: publish
     if: github.ref_name != 'main'
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-4c' || 'ubuntu-latest' }}"
+    runs-on: dagger-g2-v0-14-0-4c
     steps:
       - uses: actions/checkout@v4
       - name: "elixir publish"
@@ -167,7 +167,7 @@ jobs:
   publish-helm:
     needs: publish
     if: github.ref_name != 'main'
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-4c' || 'ubuntu-latest' }}"
+    runs-on: dagger-g2-v0-14-0-4c
     steps:
       - uses: actions/checkout@v4
       - name: "helm publish"
@@ -182,6 +182,20 @@ jobs:
         with:
           message: "☸️ Helm Chart: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
           discord-webhook: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
+
+  daggerverse-bump-dagger:
+    needs: publish
+    if: github.ref_name != 'main'
+    runs-on: dagger-g2-v0-14-0-4c
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Bump Dagger version in Daggerverse"
+        uses: ./.github/actions/call
+        env:
+          DAGGER_CI_GITHUB_TOKEN: ${{ secrets.DAGGER_CI_GITHUB_TOKEN }}
+        with:
+          function: --github-token=env:DAGGER_CI_GITHUB_TOKEN bump-dagger-version --to=${{ github.ref_name }} 
+          module: ./modules/daggerverse
 
   # TODO: daggerize provisioning tests
   test-provision-macos:
