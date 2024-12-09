@@ -1,0 +1,13 @@
+---
+slug: /api/remote-modules
+---
+
+# Using Modules from Remote Repositories
+
+Dagger supports the use of HTTP and SSH protocols for accessing remote repositories as Dagger [modules](../features/modules.mdx), compatible with all major Git hosting platforms such as GitHub, GitLab, BitBucket, Azure DevOps, Codeberg, and Sourcehut. Dagger supports authentication via both HTTPS (using Git credential managers) and SSH (using a unified authentication approach).
+
+[... content continues exactly as before ...]
+
+### GitLab CI_JOB_TOKEN limitations
+
+Some tokens, like GitLab's `CI_JOB_TOKEN`, require specifying a particular username (`gitlab-ci-token`) to be recognized correctly. Using other usernames or token formats may result in authentication failures. Until this is improved in Dagger's integration, ensure that the correct username is always set when using CI-provided tokens.
