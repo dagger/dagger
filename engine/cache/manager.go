@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/containerd/containerd/content"
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/moby/buildkit/cache"
 	cacheconfig "github.com/moby/buildkit/cache/config"
 	remotecache "github.com/moby/buildkit/cache/remotecache/v1"
@@ -52,6 +54,16 @@ const (
 	startupImportTimeout    = 1 * time.Minute
 	backgroundImportTimeout = 10 * time.Minute
 )
+
+var contentStoreLayers = map[string]struct{}{}
+
+func init() {
+	layerInfo, _ := os.ReadDir(distconsts.EngineContainerBuiltinContentDir + "/blobs/sha256/")
+
+	for _, li := range layerInfo {
+		contentStoreLayers[li.Name()] = struct{}{}
+	}
+}
 
 func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, error) {
 	localCache := solver.NewCacheManager(ctx, LocalCacheID, managerConfig.KeyStore, managerConfig.ResultStore)
@@ -296,6 +308,9 @@ func (m *manager) Export(ctx context.Context) error {
 			pushRefLayersStart := time.Now()
 			for _, layer := range remote.Descriptors {
 				if _, ok := pushedLayers[layer.Digest.String()]; ok {
+					continue
+				}
+				if _, ok := contentStoreLayers[layer.Digest.String()]; ok {
 					continue
 				}
 				if err := m.pushLayer(ctx, layer, remote.Provider); err != nil {
