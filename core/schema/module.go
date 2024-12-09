@@ -131,6 +131,10 @@ func (s *moduleSchema) Install() {
 		dagql.NodeFunc("dependencies", s.moduleSourceDependencies).
 			Doc(`The effective module source dependencies from the configuration, and calls to withDependencies and withoutDependencies.`),
 
+		dagql.Func("withUpdateDependencies", s.moduleSourceWithUpdateDependencies).
+			Doc(`Update one or more module dependencies.`).
+			ArgDoc("dependencies", `The dependencies to update.`),
+
 		dagql.Func("withDependencies", s.moduleSourceWithDependencies).
 			Doc(`Append the provided dependencies to the module source's dependency list.`).
 			ArgDoc("dependencies", `The dependencies to append.`),
