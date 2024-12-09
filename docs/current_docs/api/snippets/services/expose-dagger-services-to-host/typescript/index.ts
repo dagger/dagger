@@ -13,6 +13,6 @@ class MyModule {
       .withWorkdir("/srv")
       .withNewFile("index.html", "Hello, world!")
       .withExposedPort(8080)
-      .asService({args: ["python", "-m", "http.server", "8080"]})
+      .asService({ args: ["python", "-m", "http.server", "8080"] })
   }
 }

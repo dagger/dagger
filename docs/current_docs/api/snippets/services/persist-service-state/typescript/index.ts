@@ -13,7 +13,7 @@ class MyModule {
       .withExposedPort(6379)
       .withMountedCache("/data", dag.cacheVolume("my-redis"))
       .withWorkdir("/data")
-      .asService({useEntrypoint: true})
+      .asService({ useEntrypoint: true })
 
     const redisCLI = dag
       .container()

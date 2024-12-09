@@ -11,7 +11,7 @@ class MyModule {
       .container()
       .from("redis")
       .withExposedPort(6379)
-      .asService({useEntrypoint: true})
+      .asService({ useEntrypoint: true })
 
     // create Redis client container
     const redisCLI = dag
