@@ -11,6 +11,7 @@ query ModuleConfig($source: ModuleSourceID!) {
         description
         source {
           asString
+          pin
         }
       }
     }

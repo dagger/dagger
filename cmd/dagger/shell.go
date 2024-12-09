@@ -427,8 +427,8 @@ func (h *shellCallHandler) loadReadlineConfig(prompt string) (*readline.Config, 
 func (h *shellCallHandler) Prompt(out *termenv.Output, fg termenv.Color) string {
 	sb := new(strings.Builder)
 
-	if h.modRef != "" {
-		sb.WriteString(out.String(h.modRef).Bold().Foreground(termenv.ANSICyan).String())
+	if def, _ := h.GetModuleDef(nil); def != nil {
+		sb.WriteString(out.String(def.ModRef).Bold().Foreground(termenv.ANSICyan).String())
 		sb.WriteString(" ")
 	}
 
@@ -629,9 +629,8 @@ func (h *shellCallHandler) stateLookup(ctx context.Context, name string) (*Shell
 			if h.debug {
 				shellLogf(ctx, "[DBG]     - found dependency (%s)\n", dep.ModRef)
 			}
-			return h.getOrInitDefState(dep.ModRef, func() (*moduleDef, error) {
-				return initializeModule(ctx, h.dag, dep.ModRef)
-			})
+			depSt, _, err := h.GetDependency(ctx, name)
+			return depSt, err
 		}
 	}
 
@@ -644,6 +643,7 @@ func (h *shellCallHandler) stateLookup(ctx context.Context, name string) (*Shell
 	}
 
 	// 4. Path to local or remote module source
+	// (local paths are relative to the current working directory, not the loaded module)
 	st, err := h.getOrInitDefState(name, func() (*moduleDef, error) {
 		return tryInitializeModule(ctx, h.dag, name)
 	})
@@ -1492,18 +1492,6 @@ func (h *shellCallHandler) DepsHelp() string {
 	return doc.String()
 }
 
-func (h *shellCallHandler) GetModuleDep(name string) (*moduleDependency, error) {
-	def, err := h.GetModuleDef(nil)
-	if err != nil {
-		return nil, err
-	}
-	dep := def.GetDependency(name)
-	if dep == nil {
-		return nil, fmt.Errorf("dependency %q not found", name)
-	}
-	return dep, nil
-}
-
 type ShellDoc struct {
 	Groups []ShellDocSection
 }
@@ -1750,7 +1738,11 @@ func (h *shellCallHandler) GetDependency(ctx context.Context, name string) (*She
 		return nil, nil, fmt.Errorf("dependency %q not found", name)
 	}
 	st, err := h.getOrInitDefState(dep.ModRef, func() (*moduleDef, error) {
-		return initializeModule(ctx, h.dag, dep.ModRef)
+		var opts []dagger.ModuleSourceOpts
+		if dep.RefPin != "" {
+			opts = append(opts, dagger.ModuleSourceOpts{RefPin: dep.RefPin})
+		}
+		return initializeModule(ctx, h.dag, dep.ModRef, false, opts...)
 	})
 	if err != nil {
 		return nil, nil, err
@@ -1820,9 +1812,14 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 			},
 		},
 		&ShellCommand{
-			Use:         ".doc [module]\n<function> | .doc [function]",
-			Description: "Show documentation for a module, a type, or a function",
-			Args:        MaximumArgs(1),
+			Use: ".doc [module]\n<function> | .doc [function]",
+			Description: `Show documentation for a module, a type, or a function
+
+
+Local module paths are resolved relative to the workdir on the host, not relative
+to the currently loaded module.
+`,
+			Args: MaximumArgs(1),
 			RunState: func(cmd *ShellCommand, args []string, st *ShellState) error {
 				var err error
 
@@ -1929,13 +1926,17 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 			},
 		},
 		&ShellCommand{
-			Use:         ".use <module>",
-			Description: "Set a module as the default for the session",
-			GroupID:     moduleGroup.ID,
-			Args:        ExactArgs(1),
+			Use: ".use <module>",
+			Description: `Set a module as the default for the session
+
+Local module paths are resolved relative to the workdir on the host, not relative
+to the currently loaded module.
+`,
+			GroupID: moduleGroup.ID,
+			Args:    ExactArgs(1),
 			Run: func(cmd *ShellCommand, args []string) error {
 				st, err := h.getOrInitDefState(args[0], func() (*moduleDef, error) {
-					return initializeModule(cmd.Context(), h.dag, args[0])
+					return initializeModule(cmd.Context(), h.dag, args[0], true)
 				})
 				if err != nil {
 					return err

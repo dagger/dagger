@@ -135,6 +135,15 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The pinned version of this module source.
+     */
+    public function pin(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('pin');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'pin');
+    }
+
+    /**
      * The path to the module source's context directory on the caller's filesystem. Only valid for local sources.
      */
     public function resolveContextPathFromCaller(): string

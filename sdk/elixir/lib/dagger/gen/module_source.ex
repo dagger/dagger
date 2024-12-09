@@ -159,6 +159,15 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
+  @doc "The pinned version of this module source."
+  @spec pin(t()) :: {:ok, String.t()} | {:error, term()}
+  def pin(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("pin")
+
+    Client.execute(module_source.client, query_builder)
+  end
+
   @doc "The path to the module source's context directory on the caller's filesystem. Only valid for local sources."
   @spec resolve_context_path_from_caller(t()) :: {:ok, String.t()} | {:error, term()}
   def resolve_context_path_from_caller(%__MODULE__{} = module_source) do

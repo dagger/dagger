@@ -5845,6 +5845,7 @@ export class ModuleSource extends BaseClient {
   private readonly _kind?: ModuleSourceKind = undefined
   private readonly _moduleName?: string = undefined
   private readonly _moduleOriginalName?: string = undefined
+  private readonly _pin?: string = undefined
   private readonly _resolveContextPathFromCaller?: string = undefined
   private readonly _sourceRootSubpath?: string = undefined
   private readonly _sourceSubpath?: string = undefined
@@ -5861,6 +5862,7 @@ export class ModuleSource extends BaseClient {
     _kind?: ModuleSourceKind,
     _moduleName?: string,
     _moduleOriginalName?: string,
+    _pin?: string,
     _resolveContextPathFromCaller?: string,
     _sourceRootSubpath?: string,
     _sourceSubpath?: string,
@@ -5874,6 +5876,7 @@ export class ModuleSource extends BaseClient {
     this._kind = _kind
     this._moduleName = _moduleName
     this._moduleOriginalName = _moduleOriginalName
+    this._pin = _pin
     this._resolveContextPathFromCaller = _resolveContextPathFromCaller
     this._sourceRootSubpath = _sourceRootSubpath
     this._sourceSubpath = _sourceSubpath
@@ -6051,6 +6054,27 @@ export class ModuleSource extends BaseClient {
     const ctx = this._ctx.select("moduleOriginalName")
 
     const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The pinned version of this module source.
+   */
+  pin = async (): Promise<string> => {
+    if (this._pin) {
+      return this._pin
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "pin",
+        },
+      ],
+      await this._ctx.connection(),
+    )
 
     return response
   }
