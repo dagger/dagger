@@ -113,7 +113,7 @@ jobs:
       - name: "test"
         uses: ./.github/actions/call
         with:
-          function: "test specific --run='TestProvision' --race=true --parallel=16"
+          function: "test specific --run='TestProvision' --race=true --parallel=1"
           upload-logs: true
 
   test-everything-else:
