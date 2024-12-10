@@ -10,10 +10,11 @@ Expected stderr:
 │ ✔ connecting to engine X.Xs
 │ ✔ starting session X.Xs
 
-✔ loading module X.Xs
+✔ load module X.Xs
 │ ✔ finding module configuration X.Xs
-│ ✔ serving module X.Xs
-│ ✔ inspecting module X.Xs
+│ ✔ initializing module X.Xs
+│ ✔ inspecting module metadata X.Xs
+│ ✔ loading type definitions X.Xs
 
 ✔ parsing command line arguments X.Xs
 

@@ -5,10 +5,10 @@ Expected stderr:
 │ ✔ connecting to engine X.Xs
 │ ✔ starting session X.Xs
 
-✘ loading module X.Xs
+✘ load module X.Xs
 ! failed to serve module: input: module.withSource.initialize failed to initialize module: failed to call module "broken" to get functions: call constructor: process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
 │ ✔ finding module configuration X.Xs
-│ ✘ serving module X.Xs
+│ ✘ initializing module X.Xs
 │ ! input: module.withSource.initialize failed to initialize module: failed to call module "broken" to get functions: call constructor: process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
 │ │ $ ModuleSource.resolveFromCaller: ModuleSource! X.Xs CACHED
 │ │ │ ✔ upload /XXX/XXX/XXX from XXXXXXXXXXX (client id: XXXXXXXXXXX, session id: XXXXXXXXXXX) (include: XXXXXXXXXXX) (exclude: XXXXXXXXXXX) X.Xs
