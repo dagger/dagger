@@ -117,6 +117,10 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 			if name := tag.Get("name"); name != "" {
 				fieldSpec.name = name
 			}
+			// Check for documentation
+			if doc := tag.Get("doc"); doc != "" {
+				fieldSpec.doc = doc
+			}
 		} else if dt := tag.Get("json"); dt != "" {
 			// Fall back to json tag if field tag is not set
 			dt, _, _ = strings.Cut(dt, ",")
