@@ -1,9 +1,0 @@
-kind: Breaking
-body: |-
-    `ExecErr.Error` no longer contains the values of `Stdout` or `Stderr`.
-
-    When comparing error values for expected output, use the more specific values.
-time: 2024-11-22T12:11:53.934008034Z
-custom:
-    Author: vito
-    PR: "9033"

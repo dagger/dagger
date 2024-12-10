@@ -1,9 +1,0 @@
-kind: Breaking
-body: |
-    Removed the deprecated `index-url` and `index-extral-url` settings under `[tool.uv]`
-
-    These settings were deprecated in Dagger [v0.14.0](https://github.com/dagger/dagger/releases?q=tag%3Asdk%2Fpython%2Fv0) since uv [v0.4.23](https://github.com/astral-sh/uv/releases/tag/0.4.23) replaced them with the `[[tool.uv.index]]` table. See [Package indexes](https://docs.astral.sh/uv/configuration/indexes/) for the full documentation.
-time: 2024-12-09T12:03:36.085711-01:00
-custom:
-    Author: helderco
-    PR: "9127"

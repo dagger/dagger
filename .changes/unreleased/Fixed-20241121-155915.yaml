@@ -1,6 +1,0 @@
-kind: Fixed
-body: Allow `Container.withExec` `expect` to catch exit code 128
-time: 2024-11-21T15:59:15.645085385Z
-custom:
-    Author: jedevc
-    PR: "9027"

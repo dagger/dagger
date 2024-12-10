@@ -1,7 +1,0 @@
-kind: Fixed
-body: |
-  Directory.terminal API works now
-time: 2024-11-13T22:14:07.998787448-08:00
-custom:
-  Author: sipsma
-  PR: "8952"

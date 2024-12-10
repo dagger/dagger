@@ -1,6 +1,0 @@
-kind: Fixed
-body: Fixed dagger init generating the wrong package name when using a module name that includes a number
-time: 2024-11-19T19:14:20.564335-01:00
-custom:
-    Author: helderco
-    PR: "9000"

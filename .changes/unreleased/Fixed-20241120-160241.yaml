@@ -1,7 +1,0 @@
-kind: Fixed
-body: |
-  Fix resource leaks in the engine that occurred after each debug terminal was opened.
-time: 2024-11-20T16:02:41.381210606-08:00
-custom:
-  Author: sipsma
-  PR: "9013"
