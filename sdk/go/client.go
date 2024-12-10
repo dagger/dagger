@@ -175,9 +175,6 @@ type errorWrappedClient struct {
 func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Request, resp *graphql.Response) error {
 	err := c.Client.MakeRequest(ctx, req, resp)
 	if err != nil {
-		if e := getCustomError(err); e != nil {
-			return e
-		}
 		return err
 	}
 	return nil
