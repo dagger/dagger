@@ -150,3 +150,25 @@ When a package manager is not explicitly defined within the `package.json` file,
 :::warning
 This behavior however should be considered a sensible fallback, and not as an explicit configuration. Since this default can change, we encourage you to configure a package manager explicitly.
 :::
+
+### Alternative base images
+
+The image to use is derived from the version in the `dagger.runtime` field if it's present. If this is not suitable for your needs, you can specify a custom base image in your module's `package.json`, tailoring the SDK to your project's needs.
+
+:::warning
+It is recommended to use this feature only for advanced use cases such as adding bespoke environment variables, authentication files or operating system packages to the runtime container. Ensure that you avoid deviating from the default image too much, as doing so could create unexpected results.
+:::
+
+To change the base image, set the field `dagger.baseImage` in your Dagger module's `package.json` file.
+
+```json
+{
+  "dagger": {
+    "baseImage": "node:23.2.0-alpine@sha256:ecefaffd4706c5879af52e022fdb8ea30cbd6590e2a30d05347790d690727c6c"
+  }
+}
+```
+
+:::note
+Currently, only Alpine-based images are supported.
+:::
