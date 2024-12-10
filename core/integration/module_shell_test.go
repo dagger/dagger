@@ -2,7 +2,9 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"regexp"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -570,6 +572,52 @@ func (m *Test) DirectoryID(ctx context.Context) (string, error) {
 
 	require.NoError(t, err)
 	require.Equal(t, "bar", out)
+}
+
+func (ShellSuite) TestArgsSpread(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen := daggerCliBase(t, c)
+
+	for _, tc := range []struct {
+		command  string
+		expected string
+	}{
+		{
+			command:  `with-exec echo hello world | stdout`,
+			expected: "hello world\n",
+		},
+		{
+			command:  `with-exec echo with tail options --redirect-stdout /out | file /out | contents`,
+			expected: "with tail options\n",
+		},
+		{
+			command:  `with-exec --redirect-stdout /out echo with head options | file /out | contents`,
+			expected: "with head options\n",
+		},
+		{
+			command:  `with-exec --stdin "with interspersed args" cat --redirect-stdout /out | file /out | contents`,
+			expected: "with interspersed args",
+		},
+		{
+			command:  `with-exec --redirect-stdout /out -- echo -n stop processing flags: --expand | file /out | contents`,
+			expected: "stop processing flags: --expand",
+		},
+		{
+			command:  `with-env-variable MSG "with double" | with-exec --redirect-stdout /out --expand -- echo -n \$MSG --expand | file /out | contents`,
+			expected: "with double --expand",
+		},
+		{
+			command:  `with-exec --redirect-stdout /out -- echo -n git checkout -- file | file /out | contents`,
+			expected: "git checkout -- file",
+		},
+	} {
+		t.Run(strings.TrimSpace(tc.expected), func(ctx context.Context, t *testctx.T) {
+			script := fmt.Sprintf("container | from %s | %s", alpineImage, tc.command)
+			out, err := modGen.With(daggerShell(script)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, out)
+		})
+	}
 }
 
 func (ShellSuite) TestInstall(ctx context.Context, t *testctx.T) {

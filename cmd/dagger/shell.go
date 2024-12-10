@@ -705,34 +705,109 @@ func (h *shellCallHandler) functionCall(ctx context.Context, st *ShellState, nam
 	return st.WithCall(fn, argValues), nil
 }
 
+// shellPreprocessArgs converts positional arguments to flag arguments
+//
+// Values are not processed. This function is used to leverage pflags to parse
+// flags interspersed with positional arguments, so a function's required
+// arguments can be placed anywhere. Then we get the unprocessed flags in
+// order to validate if the remaining number of positional arguments match
+// the number of required arguments.
+//
+// Required args in dagger shell are positional but we have a lot of power
+// in custom flags that we want to reuse, so just add the corresponding
+// `--flag-name` args in order for pflags to be able to parse them later.
+//
+// Additionally, if there's only one required argument that is a list of strings,
+// all positional arguments are used as elements of that list.
+func shellPreprocessArgs(fn *modFunction, args []string) ([]string, error) {
+	flags := pflag.NewFlagSet(fn.CmdName(), pflag.ContinueOnError)
+
+	opts := fn.OptionalArgs()
+
+	// All CLI arguments are strings at first, but booleans can be omitted.
+	// We don't wan't to process values yet, just validate and consume the flags
+	// so we get the remaining positional args.
+	for _, arg := range opts {
+		name := arg.FlagName()
+
+		switch arg.TypeDef.Kind {
+		case dagger.TypeDefKindListKind:
+			switch arg.TypeDef.AsList.ElementTypeDef.Kind {
+			case dagger.TypeDefKindBooleanKind:
+				flags.BoolSlice(name, nil, "")
+			default:
+				flags.StringSlice(name, nil, "")
+			}
+		case dagger.TypeDefKindBooleanKind:
+			flags.Bool(name, false, "")
+		default:
+			flags.String(name, "", "")
+		}
+	}
+
+	if err := flags.Parse(args); err != nil {
+		return args, err
+	}
+
+	reqs := fn.RequiredArgs()
+
+	// A command for with-exec could include a `--`, but it's only if it's
+	// the first positional argument that means we've stopped processing our
+	// flags. So these are equivalent:
+	// - with-exec --redirect-stdout /out git checkout -- file
+	// - with-exec --redirect-stdout /out -- git checkout -- file
+	pos := flags.Args()
+	if flags.ArgsLenAtDash() == 1 {
+		pos = pos[1:]
+	}
+
+	// Final processed arguments that will be parsed in the second phase later on.
+	var a []string
+
+	// Convenience for a single required argument of type [String!]!
+	// All positional arguments become elements in the list.
+	if len(reqs) == 1 && len(pos) > 1 && reqs[0].TypeDef.String() == "[]string" {
+		name := reqs[0].FlagName()
+		a = make([]string, 0, len(opts)+len(pos))
+
+		for _, value := range pos {
+			// Instead of creating a CSV value here, repeat the flag for each
+			// one so that pflags is the only one dealing with CSVs.
+			a = append(a, fmt.Sprintf("--%s=%v", name, value))
+		}
+	} else {
+		// Normal use case. Positional arguments should match number of required function arguments
+		if err := ExactArgs(len(reqs))(pos); err != nil {
+			return args, err
+		}
+		a = make([]string, 0, len(fn.Args))
+		// Use the `=` syntax so that each element in the args list corresponds
+		// to a single argument instead of two.
+		for i, arg := range reqs {
+			a = append(a, fmt.Sprintf("--%s=%v", arg.FlagName(), pos[i]))
+		}
+	}
+
+	// Add all the optional flags
+	flags.Visit(func(f *pflag.Flag) {
+		if f.Changed {
+			a = append(a, fmt.Sprintf("--%s=%v", f.Name, f.Value.String()))
+		}
+	})
+
+	return a, nil
+}
+
 // parseArgumentValues returns a map of argument names and their parsed values
 func (h *shellCallHandler) parseArgumentValues(ctx context.Context, md *moduleDef, fn *modFunction, args []string) (map[string]any, error) {
-	req := fn.RequiredArgs()
-
-	// Required args in dagger shell are positional but we have a lot of power
-	// in custom flags that we want to reuse, so just add the corresponding
-	// `--flag-name` args in order for pflags to be able to parse them.
-	pos := make([]string, 0, len(req)*2)
-	for i, arg := range args {
-		if strings.HasPrefix(arg, "--") {
-			break
-		}
-		if i >= len(req) {
-			return nil, fmt.Errorf("accepts at most %d positional argument(s)", len(req))
-		}
-		pos = append(pos, "--"+req[i].FlagName(), arg)
+	args, err := shellPreprocessArgs(fn, args)
+	if err != nil {
+		return nil, err
 	}
 
-	if len(req) > len(pos)/2 {
-		numMissing := len(req) - len(pos)/2
-		missing := make([]string, 0, numMissing)
-		for _, arg := range req[len(req)-numMissing:] {
-			missing = append(missing, arg.FlagName())
-		}
-		return nil, fmt.Errorf("missing %d positional argument(s): %s", numMissing, strings.Join(missing, ", "))
+	if h.debug {
+		shellLogf(ctx, termenv.String(fmt.Sprintf("[DBG] preprocessed arguments: %+v\n", args)).Faint().String())
 	}
-
-	rem := args[len(req):]
 
 	flags := pflag.NewFlagSet(fn.CmdName(), pflag.ContinueOnError)
 	flags.SetOutput(interp.HandlerCtx(ctx).Stderr)
@@ -792,7 +867,7 @@ func (h *shellCallHandler) parseArgumentValues(ctx context.Context, md *moduleDe
 		}
 		return flags.Set(flag.Name, value)
 	}
-	if err := flags.ParseAll(append(pos, rem...), f); err != nil {
+	if err := flags.ParseAll(args, f); err != nil {
 		return nil, err
 	}
 
