@@ -68,6 +68,12 @@ type storedSecret struct {
 	BuildkitSessionID string
 }
 
+func (s *storedSecret) Clone() *storedSecret {
+	cp := *s
+	cp.Secret = s.Secret.Clone()
+	return &cp
+}
+
 func NewSecretStore(bkSessionManager *bksession.Manager) *SecretStore {
 	return &SecretStore{
 		secrets:          map[digest.Digest]*storedSecret{},
@@ -125,7 +131,15 @@ func (store *SecretStore) AddSecretFromOtherStore(secret *Secret, otherStore *Se
 	if !ok {
 		return fmt.Errorf("secret %s not found in other store", secret.IDDigest)
 	}
-	return store.AddSecret(secret, secretVals.Name, secretVals.Plaintext)
+
+	secretVals = secretVals.Clone()
+	secretVals.Secret = secret
+
+	store.mu.Lock()
+	store.secrets[secret.IDDigest] = secretVals
+	store.mu.Unlock()
+
+	return nil
 }
 
 func (store *SecretStore) HasSecret(idDgst digest.Digest) bool {
