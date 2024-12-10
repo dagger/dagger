@@ -1,8 +1,0 @@
-kind: Changed
-body: |-
-  Bump runtime Node version's to new LTS (22.11.0) (JOD: https://nodejs.org/en/about/previous-releases)
-  Bump runtime Bun version's to 1.1.38
-time: 2024-11-29T17:41:22.881989+01:00
-custom:
-  Author: TomChv
-  PR: "8823"
