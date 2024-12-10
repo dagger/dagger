@@ -15,7 +15,7 @@ class MyModule {
       .withEnvVariable("MARIADB_DATABASE", "drupal")
       .withEnvVariable("MARIADB_ROOT_PASSWORD", "root")
       .withExposedPort(3306)
-      .asService()
+      .asService({ useEntrypoint: true })
 
     // get Drupal base image
     // install additional dependencies

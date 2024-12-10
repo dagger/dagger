@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+
+	"dagger/my-module/internal/dagger"
 )
 
 type MyModule struct{}
@@ -15,7 +17,7 @@ func (m *MyModule) Test(ctx context.Context) (string, error) {
 		WithEnvVariable("MARIADB_DATABASE", "drupal").
 		WithEnvVariable("MARIADB_ROOT_PASSWORD", "root").
 		WithExposedPort(3306).
-		AsService()
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
 
 	// get Drupal base image
 	// install additional dependencies
