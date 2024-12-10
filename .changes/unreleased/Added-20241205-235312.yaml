@@ -1,0 +1,17 @@
+kind: Added
+body: |
+  Add direct File() method to Query API for easier file creation
+
+  This change adds a new File() method to the Query API, allowing users to create files more directly without needing to create a Directory first. This improves the developer experience by providing a more intuitive way to create files.
+
+  Example:
+  ```go
+  myFile := dag.File("file.json", "{}")
+  ```
+  Previously:
+  ```go
+  myFile := dag.Directory().WithNewFile("file.json", "{}").File("file.json")
+  ```
+
+  Fixes #7388
+pr: 9116
