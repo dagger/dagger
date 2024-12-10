@@ -45,7 +45,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 		baseWithNewConfig := baseWithOldConfig.With(daggerExec("develop"))
 		confContents, err := baseWithNewConfig.File("dagger.json").Contents(ctx)
 		require.NoError(t, err)
-		var modCfg modules.ModuleConfig
+		var modCfg modules.ModuleConfigWithUserFields
 		require.NoError(t, json.Unmarshal([]byte(confContents), &modCfg))
 		require.Equal(t, "test", modCfg.Name)
 		require.Equal(t, "go", modCfg.SDK)
@@ -56,6 +56,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "dep", modCfg.Dependencies[0].Name)
 		require.Equal(t, ".", modCfg.Source)
 		require.NotEmpty(t, modCfg.EngineVersion) // version changes with any engine change
+		require.Empty(t, modCfg.Schema)
 
 		// verify develop didn't overwrite main.go
 		out, err := baseWithNewConfig.With(daggerCall("fn")).Stdout(ctx)
@@ -241,6 +242,36 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				})
 			})
 		})
+	})
+
+	t.Run("Allows $schema keyword", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		baseWithOldConfig := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithNewFile("/work/main.go", `package main
+			type Test struct {}
+
+			func (m *Test) Fn() string { return "wowzas" }
+			`,
+			).
+			WithNewFile("/work/dagger.json", `{
+				"$schema": "https://docs.dagger.io/reference/dagger.schema.json",
+				"name": "test",
+				"sdk": "go"
+			}`,
+			)
+
+		// verify develop didn't remove $schema field
+		baseWithNewConfig := baseWithOldConfig.With(daggerExec("develop"))
+		confContents, err := baseWithNewConfig.File("dagger.json").Contents(ctx)
+		require.NoError(t, err)
+		var modCfg modules.ModuleConfigWithUserFields
+		require.NoError(t, json.Unmarshal([]byte(confContents), &modCfg))
+		require.Equal(t, "test", modCfg.Name)
+		require.Equal(t, "https://docs.dagger.io/reference/dagger.schema.json", modCfg.Schema)
 	})
 }
 
