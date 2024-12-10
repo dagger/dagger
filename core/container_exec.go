@@ -77,6 +77,9 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		if err != nil {
 			return nil, fmt.Errorf("failed to read stdinFile contents: %w", err)
 		}
+		if len(contents) == 0 {
+			return nil, fmt.Errorf("stdinFile is empty")
+		}
 		opts.Stdin = string(contents)
 	}
 

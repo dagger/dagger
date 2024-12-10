@@ -504,6 +504,15 @@ func (ContainerSuite) TestExecStdinFile(ctx context.Context, t *testctx.T) {
 		})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "cannot set both stdin and stdinFile")
+
+	// Test non-existent file
+	container, err = c.Container().
+		From("alpine:latest").
+		WithExec([]string{"cat"}, dagger.ContainerWithExecOpts{
+			StdinFile: "/nonexistent.txt",
+		})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to read stdinFile")
 }
 
 func (ContainerSuite) TestExecRedirectStdoutStderr(ctx context.Context, t *testctx.T) {
