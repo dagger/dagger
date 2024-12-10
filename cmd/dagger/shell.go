@@ -457,7 +457,7 @@ func (h *shellCallHandler) withTerminal(fn func(stdin io.Reader, stdout, stderr 
 func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 	return func(ctx context.Context, args []string) error {
 		if h.debug {
-			shellLogf(ctx, "[DBG] Exec(%v)[%d]\n", args, len(args))
+			shellDebug(ctx, "Exec(%v)", args)
 		}
 
 		// This avoids interpreter builtins running first, which would make it
@@ -470,14 +470,14 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 		st, err := h.cmd(ctx, args)
 		if err == nil && st != nil {
 			if h.debug {
-				shellLogf(ctx, "[DBG] └ OUT(%v): %+v\n", args, st)
+				shellDebug(ctx, "└ OUT(%v): %+v", args, st)
 			}
 			err = st.Write(ctx)
 		}
 		if err != nil {
 			m := err.Error()
 			if h.debug {
-				shellLogf(ctx, "[DBG] Error(%v): %s\n", args, m)
+				shellDebug(ctx, "Error(%v): %s", args, m)
 			}
 			// Ensure any error from the handler is written to stdout so that
 			// the next command in the chain knows about it.
@@ -512,12 +512,12 @@ func (h *shellCallHandler) cmd(ctx context.Context, args []string) (*ShellState,
 	}
 	if st == nil {
 		if h.debug {
-			shellLogf(ctx, "[DBG] IN(%v): %q\n", args, string(b))
+			shellDebug(ctx, "IN(%v): %q", args, string(b))
 		}
 		return nil, fmt.Errorf("unexpected input for command %q", c)
 	}
 	if h.debug {
-		shellLogf(ctx, "[DBG] └ IN(%v): %+v\n", args, st)
+		shellDebug(ctx, "└ IN(%v): %+v", args, st)
 	}
 
 	builtin, err := h.BuiltinCommand(c)
@@ -564,7 +564,7 @@ func (h *shellCallHandler) cmd(ctx context.Context, args []string) (*ShellState,
 // entrypointCall is executed when it's the first command in a pipeline
 func (h *shellCallHandler) entrypointCall(ctx context.Context, cmd string, args []string) (*ShellState, error) {
 	if h.debug {
-		shellLogf(ctx, "[DBG] └ Entrypoint(%s, %v)\n", cmd, args)
+		shellDebug(ctx, "└ Entrypoint(%s, %v)", cmd, args)
 	}
 
 	if cmd, _ := h.BuiltinCommand(cmd); cmd != nil {
@@ -576,7 +576,7 @@ func (h *shellCallHandler) entrypointCall(ctx context.Context, cmd string, args 
 		return nil, err
 	}
 	if h.debug {
-		shellLogf(ctx, "[DBG] └ Found(%s, %v): %+v\n", cmd, args, st)
+		shellDebug(ctx, "└ Found(%s, %v): %+v", cmd, args, st)
 	}
 
 	if st.IsStdlib() {
@@ -614,14 +614,14 @@ func (h *shellCallHandler) isCurrentContextFunction(name string) bool {
 
 func (h *shellCallHandler) stateLookup(ctx context.Context, name string) (*ShellState, error) {
 	if h.debug {
-		shellLogf(ctx, "[DBG]   └ StateLookup(%v)\n", name)
+		shellDebug(ctx, "  └ StateLookup(%v)", name)
 	}
 	// Is current context a loaded module?
 	if md, _ := h.GetModuleDef(nil); md != nil {
 		// 1. Function in current context
 		if md.HasMainFunction(name) {
 			if h.debug {
-				shellLogf(ctx, "[DBG]     - found in current context\n")
+				shellDebug(ctx, "    - found in current context")
 			}
 			return h.newState(), nil
 		}
@@ -629,7 +629,7 @@ func (h *shellCallHandler) stateLookup(ctx context.Context, name string) (*Shell
 		// 2. Dependency short name
 		if dep := md.GetDependency(name); dep != nil {
 			if h.debug {
-				shellLogf(ctx, "[DBG]     - found dependency (%s)\n", dep.ModRef)
+				shellDebug(ctx, "    - found dependency (%s)", dep.ModRef)
 			}
 			depSt, _, err := h.GetDependency(ctx, name)
 			return depSt, err
@@ -639,7 +639,7 @@ func (h *shellCallHandler) stateLookup(ctx context.Context, name string) (*Shell
 	// 3. Standard library command
 	if cmd, _ := h.StdlibCommand(name); cmd != nil {
 		if h.debug {
-			shellLogf(ctx, "[DBG]     - found stdlib command\n")
+			shellDebug(ctx, "    - found stdlib command")
 		}
 		return h.newStdlibState(), nil
 	}
@@ -656,7 +656,7 @@ func (h *shellCallHandler) stateLookup(ctx context.Context, name string) (*Shell
 		return nil, fmt.Errorf("function or module %q not found", name)
 	}
 	if h.debug {
-		shellLogf(ctx, "[DBG]     - found module reference\n")
+		shellDebug(ctx, "    - found module reference")
 	}
 	return st, nil
 }
@@ -705,34 +705,109 @@ func (h *shellCallHandler) functionCall(ctx context.Context, st *ShellState, nam
 	return st.WithCall(fn, argValues), nil
 }
 
+// shellPreprocessArgs converts positional arguments to flag arguments
+//
+// Values are not processed. This function is used to leverage pflags to parse
+// flags interspersed with positional arguments, so a function's required
+// arguments can be placed anywhere. Then we get the unprocessed flags in
+// order to validate if the remaining number of positional arguments match
+// the number of required arguments.
+//
+// Required args in dagger shell are positional but we have a lot of power
+// in custom flags that we want to reuse, so just add the corresponding
+// `--flag-name` args in order for pflags to be able to parse them later.
+//
+// Additionally, if there's only one required argument that is a list of strings,
+// all positional arguments are used as elements of that list.
+func shellPreprocessArgs(fn *modFunction, args []string) ([]string, error) {
+	flags := pflag.NewFlagSet(fn.CmdName(), pflag.ContinueOnError)
+
+	opts := fn.OptionalArgs()
+
+	// All CLI arguments are strings at first, but booleans can be omitted.
+	// We don't wan't to process values yet, just validate and consume the flags
+	// so we get the remaining positional args.
+	for _, arg := range opts {
+		name := arg.FlagName()
+
+		switch arg.TypeDef.Kind {
+		case dagger.TypeDefKindListKind:
+			switch arg.TypeDef.AsList.ElementTypeDef.Kind {
+			case dagger.TypeDefKindBooleanKind:
+				flags.BoolSlice(name, nil, "")
+			default:
+				flags.StringSlice(name, nil, "")
+			}
+		case dagger.TypeDefKindBooleanKind:
+			flags.Bool(name, false, "")
+		default:
+			flags.String(name, "", "")
+		}
+	}
+
+	if err := flags.Parse(args); err != nil {
+		return args, err
+	}
+
+	reqs := fn.RequiredArgs()
+
+	// A command for with-exec could include a `--`, but it's only if it's
+	// the first positional argument that means we've stopped processing our
+	// flags. So these are equivalent:
+	// - with-exec --redirect-stdout /out git checkout -- file
+	// - with-exec --redirect-stdout /out -- git checkout -- file
+	pos := flags.Args()
+	if flags.ArgsLenAtDash() == 1 {
+		pos = pos[1:]
+	}
+
+	// Final processed arguments that will be parsed in the second phase later on.
+	var a []string
+
+	// Convenience for a single required argument of type [String!]!
+	// All positional arguments become elements in the list.
+	if len(reqs) == 1 && len(pos) > 1 && reqs[0].TypeDef.String() == "[]string" {
+		name := reqs[0].FlagName()
+		a = make([]string, 0, len(opts)+len(pos))
+
+		for _, value := range pos {
+			// Instead of creating a CSV value here, repeat the flag for each
+			// one so that pflags is the only one dealing with CSVs.
+			a = append(a, fmt.Sprintf("--%s=%v", name, value))
+		}
+	} else {
+		// Normal use case. Positional arguments should match number of required function arguments
+		if err := ExactArgs(len(reqs))(pos); err != nil {
+			return args, err
+		}
+		a = make([]string, 0, len(fn.Args))
+		// Use the `=` syntax so that each element in the args list corresponds
+		// to a single argument instead of two.
+		for i, arg := range reqs {
+			a = append(a, fmt.Sprintf("--%s=%v", arg.FlagName(), pos[i]))
+		}
+	}
+
+	// Add all the optional flags
+	flags.Visit(func(f *pflag.Flag) {
+		if f.Changed {
+			a = append(a, fmt.Sprintf("--%s=%v", f.Name, f.Value.String()))
+		}
+	})
+
+	return a, nil
+}
+
 // parseArgumentValues returns a map of argument names and their parsed values
 func (h *shellCallHandler) parseArgumentValues(ctx context.Context, md *moduleDef, fn *modFunction, args []string) (map[string]any, error) {
-	req := fn.RequiredArgs()
-
-	// Required args in dagger shell are positional but we have a lot of power
-	// in custom flags that we want to reuse, so just add the corresponding
-	// `--flag-name` args in order for pflags to be able to parse them.
-	pos := make([]string, 0, len(req)*2)
-	for i, arg := range args {
-		if strings.HasPrefix(arg, "--") {
-			break
-		}
-		if i >= len(req) {
-			return nil, fmt.Errorf("accepts at most %d positional argument(s)", len(req))
-		}
-		pos = append(pos, "--"+req[i].FlagName(), arg)
+	args, err := shellPreprocessArgs(fn, args)
+	if err != nil {
+		return nil, err
 	}
 
-	if len(req) > len(pos)/2 {
-		numMissing := len(req) - len(pos)/2
-		missing := make([]string, 0, numMissing)
-		for _, arg := range req[len(req)-numMissing:] {
-			missing = append(missing, arg.FlagName())
-		}
-		return nil, fmt.Errorf("missing %d positional argument(s): %s", numMissing, strings.Join(missing, ", "))
+	if h.debug {
+		shellDebug(ctx, "preprocessed arguments: %v", args)
 	}
-
-	rem := args[len(req):]
 
 	flags := pflag.NewFlagSet(fn.CmdName(), pflag.ContinueOnError)
 	flags.SetOutput(interp.HandlerCtx(ctx).Stderr)
@@ -792,7 +867,7 @@ func (h *shellCallHandler) parseArgumentValues(ctx context.Context, md *moduleDe
 		}
 		return flags.Set(flag.Name, value)
 	}
-	if err := flags.ParseAll(append(pos, rem...), f); err != nil {
+	if err := flags.ParseAll(args, f); err != nil {
 		return nil, err
 	}
 
@@ -864,7 +939,7 @@ func (h *shellCallHandler) parseStateArgument(ctx context.Context, arg *modFunct
 func (h *shellCallHandler) Result(ctx context.Context, st *ShellState) error {
 	if h.debug {
 		h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
-			fmt.Fprintf(stderr, "[DBG] Result state: %+v\n", st)
+			shellFDebug(stderr, "Result state: %+v", st)
 			return nil
 		})
 	}
@@ -933,9 +1008,15 @@ func (h *shellCallHandler) executeRequest(ctx context.Context, q *querybuilder.S
 	})
 }
 
-func shellLogf(ctx context.Context, msg string, args ...any) {
+func shellDebug(ctx context.Context, msg string, args ...any) {
 	hctx := interp.HandlerCtx(ctx)
-	fmt.Fprintf(hctx.Stderr, msg, args...)
+	shellFDebug(hctx.Stderr, msg, args...)
+}
+
+func shellFDebug(w io.Writer, msg string, args ...any) {
+	cat := termenv.String("[DBG]").Foreground(termenv.ANSIMagenta).String()
+	msg = termenv.String(fmt.Sprintf(msg, args...)).Faint().String()
+	fmt.Fprintln(w, cat, msg)
 }
 
 // First command in pipeline: e.g., `cmd1 | cmd2 | cmd3`
