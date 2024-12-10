@@ -111,17 +111,6 @@ func (j *Job) callDaggerStep() api.JobStep {
 		// For backwards compatibility with older engines
 		env["_EXPERIMENTAL_DAGGER_CLOUD_TOKEN"] = j.PublicToken
 	}
-	for _, key := range j.envLookups() {
-		if strings.HasPrefix(key, "GITHUB_") {
-			// Inject Github context keys
-			// github.ref becomes $GITHUB_REF, etc.
-			env[key] = fmt.Sprintf("${{ github.%s }}", strings.ToLower(key))
-		} else if strings.HasPrefix(key, "RUNNER_") {
-			// Inject Runner context keys
-			// runner.ref becomes $RUNNER_REF, etc.
-			env[key] = fmt.Sprintf("${{ runner.%s }}", strings.ToLower(key))
-		}
-	}
 	return j.bashStep("exec", env)
 }
 

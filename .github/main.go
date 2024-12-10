@@ -163,17 +163,20 @@ func (ci *CI) withPrepareReleaseWorkflow() *CI {
 			TimeoutMinutes: timeoutMinutes,
 		}),
 		WorkflowDefaults: dag.Gha().Workflow("", dagger.GhaWorkflowOpts{
-			PullRequestConcurrency: "queue",
-			Permissions:            []dagger.GhaPermission{dagger.GhaPermissionReadContents},
-			OnPullRequestOpened:    true,
-			OnPullRequestPaths:     []string{".changes/v*.md"},
+			PullRequestConcurrency:      "queue",
+			Permissions:                 []dagger.GhaPermission{dagger.GhaPermissionReadContents},
+			OnPullRequestOpened:         true,
+			OnPullRequestReopened:       true,
+			OnPullRequestSynchronize:    true,
+			OnPullRequestReadyForReview: true,
+			OnPullRequestPaths:          []string{".changes/v*.md"},
 		}),
 	})
 	w := gha.
 		Workflow("daggerverse-preview").
 		WithJob(gha.Job(
 			"deploy",
-			"deploy-preview-with-dagger-main --github-token=env:DAGGER_CI_GITHUB_TOKEN",
+			"--github-token=env:DAGGER_CI_GITHUB_TOKEN deploy-preview-with-dagger-main --target $GITHUB_REF_NAME",
 			dagger.GhaJobOpts{
 				Secrets: []string{"DAGGER_CI_GITHUB_TOKEN"},
 				Module:  "modules/daggerverse",

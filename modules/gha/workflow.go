@@ -180,7 +180,7 @@ func (gha *Gha) Workflow(
 		w = w.onPullRequest(nil, onPullRequestBranches, nil)
 	}
 	if onPullRequestPaths != nil {
-		w = w.onPullRequest([]string{"paths"}, nil, onPullRequestPaths)
+		w = w.onPullRequest(nil, nil, onPullRequestPaths)
 	}
 	if onPullRequestAssigned {
 		w = w.onPullRequest([]string{"assigned"}, nil, nil)
