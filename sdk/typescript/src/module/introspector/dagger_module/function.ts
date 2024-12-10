@@ -10,11 +10,12 @@ import {
 } from "../typescript_module/index.js"
 import { DaggerArgument, DaggerArguments } from "./argument.js"
 import { FUNCTION_DECORATOR } from "./decorator.js"
+import { Locatable } from "./locatable.js"
 import { References } from "./reference.js"
 
 export type DaggerFunctions = { [name: string]: DaggerFunction }
 
-export class DaggerFunction {
+export class DaggerFunction extends Locatable {
   public name: string
   public description: string
   private _returnTypeRef?: string
@@ -29,6 +30,8 @@ export class DaggerFunction {
     private readonly node: ts.MethodDeclaration,
     private readonly ast: AST,
   ) {
+    super(node)
+
     this.symbol = this.ast.getSymbolOrThrow(node.name)
     this.signature = this.ast.getSignatureFromFunctionOrThrow(node)
     this.name = this.node.name.getText()
