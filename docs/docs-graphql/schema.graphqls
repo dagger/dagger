@@ -2361,6 +2361,9 @@ type ModuleSource {
   """
   moduleOriginalName: String!
 
+  """The pinned version of this module source."""
+  pin: String!
+
   """
   The path to the module source's context directory on the caller's filesystem. Only valid for local sources.
   """

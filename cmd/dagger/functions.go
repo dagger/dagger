@@ -268,7 +268,7 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	if fc.DisableModuleLoad {
 		mod, err = initializeCore(ctx, fc.c.Dagger())
 	} else {
-		mod, err = initializeModule(ctx, fc.c.Dagger())
+		mod, err = initializeDefaultModule(ctx, fc.c.Dagger())
 	}
 	if err != nil {
 		return err
@@ -294,89 +294,6 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	}
 
 	return cmd.RunE(cmd, flags)
-}
-
-// initializeCore loads the core type definitions.
-func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, rerr error) {
-	def := &moduleDef{}
-
-	ctx, loadSpan := Tracer().Start(ctx, "inspecting core types", telemetry.Encapsulate())
-	defer telemetry.End(loadSpan, func() error { return rerr })
-
-	if err := def.loadTypeDefs(ctx, dag); err != nil {
-		return nil, err
-	}
-
-	return def, nil
-}
-
-// initializeModule loads the module's type definitions.
-func initializeModule(ctx context.Context, dag *dagger.Client) (*moduleDef, error) {
-	modRef, _ := getExplicitModuleSourceRef()
-	return maybeInitializeModule(ctx, dag, modRef, false)
-}
-
-// maybeInitializeModule optionally loads the module's type definitions.
-func maybeInitializeModule(ctx context.Context, dag *dagger.Client, srcRef string, optional bool) (rdef *moduleDef, rerr error) {
-	def := &moduleDef{}
-
-	ctx, span := Tracer().Start(ctx, "loading module")
-	defer telemetry.End(span, func() error { return rerr })
-
-	resolveCtx, resolveSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
-	defer telemetry.End(resolveSpan, func() error { return rerr })
-
-	// the user explicitly set the `-m,--mod` flag
-	modRefSet := srcRef != ""
-
-	if !modRefSet {
-		srcRef = moduleURLDefault
-	}
-
-	modConf, err := getModuleConfigurationForSourceRef(resolveCtx, dag, srcRef, true, true)
-	if err != nil && (modRefSet || !optional) {
-		return nil, fmt.Errorf("failed to get configured module: %w", err)
-	}
-	resolveSpan.End()
-
-	if modConf == nil || !modConf.FullyInitialized() {
-		return initializeCore(ctx, dag)
-	}
-
-	def.Source = modConf.Source
-	mod := modConf.Source.AsModule().Initialize()
-
-	serveCtx, serveSpan := Tracer().Start(ctx, "serving module", telemetry.Encapsulate())
-	err = mod.Serve(serveCtx)
-	telemetry.End(serveSpan, func() error { return err })
-	if err != nil {
-		return nil, fmt.Errorf("failed to serve module: %w", err)
-	}
-
-	ctx, loadSpan := Tracer().Start(ctx, "inspecting module", telemetry.Encapsulate())
-	defer telemetry.End(loadSpan, func() error { return rerr })
-
-	name, err := mod.Name(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get module name: %w", err)
-	}
-	def.Name = name
-
-	desc, err := mod.Description(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get module description: %w", err)
-	}
-	def.Description = desc
-
-	if err := def.loadTypeDefs(ctx, dag); err != nil {
-		return nil, err
-	}
-
-	if def.MainObject == nil {
-		return nil, fmt.Errorf("main object not found, check that your module's name and main object match")
-	}
-
-	return def, nil
 }
 
 // loadCommand finds the leaf command to run.

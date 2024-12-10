@@ -157,6 +157,9 @@ func (s *moduleSchema) Install() {
 		dagql.Func("asString", s.moduleSourceAsString).
 			Doc(`A human readable ref string representation of this module source.`),
 
+		dagql.Func("pin", s.moduleSourcePin).
+			Doc(`The pinned version of this module source.`),
+
 		dagql.NodeFunc("asModule", s.moduleSourceAsModule).
 			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`).
 			ArgDoc("engineVersion", `The engine version to upgrade to.`),
