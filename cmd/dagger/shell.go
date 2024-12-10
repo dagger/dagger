@@ -457,7 +457,7 @@ func (h *shellCallHandler) withTerminal(fn func(stdin io.Reader, stdout, stderr 
 func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 	return func(ctx context.Context, args []string) error {
 		if h.debug {
-			shellLogf(ctx, "[DBG] Exec(%v)[%d]\n", args, len(args))
+			shellDebug(ctx, "Exec(%v)", args)
 		}
 
 		// This avoids interpreter builtins running first, which would make it
@@ -470,14 +470,14 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 		st, err := h.cmd(ctx, args)
 		if err == nil && st != nil {
 			if h.debug {
-				shellLogf(ctx, "[DBG] └ OUT(%v): %+v\n", args, st)
+				shellDebug(ctx, "└ OUT(%v): %+v", args, st)
 			}
 			err = st.Write(ctx)
 		}
 		if err != nil {
 			m := err.Error()
 			if h.debug {
-				shellLogf(ctx, "[DBG] Error(%v): %s\n", args, m)
+				shellDebug(ctx, "Error(%v): %s", args, m)
 			}
 			// Ensure any error from the handler is written to stdout so that
 			// the next command in the chain knows about it.
@@ -512,12 +512,12 @@ func (h *shellCallHandler) cmd(ctx context.Context, args []string) (*ShellState,
 	}
 	if st == nil {
 		if h.debug {
-			shellLogf(ctx, "[DBG] IN(%v): %q\n", args, string(b))
+			shellDebug(ctx, "IN(%v): %q", args, string(b))
 		}
 		return nil, fmt.Errorf("unexpected input for command %q", c)
 	}
 	if h.debug {
-		shellLogf(ctx, "[DBG] └ IN(%v): %+v\n", args, st)
+		shellDebug(ctx, "└ IN(%v): %+v", args, st)
 	}
 
 	builtin, err := h.BuiltinCommand(c)
@@ -564,7 +564,7 @@ func (h *shellCallHandler) cmd(ctx context.Context, args []string) (*ShellState,
 // entrypointCall is executed when it's the first command in a pipeline
 func (h *shellCallHandler) entrypointCall(ctx context.Context, cmd string, args []string) (*ShellState, error) {
 	if h.debug {
-		shellLogf(ctx, "[DBG] └ Entrypoint(%s, %v)\n", cmd, args)
+		shellDebug(ctx, "└ Entrypoint(%s, %v)", cmd, args)
 	}
 
 	if cmd, _ := h.BuiltinCommand(cmd); cmd != nil {
@@ -576,7 +576,7 @@ func (h *shellCallHandler) entrypointCall(ctx context.Context, cmd string, args 
 		return nil, err
 	}
 	if h.debug {
-		shellLogf(ctx, "[DBG] └ Found(%s, %v): %+v\n", cmd, args, st)
+		shellDebug(ctx, "└ Found(%s, %v): %+v", cmd, args, st)
 	}
 
 	if st.IsStdlib() {
@@ -614,14 +614,14 @@ func (h *shellCallHandler) isCurrentContextFunction(name string) bool {
 
 func (h *shellCallHandler) stateLookup(ctx context.Context, name string) (*ShellState, error) {
 	if h.debug {
-		shellLogf(ctx, "[DBG]   └ StateLookup(%v)\n", name)
+		shellDebug(ctx, "  └ StateLookup(%v)", name)
 	}
 	// Is current context a loaded module?
 	if md, _ := h.GetModuleDef(nil); md != nil {
 		// 1. Function in current context
 		if md.HasMainFunction(name) {
 			if h.debug {
-				shellLogf(ctx, "[DBG]     - found in current context\n")
+				shellDebug(ctx, "    - found in current context")
 			}
 			return h.newState(), nil
 		}
@@ -629,7 +629,7 @@ func (h *shellCallHandler) stateLookup(ctx context.Context, name string) (*Shell
 		// 2. Dependency short name
 		if dep := md.GetDependency(name); dep != nil {
 			if h.debug {
-				shellLogf(ctx, "[DBG]     - found dependency (%s)\n", dep.ModRef)
+				shellDebug(ctx, "    - found dependency (%s)", dep.ModRef)
 			}
 			depSt, _, err := h.GetDependency(ctx, name)
 			return depSt, err
@@ -639,7 +639,7 @@ func (h *shellCallHandler) stateLookup(ctx context.Context, name string) (*Shell
 	// 3. Standard library command
 	if cmd, _ := h.StdlibCommand(name); cmd != nil {
 		if h.debug {
-			shellLogf(ctx, "[DBG]     - found stdlib command\n")
+			shellDebug(ctx, "    - found stdlib command")
 		}
 		return h.newStdlibState(), nil
 	}
@@ -656,7 +656,7 @@ func (h *shellCallHandler) stateLookup(ctx context.Context, name string) (*Shell
 		return nil, fmt.Errorf("function or module %q not found", name)
 	}
 	if h.debug {
-		shellLogf(ctx, "[DBG]     - found module reference\n")
+		shellDebug(ctx, "    - found module reference")
 	}
 	return st, nil
 }
@@ -806,7 +806,7 @@ func (h *shellCallHandler) parseArgumentValues(ctx context.Context, md *moduleDe
 	}
 
 	if h.debug {
-		shellLogf(ctx, termenv.String(fmt.Sprintf("[DBG] preprocessed arguments: %+v\n", args)).Faint().String())
+		shellDebug(ctx, "preprocessed arguments: %v", args)
 	}
 
 	flags := pflag.NewFlagSet(fn.CmdName(), pflag.ContinueOnError)
@@ -939,7 +939,7 @@ func (h *shellCallHandler) parseStateArgument(ctx context.Context, arg *modFunct
 func (h *shellCallHandler) Result(ctx context.Context, st *ShellState) error {
 	if h.debug {
 		h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
-			fmt.Fprintf(stderr, "[DBG] Result state: %+v\n", st)
+			shellFDebug(stderr, "Result state: %+v", st)
 			return nil
 		})
 	}
@@ -1008,9 +1008,15 @@ func (h *shellCallHandler) executeRequest(ctx context.Context, q *querybuilder.S
 	})
 }
 
-func shellLogf(ctx context.Context, msg string, args ...any) {
+func shellDebug(ctx context.Context, msg string, args ...any) {
 	hctx := interp.HandlerCtx(ctx)
-	fmt.Fprintf(hctx.Stderr, msg, args...)
+	shellFDebug(hctx.Stderr, msg, args...)
+}
+
+func shellFDebug(w io.Writer, msg string, args ...any) {
+	cat := termenv.String("[DBG]").Foreground(termenv.ANSIMagenta).String()
+	msg = termenv.String(fmt.Sprintf(msg, args...)).Faint().String()
+	fmt.Fprintln(w, cat, msg)
 }
 
 // First command in pipeline: e.g., `cmd1 | cmd2 | cmd3`
