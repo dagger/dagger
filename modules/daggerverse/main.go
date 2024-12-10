@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
-	"dagger/daggerverse/internal/dagger"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/google/go-github/v66/github"
+
+	"dagger/daggerverse/internal/dagger"
 )
 
 type Daggerverse struct {
@@ -62,33 +63,48 @@ func New(
 // Deploy preview environment running Dagger main: dagger call --github-token=env:GITHUB_PAT deploy-preview-with-dagger-main
 func (h *Daggerverse) DeployPreviewWithDaggerMain(
 	ctx context.Context,
+	target string,
 ) error {
 	// make a change so that a new Daggerverse deployment will be created
 	daggerio := h.clone().
 		WithNewFile("daggerverse/CREATE_PREVIEW_ENVIRONMENT", time.Now().String())
 
-	branch := fmt.Sprintf("dgvs-test-with-dagger-main-%s", h.date())
+	branch := fmt.Sprintf("dgvs-test-with-dagger-main-%s", target)
 	commitMsg := fmt.Sprintf(`dgvs: Test Dagger Engine main @ %s
 
 daggerverse-checks in GitHub Actions ensures that module crawling works as expected. Should complete within 5 mins.`, h.date())
 
-	// open a PR so that it creates a new Daggerverse preview environment running Dagger main
-	err := h.Gh.WithSource(daggerio).
+	// push the preview environment trigger branch
+	gh := h.Gh.WithSource(daggerio).
 		WithGitExec([]string{"checkout", "-b", branch}).
 		WithGitExec([]string{"add", "daggerverse/CREATE_PREVIEW_ENVIRONMENT"}).
 		WithGitExec([]string{"config", "user.email", h.GitHubUserEmail}).
 		WithGitExec([]string{"config", "user.name", h.GitHubUser}).
 		WithGitExec([]string{"commit", "-am", commitMsg}).
-		WithGitExec([]string{"push", "origin", branch}).
+		WithGitExec([]string{"push", "-f", "origin", branch})
+	if _, err := gh.Source().Sync(ctx); err != nil {
+		return err
+	}
+
+	// open a PR on the trigger branch that it creates a new Daggerverse
+	// preview environment running Dagger main
+	err := gh.
 		PullRequest().Create(
 		ctx,
 		dagger.GhPullRequestCreateOpts{
+			// TODO: this should actually be the username of the original PR author
 			Assignees: []string{h.GitHubUsername},
 			Fill:      true,
 			Labels:    []string{"preview", "area/daggerverse"},
 			Head:      branch,
 		},
 	)
+	if err != nil {
+		// FIXME: this will stop working in v0.15.0!
+		if strings.Contains(err.Error(), "already exists") {
+			return nil
+		}
+	}
 
 	return err
 }
@@ -181,10 +197,11 @@ func (h *Daggerverse) BumpDaggerVersion(
 		WithGitExec([]string{"config", "user.email", h.GitHubUserEmail}).
 		WithGitExec([]string{"config", "user.name", h.GitHubUser}).
 		WithGitExec([]string{"commit", "-am", commitMsg}).
-		WithGitExec([]string{"push", "origin", branch}).
+		WithGitExec([]string{"push", "-f", "origin", branch}).
 		PullRequest().Create(
 		ctx,
 		dagger.GhPullRequestCreateOpts{
+			// TODO: this should actually be the username of the original PR author
 			Assignees: []string{h.GitHubUsername},
 			Fill:      true,
 			Labels:    []string{"preview", "area/daggerverse"},
