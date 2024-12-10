@@ -66,9 +66,9 @@ If this works, Dagger will be able to use the same credentials to access your pr
 - Azure DevOps: Use [Git Credential Manager](https://learn.microsoft.com/en-us/azure/devops/repos/git/set-up-credential-managers)
 - BitBucket: Configure credentials using the [Git credential system](https://git-scm.com/book/en/v2/Git-Tools-Credential-Storage) (the widely-adopted implementation is [Git Credential Manager](https://github.com/git-ecosystem/git-credential-manager))
 
-### Using credentials in CI environments
+### Using Git credentials with tokens
 
-When running Dagger inside CI systems, you often have tokens provided by the CI provider. Instead of writing a custom helper script, you can directly store credentials in an ephemeral credentials file and configure Git to use it. Below are examples for GitLab, GitHub, and BitBucket, each shown in separate tabs. These approaches are minimal and avoid persistent storage of credentials.
+The examples below demonstrate how to set up Git credentials using tokens, which works in both local development and CI environments. For CI environments specifically, these examples show how to use provider-supplied tokens and avoid persistent credential storage.
 
 :::tabs
 
@@ -172,9 +172,11 @@ For quick and easy referencing:
 - To target a specific directory within the repository, use the format `#version:subpath` (for directory arguments) or add a `/subpath` (for modules). Remember that the version is mandatory when specifying a subpath.
 - For private repositories:
   - HTTPS: Ensure your Git credentials are properly configured using your provider's recommended method.
-    - GitLab `CI_JOB_TOKEN` -> username: `gitlab-ci-token`
-    - GitHub tokens -> username: `x-access-token`
-    - BitBucket App Passwords -> username: your BitBucket username
+    - For local development: Use your provider's CLI tool or Git Credential Manager
+    - For CI environments:
+      - GitLab `CI_JOB_TOKEN` -> username: `gitlab-ci-token`
+      - GitHub tokens -> username: `x-access-token`
+      - BitBucket App Passwords -> username: your BitBucket username
   - SSH: Make sure your SSH keys are properly set up and added to the SSH agent.
 
 
