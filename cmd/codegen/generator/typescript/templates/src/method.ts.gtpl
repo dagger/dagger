@@ -39,10 +39,10 @@
 {{ "" -}}
 	{{- end }}
 
-	const ctx = this._ctx.select(
-		"{{ .Name }}",
+    const ctx = this._ctx.select(
+      "{{ .Name }}",
 {{- if or $required $optionals }}
-    { {{""}}
+      { {{""}}
       		{{- with $required }}
 				{{- template "call_args" $required }}
 			{{- end }}
@@ -52,9 +52,8 @@
       ...opts
 			{{- end -}}
 			{{- if gt (len $enums) 0 -}}, __metadata: metadata{{- end -}}
-{{""}}  },
-		{{- end }}		
-	)
+{{""}} },{{- end }}
+    )
 
 	{{- if .TypeRef }}
     return new {{ .TypeRef | FormatOutputType }}(ctx)
