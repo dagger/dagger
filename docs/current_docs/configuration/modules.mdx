@@ -153,7 +153,7 @@ This behavior however should be considered a sensible fallback, and not as an ex
 
 ### Alternative base images
 
-You can specify a custom base image in your module's `package.json`, tailoring the SDK to your project's needs.
+The image to use is derived from the version in the `dagger.runtime` field if it's present. If this is not suitable for your needs, you can specify a custom base image in your module's `package.json`, tailoring the SDK to your project's needs.
 
 :::warning
 It is recommended to use this feature only for advanced use cases such as adding bespoke environment variables, authentication files or operating system packages to the runtime container. Ensure that you avoid deviating from the default image too much, as doing so could create unexpected results.
@@ -164,7 +164,7 @@ To change the base image, set the field `dagger.baseImage` in your Dagger module
 ```json
 {
   "dagger": {
-    "baseImage": "node:23.2.0-alpine@sha256:ecefaffd4706..."
+    "baseImage": "node:23.2.0-alpine@sha256:ecefaffd4706c5879af52e022fdb8ea30cbd6590e2a30d05347790d690727c6c"
   }
 }
 ```
