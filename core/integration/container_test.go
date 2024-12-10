@@ -484,34 +484,37 @@ func (ContainerSuite) TestExecStdinFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	content := "hello from file"
-	container, err := c.Container().
+	container := c.Container().
 		From("alpine:latest").
 		WithNewFile("/input.txt", content).
-		WithExec([]string{"cat"}, core.ContainerExecOpts{
+		WithExec([]string{"cat"}, dagger.ContainerWithExecOpts{
 			StdinFile: "/input.txt",
 		})
-	require.NoError(t, err)
 
 	out, err := container.Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, content, out)
 
 	// Test mutual exclusivity
-	container, err = c.Container().
+	container = c.Container().
 		From("alpine:latest").
-		WithExec([]string{"cat"}, core.ContainerExecOpts{
+		WithExec([]string{"cat"}, dagger.ContainerWithExecOpts{
 			Stdin:     "hello",
 			StdinFile: "/input.txt",
 		})
+
+	_, err = container.Stdout(ctx)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "cannot set both stdin and stdinFile")
 
 	// Test non-existent file
-	container, err = c.Container().
+	container = c.Container().
 		From("alpine:latest").
-		WithExec([]string{"cat"}, core.ContainerExecOpts{
+		WithExec([]string{"cat"}, dagger.ContainerWithExecOpts{
 			StdinFile: "/nonexistent.txt",
 		})
+
+	_, err = container.Stdout(ctx)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to read stdinFile")
 }
