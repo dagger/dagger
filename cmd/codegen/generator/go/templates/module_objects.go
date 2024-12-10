@@ -108,15 +108,25 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 		fieldSpec.goName = field.Name()
 		fieldSpec.name = fieldSpec.goName
 
-		// override the name with the json tag if it was set - otherwise, we
-		// end up asking for a name that we won't unmarshal correctly
+		// Check field tag first - if it's set to true, expose the field in the API
 		tag := reflect.StructTag(t.Tag(i))
-		if dt := tag.Get("json"); dt != "" {
+		if ft := tag.Get("field"); ft == "true" {
+			// Field is explicitly marked for API exposure
+			fieldSpec.name = fieldSpec.goName
+			// Check for name override from field tag
+			if name := tag.Get("name"); name != "" {
+				fieldSpec.name = name
+			}
+		} else if dt := tag.Get("json"); dt != "" {
+			// Fall back to json tag if field tag is not set
 			dt, _, _ = strings.Cut(dt, ",")
 			if dt == "-" {
 				continue
 			}
 			fieldSpec.name = dt
+		} else {
+			// If neither field nor json tag is set, skip the field
+			continue
 		}
 
 		docPragmas, docComment := parsePragmaComment(astFields[i].Doc.Text())
