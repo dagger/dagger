@@ -489,19 +489,16 @@ func (ContainerSuite) TestExecStdinFile(ctx context.Context, t *testctx.T) {
 		WithNewFile("/input.txt", content)
 
 	// Test stdinFile functionality
-	execContainer, err := container.WithExec(ctx, core.ContainerExecOpts{
-		Args:      []string{"cat"},
+	execContainer := container.WithExec([]string{"cat"}, dagger.ContainerWithExecOpts{
 		StdinFile: "/input.txt",
 	})
-	require.NoError(t, err)
 
 	out, err := execContainer.Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, content, out)
 
 	// Test mutual exclusivity
-	_, err = container.WithExec(ctx, core.ContainerExecOpts{
-		Args:      []string{"cat"},
+	_, err = container.WithExec([]string{"cat"}, dagger.ContainerWithExecOpts{
 		Stdin:     "hello",
 		StdinFile: "/input.txt",
 	})
