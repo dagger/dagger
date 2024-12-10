@@ -6066,15 +6066,9 @@ export class ModuleSource extends BaseClient {
       return this._pin
     }
 
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "pin",
-        },
-      ],
-      await this._ctx.connection(),
-    )
+    const ctx = this._ctx.select("pin")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
