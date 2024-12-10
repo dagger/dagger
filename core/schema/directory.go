@@ -76,6 +76,10 @@ func (s *directorySchema) Install() {
 			ArgDoc("directory", `Identifier of the directory to copy.`).
 			ArgDoc("exclude", `Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`).
 			ArgDoc("include", `Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
+		dagql.Func("filter", s.filter).
+			Doc(`Returns a new directory containing only files matching the given patterns.`).
+			ArgDoc("include", `Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`).
+			ArgDoc("exclude", `Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
 		dagql.Func("withNewDirectory", s.withNewDirectory).
 			Doc(`Retrieves this directory plus a new directory created at the given path.`).
 			ArgDoc("path", `Location of the directory created (e.g., "/logs").`).
@@ -125,6 +129,18 @@ func (s *directorySchema) Install() {
 			guarantees when using this option. It should only be used when
 			absolutely necessary and only with trusted commands.`),
 	}.Install(s.srv)
+}
+
+type filterArgs struct {
+	Include []string `default:"[]"`
+	Exclude []string `default:"[]"`
+}
+
+func (s *directorySchema) filter(ctx context.Context, parent *core.Directory, args filterArgs) (*core.Directory, error) {
+	return parent.WithDirectory(ctx, ".", parent, core.CopyFilter{
+		Include: args.Include,
+		Exclude: args.Exclude,
+	}, nil)
 }
 
 type directoryPipelineArgs struct {
