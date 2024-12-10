@@ -484,12 +484,13 @@ func (ContainerSuite) TestExecStdinFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	content := "hello from file"
-	container := c.Container().
+	container, err := c.Container().
 		From("alpine:latest").
 		WithNewFile("/input.txt", content).
-		WithExec([]string{"cat"}, dagger.ContainerWithExecOpts{
+		WithExec([]string{"cat"}, core.ContainerExecOpts{
 			StdinFile: "/input.txt",
 		})
+	require.NoError(t, err)
 
 	out, err := container.Stdout(ctx)
 	require.NoError(t, err)
@@ -498,7 +499,7 @@ func (ContainerSuite) TestExecStdinFile(ctx context.Context, t *testctx.T) {
 	// Test mutual exclusivity
 	container, err = c.Container().
 		From("alpine:latest").
-		WithExec([]string{"cat"}, dagger.ContainerWithExecOpts{
+		WithExec([]string{"cat"}, core.ContainerExecOpts{
 			Stdin:     "hello",
 			StdinFile: "/input.txt",
 		})
@@ -508,7 +509,7 @@ func (ContainerSuite) TestExecStdinFile(ctx context.Context, t *testctx.T) {
 	// Test non-existent file
 	container, err = c.Container().
 		From("alpine:latest").
-		WithExec([]string{"cat"}, dagger.ContainerWithExecOpts{
+		WithExec([]string{"cat"}, core.ContainerExecOpts{
 			StdinFile: "/nonexistent.txt",
 		})
 	require.Error(t, err)
