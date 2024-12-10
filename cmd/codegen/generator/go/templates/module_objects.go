@@ -418,6 +418,7 @@ func (spec *parsedObjectType) marshalJSONMethodCode() (*Statement, error) {
 The code for the type of a field in the concrete struct we use for marshalling into.
 */
 func (spec *parsedObjectType) marshalFieldTypeCode(typeSpec ParsedType) (*Statement, error) {
+	// Handle field types
 	switch typeSpec := typeSpec.(type) {
 	case *parsedIfaceTypeReference:
 		return Id("any"), nil
@@ -425,8 +426,24 @@ func (spec *parsedObjectType) marshalFieldTypeCode(typeSpec ParsedType) (*Statem
 		if _, ok := typeSpec.underlying.(*parsedIfaceTypeReference); ok {
 			return Id("any"), nil
 		}
+		fieldTypeCode, err := spec.marshalFieldTypeCode(typeSpec.underlying)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate slice field type code: %w", err)
+		}
+		return Index().Add(fieldTypeCode), nil
+	case *parsedObjectTypeReference:
+		if typeSpec.isPtr {
+			return Op("*").Id(typeName(typeSpec)), nil
+		}
+		return Id(typeName(typeSpec)), nil
+	case *parsedPrimitiveType:
+		if typeSpec.isPtr {
+			return Op("*").Id(typeSpec.GoType().String()), nil
+		}
+		return Id(typeSpec.GoType().String()), nil
+	default:
+		return nil, fmt.Errorf("unsupported field type %T", typeSpec)
 	}
-	return spec.concreteFieldTypeCode(typeSpec)
 }
 
 /*
