@@ -19,9 +19,9 @@ import (
 type Distro string
 
 const (
-	DistroAlpine = "alpine"
-	DistroWolfi  = "wolfi"
-	DistroUbuntu = "ubuntu"
+	DistroAlpine Distro = "alpine"
+	DistroWolfi  Distro = "wolfi"
+	DistroUbuntu Distro = "ubuntu"
 )
 
 type DaggerEngine struct {
