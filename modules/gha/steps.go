@@ -3,12 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/dagger/dagger/modules/gha/api"
 	"golang.org/x/mod/semver"
-	"mvdan.cc/sh/shell"
 )
 
 func (j *Job) checkoutStep() api.JobStep {
@@ -65,29 +63,6 @@ func (j *Job) installDaggerSteps() []api.JobStep {
 	}
 }
 
-// Analyze the pipeline command, and return a list of env variables it references
-func (j *Job) envLookups() []string {
-	var lookups = make(map[string]struct{})
-	_, err := shell.Expand(j.Command, func(name string) string {
-		lookups[name] = struct{}{}
-		return name
-	})
-	if err != nil {
-		// An error might mean an invalid command OR a bug or incomatibility in our parser,
-		// let's not surface it for now.
-		return nil
-	}
-	result := make([]string, 0, len(lookups))
-	for name := range lookups {
-		if name == "IFS" {
-			continue
-		}
-		result = append(result, name)
-	}
-	sort.Strings(result)
-	return result
-}
-
 func (j *Job) callDaggerStep() api.JobStep {
 	env := map[string]string{}
 	// Debug mode
@@ -110,17 +85,6 @@ func (j *Job) callDaggerStep() api.JobStep {
 		env["DAGGER_CLOUD_TOKEN"] = j.PublicToken
 		// For backwards compatibility with older engines
 		env["_EXPERIMENTAL_DAGGER_CLOUD_TOKEN"] = j.PublicToken
-	}
-	for _, key := range j.envLookups() {
-		if strings.HasPrefix(key, "GITHUB_") {
-			// Inject Github context keys
-			// github.ref becomes $GITHUB_REF, etc.
-			env[key] = fmt.Sprintf("${{ github.%s }}", strings.ToLower(key))
-		} else if strings.HasPrefix(key, "RUNNER_") {
-			// Inject Runner context keys
-			// runner.ref becomes $RUNNER_REF, etc.
-			env[key] = fmt.Sprintf("${{ runner.%s }}", strings.ToLower(key))
-		}
 	}
 	return j.bashStep("exec", env)
 }

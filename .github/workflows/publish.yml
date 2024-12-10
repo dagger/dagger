@@ -192,9 +192,9 @@ jobs:
       - name: "Bump Dagger version in Daggerverse"
         uses: ./.github/actions/call
         env:
-          DAGGER_CI_GITHUB_TOKEN: ${{ secrets.DAGGER_CI_GITHUB_TOKEN }}
+          RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
         with:
-          function: --github-token=env:DAGGER_CI_GITHUB_TOKEN bump-dagger-version --to=${{ github.ref_name }} 
+          function: --github-token=env:RELEASE_DAGGER_CI_TOKEN bump-dagger-version --to=${{ github.ref_name }}
           module: ./modules/daggerverse
 
   # TODO: daggerize provisioning tests

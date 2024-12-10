@@ -44,7 +44,7 @@ func (m *Examples) GhaGithubContext() *dagger.Directory {
 			dag.Gha().Workflow("lint all branches", dagger.GhaWorkflowOpts{
 				OnPush: true,
 			}).
-				WithJob(dag.Gha().Job("lin", "lint --source=${GITHUB_REPOSITORY_URL}#${GITHUB_REF}")),
+				WithJob(dag.Gha().Job("lint", "lint --source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}#${GITHUB_REF}")),
 		).
 		Generate()
 }
