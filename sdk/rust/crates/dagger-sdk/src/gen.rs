@@ -6444,6 +6444,11 @@ impl ModuleSource {
         let query = self.selection.select("moduleOriginalName");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The pinned version of this module source.
+    pub async fn pin(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("pin");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The path to the module source's context directory on the caller's filesystem. Only valid for local sources.
     pub async fn resolve_context_path_from_caller(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("resolveContextPathFromCaller");
