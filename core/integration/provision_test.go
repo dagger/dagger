@@ -27,8 +27,7 @@ func TestProvision(t *testing.T) {
 func (ProvisionSuite) TestDockerDriver(ctx context.Context, t *testctx.T) {
 	t.Run("default image", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		dockerd := dockerService(t, c, "", nil)
-		dockerc := dockerClient(ctx, t, c, dockerd, "", nil)
+		dockerc := dockerSetup(ctx, t, "provisioner", c, "", nil)
 		dockerc = dockerc.WithMountedFile("/bin/dagger", daggerCliFile(t, c))
 
 		out, err := dockerc.
@@ -41,8 +40,7 @@ func (ProvisionSuite) TestDockerDriver(ctx context.Context, t *testctx.T) {
 
 	t.Run("specified image", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		dockerd := dockerService(t, c, "", nil)
-		dockerc := dockerClient(ctx, t, c, dockerd, "", nil)
+		dockerc := dockerSetup(ctx, t, "provisioner", c, "", nil)
 		dockerc = dockerc.WithMountedFile("/bin/dagger", daggerCliFile(t, c))
 
 		version := "v0.14.0"
@@ -55,8 +53,7 @@ func (ProvisionSuite) TestDockerDriver(ctx context.Context, t *testctx.T) {
 
 	t.Run("current image", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		dockerd := dockerService(t, c, "", nil)
-		dockerc := dockerClient(ctx, t, c, dockerd, "", nil)
+		dockerc := dockerSetup(ctx, t, "provisioner", c, "", nil)
 		dockerc = dockerc.WithMountedFile("/bin/dagger", daggerCliFile(t, c))
 		dockerc, err := dockerLoadEngine(ctx, c, dockerc, "registry.dagger.io/engine:dev")
 		require.NoError(t, err)
@@ -78,8 +75,7 @@ func (ProvisionSuite) TestDockerDriverConfig(ctx context.Context, t *testctx.T) 
 		return ctr.WithNewFile("/root/.config/dagger/engine.json", configContents)
 	}
 
-	dockerd := dockerService(t, c, "", middleware)
-	dockerc := dockerClient(ctx, t, c, dockerd, "", middleware)
+	dockerc := dockerSetup(ctx, t, "provisioner", c, "", middleware)
 	dockerc, err := dockerLoadEngine(ctx, c, dockerc, "registry.dagger.io/engine:dev")
 	require.NoError(t, err)
 	dockerc = dockerc.
@@ -101,22 +97,92 @@ func (ProvisionSuite) TestDockerDriverConfig(ctx context.Context, t *testctx.T) 
 	require.JSONEq(t, configContents, result)
 }
 
-func dockerService(t *testctx.T, dag *dagger.Client, dockerVersion string, f func(*dagger.Container) *dagger.Container) *dagger.Service {
-	tag := "dind"
-	if dockerVersion != "" {
-		tag = dockerVersion + "-" + tag
+func (ProvisionSuite) TestDockerDriverGarbageCollectEngines(ctx context.Context, t *testctx.T) {
+	dockerPs := func(ctx context.Context, t *testctx.T, dockerc *dagger.Container) []string {
+		out, err := dockerc.
+			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			WithExec([]string{"docker", "ps", "-q"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		out = strings.TrimSpace(out)
+		if out == "" {
+			return []string{}
+		}
+		return strings.Split(out, "\n")
 	}
 
+	t.Run("cleanup", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		dockerc := dockerSetup(ctx, t, "provisioner", c, "", nil)
+		dockerc = dockerc.WithMountedFile("/bin/dagger", daggerCliFile(t, c))
+
+		require.Len(t, dockerPs(ctx, t, dockerc), 0)
+
+		version := "v0.13.0"
+		out, err := dockerc.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:"+version).
+			WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{Stdin: "{version}"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"version":"`+version+`"}`, out)
+
+		require.Len(t, dockerPs(ctx, t, dockerc), 1)
+
+		version = "v0.14.0"
+		out, err = dockerc.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:"+version).
+			WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{Stdin: "{version}"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"version":"`+version+`"}`, out)
+
+		require.Len(t, dockerPs(ctx, t, dockerc), 1)
+	})
+
+	t.Run("no cleanup", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		dockerc := dockerSetup(ctx, t, "provisioner", c, "", nil)
+		dockerc = dockerc.WithMountedFile("/bin/dagger", daggerCliFile(t, c))
+		dockerc = dockerc.WithEnvVariable("DAGGER_LEAVE_OLD_ENGINE", "true")
+
+		require.Len(t, dockerPs(ctx, t, dockerc), 0)
+
+		version := "v0.13.0"
+		out, err := dockerc.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:"+version).
+			WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{Stdin: "{version}"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"version":"`+version+`"}`, out)
+
+		require.Len(t, dockerPs(ctx, t, dockerc), 1)
+
+		version = "v0.14.0"
+		out, err = dockerc.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:"+version).
+			WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{Stdin: "{version}"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"version":"`+version+`"}`, out)
+
+		require.Len(t, dockerPs(ctx, t, dockerc), 2)
+	})
+}
+
+func dockerSetup(ctx context.Context, t *testctx.T, name string, dag *dagger.Client, dockerVersion string, f func(*dagger.Container) *dagger.Container) *dagger.Container {
 	if f == nil {
 		f = func(ctr *dagger.Container) *dagger.Container {
 			return ctr
 		}
 	}
 
+	dockerdTag := "dind"
+	dockercTag := "cli"
+	if dockerVersion != "" {
+		dockerdTag = dockerVersion + "-" + dockerdTag
+		dockercTag = dockerVersion + "-" + dockercTag
+	}
+
 	port := 4000
-	dockerd := dag.Container().From("docker:"+tag).
+	dockerd := dag.Container().From("docker:"+dockerdTag).
 		With(f).
-		WithMountedCache("/var/lib/docker", dag.CacheVolume(t.Name()+"-"+dockerVersion+"-docker-lib"), dagger.ContainerWithMountedCacheOpts{
+		WithMountedCache("/var/lib/docker", dag.CacheVolume(name+"-"+dockerVersion+"-docker-lib"), dagger.ContainerWithMountedCacheOpts{
 			Sharing: dagger.CacheSharingModePrivate,
 		}).
 		WithExposedPort(port).
@@ -130,35 +196,30 @@ func dockerService(t *testctx.T, dag *dagger.Client, dockerVersion string, f fun
 				InsecureRootCapabilities: true,
 			},
 		)
-
-	return dockerd
-}
-
-func dockerClient(ctx context.Context, t *testctx.T, dag *dagger.Client, dockerd *dagger.Service, dockerVersion string, f func(*dagger.Container) *dagger.Container) *dagger.Container {
-	tag := "cli"
-	if dockerVersion != "" {
-		tag = dockerVersion + "-" + tag
-	}
-
-	if f == nil {
-		f = func(ctr *dagger.Container) *dagger.Container {
-			return ctr
-		}
-	}
+	dockerd, err := dockerd.Start(ctx)
+	require.NoError(t, err)
 
 	dockerHost, err := dockerd.Endpoint(ctx, dagger.ServiceEndpointOpts{
 		Scheme: "tcp",
 	})
 	require.NoError(t, err)
 
-	client := dag.Container().From("docker:"+tag).
+	dockerc := dag.Container().From("docker:"+dockercTag).
 		With(f).
 		With(mountDockerConfig(dag)).
 		WithServiceBinding("docker", dockerd).
 		WithEnvVariable("DOCKER_HOST", dockerHost).
 		WithEnvVariable("CACHEBUSTER", identity.NewID())
 
-	return client
+	t.Cleanup(func() {
+		_, err := dockerc.WithExec([]string{"sh", "-c", "docker rm -f $(docker ps -aq); docker system prune --all --volumes; true"}).Sync(ctx)
+		require.NoError(t, err)
+
+		_, err = dockerd.Stop(ctx)
+		require.NoError(t, err)
+	})
+
+	return dockerc
 }
 
 func dockerLoadEngine(ctx context.Context, dag *dagger.Client, ctr *dagger.Container, engineTag string) (*dagger.Container, error) {

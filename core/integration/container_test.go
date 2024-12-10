@@ -3632,8 +3632,8 @@ func (ContainerSuite) TestInsecureRootCapabilitesWithService(ctx context.Context
 	// testing it can startup, create containers and bind mount from its filesystem to
 	// them.
 	randID := identity.NewID()
-	dockerd := dockerService(t, c, "23.0.1", middleware)
-	out, err := dockerClient(ctx, t, c, dockerd, "23.0.1", middleware).
+	dockerc := dockerSetup(ctx, t, t.Name(), c, "23.0.1", middleware)
+	out, err := dockerc.
 		WithExec([]string{"sh", "-e", "-c", strings.Join([]string{
 			fmt.Sprintf("echo %s-from-outside > /tmp/from-outside", randID),
 			"docker run --rm -v /tmp:/tmp alpine cat /tmp/from-outside",
@@ -4213,7 +4213,7 @@ func (ContainerSuite) TestImageLoadCompatibility(ctx context.Context, t *testctx
 	c := connect(ctx, t)
 
 	for _, dockerVersion := range []string{"20.10", "23.0", "24.0"} {
-		dockerd := dockerService(t, c, dockerVersion, nil)
+		dockerc := dockerSetup(ctx, t, t.Name(), c, dockerVersion, nil)
 
 		for _, mediaType := range []dagger.ImageMediaTypes{dagger.ImageMediaTypesOcimediaTypes, dagger.ImageMediaTypesDockerMediaTypes} {
 			mediaType := mediaType
@@ -4231,7 +4231,7 @@ func (ContainerSuite) TestImageLoadCompatibility(ctx context.Context, t *testctx
 						})
 					require.NoError(t, err)
 
-					ctr := dockerClient(ctx, t, c, dockerd, dockerVersion, nil).
+					ctr := dockerc.
 						WithMountedFile(path.Join("/", path.Base(tmpfile)), c.Host().File(tmpfile)).
 						WithExec([]string{"docker", "load", "-i", "/" + path.Base(tmpfile)})
 
