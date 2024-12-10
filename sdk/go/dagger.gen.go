@@ -132,9 +132,6 @@ type EnumValueTypeDefID string
 // The `EnvVariableID` scalar type represents an identifier for an object of type EnvVariable.
 type EnvVariableID string
 
-// The `ErrorID` scalar type represents an identifier for an object of type Error.
-type ErrorID string
-
 // The `FieldTypeDefID` scalar type represents an identifier for an object of type FieldTypeDef.
 type FieldTypeDefID string
 
@@ -352,59 +349,11 @@ func (r *Container) WithGraphQLQuery(q *querybuilder.Selection) *Container {
 	}
 }
 
-// ContainerAsServiceOpts contains options for Container.AsService
-type ContainerAsServiceOpts struct {
-	// Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
-	//
-	// If empty, the container's default command is used.
-	Args []string
-	// If the container has an entrypoint, prepend it to the args.
-	UseEntrypoint bool
-	// Provides Dagger access to the executed command.
-	//
-	// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
-	ExperimentalPrivilegedNesting bool
-	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
-	InsecureRootCapabilities bool
-	// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
-	Expand bool
-	// If set, skip the automatic init process injected into containers by default.
-	//
-	// This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
-	NoInit bool
-}
-
 // Turn the container into a Service.
 //
 // Be sure to set any exposed ports before this conversion.
-func (r *Container) AsService(opts ...ContainerAsServiceOpts) *Service {
+func (r *Container) AsService() *Service {
 	q := r.query.Select("asService")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `args` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Args) {
-			q = q.Arg("args", opts[i].Args)
-		}
-		// `useEntrypoint` optional argument
-		if !querybuilder.IsZeroValue(opts[i].UseEntrypoint) {
-			q = q.Arg("useEntrypoint", opts[i].UseEntrypoint)
-		}
-		// `experimentalPrivilegedNesting` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
-			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
-		}
-		// `insecureRootCapabilities` optional argument
-		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
-			q = q.Arg("insecureRootCapabilities", opts[i].InsecureRootCapabilities)
-		}
-		// `expand` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Expand) {
-			q = q.Arg("expand", opts[i].Expand)
-		}
-		// `noInit` optional argument
-		if !querybuilder.IsZeroValue(opts[i].NoInit) {
-			q = q.Arg("noInit", opts[i].NoInit)
-		}
-	}
 
 	return &Service{
 		query: q,
@@ -2670,20 +2619,9 @@ func (r *EngineCache) WithGraphQLQuery(q *querybuilder.Selection) *EngineCache {
 	}
 }
 
-// EngineCacheEntrySetOpts contains options for EngineCache.EntrySet
-type EngineCacheEntrySetOpts struct {
-	Key string
-}
-
 // The current set of entries in the cache
-func (r *EngineCache) EntrySet(opts ...EngineCacheEntrySetOpts) *EngineCacheEntrySet {
+func (r *EngineCache) EntrySet() *EngineCacheEntrySet {
 	q := r.query.Select("entrySet")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `key` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Key) {
-			q = q.Arg("key", opts[i].Key)
-		}
-	}
 
 	return &EngineCacheEntrySet{
 		query: q,
@@ -3331,72 +3269,6 @@ func (r *EnvVariable) Value(ctx context.Context) (string, error) {
 		return *r.value, nil
 	}
 	q := r.query.Select("value")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-type Error struct {
-	query *querybuilder.Selection
-
-	id      *ErrorID
-	message *string
-}
-
-func (r *Error) WithGraphQLQuery(q *querybuilder.Selection) *Error {
-	return &Error{
-		query: q,
-	}
-}
-
-// A unique identifier for this Error.
-func (r *Error) ID(ctx context.Context) (ErrorID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ErrorID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Error) XXX_GraphQLType() string {
-	return "Error"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *Error) XXX_GraphQLIDType() string {
-	return "ErrorID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Error) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *Error) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// A description of the error.
-func (r *Error) Message(ctx context.Context) (string, error) {
-	if r.message != nil {
-		return *r.message, nil
-	}
-	q := r.query.Select("message")
 
 	var response string
 
@@ -4053,7 +3925,6 @@ type FunctionCall struct {
 	name        *string
 	parent      *JSON
 	parentName  *string
-	returnError *Void
 	returnValue *Void
 }
 
@@ -4173,18 +4044,6 @@ func (r *FunctionCall) ParentName(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
-}
-
-// Return an error from the function.
-func (r *FunctionCall) ReturnError(ctx context.Context, error *Error) error {
-	assertNotNil("error", error)
-	if r.returnError != nil {
-		return nil
-	}
-	q := r.query.Select("returnError")
-	q = q.Arg("error", error)
-
-	return q.Execute(ctx)
 }
 
 // Set the return value of the function call to the provided value.
@@ -6000,7 +5859,7 @@ func (r *ModuleSource) ConfigExists(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
-// The directory containing everything needed to load and use the module.
+// The directory containing everything needed to load load and use the module.
 func (r *ModuleSource) ContextDirectory() *Directory {
 	q := r.query.Select("contextDirectory")
 
@@ -6009,7 +5868,7 @@ func (r *ModuleSource) ContextDirectory() *Directory {
 	}
 }
 
-// The effective module source dependencies from the configuration, and calls to withDependencies and withoutDependencies.
+// The dependencies of the module source. Includes dependencies from the configuration and any extras from withDependencies calls.
 func (r *ModuleSource) Dependencies(ctx context.Context) ([]ModuleDependency, error) {
 	q := r.query.Select("dependencies")
 
@@ -6351,16 +6210,6 @@ func (r *ModuleSource) WithView(name string, patterns []string) *ModuleSource {
 	q := r.query.Select("withView")
 	q = q.Arg("name", name)
 	q = q.Arg("patterns", patterns)
-
-	return &ModuleSource{
-		query: q,
-	}
-}
-
-// Remove the provided dependencies from the module source's dependency list.
-func (r *ModuleSource) WithoutDependencies(dependencies []string) *ModuleSource {
-	q := r.query.Select("withoutDependencies")
-	q = q.Arg("dependencies", dependencies)
 
 	return &ModuleSource{
 		query: q,
@@ -6740,9 +6589,12 @@ func (r *Client) WithGraphQLQuery(q *querybuilder.Selection) *Client {
 }
 
 // Retrieves a content-addressed blob.
-func (r *Client) Blob(digest string) *Directory {
+func (r *Client) Blob(digest string, size int, mediaType string, uncompressed string) *Directory {
 	q := r.query.Select("blob")
 	q = q.Arg("digest", digest)
+	q = q.Arg("size", size)
+	q = q.Arg("mediaType", mediaType)
+	q = q.Arg("uncompressed", uncompressed)
 
 	return &Directory{
 		query: q,
@@ -6869,16 +6721,6 @@ func (r *Client) Engine() *Engine {
 	q := r.query.Select("engine")
 
 	return &Engine{
-		query: q,
-	}
-}
-
-// Create a new error.
-func (r *Client) Error(message string) *Error {
-	q := r.query.Select("error")
-	q = q.Arg("message", message)
-
-	return &Error{
 		query: q,
 	}
 }
@@ -7083,16 +6925,6 @@ func (r *Client) LoadEnvVariableFromID(id EnvVariableID) *EnvVariable {
 	q = q.Arg("id", id)
 
 	return &EnvVariable{
-		query: q,
-	}
-}
-
-// Load a Error from its ID.
-func (r *Client) LoadErrorFromID(id ErrorID) *Error {
-	q := r.query.Select("loadErrorFromID")
-	q = q.Arg("id", id)
-
-	return &Error{
 		query: q,
 	}
 }
@@ -8522,11 +8354,23 @@ const (
 	// Shares the cache volume amongst many build pipelines, but will serialize the writes
 	CacheSharingModeLocked CacheSharingMode = "LOCKED"
 
+	// Shares the cache volume amongst many build pipelines, but will serialize the writes
+	// Deprecated: use CacheSharingModeLocked instead
+	Locked CacheSharingMode = CacheSharingModeLocked
+
 	// Keeps a cache volume for a single build pipeline
 	CacheSharingModePrivate CacheSharingMode = "PRIVATE"
 
+	// Keeps a cache volume for a single build pipeline
+	// Deprecated: use CacheSharingModePrivate instead
+	Private CacheSharingMode = CacheSharingModePrivate
+
 	// Shares the cache volume amongst many build pipelines
 	CacheSharingModeShared CacheSharingMode = "SHARED"
+
+	// Shares the cache volume amongst many build pipelines
+	// Deprecated: use CacheSharingModeShared instead
+	Shared CacheSharingMode = CacheSharingModeShared
 )
 
 // Compression algorithm to use for image layers.
@@ -8537,11 +8381,23 @@ func (ImageLayerCompression) IsEnum() {}
 const (
 	ImageLayerCompressionEstarGz ImageLayerCompression = "EStarGZ"
 
+	// Deprecated: use ImageLayerCompressionEstarGz instead
+	Estargz ImageLayerCompression = ImageLayerCompressionEstarGz
+
 	ImageLayerCompressionGzip ImageLayerCompression = "Gzip"
+
+	// Deprecated: use ImageLayerCompressionGzip instead
+	Gzip ImageLayerCompression = ImageLayerCompressionGzip
 
 	ImageLayerCompressionUncompressed ImageLayerCompression = "Uncompressed"
 
+	// Deprecated: use ImageLayerCompressionUncompressed instead
+	Uncompressed ImageLayerCompression = ImageLayerCompressionUncompressed
+
 	ImageLayerCompressionZstd ImageLayerCompression = "Zstd"
+
+	// Deprecated: use ImageLayerCompressionZstd instead
+	Zstd ImageLayerCompression = ImageLayerCompressionZstd
 )
 
 // Mediatypes to use in published or exported image metadata.
@@ -8552,7 +8408,13 @@ func (ImageMediaTypes) IsEnum() {}
 const (
 	ImageMediaTypesDockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
 
+	// Deprecated: use ImageMediaTypesDockerMediaTypes instead
+	Dockermediatypes ImageMediaTypes = ImageMediaTypesDockerMediaTypes
+
 	ImageMediaTypesOcimediaTypes ImageMediaTypes = "OCIMediaTypes"
+
+	// Deprecated: use ImageMediaTypesOcimediaTypes instead
+	Ocimediatypes ImageMediaTypes = ImageMediaTypesOcimediaTypes
 )
 
 // The kind of module source.
@@ -8563,7 +8425,13 @@ func (ModuleSourceKind) IsEnum() {}
 const (
 	ModuleSourceKindGitSource ModuleSourceKind = "GIT_SOURCE"
 
+	// Deprecated: use ModuleSourceKindGitSource instead
+	GitSource ModuleSourceKind = ModuleSourceKindGitSource
+
 	ModuleSourceKindLocalSource ModuleSourceKind = "LOCAL_SOURCE"
+
+	// Deprecated: use ModuleSourceKindLocalSource instead
+	LocalSource ModuleSourceKind = ModuleSourceKindLocalSource
 )
 
 // Transport layer network protocol associated to a port.
@@ -8574,7 +8442,13 @@ func (NetworkProtocol) IsEnum() {}
 const (
 	NetworkProtocolTcp NetworkProtocol = "TCP"
 
+	// Deprecated: use NetworkProtocolTcp instead
+	Tcp NetworkProtocol = NetworkProtocolTcp
+
 	NetworkProtocolUdp NetworkProtocol = "UDP"
+
+	// Deprecated: use NetworkProtocolUdp instead
+	Udp NetworkProtocol = NetworkProtocolUdp
 )
 
 // Expected return type of an execution
@@ -8586,11 +8460,23 @@ const (
 	// Any execution (exit codes 0-127)
 	ReturnTypeAny ReturnType = "ANY"
 
+	// Any execution (exit codes 0-127)
+	// Deprecated: use ReturnTypeAny instead
+	Any ReturnType = ReturnTypeAny
+
 	// A failed execution (exit codes 1-127)
 	ReturnTypeFailure ReturnType = "FAILURE"
 
+	// A failed execution (exit codes 1-127)
+	// Deprecated: use ReturnTypeFailure instead
+	Failure ReturnType = ReturnTypeFailure
+
 	// A successful execution (exit code 0)
 	ReturnTypeSuccess ReturnType = "SUCCESS"
+
+	// A successful execution (exit code 0)
+	// Deprecated: use ReturnTypeSuccess instead
+	Success ReturnType = ReturnTypeSuccess
 )
 
 // Distinguishes the different kinds of TypeDefs.
@@ -8602,40 +8488,90 @@ const (
 	// A boolean value.
 	TypeDefKindBooleanKind TypeDefKind = "BOOLEAN_KIND"
 
+	// A boolean value.
+	// Deprecated: use TypeDefKindBooleanKind instead
+	BooleanKind TypeDefKind = TypeDefKindBooleanKind
+
 	// A GraphQL enum type and its values
 	//
 	// Always paired with an EnumTypeDef.
 	TypeDefKindEnumKind TypeDefKind = "ENUM_KIND"
 
+	// A GraphQL enum type and its values
+	//
+	// Always paired with an EnumTypeDef.
+	// Deprecated: use TypeDefKindEnumKind instead
+	EnumKind TypeDefKind = TypeDefKindEnumKind
+
 	// A graphql input type, used only when representing the core API via TypeDefs.
 	TypeDefKindInputKind TypeDefKind = "INPUT_KIND"
 
+	// A graphql input type, used only when representing the core API via TypeDefs.
+	// Deprecated: use TypeDefKindInputKind instead
+	InputKind TypeDefKind = TypeDefKindInputKind
+
 	// An integer value.
 	TypeDefKindIntegerKind TypeDefKind = "INTEGER_KIND"
+
+	// An integer value.
+	// Deprecated: use TypeDefKindIntegerKind instead
+	IntegerKind TypeDefKind = TypeDefKindIntegerKind
 
 	// A named type of functions that can be matched+implemented by other objects+interfaces.
 	//
 	// Always paired with an InterfaceTypeDef.
 	TypeDefKindInterfaceKind TypeDefKind = "INTERFACE_KIND"
 
+	// A named type of functions that can be matched+implemented by other objects+interfaces.
+	//
+	// Always paired with an InterfaceTypeDef.
+	// Deprecated: use TypeDefKindInterfaceKind instead
+	InterfaceKind TypeDefKind = TypeDefKindInterfaceKind
+
 	// A list of values all having the same type.
 	//
 	// Always paired with a ListTypeDef.
 	TypeDefKindListKind TypeDefKind = "LIST_KIND"
+
+	// A list of values all having the same type.
+	//
+	// Always paired with a ListTypeDef.
+	// Deprecated: use TypeDefKindListKind instead
+	ListKind TypeDefKind = TypeDefKindListKind
 
 	// A named type defined in the GraphQL schema, with fields and functions.
 	//
 	// Always paired with an ObjectTypeDef.
 	TypeDefKindObjectKind TypeDefKind = "OBJECT_KIND"
 
+	// A named type defined in the GraphQL schema, with fields and functions.
+	//
+	// Always paired with an ObjectTypeDef.
+	// Deprecated: use TypeDefKindObjectKind instead
+	ObjectKind TypeDefKind = TypeDefKindObjectKind
+
 	// A scalar value of any basic kind.
 	TypeDefKindScalarKind TypeDefKind = "SCALAR_KIND"
 
+	// A scalar value of any basic kind.
+	// Deprecated: use TypeDefKindScalarKind instead
+	ScalarKind TypeDefKind = TypeDefKindScalarKind
+
 	// A string value.
 	TypeDefKindStringKind TypeDefKind = "STRING_KIND"
+
+	// A string value.
+	// Deprecated: use TypeDefKindStringKind instead
+	StringKind TypeDefKind = TypeDefKindStringKind
 
 	// A special kind used to signify that no value is returned.
 	//
 	// This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
 	TypeDefKindVoidKind TypeDefKind = "VOID_KIND"
+
+	// A special kind used to signify that no value is returned.
+	//
+	// This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
+	// Deprecated: use TypeDefKindVoidKind instead
+	VoidKind TypeDefKind = TypeDefKindVoidKind
 )

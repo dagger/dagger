@@ -486,22 +486,22 @@ func (ContainerSuite) TestExecStdinFile(ctx context.Context, t *testctx.T) {
 	content := "hello from file"
 	container := c.Container().
 		From("alpine:latest").
-		WithNewFile("/input.txt", content)
+		WithNewFile("/input.txt", content).
+		WithExec([]string{"cat"}, dagger.ContainerWithExecOpts{
+			StdinFile: "/input.txt",
+		})
 
-	// Test stdinFile functionality
-	execContainer := container.WithExec([]string{"cat"}, dagger.ContainerWithExecOpts{
-		StdinFile: "/input.txt",
-	})
-
-	out, err := execContainer.Stdout(ctx)
+	out, err := container.Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, content, out)
 
 	// Test mutual exclusivity
-	_, err = container.WithExec([]string{"cat"}, dagger.ContainerWithExecOpts{
-		Stdin:     "hello",
-		StdinFile: "/input.txt",
-	})
+	container, err = c.Container().
+		From("alpine:latest").
+		WithExec([]string{"cat"}, dagger.ContainerWithExecOpts{
+			Stdin:     "hello",
+			StdinFile: "/input.txt",
+		})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "cannot set both stdin and stdinFile")
 }
