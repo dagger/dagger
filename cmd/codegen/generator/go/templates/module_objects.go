@@ -108,15 +108,29 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 		fieldSpec.goName = field.Name()
 		fieldSpec.name = fieldSpec.goName
 
-		// override the name with the json tag if it was set - otherwise, we
-		// end up asking for a name that we won't unmarshal correctly
+		// Check field tag first - if it's set to true, expose the field in the API
 		tag := reflect.StructTag(t.Tag(i))
-		if dt := tag.Get("json"); dt != "" {
+		if ft := tag.Get("field"); ft == "true" {
+			// Field is explicitly marked for API exposure
+			fieldSpec.name = fieldSpec.goName
+			// Check for name override from field tag
+			if name := tag.Get("name"); name != "" {
+				fieldSpec.name = name
+			}
+			// Check for documentation
+			if doc := tag.Get("doc"); doc != "" {
+				fieldSpec.doc = doc
+			}
+		} else if dt := tag.Get("json"); dt != "" {
+			// Fall back to json tag if field tag is not set
 			dt, _, _ = strings.Cut(dt, ",")
 			if dt == "-" {
 				continue
 			}
 			fieldSpec.name = dt
+		} else {
+			// If neither field nor json tag is set, skip the field
+			continue
 		}
 
 		docPragmas, docComment := parsePragmaComment(astFields[i].Doc.Text())
@@ -408,6 +422,7 @@ func (spec *parsedObjectType) marshalJSONMethodCode() (*Statement, error) {
 The code for the type of a field in the concrete struct we use for marshalling into.
 */
 func (spec *parsedObjectType) marshalFieldTypeCode(typeSpec ParsedType) (*Statement, error) {
+	// Handle field types
 	switch typeSpec := typeSpec.(type) {
 	case *parsedIfaceTypeReference:
 		return Id("any"), nil
@@ -415,8 +430,24 @@ func (spec *parsedObjectType) marshalFieldTypeCode(typeSpec ParsedType) (*Statem
 		if _, ok := typeSpec.underlying.(*parsedIfaceTypeReference); ok {
 			return Id("any"), nil
 		}
+		fieldTypeCode, err := spec.marshalFieldTypeCode(typeSpec.underlying)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate slice field type code: %w", err)
+		}
+		return Index().Add(fieldTypeCode), nil
+	case *parsedObjectTypeReference:
+		if typeSpec.isPtr {
+			return Op("*").Id(typeName(typeSpec)), nil
+		}
+		return Id(typeName(typeSpec)), nil
+	case *parsedPrimitiveType:
+		if typeSpec.isPtr {
+			return Op("*").Id(typeSpec.GoType().String()), nil
+		}
+		return Id(typeSpec.GoType().String()), nil
+	default:
+		return nil, fmt.Errorf("unsupported field type %T", typeSpec)
 	}
-	return spec.concreteFieldTypeCode(typeSpec)
 }
 
 /*

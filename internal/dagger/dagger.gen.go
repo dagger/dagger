@@ -7,13 +7,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"os"
 	"reflect"
+	"strconv"
 
+	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/dagger/internal/querybuilder"
+	"github.com/dagger/dagger/internal/telemetry"
 )
 
 func Tracer() trace.Tracer {
@@ -22,6 +29,12 @@ func Tracer() trace.Tracer {
 
 // reassigned at runtime after the span is initialized
 var marshalCtx = context.Background()
+
+// SetMarshalContext is a hack that lets us set the ctx to use for
+// MarshalJSON implementations that get an object's ID.
+func SetMarshalContext(ctx context.Context) {
+	marshalCtx = ctx
+}
 
 // assertNotNil panic if the given value is nil.
 // This function is used to validate that input with pointer type are not nil.
@@ -313,6 +326,15 @@ func (r *CacheVolume) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *CacheVolume) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadCacheVolumeFromID(CacheVolumeID(id))
+	return nil
 }
 
 // An OCI-compatible container, also known as a Docker container.
@@ -736,6 +758,15 @@ func (r *Container) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *Container) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadContainerFromID(ContainerID(id))
+	return nil
 }
 
 // The unique image reference which can only be retrieved immediately after the 'Container.From' call.
@@ -2017,6 +2048,15 @@ func (r *CurrentModule) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *CurrentModule) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadCurrentModuleFromID(CurrentModuleID(id))
+	return nil
+}
 
 // The name of the module being executed in
 func (r *CurrentModule) Name(ctx context.Context) (string, error) {
@@ -2322,6 +2362,15 @@ func (r *Directory) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *Directory) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadDirectoryFromID(DirectoryID(id))
+	return nil
+}
 
 // Force evaluation in the engine.
 func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
@@ -2591,6 +2640,15 @@ func (r *Engine) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *Engine) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadEngineFromID(EngineID(id))
+	return nil
+}
 
 // The local (on-disk) cache for the Dagger engine
 func (r *Engine) LocalCache() *EngineCache {
@@ -2666,6 +2724,15 @@ func (r *EngineCache) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *EngineCache) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadEngineCacheFromID(EngineCacheID(id))
+	return nil
 }
 
 // The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
@@ -2840,6 +2907,15 @@ func (r *EngineCacheEntry) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *EngineCacheEntry) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadEngineCacheEntryFromID(EngineCacheEntryID(id))
+	return nil
+}
 
 // The most recent time the cache entry was used, in Unix nanoseconds.
 func (r *EngineCacheEntry) MostRecentUseTimeUnixNano(ctx context.Context) (int, error) {
@@ -2967,6 +3043,15 @@ func (r *EngineCacheEntrySet) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *EngineCacheEntrySet) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadEngineCacheEntrySetFromID(EngineCacheEntrySetID(id))
+	return nil
+}
 
 // A definition of a custom enum defined in a Module.
 type EnumTypeDef struct {
@@ -3035,6 +3120,15 @@ func (r *EnumTypeDef) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *EnumTypeDef) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadEnumTypeDefFromID(EnumTypeDefID(id))
+	return nil
 }
 
 // The name of the enum.
@@ -3172,6 +3266,15 @@ func (r *EnumValueTypeDef) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *EnumValueTypeDef) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadEnumValueTypeDefFromID(EnumValueTypeDefID(id))
+	return nil
+}
 
 // The name of the enum value.
 func (r *EnumValueTypeDef) Name(ctx context.Context) (string, error) {
@@ -3248,6 +3351,15 @@ func (r *EnvVariable) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *EnvVariable) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadEnvVariableFromID(EnvVariableID(id))
+	return nil
 }
 
 // The environment variable name.
@@ -3344,6 +3456,15 @@ func (r *FieldTypeDef) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *FieldTypeDef) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadFieldTypeDefFromID(FieldTypeDefID(id))
+	return nil
 }
 
 // The name of the field in lowerCamelCase format.
@@ -3506,6 +3627,15 @@ func (r *File) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *File) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadFileFromID(FileID(id))
+	return nil
 }
 
 // Retrieves the name of the file.
@@ -3676,6 +3806,15 @@ func (r *Function) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *Function) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadFunctionFromID(FunctionID(id))
+	return nil
 }
 
 // The name of the function.
@@ -3875,6 +4014,15 @@ func (r *FunctionArg) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *FunctionArg) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadFunctionArgFromID(FunctionArgID(id))
+	return nil
+}
 
 // Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner.
 func (r *FunctionArg) Ignore(ctx context.Context) ([]string, error) {
@@ -3972,6 +4120,15 @@ func (r *FunctionCall) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *FunctionCall) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadFunctionCallFromID(FunctionCallID(id))
+	return nil
 }
 
 // The argument values the function is being invoked with.
@@ -4111,6 +4268,15 @@ func (r *FunctionCallArgValue) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *FunctionCallArgValue) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadFunctionCallArgValueFromID(FunctionCallArgValueID(id))
+	return nil
+}
 
 // The name of the argument.
 func (r *FunctionCallArgValue) Name(ctx context.Context) (string, error) {
@@ -4206,6 +4372,15 @@ func (r *GeneratedCode) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *GeneratedCode) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadGeneratedCodeFromID(GeneratedCodeID(id))
+	return nil
 }
 
 // List of paths to mark generated in version control (i.e. .gitattributes).
@@ -4368,6 +4543,15 @@ func (r *GitModuleSource) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *GitModuleSource) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadGitModuleSourceFromID(GitModuleSourceID(id))
+	return nil
+}
 
 // The clean module name of the root of the module
 func (r *GitModuleSource) Root(ctx context.Context) (string, error) {
@@ -4473,6 +4657,15 @@ func (r *GitRef) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *GitRef) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadGitRefFromID(GitRefID(id))
+	return nil
 }
 
 // GitRefTreeOpts contains options for GitRef.Tree
@@ -4584,6 +4777,15 @@ func (r *GitRepository) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *GitRepository) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadGitRepositoryFromID(GitRepositoryID(id))
+	return nil
 }
 
 // Returns details of a ref.
@@ -4739,6 +4941,15 @@ func (r *Host) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *Host) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadHostFromID(HostID(id))
+	return nil
 }
 
 // HostServiceOpts contains options for Host.Service
@@ -4912,6 +5123,15 @@ func (r *InputTypeDef) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *InputTypeDef) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadInputTypeDefFromID(InputTypeDefID(id))
+	return nil
+}
 
 // The name of the input object.
 func (r *InputTypeDef) Name(ctx context.Context) (string, error) {
@@ -5027,6 +5247,15 @@ func (r *InterfaceTypeDef) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *InterfaceTypeDef) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadInterfaceTypeDefFromID(InterfaceTypeDefID(id))
+	return nil
+}
 
 // The name of the interface.
 func (r *InterfaceTypeDef) Name(ctx context.Context) (string, error) {
@@ -5117,6 +5346,15 @@ func (r *Label) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *Label) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadLabelFromID(LabelID(id))
+	return nil
+}
 
 // The label name.
 func (r *Label) Name(ctx context.Context) (string, error) {
@@ -5205,6 +5443,15 @@ func (r *ListTypeDef) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *ListTypeDef) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadListTypeDefFromID(ListTypeDefID(id))
+	return nil
+}
 
 // Module source that that originates from a path locally relative to an arbitrary directory.
 type LocalModuleSource struct {
@@ -5268,6 +5515,15 @@ func (r *LocalModuleSource) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *LocalModuleSource) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadLocalModuleSourceFromID(LocalModuleSourceID(id))
+	return nil
 }
 
 // The relative path to the module root from the host directory
@@ -5489,6 +5745,15 @@ func (r *Module) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *Module) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadModuleFromID(ModuleID(id))
+	return nil
 }
 
 // Retrieves the module with the objects loaded via its SDK.
@@ -5741,6 +6006,15 @@ func (r *ModuleDependency) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *ModuleDependency) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadModuleDependencyFromID(ModuleDependencyID(id))
+	return nil
+}
 
 // The name of the dependency module.
 func (r *ModuleDependency) Name(ctx context.Context) (string, error) {
@@ -5962,6 +6236,15 @@ func (r *ModuleSource) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *ModuleSource) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadModuleSourceFromID(ModuleSourceID(id))
+	return nil
 }
 
 // The kind of source (e.g. local, git, etc.)
@@ -6269,6 +6552,15 @@ func (r *ModuleSourceView) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *ModuleSourceView) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadModuleSourceViewFromID(ModuleSourceViewID(id))
+	return nil
+}
 
 // The name of the view
 func (r *ModuleSourceView) Name(ctx context.Context) (string, error) {
@@ -6436,6 +6728,15 @@ func (r *ObjectTypeDef) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *ObjectTypeDef) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadObjectTypeDefFromID(ObjectTypeDefID(id))
+	return nil
+}
 
 // The name of the object.
 func (r *ObjectTypeDef) Name(ctx context.Context) (string, error) {
@@ -6553,6 +6854,15 @@ func (r *Port) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *Port) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadPortFromID(PortID(id))
+	return nil
 }
 
 // The port number.
@@ -7418,6 +7728,15 @@ func (r *ScalarTypeDef) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *ScalarTypeDef) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadScalarTypeDefFromID(ScalarTypeDefID(id))
+	return nil
+}
 
 // The name of the scalar.
 func (r *ScalarTypeDef) Name(ctx context.Context) (string, error) {
@@ -7498,6 +7817,15 @@ func (r *Secret) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *Secret) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadSecretFromID(SecretID(id))
+	return nil
 }
 
 // The name of this secret.
@@ -7638,6 +7966,15 @@ func (r *Service) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *Service) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadServiceFromID(ServiceID(id))
+	return nil
 }
 
 // Retrieves the list of ports provided by the service.
@@ -7805,6 +8142,15 @@ func (r *Socket) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *Socket) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadSocketFromID(SocketID(id))
+	return nil
+}
 
 // Source location information.
 type SourceMap struct {
@@ -7888,6 +8234,15 @@ func (r *SourceMap) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
+func (r *SourceMap) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadSourceMapFromID(SourceMapID(id))
+	return nil
+}
 
 // The line number within the filename.
 func (r *SourceMap) Line(ctx context.Context) (int, error) {
@@ -7967,6 +8322,15 @@ func (r *Terminal) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *Terminal) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadTerminalFromID(TerminalID(id))
+	return nil
 }
 
 // Forces evaluation of the pipeline in the engine.
@@ -8099,6 +8463,15 @@ func (r *TypeDef) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+func (r *TypeDef) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadTypeDefFromID(TypeDefID(id))
+	return nil
 }
 
 // The kind of type this is (e.g. primitive, list, object).
@@ -8575,3 +8948,96 @@ const (
 	// Deprecated: use TypeDefKindVoidKind instead
 	VoidKind TypeDefKind = TypeDefKindVoidKind
 )
+
+type Client struct {
+	query  *querybuilder.Selection
+	client graphql.Client
+}
+
+var dag *Client
+
+func init() {
+	gqlClient, q := getClientParams()
+	dag = &Client{
+		query:  q.Client(gqlClient),
+		client: gqlClient,
+	}
+}
+
+func Connect() *Client {
+	return dag
+}
+
+// GraphQLClient returns the underlying graphql.Client
+func (c *Client) GraphQLClient() graphql.Client {
+	return c.client
+}
+
+func getClientParams() (graphql.Client, *querybuilder.Selection) {
+	portStr, ok := os.LookupEnv("DAGGER_SESSION_PORT")
+	if !ok {
+		panic("DAGGER_SESSION_PORT is not set")
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		panic(fmt.Errorf("DAGGER_SESSION_PORT %q is invalid: %w", portStr, err))
+	}
+
+	sessionToken := os.Getenv("DAGGER_SESSION_TOKEN")
+	if sessionToken == "" {
+		panic("DAGGER_SESSION_TOKEN is not set")
+	}
+
+	host := fmt.Sprintf("127.0.0.1:%d", port)
+
+	dialTransport := &http.Transport{
+		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+			return net.Dial("tcp", host)
+		},
+	}
+	httpClient := &http.Client{
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			r.SetBasicAuth(sessionToken, "")
+
+			// detect $TRACEPARENT set by 'dagger run'
+			r = r.WithContext(fallbackSpanContext(r.Context()))
+
+			// propagate span context via headers (i.e. for Dagger-in-Dagger)
+			telemetry.Propagator.Inject(r.Context(), propagation.HeaderCarrier(r.Header))
+
+			return dialTransport.RoundTrip(r)
+		}),
+	}
+	gqlClient := errorWrappedClient{graphql.NewClient(fmt.Sprintf("http://%s/query", host), httpClient)}
+
+	return gqlClient, querybuilder.Query()
+}
+
+func fallbackSpanContext(ctx context.Context) context.Context {
+	if trace.SpanContextFromContext(ctx).IsValid() {
+		return ctx
+	}
+	return telemetry.Propagator.Extract(ctx, telemetry.NewEnvCarrier(true))
+}
+
+// TODO: pollutes namespace, move to non internal package in dagger.io/dagger
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+type errorWrappedClient struct {
+	graphql.Client
+}
+
+func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Request, resp *graphql.Response) error {
+	err := c.Client.MakeRequest(ctx, req, resp)
+	if err != nil {
+		if e := getCustomError(err); e != nil {
+			return e
+		}
+		return err
+	}
+	return nil
+}
