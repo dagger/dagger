@@ -5,22 +5,18 @@ export class Container extends BaseClient {
    * Constructor is used for internal usage only, do not create object from it.
    */
    constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
+    ctx?: Context,
    ) {
-     super(parent)
+     super(ctx)
 
    }
   exec = (opts?: ContainerExecOpts): Container => {
-    return new Container({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "exec",
-          args: { ...opts },
-        },
-      ],
-      ctx: this._ctx,
-    })
+
+    const ctx = this._ctx.select(
+      "exec",
+      { ...opts },
+    )
+    return new Container(ctx)
   }
 
   /**
