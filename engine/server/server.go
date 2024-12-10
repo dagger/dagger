@@ -75,6 +75,7 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/sources/blob"
+	"github.com/dagger/dagger/engine/sources/containerimagedns"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/engine/sources/httpdns"
 	"github.com/dagger/dagger/engine/sources/local"
@@ -417,6 +418,15 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	logrus.Infof("found worker %q, labels=%v, platforms=%v", workerID, baseLabels, FormatPlatforms(srv.enabledPlatforms))
 	archutil.WarnIfUnsupported(srv.enabledPlatforms)
 
+	imgSrc, err := containerimagedns.NewSource(containerimagedns.SourceOpt{
+		SourceOpt:     srv.baseWorker.ImageSource.SourceOpt,
+		BaseDNSConfig: srv.dns,
+	})
+	if err != nil {
+		return nil, err
+	}
+	srv.workerSourceManager.Register(imgSrc)
+
 	// registerDaggerCustomSources adds Dagger's custom sources to the worker.
 	hs, err := httpdns.NewSource(httpdns.Opt{
 		Opt: srchttp.Opt{
@@ -475,6 +485,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		NetworkProviders:    srv.networkProviders,
 		ParallelismSem:      srv.parallelismSem,
 		WorkerCache:         srv.workerCache,
+		DNSImageSource:      imgSrc,
 	})
 
 	//
