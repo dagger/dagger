@@ -132,6 +132,10 @@ func (h *Daggerverse) BumpDaggerVersion(
 		from = strings.TrimSpace(from)
 	}
 
+	// get just the version, without the v semver prefix
+	from = strings.TrimPrefix(from, "v")
+	to = strings.TrimPrefix(to, "v")
+
 	fromDashed := strings.ReplaceAll(from, ".", "-")
 	toDashed := strings.ReplaceAll(to, ".", "-")
 	engineImage := fmt.Sprintf("registry.dagger.io/engine:v%s", to)
