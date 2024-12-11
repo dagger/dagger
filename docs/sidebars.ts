@@ -123,10 +123,6 @@ module.exports = {
           ]
         },
         {
-          "type": "doc",
-          "id": "api/gpu"
-        },
-        {
           "type": "category",
           "label": "API and SDKs Reference",
           "collapsible": true,
