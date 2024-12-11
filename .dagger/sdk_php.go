@@ -102,7 +102,7 @@ func (t PHPSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 
 // Test the publishing process
 func (t PHPSDK) TestPublish(ctx context.Context, tag string) error {
-	return t.Publish(ctx, tag, true, "https://github.com/dagger/dagger-php-sdk.git", "https://github.com/dagger/dagger.git", "dagger-ci", "hello@dagger.io", nil)
+	return t.Publish(ctx, tag, true, "https://github.com/dagger/dagger-php-sdk.git", "https://github.com/dagger/dagger.git", "dagger-ci", "hello@dagger.io", nil, nil)
 }
 
 // Publish the PHP SDK
@@ -128,6 +128,8 @@ func (t PHPSDK) Publish(
 
 	// +optional
 	githubToken *dagger.Secret,
+	// +optional
+	discordWebhook *dagger.Secret,
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/php/")
 
@@ -151,6 +153,13 @@ func (t PHPSDK) Publish(
 			Notes:  dag.Releaser().ChangeNotes("sdk/php", version),
 			Token:  githubToken,
 			DryRun: dryRun,
+		}); err != nil {
+			return err
+		}
+
+		if err := dag.Releaser().Notify(ctx, gitRepoSource, "sdk/php/"+version, "🐘 PHP SDK", dagger.ReleaserNotifyOpts{
+			DiscordWebhook: discordWebhook,
+			DryRun:         dryRun,
 		}); err != nil {
 			return err
 		}

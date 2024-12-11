@@ -94,6 +94,7 @@ func (t GoSDK) TestPublish(ctx context.Context, tag string) error {
 		"dagger-ci",
 		"hello@dagger.io",
 		nil,
+		nil,
 	)
 }
 
@@ -120,6 +121,8 @@ func (t GoSDK) Publish(
 
 	// +optional
 	githubToken *dagger.Secret,
+	// +optional
+	discordWebhook *dagger.Secret,
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/go/")
 
@@ -145,6 +148,13 @@ func (t GoSDK) Publish(
 			Notes:  dag.Releaser().ChangeNotes("sdk/go", version),
 			Token:  githubToken,
 			DryRun: dryRun,
+		}); err != nil {
+			return err
+		}
+
+		if err := dag.Releaser().Notify(ctx, gitRepoSource, "sdk/go/"+version, "🐹 Go SDK", dagger.ReleaserNotifyOpts{
+			DiscordWebhook: discordWebhook,
+			DryRun:         dryRun,
 		}); err != nil {
 			return err
 		}

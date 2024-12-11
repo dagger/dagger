@@ -135,7 +135,7 @@ func (t PythonSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 
 // Test the publishing process
 func (t PythonSDK) TestPublish(ctx context.Context, tag string) error {
-	return t.Publish(ctx, tag, true, "", nil, "https://github.com/dagger/dagger.git", nil)
+	return t.Publish(ctx, tag, true, "", nil, "https://github.com/dagger/dagger.git", nil, nil)
 }
 
 // Publish the Python SDK
@@ -154,8 +154,11 @@ func (t PythonSDK) Publish(
 	// +optional
 	// +default="https://github.com/dagger/dagger.git"
 	gitRepoSource string,
+
 	// +optional
 	githubToken *dagger.Secret,
+	// +optional
+	discordWebhook *dagger.Secret,
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/python/")
 
@@ -181,6 +184,13 @@ func (t PythonSDK) Publish(
 			Notes:  dag.Releaser().ChangeNotes("sdk/python", version),
 			Token:  githubToken,
 			DryRun: dryRun,
+		}); err != nil {
+			return err
+		}
+
+		if err := dag.Releaser().Notify(ctx, gitRepoSource, "sdk/python/"+version, "🐍 Python SDK", dagger.ReleaserNotifyOpts{
+			DiscordWebhook: discordWebhook,
+			DryRun:         dryRun,
 		}); err != nil {
 			return err
 		}

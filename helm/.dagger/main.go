@@ -149,8 +149,12 @@ func (h *Helm) Publish(
 	// +optional
 	// +default="https://github.com/dagger/dagger.git"
 	gitRepoSource string,
+
 	// +optional
 	githubToken *dagger.Secret,
+	// +optional
+	discordWebhook *dagger.Secret,
+
 	// Test as much as possible without actually publishing anything
 	// +optional
 	dryRun bool,
@@ -186,6 +190,13 @@ func (h *Helm) Publish(
 			Notes:  dag.Releaser().ChangeNotes("helm/dagger", version),
 			Token:  githubToken,
 			DryRun: dryRun,
+		}); err != nil {
+			return err
+		}
+
+		if err := dag.Releaser().Notify(ctx, gitRepoSource, "helm/chart/"+version, "☸️ Helm Chart", dagger.ReleaserNotifyOpts{
+			DiscordWebhook: discordWebhook,
+			DryRun:         dryRun,
 		}); err != nil {
 			return err
 		}

@@ -1,6 +1,6 @@
 {
   "name": "releaser",
-  "engineVersion": "v0.14.0",
+  "engineVersion": "v0.15.0",
   "sdk": "go",
   "dependencies": [
     {
@@ -9,9 +9,13 @@
       "pin": "5a5ab8cce801ad62f2618f50a4e859e2f7fcacb9"
     },
     {
+      "name": "notify",
+      "source": "github.com/gerhard/daggerverse/notify@2024-02-13",
+      "pin": "d83fad32dc187838c849d4ea8152cc97a46de00a"
+    },
+    {
       "name": "version",
-      "source": "../version",
-      "pin": ""
+      "source": "../version"
     }
   ],
   "source": ".dagger"
