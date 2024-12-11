@@ -7,7 +7,7 @@ from dagger import dag, function, object_type
 class MyModule:
     @function
     async def build(self) -> str:
-        """Build and publish image with oci labels"""
+        """Build and publish image with OCI labels"""
         ref = (
             dag.container()
             .from_("alpine")
