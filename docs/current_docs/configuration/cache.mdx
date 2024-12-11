@@ -16,57 +16,15 @@ Dagger caches two types of data:
 
 - Show all the cache entry metadata:
 
-<Tabs groupId="api">
-<TabItem value="CLI">
 ```shell
 dagger core engine local-cache entry-set entries
 ```
-</TabItem>
-<TabItem value="GraphQL">
-    ```shell
-    dagger query <<EOF
-    {
-      engine {
-        localCache {
-          entrySet {
-            entries {
-              description
-              diskSpaceBytes
-            }
-          }
-        }
-      }
-    }
-    EOF
-    ```
-</TabItem>
-</Tabs>
 
 - Show high level summaries of cache usage:
 
-<Tabs groupId="api">
-<TabItem value="CLI">
 ```shell
 dagger core engine local-cache entry-set
 ```
-</TabItem>
-<TabItem value="GraphQL">
-    ```shell
-    dagger query <<EOF
-    {
-      engine {
-        localCache {
-          entrySet {
-            entryCount
-            diskSpaceBytes
-          }
-        }
-      }
-    }
-    EOF
-    ```
-</TabItem>
-</Tabs>
 
 ## Garbage collection
 
@@ -84,23 +42,6 @@ The cache policy can be manually configured using the [engine config](./engine.m
 
 To manually free up disk space used by the cache, use the following command:
 
-<Tabs groupId="api">
-<TabItem value="CLI">
 ```shell
 dagger core engine local-cache prune
 ```
-</TabItem>
-<TabItem value="GraphQL">
-```shell
-dagger query <<EOF
-{
-  engine {
-    localCache {
-      prune
-    }
-  }
-}
-EOF
-```
-</TabItem>
-</Tabs>
