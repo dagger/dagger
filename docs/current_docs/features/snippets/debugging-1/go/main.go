@@ -1,10 +1,6 @@
 package main
 
-import (
-	"context"
-
-	"dagger.io/dagger/dag"
-)
+import "context"
 
 type MyModule struct{}
 

@@ -6,7 +6,12 @@ class MyModule:
     @function
     async def redis_service(self) -> str:
         """Creates Redis service and client."""
-        redis_srv = dag.container().from_("redis").with_exposed_port(6379).as_service()
+        redis_srv = (
+            dag.container()
+            .from_("redis")
+            .with_exposed_port(6379)
+            .as_service(use_entrypoint=True)
+        )
 
         # create Redis client container
         redis_cli = (

@@ -15,7 +15,7 @@ class MyModule:
             .with_env_variable("MARIADB_DATABASE", "drupal")
             .with_env_variable("MARIADB_ROOT_PASSWORD", "root")
             .with_exposed_port(3306)
-            .as_service()
+            .as_service(use_entrypoint=True)
         )
 
         # get Drupal base image

@@ -15,7 +15,7 @@ class MyModule:
             .with_exposed_port(6379)
             .with_mounted_cache("/data", dag.cache_volume("my-redis"))
             .with_workdir("/data")
-            .as_service()
+            .as_service(use_entrypoint=True)
         )
 
         # create Redis client container
