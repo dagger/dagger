@@ -175,7 +175,7 @@ jobs:
         env:
           RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
         with:
-          function: publish --tag=${{ github.ref_name }} --github-token=env:RELEASE_DAGGER_CI_TOKEN
+          function: publish --target=${{ github.ref_name }} --github-token=env:RELEASE_DAGGER_CI_TOKEN
           module: ./helm
       - name: "notify"
         uses: ./.github/actions/notify
