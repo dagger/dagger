@@ -19,7 +19,7 @@ on:
 jobs:
   publish:
     if: ${{ github.repository == 'dagger/dagger' && github.event_name == 'push' }}
-    runs-on: dagger-g2-v0-14-0-16c
+    runs-on: dagger-g2-v0-15-0-16c
     steps:
       - uses: actions/checkout@v4
       - name: "Publish Engine"
@@ -72,7 +72,7 @@ jobs:
 
   publish-sdk-go:
     needs: publish
-    runs-on: dagger-g2-v0-14-0-4c
+    runs-on: dagger-g2-v0-15-0-4c
     steps:
       - uses: actions/checkout@v4
       - name: "go publish"
@@ -90,7 +90,7 @@ jobs:
 
   publish-sdk-php:
     needs: publish
-    runs-on: dagger-g2-v0-14-0-4c
+    runs-on: dagger-g2-v0-15-0-4c
     steps:
       - uses: actions/checkout@v4
       - name: "php publish"
@@ -109,7 +109,7 @@ jobs:
   publish-sdk-python:
     needs: publish
     if: github.ref_name != 'main'
-    runs-on: dagger-g2-v0-14-0-4c
+    runs-on: dagger-g2-v0-15-0-4c
     steps:
       - uses: actions/checkout@v4
       - name: "python publish"
@@ -129,7 +129,7 @@ jobs:
   publish-sdk-typescript:
     needs: publish
     if: github.ref_name != 'main'
-    runs-on: dagger-g2-v0-14-0-4c
+    runs-on: dagger-g2-v0-15-0-4c
     steps:
       - uses: actions/checkout@v4
       - name: "typescript publish"
@@ -148,7 +148,7 @@ jobs:
   publish-sdk-elixir:
     needs: publish
     if: github.ref_name != 'main'
-    runs-on: dagger-g2-v0-14-0-4c
+    runs-on: dagger-g2-v0-15-0-4c
     steps:
       - uses: actions/checkout@v4
       - name: "elixir publish"
@@ -167,7 +167,7 @@ jobs:
   publish-helm:
     needs: publish
     if: github.ref_name != 'main'
-    runs-on: dagger-g2-v0-14-0-4c
+    runs-on: dagger-g2-v0-15-0-4c
     steps:
       - uses: actions/checkout@v4
       - name: "helm publish"
@@ -186,7 +186,7 @@ jobs:
   daggerverse-bump-dagger:
     needs: publish
     if: github.ref_name != 'main'
-    runs-on: dagger-g2-v0-14-0-4c
+    runs-on: dagger-g2-v0-15-0-4c
     steps:
       - uses: actions/checkout@v4
       - name: "Bump Dagger version in Daggerverse"
