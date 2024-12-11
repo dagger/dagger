@@ -847,7 +847,7 @@ func (h *shellCallHandler) parseArgumentValues(ctx context.Context, md *moduleDe
 		if err != nil {
 			return err
 		}
-		v, bypass, err := h.parseFlagValue(ctx, flag.Name, value, a.TypeDef)
+		v, bypass, err := h.parseFlagValue(ctx, value, a.TypeDef)
 		if err != nil {
 			return fmt.Errorf("cannot expand function argument %q: %w", a.FlagName(), err)
 		}
@@ -897,7 +897,7 @@ func (h *shellCallHandler) parseArgumentValues(ctx context.Context, md *moduleDe
 //
 // This happens most commonly when argument is the result of command expansion
 // from a sub-shell.
-func (h *shellCallHandler) parseFlagValue(ctx context.Context, name string, value string, argType *modTypeDef) (any, bool, error) {
+func (h *shellCallHandler) parseFlagValue(ctx context.Context, value string, argType *modTypeDef) (any, bool, error) {
 	if !strings.HasPrefix(value, shellStatePrefix) {
 		return value, false, nil
 	}
