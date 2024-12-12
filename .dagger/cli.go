@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 
+	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/build"
@@ -25,7 +27,8 @@ func (cli *CLI) Binary(
 
 const (
 	// https://github.com/goreleaser/goreleaser/releases
-	goReleaserVersion = "v2.3.2"
+	goReleaserVersion = "v2.4.8"
+	goReleaserImage   = "ghcr.io/goreleaser/goreleaser-pro:" + goReleaserVersion + "-pro"
 )
 
 // Publish the CLI using GoReleaser
@@ -42,7 +45,6 @@ func (cli *CLI) Publish(
 
 	awsRegion string,
 	awsBucket string,
-	awsCloudfrontDistribution string,
 	artefactsFQDN string,
 ) error {
 	ctr, err := publishEnv(ctx)
@@ -87,7 +89,6 @@ func (cli *CLI) Publish(
 		WithSecretVariable("AWS_SECRET_ACCESS_KEY", awsSecretAccessKey).
 		WithEnvVariable("AWS_REGION", awsRegion).
 		WithEnvVariable("AWS_BUCKET", awsBucket).
-		WithEnvVariable("AWS_CLOUDFRONT_DISTRIBUTION_ID", awsCloudfrontDistribution).
 		WithEnvVariable("ARTEFACTS_FQDN", artefactsFQDN).
 		WithEnvVariable("ENGINE_VERSION", cli.Dagger.Version).
 		WithEnvVariable("ENGINE_TAG", cli.Dagger.Tag).
@@ -97,6 +98,57 @@ func (cli *CLI) Publish(
 		}).
 		Sync(ctx)
 	return err
+}
+
+func (cli *CLI) PublishMetadata(
+	ctx context.Context,
+
+	awsAccessKeyID *dagger.Secret,
+	awsSecretAccessKey *dagger.Secret,
+	awsRegion string,
+	awsBucket string,
+	awsCloudfrontDistribution string,
+) error {
+	ctr := dag.
+		Alpine(dagger.AlpineOpts{
+			Packages: []string{"aws-cli"},
+		}).
+		Container().
+		WithWorkdir("/src").
+		WithDirectory(".", cli.Dagger.Source()).
+		WithSecretVariable("AWS_ACCESS_KEY_ID", awsAccessKeyID).
+		WithSecretVariable("AWS_SECRET_ACCESS_KEY", awsSecretAccessKey).
+		WithEnvVariable("AWS_REGION", awsRegion).
+		WithEnvVariable("AWS_EC2_METADATA_DISABLED", "true")
+
+	// update install scripts
+	ctr = ctr.
+		WithExec([]string{"aws", "s3", "cp", "./install.sh", s3Path(awsBucket, "dagger/install.sh")}).
+		WithExec([]string{"aws", "s3", "cp", "./install.ps1", s3Path(awsBucket, "dagger/install.ps1")}).
+		WithExec([]string{"aws", "cloudfront", "create-invalidation", "--distribution-id", awsCloudfrontDistribution, "--paths", "/dagger/install.sh", "/dagger/install.ps1"})
+
+	// update version pointers (only on proper releases)
+	if version := cli.Dagger.Version; semver.IsValid(version) && semver.Prerelease(version) == "" {
+		cpOpts := dagger.ContainerWithExecOpts{
+			Stdin: strings.TrimPrefix(version, "v"),
+		}
+		ctr = ctr.
+			WithExec([]string{"aws", "s3", "cp", "-", s3Path(awsBucket, "dagger/latest_version")}, cpOpts).
+			WithExec([]string{"aws", "s3", "cp", "-", s3Path(awsBucket, "dagger/versions/latest")}, cpOpts).
+			WithExec([]string{"aws", "s3", "cp", "-", s3Path(awsBucket, "dagger/versions/%s", strings.TrimPrefix(semver.MajorMinor(version), "v"))}, cpOpts)
+	}
+
+	_, err := ctr.Sync(ctx)
+	return err
+}
+
+func s3Path(bucket string, path string, args ...any) string {
+	u := url.URL{
+		Scheme: "s3",
+		Host:   bucket,
+		Path:   fmt.Sprintf(path, args...),
+	}
+	return u.String()
 }
 
 // Verify that the CLI builds without actually publishing anything
@@ -151,14 +203,14 @@ func (cli *CLI) TestPublish(ctx context.Context) error {
 }
 
 func publishEnv(ctx context.Context) (*dagger.Container, error) {
-	// TODO: remove after upgrading to GoReleaser Pro has go 1.23.2 (it currently only has go 1.23.1)
-	go1_23_2 := dag.Container().From("golang:1.23.2-alpine@sha256:9dd2625a1ff2859b8d8b01d8f7822c0f528942fe56cfe7a1e7c38d3b8d72d679").Directory("/usr/local/go")
+	ctr := dag.Container().From(goReleaserImage)
 
-	ctr := dag.Container().
-		From(fmt.Sprintf("ghcr.io/goreleaser/goreleaser-pro:%s-pro", goReleaserVersion)).
-		WithDirectory("/usr/local/go", go1_23_2).
-		WithEntrypoint([]string{}).
-		WithExec([]string{"apk", "add", "aws-cli"})
+	// HACK: this can be enabled to force a go update (e.g. when we need it for
+	// a security update)
+	// ctr = ctr.WithDirectory(
+	// 	"/usr/local/go",
+	// 	dag.Container().From("golang:<version>-alpine@sha256:<hash>").Directory("/usr/local/go"),
+	// )
 
 	// install nix
 	ctr = ctr.

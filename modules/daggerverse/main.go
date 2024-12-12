@@ -17,8 +17,6 @@ type Daggerverse struct {
 	// +private
 	GitHubUser string
 	// +private
-	GitHubUsername string
-	// +private
 	GitHubUserEmail string
 	// +private
 	Repo string
@@ -42,9 +40,8 @@ func New(
 	}
 	repo := "github.com/dagger/dagger.io"
 	dgvs := &Daggerverse{
-		GitHubUsername: *user.Login,
-		GitHubUser:     *user.Name,
-		Repo:           repo,
+		GitHubUser: *user.Name,
+		Repo:       repo,
 		Gh: dag.Gh(dagger.GhOpts{
 			Token: githubToken,
 			Repo:  repo,
@@ -64,6 +61,9 @@ func New(
 func (h *Daggerverse) DeployPreviewWithDaggerMain(
 	ctx context.Context,
 	target string,
+
+	// +optional
+	githubAssignee string,
 ) error {
 	// make a change so that a new Daggerverse deployment will be created
 	daggerio := h.clone().
@@ -88,25 +88,30 @@ daggerverse-checks in GitHub Actions ensures that module crawling works as expec
 
 	// open a PR on the trigger branch that it creates a new Daggerverse
 	// preview environment running Dagger main
-	err := gh.
-		PullRequest().Create(
-		ctx,
-		dagger.GhPullRequestCreateOpts{
-			// TODO: this should actually be the username of the original PR author
-			Assignees: []string{h.GitHubUsername},
-			Fill:      true,
-			Labels:    []string{"preview", "area/daggerverse"},
-			Head:      branch,
-		},
-	)
+	exists, err := gh.PullRequest().Exists(ctx, branch)
 	if err != nil {
-		// FIXME: this will stop working in v0.15.0!
-		if strings.Contains(err.Error(), "already exists") {
-			return nil
+		return err
+	}
+	if !exists {
+		var assignees []string
+		if githubAssignee != "" {
+			assignees = append(assignees, githubAssignee)
+		}
+		err := gh.
+			PullRequest().Create(
+			ctx,
+			dagger.GhPullRequestCreateOpts{
+				Assignees: assignees,
+				Fill:      true,
+				Labels:    []string{"preview", "area/daggerverse"},
+				Head:      branch,
+			})
+		if err != nil {
+			return err
 		}
 	}
 
-	return err
+	return nil
 }
 
 // Bump Dagger version: dagger call --github-token=env:GITHUB_PAT bump-dagger-version --from=0.13.7 --to=0.14.0
@@ -119,6 +124,9 @@ func (h *Daggerverse) BumpDaggerVersion(
 	from string,
 	// Which version of Dagger are we bumping to
 	to string,
+
+	// +optional
+	githubAssignee string,
 ) (err error) {
 	if from == "" {
 		from, err = dag.Container().From("alpine").
@@ -195,6 +203,10 @@ func (h *Daggerverse) BumpDaggerVersion(
 	branch := fmt.Sprintf("dgvs-bump-dagger-from-%s-to-%s-with-dagger-main", from, to)
 	commitMsg := fmt.Sprintf("dgvs: Bump Dagger from %s to %s", from, to)
 
+	var assignees []string
+	if githubAssignee != "" {
+		assignees = append(assignees, githubAssignee)
+	}
 	err = h.Gh.WithSource(updated).
 		WithGitExec([]string{"checkout", "-b", branch}).
 		WithGitExec([]string{"add", ".github", "daggerverse", "infra"}).
@@ -205,8 +217,7 @@ func (h *Daggerverse) BumpDaggerVersion(
 		PullRequest().Create(
 		ctx,
 		dagger.GhPullRequestCreateOpts{
-			// TODO: this should actually be the username of the original PR author
-			Assignees: []string{h.GitHubUsername},
+			Assignees: assignees,
 			Fill:      true,
 			Labels:    []string{"preview", "area/daggerverse"},
 			Head:      branch,

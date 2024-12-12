@@ -38,30 +38,3 @@ blobs:
     region: "{{ .Env.AWS_REGION }}"
     bucket: "{{ .Env.AWS_BUCKET }}"
     directory: "dagger/main/head"
-
-publishers:
-  - name: publish-install-sh
-    cmd: sh -c "aws s3 cp install.sh s3://{{ .Env.AWS_BUCKET }}/dagger/install.sh"
-    env:
-      - PATH={{ .Env.PATH }}
-      - AWS_EC2_METADATA_DISABLED=true
-      - AWS_ACCESS_KEY_ID={{ .Env.AWS_ACCESS_KEY_ID }}
-      - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
-      - AWS_REGION={{ .Env.AWS_REGION }}
-  - name: publish-install-ps1
-    cmd: sh -c "aws s3 cp install.ps1 s3://{{ .Env.AWS_BUCKET }}/dagger/install.ps1"
-    env:
-      - PATH={{ .Env.PATH }}
-      - AWS_EC2_METADATA_DISABLED=true
-      - AWS_ACCESS_KEY_ID={{ .Env.AWS_ACCESS_KEY_ID }}
-      - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
-      - AWS_REGION={{ .Env.AWS_REGION }}
-  - name: publish-install-ps1
-    cmd: sh -c "aws cloudfront create-invalidation --distribution-id {{ .Env.AWS_CLOUDFRONT_DISTRIBUTION_ID }} --paths /dagger/install.sh /dagger/install.ps1"
-    env:
-      - PATH={{ .Env.PATH }}
-      - AWS_ACCESS_KEY_ID={{ .Env.AWS_ACCESS_KEY_ID }}
-      - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
-      - AWS_REGION={{ .Env.AWS_REGION }}
-      - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
-      - AWS_CLOUDFRONT_DISTRIBUTION_ID={{ .Env.AWS_CLOUDFRONT_DISTRIBUTION_ID }}
