@@ -88,25 +88,27 @@ daggerverse-checks in GitHub Actions ensures that module crawling works as expec
 
 	// open a PR on the trigger branch that it creates a new Daggerverse
 	// preview environment running Dagger main
-	err := gh.
-		PullRequest().Create(
-		ctx,
-		dagger.GhPullRequestCreateOpts{
-			// TODO: this should actually be the username of the original PR author
-			Assignees: []string{h.GitHubUsername},
-			Fill:      true,
-			Labels:    []string{"preview", "area/daggerverse"},
-			Head:      branch,
-		},
-	)
+	exists, err := gh.PullRequest().Exists(ctx, branch)
 	if err != nil {
-		// FIXME: this will stop working in v0.15.0!
-		if strings.Contains(err.Error(), "already exists") {
-			return nil
+		return err
+	}
+	if !exists {
+		err := gh.
+			PullRequest().Create(
+			ctx,
+			dagger.GhPullRequestCreateOpts{
+				// TODO: this should actually be the username of the original PR author
+				Assignees: []string{h.GitHubUsername},
+				Fill:      true,
+				Labels:    []string{"preview", "area/daggerverse"},
+				Head:      branch,
+			})
+		if err != nil {
+			return err
 		}
 	}
 
-	return err
+	return nil
 }
 
 // Bump Dagger version: dagger call --github-token=env:GITHUB_PAT bump-dagger-version --from=0.13.7 --to=0.14.0
