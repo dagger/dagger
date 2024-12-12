@@ -2104,6 +2104,7 @@ to the currently loaded module.
 				return &CompletionContext{
 					Completer: ctx.Completer,
 					CmdRoot:   shellDepsCmdName,
+					root:      true,
 				}
 			},
 		},
@@ -2119,6 +2120,7 @@ to the currently loaded module.
 				return &CompletionContext{
 					Completer: ctx.Completer,
 					CmdRoot:   shellStdlibCmdName,
+					root:      true,
 				}
 			},
 		},
@@ -2133,6 +2135,7 @@ to the currently loaded module.
 				return &CompletionContext{
 					Completer: ctx.Completer,
 					CmdRoot:   shellCoreCmdName,
+					root:      true,
 				}
 			},
 		},
@@ -2187,6 +2190,7 @@ to the currently loaded module.
 					return &CompletionContext{
 						Completer:   ctx.Completer,
 						ModFunction: fn,
+						root:        true,
 					}
 				},
 			},

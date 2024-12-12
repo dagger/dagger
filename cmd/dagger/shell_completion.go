@@ -212,9 +212,7 @@ func (ctx *CompletionContext) completions(prefix string) []string {
 
 	case ctx.CmdRoot == shellStdlibCmdName:
 		for _, cmd := range ctx.Completer.Stdlib() {
-			if cmd.State != NoState {
-				results = append(results, cmd.Name())
-			}
+			results = append(results, cmd.Name())
 		}
 
 	case ctx.CmdRoot == shellDepsCmdName:
@@ -251,15 +249,56 @@ func (ctx *CompletionContext) lookupField(field string, args []string) *Completi
 		}
 	}
 
-	// If not root, the above are the only possibilities.
+	// Limit options for these namespace-setting commands
+	switch ctx.CmdRoot {
+	case shellStdlibCmdName:
+		if cmd := ctx.stdlibCmd(field); cmd != nil {
+			return cmd.Complete(ctx, args)
+		}
+	case shellDepsCmdName:
+		// TODO: loading other modules isn't supported yet
+		return nil
+
+	case shellCoreCmdName:
+		if fn := def.GetCoreFunction(field); fn != nil {
+			return &CompletionContext{
+				Completer:   ctx.Completer,
+				ModFunction: fn,
+			}
+		}
+	}
+
+	// Default lookup and fallbacks after this point, which only happens
+	// when it's the first command.
 	if !ctx.root {
 		return nil
 	}
 
+	// 1. Current module function
+	if def.HasMainFunction(field) {
+		next, err := def.GetFunction(def.MainObject.AsFunctionProvider(), field)
+		if err != nil {
+			return nil
+		}
+		return &CompletionContext{
+			Completer:   ctx.Completer,
+			ModFunction: next,
+		}
+	}
+
+	// 2. Dependency
+	if dep := def.GetDependency(field); dep != nil {
+		// TODO: loading other modules isn't supported yet
+		return nil
+	}
+
+	// 3. Stdlib
 	if cmd := ctx.stdlibCmd(field); cmd != nil {
 		return cmd.Complete(ctx, args)
 	}
 
+	// 4. Module reference
+	// TODO: loading other modules isn't supported yet
 	if field == ctx.Completer.modRef {
 		return &CompletionContext{
 			Completer:   ctx.Completer,
@@ -271,7 +310,7 @@ func (ctx *CompletionContext) lookupField(field string, args []string) *Completi
 }
 
 func (ctx *CompletionContext) lookupType() *CompletionContext {
-	if ctx.ModType != nil {
+	if ctx.ModType != nil || ctx.CmdRoot != "" {
 		return ctx
 	}
 	if ctx.ModFunction != nil {

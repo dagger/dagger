@@ -20,12 +20,19 @@ func TestShellAutocomplete(t *testing.T) {
 	// options should include the contents after the $
 
 	cmdlines := []string{
-		// top-level
+		// top-level function
 		`<con$tainer >`,
 		`<$container >`,
 		`  <$container >`,
 		`<con$tainer > "alpine:latest"`,
 		`<con$tainer >| directory`,
+
+		// top-level deps
+		`<a$lpine >`,
+
+		// stdlib fallback
+		`<dir$ectory >`,
+		`directory | <with$-new-file >`,
 
 		// chaining
 		`container | <dir$ectory >`,
@@ -44,18 +51,24 @@ func TestShellAutocomplete(t *testing.T) {
 		`container <--$packages > | directory`,
 		`container | directory <--$expand >`,
 
-		// .container builtin
-		`<.con$tainer >`,
-		`<$.container >`,
-		`.container <--$platform >`,
-		`.container | <dir$ectory >`,
+		// .deps builtin
+		`<.dep$s >`,
+		`<$.deps >`,
+		`.deps | <a$lpine >`,
+
+		// .stdlib builtin
+		`<.std$lib >`,
+		`<$.stdlib >`,
+		`.stdlib | <con$tainer >`,
+		`.stdlib | container <--$platform >`,
+		`.stdlib | container | <dir$ectory >`,
 
 		// .core builtin
 		`<.co$re >`,
 		`<$.core >`,
-		`.core <con$tainer >`,
-		`.core container <--$platform >`,
-		`.core container | <dir$ectory >`,
+		`.core | <con$tainer >`,
+		`.core | container <--$platform >`,
+		`.core | container | <dir$ectory >`,
 
 		// FIXME: avoid inserting extra spaces
 		// `<contain$er> `,
