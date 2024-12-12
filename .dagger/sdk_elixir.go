@@ -100,7 +100,7 @@ func (t ElixirSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 
 // Test the publishing process
 func (t ElixirSDK) TestPublish(ctx context.Context, tag string) error {
-	return t.Publish(ctx, tag, true, nil, "https://github.com/dagger/dagger.git", nil)
+	return t.Publish(ctx, tag, true, nil, "https://github.com/dagger/dagger.git", nil, nil)
 }
 
 // Publish the Elixir SDK
@@ -116,8 +116,11 @@ func (t ElixirSDK) Publish(
 	// +optional
 	// +default="https://github.com/dagger/dagger.git"
 	gitRepoSource string,
+
 	// +optional
 	githubToken *dagger.Secret,
+	// +optional
+	discordWebhook *dagger.Secret,
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/elixir/")
 	mixFile := "/sdk/elixir/mix.exs"
@@ -152,6 +155,13 @@ func (t ElixirSDK) Publish(
 			Notes:  dag.Releaser().ChangeNotes("sdk/elixir", version),
 			Token:  githubToken,
 			DryRun: dryRun,
+		}); err != nil {
+			return err
+		}
+
+		if err := dag.Releaser().Notify(ctx, gitRepoSource, "sdk/elixir/"+version, "🧪 Elixir SDK", dagger.ReleaserNotifyOpts{
+			DiscordWebhook: discordWebhook,
+			DryRun:         dryRun,
 		}); err != nil {
 			return err
 		}

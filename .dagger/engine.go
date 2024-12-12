@@ -163,14 +163,13 @@ func (e *DaggerEngine) Service(
 			// only one engine can run off it's local state dir at a time; Private means that we will attempt to re-use
 			// these cache volumes if they are not already locked to another running engine but otherwise will create a new
 			// one, which gets us best-effort cache re-use for these nested engine services
-			Sharing: dagger.Private,
-		}).
-		WithExec(nil, dagger.ContainerWithExecOpts{
-			UseEntrypoint:            true,
-			InsecureRootCapabilities: true,
+			Sharing: dagger.CacheSharingModePrivate,
 		})
 
-	return devEngine.AsService(), nil
+	return devEngine.AsService(dagger.ContainerAsServiceOpts{
+		UseEntrypoint:            true,
+		InsecureRootCapabilities: true,
+	}), nil
 }
 
 // Lint the engine

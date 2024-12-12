@@ -49,11 +49,10 @@ func (r Releaser) GithubRelease(
 	// GitHub repository URL
 	repository string,
 	// Tag for the GitHub release
-	// eg. sdk/typescript/v0.14.0
+	// eg. v0.14.0
 	tag string,
-	// The target for the release
-	// eg. 🤷‍♂️
-	// FIXME: what's the difference with 'tag'? Who knows, it wasn't documented - SH Nov 2024
+	// The target tag for the release
+	// e.g. sdk/typescript/v0.14.0
 	target string,
 	// File containing release notes
 	// +optional
@@ -65,14 +64,10 @@ func (r Releaser) GithubRelease(
 	// +optional
 	dryRun bool,
 ) error {
-	u, err := url.Parse(repository)
+	githubRepo, err := githubRepo(repository)
 	if err != nil {
 		return err
 	}
-	if (u.Host != "") && (u.Host != "github.com") {
-		return fmt.Errorf("git repo must be on github.com")
-	}
-	githubRepo := strings.TrimPrefix(strings.TrimSuffix(u.Path, ".git"), "/")
 
 	commit, err := dag.Version().Git().Commit(target).Commit(ctx)
 	if err != nil {
@@ -114,4 +109,51 @@ func (r Releaser) GithubRelease(
 			Latest:    dagger.GhLatestLatestFalse,
 		},
 	)
+}
+
+func (r Releaser) Notify(
+	ctx context.Context,
+	// GitHub repository URL
+	repository string,
+	// The target tag for the release
+	// e.g. sdk/typescript/v0.14.0
+	target string,
+	// Name of the component to release
+	name string,
+	// Discord webhook
+	// +optional
+	discordWebhook *dagger.Secret,
+
+	// Whether to perform a dry run without creating the release
+	// +optional
+	dryRun bool,
+) error {
+	githubRepo, err := githubRepo(repository)
+	if err != nil {
+		return err
+	}
+	if dryRun {
+		return nil
+	}
+
+	if discordWebhook == nil {
+		message := fmt.Sprintf("%s: https://github.com/%s/releases/tag/%s", name, githubRepo, target)
+		_, err = dag.Notify().Discord(ctx, discordWebhook, message)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func githubRepo(repo string) (string, error) {
+	u, err := url.Parse(repo)
+	if err != nil {
+		return "", err
+	}
+	if (u.Host != "") && (u.Host != "github.com") {
+		return "", fmt.Errorf("git repo must be on github.com")
+	}
+	return strings.TrimPrefix(strings.TrimSuffix(u.Path, ".git"), "/"), nil
 }

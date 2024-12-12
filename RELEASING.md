@@ -220,7 +220,7 @@ git commit -s -m "chore: bump dependencies to $ENGINE_VERSION"
 - [ ] Push to `dagger/dagger` - we need access to secrets that PRs coming from forks will not have. Open the PR as a draft and capture the PR number:
 
 ```console
-gh pr create --draft --title "chore: prep for v0.13.7" --body "" | tee /tmp/prep-pr.txt
+gh pr create --draft --title "chore: prep for $ENGINE_VERSION" --body "" | tee /tmp/prep-pr.txt
 export RELEASE_PREP_PR=$(cat /tmp/prep-pr.txt | sed -r 's/^[^0-9]*([0-9]+).*/\1/')
 ```
 

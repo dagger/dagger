@@ -1,12 +1,11 @@
 {
   "name": "helm",
-  "engineVersion": "v0.14.0",
+  "engineVersion": "v0.15.0",
   "sdk": "go",
   "dependencies": [
     {
       "name": "dagger-cli",
-      "source": "../cmd/dagger",
-      "pin": ""
+      "source": "../cmd/dagger"
     },
     {
       "name": "k3s",
@@ -15,13 +14,11 @@
     },
     {
       "name": "releaser",
-      "source": "../releaser",
-      "pin": ""
+      "source": "../releaser"
     },
     {
       "name": "wolfi",
-      "source": "../modules/wolfi",
-      "pin": ""
+      "source": "../modules/wolfi"
     }
   ],
   "source": ".dagger"

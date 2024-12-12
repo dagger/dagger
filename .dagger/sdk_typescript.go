@@ -166,7 +166,7 @@ func (t TypescriptSDK) Generate(ctx context.Context) (*dagger.Directory, error) 
 
 // Test the publishing process
 func (t TypescriptSDK) TestPublish(ctx context.Context, tag string) error {
-	return t.Publish(ctx, tag, true, nil, "https://github.com/dagger/dagger.git", nil)
+	return t.Publish(ctx, tag, true, nil, "https://github.com/dagger/dagger.git", nil, nil)
 }
 
 // Publish the Typescript SDK
@@ -182,8 +182,11 @@ func (t TypescriptSDK) Publish(
 	// +optional
 	// +default="https://github.com/dagger/dagger.git"
 	gitRepoSource string,
+
 	// +optional
 	githubToken *dagger.Secret,
+	// +optional
+	discordWebhook *dagger.Secret,
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/typescript/")
 	versionFlag := strings.TrimPrefix(version, "v")
@@ -225,6 +228,13 @@ always-auth=true`, plaintext)
 			Notes:  dag.Releaser().ChangeNotes("sdk/typescript", version),
 			Token:  githubToken,
 			DryRun: dryRun,
+		}); err != nil {
+			return err
+		}
+
+		if err := dag.Releaser().Notify(ctx, gitRepoSource, "sdk/typescript/"+version, "⬢ TypeScript SDK", dagger.ReleaserNotifyOpts{
+			DiscordWebhook: discordWebhook,
+			DryRun:         dryRun,
 		}); err != nil {
 			return err
 		}
