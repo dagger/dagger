@@ -1,4 +1,4 @@
-name: Alternative CI Runners
+name: Alternative CI Runners 1
 
 on:
   # Run the workflow every day TWICE:
@@ -17,6 +17,12 @@ jobs:
     uses: ./.github/workflows/_dagger_on_depot_remote_engine.yml
     with:
       function: docs lint
+  docs-lint-on-depot-local-engine:
+    uses: ./.github/workflows/_dagger_on_depot_local_engine.yml
+    with:
+      function: docs lint
+      dev: true
+      timeout: 20
 
   test-cli-engine-on-depot-remote-engine:
     needs: docs-lint-on-depot-remote-engine
@@ -31,11 +37,12 @@ jobs:
     with:
       function: check --targets=sdk/go
   sdk-go-dev-on-depot-local-engine:
+    needs: sdk-go-on-depot-remote-engine
     uses: ./.github/workflows/_dagger_on_depot_local_engine.yml
     with:
       function: check --targets=sdk/go
-      size: 4
       dev: true
+      timeout: 15
 
   sdk-python-on-depot-remote-engine:
     needs: docs-lint-on-depot-remote-engine
@@ -43,10 +50,10 @@ jobs:
     with:
       function: check --targets=sdk/python
   sdk-python-dev-on-depot-local-engine:
+    needs: sdk-python-on-depot-remote-engine
     uses: ./.github/workflows/_dagger_on_depot_local_engine.yml
     with:
       function: check --targets=sdk/python
-      size: 8
       dev: true
 
   sdk-typescript-on-depot-remote-engine:
@@ -55,8 +62,8 @@ jobs:
     with:
       function: check --targets=sdk/typescript
   sdk-typescript-dev-on-depot-local-engine:
+    needs: sdk-typescript-on-depot-remote-engine
     uses: ./.github/workflows/_dagger_on_depot_local_engine.yml
     with:
       function: check --targets=sdk/typescript
-      size: 8
       dev: true

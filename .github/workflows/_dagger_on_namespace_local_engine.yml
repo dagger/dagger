@@ -1,4 +1,4 @@
-name: Dagger on Depot - Local Engine
+name: Dagger on Namespace - Local Engine
 
 on:
   workflow_call:
@@ -31,7 +31,8 @@ on:
 jobs:
   local-dagger-engine:
     if: ${{ github.repository == 'dagger/dagger' }}
-    runs-on: depot-ubuntu-${{ inputs.ubuntu }}-${{ inputs.size }}
+    runs-on:
+      - nscloud-ubuntu-${{ inputs.ubuntu }}-amd64-${{ inputs.size }}x32
     timeout-minutes: ${{ inputs.timeout }}
     steps:
       - name: Checkout repo
