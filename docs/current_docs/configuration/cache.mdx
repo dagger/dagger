@@ -16,39 +16,15 @@ Dagger caches two types of data:
 
 - Show all the cache entry metadata:
 
-    ```shell
-    dagger query <<EOF
-    {
-      engine {
-        localCache {
-          entrySet {
-            entries {
-              description
-              diskSpaceBytes
-            }
-          }
-        }
-      }
-    }
-    EOF
-    ```
+```shell
+dagger core engine local-cache entry-set entries
+```
 
 - Show high level summaries of cache usage:
 
-    ```shell
-    dagger query <<EOF
-    {
-      engine {
-        localCache {
-          entrySet {
-            entryCount
-            diskSpaceBytes
-          }
-        }
-      }
-    }
-    EOF
-    ```
+```shell
+dagger core engine local-cache entry-set
+```
 
 ## Garbage collection
 
@@ -67,13 +43,5 @@ The cache policy can be manually configured using the [engine config](./engine.m
 To manually free up disk space used by the cache, use the following command:
 
 ```shell
-dagger query <<EOF
-{
-  engine {
-    localCache {
-      prune
-    }
-  }
-}
-EOF
+dagger core engine local-cache prune
 ```
