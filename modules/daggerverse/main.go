@@ -150,14 +150,11 @@ func (h *Daggerverse) BumpDaggerVersion(
 
 	engine := dag.Container().From(engineImage).
 		WithExposedPort(1234).
-		WithExec([]string{
+		WithDefaultArgs([]string{
 			"--addr", "tcp://0.0.0.0:1234",
 			"--addr", "unix:///var/run/buildkit/buildkitd.sock",
 			"--network-cidr", "10.12.34.0/24",
-		}, dagger.ContainerWithExecOpts{
-			UseEntrypoint:            true,
-			InsecureRootCapabilities: true,
-		}).AsService()
+		}).AsService(dagger.ContainerAsServiceOpts{InsecureRootCapabilities: true, UseEntrypoint: true})
 
 	daggerio, err := dag.Container().From(engineImage).
 		WithDirectory("/dagger.io", h.clone()).

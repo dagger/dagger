@@ -273,8 +273,8 @@ require (
 )
 
 require (
-	dagger.io/dagger v0.15.0
-	github.com/dagger/dagger/engine/distconsts v0.15.0
+	dagger.io/dagger v0.15.1
+	github.com/dagger/dagger/engine/distconsts v0.15.1
 	github.com/dustin/go-humanize v1.0.1
 	resenje.org/singleflight v0.4.3
 )
