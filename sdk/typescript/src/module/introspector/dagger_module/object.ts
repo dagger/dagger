@@ -104,7 +104,9 @@ export class DaggerObject implements DaggerObjectBase {
     }
 
     for (const property of Object.values(this.properties)) {
-      property.propagateReferences(references)
+      if (property.isExposed) {
+        property.propagateReferences(references)
+      }
     }
 
     for (const fn of Object.values(this.methods)) {
