@@ -51,7 +51,6 @@ jobs:
             --aws-secret-access-key=env:AWS_SECRET_ACCESS_KEY \
             --aws-region="$AWS_REGION" \
             --aws-bucket="$AWS_BUCKET" \
-            --aws-cloudfront-distribution="$AWS_CLOUDFRONT_DISTRIBUTION" \
             --artefacts-fqdn="$ARTEFACTS_FQDN"
         env:
           GH_ORG_NAME: ${{ vars.GH_ORG_NAME }}
@@ -60,9 +59,25 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ vars.RELEASE_AWS_REGION }}
           AWS_BUCKET: ${{ vars.RELEASE_AWS_BUCKET }}
-          AWS_CLOUDFRONT_DISTRIBUTION: ${{ vars.RELEASE_AWS_CLOUDFRONT_DISTRIBUTION }}
           ARTEFACTS_FQDN: ${{ vars.RELEASE_FQDN }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_PRO_LICENSE_KEY }}
+      - name: "Publish Metadata"
+        uses: ./.github/actions/call
+        with:
+          function: |-
+            cli \
+            publish-metadata \
+            --aws-access-key-id=env:AWS_ACCESS_KEY_ID \
+            --aws-secret-access-key=env:AWS_SECRET_ACCESS_KEY \
+            --aws-region="$AWS_REGION" \
+            --aws-bucket="$AWS_BUCKET" \
+            --aws-cloudfront-distribution="$AWS_CLOUDFRONT_DISTRIBUTION"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ vars.RELEASE_AWS_REGION }}
+          AWS_BUCKET: ${{ vars.RELEASE_AWS_BUCKET }}
+          AWS_CLOUDFRONT_DISTRIBUTION: ${{ vars.RELEASE_AWS_CLOUDFRONT_DISTRIBUTION }}
       # TODO: move this into dagger function call
       - name: "Notify"
         uses: ./.github/actions/notify
