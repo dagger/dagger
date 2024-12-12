@@ -1,0 +1,7 @@
+kind: Fixed
+body: 'Ignore private property type resolution since they are not exposed to the Dagger
+  API. '
+time: 2024-12-12T19:36:30.798874+01:00
+custom:
+  Author: TomChv
+  PR: "9184"
