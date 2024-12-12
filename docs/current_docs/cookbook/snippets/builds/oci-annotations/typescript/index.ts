@@ -14,7 +14,10 @@ class MyModule {
       .withWorkdir("/src")
       .withExec(["git", "clone", "https://github.com/dagger/dagger", "."])
       .withAnnotation("org.opencontainers.image.authors", "John Doe")
-      .withAnnotation("org.opencontainers.image.title", "Dagger source image viewer")
+      .withAnnotation(
+        "org.opencontainers.image.title",
+        "Dagger source image viewer",
+      )
       .publish(`ttl.sh/custom-image-${Math.floor(Math.random() * 10000000)}`)
 
     return address
