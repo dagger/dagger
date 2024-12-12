@@ -85,7 +85,9 @@ the runner.
 GPU support is currently experimental and only works with NVIDIA GPUs.
 :::
 
-In order to use a GPU, Dagger needs a custom, GPU-enabled runner. Assuming Dagger is already installed on a GPU-capable host, use the instructions below to replace the default runner with a GPU-enabled runner.
+In order to use a GPU, Dagger needs a custom, GPU-enabled runner and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#installing-the-nvidia-container-toolkit).
+
+Assuming that Dagger and the NVIDIA Container Toolkit are already installed on a GPU-capable host, use the instructions below to replace the default runner with a GPU-enabled runner.
 
 :::note
 The sections below provide instructions for the local host and for cloud infrastructure providers [Fly.io](https://fly.io/) and [Lambda Labs](https://lambdalabs.com/). These instructions can be adapted for use on other cloud providers, so long as the host has access to an NVIDIA GPU.
