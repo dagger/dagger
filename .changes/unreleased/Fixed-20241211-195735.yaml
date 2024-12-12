@@ -1,7 +1,0 @@
-kind: Fixed
-body: |
-  Metrics display in the TUI is fixed to display for all executed containers, rather than just services.
-time: 2024-12-11T19:57:35.761154448-08:00
-custom:
-  Author: sipsma
-  PR: "9171"
