@@ -269,6 +269,9 @@ gh pr ready
       @jpadams @marcosnils @matipan @gerhard in the release thread and wait for a
       response before continuing with the release (this might be a blocker).
 
+- [ ] `15 mins` Confirm that all checks on `$RELEASE_BRANCH` are green, for main you're basically [checking](https://github.com/dagger/dagger/commits/main/) that the merged prep commit is has a green check.
+      Do not push tags until this is finished.
+
 ## 🚀 Release ⏱ `10mins`
 
 - [ ] When you have confirmed that all checks on `$RELEASE_BRANCH` are green, run the following:
