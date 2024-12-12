@@ -14,7 +14,6 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
@@ -42,6 +41,11 @@ type DB struct {
 
 	CompletedEffects map[string]bool
 	FailedEffects    map[string]bool
+
+	// Map of call digest -> metric name -> data points
+	// NOTE: this is hard coded for Gauge int64 metricdata essentially right now,
+	// needs generalization as more metric types get added
+	MetricsByCall map[string]map[string][]metricdata.DataPoint[int64]
 
 	// updatedSpans is a set of spans that have been updated since the last
 	// sync, which includes any parent spans whose overall active time intervals
@@ -259,23 +263,20 @@ func (db DBMetricExporter) Export(ctx context.Context, resourceMetrics *metricda
 			}
 
 			for _, point := range metricData.DataPoints {
-				spanIDStr, ok := point.Attributes.Value(telemetry.MetricsSpanIDAttr)
-				if !ok {
-					continue
-				}
-				spanID, err := trace.SpanIDFromHex(spanIDStr.AsString())
-				if err != nil {
-					continue
-				}
-				span, ok := db.Spans.Map[SpanID{spanID}]
+				callDigest, ok := point.Attributes.Value(telemetry.DagDigestAttr)
 				if !ok {
 					continue
 				}
 
-				if span.MetricsByName == nil {
-					span.MetricsByName = make(map[string][]metricdata.DataPoint[int64])
+				if db.MetricsByCall == nil {
+					db.MetricsByCall = make(map[string]map[string][]metricdata.DataPoint[int64])
 				}
-				span.MetricsByName[metric.Name] = append(span.MetricsByName[metric.Name], point)
+				metricsByName, ok := db.MetricsByCall[callDigest.AsString()]
+				if !ok {
+					metricsByName = make(map[string][]metricdata.DataPoint[int64])
+					db.MetricsByCall[callDigest.AsString()] = metricsByName
+				}
+				metricsByName[metric.Name] = append(metricsByName[metric.Name], point)
 			}
 		}
 	}
