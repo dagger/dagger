@@ -7,7 +7,6 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
@@ -32,10 +31,6 @@ type Span struct {
 	// v0.14 and below
 	causesViaAttrs  SpanSet            `json:"-"`
 	effectsViaAttrs map[string]SpanSet `json:"-"`
-
-	// NOTE: this is hard coded for Gauge int64 metricdata essentially right now,
-	// needs generalization as more metric types get added
-	MetricsByName map[string][]metricdata.DataPoint[int64]
 
 	// Indicates that this span was actually exported to the database, and not
 	// just allocated due to a span parent or other relationship.

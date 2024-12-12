@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"golang.org/x/term"
 
@@ -397,30 +398,43 @@ func (r *renderer) renderCached(out *termenv.Output, span *dagui.Span) {
 }
 
 func (r renderer) renderMetrics(out *termenv.Output, span *dagui.Span) {
-	if span.MetricsByName == nil {
+	if r.Verbosity < dagui.ShowMetricsVerbosity {
+		return
+	}
+
+	if span.CallDigest == "" {
+		return
+	}
+	metricsByName := r.db.MetricsByCall[span.CallDigest]
+	if metricsByName == nil {
 		return
 	}
 
 	// IO Stats
-	r.renderMetric(out, span, telemetry.IOStatDiskReadBytes, "Disk Read", humanizeBytes)
-	r.renderMetric(out, span, telemetry.IOStatDiskWriteBytes, "Disk Write", humanizeBytes)
-	r.renderMetricIfNonzero(out, span, telemetry.IOStatPressureSomeTotal, "IO Pressure", durationString)
+	r.renderMetric(out, metricsByName, telemetry.IOStatDiskReadBytes, "Disk Read", humanizeBytes)
+	r.renderMetric(out, metricsByName, telemetry.IOStatDiskWriteBytes, "Disk Write", humanizeBytes)
+	r.renderMetricIfNonzero(out, metricsByName, telemetry.IOStatPressureSomeTotal, "IO Pressure", durationString)
 
 	// CPU Stats
-	r.renderMetricIfNonzero(out, span, telemetry.CPUStatPressureSomeTotal, "CPU Pressure (some)", durationString)
-	r.renderMetricIfNonzero(out, span, telemetry.CPUStatPressureFullTotal, "CPU Pressure (full)", durationString)
+	r.renderMetricIfNonzero(out, metricsByName, telemetry.CPUStatPressureSomeTotal, "CPU Pressure (some)", durationString)
+	r.renderMetricIfNonzero(out, metricsByName, telemetry.CPUStatPressureFullTotal, "CPU Pressure (full)", durationString)
 
 	// Memory Stats
-	r.renderMetric(out, span, telemetry.MemoryCurrentBytes, "Memory Bytes (current)", humanizeBytes)
-	r.renderMetric(out, span, telemetry.MemoryPeakBytes, "Memory Bytes (peak)", humanizeBytes)
+	r.renderMetric(out, metricsByName, telemetry.MemoryCurrentBytes, "Memory Bytes (current)", humanizeBytes)
+	r.renderMetric(out, metricsByName, telemetry.MemoryPeakBytes, "Memory Bytes (peak)", humanizeBytes)
 
 	// Network Stats
-	r.renderNetworkMetric(out, span, telemetry.NetstatRxBytes, telemetry.NetstatRxDropped, telemetry.NetstatRxPackets, "Network Rx")
-	r.renderNetworkMetric(out, span, telemetry.NetstatTxBytes, telemetry.NetstatTxDropped, telemetry.NetstatTxPackets, "Network Tx")
+	r.renderNetworkMetric(out, metricsByName, telemetry.NetstatRxBytes, telemetry.NetstatRxDropped, telemetry.NetstatRxPackets, "Network Rx")
+	r.renderNetworkMetric(out, metricsByName, telemetry.NetstatTxBytes, telemetry.NetstatTxDropped, telemetry.NetstatTxPackets, "Network Tx")
 }
 
-func (r renderer) renderMetric(out *termenv.Output, span *dagui.Span, metricName string, label string, formatValue func(int64) string) {
-	if dataPoints := span.MetricsByName[metricName]; len(dataPoints) > 0 {
+func (r renderer) renderMetric(
+	out *termenv.Output,
+	metricsByName map[string][]metricdata.DataPoint[int64],
+	metricName string, label string,
+	formatValue func(int64) string,
+) {
+	if dataPoints := metricsByName[metricName]; len(dataPoints) > 0 {
 		lastPoint := dataPoints[len(dataPoints)-1]
 		fmt.Fprint(out, " | ")
 		displayMetric := out.String(fmt.Sprintf("%s: %s", label, formatValue(lastPoint.Value)))
@@ -429,26 +443,39 @@ func (r renderer) renderMetric(out *termenv.Output, span *dagui.Span, metricName
 	}
 }
 
-func (r renderer) renderMetricIfNonzero(out *termenv.Output, span *dagui.Span, metricName string, label string, formatValue func(int64) string) {
-	if dataPoints := span.MetricsByName[metricName]; len(dataPoints) > 0 {
+func (r renderer) renderMetricIfNonzero(
+	out *termenv.Output,
+	metricsByName map[string][]metricdata.DataPoint[int64],
+	metricName string, label string,
+	formatValue func(int64) string,
+) {
+	if dataPoints := metricsByName[metricName]; len(dataPoints) > 0 {
 		lastPoint := dataPoints[len(dataPoints)-1]
 		if lastPoint.Value == 0 {
 			return
 		}
-		r.renderMetric(out, span, metricName, label, formatValue)
+		r.renderMetric(out, metricsByName, metricName, label, formatValue)
 	}
 }
 
-func (r renderer) renderNetworkMetric(out *termenv.Output, span *dagui.Span, bytesMetric, droppedMetric, packetsMetric, label string) {
-	r.renderMetricIfNonzero(out, span, bytesMetric, label, humanizeBytes)
-	if dataPoints := span.MetricsByName[bytesMetric]; len(dataPoints) > 0 {
-		renderPacketLoss(out, span, droppedMetric, packetsMetric)
+func (r renderer) renderNetworkMetric(
+	out *termenv.Output,
+	metricsByName map[string][]metricdata.DataPoint[int64],
+	bytesMetric, droppedMetric, packetsMetric, label string,
+) {
+	r.renderMetricIfNonzero(out, metricsByName, bytesMetric, label, humanizeBytes)
+	if dataPoints := metricsByName[bytesMetric]; len(dataPoints) > 0 {
+		renderPacketLoss(out, metricsByName, droppedMetric, packetsMetric)
 	}
 }
 
-func renderPacketLoss(out *termenv.Output, span *dagui.Span, droppedMetric, packetsMetric string) {
-	if drops := span.MetricsByName[droppedMetric]; len(drops) > 0 {
-		if packets := span.MetricsByName[packetsMetric]; len(packets) > 0 {
+func renderPacketLoss(
+	out *termenv.Output,
+	metricsByName map[string][]metricdata.DataPoint[int64],
+	droppedMetric, packetsMetric string,
+) {
+	if drops := metricsByName[droppedMetric]; len(drops) > 0 {
+		if packets := metricsByName[packetsMetric]; len(packets) > 0 {
 			lastDrops := drops[len(drops)-1]
 			lastPackets := packets[len(packets)-1]
 			if lastDrops.Value > 0 && lastPackets.Value > 0 {
