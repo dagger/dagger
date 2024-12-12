@@ -1791,13 +1791,9 @@ func (TypescriptSuite) TestPrivatePropertyWithUnsupportedType(ctx context.Contex
 
 @object()
 export class Test {
-	@func()
-	foo: string
-
 	_bar: any
 
 	constructor() {
-		this.foo = 'foo'
 		this._bar = 42
 	}
 
