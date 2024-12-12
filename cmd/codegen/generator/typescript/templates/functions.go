@@ -19,16 +19,16 @@ func TypescriptTemplateFuncs(
 	moduleParentPath string,
 ) template.FuncMap {
 	return typescriptTemplateFuncs{
-		moduleName: moduleName,
+		moduleName:       moduleName,
 		moduleParentPath: moduleParentPath,
-		schemaVersion: schemaVersion,
+		schemaVersion:    schemaVersion,
 	}.FuncMap()
 }
 
 type typescriptTemplateFuncs struct {
-	moduleName string
+	moduleName       string
 	moduleParentPath string
-	schemaVersion string
+	schemaVersion    string
 }
 
 func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
@@ -307,7 +307,7 @@ func (funcs typescriptTemplateFuncs) toSingleType(value string) string {
 	return value[:len(value)-2]
 }
 
-func (funcs typescriptTemplateFuncs) moduleRelPath (path string) string {
+func (funcs typescriptTemplateFuncs) moduleRelPath(path string) string {
 	return filepath.Join(
 		// Path to the root of this module (since we're at the codegen root sdk/src/api/).
 		"../../../",
