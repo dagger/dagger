@@ -86,7 +86,7 @@ export class DaggerObject implements DaggerObjectBase {
 
     for (const property of Object.values(this.properties)) {
       const ref = property.getReference()
-      if (ref) {
+      if (ref && property.isExposed) {
         references.push(ref)
       }
     }

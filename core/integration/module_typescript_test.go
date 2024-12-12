@@ -1779,3 +1779,37 @@ class Test {
 		require.JSONEq(t, `{"test": {"foo": "bar"}}`, out)
 	})
 }
+
+func (TypescriptSuite) TestPrivatePropertyWithUnsupportedType(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=test", "--sdk=typescript")).
+		With(sdkSource("typescript", `import { object, func } from '@dagger.io/dagger'
+
+@object()
+export class Test {
+	@func()
+	foo: string
+
+	_bar: any
+
+	constructor() {
+		this.foo = 'foo'
+		this._bar = 42
+	}
+
+	@func()
+	bar(): string {
+	  // We explicitly returns a string where the type is actually a number just to verify that any works as expected
+		// and is ignored by the introspection since it's a private property.
+		return this._bar 
+	}
+}`))
+
+	out, err := modGen.With(daggerQuery(`{test{bar}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test": {"bar": "42"}}`, out)
+}
