@@ -294,17 +294,17 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 		return err
 	}
 
-	s, b, err := readShellState(h.stdoutBuf)
-	if err != nil {
+	resp, err := h.Result(ctx, h.stdoutBuf, true, handleObjectLeaf)
+	if err != nil || resp == nil {
 		return err
-	}
-	if s != nil {
-		return h.Result(ctx, s)
 	}
 
 	return h.withTerminal(func(_ io.Reader, stdout, _ io.Writer) error {
-		_, err := fmt.Fprint(stdout, string(b))
-		return err
+		fmt.Fprint(stdout, resp)
+		if sval, ok := resp.(string); ok && stdoutIsTTY && !strings.HasSuffix(sval, "\n") {
+			fmt.Fprintln(stdout)
+		}
+		return nil
 	})
 }
 
@@ -525,7 +525,7 @@ func (h *shellCallHandler) cmd(ctx context.Context, args []string) (*ShellState,
 		return nil, err
 	}
 	if builtin != nil {
-		return nil, builtin.Execute(ctx, a, st)
+		return nil, builtin.Execute(ctx, h, a, st)
 	}
 
 	if st.IsCommandRoot() {
@@ -536,7 +536,7 @@ func (h *shellCallHandler) cmd(ctx context.Context, args []string) (*ShellState,
 			if err != nil {
 				return nil, err
 			}
-			return nil, stdlib.Execute(ctx, a, nil)
+			return nil, stdlib.Execute(ctx, h, a, nil)
 
 		case st.IsDeps():
 			// Example: `.deps | <dependency>`
@@ -568,7 +568,7 @@ func (h *shellCallHandler) entrypointCall(ctx context.Context, cmd string, args 
 	}
 
 	if cmd, _ := h.BuiltinCommand(cmd); cmd != nil {
-		return nil, cmd.Execute(ctx, args, nil)
+		return nil, cmd.Execute(ctx, h, args, nil)
 	}
 
 	st, err := h.stateLookup(ctx, cmd)
@@ -584,7 +584,7 @@ func (h *shellCallHandler) entrypointCall(ctx context.Context, cmd string, args 
 		if err != nil {
 			return nil, err
 		}
-		return st, cmd.Execute(ctx, args, nil)
+		return st, cmd.Execute(ctx, h, args, nil)
 	}
 
 	if md, _ := h.GetModuleDef(st); md != nil {
@@ -847,25 +847,25 @@ func (h *shellCallHandler) parseArgumentValues(ctx context.Context, md *moduleDe
 		if err != nil {
 			return err
 		}
-		if strings.HasPrefix(value, shellStatePrefix) {
-			v, replace, err := h.parseStateArgument(ctx, a, value)
-			if err != nil {
-				return fmt.Errorf("failed expanding argument %q: %w", a.FlagName(), err)
-			}
-			// Flags only support setting their values from strings, so if
-			// anything else is returned, we just ignore it.
-			// TODO: try to validate this more to avoid surprises
-			if sval, ok := v.(string); ok && !replace {
-				return flags.Set(flag.Name, sval)
-			}
-			// This will bypass using a flag for this argument since we're
-			// saying it's a final value alreadyl
-			if replace {
-				values[a.Name] = v
-			}
-			return nil
+		v, bypass, err := h.parseFlagValue(ctx, value, a.TypeDef)
+		if err != nil {
+			return fmt.Errorf("cannot expand function argument %q: %w", a.FlagName(), err)
 		}
-		return flags.Set(flag.Name, value)
+		if v == nil {
+			return fmt.Errorf("unexpected nil value while expanding function argument %q", a.FlagName())
+		}
+		// Flags only support setting their values from strings, so if
+		// anything else is returned, we just ignore it.
+		// TODO: try to validate this more to avoid surprises
+		if sval, ok := v.(string); ok && !bypass {
+			return flags.Set(flag.Name, sval)
+		}
+		// This will bypass using a flag for this argument since we're
+		// saying it's a final value already.
+		if bypass {
+			values[a.Name] = v
+		}
+		return nil
 	}
 	if err := flags.ParseAll(args, f); err != nil {
 		return nil, err
@@ -893,119 +893,130 @@ func (h *shellCallHandler) parseArgumentValues(ctx context.Context, md *moduleDe
 	return values, nil
 }
 
-func (h *shellCallHandler) parseStateArgument(ctx context.Context, arg *modFunctionArg, value string) (any, bool, error) {
-	// Does this replace the source value or do we pass it on to flag parsing?
-	var replace bool
-
-	st, b, err := readShellState(strings.NewReader(value))
-	if err != nil {
-		return nil, replace, err
-	}
-	// Not state, but has some other content
-	if st == nil && len(b) > 0 {
-		return string(b), replace, nil
-	}
-	fn, err := st.Function().GetDef(h.modDef(st))
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to get function definition: %w", err)
+// parseFlagValue ensures that a flag value with state gets resolved
+//
+// This happens most commonly when argument is the result of command expansion
+// from a sub-shell.
+func (h *shellCallHandler) parseFlagValue(ctx context.Context, value string, argType *modTypeDef) (any, bool, error) {
+	if !strings.HasPrefix(value, shellStatePrefix) {
+		return value, false, nil
 	}
 
-	q := st.QueryBuilder(h.dag)
+	var bypass bool
 
-	// When an argument returns an object, assume we want its ID
-	// TODO: Allow ids in TypeDefs so we can directly check if there's an `id`
-	// function in this object.
-	if fn.ReturnType.AsFunctionProvider() != nil {
-		if st.Function().ReturnObject != arg.TypeDef.Name() {
-			return nil, replace, fmt.Errorf("expected return type %q, got %q", arg.TypeDef.Name(), st.Function().ReturnObject)
+	handleObjectID := func(_ context.Context, q *querybuilder.Selection, t *modTypeDef) (*querybuilder.Selection, error) {
+		// When an argument returns an object, assume we want its ID
+		// TODO: Allow ids in TypeDefs so we can directly check if there's an `id`
+		// function in this object.
+		if t.AsFunctionProvider() != nil {
+			if argType.Name() != t.Name() {
+				return nil, fmt.Errorf("expected return type %q, got %q", argType.Name(), t.Name())
+			}
+			q = q.Select("id")
+			bypass = true
 		}
-		q = q.Select("id")
-		replace = true
+
+		// TODO: do a bit more validation. Consider that values that are not
+		// to be replaced should only be strings, because that's what the
+		// flagSet supports. This also means the type won't match the expected
+		// definition. For example, a function that returns a `Directory` object
+		// could have a subshell return a path string so the flag will turn that
+		// into the `Directory` object.
+
+		return q, nil
 	}
-
-	// TODO: do a bit more validation. Consider that values that are not
-	// to be replaced should only be strings, because that's what the
-	// flagSet supports. This also means the type won't match the expected
-	// definition. For example, a function that returns a `Directory` object
-	// could have a subshell return a path string so the flag will turn that
-	// into the `Directory` object.
-
-	var response any
-	err = makeRequest(ctx, q, &response)
-	return response, replace, err
+	v, err := h.Result(ctx, strings.NewReader(value), false, handleObjectID)
+	return v, bypass, err
 }
 
-// Result handles making the final request and printing the response
-func (h *shellCallHandler) Result(ctx context.Context, st *ShellState) error {
-	if h.debug {
-		h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
-			shellFDebug(stderr, "Result state: %+v", st)
-			return nil
-		})
+// Result reads the state from stdin and returns the final result
+func (h *shellCallHandler) Result(
+	ctx context.Context,
+	// r is the reader to read the shell state from
+	r io.Reader,
+	// doPrintResponse prepares the response for printing according to an output
+	// format
+	doPrintResponse bool,
+	// beforeRequest is a callback that allows modifying the query before making
+	// the request
+	//
+	// It's also useful for validating the query with the function's
+	// return type.
+	beforeRequest func(context.Context, *querybuilder.Selection, *modTypeDef) (*querybuilder.Selection, error),
+) (any, error) {
+	st, b, err := readShellState(r)
+	if err != nil {
+		return nil, err
+	}
+	if st == nil {
+		return string(b), nil
 	}
 
 	if st.IsCommandRoot() {
-		var out string
-
 		switch {
 		case st.IsStdlib():
-			out = h.CommandsList(st.Cmd, h.Stdlib())
+			return h.CommandsList(st.Cmd, h.Stdlib()), nil
 		case st.IsDeps():
-			out = h.DependenciesList()
+			return h.DependenciesList(), nil
 		case st.IsCore():
 			def := h.modDef(nil)
-			out = h.FunctionsList(st.Cmd, def.GetCoreFunctions())
+			return h.FunctionsList(st.Cmd, def.GetCoreFunctions()), nil
 		default:
-			return fmt.Errorf("unexpected namespace: %s", st.Cmd)
+			return nil, fmt.Errorf("unexpected namespace %q", st.Cmd)
 		}
-
-		return h.withTerminal(func(_ io.Reader, stdout, _ io.Writer) error {
-			fmt.Fprintln(stdout, out)
-			return nil
-		})
 	}
 
 	def := h.modDef(st)
 
 	// Example: `build` (i.e., omitted constructor)
 	if def.HasModule() && st.IsEmpty() {
-		newSt, err := h.constructorCall(ctx, def, st, nil)
+		st, err = h.constructorCall(ctx, def, st, nil)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		st = newSt
 	}
 
 	fn, err := st.Function().GetDef(def)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	sel := st.QueryBuilder(h.dag)
-	q, err := handleObjectLeaf(ctx, sel, fn.ReturnType)
-	if err != nil {
-		return err
+	q := st.QueryBuilder(h.dag)
+	if beforeRequest != nil {
+		q, err = beforeRequest(ctx, q, fn.ReturnType)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	return h.executeRequest(ctx, q, fn.ReturnType)
-}
-
-func (h *shellCallHandler) executeRequest(ctx context.Context, q *querybuilder.Selection, returnType *modTypeDef) error {
+	// The beforeRequest hook has a chance to return a nil `q` to signal
+	// that we shouldn't proceed with the request. For example, it's
+	// possible  that a pipeline ending in an object doesn't have anything
+	// to sub-select.
 	if q == nil {
-		return h.withTerminal(func(stdin io.Reader, stdout, stderr io.Writer) error {
-			return handleResponse(returnType, nil, stdout, stderr)
-		})
+		return nil, nil
 	}
 
 	var response any
 
 	if err := makeRequest(ctx, q, &response); err != nil {
-		return err
+		return nil, err
 	}
 
-	return h.withTerminal(func(stdin io.Reader, stdout, stderr io.Writer) error {
-		return handleResponse(returnType, response, stdout, stderr)
-	})
+	if fn.ReturnType.Kind == dagger.TypeDefKindVoidKind {
+		return nil, nil
+	}
+
+	if doPrintResponse {
+		buf := new(bytes.Buffer)
+		frmt := outputFormat(fn.ReturnType)
+		if err := printResponse(buf, response, frmt); err != nil {
+			return nil, err
+		}
+		return buf.String(), nil
+	}
+
+	return response, nil
 }
 
 func shellDebug(ctx context.Context, msg string, args ...any) {
@@ -1366,7 +1377,7 @@ func NoArgs(args []string) error {
 }
 
 // Execute is the main dispatcher function for shell builtin commands
-func (c *ShellCommand) Execute(ctx context.Context, args []string, st *ShellState) error {
+func (c *ShellCommand) Execute(ctx context.Context, h *shellCallHandler, args []string, st *ShellState) error {
 	if st != nil && c.RunState == nil {
 		return fmt.Errorf("command %q cannot be piped", c.Name())
 	}
@@ -1375,11 +1386,30 @@ func (c *ShellCommand) Execute(ctx context.Context, args []string, st *ShellStat
 			return fmt.Errorf("command %q %w\nusage: %s", c.Name(), err, c.Use)
 		}
 	}
+	// Resolve state values in arguments
+	a := make([]string, 0, len(args))
+	for i, arg := range args {
+		if strings.HasPrefix(arg, shellStatePrefix) {
+			w := strings.NewReader(arg)
+			v, err := h.Result(ctx, w, false, nil)
+			if err != nil {
+				return fmt.Errorf("cannot expand command argument at %d", i)
+			}
+			if v == nil {
+				return fmt.Errorf("unexpected nil value while expanding argument at %d", i)
+			}
+			arg = fmt.Sprintf("%v", v)
+		}
+		a = append(a, arg)
+	}
+	if h.debug {
+		shellDebug(ctx, "└ CmdExec(%v)", a)
+	}
 	c.SetContext(ctx)
 	if c.RunState != nil {
-		return c.RunState(c, args, st)
+		return c.RunState(c, a, st)
 	}
-	return c.Run(c, args)
+	return c.Run(c, a)
 }
 
 // shellFunctionUseLine returns the usage line fine for a function

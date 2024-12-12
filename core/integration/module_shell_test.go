@@ -94,12 +94,16 @@ func (Test) Go() string {
 
 package main
 
-type Dep struct{}
+func New() *Dep {
+	return &Dep{
+		Version: "dep function",  
+	}
+}
 
-// Dep version
-func (Dep) Version() string {
-	return "dep function"
-} 
+type Dep struct{
+	// Dep version
+	Version string
+}
 `,
 		)).
 		With(withModInitAt("modules/git", "go", `// A git helper
@@ -280,7 +284,7 @@ func (Other) Version() string {
 			With(daggerShell("dep")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"_type": "Dep"}`, out)
+		require.JSONEq(t, `{"version": "dep function"}`, out)
 	})
 
 	t.Run("dep doc type", func(ctx context.Context, t *testctx.T) {
@@ -473,7 +477,7 @@ type Foo struct{
 			With(daggerShell("foo")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"_type": "Foo", "bar": "foobar"}`, out)
+		require.JSONEq(t, `{"bar": "foobar"}`, out)
 	})
 
 	t.Run("stateful", func(ctx context.Context, t *testctx.T) {
@@ -618,6 +622,15 @@ func (ShellSuite) TestArgsSpread(ctx context.Context, t *testctx.T) {
 			require.Equal(t, tc.expected, out)
 		})
 	}
+}
+
+func (ShellSuite) TestCommandStateArgs(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	script := fmt.Sprintf("FOO=$(container | from %s | with-exec -- echo -n foo | stdout); .doc $FOO", alpineImage)
+	_, err := daggerCliBase(t, c).
+		With(daggerShell(script)).
+		Sync(ctx)
+	requireErrOut(t, err, `"foo" not found`)
 }
 
 func (ShellSuite) TestInstall(ctx context.Context, t *testctx.T) {
