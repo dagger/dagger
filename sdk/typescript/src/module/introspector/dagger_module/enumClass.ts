@@ -9,7 +9,10 @@ export type DaggerEnumClasses = { [name: string]: DaggerEnumClass }
 
 export type DaggerEnumClassValues = { [name: string]: DaggerEnumClassValue }
 
-export class DaggerEnumClassValue extends Locatable implements DaggerEnumBaseValue {
+export class DaggerEnumClassValue
+  extends Locatable
+  implements DaggerEnumBaseValue
+{
   public name: string
   public value: string
   public description: string
