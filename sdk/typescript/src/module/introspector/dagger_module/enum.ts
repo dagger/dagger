@@ -8,7 +8,7 @@ import { Locatable } from "./locatable.js"
 export type DaggerEnums = { [name: string]: DaggerEnum }
 export type DaggerEnumValues = { [name: string]: DaggerEnumValue }
 
-export class DaggerEnumValue implements DaggerEnumBaseValue {
+export class DaggerEnumValue extends Locatable implements DaggerEnumBaseValue {
   public name: string
   public value: string
   public description: string
@@ -19,6 +19,7 @@ export class DaggerEnumValue implements DaggerEnumBaseValue {
     private readonly node: ts.EnumMember,
     private readonly ast: AST,
   ) {
+    super(node)
     this.symbol = this.ast.getSymbolOrThrow(this.node.name)
     this.name = this.node.name.getText()
     this.description = this.ast.getDocFromSymbol(this.symbol)

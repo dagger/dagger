@@ -9,7 +9,7 @@ export type DaggerEnumClasses = { [name: string]: DaggerEnumClass }
 
 export type DaggerEnumClassValues = { [name: string]: DaggerEnumClassValue }
 
-export class DaggerEnumClassValue implements DaggerEnumBaseValue {
+export class DaggerEnumClassValue extends Locatable implements DaggerEnumBaseValue {
   public name: string
   public value: string
   public description: string
@@ -20,6 +20,7 @@ export class DaggerEnumClassValue implements DaggerEnumBaseValue {
     private readonly node: ts.PropertyDeclaration,
     private readonly ast: AST,
   ) {
+    super(node)
     this.name = this.node.name.getText()
     this.symbol = this.ast.getSymbolOrThrow(this.node.name)
     this.description = this.ast.getDocFromSymbol(this.symbol)

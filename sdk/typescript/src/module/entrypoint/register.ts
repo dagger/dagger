@@ -84,6 +84,7 @@ export async function register(
     Object.values(enum_.values).forEach((value) => {
       typeDef = typeDef.withEnumValue(value.value, {
         description: value.description,
+        sourceMap: addSourceMap(value),
       })
     })
 
