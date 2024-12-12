@@ -2100,6 +2100,12 @@ to the currently loaded module.
 				}
 				return cmd.Send(h.newDepsState())
 			},
+			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
+				return &CompletionContext{
+					Completer: ctx.Completer,
+					CmdRoot:   shellDepsCmdName,
+				}
+			},
 		},
 		&ShellCommand{
 			Use:         shellStdlibCmdName,
@@ -2109,6 +2115,12 @@ to the currently loaded module.
 			Run: func(cmd *ShellCommand, _ []string, _ *ShellState) error {
 				return cmd.Send(h.newStdlibState())
 			},
+			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
+				return &CompletionContext{
+					Completer: ctx.Completer,
+					CmdRoot:   shellStdlibCmdName,
+				}
+			},
 		},
 		&ShellCommand{
 			Use:         ".core [function]",
@@ -2116,6 +2128,12 @@ to the currently loaded module.
 			State:       NoState,
 			Run: func(cmd *ShellCommand, args []string, _ *ShellState) error {
 				return cmd.Send(h.newCoreState())
+			},
+			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
+				return &CompletionContext{
+					Completer: ctx.Completer,
+					CmdRoot:   shellCoreCmdName,
+				}
 			},
 		},
 		cobraToShellCommand(loginCmd),

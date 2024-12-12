@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/chzyer/readline"
@@ -86,7 +87,7 @@ func (h *shellAutoComplete) Do(line []rune, pos int) (newLine [][]rune, length i
 	var results [][]rune
 	for _, result := range shctx.completions(inprogressPrefix) {
 		if result, ok := strings.CutPrefix(result, inprogressPrefix); ok {
-			results = append(results, []rune(result))
+			results = append(results, []rune(result+" "))
 		}
 	}
 	return results, len(inprogressPrefix)
@@ -137,15 +138,12 @@ func (h *shellAutoComplete) dispatchPipe(previous *CompletionContext, pipe *synt
 		return nil
 	}
 
-	previous = h.dispatch(previous, pipe.Y, cursor)
-	return previous
+	return h.dispatch(previous, pipe.Y, cursor)
 }
 
 func (h *shellAutoComplete) root() *CompletionContext {
-	def := h.modDef(nil)
 	return &CompletionContext{
 		Completer: h,
-		ModType:   def.MainObject.AsFunctionProvider(),
 		root:      true,
 	}
 }
@@ -156,9 +154,13 @@ func (h *shellAutoComplete) root() *CompletionContext {
 type CompletionContext struct {
 	Completer *shellAutoComplete
 
+	// CmdRoot is the name of a namespace-setting command.
+	CmdRoot string
+
 	// ModType indicates the completions should be performed on an
 	// object/interface/etc.
 	ModType functionProvider
+
 	// ModFunc indicates the completions should be performed on the arguments
 	// for a function call.
 	ModFunction *modFunction
@@ -168,26 +170,63 @@ type CompletionContext struct {
 
 func (ctx *CompletionContext) completions(prefix string) []string {
 	var results []string
-	if ctx.ModFunction != nil {
+	switch {
+	case ctx.ModFunction != nil:
 		// TODO: also complete required args sometimes (depending on type)
 
 		// complete optional args
 		if strings.HasPrefix(prefix, "-") {
 			for _, arg := range ctx.ModFunction.OptionalArgs() {
-				flag := "--" + arg.FlagName() + " "
+				flag := "--" + arg.FlagName()
 				results = append(results, flag)
 			}
 		}
-	} else if ctx.ModType != nil {
+
+	case ctx.ModType != nil:
 		// complete possible functions for this type
 		for _, f := range ctx.ModType.GetFunctions() {
-			cmd := f.CmdName() + " "
-			results = append(results, cmd)
+			results = append(results, f.CmdName())
 		}
 		// complete potentially chainable builtins
 		for _, builtin := range ctx.builtins() {
-			cmd := builtin.Name() + " "
-			results = append(results, cmd)
+			results = append(results, builtin.Name())
+		}
+
+	case ctx.root:
+		for _, cmd := range slices.Concat(ctx.builtins(), ctx.stdlib()) {
+			results = append(results, cmd.Name())
+		}
+		if md, _ := ctx.Completer.GetModuleDef(nil); md != nil {
+			for _, fn := range md.MainObject.AsFunctionProvider().GetFunctions() {
+				results = append(results, fn.CmdName())
+			}
+			for _, dep := range md.Dependencies {
+				results = append(results, dep.Name)
+			}
+		}
+		for modRef := range ctx.Completer.modDefs {
+			if modRef != "" {
+				results = append(results, modRef)
+			}
+		}
+
+	case ctx.CmdRoot == shellStdlibCmdName:
+		for _, cmd := range ctx.Completer.Stdlib() {
+			if cmd.State != NoState {
+				results = append(results, cmd.Name())
+			}
+		}
+
+	case ctx.CmdRoot == shellDepsCmdName:
+		if md, _ := ctx.Completer.GetModuleDef(nil); md != nil {
+			for _, dep := range md.Dependencies {
+				results = append(results, dep.Name)
+			}
+		}
+
+	case ctx.CmdRoot == shellCoreCmdName:
+		for _, fn := range ctx.Completer.modDef(nil).GetCoreFunctions() {
+			results = append(results, fn.CmdName())
 		}
 	}
 
@@ -195,59 +234,97 @@ func (ctx *CompletionContext) completions(prefix string) []string {
 }
 
 func (ctx *CompletionContext) lookupField(field string, args []string) *CompletionContext {
-	if builtin, _ := ctx.Completer.BuiltinCommand(field); builtin != nil {
-		if builtin.Complete == nil {
-			return nil
-		}
-		return builtin.Complete(ctx, args)
-	}
-
-	previous := ctx.ModType
-	if previous == nil {
-		previous = ctx.ModFunction.ReturnType.AsFunctionProvider()
-	}
-	if previous == nil {
-		return nil
+	if cmd := ctx.builtinCmd(field); cmd != nil {
+		return cmd.Complete(ctx, args)
 	}
 
 	def := ctx.Completer.modDef(nil)
-	next, err := def.GetObjectFunction(previous.ProviderName(), field)
-	if err != nil {
+
+	if ctx.ModType != nil {
+		next, err := def.GetFunction(ctx.ModType, field)
+		if err != nil {
+			return nil
+		}
+		return &CompletionContext{
+			Completer:   ctx.Completer,
+			ModFunction: next,
+		}
+	}
+
+	// If not root, the above are the only possibilities.
+	if !ctx.root {
 		return nil
 	}
-	return &CompletionContext{
-		Completer:   ctx.Completer,
-		ModFunction: next,
+
+	if cmd := ctx.stdlibCmd(field); cmd != nil {
+		return cmd.Complete(ctx, args)
 	}
+
+	if field == ctx.Completer.modRef {
+		return &CompletionContext{
+			Completer:   ctx.Completer,
+			ModFunction: def.MainObject.AsObject.Constructor,
+		}
+	}
+
+	return nil
 }
 
 func (ctx *CompletionContext) lookupType() *CompletionContext {
 	if ctx.ModType != nil {
 		return ctx
-	} else if ctx.ModFunction != nil {
+	}
+	if ctx.ModFunction != nil {
 		def := ctx.Completer.modDef(nil)
 		next := def.GetFunctionProvider(ctx.ModFunction.ReturnType.Name())
 		return &CompletionContext{
 			Completer: ctx.Completer,
 			ModType:   next,
 		}
-	} else {
-		return nil
 	}
+	return nil
 }
 
 func (ctx *CompletionContext) builtins() []*ShellCommand {
-	if ctx.ModType == nil {
-		return nil
-	}
-	var builtins []*ShellCommand
-	for _, builtin := range ctx.Completer.Builtins() {
-		if ctx.root && builtin.State == RequiredState {
-			continue
-		} else if !ctx.root && builtin.State == NoState {
-			continue
+	var cmds []*ShellCommand
+	for _, cmd := range ctx.Completer.Builtins() {
+		if ctx.root && cmd.State != RequiredState || !ctx.root && cmd.State != NoState {
+			cmds = append(cmds, cmd)
 		}
-		builtins = append(builtins, builtin)
 	}
-	return builtins
+	return cmds
+}
+
+func (ctx *CompletionContext) stdlib() []*ShellCommand {
+	var cmds []*ShellCommand
+	for _, cmd := range ctx.Completer.Stdlib() {
+		if ctx.root && cmd.State != RequiredState || !ctx.root && cmd.State != NoState {
+			cmds = append(cmds, cmd)
+		}
+	}
+	return cmds
+}
+
+func (ctx *CompletionContext) builtinCmd(name string) *ShellCommand {
+	for _, cmd := range ctx.builtins() {
+		if cmd.Name() == name {
+			if cmd.Complete == nil {
+				return nil
+			}
+			return cmd
+		}
+	}
+	return nil
+}
+
+func (ctx *CompletionContext) stdlibCmd(name string) *ShellCommand {
+	for _, cmd := range ctx.stdlib() {
+		if cmd.Name() == name {
+			if cmd.Complete == nil {
+				return nil
+			}
+			return cmd
+		}
+	}
+	return nil
 }
