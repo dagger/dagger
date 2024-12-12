@@ -244,25 +244,10 @@ func litWord(s string) *syntax.Word {
 
 // run parses code and executes the interpreter's Runner
 func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name string) error {
-	file, err := syntax.NewParser(syntax.Variant(syntax.LangPOSIX)).Parse(reader, name)
+	file, err := parseShell(reader, name)
 	if err != nil {
 		return err
 	}
-
-	syntax.Walk(file, func(node syntax.Node) bool {
-		if node, ok := node.(*syntax.CmdSubst); ok {
-			// Rewrite command substitutions from $(foo; bar) to $(exec <&-; foo; bar)
-			// so that all the original commands run with a closed (nil) standard input.
-			node.Stmts = append([]*syntax.Stmt{{
-				Cmd: &syntax.CallExpr{Args: []*syntax.Word{litWord("..exec")}},
-				Redirs: []*syntax.Redirect{{
-					Op:   syntax.DplIn,
-					Word: litWord("-"),
-				}},
-			}}, node.Stmts...)
-		}
-		return true
-	})
 
 	h.stdoutBuf.Reset()
 	h.stderrBuf.Reset()
@@ -306,6 +291,29 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 		}
 		return nil
 	})
+}
+
+func parseShell(reader io.Reader, name string) (*syntax.File, error) {
+	file, err := syntax.NewParser(syntax.Variant(syntax.LangPOSIX)).Parse(reader, name)
+	if err != nil {
+		return nil, err
+	}
+
+	syntax.Walk(file, func(node syntax.Node) bool {
+		if node, ok := node.(*syntax.CmdSubst); ok {
+			// Rewrite command substitutions from $(foo; bar) to $(exec <&-; foo; bar)
+			// so that all the original commands run with a closed (nil) standard input.
+			node.Stmts = append([]*syntax.Stmt{{
+				Cmd: &syntax.CallExpr{Args: []*syntax.Word{litWord("..exec")}},
+				Redirs: []*syntax.Redirect{{
+					Op:   syntax.DplIn,
+					Word: litWord("-"),
+				}},
+			}}, node.Stmts...)
+		}
+		return true
+	})
+	return file, nil
 }
 
 // runPath executes code from a file
@@ -423,6 +431,7 @@ func (h *shellCallHandler) loadReadlineConfig(prompt string) (*readline.Config, 
 		Prompt:       prompt,
 		HistoryFile:  filepath.Join(dataRoot, "histfile"),
 		HistoryLimit: 1000,
+		AutoComplete: &shellAutoComplete{h},
 	}, nil
 }
 
@@ -1243,16 +1252,14 @@ type ShellCommand struct {
 	// Expected arguments
 	Args PositionalArgs
 
-	// Run is the function that will be executed if it's the first command
-	// in the pipeline and RunState is not defined
-	Run func(cmd *ShellCommand, args []string) error
+	// Expected state
+	State StateArg
 
-	// RunState is the function for executing a command that can be chained
-	// in a pipeline
-	//
-	// If defined, it's always used, even if it's the first command in the
-	// pipeline. For commands that should only be the first, define `Run` instead.
-	RunState func(cmd *ShellCommand, args []string, st *ShellState) error
+	// Run is the function that will be executed.
+	Run func(cmd *ShellCommand, args []string, st *ShellState) error
+
+	// Complete provides builtin completions
+	Complete func(ctx *CompletionContext, args []string) *CompletionContext
 
 	// HelpFunc is a custom function for customizing the help output
 	HelpFunc func(cmd *ShellCommand) string
@@ -1376,10 +1383,26 @@ func NoArgs(args []string) error {
 	return nil
 }
 
+type StateArg uint
+
+const (
+	AnyState StateArg = iota
+	RequiredState
+	NoState
+)
+
 // Execute is the main dispatcher function for shell builtin commands
 func (c *ShellCommand) Execute(ctx context.Context, h *shellCallHandler, args []string, st *ShellState) error {
-	if st != nil && c.RunState == nil {
-		return fmt.Errorf("command %q cannot be piped", c.Name())
+	switch c.State {
+	case AnyState:
+	case RequiredState:
+		if st == nil {
+			return fmt.Errorf("command %q must be piped\nusage: %s", c.Name(), c.Use)
+		}
+	case NoState:
+		if st != nil {
+			return fmt.Errorf("command %q cannot be piped\nusage: %s", c.Name(), c.Use)
+		}
 	}
 	if c.Args != nil {
 		if err := c.Args(args); err != nil {
@@ -1406,10 +1429,7 @@ func (c *ShellCommand) Execute(ctx context.Context, h *shellCallHandler, args []
 		shellDebug(ctx, "└ CmdExec(%v)", a)
 	}
 	c.SetContext(ctx)
-	if c.RunState != nil {
-		return c.RunState(c, a, st)
-	}
-	return c.Run(c, a)
+	return c.Run(c, a, st)
 }
 
 // shellFunctionUseLine returns the usage line fine for a function
@@ -1878,7 +1898,8 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 			Use:    ".debug",
 			Hidden: true,
 			Args:   NoArgs,
-			Run: func(_ *ShellCommand, _ []string) error {
+			State:  NoState,
+			Run: func(cmd *ShellCommand, args []string, _ *ShellState) error {
 				// Toggles debug mode, which can be useful when in interactive mode
 				h.debug = !h.debug
 				return nil
@@ -1888,7 +1909,8 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 			Use:         ".help [command]",
 			Description: "Print this help message",
 			Args:        MaximumArgs(1),
-			Run: func(cmd *ShellCommand, args []string) error {
+			State:       NoState,
+			Run: func(cmd *ShellCommand, args []string, _ *ShellState) error {
 				if len(args) == 1 {
 					c, err := h.BuiltinCommand(args[0])
 					if err != nil {
@@ -1935,7 +1957,7 @@ Local module paths are resolved relative to the workdir on the host, not relativ
 to the currently loaded module.
 `,
 			Args: MaximumArgs(1),
-			RunState: func(cmd *ShellCommand, args []string, st *ShellState) error {
+			Run: func(cmd *ShellCommand, args []string, st *ShellState) error {
 				var err error
 
 				ctx := cmd.Context()
@@ -2049,7 +2071,8 @@ to the currently loaded module.
 `,
 			GroupID: moduleGroup.ID,
 			Args:    ExactArgs(1),
-			Run: func(cmd *ShellCommand, args []string) error {
+			State:   NoState,
+			Run: func(cmd *ShellCommand, args []string, _ *ShellState) error {
 				st, err := h.getOrInitDefState(args[0], func() (*moduleDef, error) {
 					return initializeModule(cmd.Context(), h.dag, args[0], true)
 				})
@@ -2069,28 +2092,51 @@ to the currently loaded module.
 			Description: "Dependencies from the module loaded in the current context",
 			GroupID:     moduleGroup.ID,
 			Args:        NoArgs,
-			Run: func(cmd *ShellCommand, _ []string) error {
+			State:       NoState,
+			Run: func(cmd *ShellCommand, _ []string, _ *ShellState) error {
 				_, err := h.GetModuleDef(nil)
 				if err != nil {
 					return err
 				}
 				return cmd.Send(h.newDepsState())
 			},
+			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
+				return &CompletionContext{
+					Completer: ctx.Completer,
+					CmdRoot:   shellDepsCmdName,
+					root:      true,
+				}
+			},
 		},
 		&ShellCommand{
 			Use:         shellStdlibCmdName,
 			Description: "Standard library functions",
 			Args:        NoArgs,
-			Run: func(cmd *ShellCommand, _ []string) error {
+			State:       NoState,
+			Run: func(cmd *ShellCommand, _ []string, _ *ShellState) error {
 				return cmd.Send(h.newStdlibState())
+			},
+			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
+				return &CompletionContext{
+					Completer: ctx.Completer,
+					CmdRoot:   shellStdlibCmdName,
+					root:      true,
+				}
 			},
 		},
 		&ShellCommand{
 			Use:         ".core [function]",
 			Description: "Load any core Dagger type",
-			Args:        NoArgs,
-			Run: func(cmd *ShellCommand, args []string) error {
+			State:       NoState,
+			Run: func(cmd *ShellCommand, args []string, _ *ShellState) error {
 				return cmd.Send(h.newCoreState())
+			},
+			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
+				return &CompletionContext{
+					Completer: ctx.Completer,
+					CmdRoot:   shellCoreCmdName,
+					root:      true,
+				}
 			},
 		},
 		cobraToShellCommand(loginCmd),
@@ -2125,10 +2171,11 @@ to the currently loaded module.
 			&ShellCommand{
 				Use:         shellFunctionUseLine(def, fn),
 				Description: fn.Description,
+				State:       NoState,
 				HelpFunc: func(cmd *ShellCommand) string {
 					return shellFunctionDoc(def, fn)
 				},
-				Run: func(cmd *ShellCommand, args []string) error {
+				Run: func(cmd *ShellCommand, args []string, _ *ShellState) error {
 					ctx := cmd.Context()
 
 					st := h.newState()
@@ -2138,6 +2185,13 @@ to the currently loaded module.
 					}
 
 					return cmd.Send(st)
+				},
+				Complete: func(ctx *CompletionContext, args []string) *CompletionContext {
+					return &CompletionContext{
+						Completer:   ctx.Completer,
+						ModFunction: fn,
+						root:        true,
+					}
 				},
 			},
 		)
@@ -2160,7 +2214,8 @@ func cobraToShellCommand(c *cobra.Command) *ShellCommand {
 		Use:         "." + c.Use,
 		Description: c.Short,
 		GroupID:     c.GroupID,
-		Run: func(cmd *ShellCommand, args []string) error {
+		State:       NoState,
+		Run: func(cmd *ShellCommand, args []string, _ *ShellState) error {
 			// Re-execute the dagger command (hack)
 			args = append([]string{cmd.CleanName()}, args...)
 			ctx := cmd.Context()
