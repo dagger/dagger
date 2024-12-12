@@ -25,7 +25,7 @@ func (cli *CLI) Binary(
 
 const (
 	// https://github.com/goreleaser/goreleaser/releases
-	goReleaserVersion = "v2.3.2"
+	goReleaserVersion = "v2.4.8"
 )
 
 // Publish the CLI using GoReleaser
@@ -151,12 +151,13 @@ func (cli *CLI) TestPublish(ctx context.Context) error {
 }
 
 func publishEnv(ctx context.Context) (*dagger.Container, error) {
-	// TODO: remove after upgrading to GoReleaser Pro has go 1.23.2 (it currently only has go 1.23.1)
-	go1_23_2 := dag.Container().From("golang:1.23.2-alpine@sha256:9dd2625a1ff2859b8d8b01d8f7822c0f528942fe56cfe7a1e7c38d3b8d72d679").Directory("/usr/local/go")
+	// HACK: this can be enabled to force a go update (e.g. when we need it for
+	// a security update)
+	// forcedGo := dag.Container().From("golang:<version>-alpine@sha256:<hash>").Directory("/usr/local/go")
 
 	ctr := dag.Container().
 		From(fmt.Sprintf("ghcr.io/goreleaser/goreleaser-pro:%s-pro", goReleaserVersion)).
-		WithDirectory("/usr/local/go", go1_23_2).
+		// WithDirectory("/usr/local/go", forcedGo).
 		WithEntrypoint([]string{}).
 		WithExec([]string{"apk", "add", "aws-cli"})
 
