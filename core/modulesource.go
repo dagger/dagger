@@ -571,12 +571,12 @@ func (src *ModuleSource) ModuleConfig(ctx context.Context) (*modules.ModuleConfi
 	var modCfg modules.ModuleConfig
 	configFile, err := contextDir.Self.File(ctx, filepath.Join(rootSubpath, modules.Filename))
 	if err != nil {
-		// no configuration for this module yet, so no name
-		return nil, false, nil //nolint:nilerr
+		return nil, false, fmt.Errorf("failed to get module config file: %w", err)
 	}
 	configBytes, err := configFile.Contents(ctx)
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to read module config file: %w", err)
+		// no configuration for this module yet, so no name
+		return nil, false, nil //nolint:nilerr
 	}
 
 	if err := json.Unmarshal(configBytes, &modCfg); err != nil {

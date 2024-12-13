@@ -391,55 +391,15 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory, error) {
 	dir = dir.Clone()
 
-	svcs, err := dir.Query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
-	bk, err := dir.Query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
 	dir.Dir = path.Join(dir.Dir, subdir)
-
-	// check that the directory actually exists so the user gets an error earlier
-	// rather than when the dir is used
-	info, err := dir.Stat(ctx, bk, svcs, ".")
-	if err != nil {
-		return nil, err
-	}
-
-	if !info.IsDir() {
-		return nil, fmt.Errorf("path %s is a file, not a directory", subdir)
-	}
 
 	return dir, nil
 }
 
 func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
-	svcs, err := dir.Query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
-	bk, err := dir.Query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	err = validateFileName(file)
+	err := validateFileName(file)
 	if err != nil {
 		return nil, err
-	}
-
-	// check that the file actually exists so the user gets an error earlier
-	// rather than when the file is used
-	info, err := dir.Stat(ctx, bk, svcs, file)
-	if err != nil {
-		return nil, err
-	}
-
-	if info.IsDir() {
-		return nil, fmt.Errorf("path %s is a directory, not a file", file)
 	}
 
 	return &File{

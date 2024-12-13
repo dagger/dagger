@@ -1120,11 +1120,11 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 		gitAttrsPath := filepath.Join(sourceSubpath, ".gitattributes")
 		var gitAttrsContents []byte
 		gitAttrsFile, err := baseContext.Self.File(ctx, gitAttrsPath)
+		if err != nil {
+			return fmt.Errorf("failed to get git attributes file: %w", err)
+		}
+		gitAttrsContents, err = gitAttrsFile.Contents(ctx)
 		if err == nil {
-			gitAttrsContents, err = gitAttrsFile.Contents(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get git attributes file contents: %w", err)
-			}
 			if !bytes.HasSuffix(gitAttrsContents, []byte("\n")) {
 				gitAttrsContents = append(gitAttrsContents, []byte("\n")...)
 			}
@@ -1170,8 +1170,11 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 		gitIgnorePath := filepath.Join(sourceSubpath, ".gitignore")
 		var gitIgnoreContents []byte
 		gitIgnoreFile, err := baseContext.Self.File(ctx, gitIgnorePath)
+		if err != nil {
+			return fmt.Errorf("failed to get .gitignore file: %w", err)
+		}
+		gitIgnoreContents, err = gitIgnoreFile.Contents(ctx)
 		if err == nil {
-			gitIgnoreContents, err = gitIgnoreFile.Contents(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get .gitignore file contents: %w", err)
 			}
