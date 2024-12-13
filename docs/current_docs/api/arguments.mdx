@@ -227,6 +227,43 @@ dagger core container \
 
 For more information about authentication methods, best practices, and current limitations, refer to the [documentation on using modules from remote repositories](./remote-modules.mdx).
 
+## File arguments
+
+File arguments work in the same way as [directory arguments](#directory-arguments). To pass a file to a Dagger Function as an argument, add the corresponding flag, followed by a local filesystem path or a remote Git reference. In both cases, the CLI will convert it to an object referencing that filesystem path or Git repository location, and pass the resulting `File` object as argument to the Dagger Function.
+
+Here's an example of a Dagger Function that accepts a `File` as argument, reads it, and returns its contents:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-file/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-file/python/main.py
+```
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/arguments-file/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+Here is an example of passing a local file to this Dagger Function as argument:
+
+```shell
+dagger call read-file --file=/my/file/path/README.md
+```
+
+And here is an example of passing a file from a remote Git repository as argument:
+
+```shell
+dagger call read-file --file=https://github.com/dagger/dagger.git
+```
+
+:::tip
+Accessing remote files over HTTP and SSH works the same way for both file and directory arguments.
+:::
+
 ## Container arguments
 
 Just like directories, you can pass a container to a Dagger Function from the command-line. To do so, add the corresponding flag, followed by the address of an OCI image. The CLI will dynamically pull the image, and pass the resulting `Container` object as argument to the Dagger Function.
