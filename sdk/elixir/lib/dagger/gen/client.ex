@@ -9,18 +9,6 @@ defmodule Dagger.Client do
 
   @type t() :: %__MODULE__{}
 
-  @doc "Retrieves a content-addressed blob."
-  @spec blob(t(), String.t()) :: Dagger.Directory.t()
-  def blob(%__MODULE__{} = client, digest) do
-    query_builder =
-      client.query_builder |> QB.select("blob") |> QB.put_arg("digest", digest)
-
-    %Dagger.Directory{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
   @doc "Retrieves a container builtin to the engine."
   @spec builtin_container(t(), String.t()) :: Dagger.Container.t()
   def builtin_container(%__MODULE__{} = client, digest) do

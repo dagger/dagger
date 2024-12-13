@@ -40,12 +40,6 @@ func Close() error {
 	return err
 }
 
-// Retrieves a content-addressed blob.
-func Blob(digest string) *dagger.Directory {
-	client := initClient()
-	return client.Blob(digest)
-}
-
 // Retrieves a container builtin to the engine.
 func BuiltinContainer(digest string) *dagger.Container {
 	client := initClient()

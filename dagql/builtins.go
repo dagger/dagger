@@ -142,23 +142,40 @@ func builtinOrInput(val any) (Input, error) {
 		if val == nil {
 			return nil, fmt.Errorf("cannot convert nil to an Input value")
 		}
+		reflectVal := reflect.ValueOf(val)
 		switch valT.Kind() {
 		case reflect.Slice:
 			input, err := builtinOrInput(reflect.New(valT.Elem()).Elem().Interface())
 			if err != nil {
 				return nil, fmt.Errorf("slice elem: %w", err)
 			}
-			return DynamicArrayInput{
+			arr := DynamicArrayInput{
 				Elem: input,
-			}, nil
+			}
+			for i := range reflectVal.Len() {
+				elem, err := builtinOrInput(reflectVal.Index(i).Interface())
+				if err != nil {
+					return nil, fmt.Errorf("slice elem val %d: %w", i, err)
+				}
+				arr.Values = append(arr.Values, elem)
+			}
+			return arr, nil
 		case reflect.Ptr:
 			input, err := builtinOrInput(reflect.New(valT.Elem()).Elem().Interface())
 			if err != nil {
-				return nil, fmt.Errorf("slice elem: %w", err)
+				return nil, fmt.Errorf("pointer elem: %w", err)
 			}
-			return DynamicOptional{
+			dynOpt := DynamicOptional{
 				Elem: input,
-			}, nil
+			}
+			if !reflectVal.IsNil() {
+				dynOpt.Value, err = dynOpt.Elem.Decoder().DecodeInput(reflectVal.Elem().Interface())
+				if err != nil {
+					return nil, fmt.Errorf("pointer elem val: %w", err)
+				}
+				dynOpt.Valid = true
+			}
+			return dynOpt, nil
 		default:
 			return nil, fmt.Errorf("cannot convert %T to an Input value", val)
 		}

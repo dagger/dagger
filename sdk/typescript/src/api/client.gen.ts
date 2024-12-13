@@ -6625,15 +6625,6 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Retrieves a content-addressed blob.
-   * @param digest Digest of the blob
-   */
-  blob = (digest: string): Directory => {
-    const ctx = this._ctx.select("blob", { digest })
-    return new Directory(ctx)
-  }
-
-  /**
    * Retrieves a container builtin to the engine.
    * @param digest Digest of the image manifest
    */

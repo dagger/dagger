@@ -168,6 +168,9 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 		hasArg[name] = true
 	}
 
+	// TODO: low-hanging fruit to parallelize this
+	// TODO: low-hanging fruit to parallelize this
+	// TODO: low-hanging fruit to parallelize this
 	// Load contextual arguments
 	for _, arg := range fn.metadata.Args {
 		name := arg.OriginalName

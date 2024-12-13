@@ -1025,23 +1025,22 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 		excludes = append(excludes, exclude)
 	}
 
-	bk, err := src.Query.Buildkit(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	dgst, err := bk.LocalImport(
-		ctx,
-		src.Query.Platform().Spec(),
-		contextAbsPath,
-		excludes,
-		includes,
+	var loadedDir dagql.Instance[*core.Directory]
+	err = s.dag.Select(ctx, s.dag.Root(), &loadedDir,
+		dagql.Selector{
+			Field: "host",
+		},
+		dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(contextAbsPath)},
+				{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(excludes...))},
+				{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(includes...))},
+			},
+		},
 	)
 	if err != nil {
-		return inst, fmt.Errorf("failed to import local module source: %w", err)
-	}
-	loadedDir, err := core.LoadBlob(ctx, s.dag, dgst)
-	if err != nil {
-		return inst, fmt.Errorf("failed to load local module source: %w", err)
+		return inst, fmt.Errorf("failed to create context directory: %w", err)
 	}
 
 	rootSubPath, err := src.SourceRootSubpath()
@@ -1439,16 +1438,24 @@ func (s *moduleSchema) moduleSourceResolveDirectoryFromCaller(
 		excludes = append(excludes, args.Ignore...)
 	}
 
-	dgst, err := bk.LocalImport(
-		ctx, src.Query.Platform().Spec(),
-		path,
-		excludes,
-		includes,
+	err = s.dag.Select(ctx, s.dag.Root(), &inst,
+		dagql.Selector{
+			Field: "host",
+		},
+		dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(path)},
+				{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(excludes...))},
+				{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(includes...))},
+			},
+		},
 	)
 	if err != nil {
-		return inst, fmt.Errorf("failed to import local directory module arg: %w", err)
+		return inst, fmt.Errorf("failed to create context directory: %w", err)
 	}
-	return core.LoadBlob(ctx, s.dag, dgst)
+
+	return inst, nil
 }
 
 func (s *moduleSchema) moduleSourceViews(
