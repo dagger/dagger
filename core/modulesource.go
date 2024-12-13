@@ -572,7 +572,7 @@ func (src *ModuleSource) ModuleConfig(ctx context.Context) (*modules.ModuleConfi
 	configFile, err := contextDir.Self.File(ctx, filepath.Join(rootSubpath, modules.Filename))
 	if err != nil {
 		// no configuration for this module yet, so no name
-		return nil, false, nil
+		return nil, false, nil //nolint:nilerr
 	}
 	configBytes, err := configFile.Contents(ctx)
 	if err != nil {
