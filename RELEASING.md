@@ -293,6 +293,7 @@ This will kick off [`.github/workflows/publish.yml`](https://github.com/dagger/d
 - Python packages to [🐍 dagger-io](https://pypi.org/project/dagger-io).
 - Typescript packages to [⬢ npmjs.com/package/@dagger.io/dagger](https://www.npmjs.com/package/@dagger.io/dagger).
 - Elixir packages to [🧪 hex.pm/packages/dagger](https://hex.pm/packages/dagger).
+- Rust crates to [⚙️  crates.io/crate/dagger-sdk](https://crates.io/crates/dagger-sdk).
 - PHP packages to [🐘 packagist.org/packages/dagger/dagger](https://packagist.org/packages/dagger/dagger) via [github.com/dagger/dagger-php-sdk](https://github.com/dagger/dagger-php-sdk/tags).
 - Helm charts to [☸️ registry.dagger.io/dagger-helm](https://github.com/dagger/dagger/pkgs/container/dagger-helm).
 
