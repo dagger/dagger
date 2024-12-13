@@ -48,6 +48,10 @@ type ObjectType interface {
 	// Unlike natively added fields, the extended func is limited to the external
 	// Object interface.
 	Extend(spec FieldSpec, fun FieldFunc)
+	// FieldSpec return a FieldSpec for the given field name and views, if
+	// one has been installed on this ObjectType. If no field is found, the
+	// second return value is false.
+	FieldSpec(name string, views ...string) (FieldSpec, bool)
 }
 
 type IDType interface {
@@ -72,15 +76,14 @@ type Object interface {
 	IDable
 	// ObjectType returns the type of the object.
 	ObjectType() ObjectType
-	// IDFor returns the ID representing the return value of the given field.
-	IDFor(context.Context, Selector) (*call.ID, error)
-	// Select evaluates the selected field and returns the result.
+
+	// Call evaluates the field selected by the given ID and returns the result.
 	//
 	// The returned value is the raw Typed value returned from the field; it must
 	// be instantiated with a class for further selection.
 	//
 	// Any Nullable values are automatically unwrapped.
-	Select(context.Context, Selector) (Typed, error)
+	Call(context.Context, *call.ID) (Typed, error)
 }
 
 // ScalarType represents a GraphQL Scalar type.

@@ -9,15 +9,20 @@ import (
 type Argument struct {
 	pb    *callpbv1.Argument
 	value Literal
+
+	// isSensitive is true if the argument is sensitive and should not be displayed or
+	// included in the encoded call.
+	isSensitive bool
 }
 
-func NewArgument(name string, value Literal) *Argument {
+func NewArgument(name string, value Literal, isSensitive bool) *Argument {
 	return &Argument{
 		pb: &callpbv1.Argument{
 			Name:  name,
 			Value: value.pb(),
 		},
-		value: value,
+		value:       value,
+		isSensitive: isSensitive,
 	}
 }
 
@@ -35,7 +40,7 @@ func (arg *Argument) Tainted() bool {
 }
 
 func (arg *Argument) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
-	if arg == nil {
+	if arg == nil || arg.isSensitive {
 		return
 	}
 	arg.value.gatherCalls(callsByDigest)

@@ -1842,8 +1842,6 @@ func (ModuleSuite) TestLotsOfDeps(ctx context.Context, t *testctx.T) {
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work")
 
-	modCount := 0
-
 	getModMainSrc := func(name string, depNames []string) string {
 		t.Helper()
 		mainSrc := fmt.Sprintf(`package main
@@ -1873,15 +1871,13 @@ func (ModuleSuite) TestLotsOfDeps(ctx context.Context, t *testctx.T) {
 		return string(fmted)
 	}
 
-	// need to construct dagger.json directly in order to avoid excessive
-	// `dagger mod use` calls while constructing the huge DAG of deps
-	var rootCfg modules.ModuleConfig
+	modCount := 0
 
 	addModulesWithDeps := func(newMods int, depNames []string) []string {
 		t.Helper()
 
 		var newModNames []string
-		for i := 0; i < newMods; i++ {
+		for range newMods {
 			name := fmt.Sprintf("mod%d", modCount)
 			modCount++
 			newModNames = append(newModNames, name)
@@ -1916,8 +1912,6 @@ func (ModuleSuite) TestLotsOfDeps(ctx context.Context, t *testctx.T) {
 		curDeps = addModulesWithDeps(len(curDeps)+1, curDeps)
 	}
 	addModulesWithDeps(1, curDeps)
-
-	modGen = modGen.With(configFile("..", &rootCfg))
 
 	_, err := modGen.With(daggerCall("fn")).Sync(ctx)
 	require.NoError(t, err)

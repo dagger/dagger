@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/iancoleman/strcase"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql/call"
@@ -25,6 +26,8 @@ type Class[T Typed] struct {
 	fields  map[string][]*Field[T]
 	fieldsL *sync.Mutex
 }
+
+var _ ObjectType = Class[Typed]{}
 
 type ClassOpts[T Typed] struct {
 	// NoIDs disables the default "id" field and disables the IDType method.
@@ -76,6 +79,14 @@ func (class Class[T]) IDType() (IDType, bool) {
 	} else {
 		return nil, false
 	}
+}
+
+func (class Class[T]) FieldSpec(name string, views ...string) (FieldSpec, bool) {
+	field, ok := class.Field(name, views...)
+	if !ok {
+		return FieldSpec{}, false
+	}
+	return field.Spec, true
 }
 
 func (class Class[T]) Field(name string, views ...string) (Field[T], bool) {
@@ -201,6 +212,7 @@ func (cls Class[T]) ParseField(ctx context.Context, view string, astField *ast.F
 		if err != nil {
 			return Selector{}, nil, err
 		}
+
 		input, err := argSpec.Type.Decoder().DecodeInput(val)
 		if err != nil {
 			return Selector{}, nil, fmt.Errorf("init arg %q value as %T (%s) using %T: %w", arg.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
@@ -289,26 +301,73 @@ func (r Instance[T]) String() string {
 	return fmt.Sprintf("%s@%s", r.Type().Name(), r.Constructor.Digest())
 }
 
-func (r Instance[T]) IDFor(ctx context.Context, sel Selector) (*call.ID, error) {
-	field, ok := r.Class.Field(sel.Field, sel.View)
-	if !ok {
-		return nil, fmt.Errorf("IDFor: %s has no such field: %q", r.Class.inner.Type().Name(), sel.Field)
+// WithMetadata returns an updated instance with the given metadata set.
+// isPure changes the purity of the instance.
+// customDigest overrides the default digest of the instance to the provided value.
+// NOTE: customDigest must be used with care as any instances with the same digest
+// will be considered equivalent and can thus replace each other in the cache.
+// Generally, customDigest should be used when there's a content-based digest available
+// that won't be caputured by the default, call-chain derived digest.
+func (r Instance[T]) WithMetadata(customDigest digest.Digest, isPure bool) Instance[T] {
+	return Instance[T]{
+		Constructor: r.Constructor.WithMetadata(customDigest, !isPure),
+		Self:        r.Self,
+		Class:       r.Class,
+		Module:      r.Module,
 	}
-	return sel.AppendTo(r.ID(), field.Spec), nil
 }
 
 // Select calls a field on the instance.
-func (r Instance[T]) Select(ctx context.Context, sel Selector) (val Typed, err error) {
-	field, ok := r.Class.Field(sel.Field, sel.View)
-	if !ok {
-		return nil, fmt.Errorf("Select: %s has no such field: %q", r.Class.TypeName(), sel.Field)
-	}
-	args, err := applyDefaults(field.Spec, sel.Args)
-	if err != nil {
-		return nil, fmt.Errorf("%s.%s: %w", r.Class.TypeName(), sel.Field, err)
+func (r Instance[T]) Call(ctx context.Context, newID *call.ID) (val Typed, err error) {
+	// sanity check: newID should be a new single selection on top of the instance
+	if r.Constructor.Digest() != newID.Receiver().Digest() {
+		return nil, fmt.Errorf("Select: %s has a different digest: %s", r.Type().Name(), newID.Digest())
 	}
 
-	val, err = r.Class.Call(ctx, r, sel.Field, sel.View, args)
+	fieldName := newID.Field()
+	view := newID.View()
+	field, ok := r.Class.Field(fieldName, view)
+	if !ok {
+		return nil, fmt.Errorf("Select: %s has no such field: %q", r.Class.TypeName(), fieldName)
+	}
+	if field.ViewFilter == nil {
+		// fields in the global view shouldn't attach the current view to the
+		// selector (since they're global from all perspectives)
+		view = ""
+	}
+
+	args := make(map[string]Input, len(field.Spec.Args))
+	for _, argSpec := range field.Spec.Args {
+		// just be n^2 since the overhead of a map is likely more expensive
+		// for the expected low value of n
+		var input Input
+		for _, idArg := range newID.Args() {
+			if idArg.Name() == argSpec.Name {
+				var err error
+				input, err = argSpec.Type.Decoder().DecodeInput(idArg.Value().ToInput())
+				if err != nil {
+					return nil, fmt.Errorf("init arg %q value as %T (%s) using %T: %w", argSpec.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
+				}
+				break
+			}
+		}
+
+		switch {
+		case input != nil:
+			// use input if found
+			args[argSpec.Name] = input
+
+		case argSpec.Default != nil:
+			// use default if it exists
+			args[argSpec.Name] = argSpec.Default
+
+		case argSpec.Type.Type().NonNull:
+			// error out if the arg is missing but required
+			return nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
+		}
+	}
+
+	val, err = r.Class.Call(ctx, r, fieldName, view, args)
 	if err != nil {
 		return nil, err
 	}
@@ -318,12 +377,14 @@ func (r Instance[T]) Select(ctx context.Context, sel Selector) (val Typed, err e
 			return nil, nil
 		}
 	}
-	if sel.Nth != 0 {
+
+	nth := int(newID.Nth())
+	if nth != 0 {
 		enum, ok := val.(Enumerable)
 		if !ok {
-			return nil, fmt.Errorf("cannot sub-select %dth item from %T", sel.Nth, val)
+			return nil, fmt.Errorf("cannot sub-select %dth item from %T", nth, val)
 		}
-		val, err = enum.Nth(sel.Nth)
+		val, err = enum.Nth(nth)
 		if err != nil {
 			return nil, err
 		}
@@ -334,6 +395,7 @@ func (r Instance[T]) Select(ctx context.Context, sel Selector) (val Typed, err e
 			}
 		}
 	}
+
 	return val, nil
 }
 
@@ -769,22 +831,6 @@ func definition(kind ast.DefinitionKind, val Type, views ...string) *ast.Definit
 		def.Description = isType.TypeDescription()
 	}
 	return def
-}
-
-func applyDefaults(field FieldSpec, inputs Inputs) (map[string]Input, error) {
-	args := make(map[string]Input, len(field.Args))
-	for _, arg := range field.Args {
-		val, ok := inputs.Lookup(arg.Name)
-		switch {
-		case ok:
-			args[arg.Name] = val
-		case arg.Default != nil:
-			args[arg.Name] = arg.Default
-		case arg.Type.Type().NonNull:
-			return nil, fmt.Errorf("missing required argument: %q", arg.Name)
-		}
-	}
-	return args, nil
 }
 
 type reflectField[T any] struct {
