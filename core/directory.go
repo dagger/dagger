@@ -135,7 +135,7 @@ func (dir *Directory) SetState(ctx context.Context, st llb.State) error {
 		buildkit.WithPassthrough(), // these spans aren't particularly interesting
 	)
 	if err != nil {
-		return nil
+		return err
 	}
 
 	dir.LLB = def.ToPB()
