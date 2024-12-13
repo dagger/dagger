@@ -228,7 +228,7 @@ export RELEASE_PREP_PR=$(cat /tmp/prep-pr.txt | sed -r 's/^[^0-9]*([0-9]+).*/\1/
 
 ```console
 export GITHUB_USERNAME=$(gh api /user --jq .login)
-find sdk/go sdk/python sdk/typescript sdk/elixir sdk/php helm/dagger -maxdepth 1 -name .changie.yaml -execdir \
+find sdk/go sdk/python sdk/typescript sdk/elixir sdk/php sdk/rust helm/dagger -maxdepth 1 -name .changie.yaml -execdir \
       changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom PR="$RELEASE_PREP_PR" --custom Author="$GITHUB_USERNAME" \;
 ```
 
@@ -236,14 +236,14 @@ find sdk/go sdk/python sdk/typescript sdk/elixir sdk/php helm/dagger -maxdepth 1
       running `changie batch $ENGINE_VERSION`:
 
 ```console
-find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie batch $ENGINE_VERSION \;
+find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php sdk/rust helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie batch $ENGINE_VERSION \;
 ```
 
 - [ ] Make any necessary edits to the newly generated file, e.g. `.changes/v0.12.4.md`
 - [ ] Update `CHANGELOG.md` by running `changie merge`.
 
 ```console
-find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie merge \;
+find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php sdk/rust helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie merge \;
 git add **/.changes
 git add **/CHANGELOG.md
 git commit -s -m "chore: add release notes for $ENGINE_VERSION"
