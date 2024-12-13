@@ -12,10 +12,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/client/llb/sourceresolver"
+	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
+	"github.com/moby/buildkit/identity"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -563,7 +566,7 @@ func (s *containerSchema) Install() {
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 
-		dagql.Func("asTarball", s.asTarball).
+		dagql.NodeFunc("asTarball", s.asTarball).
 			Doc(`Returns a File representing the container serialized to a tarball.`).
 			ArgDoc("platformVariants",
 				`Identifiers for other platform specific containers.`,
@@ -1799,12 +1802,116 @@ type containerAsTarballArgs struct {
 	MediaTypes        core.ImageMediaTypes `default:"OCIMediaTypes"`
 }
 
-func (s *containerSchema) asTarball(ctx context.Context, parent *core.Container, args containerAsTarballArgs) (*core.File, error) {
-	variants, err := dagql.LoadIDs(ctx, s.srv, args.PlatformVariants)
+func (s *containerSchema) asTarball(
+	ctx context.Context,
+	parent dagql.Instance[*core.Container],
+	args containerAsTarballArgs,
+) (inst dagql.Instance[*core.File], err error) {
+	platformVariants, err := dagql.LoadIDs(ctx, s.srv, args.PlatformVariants)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
-	return parent.AsTarball(ctx, s.srv, variants, args.ForcedCompression.Value, args.MediaTypes)
+
+	bk, err := parent.Self.Query.Buildkit(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	svcs, err := parent.Self.Query.Services(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get services: %w", err)
+	}
+	engineHostPlatform := parent.Self.Query.Platform()
+
+	if args.MediaTypes == "" {
+		args.MediaTypes = core.OCIMediaTypes
+	}
+
+	opts := map[string]string{
+		"tar":                           strconv.FormatBool(true),
+		string(exptypes.OptKeyOCITypes): strconv.FormatBool(args.MediaTypes == core.OCIMediaTypes),
+	}
+	if args.ForcedCompression.Value != "" {
+		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(args.ForcedCompression.Value))
+		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
+	}
+
+	inputByPlatform := map[string]buildkit.ContainerExport{}
+	services := core.ServiceBindings{}
+
+	variants := append([]*core.Container{parent.Self}, platformVariants...)
+	for _, variant := range variants {
+		if variant.FS == nil {
+			continue
+		}
+		st, err := variant.FSState()
+		if err != nil {
+			return inst, err
+		}
+
+		platformSpec := variant.Platform.Spec()
+		def, err := st.Marshal(ctx, llb.Platform(platformSpec))
+		if err != nil {
+			return inst, err
+		}
+
+		platformString := platforms.Format(variant.Platform.Spec())
+		if _, ok := inputByPlatform[platformString]; ok {
+			return inst, fmt.Errorf("duplicate platform %q", platformString)
+		}
+		inputByPlatform[platformString] = buildkit.ContainerExport{
+			Definition: def.ToPB(),
+			Config:     variant.Config,
+		}
+
+		if len(variants) == 1 {
+			// single platform case
+			for _, annotation := range variant.Annotations {
+				opts[exptypes.AnnotationManifestKey(nil, annotation.Key)] = annotation.Value
+				opts[exptypes.AnnotationManifestDescriptorKey(nil, annotation.Key)] = annotation.Value
+			}
+		} else {
+			// multi platform case
+			for _, annotation := range variant.Annotations {
+				opts[exptypes.AnnotationManifestKey(&platformSpec, annotation.Key)] = annotation.Value
+				opts[exptypes.AnnotationManifestDescriptorKey(&platformSpec, annotation.Key)] = annotation.Value
+			}
+		}
+
+		services.Merge(variant.Services)
+	}
+	if len(inputByPlatform) == 0 {
+		return inst, errors.New("no containers to export")
+	}
+
+	detach, _, err := svcs.StartBindings(ctx, services)
+	if err != nil {
+		return inst, err
+	}
+	defer detach()
+
+	tmpDir, err := os.MkdirTemp("", "dagger-tarball")
+	if err != nil {
+		return inst, fmt.Errorf("failed to create temp dir for tarball export: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	fileName := identity.NewID() + ".tar"
+
+	def, err := bk.ContainerImageToTarball(ctx, engineHostPlatform.Spec(), tmpDir, fileName, inputByPlatform, opts)
+	if err != nil {
+		return inst, fmt.Errorf("container image to tarball file conversion failed: %w", err)
+	}
+	dgst, err := core.GetContentHashFromDef(ctx, bk, def, "/")
+	if err != nil {
+		return inst, fmt.Errorf("failed to get content hash from definition: %w", err)
+	}
+
+	fileInst, err := dagql.NewInstanceForCurrentID(ctx, s.srv, parent,
+		core.NewFile(parent.Self.Query, def, fileName, parent.Self.Query.Platform(), nil),
+	)
+	if err != nil {
+		return inst, err
+	}
+	return fileInst.WithMetadata(dgst, true), nil
 }
 
 type containerImportArgs struct {

@@ -151,7 +151,7 @@ var _ InputDecoder = DynamicOptional{}
 func (o DynamicOptional) DecodeInput(val any) (Input, error) {
 	if val == nil {
 		return DynamicOptional{
-			Elem:  o,
+			Elem:  o.Elem,
 			Valid: false,
 		}, nil
 	}

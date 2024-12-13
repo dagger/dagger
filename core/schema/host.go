@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
+	"path/filepath"
+	"strings"
 
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/content/local"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/identity"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -21,7 +25,6 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/engine/sources/blob"
 )
 
 type hostSchema struct {
@@ -35,20 +38,6 @@ func (s *hostSchema) Install() {
 		dagql.Func("host", func(ctx context.Context, parent *core.Query, args struct{}) (*core.Host, error) {
 			return parent.NewHost(), nil
 		}).Doc(`Queries the host environment.`),
-
-		dagql.Func("blob", func(ctx context.Context, parent *core.Query, args struct {
-			Digest string `doc:"Digest of the blob"`
-		}) (*core.Directory, error) {
-			dig, err := digest.Parse(args.Digest)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse digest: %w", err)
-			}
-			blobDef, err := blob.LLB(dig).Marshal(ctx, buildkit.WithTracePropagation(ctx))
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal blob source: %w", err)
-			}
-			return core.NewDirectory(parent, blobDef.ToPB(), "/", parent.Platform(), nil), nil
-		}).Doc("Retrieves a content-addressed blob."),
 
 		dagql.Func("builtinContainer", func(ctx context.Context, parent *core.Query, args struct {
 			Digest string `doc:"Digest of the image manifest"`
@@ -152,7 +141,7 @@ func (s *hostSchema) Install() {
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Host]{
-		dagql.Func("directory", s.directory).
+		dagql.NodeFunc("directory", s.directory).
 			Impure("Loads data from the local machine.",
 				`Despite being impure, this field returns a pure Directory object. It
 				does this by uploading the requested path to the internal content store
@@ -235,8 +224,59 @@ type hostDirectoryArgs struct {
 	core.CopyFilter
 }
 
-func (s *hostSchema) directory(ctx context.Context, host *core.Host, args hostDirectoryArgs) (dagql.Instance[*core.Directory], error) {
-	return host.Directory(ctx, s.srv, args.Path, "host.directory", args.CopyFilter)
+func (s *hostSchema) directory(ctx context.Context, host dagql.Instance[*core.Host], args hostDirectoryArgs) (i dagql.Instance[*core.Directory], err error) {
+	args.Path = path.Clean(args.Path)
+	if args.Path == ".." || strings.HasPrefix(args.Path, "../") {
+		return i, fmt.Errorf("path %q escapes workdir; use an absolute path instead", args.Path)
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return i, fmt.Errorf("failed to get requester session ID: %w", err)
+	}
+
+	stableID := clientMetadata.ClientStableID
+	if stableID == "" {
+		slog.WarnContext(ctx, "client stable ID not set, using random value")
+		stableID = identity.NewID()
+	}
+
+	localOpts := []llb.LocalOption{
+		llb.SessionID(clientMetadata.ClientID),
+		llb.SharedKeyHint(stableID),
+		buildkit.WithTracePropagation(ctx),
+	}
+
+	localName := fmt.Sprintf("upload %s from %s (client id: %s, session id: %s)", args.Path, stableID, clientMetadata.ClientID, clientMetadata.SessionID)
+	if len(args.Include) > 0 {
+		localName += fmt.Sprintf(" (include: %s)", strings.Join(args.Include, ", "))
+		localOpts = append(localOpts, llb.IncludePatterns(args.Include))
+	}
+	if len(args.Exclude) > 0 {
+		localName += fmt.Sprintf(" (exclude: %s)", strings.Join(args.Exclude, ", "))
+		localOpts = append(localOpts, llb.ExcludePatterns(args.Exclude))
+	}
+	localOpts = append(localOpts, llb.WithCustomName(localName))
+
+	localLLB := llb.Local(args.Path, localOpts...)
+	localDef, err := localLLB.Marshal(ctx, llb.Platform(host.Self.Query.Platform().Spec()))
+	if err != nil {
+		return i, fmt.Errorf("failed to marshal local LLB: %w", err)
+	}
+	localPB := localDef.ToPB()
+
+	dir, err := dagql.NewInstanceForCurrentID(ctx, s.srv, host,
+		core.NewDirectory(host.Self.Query, localPB, "/", host.Self.Query.Platform(), nil),
+	)
+	if err != nil {
+		return i, fmt.Errorf("failed to create instance: %w", err)
+	}
+
+	bk, err := host.Self.Query.Buildkit(ctx)
+	if err != nil {
+		return i, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	return core.MakeDirectoryContentHashed(ctx, bk, dir)
 }
 
 type hostSocketArgs struct {
@@ -286,8 +326,34 @@ type hostFileArgs struct {
 	Path string
 }
 
-func (s *hostSchema) file(ctx context.Context, host *core.Host, args hostFileArgs) (dagql.Instance[*core.File], error) {
-	return host.File(ctx, s.srv, args.Path)
+func (s *hostSchema) file(ctx context.Context, host *core.Host, args hostFileArgs) (i dagql.Instance[*core.File], err error) {
+	fileDir, fileName := filepath.Split(args.Path)
+	if err := s.srv.Select(ctx, s.srv.Root(), &i, dagql.Selector{
+		Field: "host",
+	}, dagql.Selector{
+		Field: "directory",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "path",
+				Value: dagql.NewString(fileDir),
+			},
+			{
+				Name:  "include",
+				Value: dagql.ArrayInput[dagql.String]{dagql.NewString(fileName)},
+			},
+		},
+	}, dagql.Selector{
+		Field: "file",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "path",
+				Value: dagql.NewString(fileName),
+			},
+		},
+	}); err != nil {
+		return i, err
+	}
+	return i, nil
 }
 
 type hostTunnelArgs struct {

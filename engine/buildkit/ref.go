@@ -233,7 +233,7 @@ func (r *ref) Result(ctx context.Context) (bksolver.CachedResult, error) {
 		// writing log w/ %+v so that we can see stack traces embedded in err by buildkit's usage of pkg/errors
 		bklog.G(ctx).Errorf("ref evaluate error: %+v", err)
 		err = includeBuildkitContextCancelledLine(err)
-		return nil, wrapError(ctx, err, r.c)
+		return nil, WrapError(ctx, err, r.c)
 	}
 	return res, nil
 }
@@ -286,7 +286,7 @@ func ConvertToWorkerCacheResult(ctx context.Context, res *solverresult.Result[*r
 	})
 }
 
-func wrapError(ctx context.Context, baseErr error, client *Client) error {
+func WrapError(ctx context.Context, baseErr error, client *Client) error {
 	var slowCacheErr *bksolver.SlowCacheError
 	if errors.As(baseErr, &slowCacheErr) {
 		if slowCacheErr.Result != nil {

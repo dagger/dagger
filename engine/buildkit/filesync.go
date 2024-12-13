@@ -13,89 +13,15 @@ import (
 
 	"github.com/containerd/continuity/fs"
 	bkclient "github.com/moby/buildkit/client"
-	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/snapshot"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
-	"github.com/opencontainers/go-digest"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	fsutiltypes "github.com/tonistiigi/fsutil/types"
 
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/slog"
 )
-
-func (c *Client) LocalImport(
-	ctx context.Context,
-	platform specs.Platform,
-	srcPath string,
-	excludePatterns []string,
-	includePatterns []string,
-) (digest.Digest, error) {
-	srcPath = path.Clean(srcPath)
-	if srcPath == ".." || strings.HasPrefix(srcPath, "../") {
-		return "", fmt.Errorf("path %q escapes workdir; use an absolute path instead", srcPath)
-	}
-
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get requester session ID: %w", err)
-	}
-
-	stableID := clientMetadata.ClientStableID
-	if stableID == "" {
-		slog.WarnContext(ctx, "client stable ID not set, using random value")
-		stableID = identity.NewID()
-	}
-
-	localOpts := []llb.LocalOption{
-		llb.SessionID(clientMetadata.ClientID),
-		llb.SharedKeyHint(stableID),
-		WithTracePropagation(ctx),
-	}
-
-	localName := fmt.Sprintf("upload %s from %s (client id: %s, session id: %s)", srcPath, stableID, clientMetadata.ClientID, clientMetadata.SessionID)
-	if len(includePatterns) > 0 {
-		localName += fmt.Sprintf(" (include: %s)", strings.Join(includePatterns, ", "))
-		localOpts = append(localOpts, llb.IncludePatterns(includePatterns))
-	}
-	if len(excludePatterns) > 0 {
-		localName += fmt.Sprintf(" (exclude: %s)", strings.Join(excludePatterns, ", "))
-		localOpts = append(localOpts, llb.ExcludePatterns(excludePatterns))
-	}
-	localOpts = append(localOpts, llb.WithCustomName(localName))
-	localLLB := llb.Local(srcPath, localOpts...)
-
-	localDef, err := localLLB.Marshal(ctx, llb.Platform(platform))
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal local LLB: %w", err)
-	}
-	localPB := localDef.ToPB()
-
-	return c.DefToBlob(ctx, localPB)
-}
-
-// Import a directory from the engine container, as opposed to from a client
-func (c *Client) EngineContainerLocalImport(
-	ctx context.Context,
-	platform specs.Platform,
-	srcPath string,
-	excludePatterns []string,
-	includePatterns []string,
-) (digest.Digest, error) {
-	hostname, err := os.Hostname()
-	if err != nil {
-		return "", fmt.Errorf("failed to get hostname for engine local import: %w", err)
-	}
-	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
-		ClientID:       c.ID(),
-		ClientHostname: hostname,
-	})
-	return c.LocalImport(ctx, platform, srcPath, excludePatterns, includePatterns)
-}
 
 func (c *Client) diffcopy(ctx context.Context, opts engine.LocalImportOpts, msg any) error {
 	ctx, cancel, err := c.withClientCloseCancel(ctx)

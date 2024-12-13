@@ -2645,12 +2645,6 @@ scalar PortID
 
 """The root of the DAG."""
 type Query {
-  """Retrieves a content-addressed blob."""
-  blob(
-    """Digest of the blob"""
-    digest: String!
-  ): Directory!
-
   """Retrieves a container builtin to the engine."""
   builtinContainer(
     """Digest of the image manifest"""

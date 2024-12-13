@@ -6952,20 +6952,6 @@ pub struct QuerySecretOpts<'a> {
     pub accessor: Option<&'a str>,
 }
 impl Query {
-    /// Retrieves a content-addressed blob.
-    ///
-    /// # Arguments
-    ///
-    /// * `digest` - Digest of the blob
-    pub fn blob(&self, digest: impl Into<String>) -> Directory {
-        let mut query = self.selection.select("blob");
-        query = query.arg("digest", digest.into());
-        Directory {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Retrieves a container builtin to the engine.
     ///
     /// # Arguments
