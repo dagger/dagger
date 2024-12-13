@@ -44,6 +44,7 @@ jobs:
           function: |-
             cli \
             publish \
+            --tag="${{ github.ref_name }}" \
             --github-org-name="$GH_ORG_NAME" \
             --github-token=env:GITHUB_TOKEN \
             --goreleaser-key=env:GORELEASER_KEY \
