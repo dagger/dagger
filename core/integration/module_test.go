@@ -5372,7 +5372,7 @@ func (m *Dep) Collect(MyEnum, MyInterface) error {
 					// struct field
 					`fieldDef = async \(\): Promise<string> => { // dep \(../../../dep/main.go:6:5\)`,
 					// struct func
-					`\s*funcDef = async \(arg1: string, opts\?: DepFuncDefOpts // dep \(../../../dep/main.go:9:1\)\): Promise<string> => { // dep \(../../../dep/main.go:9:1\)`,
+					`\s*funcDef = async \(.*\s*opts\?: .* \/\/ dep \(../../../dep/main.go:9:1\) *\s*.*\/\/ dep \(../../../dep/main.go:9:1\)`,
 					// struct func arg
 					`\s*arg2\?: string // dep \(../../../dep/main.go:11:2\)`,
 
@@ -5427,7 +5427,7 @@ export class Dep {
 					// struct field
 					`\s*fieldDef = async \(\): Promise<string> => { // dep \(../../../dep/src/index.ts:11:3\)`,
 					// struct func
-					`\s*funcDef = async \(arg1: string, opts\?: DepFuncDefOpts // dep \(../../../dep/src/index.ts:14:3\)\): Promise<string> => { // dep \(../../../dep/src/index.ts:14:3\)`,
+					`\s*funcDef = async \(.*\s*opts\?: .* \/\/ dep \(../../../dep/src/index.ts:14:3\) *\s*.*\/\/ dep \(../../../dep/src/index.ts:14:3\)`,
 					// struct func arg
 					`\s*arg2\?: string // dep \(../../../dep/src/index.ts:14:25\)`,
 
