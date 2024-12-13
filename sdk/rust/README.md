@@ -29,15 +29,15 @@ SDK, we welcome you!
 
 ## Examples
 
-See [examples](./crates/dagger-sdk/examples/)
+See [examples](https://github.com/dagger/dagger/tree/d5a67f25e63832b7b2dcd9986f96bac91b1a5930/sdk/rust/examples).
 
-Run them like so
+Run them like so:
 
 ```bash
 cargo run --example first-pipeline
 ```
 
-The examples match the folder name in each directory in examples
+The examples match the folder name in each directory in examples.
 
 ## Install
 
@@ -52,16 +52,18 @@ cargo add dagger-sdk
 ```rust
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    let client = dagger_sdk::connect().await?;
+    dagger_sdk::connect(|client| async move {
+        let version = client
+            .container()
+            .from("golang:1.19")
+            .with_exec(vec!["go", "version"])
+            .stdout()
+            .await?;
 
-    let version = client
-        .container()
-        .from("golang:1.19")
-        .with_exec(vec!["go", "version"])
-        .stdout()
-        .await?;
-
-    println!("Hello from Dagger and {}", version.trim());
+        println!("Hello from Dagger and {}", version.trim());
+        Ok(())
+    })
+    .await?;
 
     Ok(())
 }
