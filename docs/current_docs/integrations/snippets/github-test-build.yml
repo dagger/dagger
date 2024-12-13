@@ -11,7 +11,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Test
-        uses: dagger/dagger-for-github@v6
+        uses: dagger/dagger-for-github@v7
         with:
           version: "latest"
           verb: call
@@ -29,7 +29,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Call Dagger Function
-        uses: dagger/dagger-for-github@v6
+        uses: dagger/dagger-for-github@v7
         with:
           version: "latest"
           verb: call
