@@ -301,13 +301,13 @@ This is an example of [post-call filtering](../api/fs-filters.mdx#post-call-filt
 
 #### Examples
 
--  Request the `README.md` file from the public `dagger/dagger` GitHub repository over HTTP and save it as `/src/myfile` in the container:
+-  Request the `README.md` file from the public `dagger/dagger` GitHub repository over HTTPS and save it as `/src/myfile` in the container:
 
     ```shell
     dagger call read-file-http --url=https://raw.githubusercontent.com/dagger/dagger/refs/heads/main/README.md
     ```
 
--  Request the `README.md` file from the public `dagger/dagger` GitHub repository over HTTP, save it as `/src/myfile` in the container, and display its contents:
+-  Request the `README.md` file from the public `dagger/dagger` GitHub repository over HTTPS, save it as `/src/myfile` in the container, and display its contents:
 
     ```shell
     dagger call read-file-http --url=https://raw.githubusercontent.com/dagger/dagger/refs/heads/main/README.md file --path=/src/myfile contents
