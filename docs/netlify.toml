@@ -1200,7 +1200,13 @@
 [[redirects]]
   # redirect
   from = "/configuration/custom-registry"
-  to = "/configuration/engine#configuring-custom-registries"
+  to = "/configuration/engine#custom-registries"
+  status = 301
+
+[[redirects]]
+  # redirect
+  from = "/configuration/cache"
+  to = "/api/engine#caching"
   status = 301
 
 [[redirects]]
