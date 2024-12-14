@@ -7,8 +7,8 @@ class MyModule {
     return await dag
       .container()
       .from("alpine:latest")
-      .withFile("/tmp/myfile", source)
-      .withExec(["cat", "/tmp/myfile"])
+      .withFile("/src/myfile", source)
+      .withExec(["cat", "/src/myfile"])
       .stdout()
   }
 }

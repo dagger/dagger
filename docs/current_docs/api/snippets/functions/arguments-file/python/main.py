@@ -9,7 +9,7 @@ class MyModule:
         return await (
             dag.container()
             .from_("alpine:latest")
-            .with_file("/tmp/myfile", source)
-            .with_exec(["cat", "/tmp/myfile"])
+            .with_file("/src/myfile", source)
+            .with_exec(["cat", "/src/myfile"])
             .stdout()
         )
