@@ -13,8 +13,8 @@ type Recorder struct {
 }
 
 func New(
-	// +optional
 	// Working directory for the recording container
+	// +optional
 	workdir *dagger.Directory,
 ) Recorder {
 	if workdir == nil {
@@ -31,10 +31,7 @@ func New(
 	}
 }
 
-func (r Recorder) Exec(ctx context.Context, cmd string) Recorder {
-	if r.Error != "" {
-		return r
-	}
+func (r Recorder) Exec(ctx context.Context, cmd string) (Recorder, error) {
 	// Dry-run to warm cache
 	_, err := r.R.
 		ExecEnv().
@@ -44,13 +41,12 @@ func (r Recorder) Exec(ctx context.Context, cmd string) Recorder {
 		).
 		Sync(ctx)
 	if err != nil {
-		r.Error = err.Error()
-		return r
+		return r, err
 	}
 	r.R = r.R.Exec(cmd, dagger.TermcastExecOpts{
 		Fast: true,
 	}).Wait(1000)
-	return r
+	return r, nil
 }
 
 func (r Recorder) Debug(ctx context.Context) (Recorder, error) {
