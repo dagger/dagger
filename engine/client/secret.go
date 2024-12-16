@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 
 	"github.com/moby/buildkit/session/secrets"
 	"google.golang.org/grpc"
@@ -17,8 +18,9 @@ import (
 type SecretResolver func(context.Context, *url.URL) ([]byte, error)
 
 var resolvers = map[string]SecretResolver{
-	"env": envSecretProvider,
-	"op":  opSecretProvider,
+	"env":  envSecretProvider,
+	"file": fileSecretProvider,
+	"op":   opSecretProvider,
 }
 
 type SecretProvider struct {
@@ -57,6 +59,10 @@ func envSecretProvider(_ context.Context, u *url.URL) ([]byte, error) {
 		return nil, fmt.Errorf("env var %s not found", u.Host)
 	}
 	return []byte(v), nil
+}
+
+func fileSecretProvider(_ context.Context, u *url.URL) ([]byte, error) {
+	return os.ReadFile(path.Join(u.Host, u.Path))
 }
 
 func opSecretProvider(ctx context.Context, u *url.URL) ([]byte, error) {
