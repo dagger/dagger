@@ -228,7 +228,7 @@ export RELEASE_PREP_PR=$(cat /tmp/prep-pr.txt | sed -r 's/^[^0-9]*([0-9]+).*/\1/
 
 ```console
 export GITHUB_USERNAME=$(gh api /user --jq .login)
-find sdk/go sdk/python sdk/typescript sdk/elixir sdk/php helm/dagger -maxdepth 1 -name .changie.yaml -execdir \
+find sdk/go sdk/python sdk/typescript sdk/elixir sdk/php sdk/rust helm/dagger -maxdepth 1 -name .changie.yaml -execdir \
       changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom PR="$RELEASE_PREP_PR" --custom Author="$GITHUB_USERNAME" \;
 ```
 
@@ -236,14 +236,14 @@ find sdk/go sdk/python sdk/typescript sdk/elixir sdk/php helm/dagger -maxdepth 1
       running `changie batch $ENGINE_VERSION`:
 
 ```console
-find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie batch $ENGINE_VERSION \;
+find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php sdk/rust helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie batch $ENGINE_VERSION \;
 ```
 
 - [ ] Make any necessary edits to the newly generated file, e.g. `.changes/v0.12.4.md`
 - [ ] Update `CHANGELOG.md` by running `changie merge`.
 
 ```console
-find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie merge \;
+find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php sdk/rust helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie merge \;
 git add **/.changes
 git add **/CHANGELOG.md
 git commit -s -m "chore: add release notes for $ENGINE_VERSION"
@@ -290,6 +290,7 @@ This will kick off [`.github/workflows/publish.yml`](https://github.com/dagger/d
 - Python packages to [🐍 dagger-io](https://pypi.org/project/dagger-io).
 - Typescript packages to [⬢ npmjs.com/package/@dagger.io/dagger](https://www.npmjs.com/package/@dagger.io/dagger).
 - Elixir packages to [🧪 hex.pm/packages/dagger](https://hex.pm/packages/dagger).
+- Rust crates to [⚙️  crates.io/crate/dagger-sdk](https://crates.io/crates/dagger-sdk).
 - PHP packages to [🐘 packagist.org/packages/dagger/dagger](https://packagist.org/packages/dagger/dagger) via [github.com/dagger/dagger-php-sdk](https://github.com/dagger/dagger-php-sdk/tags).
 - Helm charts to [☸️ registry.dagger.io/dagger-helm](https://github.com/dagger/dagger/pkgs/container/dagger-helm).
 
