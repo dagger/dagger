@@ -37,8 +37,8 @@ runs:
     - name: Setup
       shell: bash
       run: |
-        mkdir -p /tmp/actions/call
-        touch /tmp/actions/call/local-envs
+        mkdir -p ${{ runner.temp }}/actions/call
+        touch ${{ runner.temp }}/actions/call/local-envs
 
     - name: Install dagger
       shell: bash
@@ -76,9 +76,9 @@ runs:
           exit 1
         fi
 
-        # put env variables in /tmp/actions/call/local-envs instead of
+        # put env variables in ${{ runner.temp }}/actions/call/local-envs instead of
         # $GITHUB_ENV to avoid leaking into parent workflow
-        (cd .dagger/mage; go run main.go -w ../.. engine:dev) | tee /tmp/actions/call/local-envs
+        (cd .dagger/mage; go run main.go -w ../.. engine:dev) | tee ${{ runner.temp }}/actions/call/local-envs
 
         echo "::endgroup::"
       env:
@@ -91,7 +91,7 @@ runs:
     - name: Wait for dagger to be ready
       shell: bash
       run: |
-        source /tmp/actions/call/local-envs
+        source ${{ runner.temp }}/actions/call/local-envs
 
         echo "::group::Dagger client version"
         dagger --silent version
@@ -104,11 +104,11 @@ runs:
     - name: ${{ inputs.function }}
       shell: bash
       run: |
-        source /tmp/actions/call/local-envs
+        source ${{ runner.temp }}/actions/call/local-envs
 
         function redirect_logs() {
           if [[ "${{ inputs.upload-logs }}" == "true" ]]; then
-            "$@" &> /tmp/actions/call/call.log
+            "$@" &> ${{ runner.temp }}/actions/call/call.log
           elif [[ -n "${{ inputs.redirect }}" ]]; then
             "$@" | tee "${{ inputs.redirect }}"
           else
@@ -135,24 +135,24 @@ runs:
       uses: actions/upload-artifact@v4
       with:
         name: call-logs-${{ runner.name }}-${{ github.job }}
-        path: /tmp/actions/call/call.log
+        path: ${{ runner.temp }}/actions/call/call.log
         overwrite: true
 
     - name: Capture dev engine logs
       if: always() && inputs.dev-engine == 'true'
       shell: bash
       run: |
-        docker logs dagger-engine.dev-${{ runner.name }} &> /tmp/actions/call/engine.log
+        docker logs dagger-engine.dev-${{ runner.name }} &> ${{ runner.temp }}/actions/call/engine.log
 
     - name: Archive engine logs
       if: always() && inputs.dev-engine == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: engine-logs-${{ runner.name }}
-        path: /tmp/actions/call/engine.log
+        path: ${{ runner.temp }}/actions/call/engine.log
         overwrite: true
 
     - name: Cleanup
       shell: bash
       run: |
-        rm -rf /tmp/actions/call
+        rm -rf ${{ runner.temp }}/actions/call
