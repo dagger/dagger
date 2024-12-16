@@ -133,7 +133,7 @@ export class AST {
       targetNode.getStart(sourceFile),
     )
 
-    // sourcile.filaname is the absolute path to the file, we need to get the relative path
+    // sourceFile.fileName is the absolute path to the file, we need to get the relative path
     // from the module path so we exclude the module path from the given path.
     // But since root will always start with `/src`, we want to catch the second `src`
     // inside the module.
