@@ -125,6 +125,7 @@ func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.Instance[*cor
 	err := s.srv.Select(ctx, ctr, &svc,
 		dagql.Selector{
 			Field: "asService",
+			View:  s.srv.View,
 		},
 	)
 	if err != nil {
