@@ -30,6 +30,7 @@
     "node-color-log": "npm:node-color-log@^12.0.1",
     "node-fetch": "npm:node-fetch@^3.3.2",
     "reflect-metadata": "npm:reflect-metadata@^0.2.2",
-    "tar": "npm:tar@^7.4.2"
+    "tar": "npm:tar@^7.4.2",
+    "typescript": "npm:typescript@^5.5.4"
   }
 }

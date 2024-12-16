@@ -344,22 +344,31 @@ func (t *TypescriptSdk) configureModule(ctr *dagger.Container) *dagger.Container
 
 	// If there's a package.json, run the tsconfig updator script and install the genDir.
 	// else, copy the template config files.
-	if t.moduleConfig.packageJSONConfig != nil {
-		if runtime == Bun {
-			ctr = ctr.
+	if t.moduleConfig.packageJSONConfig != nil || t.moduleConfig.hasFile("deno.json"){
+		switch runtime {
+		case Bun:
+			return ctr.
 				WithExec([]string{"bun", "/opt/module/bin/__tsconfig.updator.ts"}).
 				WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--summary", "./sdk"})
-		} else if runtime == Node {
-			ctr = ctr.
+		case Node:
+			return ctr.
 				WithExec([]string{"tsx", "/opt/module/bin/__tsconfig.updator.ts"}).
 				WithExec([]string{"npm", "pkg", "set", "type=module"}).
 				WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=./sdk"})
+		case Deno:
+			// If it's deno, we replace the package.json with deno.json.
+			ctr = ctr.WithoutFile("package.json").WithoutFile("tsconfig.json")
+
+			if !t.moduleConfig.hasFile("deno.json") {
+				ctr = ctr.WithFile("deno.json", ctr.File("/opt/module/template/deno.json"))
+			}
+
+			return ctr 
 		}
-	} else {
-		ctr = ctr.WithDirectory(".", ctr.Directory("/opt/module/template"), dagger.ContainerWithDirectoryOpts{Include: []string{"*.json"}})
+
 	}
 
-	return ctr
+	return ctr.WithDirectory(".", ctr.Directory("/opt/module/template"), dagger.ContainerWithDirectoryOpts{Include: []string{"package.json", "tsconfig.json"}})
 }
 
 // addSDK returns a directory with the SDK sources.
