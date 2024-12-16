@@ -16,6 +16,6 @@ class MyModule:
             .from_("python:3.11")
             .with_directory("/src", source)
             .with_workdir("/src")
-            .with_mounted_cache("/root/.cache/pip", dag.cache_volume("python-311"))
+            .with_mounted_cache("/root/.cache/pip", dag.cache_volume("pip_cache"))
             .with_exec(["pip", "install", "-r", "requirements.txt"])
         )
