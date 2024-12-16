@@ -19,7 +19,7 @@ on:
 jobs:
   publish:
     if: ${{ github.repository == 'dagger/dagger' && github.event_name == 'push' }}
-    runs-on: dagger-g2-v0-15-0-16c
+    runs-on: dagger-g2-v0-15-1-16c
     steps:
       - uses: actions/checkout@v4
       - name: "Publish Engine"
@@ -44,6 +44,7 @@ jobs:
           function: |-
             cli \
             publish \
+            --tag="${{ github.ref_name }}" \
             --github-org-name="$GH_ORG_NAME" \
             --github-token=env:GITHUB_TOKEN \
             --goreleaser-key=env:GORELEASER_KEY \
@@ -88,7 +89,7 @@ jobs:
 
   publish-sdk-go:
     needs: publish
-    runs-on: dagger-g2-v0-15-0-4c
+    runs-on: dagger-g2-v0-15-1-4c
     steps:
       - uses: actions/checkout@v4
       - name: "go publish"
@@ -101,7 +102,7 @@ jobs:
 
   publish-sdk-php:
     needs: publish
-    runs-on: dagger-g2-v0-15-0-4c
+    runs-on: dagger-g2-v0-15-1-4c
     steps:
       - uses: actions/checkout@v4
       - name: "php publish"
@@ -115,7 +116,7 @@ jobs:
   publish-sdk-python:
     needs: publish
     if: github.ref_name != 'main'
-    runs-on: dagger-g2-v0-15-0-4c
+    runs-on: dagger-g2-v0-15-1-4c
     steps:
       - uses: actions/checkout@v4
       - name: "python publish"
@@ -131,7 +132,7 @@ jobs:
   publish-sdk-typescript:
     needs: publish
     if: github.ref_name != 'main'
-    runs-on: dagger-g2-v0-15-0-4c
+    runs-on: dagger-g2-v0-15-1-4c
     steps:
       - uses: actions/checkout@v4
       - name: "typescript publish"
@@ -146,7 +147,7 @@ jobs:
   publish-sdk-elixir:
     needs: publish
     if: github.ref_name != 'main'
-    runs-on: dagger-g2-v0-15-0-4c
+    runs-on: dagger-g2-v0-15-1-4c
     steps:
       - uses: actions/checkout@v4
       - name: "elixir publish"
@@ -161,7 +162,7 @@ jobs:
   publish-helm:
     needs: publish
     if: github.ref_name != 'main'
-    runs-on: dagger-g2-v0-15-0-4c
+    runs-on: dagger-g2-v0-15-1-4c
     steps:
       - uses: actions/checkout@v4
       - name: "helm publish"
@@ -176,7 +177,7 @@ jobs:
   daggerverse-bump-dagger:
     needs: publish
     if: github.ref_name != 'main'
-    runs-on: dagger-g2-v0-15-0-4c
+    runs-on: dagger-g2-v0-15-1-4c
     steps:
       - uses: actions/checkout@v4
       - name: "Bump Dagger version in Daggerverse"
@@ -184,7 +185,7 @@ jobs:
         env:
           RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
         with:
-          function: --github-token=env:RELEASE_DAGGER_CI_TOKEN bump-dagger-version --to=${{ github.ref_name }} --github-assignee={{ github.actor }}
+          function: --github-token=env:RELEASE_DAGGER_CI_TOKEN bump-dagger-version --to=${{ github.ref_name }} --github-assignee=${{ github.actor }}
           module: ./modules/daggerverse
 
   # TODO: daggerize provisioning tests

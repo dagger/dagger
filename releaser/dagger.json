@@ -18,5 +18,5 @@
       "source": "../version"
     }
   ],
-  "source": ".dagger"
+  "source": "."
 }

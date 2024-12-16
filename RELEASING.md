@@ -269,6 +269,9 @@ gh pr ready
       @jpadams @marcosnils @matipan @gerhard in the release thread and wait for a
       response before continuing with the release (this might be a blocker).
 
+- [ ] `15 mins` Confirm that all checks on `$RELEASE_BRANCH` are green, for main you're basically [checking](https://github.com/dagger/dagger/commits/main/) that the merged prep commit is has a green check.
+      Do not push tags until this is finished.
+
 ## 🚀 Release ⏱ `10mins`
 
 - [ ] When you have confirmed that all checks on `$RELEASE_BRANCH` are green, run the following:
@@ -474,7 +477,7 @@ production deployment via Netlify as follows:
 gh release view --repo dagger/dagger-for-github --json tagName,publishedAt
 
 # Sign the tag, using the date as the comment, e.g. 2024-07-22
-git tag --sign -m "2024-08-02" <NEXT_PATCH_VERSION>
+git tag --sign -m $(date '+%Y-%m-%d') <NEXT_PATCH_VERSION>
 git push origin <NEXT_PATCH_VERSION> #shouldn't need to force since new tag
 ```
 
@@ -487,11 +490,11 @@ git push origin <NEXT_PATCH_VERSION> #shouldn't need to force since new tag
 gh release create --generate-notes --verify-tag <NEXT_PATCH_VERSION>
 ```
 
-- [ ] Force update the major version, currently `v6`, using the date as the comment, e.g. 2024-07-22
+- [ ] Force update the major version, currently `v7`, using the date as the comment, e.g. 2024-07-22
 
 ```console
-git tag --sign -m "2024-08-02" v6 --force
-git push origin v6 --force #need to force since moving this tag
+git tag --sign -m $(date '+%Y-%m-%d') v7 --force
+git push origin v7 --force #need to force since moving this tag
 ```
 
 ## 🍺 dagger Homebrew ⏱ `2mins`
