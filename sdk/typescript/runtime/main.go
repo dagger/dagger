@@ -17,12 +17,15 @@ import (
 const (
 	bunVersion  = "1.1.38"
 	nodeVersion = "22.11.0" // LTS version, JOD (https://nodejs.org/en/about/previous-releases)
+	denoVersion = "2.1.4"
 
 	nodeImageDigest = "sha256:b64ced2e7cd0a4816699fe308ce6e8a08ccba463c757c00c14cd372e3d2c763e"
 	bunImageDigest  = "sha256:5148f6742ac31fac28e6eab391ab1f11f6dfc0c8512c7a3679b374ec470f5982"
+	denoImageDigest = "sha256:bbbc64e254c4fbd928da597faae8633e2302c630386f3469595444c0b29e14d6"
 
 	nodeImageRef = "node:" + nodeVersion + "-alpine@" + nodeImageDigest
 	bunImageRef  = "oven/bun:" + bunVersion + "-alpine@" + bunImageDigest
+	denoImageRef = "denoland/deno:alpine-" + denoVersion + "@" + denoImageDigest
 )
 
 type SupportedTSRuntime string
@@ -30,15 +33,17 @@ type SupportedTSRuntime string
 const (
 	Bun  SupportedTSRuntime = "bun"
 	Node SupportedTSRuntime = "node"
+	Deno SupportedTSRuntime = "deno"
 )
 
 type SupportedPackageManager string
 
 const (
-	Yarn       SupportedPackageManager = "yarn"
-	Pnpm       SupportedPackageManager = "pnpm"
-	Npm        SupportedPackageManager = "npm"
-	BunManager SupportedPackageManager = "bun"
+	Yarn        SupportedPackageManager = "yarn"
+	Pnpm        SupportedPackageManager = "pnpm"
+	Npm         SupportedPackageManager = "npm"
+	BunManager  SupportedPackageManager = "bun"
+	DenoManager SupportedPackageManager = "deno"
 )
 
 const (
@@ -120,6 +125,9 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *dagger.Mod
 	)
 
 	switch t.moduleConfig.runtime {
+	case Deno:
+		return ctr.
+			WithEntrypoint([]string{"deno", "run", "--unstable-bare-node-builtins", "--unstable-byonm", "--unstable-sloppy-imports", "-A", t.moduleConfig.entrypointPath()}), nil
 	case Bun:
 		return ctr.
 			WithEntrypoint([]string{"bun", t.moduleConfig.entrypointPath()}), nil
@@ -231,6 +239,7 @@ func (t *TypescriptSdk) moduleConfigFiles(path string) []string {
 	modConfigFiles := []string{
 		"package.json",
 		"tsconfig.json",
+		"deno.json",
 
 		// Workspaces files
 		"pnpm-workspace.yaml",
@@ -239,6 +248,7 @@ func (t *TypescriptSdk) moduleConfigFiles(path string) []string {
 		// Lockfiles to include
 		"package-lock.json",
 		"yarn.lock",
+		"deno.lock",
 		"pnpm-lock.yaml",
 		"bun.lockb",
 	}
@@ -258,6 +268,10 @@ func (t *TypescriptSdk) Base() (*dagger.Container, error) {
 	version := t.moduleConfig.runtimeVersion
 
 	switch runtime {
+	case Deno:
+		return ctr.
+			WithoutEntrypoint().
+			WithMountedCache("/root/.deno/cache", dag.CacheVolume(fmt.Sprintf("mod-deno-cache-%s", denoVersion))), nil
 	case Bun:
 		return ctr.
 			WithoutEntrypoint().
@@ -335,7 +349,7 @@ func (t *TypescriptSdk) configureModule(ctr *dagger.Container) *dagger.Container
 			ctr = ctr.
 				WithExec([]string{"bun", "/opt/module/bin/__tsconfig.updator.ts"}).
 				WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--summary", "./sdk"})
-		} else {
+		} else if runtime == Node {
 			ctr = ctr.
 				WithExec([]string{"tsx", "/opt/module/bin/__tsconfig.updator.ts"}).
 				WithExec([]string{"npm", "pkg", "set", "type=module"}).
@@ -410,6 +424,12 @@ func (t *TypescriptSdk) detectBaseImageRef() (string, error) {
 		}
 
 		return nodeImageRef, nil
+	case Deno:
+		if version != "" {
+			return fmt.Sprintf("%s:alpine-%s", Deno, version), nil
+		}
+
+		return denoImageRef, nil
 	default:
 		return "", fmt.Errorf("unknown runtime: %q", runtime)
 	}
@@ -432,7 +452,7 @@ func (t *TypescriptSdk) detectRuntime() error {
 			runtime, version, _ := strings.Cut(value, "@")
 
 			switch runtime := SupportedTSRuntime(runtime); runtime {
-			case Bun, Node:
+			case Bun, Node, Deno:
 				t.moduleConfig.runtime = runtime
 				t.moduleConfig.runtimeVersion = version
 
@@ -446,6 +466,12 @@ func (t *TypescriptSdk) detectRuntime() error {
 	// Try to detect runtime from lock files
 	if t.moduleConfig.hasFile("bun.lockb") {
 		t.moduleConfig.runtime = Bun
+
+		return nil
+	}
+
+	if t.moduleConfig.hasFile("deno.lock") {
+		t.moduleConfig.runtime = Deno
 
 		return nil
 	}
@@ -476,6 +502,11 @@ func (t *TypescriptSdk) detectPackageManager() (SupportedPackageManager, string,
 		return BunManager, "", nil
 	}
 
+	// If the runtime is Deno, we should use DenoManager
+	if t.moduleConfig.runtime == Deno {
+		return DenoManager, "", nil
+	}
+
 	// If we find a package.json, we check if the packageManager is specified in `packageManager` field.
 	if t.moduleConfig.packageJSONConfig != nil {
 		value := t.moduleConfig.packageJSONConfig.PackageManager
@@ -498,6 +529,9 @@ func (t *TypescriptSdk) detectPackageManager() (SupportedPackageManager, string,
 
 	if t.moduleConfig.hasFile("bun.lockb") {
 		return BunManager, "", nil
+	}
+	if t.moduleConfig.hasFile("deno.lock") {
+		return DenoManager, "", nil
 	}
 
 	if t.moduleConfig.hasFile("package-lock.json") {
@@ -558,6 +592,9 @@ func (t *TypescriptSdk) generateLockFile(ctr *dagger.Container) (*dagger.Contain
 	case BunManager:
 		return ctr.
 			WithExec([]string{"bun", "install", "--no-verify", "--no-progress"}), nil
+	case DenoManager:
+		return ctr.
+			WithExec([]string{"deno", "install"}), nil
 	default:
 		return nil, fmt.Errorf("detected unknown package manager: %s", packageManager)
 	}
@@ -582,6 +619,9 @@ func (t *TypescriptSdk) installDependencies(ctr *dagger.Container) (*dagger.Cont
 	case BunManager:
 		return ctr.
 			WithExec([]string{"bun", "install", "--no-verify", "--no-progress"}), nil
+	case DenoManager:
+		return ctr.
+			WithExec([]string{"deno", "install", "--no-check"}), nil
 	default:
 		return nil, fmt.Errorf("detected unknown package manager: %s", t.moduleConfig.packageManager)
 	}

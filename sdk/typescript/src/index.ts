@@ -1,5 +1,4 @@
-export { gql } from "graphql-tag"
-export { GraphQLClient } from "graphql-request"
+export { GraphQLClient, gql } from "graphql-request"
 
 // Default client bindings
 export * from "./api/client.gen.js"

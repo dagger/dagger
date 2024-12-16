@@ -1,0 +1,35 @@
+{
+  "nodeModulesDir": "auto",
+  "unstable": [
+    "bare-node-builtins",
+    "byonm",
+    "sloppy-imports",
+    "node-globals"
+  ],
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  },
+  "imports": {
+    "@dagger.io/dagger": "./sdk/src",
+    "@dagger.io/dagger/telemetry": "./sdk/src/telemetry",
+    "@std/random": "jsr:@std/random@^0.1.0",
+    "graphql-request": "npm:graphql-request@7.1.0",
+    "graphql-tag": "npm:graphql-tag@^2.12.6",
+    "@grpc/grpc-js": "npm:@grpc/grpc-js@^1.11.1",
+    "@lifeomic/axios-fetch": "npm:@lifeomic/axios-fetch@^3.1.0",
+    "@opentelemetry/api": "npm:@opentelemetry/api@^1.5.0",
+    "@opentelemetry/core": "npm:@opentelemetry/core@^1.25.1",
+    "@opentelemetry/exporter-trace-otlp-http": "npm:@opentelemetry/exporter-trace-otlp-http@^0.53.0",
+    "@opentelemetry/sdk-metrics": "npm:@opentelemetry/sdk-metrics@^1.25.1",
+    "@opentelemetry/sdk-node": "npm:@opentelemetry/sdk-node@^0.52.1",
+    "@opentelemetry/semantic-conventions": "npm:@opentelemetry/semantic-conventions@^1.25.1",
+    "adm-zip": "npm:adm-zip@^0.5.15",
+    "env-paths": "npm:env-paths@^3.0.0",
+    "graphql": "npm:graphql@^16.9.0",
+    "node-color-log": "npm:node-color-log@^12.0.1",
+    "node-fetch": "npm:node-fetch@^3.3.2",
+    "reflect-metadata": "npm:reflect-metadata@^0.2.2",
+    "tar": "npm:tar@^7.4.2"
+  }
+}
