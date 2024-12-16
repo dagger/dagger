@@ -19,7 +19,7 @@ Export a type for each type or input existing in the GraphQL schema.
 				{{- end }}
  */
 		{{- end }}
-export type {{ .Name }} = string & {__{{ .Name }}: never}
+export type {{ .Name }} = string & {__{{ .Name }}: never} {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 {{ "" }}
 	{{- end }}
 
@@ -34,7 +34,7 @@ export type {{ .Name }} = string & {__{{ .Name }}: never}
 				{{- end }}
  */
 		{{- end }}
-export enum {{ .Name }} {
+export enum {{ .Name }} { {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 		{{- $sortedEnumValues := SortEnumFields .EnumValues }}
 		{{- range $sortedEnumValues }}
 			{{- if .Description }}
@@ -47,7 +47,7 @@ export enum {{ .Name }} {
 				{{- end }}
    */
 			{{- end }}
-  {{ .Name | FormatEnum }} = "{{ .Name }}",
+  {{ .Name | FormatEnum }} = "{{ .Name }}", {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 		{{- end }}
 }
 	{{- end }}
@@ -100,9 +100,9 @@ export type {{ $.Name | FormatName }} = {
 
 		{{- /* Write type, if it's an id it's an output, otherwise it's an input. */ -}}
 		{{- if eq $field.Name "id" }}
-  {{ $field.Name }}{{ $opt }}: {{ $field.TypeRef | FormatOutputType }}
+  {{ $field.Name }}{{ $opt }}: {{ $field.TypeRef | FormatOutputType }} {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 		{{- else }}
-  {{ $field.Name }}{{ $opt }}: {{ $field.TypeRef | FormatInputType }}
+  {{ $field.Name }}{{ $opt }}: {{ $field.TypeRef | FormatInputType }} {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 		{{- end }}
 
 	{{- end }}
