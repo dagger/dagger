@@ -22,6 +22,8 @@ jobs:
     runs-on: "dagger-g3-main-4c"
     if: ${{ github.repository == 'dagger/dagger' }}
     timeout-minutes: 10
+    env:
+      DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
     steps:
       - name: dagger init (go)
         shell: bash
@@ -30,24 +32,18 @@ jobs:
           cd /tmp/benchmark
 
           dagger init --name=benchmark --sdk=go
-        env:
-          DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
       
       - name: dagger functions@initial (go)
         shell: bash
         run: |
           dagger functions
         working-directory: /tmp/benchmark
-        env:
-          DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
       - name: dagger functions@cached (go)
         shell: bash
         run: |
           dagger functions
         working-directory: /tmp/benchmark
-        env:
-          DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
       - name: dagger functions@modified (go)
         shell: bash
@@ -57,14 +53,14 @@ jobs:
 
           dagger functions
         working-directory: /tmp/benchmark
-        env:
-          DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
   benchmark-python:
     name: Benchmark (Python)
     runs-on: "dagger-g3-main-4c"
     if: ${{ github.repository == 'dagger/dagger' }}
     timeout-minutes: 10    
+    env:
+      DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
     steps:
       - name: dagger init (python)
         shell: bash
@@ -73,24 +69,18 @@ jobs:
           cd /tmp/benchmark
 
           dagger init --name=benchmark --sdk=python
-        env:
-          DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
       - name: dagger functions@initial (python)
         shell: bash
         run: |
           dagger functions
         working-directory: /tmp/benchmark
-        env:
-          DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
       - name: dagger functions@cached (python)
         shell: bash
         run: |
           dagger functions
         working-directory: /tmp/benchmark
-        env:
-          DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
       - name: dagger functions@modified (python)
         shell: bash
@@ -100,14 +90,14 @@ jobs:
 
           dagger functions
         working-directory: /tmp/benchmark
-        env:
-          DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
   benchmark-typescript:
     name: Benchmark (TypeScript::${{ matrix.package-manager }})
     runs-on: "dagger-g3-main-4c"
     if: ${{ github.repository == 'dagger/dagger' }}
     timeout-minutes: 10
+    env:
+      DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
     strategy:
       matrix:
         package-manager: [pnpm, yarn, yarnv4, npm, bun]
@@ -187,24 +177,18 @@ jobs:
           fi
 
           dagger init --name=benchmark --sdk=typescript
-        env:
-          DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
       - name: dagger functions@initial (typescript::${{ matrix.package-manager }})
         shell: bash
         run: |
           dagger functions
         working-directory: /tmp/benchmark
-        env:
-          DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
       - name: dagger functions@cached (typescript::${{ matrix.package-manager }})
         shell: bash
         run: |
           dagger functions
         working-directory: /tmp/benchmark
-        env:
-          DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
       - name: dagger functions@modified (typescript::${{ matrix.package-manager }})
         shell: bash
@@ -214,5 +198,3 @@ jobs:
 
           dagger functions
         working-directory: /tmp/benchmark
-        env:
-          DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
