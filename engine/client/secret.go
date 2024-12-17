@@ -23,6 +23,19 @@ var resolvers = map[string]SecretResolver{
 	"op":   opSecretProvider,
 }
 
+func SecretResolverForID(id string) (SecretResolver, *url.URL, error) {
+	u, err := url.Parse(id)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	resolver, ok := resolvers[u.Scheme]
+	if !ok {
+		return nil, nil, fmt.Errorf("unsupported secret scheme: %s", u.Scheme)
+	}
+	return resolver, u, nil
+}
+
 type SecretProvider struct {
 }
 
@@ -31,15 +44,11 @@ func (sp SecretProvider) Register(server *grpc.Server) {
 }
 
 func (sp SecretProvider) GetSecret(ctx context.Context, req *secrets.GetSecretRequest) (*secrets.GetSecretResponse, error) {
-	u, err := url.Parse(req.ID)
+	resolver, u, err := SecretResolverForID(req.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	resolver, ok := resolvers[u.Scheme]
-	if !ok {
-		return nil, fmt.Errorf("unsupported secret scheme: %s", u.Scheme)
-	}
 	plaintext, err := resolver(ctx, u)
 	if err != nil {
 		if errors.Is(err, secrets.ErrNotFound) {

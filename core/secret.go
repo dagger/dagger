@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/dagger/dagger/engine/client"
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/secrets"
 	"github.com/opencontainers/go-digest"
@@ -111,6 +112,11 @@ func (store *SecretStore) MapSecret(secret *Secret, buildkitSessionID, name, uri
 	}
 	if secret.IDDigest == "" {
 		return fmt.Errorf("secret must have an ID digest")
+	}
+
+	_, _, err := client.SecretResolverForID(uri)
+	if err != nil {
+		return err
 	}
 
 	store.mu.Lock()
