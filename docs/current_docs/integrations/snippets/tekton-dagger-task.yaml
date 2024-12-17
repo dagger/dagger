@@ -26,7 +26,7 @@ spec:
             - ALL
       readinessProbe:
         exec:
-          command: ["buildctl", "debug", "workers"]
+          command: ["dagger", "core", "version"]
       volumeMounts:
         - mountPath: /var/run/buildkit
           name: dagger-socket
