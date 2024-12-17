@@ -1012,6 +1012,7 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 				return fullPath, nil
 			},
 		},
+		client.SecretProvider{},
 		session.NewTunnelListenerAttachable(ctx, func(network, addr string) (net.Listener, error) {
 			return runInNetNS(ctx, state, func() (net.Listener, error) {
 				return net.Listen(network, addr)
