@@ -1,26 +1,11 @@
 package core
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"net/url"
-	"path"
-	"path/filepath"
-	"slices"
-	"strings"
-
-	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/slog"
 )
 
 type ModuleSourceKind string
@@ -51,10 +36,165 @@ func (proto ModuleSourceKind) ToLiteral() call.Literal {
 	return ModuleSourceKindEnum.Literal(proto)
 }
 
+type SchemeType int
+
+const (
+	NoScheme SchemeType = iota
+	SchemeHTTP
+	SchemeHTTPS
+	SchemeSSH
+	SchemeSCPLike
+)
+
+func (s SchemeType) Prefix() string {
+	switch s {
+	case SchemeHTTP:
+		return "http://"
+	case SchemeHTTPS:
+		return "https://"
+	case SchemeSSH:
+		return "ssh://"
+	default:
+		return ""
+	}
+}
+
+func (s SchemeType) IsSSH() bool {
+	return s == SchemeSSH
+}
+
 type ModuleInitConfig struct {
 	Merge bool
 }
 
+type LocalModuleSource struct {
+	Query *Query
+
+	ModuleSource
+
+	ContextDirectoryPath string `field:"true" doc:"The absolute path to the context directory on the caller's host."`
+}
+
+func (*LocalModuleSource) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LocalModuleSource",
+		NonNull:   true,
+	}
+}
+
+func (*LocalModuleSource) TypeDescription() string {
+	return "The configuration of dependency of a module."
+}
+
+func (src LocalModuleSource) Clone() *LocalModuleSource {
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	panic("implement me")
+}
+
+type GitModuleSource struct {
+	Query *Query
+
+	ModuleSource
+
+	Version string `field:"true" doc:"The specified version of the git repo this source points to."`
+
+	// TODO: Pin is just the same as commit, do they need to be separate?
+	// TODO: Pin is just the same as commit, do they need to be separate?
+	// TODO: Pin is just the same as commit, do they need to be separate?
+	Commit string `field:"true" doc:"The resolved commit of the git repo this source points to."`
+	Pin    string `field:"true" doc:"The pinned version of this module source."`
+
+	CloneRef string `field:"true" name:"cloneRef" doc:"The ref to clone the root of the git repo from"`
+
+	// TODO: do these both need to exist still? They were slightly different
+	// TODO: do these both need to exist still? They were slightly different
+	// TODO: do these both need to exist still? They were slightly different
+	HTMLRepoURL string `field:"true" name:"htmlRepoURL" doc:"The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket)"`
+	HTMLURL     string `field:"true" name:"htmlURL" doc:"The URL to the source's git repo in a web browser"`
+
+	AsString string `field:"true" doc:"A human readable ref string representation of this module source."`
+}
+
+func (*GitModuleSource) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "GitModuleSource",
+		NonNull:   true,
+	}
+}
+
+func (*GitModuleSource) TypeDescription() string {
+	return "The configuration of dependency of a module."
+}
+
+func (src GitModuleSource) Clone() *GitModuleSource {
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	panic("implement me")
+}
+
+type ModuleSource struct {
+	Query *Query
+
+	ContextDirectory  dagql.Instance[*Directory] `field:"true" doc:"The directory containing everything needed to load and use the module."`
+	SourceRootSubpath string                     `field:"true" doc:"The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory)."`
+	SourceSubpath     string                     `field:"true" doc:"The path to the source code of the module relative to the context directory."`
+
+	ModuleName string `field:"true" doc:"The name of the module."`
+
+	ConfigExists bool `field:"true" doc:"Whether the module has a configuration file."`
+
+	Digest string `field:"true" doc:"Return the module source's content digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine."`
+
+	Dependencies []*modules.ModuleConfigDependency `field:"false"`
+}
+
+func (*ModuleSource) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ModuleSource",
+		NonNull:   true,
+	}
+}
+
+func (*ModuleSource) TypeDescription() string {
+	return "The configuration of dependency of a module."
+}
+
+func (src ModuleSource) Clone() *ModuleSource {
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	panic("implement me")
+}
+
+type ModuleDependency struct {
+	Source dagql.Instance[*ModuleSource] `field:"true" name:"source" doc:"The source for the dependency module."`
+	Name   string                        `field:"true" name:"name" doc:"The name of the dependency module."`
+}
+
+func (*ModuleDependency) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ModuleDependency",
+		NonNull:   true,
+	}
+}
+
+func (*ModuleDependency) TypeDescription() string {
+	return "The configuration of dependency of a module."
+}
+
+func (dep ModuleDependency) Clone() *ModuleDependency {
+	cp := dep
+	cp.Source.Self = dep.Source.Self.Clone()
+	return &cp
+}
+
+/*
 type ModuleSource struct {
 	Query *Query
 
@@ -71,7 +211,6 @@ type ModuleSource struct {
 	WithSDK             string
 	WithInitConfig      *ModuleInitConfig
 	WithSourceSubpath   string
-	WithViews           []*ModuleSourceView
 }
 
 func (src *ModuleSource) Type() *ast.Type {
@@ -592,60 +731,6 @@ func (src *ModuleSource) ModuleConfig(ctx context.Context) (*modules.ModuleConfi
 	return &modCfg, true, nil
 }
 
-func (src *ModuleSource) Views(ctx context.Context) ([]*ModuleSourceView, error) {
-	existingViews := map[string]int{}
-	cfg, cfgExists, err := src.ModuleConfig(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("module config: %w", err)
-	}
-
-	var views []*ModuleSourceView
-	if cfgExists {
-		for i, view := range cfg.Views {
-			existingViews[view.Name] = i
-			views = append(views, &ModuleSourceView{view})
-		}
-	}
-
-	for _, view := range src.WithViews {
-		if i, ok := existingViews[view.Name]; ok {
-			views[i] = view
-		} else {
-			views = append(views, view)
-		}
-	}
-
-	slices.SortFunc(views, func(a, b *ModuleSourceView) int {
-		return strings.Compare(a.Name, b.Name)
-	})
-	return views, nil
-}
-
-func (src *ModuleSource) ViewByName(ctx context.Context, viewName string) (*ModuleSourceView, error) {
-	for i := range src.WithViews {
-		view := src.WithViews[len(src.WithViews)-1-i]
-		if view.Name == viewName {
-			return view, nil
-		}
-	}
-
-	cfg, ok, err := src.ModuleConfig(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("module config: %w", err)
-	}
-	if !ok {
-		return nil, fmt.Errorf("module config not found")
-	}
-
-	for _, view := range cfg.Views {
-		if view.Name == viewName {
-			return &ModuleSourceView{view}, nil
-		}
-	}
-
-	return nil, fmt.Errorf("view %q not found", viewName)
-}
-
 type LocalModuleSource struct {
 	RootSubpath string `field:"true" doc:"The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory)."`
 
@@ -692,33 +777,6 @@ func (src *LocalModuleSource) RefString() string {
 
 func (src *LocalModuleSource) Symbolic() string {
 	return src.RefString()
-}
-
-type SchemeType int
-
-const (
-	NoScheme SchemeType = iota
-	SchemeHTTP
-	SchemeHTTPS
-	SchemeSSH
-	SchemeSCPLike
-)
-
-func (s SchemeType) Prefix() string {
-	switch s {
-	case SchemeHTTP:
-		return "http://"
-	case SchemeHTTPS:
-		return "https://"
-	case SchemeSSH:
-		return "ssh://"
-	default:
-		return ""
-	}
-}
-
-func (s SchemeType) IsSSH() bool {
-	return s == SchemeSSH
 }
 
 type GitModuleSource struct {
@@ -800,18 +858,4 @@ func (src *GitModuleSource) HTMLURL() string {
 		return src.HTMLRepoURL + path.Join("/src", src.Commit, src.RootSubpath)
 	}
 }
-
-type ModuleSourceView struct {
-	*modules.ModuleConfigView
-}
-
-func (v *ModuleSourceView) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "ModuleSourceView",
-		NonNull:   true,
-	}
-}
-
-func (v *ModuleSourceView) TypeDescription() string {
-	return "A named set of path filters that can be applied to directory arguments provided to functions."
-}
+*/
