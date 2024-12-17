@@ -646,6 +646,16 @@ func (ShellSuite) TestArgsSpread(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (ShellSuite) TestSliceFlag(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	script := fmt.Sprintf("directory | with-directory / $(container | from %s | directory /etc) --include=passwd,shadow | entries", alpineImage)
+	out, err := daggerCliBase(t, c).
+		With(daggerShell(script)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "passwd\nshadow\n", out)
+}
+
 func (ShellSuite) TestCommandStateArgs(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	script := fmt.Sprintf("FOO=$(container | from %s | with-exec -- echo -n foo | stdout); .doc $FOO", alpineImage)

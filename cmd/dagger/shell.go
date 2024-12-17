@@ -807,7 +807,16 @@ func shellPreprocessArgs(fn *modFunction, args []string) ([]string, error) {
 
 	// Add all the optional flags
 	flags.Visit(func(f *pflag.Flag) {
-		if f.Changed {
+		if !f.Changed {
+			return
+		}
+		switch val := f.Value.(type) {
+		case pflag.SliceValue:
+			// Repeat the flag for each value so we don't have to deal with CSV.
+			for _, v := range val.GetSlice() {
+				a = append(a, fmt.Sprintf("--%s=%v", f.Name, v))
+			}
+		default:
 			a = append(a, fmt.Sprintf("--%s=%v", f.Name, f.Value.String()))
 		}
 	})
