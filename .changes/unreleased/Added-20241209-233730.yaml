@@ -1,0 +1,7 @@
+kind: Added
+body: |
+  Add stdinFile argument to container.withExec() to allow reading stdin from a file
+time: 2024-12-09T23:37:30.848648773Z
+custom:
+  Author: devin
+  PR: "9150"
