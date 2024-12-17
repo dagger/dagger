@@ -476,6 +476,14 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 			args = args[1:]
 		}
 
+		// If argument is a state value, just pass it on to stdout.
+		// Example: `$FOO` or `$FOO | bar`
+		if strings.HasPrefix(args[0], shellStatePrefix) {
+			hctx := interp.HandlerCtx(ctx)
+			fmt.Fprint(hctx.Stdout, args[0])
+			return nil
+		}
+
 		st, err := h.cmd(ctx, args)
 		if err == nil && st != nil {
 			if h.debug {
