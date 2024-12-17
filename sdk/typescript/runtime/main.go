@@ -344,7 +344,7 @@ func (t *TypescriptSdk) configureModule(ctr *dagger.Container) *dagger.Container
 
 	// If there's a package.json, run the tsconfig updator script and install the genDir.
 	// else, copy the template config files.
-	if t.moduleConfig.packageJSONConfig != nil || t.moduleConfig.hasFile("deno.json"){
+	if t.moduleConfig.packageJSONConfig != nil || t.moduleConfig.hasFile("deno.json") {
 		switch runtime {
 		case Bun:
 			return ctr.
@@ -363,7 +363,7 @@ func (t *TypescriptSdk) configureModule(ctr *dagger.Container) *dagger.Container
 				ctr = ctr.WithFile("deno.json", ctr.File("/opt/module/template/deno.json"))
 			}
 
-			return ctr 
+			return ctr
 		}
 
 	}
