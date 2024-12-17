@@ -14,7 +14,7 @@ spec:
       sidecars:
         - name: dagger-engine
           # replace with the latest available version of Dagger for your platform
-          image: registry.dagger.io/engine:v0.15.1
+          image: registry.dagger.io/engine:v{{ version }}
           securityContext:
             privileged: true
             capabilities:
@@ -41,7 +41,7 @@ spec:
             mode: 0755
             http:
               # replace with the latest available version of Dagger for your platform
-              url: https://github.com/dagger/dagger/releases/download/v0.15.1/dagger_v0.15.1_linux_amd64.tar.gz
+              url: https://github.com/dagger/dagger/releases/download/v{{ version }}/dagger_v{{ version }}_linux_amd64.tar.gz
       container:
         image: alpine:latest
         command: ["sh", "-c"]
