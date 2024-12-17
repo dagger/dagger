@@ -357,7 +357,7 @@ RUN echo we are both cached
 func (*Viztest) DockerBuild() *dagger.Container {
 	return dag.Directory().
 		WithNewFile("Dockerfile", `FROM busybox:1.35
-RUN echo the time is curently `+time.Now().String()+`
+RUN echo the time is currently `+time.Now().String()+`
 RUN echo hello, world!
 RUN echo what is up?
 RUN echo im another layer
@@ -368,9 +368,16 @@ RUN echo im another layer
 func (*Viztest) DockerBuildFail() *dagger.Container {
 	return dag.Directory().
 		WithNewFile("Dockerfile", `FROM busybox:1.34
-RUN echo the time is curently `+time.Now().String()+`
+RUN echo the time is currently `+time.Now().String()+`
 RUN echo hello, world!
 RUN echo im failing && false
 `).
 		DockerBuild()
+}
+
+func (*Viztest) DiskMetrics(ctx context.Context) (string, error) {
+	return dag.Container().From("alpine").
+		WithEnvVariable("cache_bust", time.Now().String()).
+		WithExec([]string{"sh", "-c", "dd if=/dev/urandom of=random_file bs=1M count=1000 && sync"}).
+		Stdout(ctx)
 }
