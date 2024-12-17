@@ -3,7 +3,7 @@ name: Trace GitHub Actions Workflows
 on:
   workflow_run:
     workflows:
-      - "Alternative CI Runners"
+      - "Alternative CI Runners**"
       - "Benchmark"
       - "daggerverse-preview"
       - "Docs"
