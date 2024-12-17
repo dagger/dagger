@@ -107,10 +107,6 @@ type mapSecretArgs struct {
 }
 
 func (s *secretSchema) mapSecret(ctx context.Context, parent *core.Query, args mapSecretArgs) (i dagql.Instance[*core.Secret], err error) {
-	if err := parent.RequireMainClient(ctx); err != nil {
-		return i, err
-	}
-
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return i, fmt.Errorf("failed to get client metadata from context: %w", err)
