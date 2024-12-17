@@ -7138,16 +7138,8 @@ export class Client extends BaseClient {
    * @param uri The URI of the secret store
    */
   mapSecret = (name: string, uri: string): Secret => {
-    return new Secret({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "mapSecret",
-          args: { name, uri },
-        },
-      ],
-      ctx: this._ctx,
-    })
+    const ctx = this._ctx.select("mapSecret", { name, uri })
+    return new Secret(ctx)
   }
 
   /**

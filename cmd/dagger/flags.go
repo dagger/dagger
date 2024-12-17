@@ -467,12 +467,6 @@ type secretValue struct {
 	uri string
 }
 
-const (
-	envSecretSource     = "env"
-	fileSecretSource    = "file"
-	commandSecretSource = "cmd"
-)
-
 func (v *secretValue) Type() string {
 	return Secret
 }
