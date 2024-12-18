@@ -1710,14 +1710,26 @@ func (container *Container) AsServiceLegacy(ctx context.Context) (*Service, erro
 }
 
 func (container *Container) AsService(ctx context.Context, args ContainerAsServiceArgs) (*Service, error) {
+	if len(args.Args) == 0 &&
+		len(container.Config.Cmd) == 0 &&
+		len(container.Config.Entrypoint) == 0 {
+		return nil, ErrNoSvcCommand
+	}
+
+	useEntrypoint := args.UseEntrypoint
+	if len(container.Config.Entrypoint) > 0 {
+		useEntrypoint = true
+	}
+
 	var cmdargs = container.Config.Cmd
 	if len(args.Args) > 0 {
 		cmdargs = args.Args
+		useEntrypoint = false
 	}
 
 	container, err := container.WithExec(ctx, ContainerExecOpts{
 		Args:                          cmdargs,
-		UseEntrypoint:                 args.UseEntrypoint,
+		UseEntrypoint:                 useEntrypoint,
 		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
 		InsecureRootCapabilities:      args.InsecureRootCapabilities,
 		Expand:                        args.Expand,

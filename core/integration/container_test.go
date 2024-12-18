@@ -4817,13 +4817,13 @@ func main() {
 		From(alpineImage).
 		WithExec([]string{"sh", "-c", "apk add curl"})
 
-	t.Run("use default args by default", func(ctx context.Context, t *testctx.T) {
+	t.Run("use default args and entrypoint by default", func(ctx context.Context, t *testctx.T) {
 		output, err := curlctr.
 			WithServiceBinding("myapp", binctr.AsService()).
 			WithExec([]string{"sh", "-c", "curl -vXGET 'http://myapp:8080/hello'"}).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "args: /bin/app,via-default-args", output)
+		require.Equal(t, "args: /bin/app,via-entrypoint,/bin/app,via-default-args", output)
 	})
 
 	t.Run("can override default args", func(ctx context.Context, t *testctx.T) {
@@ -4850,5 +4850,19 @@ func main() {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "args: /bin/app,via-entrypoint,/bin/app,via-default-args", output)
+	})
+
+	t.Run("error when no cmd and entrypoint is set", func(ctx context.Context, t *testctx.T) {
+		withargsOverwritten := binctr.
+			WithoutEntrypoint().
+			WithoutDefaultArgs().
+			AsService()
+
+		_, err := curlctr.
+			WithServiceBinding("myapp", withargsOverwritten).
+			WithExec([]string{"sh", "-c", "curl -vXGET 'http://myapp:8080/hello'"}).
+			Stdout(ctx)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), core.ErrNoSvcCommand.Error())
 	})
 }

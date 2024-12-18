@@ -3677,7 +3677,8 @@ func (m *Test) Fn(ctx context.Context) *dagger.Container {
 	redis := dag.Container().
 		From("redis").
 		WithExposedPort(6379).
-		AsService()
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+
 	cli := dag.Container().
 		From("redis").
 		WithoutEntrypoint().
