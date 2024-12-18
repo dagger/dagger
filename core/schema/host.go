@@ -141,27 +141,20 @@ func (s *hostSchema) Install() {
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Host]{
-		dagql.NodeFunc("directory", s.directory).
-			Impure("Loads data from the local machine.",
-				`Despite being impure, this field returns a pure Directory object. It
-				does this by uploading the requested path to the internal content store
-				and returning a content-addressed Directory using the `+"`blob()` API.").
+		// NOTE: (for near future) we can support force reloading by adding a new arg to this function and providing
+		// a custom cache key function that uses a random value when that arg is true.
+		dagql.NodeFuncWithCacheKey("directory", s.directory, CachePerClient).
 			Doc(`Accesses a directory on the host.`).
 			ArgDoc("path", `Location of the directory to access (e.g., ".").`).
 			ArgDoc("exclude", `Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`).
 			ArgDoc("include", `Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 
-		dagql.Func("file", s.file).
-			Impure("Loads data from the local machine.",
-				`Despite being impure, this field returns a pure File object. It does
-				this by uploading the requested path to the internal content store and
-				returning a content-addressed File using from the `+"`blob()` API.").
+		dagql.FuncWithCacheKey("file", s.file, CachePerClient).
 			Doc(`Accesses a file on the host.`).
 			ArgDoc("path", `Location of the file to retrieve (e.g., "README.md").`),
 
-		dagql.Func("unixSocket", s.socket).
+		dagql.FuncWithCacheKey("unixSocket", s.socket, CachePerClient).
 			Doc(`Accesses a Unix socket on the host.`).
-			Impure("Value depends on the caller as it points to their host.").
 			ArgDoc("path", `Location of the Unix socket (e.g., "/var/run/docker.sock").`),
 
 		dagql.Func("__internalSocket", s.internalSocket).
@@ -184,8 +177,7 @@ func (s *hostSchema) Install() {
 				is false, each port maps to a random port chosen by the host.`,
 				`If ports are given and native is true, the ports are additive.`),
 
-		dagql.Func("service", s.service).
-			Impure("Value depends on the caller as it points to their host.").
+		dagql.FuncWithCacheKey("service", s.service, CachePerClient).
 			Doc(`Creates a service that forwards traffic to a specified address via the host.`).
 			ArgDoc("ports",
 				`Ports to expose via the service, forwarding through the host network.`,
@@ -198,8 +190,7 @@ func (s *hostSchema) Install() {
 		dagql.Func("__internalService", s.internalService).
 			Doc(`(Internal-only) "service" but scoped to the exact right buildkit session ID.`),
 
-		dagql.Func("setSecretFile", s.setSecretFile).
-			Impure("`setSecretFile` reads its value from the local machine.").
+		dagql.FuncWithCacheKey("setSecretFile", s.setSecretFile, CachePerClient).
 			Doc(
 				`Sets a secret given a user-defined name and the file path on the host,
 				and returns the secret.`,

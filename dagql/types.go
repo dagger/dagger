@@ -48,10 +48,6 @@ type ObjectType interface {
 	// Unlike natively added fields, the extended func is limited to the external
 	// Object interface.
 	Extend(spec FieldSpec, fun FieldFunc)
-	// FieldSpec return a FieldSpec for the given field name and views, if
-	// one has been installed on this ObjectType. If no field is found, the
-	// second return value is false.
-	FieldSpec(name string, views ...string) (FieldSpec, bool)
 }
 
 type IDType interface {
@@ -83,7 +79,15 @@ type Object interface {
 	// be instantiated with a class for further selection.
 	//
 	// Any Nullable values are automatically unwrapped.
-	Call(context.Context, *call.ID) (Typed, error)
+	Call(context.Context, *Server, *call.ID) (Typed, *call.ID, error)
+
+	// Select evaluates the field selected by the given selector and returns the result.
+	//
+	// The returned value is the raw Typed value returned from the field; it must
+	// be instantiated with a class for further selection.
+	//
+	// Any Nullable values are automatically unwrapped.
+	Select(context.Context, *Server, Selector) (Typed, *call.ID, error)
 }
 
 // ScalarType represents a GraphQL Scalar type.

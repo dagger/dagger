@@ -81,14 +81,6 @@ func (class Class[T]) IDType() (IDType, bool) {
 	}
 }
 
-func (class Class[T]) FieldSpec(name string, views ...string) (FieldSpec, bool) {
-	field, ok := class.Field(name, views...)
-	if !ok {
-		return FieldSpec{}, false
-	}
-	return field.Spec, true
-}
-
 func (class Class[T]) Field(name string, views ...string) (Field[T], bool) {
 	class.fieldsL.Lock()
 	defer class.fieldsL.Unlock()
@@ -212,7 +204,6 @@ func (cls Class[T]) ParseField(ctx context.Context, view string, astField *ast.F
 		if err != nil {
 			return Selector{}, nil, err
 		}
-
 		input, err := argSpec.Type.Decoder().DecodeInput(val)
 		if err != nil {
 			return Selector{}, nil, fmt.Errorf("init arg %q value as %T (%s) using %T: %w", arg.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
@@ -317,18 +308,14 @@ func (r Instance[T]) WithMetadata(customDigest digest.Digest, isPure bool) Insta
 	}
 }
 
-// Select calls a field on the instance.
-func (r Instance[T]) Call(ctx context.Context, newID *call.ID) (val Typed, err error) {
-	// sanity check: newID should be a new single selection on top of the instance
-	if r.Constructor.Digest() != newID.Receiver().Digest() {
-		return nil, fmt.Errorf("Select: %s has a different digest: %s", r.Type().Name(), newID.Digest())
-	}
+func NoopDone(res Typed, cached bool, rerr error) {}
 
-	fieldName := newID.Field()
-	view := newID.View()
-	field, ok := r.Class.Field(fieldName, view)
+// Selects calls the field on the instance specified by the selector
+func (r Instance[T]) Select(ctx context.Context, s *Server, sel Selector) (Typed, *call.ID, error) {
+	view := sel.View
+	field, ok := r.Class.Field(sel.Field, view)
 	if !ok {
-		return nil, fmt.Errorf("Select: %s has no such field: %q", r.Class.TypeName(), fieldName)
+		return nil, nil, fmt.Errorf("Select: %s has no such field: %q", r.Class.TypeName(), sel.Field)
 	}
 	if field.ViewFilter == nil {
 		// fields in the global view shouldn't attach the current view to the
@@ -336,67 +323,195 @@ func (r Instance[T]) Call(ctx context.Context, newID *call.ID) (val Typed, err e
 		view = ""
 	}
 
-	args := make(map[string]Input, len(field.Spec.Args))
+	idArgs := make([]*call.Argument, 0, len(sel.Args))
+	inputArgs := make(map[string]Input, len(sel.Args))
 	for _, argSpec := range field.Spec.Args {
 		// just be n^2 since the overhead of a map is likely more expensive
 		// for the expected low value of n
-		var input Input
-		for _, idArg := range newID.Args() {
-			if idArg.Name() == argSpec.Name {
-				var err error
-				input, err = argSpec.Type.Decoder().DecodeInput(idArg.Value().ToInput())
-				if err != nil {
-					return nil, fmt.Errorf("init arg %q value as %T (%s) using %T: %w", argSpec.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
-				}
+		var namedInput NamedInput
+		for _, selArg := range sel.Args {
+			if selArg.Name == argSpec.Name {
+				namedInput = selArg
 				break
 			}
 		}
 
 		switch {
-		case input != nil:
-			// use input if found
-			args[argSpec.Name] = input
+		case namedInput.Value != nil:
+			idArgs = append(idArgs, call.NewArgument(
+				namedInput.Name,
+				namedInput.Value.ToLiteral(),
+				argSpec.Sensitive,
+			))
+			inputArgs[argSpec.Name] = namedInput.Value
 
 		case argSpec.Default != nil:
-			// use default if it exists
-			args[argSpec.Name] = argSpec.Default
+			idArgs = append(idArgs, call.NewArgument(
+				argSpec.Name,
+				argSpec.Default.ToLiteral(),
+				argSpec.Sensitive,
+			))
+			inputArgs[argSpec.Name] = argSpec.Default
 
 		case argSpec.Type.Type().NonNull:
 			// error out if the arg is missing but required
-			return nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
+			return nil, nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
 		}
+	}
+	// TODO: it's better DX if it matches schema order
+	sort.Slice(idArgs, func(i, j int) bool {
+		return idArgs[i].Name() < idArgs[j].Name()
+	})
+
+	astType := field.Spec.Type.Type()
+	if sel.Nth != 0 {
+		astType = astType.Elem
 	}
 
-	val, err = r.Class.Call(ctx, r, fieldName, view, args)
-	if err != nil {
-		return nil, err
-	}
-	if n, ok := val.(Derefable); ok {
-		val, ok = n.Deref()
-		if !ok {
-			return nil, nil
-		}
-	}
+	tainted := !sel.Pure && field.Spec.ImpurityReason != ""
 
-	nth := int(newID.Nth())
-	if nth != 0 {
-		enum, ok := val.(Enumerable)
-		if !ok {
-			return nil, fmt.Errorf("cannot sub-select %dth item from %T", nth, val)
-		}
-		val, err = enum.Nth(nth)
+	newID := r.Constructor.Append(
+		astType,
+		sel.Field,
+		view,
+		field.Spec.Module,
+		tainted,
+		sel.Nth,
+		"",
+		idArgs...,
+	)
+
+	if field.CacheKeyFunc != nil {
+		customDgst, err := field.CacheKeyFunc(ctx, r, inputArgs, newID.Digest())
 		if err != nil {
-			return nil, err
+			return nil, nil, fmt.Errorf("failed to compute cache key for %s.%s: %w", r.Type().Name(), sel.Field, err)
 		}
-		if n, ok := val.(Derefable); ok {
-			val, ok = n.Deref()
+		newID = newID.WithMetadata(customDgst, tainted)
+	}
+
+	return r.call(ctx, s, newID, inputArgs)
+}
+
+// Call calls the field on the instance specified by the ID.
+func (r Instance[T]) Call(ctx context.Context, s *Server, newID *call.ID) (Typed, *call.ID, error) {
+	fieldName := newID.Field()
+	view := newID.View()
+	field, ok := r.Class.Field(fieldName, view)
+	if !ok {
+		return nil, nil, fmt.Errorf("Call: %s has no such field: %q", r.Class.TypeName(), fieldName)
+	}
+	idArgs := newID.Args()
+	inputArgs := make(map[string]Input, len(idArgs))
+	// defaults and checking for required args is expected to already be done
+	for _, idArg := range idArgs {
+		argSpec, ok := field.Spec.Args.Lookup(idArg.Name())
+		if !ok {
+			return nil, nil, fmt.Errorf("Call: %s.%s has no such argument: %q", r.Class.TypeName(), field.Spec.Name, idArg.Name())
+		}
+		input, err := argSpec.Type.Decoder().DecodeInput(idArg.Value().ToInput())
+		if err != nil {
+			return nil, nil, fmt.Errorf("Call: init arg %q value as %T (%s) using %T: %w", argSpec.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
+		}
+		inputArgs[argSpec.Name] = input
+	}
+
+	return r.call(ctx, s, newID, inputArgs)
+}
+
+func (r Instance[T]) call(
+	ctx context.Context,
+	s *Server,
+	newID *call.ID,
+	inputArgs map[string]Input,
+) (Typed, *call.ID, error) {
+	// sanity check: newID should be a new single selection on top of the instance
+	if r.Constructor.Digest() != newID.Receiver().Digest() {
+		return nil, nil, fmt.Errorf("Call: %s has a different digest: %s", r.Type().Name(), newID.Digest())
+	}
+
+	doCall := func(ctx context.Context) (innerVal Typed, innerErr error) {
+		if s.telemetry != nil {
+			wrappedCtx, done := s.telemetry(ctx, r, newID)
+			defer func() { done(innerVal, false, innerErr) }()
+			ctx = wrappedCtx
+		}
+
+		innerVal, innerErr = r.Class.Call(ctx, r, newID.Field(), newID.View(), inputArgs)
+		if innerErr != nil {
+			return nil, innerErr
+		}
+
+		if n, ok := innerVal.(Derefable); ok {
+			innerVal, ok = n.Deref()
 			if !ok {
 				return nil, nil
 			}
 		}
+		nth := int(newID.Nth())
+		if nth != 0 {
+			enum, ok := innerVal.(Enumerable)
+			if !ok {
+				return nil, fmt.Errorf("cannot sub-select %dth item from %T", nth, innerVal)
+			}
+			innerVal, innerErr = enum.Nth(nth)
+			if innerErr != nil {
+				return nil, innerErr
+			}
+			if n, ok := innerVal.(Derefable); ok {
+				innerVal, ok = n.Deref()
+				if !ok {
+					return nil, nil
+				}
+			}
+		}
+
+		return innerVal, nil
 	}
 
-	return val, nil
+	ctx = idToContext(ctx, newID)
+	dig := newID.Digest()
+	var val Typed
+	var err error
+	if newID.IsTainted() {
+		val, err = doCall(ctx)
+	} else {
+		val, _, err = s.Cache.GetOrInitialize(ctx, dig, doCall)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// If the returned val is IDable, is pure, and has a different digest than the original, then
+	// add that different digest as a cache key for this val.
+	// This enables APIs to return new object instances with overridden purity and/or digests, e.g. returning
+	// values that have a pure content-based cache key different from the call-chain ID digest.
+	if idable, ok := val.(IDable); ok && idable != nil {
+		valID := idable.ID()
+
+		// only cache pure results
+		isPure := !valID.IsTainted()
+
+		// only need to add a new cache key if the returned val has a different custom digest than the original
+		digestChanged := valID.Digest() != dig
+
+		// Corner case: the `id` field on an object returns an IDable value (IDs are themselves both values and IDable).
+		// However, if we cached `val` in this case, we would be caching <id digest> -> <id value>, which isn't what we
+		// want. Instead, we only want to cache <id digest> -> <actual object value>.
+		// To avoid this, we check that the returned IDable type is the actual object type.
+		matchesType := valID.Type().ToAST().Name() == val.Type().Name()
+
+		if isPure && digestChanged && matchesType {
+			newID = valID
+			_, _, err := s.Cache.GetOrInitialize(ctx, valID.Digest(), func(context.Context) (Typed, error) {
+				return val, nil
+			})
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+
+	return val, newID, nil
 }
 
 type View interface {
@@ -450,9 +565,29 @@ func Func[T Typed, A any, R any](name string, fn func(ctx context.Context, self 
 	})
 }
 
+// FuncWithCacheKey is like Func but allows specifying a custom digest that will be used to cache the operation in dagql.
+func FuncWithCacheKey[T Typed, A any, R any](
+	name string,
+	fn func(ctx context.Context, self T, args A) (R, error),
+	cacheKeyFn func(ctx context.Context, self Instance[T], args A, origDgst digest.Digest) (digest.Digest, error),
+) Field[T] {
+	return NodeFuncWithCacheKey(name, func(ctx context.Context, self Instance[T], args A) (R, error) {
+		return fn(ctx, self.Self, args)
+	}, cacheKeyFn)
+}
+
 // NodeFunc is the same as Func, except it passes the Instance instead of the
 // receiver so that you can access its ID.
 func NodeFunc[T Typed, A any, R any](name string, fn func(ctx context.Context, self Instance[T], args A) (R, error)) Field[T] {
+	return NodeFuncWithCacheKey(name, fn, nil)
+}
+
+// NodeFuncWithCacheKey is like NodeFunc but allows specifying a custom digest that will be used to cache the operation in dagql.
+func NodeFuncWithCacheKey[T Typed, A any, R any](
+	name string,
+	fn func(ctx context.Context, self Instance[T], args A) (R, error),
+	cacheKeyFn func(ctx context.Context, self Instance[T], args A, origDgst digest.Digest) (digest.Digest, error),
+) Field[T] {
 	var zeroArgs A
 	inputs, argsErr := inputSpecsForType(zeroArgs, true)
 	if argsErr != nil {
@@ -467,7 +602,7 @@ func NodeFunc[T Typed, A any, R any](name string, fn func(ctx context.Context, s
 		slog.Error("failed to parse return type", "type", zeroSelf.Type(), "field", name, "error", err)
 	}
 
-	return Field[T]{
+	field := Field[T]{
 		Spec: FieldSpec{
 			Name: name,
 			Args: inputs,
@@ -490,6 +625,23 @@ func NodeFunc[T Typed, A any, R any](name string, fn func(ctx context.Context, s
 			return builtinOrTyped(res)
 		},
 	}
+
+	if cacheKeyFn != nil {
+		field.CacheKeyFunc = func(ctx context.Context, self Instance[T], argVals map[string]Input, origDgst digest.Digest) (digest.Digest, error) {
+			if argsErr != nil {
+				// this error is deferred until runtime, since it's better (at least
+				// more testable) than panicking
+				return "", argsErr
+			}
+			var args A
+			if err := setInputFields(inputs, argVals, &args); err != nil {
+				return "", err
+			}
+			return cacheKeyFn(ctx, self, args, origDgst)
+		}
+	}
+
+	return field
 }
 
 // FieldSpec is a specification for a field.
@@ -680,8 +832,9 @@ func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Cl
 
 // Field defines a field of an Object type.
 type Field[T Typed] struct {
-	Spec FieldSpec
-	Func func(context.Context, Instance[T], map[string]Input) (Typed, error)
+	Spec         FieldSpec
+	Func         func(context.Context, Instance[T], map[string]Input) (Typed, error)
+	CacheKeyFunc func(context.Context, Instance[T], map[string]Input, digest.Digest) (digest.Digest, error)
 
 	// ViewFilter is filter that specifies under which views this field is
 	// accessible. If not view is present, the default is the "global" view.
