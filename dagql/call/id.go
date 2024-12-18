@@ -3,6 +3,7 @@ package call
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"sync"
 
@@ -211,8 +212,14 @@ func (id *ID) Display() string {
 }
 
 // Return a new ID that's the selection of the nth element of the return value of the existing ID.
-// Note that this will result in any custom digest on `id` being unset.
+// The new digest is derived from the existing ID's digest and the nth index.
 func (id *ID) SelectNth(nth int) *ID {
+	buf := []byte(id.Digest())
+	buf = binary.LittleEndian.AppendUint64(buf, uint64(nth))
+	h := xxh3.New()
+	h.Write(buf)
+	dgst := digest.NewDigest("xxh3", h)
+
 	return id.receiver.Append(
 		id.pb.Type.Elem.ToAST(),
 		id.pb.Field,
@@ -220,7 +227,7 @@ func (id *ID) SelectNth(nth int) *ID {
 		id.module,
 		id.pb.Tainted,
 		nth,
-		"",
+		dgst,
 		id.args...,
 	)
 }
@@ -433,7 +440,7 @@ func (id *ID) decode(
 	return nil
 }
 
-// presumes that id.pb.Digest and id.pb.ContentDigest are NOT set already,
+// presumes that id.pb.Digest are NOT set already,
 // otherwise those values will be incorrectly included in the digest
 func (id *ID) calcDigest() (string, error) {
 	if id == nil {
