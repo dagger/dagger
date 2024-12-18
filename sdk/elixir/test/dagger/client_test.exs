@@ -283,7 +283,7 @@ defmodule Dagger.ClientTest do
       |> Client.container()
       |> Container.from("nginx:1.25-alpine3.18")
       |> Container.with_exposed_port(80)
-      |> Container.as_service()
+      |> Container.as_service(use_entrypoint: true)
 
     assert {:ok, out} =
              dag
