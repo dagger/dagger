@@ -1,7 +1,7 @@
-{{- if eq .Values.engine.kind "DaemonSet" -}}
+{{- if eq .Values.engine.kind "StatefulSet" -}}
 ---
 apiVersion: apps/v1
-kind: DaemonSet
+kind: StatefulSet
 metadata:
   name: {{ include "dagger.fullname" . }}-engine
   namespace: {{ .Release.Namespace }}
@@ -80,25 +80,25 @@ spec:
             {{- toYaml .Values.engine.readinessProbeSettings | nindent 12 }}
             {{- end }}
           volumeMounts:
-            - name: varlibdagger
+            - name: data
               mountPath: /var/lib/dagger
-            - name: varrundagger
+            - name: run
               mountPath: /var/run/buildkit
             {{- if .Values.engine.config }}
-            - name: dagger-engine-config
+            - name: config
               mountPath: /etc/dagger/engine.toml
               subPath: engine.toml
             {{- end }}
       terminationGracePeriodSeconds: {{ .Values.engine.terminationGracePeriodSeconds }}
       volumes:
-        - name: varlibdagger
+        - name: data
           hostPath:
-            path: /var/lib/dagger
-        - name: varrundagger
+            path: /var/lib/dagger-{{ include "dagger.fullname" . }}
+        - name: run
           hostPath:
-            path: /var/run/dagger
+            path: /var/run/dagger-{{ include "dagger.fullname" . }}
         {{- if .Values.engine.config }}
-        - name: dagger-engine-config
+        - name: config
           configMap:
             name: {{ include "dagger.fullname" . }}-engine-config
             items:
