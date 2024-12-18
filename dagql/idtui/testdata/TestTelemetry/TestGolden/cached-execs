@@ -27,4 +27,4 @@ Expected stderr:
 │ ✔ .withExec(args: ["echo", "im busted by that buster"]): Container! X.Xs
 │ ┃ im busted by that buster
 
-Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1
+Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

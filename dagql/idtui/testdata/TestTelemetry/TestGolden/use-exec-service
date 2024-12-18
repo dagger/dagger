@@ -32,4 +32,4 @@ Expected stderr:
 │ ✔ .withExec(args: ["wget", "-q", "-O-", "http://exec-service"]): Container! X.Xs
 │ ┃ <h1>hello, world!</h1><p>the time is 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X</p>
 
-Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1
+Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
