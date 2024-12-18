@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"reflect"
 	"runtime/debug"
-	"sort"
 	"sync"
 
 	"github.com/99designs/gqlgen/graphql"
@@ -468,7 +467,7 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (Object, error) {
 		base = s.root
 	}
 
-	res, id, err := s.cachedCall(ctx, base, id)
+	res, id, err := base.Call(ctx, s, id)
 	if err != nil {
 		return nil, fmt.Errorf("load: %w", err)
 	}
@@ -485,11 +484,8 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 	var res Typed = self
 	var id *call.ID
 	for i, sel := range sels {
-		newID, err := sel.AppendTo(self.ID(), self.ObjectType())
-		if err != nil {
-			return fmt.Errorf("id for %s: %w", sel, err)
-		}
-		res, id, err = s.cachedCall(ctx, self, newID)
+		var err error
+		res, id, err = self.Select(ctx, s, sel)
 		if err != nil {
 			return fmt.Errorf("select: %w", err)
 		}
@@ -628,69 +624,6 @@ func NewInstanceForID[P, T Typed](
 	}, nil
 }
 
-func NoopDone(res Typed, cached bool, rerr error) {}
-
-func (s *Server) cachedCall(
-	ctx context.Context,
-	// self is the Object (i.e. actual instantiated value) being called
-	self Object,
-	// newID is the ID representation of the operation being called on self
-	newID *call.ID,
-) (res Typed, chained *call.ID, rerr error) {
-	doSelect := func(ctx context.Context) (innerVal Typed, innerErr error) {
-		if s.telemetry != nil {
-			wrappedCtx, done := s.telemetry(ctx, self, newID)
-			defer func() { done(innerVal, false, innerErr) }()
-			ctx = wrappedCtx
-		}
-		return self.Call(ctx, newID)
-	}
-	ctx = idToContext(ctx, newID)
-	dig := newID.Digest()
-	var val Typed
-	var err error
-	if newID.IsTainted() {
-		val, err = doSelect(ctx)
-	} else {
-		val, _, err = s.Cache.GetOrInitialize(ctx, dig, doSelect)
-	}
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// If the returned val is IDable, is pure, and has a different digest than the original, then
-	// add that different digest as a cache key for this val.
-	// This enables APIs to return new object instances with overridden purity and/or digests, e.g. returning
-	// values that have a pure content-based cache key different from the call-chain ID digest.
-	if idable, ok := val.(IDable); ok && idable != nil {
-		valID := idable.ID()
-
-		// only cache pure results
-		isPure := !valID.IsTainted()
-
-		// only need to add a new cache key if the returned val has a different custom digest than the original
-		digestChanged := valID.Digest() != dig
-
-		// Corner case: the `id` field on an object returns an IDable value (IDs are themselves both values and IDable).
-		// However, if we cached `val` in this case, we would be caching <id digest> -> <id value>, which isn't what we
-		// want. Instead, we only want to cache <id digest> -> <actual object value>.
-		// To avoid this, we check that the returned IDable type is the actual object type.
-		matchesType := valID.Type().ToAST().Name() == val.Type().Name()
-
-		if isPure && digestChanged && matchesType {
-			newID = valID
-			_, _, err := s.Cache.GetOrInitialize(ctx, valID.Digest(), func(context.Context) (Typed, error) {
-				return val, nil
-			})
-			if err != nil {
-				return nil, nil, err
-			}
-		}
-	}
-
-	return val, newID, nil
-}
-
 func idToPath(id *call.ID) ast.Path {
 	path := ast.Path{}
 	if id == nil { // Query
@@ -742,12 +675,7 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 		}
 	}()
 
-	newID, err := sel.Selector.AppendTo(self.ID(), self.ObjectType())
-	if err != nil {
-		return nil, err
-	}
-
-	val, chainedID, err := s.cachedCall(ctx, self, newID)
+	val, chainedID, err := self.Select(ctx, s, sel.Selector)
 	if err != nil {
 		return nil, err
 	}
@@ -920,52 +848,6 @@ func (sel Selector) String() string {
 		str += fmt.Sprintf("[%d]", sel.Nth)
 	}
 	return str
-}
-
-func (sel Selector) AppendTo(id *call.ID, objType ObjectType) (*call.ID, error) {
-	spec, ok := objType.FieldSpec(sel.Field, sel.View)
-	if !ok {
-		return nil, fmt.Errorf("AppendTo: %s has no such field: %q", objType.TypeName(), sel.Field)
-	}
-
-	astType := spec.Type.Type()
-	tainted := !sel.Pure && spec.ImpurityReason != ""
-	idArgs := make([]*call.Argument, 0, len(sel.Args))
-	for _, arg := range sel.Args {
-		if arg.Value == nil {
-			// we don't include null arguments, since they would needlessly bust caches
-			continue
-		}
-		var isSensitive bool
-		if arg, found := spec.Args.Lookup(arg.Name); found && arg.Sensitive {
-			isSensitive = true
-		}
-		idArgs = append(idArgs, call.NewArgument(
-			arg.Name,
-			arg.Value.ToLiteral(),
-			isSensitive,
-		))
-	}
-	// TODO: it's better DX if it matches schema order
-	sort.Slice(idArgs, func(i, j int) bool {
-		return idArgs[i].Name() < idArgs[j].Name()
-	})
-	if sel.Nth != 0 {
-		astType = astType.Elem
-	}
-
-	idx := id.Append(
-		astType,
-		sel.Field,
-		sel.View,
-		spec.Module,
-		tainted,
-		sel.Nth,
-		"",
-		idArgs...,
-	)
-
-	return idx, nil
 }
 
 type Inputs []NamedInput
