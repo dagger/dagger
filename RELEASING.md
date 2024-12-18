@@ -4,7 +4,6 @@ This describes how to release Dagger:
 
 - [📝 Preparation ⏱ `30mins`](#-preparation--30mins)
 - [🚀 Release ⏱ `10mins`](#-release--10mins)
-- [📒 Documentation ⏱ `5mins`](#-documentation--5mins)
 - [🌌 Daggerverse ⏱ `2mins`](#-daggerverse--2mins)
 - [🌥️ Dagger Cloud ⏱ `2mins`](#-dagger-cloud--2mins)
 - [🪣 Install scripts ⏱ `2mins`](#-install-scripts--2mins)
@@ -289,6 +288,7 @@ This will kick off [`.github/workflows/publish.yml`](https://github.com/dagger/d
 
 - A new image to [ghcr.io/dagger/engine](https://github.com/dagger/dagger/pkgs/container/engine) (mirrored to registry.dagger.io/engine using https://github.com/dagger/registry-redirect).
 - New cli binaries to [dl.dagger.io](https://dl.dagger.io) (served from an S3 bucket, uploaded to by goreleaser)
+- New docs to [docs.dagger.io](https://docs.dagger.io) (served from netlify)
 - Go packages to [🐙 dagger.io/dagger](https://pkg.go.dev/dagger.io/dagger) via [github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
 - Python packages to [🐍 dagger-io](https://pypi.org/project/dagger-io).
 - Typescript packages to [⬢ npmjs.com/package/@dagger.io/dagger](https://www.npmjs.com/package/@dagger.io/dagger).
@@ -382,61 +382,6 @@ One easy way to do this is to re-use the engine version bump PR that was created
 Be sure to use "Rebase and Merge" when merging the PR to `main` to preserve the history of the cherry-picked commits.
 
 - [Example of this here for `v0.11.9`](https://github.com/dagger/dagger/pull/7745)
-
-## 📒 Documentation ⏱ `5mins`
-
-> [!WARNING]
->
-> Merging a documentation PR does NOT automatically deploy the
-> new documentation to the production website.
-
-There are two websites for documentation:
-
-1. Staging: https://devel.docs.dagger.io - [Netlify dashboard](https://app.netlify.com/sites/devel-docs-dagger-io)
-2. Production: https://docs.dagger.io - [Netlify dashboard](https://app.netlify.com/sites/docs-dagger-io)
-
-### Staging release
-
-When a PR is merged, a new deployment is created for the documentation
-site and it is automatically published to https://devel.docs.dagger.io
-via Netlify.
-
-Use this staging website to test the documentation, including:
-
-- verifying that the new content appears in the navigation
-- verifying internal and external links work correctly
-- verifying that images appear correctly
-- etc.
-
-### Production release
-
-When a PR is merged, a new production deployment is also created for
-https://docs.dagger.io. However, this deployment is not automatically
-published.
-
-After testing the documentation using the staging website and if you
-are satisfied with it, manually publish the
-production deployment via Netlify as follows:
-
-- [ ] Log in to the [Netlify dashboard for
-      https://docs.dagger.io](https://app.netlify.com/sites/docs-dagger-io).
-- [ ] Refer to the list of "production deploys" and select the one you wish to
-      deploy. Usually, this will be the most recent one. You can confirm this by
-      checking the deployment hash against the latest commit hash in the
-      [dagger/dagger repository main branch](https://github.com/dagger/dagger).
-- [ ] On the deployment page, click the "Preview" button to once again
-      preview/check the deployment. You can also check the deployment log to
-      confirm there were no errors during the documentation build process.
-- [ ] If you are satisfied with the preview, click the "Publish deploy" button.
-      This will publish the selected deployment on https://docs.dagger.io
-
-> [!NOTE]
->
-> There have been cases where Netlify builds have failed with errors,
-> but the same build succeeds when performed locally. In the past, one reason
-> for this has been Netlify's use of a stale cache. In case you encounter
-> this error, click "Options -> Clear cache and retry with latest branch commit"
-> to recreate the deployment with a clean cache.
 
 ## 🌌 Daggerverse ⏱ `2mins`
 

@@ -16,16 +16,38 @@ Within this directory, the content is separated into:
 
 It gets automatically deployed to [devel.docs.dagger.io](https://devel.docs.dagger.io).
 
-The doc URL will use the `slug` property from the doc markdown metadata.
+You can use this staging website to test the documentation, including:
 
-Given `slug: /1001/install/`, the live URL will be [devel.docs.dagger.io/1001/install](https://devel.docs.dagger.io/1001/install)
+- verifying that the new content appears in the navigation
+- verifying internal and external links work correctly
+- verifying that images appear correctly
+- etc.
 
-It must be manually deployed to [docs.dagger.io](https://docs.dagger.io).Only a certain group of people can deploy via Netlify. For those with permission, follow these steps:
+The doc URL will use the `slug` property from the doc markdown metadata. Given
+`slug: /1001/install/`, the live URL will be [devel.docs.dagger.io/1001/install](https://devel.docs.dagger.io/1001/install)
 
-1. Go to Nelify and login. If you are on the Dagger team and need creds, you need to make a request with Infra using the linear template.
-2. Go to "Dagger team" and click on "docs.dagger.io"
-3. Click on the latest commit box to see the deploy details
-4. Click on "publish deploy"
+It must be manually deployed to [docs.dagger.io](https://docs.dagger.io). Only
+a certain group of people can deploy via Netlify. For those with permission,
+follow these steps:
+
+1. Log in to the [Netlify dashboard for https://docs.dagger.io](https://app.netlify.com/sites/docs-dagger-io).
+2. Refer to the list of "production deploys" and select the one you wish to
+   deploy. Usually, this will be the most recent one. You can confirm this by
+   checking the deployment hash against the latest commit hash in the
+   [dagger/dagger repository main branch](https://github.com/dagger/dagger).
+3. On the deployment page, click the "Preview" button to once again
+   preview/check the deployment. You can also check the deployment log to
+   confirm there were no errors during the documentation build process.
+4. If you are satisfied with the preview, click the "Publish deploy" button.
+   This will publish the selected deployment on <https://docs.dagger.io>.
+
+> [!NOTE]
+>
+> There have been cases where Netlify builds have failed with errors,
+> but the same build succeeds when performed locally. In the past, one reason
+> for this has been Netlify's use of a stale cache. In case you encounter
+> this error, click "Options -> Clear cache and retry with latest branch commit"
+> to recreate the deployment with a clean cache.
 
 ## How can I test my docs change/PR?
 

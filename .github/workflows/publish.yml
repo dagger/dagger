@@ -79,6 +79,16 @@ jobs:
           AWS_REGION: ${{ vars.RELEASE_AWS_REGION }}
           AWS_BUCKET: ${{ vars.RELEASE_AWS_BUCKET }}
           AWS_CLOUDFRONT_DISTRIBUTION: ${{ vars.RELEASE_AWS_CLOUDFRONT_DISTRIBUTION }}
+      - name: "Publish Docs"
+        uses: ./.github/actions/call
+        if: github.ref_name != 'main'
+        with:
+          function: |-
+            docs \
+            publish \
+            --netlify-token=env:NETLIFY_TOKEN
+        env:
+          NETLIFY_TOKEN: ${{ secrets.NETLIFY_TOKEN }}
       # TODO: move this into dagger function call
       - name: "Notify"
         uses: ./.github/actions/notify
