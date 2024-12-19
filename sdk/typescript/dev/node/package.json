@@ -1,8 +1,10 @@
 {
   "dependencies": {
+    "@dagger.io/dagger": "./sdk",
     "typescript": "^5.3.2"
   },
   "devDependencies": {
     "@dagger.io/dagger": "file:sdk"
-  }
+  },
+  "type": "module"
 }
