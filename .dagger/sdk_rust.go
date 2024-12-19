@@ -9,6 +9,7 @@ import (
 	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/BurntSushi/toml"
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 	"github.com/dagger/dagger/.dagger/util"
 )
@@ -118,13 +119,12 @@ func (r RustSDK) Publish(
 	version := strings.TrimPrefix(tag, "sdk/rust/")
 
 	versionFlag := strings.TrimPrefix(version, "v")
-	if dryRun {
+	if !semver.IsValid(version) {
 		// just pick any version, it's a dry-run
 		versionFlag = "--bump=rc"
 	}
 
 	crate := "dagger-sdk"
-
 	base := r.
 		rustBase(rustDockerStable).
 		WithExec([]string{
@@ -140,6 +140,46 @@ func (r RustSDK) Publish(
 	if dryRun {
 		args = append(args, "--dry-run")
 		base = base.WithExec(args)
+
+		targetVersion := strings.TrimPrefix(version, "v")
+		if !semver.IsValid(version) {
+			cargoToml, err := base.File("Cargo.toml").Contents(ctx)
+			if err != nil {
+				return err
+			}
+			var config struct {
+				Workspace struct {
+					Package struct {
+						Version string
+					}
+				}
+			}
+			_, err = toml.Decode(cargoToml, &config)
+			if err != nil {
+				return err
+			}
+			targetVersion = config.Workspace.Package.Version
+		}
+
+		// check we created the right files
+		_, err := base.Directory(fmt.Sprintf("./target/package/dagger-sdk-%s", targetVersion)).Sync(ctx)
+		if err != nil {
+			return err
+		}
+		_, err = base.File(fmt.Sprintf("./target/package/dagger-sdk-%s.crate", targetVersion)).Sync(ctx)
+		if err != nil {
+			return err
+		}
+
+		// check that Cargo.toml got the version
+		dt, err := base.File(fmt.Sprintf("./target/package/dagger-sdk-%s/Cargo.toml", targetVersion)).Contents(ctx)
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(dt, "\nversion = \""+targetVersion+"\"\n") {
+			//nolint:stylecheck
+			return fmt.Errorf("Cargo.toml did not contain %q", targetVersion)
+		}
 	} else {
 		base = base.
 			WithSecretVariable("CARGO_REGISTRY_TOKEN", cargoRegistryToken).

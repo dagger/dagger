@@ -8,6 +8,7 @@ replace github.com/dagger/dagger/engine/distconsts => ../engine/distconsts
 
 require (
 	github.com/99designs/gqlgen v0.17.57
+	github.com/BurntSushi/toml v0.3.1
 	github.com/Khan/genqlient v0.7.0
 	github.com/containerd/platforms v0.2.1
 	github.com/magefile/mage v1.15.0
