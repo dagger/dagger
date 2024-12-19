@@ -16,6 +16,9 @@ engine:
   #     format = "json"
   labels: {}
 
+  # -- Use a `DaemonSet` or `StatefulSet`
+  kind: DaemonSet
+
   ### Customize Dagger Engine start args
   #
   args: []
