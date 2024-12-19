@@ -227,7 +227,7 @@ func BronzeRunner(
 	// +optional
 	dind bool,
 ) string {
-	return Runner(2, daggerVersion, 4, false, dind)
+	return Runner(3, daggerVersion, 4, false, dind)
 }
 
 // Silver runner: Multi-tenant instance, 8 cpu
@@ -236,7 +236,7 @@ func SilverRunner(
 	// +optional
 	dind bool,
 ) string {
-	return Runner(2, daggerVersion, 8, false, dind)
+	return Runner(3, daggerVersion, 8, false, dind)
 }
 
 // Gold runner: Single-tenant instance, 16 cpu
@@ -245,7 +245,7 @@ func GoldRunner(
 	// +optional
 	dind bool,
 ) string {
-	return Runner(2, daggerVersion, 16, true, dind)
+	return Runner(3, daggerVersion, 16, true, dind)
 }
 
 // Platinum runner: Single-tenant instance, 32 cpu
@@ -254,5 +254,5 @@ func PlatinumRunner(
 	// +optional
 	dind bool,
 ) string {
-	return Runner(2, daggerVersion, 32, true, dind)
+	return Runner(3, daggerVersion, 32, true, dind)
 }
