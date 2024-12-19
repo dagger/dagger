@@ -636,28 +636,11 @@ func handleResponse(returnType *modTypeDef, response any, o, e io.Writer) error 
 		}
 	}
 
-	// Command chain ended in an object, so add the _type field.
-	if returnType.AsFunctionProvider() != nil {
-		typeName := returnType.AsFunctionProvider().ProviderName()
-
-		if typeName == "Query" {
-			typeName = "Client"
-		}
-
-		// Add the object's name so we always have something to show.
-		payload := make(map[string]any)
-		payload["_type"] = typeName
-
-		if response == nil {
-			response = payload
-		} else {
-			r, err := addPayload(response, payload)
-			if err != nil {
-				return err
-			}
-			response = r
-		}
+	resp, err := addTypeToResponse(returnType, response)
+	if err != nil {
+		return err
 	}
+	response = resp
 
 	buf := new(bytes.Buffer)
 	frmt := outputFormat(returnType)
@@ -678,12 +661,41 @@ func handleResponse(returnType *modTypeDef, response any, o, e io.Writer) error 
 		fmt.Fprintf(e, "Saved output to %q.\n", path)
 	}
 
-	_, err := buf.WriteTo(o)
+	_, err = buf.WriteTo(o)
 	if stdoutIsTTY && !strings.HasSuffix(buf.String(), "\n") {
 		fmt.Fprintln(o)
 	}
 
 	return err
+}
+
+func addTypeToResponse(typeDef *modTypeDef, response any) (any, error) {
+	// Command chain ended in an object, so add the _type field.
+	if typeDef.AsFunctionProvider() == nil {
+		return response, nil
+	}
+
+	typeName := typeDef.AsFunctionProvider().ProviderName()
+
+	if typeName == "Query" {
+		typeName = "Client"
+	}
+
+	// Add the object's name so we always have something to show.
+	payload := make(map[string]any)
+	payload["_type"] = typeName
+
+	if response == nil {
+		response = payload
+	} else {
+		r, err := addPayload(response, payload)
+		if err != nil {
+			return nil, err
+		}
+		response = r
+	}
+
+	return response, nil
 }
 
 func outputFormat(typeDef *modTypeDef) string {
