@@ -742,7 +742,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			cmd = &wrapCommand{
 				ExecCommand: cmd,
 				before: func() error {
-					ttyFd := int(os.Stdout.Fd())
+					ttyFd := int(os.Stdin.Fd())
 					oldState, err := term.MakeRaw(ttyFd)
 					if err != nil {
 						return err
