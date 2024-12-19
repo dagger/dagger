@@ -100,6 +100,9 @@ type Container struct {
 	// (Internal-only for now) Environment variables from the engine container, prefixed
 	// with a special value, that will be inherited by this container if set.
 	SystemEnvNames []string `json:"system_envs,omitempty"`
+
+	// default args set via withDefaultArgs.
+	DefaultArgs []string `json:"defaultArgs,omitempty"`
 }
 
 func (*Container) Type() *ast.Type {
@@ -1710,13 +1713,24 @@ func (container *Container) AsServiceLegacy(ctx context.Context) (*Service, erro
 }
 
 func (container *Container) AsService(ctx context.Context, args ContainerAsServiceArgs) (*Service, error) {
-	var cmdargs = container.Config.Cmd
+	if len(args.Args) == 0 && !args.UseEntrypoint && len(container.DefaultArgs) == 0 {
+		return nil, ErrNoSvcCommand
+	}
+
+	cmdArgs := []string{}
+	if args.UseEntrypoint {
+		cmdArgs = container.Config.Cmd
+	}
+
+	if len(container.DefaultArgs) > 0 {
+		cmdArgs = container.DefaultArgs
+	}
 	if len(args.Args) > 0 {
-		cmdargs = args.Args
+		cmdArgs = args.Args
 	}
 
 	container, err := container.WithExec(ctx, ContainerExecOpts{
-		Args:                          cmdargs,
+		Args:                          cmdArgs,
 		UseEntrypoint:                 args.UseEntrypoint,
 		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
 		InsecureRootCapabilities:      args.InsecureRootCapabilities,
