@@ -8,8 +8,6 @@ import (
 	srctypes "github.com/moby/buildkit/source/types"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
-
-	"github.com/dagger/dagger/engine/sources/blob"
 )
 
 func DefToDAG(def *pb.Definition) (*OpDAG, error) {
@@ -115,7 +113,6 @@ type OpDAG struct {
 	asLocalOp *LocalOp
 	asHTTPOp  *HTTPOp
 	asOCIOp   *OCIOp
-	asBlobOp  *BlobOp
 }
 
 func (dag *OpDAG) String() string {
@@ -447,36 +444,4 @@ func (dag *OpDAG) AsOCI() (*OCIOp, bool) {
 	}
 	dag.asOCIOp = op
 	return op, true
-}
-
-type BlobOp struct {
-	*OpDAG
-	*pb.SourceOp
-}
-
-func (dag *OpDAG) AsBlob() (*BlobOp, bool) {
-	if dag.asBlobOp != nil {
-		return dag.asBlobOp, true
-	}
-	pbSource := dag.GetSource()
-	if pbSource == nil {
-		return nil, false
-	}
-	if !strings.HasPrefix(pbSource.Identifier, blob.BlobScheme+"://") {
-		return nil, false
-	}
-	op := &BlobOp{
-		OpDAG:    dag,
-		SourceOp: pbSource,
-	}
-	dag.asBlobOp = op
-	return op, true
-}
-
-func (op *BlobOp) Digest() (digest.Digest, error) {
-	id, err := blob.IdentifierFromPB(op.SourceOp)
-	if err != nil {
-		return "", err
-	}
-	return id.Digest, nil
 }
