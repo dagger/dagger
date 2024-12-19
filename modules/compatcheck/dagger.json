@@ -1,5 +1,6 @@
 {
   "name": "compatcheck",
+  "engineVersion": "v0.12.5",
   "sdk": "go",
   "dependencies": [
     {
@@ -7,6 +8,5 @@
       "source": "../../."
     }
   ],
-  "source": ".",
-  "engineVersion": "v0.12.5"
+  "source": "."
 }

@@ -5,13 +5,11 @@
   "dependencies": [
     {
       "name": "dirdiff",
-      "source": "../modules/dirdiff",
-      "pin": ""
+      "source": "../modules/dirdiff"
     },
     {
       "name": "gha",
-      "source": "../modules/gha",
-      "pin": ""
+      "source": "../modules/gha"
     }
   ],
   "source": "."

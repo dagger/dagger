@@ -1,9 +1,9 @@
 {
   "name": "php-sdk",
+  "engineVersion": "v0.13.3",
   "sdk": "go",
   "exclude": [
     "vendor/"
   ],
-  "source": "runtime",
-  "engineVersion": "v0.13.3"
+  "source": "runtime"
 }

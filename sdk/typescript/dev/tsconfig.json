@@ -5,10 +5,10 @@
     "experimentalDecorators": true,
     "paths": {
       "@dagger.io/dagger": [
-        "./sdk"
+        "./sdk/src"
       ],
       "@dagger.io/dagger/telemetry": [
-        "./sdk/telemetry"
+        "./sdk/src/telemetry"
       ]
     }
   }

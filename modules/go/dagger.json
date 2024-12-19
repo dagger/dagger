@@ -5,18 +5,15 @@
   "dependencies": [
     {
       "name": "dirdiff",
-      "source": "../dirdiff",
-      "pin": ""
+      "source": "../dirdiff"
     },
     {
       "name": "golangci",
-      "source": "../golangci",
-      "pin": ""
+      "source": "../golangci"
     },
     {
       "name": "wolfi",
-      "source": "../wolfi",
-      "pin": ""
+      "source": "../wolfi"
     }
   ],
   "source": "."
