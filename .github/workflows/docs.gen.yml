@@ -19,7 +19,7 @@ concurrency:
 jobs:
     docs:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-15-1-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-1-4c' || 'ubuntu-latest' }}
         name: Docs
         steps:
             - name: Checkout

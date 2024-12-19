@@ -19,7 +19,7 @@ concurrency:
 jobs:
   benchmark-go:
     name: Benchmark (Go)
-    runs-on: "dagger-g2-main-4c"
+    runs-on: "dagger-g3-main-4c"
     if: ${{ github.repository == 'dagger/dagger' }}
     timeout-minutes: 10
     steps:
@@ -62,7 +62,7 @@ jobs:
 
   benchmark-python:
     name: Benchmark (Python)
-    runs-on: "dagger-g2-main-4c"
+    runs-on: "dagger-g3-main-4c"
     if: ${{ github.repository == 'dagger/dagger' }}
     timeout-minutes: 10    
     steps:
@@ -105,7 +105,7 @@ jobs:
 
   benchmark-typescript:
     name: Benchmark (TypeScript::${{ matrix.package-manager }})
-    runs-on: "dagger-g2-main-4c"
+    runs-on: "dagger-g3-main-4c"
     if: ${{ github.repository == 'dagger/dagger' }}
     timeout-minutes: 10
     strategy:
