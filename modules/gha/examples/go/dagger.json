@@ -1,5 +1,6 @@
 {
   "name": "examples",
+  "engineVersion": "v0.13.6",
   "sdk": "go",
   "dependencies": [
     {
@@ -7,6 +8,5 @@
       "source": "../.."
     }
   ],
-  "source": ".",
-  "engineVersion": "v0.13.6"
+  "source": "."
 }

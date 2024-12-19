@@ -5,13 +5,11 @@
   "dependencies": [
     {
       "name": "go",
-      "source": "../../modules/go",
-      "pin": ""
+      "source": "../../modules/go"
     },
     {
       "name": "version",
-      "source": "../../version",
-      "pin": ""
+      "source": "../../version"
     }
   ],
   "source": ".dagger"

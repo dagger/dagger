@@ -1,5 +1,6 @@
 {
   "name": "typescript-sdk-dev",
+  "engineVersion": "v0.12.7",
   "sdk": "typescript",
   "dependencies": [
     {
@@ -7,6 +8,5 @@
       "source": "node"
     }
   ],
-  "source": ".",
-  "engineVersion": "v0.12.7"
+  "source": "."
 }

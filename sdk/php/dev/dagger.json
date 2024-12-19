@@ -1,12 +1,13 @@
 {
   "name": "php-sdk-dev",
+  "engineVersion": "v0.13.3",
   "sdk": "php@05cab0d6502599671a9da7d338011edd3a76129c",
   "dependencies": [
     {
       "name": "always-exec",
-      "source": "github.com/charjr/dagger-always-exec@d478c1aaf4c5290926d2d1978d98d9f0054529eb"
+      "source": "github.com/charjr/dagger-always-exec@d478c1aaf4c5290926d2d1978d98d9f0054529eb",
+      "pin": "d478c1aaf4c5290926d2d1978d98d9f0054529eb"
     }
   ],
-  "source": ".",
-  "engineVersion": "v0.13.3"
+  "source": "."
 }

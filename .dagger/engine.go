@@ -428,6 +428,7 @@ func (e *DaggerEngine) Scan(ctx context.Context) error {
 		src = src.
 			WithoutDirectory("docs").
 			WithoutDirectory("sdk/rust/crates/dagger-sdk/examples").
+			WithoutDirectory("core/integration/testdata").
 			WithoutDirectory("dagql/idtui/viztest")
 
 		_, err := ctr.
