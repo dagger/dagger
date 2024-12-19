@@ -742,7 +742,24 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			cmd = &wrapCommand{
 				ExecCommand: cmd,
 				before: func() error {
-					ttyFd := int(os.Stdout.Fd())
+					var in *os.File
+					inr, _ := findTTYs()
+					if inr != nil {
+						in = inr.(*os.File)
+					}
+
+					if in == nil {
+						tty, err := openInputTTY()
+						if err != nil {
+							return err
+						}
+						if tty != nil {
+							in = tty
+							defer tty.Close()
+						}
+					}
+
+					ttyFd := int(in.Fd())
 					oldState, err := term.MakeRaw(ttyFd)
 					if err != nil {
 						return err
