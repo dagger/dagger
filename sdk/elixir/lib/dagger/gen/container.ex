@@ -499,14 +499,31 @@ defmodule Dagger.Container do
 
   Be sure to set any exposed ports before calling this api.
   """
-  @spec up(t(), [{:ports, [Dagger.PortForward.t()]}, {:random, boolean() | nil}]) ::
-          :ok | {:error, term()}
+  @spec up(t(), [
+          {:ports, [Dagger.PortForward.t()]},
+          {:random, boolean() | nil},
+          {:args, [String.t()]},
+          {:use_entrypoint, boolean() | nil},
+          {:experimental_privileged_nesting, boolean() | nil},
+          {:insecure_root_capabilities, boolean() | nil},
+          {:expand, boolean() | nil},
+          {:no_init, boolean() | nil}
+        ]) :: :ok | {:error, term()}
   def up(%__MODULE__{} = container, optional_args \\ []) do
     query_builder =
       container.query_builder
       |> QB.select("up")
       |> QB.maybe_put_arg("ports", optional_args[:ports])
       |> QB.maybe_put_arg("random", optional_args[:random])
+      |> QB.maybe_put_arg("args", optional_args[:args])
+      |> QB.maybe_put_arg("useEntrypoint", optional_args[:use_entrypoint])
+      |> QB.maybe_put_arg(
+        "experimentalPrivilegedNesting",
+        optional_args[:experimental_privileged_nesting]
+      )
+      |> QB.maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
+      |> QB.maybe_put_arg("expand", optional_args[:expand])
+      |> QB.maybe_put_arg("noInit", optional_args[:no_init])
 
     case Client.execute(container.client, query_builder) do
       {:ok, _} -> :ok

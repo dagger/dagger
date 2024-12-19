@@ -786,13 +786,18 @@ func main() {
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+
 	"dagger/foo/internal/dagger"
 )
 
 type Foo struct{}
 
-func (f *Foo) TestServiceUpEntrypoint(ctx context.Context, app *dagger.File) (string, error) {
-	svc, err := f.StartEntrypointByDefault(ctx, app)
+func (f *Foo) TestServiceBindingEntrypoint(ctx context.Context, app *dagger.File) (string, error) {
+	ctr, err := f.StartEntrypointByDefault(ctx, app)
 	if err != nil {
 		return "", err
 	}
@@ -800,23 +805,56 @@ func (f *Foo) TestServiceUpEntrypoint(ctx context.Context, app *dagger.File) (st
 	return dag.Container().
 		From("alpine:3.20.2").
 		WithExec([]string{"sh", "-c", "apk add curl"}).
-		WithServiceBinding("myapp", svc).
+		WithServiceBinding("myapp", ctr.AsService()).
 		WithExec([]string{"sh", "-c", "curl -vXGET 'http://myapp:8080/hello'"}).
 		Stdout(ctx)
 }
 
-func (f *Foo) StartEntrypointByDefault(ctx context.Context, app *dagger.File) (*dagger.Service, error) {
+func (f *Foo) TestServiceUpEntrypoint(ctx context.Context, app *dagger.File) (string, error) {
+	ctr, err := f.StartEntrypointByDefault(ctx, app)
+	if err != nil {
+		return "", err
+	}
+	go ctr.Up(ctx, dagger.ContainerUpOpts{
+		Ports: []dagger.PortForward{
+			{
+				Protocol: dagger.NetworkProtocolTcp,
+				Frontend: 8080,
+				Backend:  8080,
+			},
+		},
+	})
+
+	for range 10 {
+		time.Sleep(2 * time.Second)
+		client := http.Client{
+			Timeout: 2 * time.Second,
+		}
+		resp, err := client.Get("http://localhost:8080/hello")
+		if err != nil {
+			continue
+		}
+		defer resp.Body.Close()
+		dt, err := io.ReadAll(resp.Body)
+		if err != nil {
+			continue
+		}
+		return string(dt), nil
+	}
+	return "", fmt.Errorf("could not fetch")
+}
+
+func (f *Foo) StartEntrypointByDefault(ctx context.Context, app *dagger.File) (*dagger.Container, error) {
 	return dag.Container().
 		From("alpine:3.20.2").
 		WithFile("/bin/app", app).
 		WithEntrypoint([]string{"/bin/app", "via-entrypoint"}).
 		WithDefaultArgs([]string{"/bin/app", "via-default-args"}).
-		WithExposedPort(8080).
-		AsService(), nil
+		WithExposedPort(8080), nil
 }
 
-func (f *Foo) TestServiceUpWithExec(ctx context.Context, app *dagger.File) (string, error) {
-	svc, err := f.UseWithExecWhenAvailable(ctx, app)
+func (f *Foo) TestServiceBindingWithExec(ctx context.Context, app *dagger.File) (string, error) {
+	ctr, err := f.UseWithExecWhenAvailable(ctx, app)
 	if err != nil {
 		return "", err
 	}
@@ -824,20 +862,53 @@ func (f *Foo) TestServiceUpWithExec(ctx context.Context, app *dagger.File) (stri
 	return dag.Container().
 		From("alpine:3.20.2").
 		WithExec([]string{"sh", "-c", "apk add curl"}).
-		WithServiceBinding("myapp", svc).
+		WithServiceBinding("myapp", ctr.AsService()).
 		WithExec([]string{"sh", "-c", "curl -vXGET 'http://myapp:8080/hello'"}).
 		Stdout(ctx)
 }
 
-func (f *Foo) UseWithExecWhenAvailable(ctx context.Context, app *dagger.File) (*dagger.Service, error) {
+func (f *Foo) TestServiceUpWithExec(ctx context.Context, app *dagger.File) (string, error) {
+	ctr, err := f.UseWithExecWhenAvailable(ctx, app)
+	if err != nil {
+		return "", err
+	}
+	go ctr.Up(ctx, dagger.ContainerUpOpts{
+		Ports: []dagger.PortForward{
+			{
+				Protocol: dagger.NetworkProtocolTcp,
+				Frontend: 8080,
+				Backend:  8080,
+			},
+		},
+	})
+
+	for range 10 {
+		time.Sleep(2 * time.Second)
+		client := http.Client{
+			Timeout: 2 * time.Second,
+		}
+		resp, err := client.Get("http://localhost:8080/hello")
+		if err != nil {
+			continue
+		}
+		defer resp.Body.Close()
+		dt, err := io.ReadAll(resp.Body)
+		if err != nil {
+			continue
+		}
+		return string(dt), nil
+	}
+	return "", fmt.Errorf("could not fetch")
+}
+
+func (f *Foo) UseWithExecWhenAvailable(ctx context.Context, app *dagger.File) (*dagger.Container, error) {
 	return dag.Container().
 		From("alpine:3.20.2").
 		WithFile("/bin/app", app).
 		WithEntrypoint([]string{"/bin/app", "via-entrypoint"}).
 		WithDefaultArgs([]string{"/bin/app", "via-default-args"}).
 		WithExec([]string{"/bin/app", "via-withExec"}).
-		WithExposedPort(8080).
-		AsService(), nil
+		WithExposedPort(8080), nil
 }
 `
 
@@ -857,6 +928,12 @@ func (f *Foo) UseWithExecWhenAvailable(ctx context.Context, app *dagger.File) (*
 	// verify that the engine uses the entrypoint when serving the legacy AsService api
 	t.Run("use entrypoint by default", func(ctx context.Context, t *testctx.T) {
 		output, err := ctr.
+			With(daggerExec("call", "test-service-binding-entrypoint", "--app=app")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "args: /bin/app,via-entrypoint,/bin/app,via-default-args", output)
+
+		output, err = ctr.
 			With(daggerExec("call", "test-service-up-entrypoint", "--app=app")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -866,6 +943,12 @@ func (f *Foo) UseWithExecWhenAvailable(ctx context.Context, app *dagger.File) (*
 	// verify that the engine uses the entrypoint when serving the legacy AsService api
 	t.Run("use withExec when used", func(ctx context.Context, t *testctx.T) {
 		output, err := ctr.
+			With(daggerExec("call", "test-service-binding-with-exec", "--app=app")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "args: /bin/app,via-withExec", output)
+
+		output, err = ctr.
 			With(daggerExec("call", "test-service-up-with-exec", "--app=app")).
 			Stdout(ctx)
 		require.NoError(t, err)
