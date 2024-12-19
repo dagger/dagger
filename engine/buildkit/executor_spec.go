@@ -965,6 +965,13 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		return fmt.Errorf("create filesyncer: %w", err)
 	}
 
+	env := map[string]string{}
+	for _, e := range state.spec.Process.Env {
+		if k, v, ok := strings.Cut(e, "="); ok {
+			env[k] = v
+		}
+	}
+
 	attachables := []bksession.Attachable{
 		client.SocketProvider{
 			EnableHostNetworkAccess: true,
@@ -1012,7 +1019,12 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 				return fullPath, nil
 			},
 		},
-		client.SecretProvider{},
+		client.SecretProvider{
+			LookupEnv: func(key string) (string, bool) {
+				v, ok := env[key]
+				return v, ok
+			},
+		},
 		session.NewTunnelListenerAttachable(ctx, func(network, addr string) (net.Listener, error) {
 			return runInNetNS(ctx, state, func() (net.Listener, error) {
 				return net.Listen(network, addr)
