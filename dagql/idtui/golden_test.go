@@ -327,7 +327,7 @@ var scrubs = []scrubber{
 	{
 		regexp.MustCompile(`\b` + strings.Join(idtui.SkipLoggedOutTraceMsgEnvs, "|") + `\b`),
 		"SHUTUP",
-		"NOTHANKS",
+		"DAGGER_NO_NAG",
 	},
 	// Uploads
 	{

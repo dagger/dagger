@@ -23,4 +23,4 @@ Expected stderr:
 │ ! process "false" did not complete successfully: exit code: 1
 │ ○ .withExec(args: ["sleep", "1"]): Container! X.Xs
 
-Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1
+Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
