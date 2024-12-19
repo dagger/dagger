@@ -2,27 +2,42 @@
 
 declare(strict_types=1);
 
-namespace Dagger\ValueObject;
+namespace Dagger\ValueObject\TypeHint;
 
 use Dagger\Client\AbstractScalar;
 use Dagger\Client\IdAble;
 use Dagger\Exception\UnsupportedType;
 use Dagger\TypeDefKind;
+use Dagger\ValueObject\TypeHint;
 use DomainException;
 use ReflectionClass;
 use ReflectionNamedType;
 use ReflectionType;
-use RuntimeException;
 
-final readonly class Type
+final readonly class Type implements TypeHint
 {
-    public TypeDefKind $typeDefKind;
+    private TypeDefKind $typeDefKind;
 
     public function __construct(
-        public string $name,
-        public bool $nullable = false,
+        private string $name,
+        private bool $nullable = false,
     ) {
-        $this->typeDefKind = $this->getTypeDefKind($name);
+        $this->typeDefKind = $this->determineTypeDefKind($name);
+    }
+
+    public function getName(): string
+    {
+        return $this->name;
+    }
+
+    public function getTypeDefKind(): TypeDefKind
+    {
+        return $this->typeDefKind;
+    }
+
+    public function isNullable(): bool
+    {
+        return $this->nullable;
     }
 
     public static function fromReflection(ReflectionType $type): self
@@ -48,7 +63,7 @@ final readonly class Type
         return $class->implementsInterface(IdAble::class);
     }
 
-    private function getTypeDefKind(string $nameOfType): TypeDefKind
+    private function determineTypeDefKind(string $nameOfType): TypeDefKind
     {
         switch ($nameOfType) {
             case 'bool':
@@ -60,15 +75,6 @@ final readonly class Type
             case 'null':
             case 'void':
                 return TypeDefKind::VOID_KIND;
-        }
-
-        if ($nameOfType === 'array') {
-            throw new DomainException(sprintf(
-                '%s should not be constructed for arrays, use %s instead.' .
-                ' If this error occurred outside of developing the PHP SDK, it is a bug.',
-                self::class,
-                ListOfType::class,
-            ));
         }
 
         if (class_exists($nameOfType)) {
@@ -88,6 +94,14 @@ final readonly class Type
 
         if (interface_exists($nameOfType)) {
             return TypeDefKind::INTERFACE_KIND;
+        }
+
+        if ($nameOfType === 'array') {
+            throw new DomainException(sprintf(
+                '%s should not be used for arrays, use %s instead.',
+                self::class,
+                ListOfType::class,
+            ));
         }
 
         throw new UnsupportedType(sprintf(
