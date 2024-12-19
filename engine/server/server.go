@@ -74,7 +74,6 @@ import (
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/engine/sources/blob"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/engine/sources/httpdns"
 	"github.com/dagger/dagger/engine/sources/local"
@@ -439,14 +438,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, err
 	}
 	srv.workerSourceManager.Register(gs)
-
-	bs, err := blob.NewSource(blob.Opt{
-		CacheAccessor: srv.workerCache,
-	})
-	if err != nil {
-		return nil, err
-	}
-	srv.workerSourceManager.Register(bs)
 
 	ls, err := local.NewSource(local.Opt{
 		CacheAccessor: srv.workerCache,
