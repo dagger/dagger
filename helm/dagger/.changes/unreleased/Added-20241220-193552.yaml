@@ -1,0 +1,6 @@
+kind: Added
+body: Enable deploying multiples Dagger Engines on a single K8s nodes
+time: 2024-12-20T19:35:52.957849Z
+custom:
+    Author: gerhard
+    PR: "9249"
