@@ -18,7 +18,7 @@ spec:
   sidecars:
     - name: dagger-engine
       # modify to use the desired Dagger version
-      image: registry.dagger.io/engine:v0.12.7
+      image: registry.dagger.io/engine:v{{ version }}
       securityContext:
         privileged: true
         capabilities:
@@ -26,7 +26,7 @@ spec:
             - ALL
       readinessProbe:
         exec:
-          command: ["buildctl", "debug", "workers"]
+          command: ["dagger", "core", "version"]
       volumeMounts:
         - mountPath: /var/run/buildkit
           name: dagger-socket

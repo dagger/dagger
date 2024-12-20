@@ -39,7 +39,7 @@ This Pipeline references two Tasks:
 
 Define a new Tekton Task as follows, in a file named `dagger-task.yaml`:
 
-```yaml title="dagger-task.yaml" file=./snippets/tekton-dagger-task.yaml
+```yaml title="dagger-task.yaml" file=./snippets/tekton-dagger-task.yaml template
 ```
 
 This Tekton Task installs the Dagger CLI and calls a Dagger Function. This Task installs the dependencies needed to execute the Dagger pipeline for the project (which was checked out in the previous Tekton Pipeline) and then calls a Dagger Function to build the project.
