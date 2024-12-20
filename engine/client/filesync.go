@@ -7,9 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 
-	"github.com/containerd/continuity/fs"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/tonistiigi/fsutil"
@@ -22,51 +20,13 @@ import (
 )
 
 type Filesyncer struct {
-	// Absolute path to the rootfs directory. If no special rootDir,
-	// this is "" and the default system root dir is assumed
-	rootDir string
-
-	// Path to the cwd relative to the rootDir. If no special rootDir,
-	// this is "" and the default system cwd is assumed
-	cwdRelPath string
-
 	uid, gid uint32
 }
 
-func NewFilesyncer(rootDir, cwdPath string, uid, gid *uint32) (Filesyncer, error) {
-	if rootDir != "" {
-		if runtime.GOOS == "windows" {
-			return Filesyncer{}, errors.New("rootDir not supported on Windows")
-		}
-		if !filepath.IsAbs(rootDir) {
-			return Filesyncer{}, fmt.Errorf("rootDir must be an absolute path: %s", rootDir)
-		}
-		rootDir = filepath.Clean(rootDir)
-	}
-	if cwdPath != "" {
-		if runtime.GOOS == "windows" {
-			return Filesyncer{}, errors.New("cwdPath not supported on Windows")
-		}
-		if filepath.IsAbs(cwdPath) {
-			return Filesyncer{}, fmt.Errorf("cwdPath must be a relative path, got %q", cwdPath)
-		}
-		cwdPath = filepath.Clean(cwdPath)
-	}
-
+func NewFilesyncer() (Filesyncer, error) {
 	f := Filesyncer{
-		rootDir:    rootDir,
-		cwdRelPath: cwdPath,
-	}
-
-	if uid == nil {
-		f.uid = uint32(os.Getuid())
-	} else {
-		f.uid = *uid
-	}
-	if gid == nil {
-		f.gid = uint32(os.Getgid())
-	} else {
-		f.gid = *gid
+		uid: uint32(os.Getuid()),
+		gid: uint32(os.Getgid()),
 	}
 
 	return f, nil
@@ -112,11 +72,7 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 		}
 
 		if opts.StatReturnAbsPath {
-			if s.rootDir == "" {
-				stat.Path = absPath
-			} else {
-				stat.Path = filepath.Join("/", strings.TrimPrefix(absPath, s.rootDir))
-			}
+			stat.Path = absPath
 		}
 
 		stat.Path = filepath.ToSlash(stat.Path)
@@ -282,38 +238,15 @@ func (f Filesyncer) fullRootPathAndBaseName(reqPath string, fullyResolvePath boo
 	// NOTE: filepath.Clean also handles calling FromSlash (relevant when this is a Windows client)
 	reqPath = filepath.Clean(reqPath)
 
-	if f.rootDir == "" {
-		// rootDir is "" when we are NOT a client running in a nested exec (so we could be Linux, Windows, MacOS)
-
-		rootPath, err := Abs(reqPath)
-		if err != nil {
-			return "", fmt.Errorf("get abs path: %w", err)
-		}
-		if fullyResolvePath {
-			rootPath, err = filepath.EvalSymlinks(rootPath)
-			if err != nil {
-				return "", fmt.Errorf("eval symlinks: %w", err)
-			}
-		}
-		return rootPath, nil
-	}
-
-	// We are serving a nested exec whose rootDir is set to some path in the engine container.
-	// We can safely assume we are running on Linux.
-	// Resolve the full path on the system, *including* the rootDir, evaluating and bounding
-	// symlinks under the rootDir
-	if !filepath.IsAbs(reqPath) {
-		reqPath = filepath.Join(f.cwdRelPath, reqPath)
-	}
-
-	baseName := filepath.Base(reqPath) // save this now since fs.RootPath will resolve all symlinks
-	rootPath, err := fs.RootPath(f.rootDir, reqPath)
+	rootPath, err := Abs(reqPath)
 	if err != nil {
-		return "", fmt.Errorf("get full root path: %w", err)
+		return "", fmt.Errorf("get abs path: %w", err)
 	}
-	if !fullyResolvePath && rootPath != f.rootDir {
-		rootPath = filepath.Join(filepath.Dir(rootPath), baseName)
+	if fullyResolvePath {
+		rootPath, err = filepath.EvalSymlinks(rootPath)
+		if err != nil {
+			return "", fmt.Errorf("eval symlinks: %w", err)
+		}
 	}
-
 	return rootPath, nil
 }
