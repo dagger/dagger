@@ -1011,7 +1011,9 @@ type containerWithDefaultArgs struct {
 }
 
 func (s *containerSchema) withDefaultArgs(ctx context.Context, parent *core.Container, args containerWithDefaultArgs) (*core.Container, error) {
-	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+	c := parent.Clone()
+	c.DefaultArgs = args.Args
+	return c.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		if args.Args == nil {
 			cfg.Cmd = []string{}
 			return cfg
