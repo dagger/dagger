@@ -65,6 +65,7 @@ type frontendPretty struct {
 	view       *strings.Builder  // rendered async
 	viewOut    *termenv.Output
 	browserBuf *strings.Builder // logs if browser fails
+	stdin      *os.File         // used by backgroundMsg for running terminal
 
 	// held to synchronize tea.Model with updates
 	mu sync.Mutex
@@ -215,6 +216,9 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Conte
 		}
 	}
 	opts = append(opts, tea.WithInput(in))
+	// store in fe to use in backgroundMsg processing
+	// which is used for terminal command
+	fe.stdin = in
 
 	if out != nil {
 		opts = append(opts, tea.WithOutput(out))
@@ -742,24 +746,11 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			cmd = &wrapCommand{
 				ExecCommand: cmd,
 				before: func() error {
-					var in *os.File
-					inr, _ := findTTYs()
-					if inr != nil {
-						in = inr.(*os.File)
+					if fe.stdin == nil {
+						return fmt.Errorf("stdin is nil in id tui")
 					}
 
-					if in == nil {
-						tty, err := openInputTTY()
-						if err != nil {
-							return err
-						}
-						if tty != nil {
-							in = tty
-							defer tty.Close()
-						}
-					}
-
-					ttyFd := int(in.Fd())
+					ttyFd := int(fe.stdin.Fd())
 					oldState, err := term.MakeRaw(ttyFd)
 					if err != nil {
 						return err
@@ -1184,7 +1175,7 @@ func (l *prettyLogs) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-func findTTYs() (in io.Reader, out io.Writer) {
+func findTTYs() (in *os.File, out *os.File) {
 	if term.IsTerminal(int(os.Stdin.Fd())) {
 		in = os.Stdin
 	}
