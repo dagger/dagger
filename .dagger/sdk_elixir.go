@@ -123,11 +123,11 @@ func (t ElixirSDK) Publish(
 	discordWebhook *dagger.Secret,
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/elixir/")
-	mixFile := "/sdk/elixir/mix.exs"
 
 	ctr := t.elixirBase(elixirVersions[elixirLatestVersion])
 
-	if !dryRun {
+	if semver.IsValid(version) {
+		mixFile := "/sdk/elixir/mix.exs"
 		mixExs, err := t.Dagger.Source().File(mixFile).Contents(ctx)
 		if err != nil {
 			return err
