@@ -47,31 +47,73 @@ func (h *Helm) Test(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	test, err := h.chart().
+	kubectl, err := h.chart().
 		WithMountedFile("/usr/bin/dagger", dag.DaggerCli().Binary()).
 		WithServiceBinding("helm-test", k3ssvc).
 		WithFile("/.kube/config", k3s.Config()).
 		WithEnvVariable("KUBECONFIG", "/.kube/config").
 		WithEnvVariable("CACHEBUSTER", identity.NewID()).
-		WithExec([]string{"kubectl", "get", "nodes"}).
-		WithExec([]string{"helm", "install", "--wait", "--create-namespace", "--namespace=dagger", "--set=engine.image.ref=registry.dagger.io/engine:main", "dagger", "."}).
+		WithExec([]string{"kubectl", "get", "nodes", "--output=wide"}).
 		Sync(ctx)
 	if err != nil {
 		return err
 	}
-	podName, err := test.
+
+	defaultEngine, err := kubectl.
 		WithExec([]string{
-			"kubectl", "get", "pod",
-			"--selector=name=dagger-dagger-helm-engine",
-			"--namespace=dagger",
-			"--output=jsonpath={.items[0].metadata.name}",
-		}).
-		Stdout(ctx)
+			"helm", "install", "--wait", "--create-namespace", "--namespace=dagger",
+			"--set=engine.image.ref=registry.dagger.io/engine:main", "dagger", "."}).
+		Sync(ctx)
 	if err != nil {
 		return err
 	}
-	stdout, err := test.
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", fmt.Sprintf("kube-pod://%s?namespace=dagger", podName)).
+
+	err = runDaggerQuery(ctx, "dagger-dagger-helm-engine", "DaemonSet", defaultEngine)
+	if err != nil {
+		return err
+	}
+
+	secondEngine, err := kubectl.
+		WithExec([]string{
+			"helm", "install", "--wait", "--create-namespace", "--namespace=dagger",
+			"--set=engine.image.ref=registry.dagger.io/engine:main", "--set=engine.kind=StatefulSet", "dagger2", "."}).
+		Sync(ctx)
+	if err != nil {
+		return err
+	}
+
+	err = runDaggerQuery(ctx, "dagger2-dagger-helm-engine", "StatefulSet", secondEngine)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (h *Helm) chart() *dagger.Container {
+	return dag.Wolfi().
+		Container(dagger.WolfiContainerOpts{
+			Packages: []string{
+				"helm",
+				"kubectl",
+			},
+		}).
+		WithDirectory("/dagger-helm", h.Chart).
+		WithWorkdir("/dagger-helm")
+}
+
+func runDaggerQuery(ctx context.Context, engineName string, engineKind string, kubectl *dagger.Container) error {
+	podName, err := kubectl.WithExec([]string{
+		"kubectl", "get", "pod",
+		"--selector=name=" + engineName,
+		"--namespace=dagger",
+		"--output=jsonpath={.items[0].metadata.name}",
+	}).Stdout(ctx)
+	if err != nil {
+		return err
+	}
+
+	stdout, err := kubectl.WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", fmt.Sprintf("kube-pod://%s?namespace=dagger", podName)).
 		WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{
 			Stdin: `{
 				container {
@@ -86,21 +128,23 @@ func (h *Helm) Test(ctx context.Context) error {
 		return err
 	}
 	if !strings.Contains(stdout, "Linux") {
-		return fmt.Errorf("container didn't seem to be running linux")
+		return fmt.Errorf("expected to be a Linux container, got: %s", stdout)
 	}
-	return nil
-}
 
-func (h *Helm) chart() *dagger.Container {
-	return dag.Wolfi().
-		Container(dagger.WolfiContainerOpts{
-			Packages: []string{
-				"helm",
-				"kubectl",
-			},
-		}).
-		WithDirectory("/dagger-helm", h.Chart).
-		WithWorkdir("/dagger-helm")
+	kind, err := kubectl.WithExec([]string{
+		"kubectl", "get", "pod",
+		"--selector=name=" + engineName,
+		"--namespace=dagger",
+		"--output=jsonpath={.items[0].metadata.ownerReferences[0].kind}",
+	}).Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(kind, engineKind) {
+		return fmt.Errorf("expected to be a %s, got: %s", engineKind, kind)
+	}
+
+	return nil
 }
 
 // Set chart & app version
