@@ -198,7 +198,6 @@ func (r *{{ $.Name | FormatName }}) MarshalJSON() ([]byte, error) {
   return json.Marshal(id)
 }
 
-{{- if IsModuleCode }}
 func (r *{{ $.Name | FormatName }}) UnmarshalJSON(bs []byte) error {
   var id string
   err := json.Unmarshal(bs, &id)
@@ -208,7 +207,6 @@ func (r *{{ $.Name | FormatName }}) UnmarshalJSON(bs []byte) error {
   *r = *dag.Load{{ $.Name | FormatName }}FromID({{$.Name | FormatName}}ID(id))
   return nil
 }
-{{- end }}
 
 {{ end }}
 {{ end -}}
