@@ -240,9 +240,8 @@ func (*Viztest) CachedExecService() *dagger.Service {
 		WithExec([]string{"sleep", "1"}).
 		WithExec([]string{"echo", "im busted by that buster"}).
 		WithNewFile("/srv/index.html", "<h1>hello, world!</h1>").
-		WithExec([]string{"httpd", "-v", "-h", "/srv", "-f"}).
 		WithExposedPort(80).
-		AsService()
+		AsService(dagger.ContainerAsServiceOpts{Args: []string{"httpd", "-v", "-h", "/srv", "-f"}})
 }
 
 func (*Viztest) CachedExecs(ctx context.Context) error {
@@ -272,9 +271,8 @@ func (*Viztest) ExecService() *dagger.Service {
 		From("busybox").
 		WithNewFile("/srv/index.html",
 			"<h1>hello, world!</h1><p>the time is "+time.Now().String()+"</p>").
-		WithExec([]string{"httpd", "-v", "-h", "/srv", "-f"}).
 		WithExposedPort(80).
-		AsService()
+		AsService(dagger.ContainerAsServiceOpts{Args: []string{"httpd", "-v", "-h", "/srv", "-f"}})
 }
 
 func (v *Viztest) UseExecService(ctx context.Context) error {

@@ -175,12 +175,12 @@ type Example struct {
 	// verbosities 3 and higher do not work well with golden, they're not very deterministic atm
 	Verbosity int
 	Fail      bool
-	// if a reason is given for Flaky, ignore failures, but log the failure and the provided explanation
+	// if a reason is given for Flaky, ignore failures, but log the failure and the provided explanation.
 	// ineffectual if FuzzyTest is in use.
 	Flaky  string
 	Env    []string
 	DBTest func(*testctx.T, *dagui.DB)
-	// Using fuzzytest will eschew golden assertions and files on disk and allow string assertions instead
+	// Using fuzzytest will eschew golden assertions and testdata and allow string assertions instead
 	FuzzyTest func(*testctx.T, string)
 }
 

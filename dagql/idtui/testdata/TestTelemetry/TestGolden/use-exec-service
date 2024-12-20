@@ -18,15 +18,14 @@ Expected stderr:
 │ ✔ container: Container! X.Xs
 │ $ .from(address: "busybox"): Container! X.Xs CACHED
 │ ✔ .withNewFile(contents: "<h1>hello, world!</h1><p>the time is 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X</p>", path: "/srv/index.html"): Container! X.Xs
-│ ✔ .withExec(args: ["httpd", "-v", "-h", "/srv", "-f"]): Container! X.Xs
 │ ✔ .withExposedPort(port: 80): Container! X.Xs
-│ ✔ .asService: Service! X.Xs
+│ ✔ .asService(args: ["httpd", "-v", "-h", "/srv", "-f"]): Service! X.Xs
 │ ┃ [::ffff:10.XX.XX.XX]:XXXXX: response:200
 │
 │ $ Container.from(address: "alpine"): Container! X.Xs CACHED
 │ ✔ .withServiceBinding(
 │ │ │ alias: "exec-service"
-│ │ │ service: ✔ Container.asService: Service! X.Xs
+│ │ │ service: ✔ Container.asService(args: ["httpd", "-v", "-h", "/srv", "-f"]): Service! X.Xs
 │ │ ): Container! X.Xs
 │ ✔ .withEnvVariable(name: "NOW", value: "20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"): Container! X.Xs
 │ ✔ .withExec(args: ["wget", "-q", "-O-", "http://exec-service"]): Container! X.Xs
