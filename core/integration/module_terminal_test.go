@@ -681,7 +681,7 @@ type Test struct {
 		err = cmd.Start()
 		require.NoError(t, err)
 
-		_, err = console.ExpectString("/bin/noexist: No such file or directory")
+		_, err = console.ExpectString("/bin/noexist: no such file or directory")
 		require.NoError(t, err)
 
 		err = cmd.Wait()
