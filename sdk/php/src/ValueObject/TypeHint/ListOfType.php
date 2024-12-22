@@ -2,24 +2,44 @@
 
 declare(strict_types=1);
 
-namespace Dagger\ValueObject;
+namespace Dagger\ValueObject\TypeHint;
 
 use Dagger\Attribute;
 use Dagger\Exception\UnsupportedType;
 use Dagger\TypeDefKind;
+use Dagger\ValueObject\TypeHint;
 use ReflectionNamedType;
 use ReflectionType;
-use RuntimeException;
 
-final readonly class ListOfType
+final readonly class ListOfType implements TypeHint
 {
-    public TypeDefKind $typeDefKind;
+    private TypeDefKind $typeDefKind;
 
     public function __construct(
-        public ListOfType|Type $subtype,
-        public bool $nullable = false,
+        private TypeHint $subtype,
+        private bool $nullable = false,
     ) {
         $this->typeDefKind = TypeDefKind::LIST_KIND;
+    }
+
+    public function getName(): string
+    {
+        return sprintf('array<%s>', $this->subtype->getName());
+    }
+
+    public function getTypeDefKind(): TypeDefKind
+    {
+        return TypeDefKind::LIST_KIND;
+    }
+
+    public function isNullable(): bool
+    {
+        return $this->nullable;
+    }
+
+    public function getSubtype(): TypeHint
+    {
+        return $this->subtype;
     }
 
     public static function fromReflection(
@@ -48,18 +68,18 @@ final readonly class ListOfType
             );
         }
 
-        return new self(self::getSubtype($attribute), $type->allowsNull());
+        return new self(self::determineSubtype($attribute), $type->allowsNull());
     }
 
-    private static function getSubtype(
+    private static function determineSubtype(
         Attribute\ListOfType $attribute,
-    ): ListOfType|Type {
+    ): TypeHint {
         if (is_string($attribute->type)) {
             return new Type($attribute->type, $attribute->nullable);
         }
 
         return new ListOfType(
-            self::getSubtype($attribute->type),
+            self::determineSubtype($attribute->type),
             $attribute->nullable,
         );
     }
