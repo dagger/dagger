@@ -14,16 +14,6 @@ namespace Dagger;
 class Client extends Client\AbstractClient
 {
     /**
-     * Retrieves a content-addressed blob.
-     */
-    public function blob(string $digest): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('blob');
-        $innerQueryBuilder->setArgument('digest', $digest);
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Retrieves a container builtin to the engine.
      */
     public function builtinContainer(string $digest): Container
