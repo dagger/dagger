@@ -304,7 +304,7 @@ func (t *Test) publishTestResults(ctx context.Context, ctr *dagger.Container) er
 #!/bin/sh
 
 ## commit buster 1
-curl -vXPOST https://tests-dashboard.rajatjindal.com/api/run/%s \
+curl -vXPOST http://tests-dashboard.x1.ci.dagger.cloud/api/run/%s \
  	-H "Content-Type: multipart/mixed" \
  	-F "results=@testresults.json" \
  	-F 'metadata=%s;type=application/json'
