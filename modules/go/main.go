@@ -86,11 +86,11 @@ func New(
 			WithEnvVariable("GOLANG_VERSION", version).
 			WithEnvVariable("GOPATH", "/go").
 			WithEnvVariable("PATH", "${GOPATH}/bin:${PATH}", dagger.ContainerWithEnvVariableOpts{Expand: true}).
-			WithExec([]string{"sh", "-c", "go install gotest.tools/gotestsum@v1.12.0"}).
 			WithDirectory("/usr/local/bin", dag.Directory()).
 			// Configure caches
 			WithMountedCache("/go/pkg/mod", moduleCache).
 			WithMountedCache("/root/.cache/go-build", buildCache).
+			WithExec([]string{"go", "install", "gotest.tools/gotestsum@v1.12.0"}).
 			WithWorkdir("/app")
 	}
 	return Go{

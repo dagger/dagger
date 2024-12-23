@@ -193,6 +193,7 @@ func (t *Test) test(
 	if err != nil {
 		return err
 	}
+
 	ctr, err := t.goTest(
 		cmd,
 		runTestRegex,
@@ -210,8 +211,29 @@ func (t *Test) test(
 		return err
 	}
 
-	// TODO(rajatjindal): make it optional
-	return t.publishTestResults(ctx, ctr)
+	exitCode, err := ctr.ExitCode(ctx)
+	if err != nil {
+		return fmt.Errorf("get exit code: %w", err)
+	}
+
+	stderr, err := ctr.Stderr(ctx)
+	if err != nil {
+		return fmt.Errorf("get exit code: %w", err)
+	}
+
+	// if running in GitHub context, then publish the test results
+	if t.Dagger.GithubEventFile != nil {
+		_ = t.publishTestResults(ctx, ctr)
+	}
+
+	if exitCode != 0 {
+		return &dagger.ExecError{
+			ExitCode: exitCode,
+			Stderr:   stderr,
+		}
+	}
+
+	return nil
 }
 
 func (t *Test) publishTestResults(ctx context.Context, ctr *dagger.Container) error {
