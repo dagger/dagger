@@ -35,6 +35,32 @@ jobs:
         with:
           function: "scripts lint"
 
+  test:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-16c-st' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "test"
+        uses: ./.github/actions/call
+        with:
+          function: "test all --race=true --parallel=16"
+          upload-logs: true
+
+  # Run Engine tests in dev Engine so that we can spot integration failures early
+  # Only run a subset of important test cases since we just need to verify basic
+  # functionality rather than repeat every test already run in the other targets.
+  testdev:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-32c-dind-st' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "testdev"
+        uses: ./.github/actions/call
+        with:
+          function: "test specific --run='TestModule|TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestContainer' --skip='TestDev' --race=true --parallel=16"
+          dev-engine: true
+          upload-logs: true
+
   test-publish:
     runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-1-16c' || 'ubuntu-latest' }}"
     timeout-minutes: 20
