@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -676,6 +677,27 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 		})
 	})
 
+	t.Run("installing a dependency with duplicate name is not allowed", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := c.Container().
+			From("alpine:latest").
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--sdk=go", "--name=foo", "--source=.")).
+			With(daggerExec("install", "github.com/shykes/daggerverse/docker@v0.4.1"))
+
+		daggerjson, err := ctr.File("dagger.json").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, "github.com/shykes/daggerverse/docker@docker/v0.4.1")
+
+		_, err = ctr.
+			With(daggerExec("install", "github.com/shykes/daggerverse/wolfi@v0.1.4", "--name=docker")).
+			Sync(ctx)
+
+		require.ErrorContains(t, err, "two or more dependencies are trying to use the same name")
+	})
+
 	t.Run("install dep from various places", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -1299,4 +1321,239 @@ func (f *Foo) ContainerEcho(ctx context.Context, input string) (string, error) {
 			})
 		}
 	})
+}
+
+func (CLISuite) TestDaggerUpdate(ctx context.Context, t *testctx.T) {
+	const (
+		// pins from github.com/shykes/daggerverse/docker module
+		// to facilitate testing that pins are updated to expected
+		// values when we run dagger update
+		randomMainPin  = "b20176e68d27edc9660960ec27f323d33dba633b"
+		randomWolfiPin = "3d608cb5e6b4b18036a471400bc4e6c753f229d7"
+		v041DockerPin  = "5c8b312cd7c8493966d28c118834d4e9565c7c62"
+		v042DockerPin  = "7f2dcf2dbfb24af68c4c83a6da94dd5d885e58b8"
+		v013WolfiPin   = "3338120927f8e291c4780de691ef63a7c9d825c0"
+	)
+
+	// sample dagger.json files to use simulating initial setup
+	// we pin the dep to a random commit and then verify
+	// that the update actually changes the pin
+	noDeps := `{
+		"name": "foo", 
+		"sdk": "go"
+	}`
+
+	// pin a random old commit to verify pin is changed
+	depHasOldVersion := `{
+		"name": "foo", 
+		"sdk": "go", 
+		"dependencies": [
+			{ 
+				"name": "docker", 
+				"source": "github.com/shykes/daggerverse/docker@docker/v0.4.1",
+				"pin": "` + randomMainPin + `"
+			}
+		]
+	}`
+
+	depHasBranch := `{
+		"name": "foo", 
+		"sdk": "go", 
+		"dependencies": [
+			{ 
+				"name": "docker", 
+				"source": "github.com/shykes/daggerverse/docker@main",
+				"pin": "` + randomMainPin + `"
+			}
+		]
+	}`
+
+	depIsLocal := `{
+		"name": "foo", 
+		"sdk": "go", 
+		"dependencies": [
+			{ 
+				"name": "bar", 
+				"source": "./bar"
+			}
+		]
+	}`
+
+	depHasNoVersion := `{
+		"name": "foo", 
+		"sdk": "go", 
+		"dependencies": [
+			{ 
+				"name": "docker", 
+				"source": "github.com/shykes/daggerverse/docker",
+				"pin": "` + randomMainPin + `"
+			}
+		]
+	}`
+
+	multipleDeps := `{
+		"name": "foo", 
+		"sdk": "go", 
+		"dependencies": [
+			{ 
+				"name": "docker", 
+				"source": "github.com/shykes/daggerverse/docker@v0.4.1",
+				"pin": "` + randomMainPin + `"
+			},
+			{ 
+				"name": "wolfi", 
+				"source": "github.com/shykes/daggerverse/wolfi@v0.1.3",
+				"pin": "` + randomWolfiPin + `"
+			}
+		]
+	}`
+
+	testcases := []struct {
+		name          string
+		daggerjson    string
+		updateCmd     []string
+		contains      []string
+		notContains   []string
+		expectedError string
+	}{
+		{
+			name:        "existing dep has version, update cmd has version",
+			daggerjson:  depHasOldVersion,
+			updateCmd:   []string{"update", "github.com/shykes/daggerverse/docker@v0.4.2"},
+			contains:    []string{`"github.com/shykes/daggerverse/docker@docker/v0.4.2"`, v042DockerPin},
+			notContains: []string{`github.com/shykes/daggerverse/docker@docker/v0.4.1`},
+		},
+		{
+			name:        "existing dep has branch, update cmd has version",
+			daggerjson:  depHasBranch,
+			updateCmd:   []string{"update", "github.com/shykes/daggerverse/docker@v0.4.2"},
+			contains:    []string{`"github.com/shykes/daggerverse/docker@docker/v0.4.2"`, v042DockerPin},
+			notContains: []string{`github.com/shykes/daggerverse/docker@main`, randomMainPin},
+		},
+		{
+			name:        "existing dep dont have version, update cmd has version",
+			daggerjson:  depHasNoVersion,
+			updateCmd:   []string{"update", "github.com/shykes/daggerverse/docker@v0.4.2"},
+			contains:    []string{`github.com/shykes/daggerverse/docker@docker/v0.4.2`, v042DockerPin},
+			notContains: []string{`"github.com/shykes/daggerverse/docker"`},
+		},
+		{
+			name:        "existing dep dont have version, update cmd dont have version",
+			daggerjson:  depHasNoVersion,
+			updateCmd:   []string{"update", "github.com/shykes/daggerverse/docker"},
+			notContains: []string{randomMainPin},
+		},
+		{
+			name:        "existing dep use branch, update cmd dont have version",
+			daggerjson:  depHasBranch,
+			updateCmd:   []string{"update", "github.com/shykes/daggerverse/docker"},
+			contains:    []string{`"github.com/shykes/daggerverse/docker@main`},
+			notContains: []string{`"github.com/shykes/daggerverse/docker"`, randomMainPin},
+		},
+		{
+			name:        "existing dep have version, update cmd dont have version",
+			daggerjson:  depHasOldVersion,
+			updateCmd:   []string{"update", "github.com/shykes/daggerverse/docker"},
+			contains:    []string{`github.com/shykes/daggerverse/docker@docker/v0.4.1`, v041DockerPin},
+			notContains: []string{`"github.com/shykes/daggerverse/docker"`},
+		},
+		{
+			name:        "existing dep dont have version, update cmd use name without version",
+			daggerjson:  depHasNoVersion,
+			updateCmd:   []string{"update", "docker"},
+			contains:    []string{`"github.com/shykes/daggerverse/docker"`},
+			notContains: []string{randomMainPin},
+		},
+		{
+			name:        "existing dep use branch, update cmd use name without version",
+			daggerjson:  depHasBranch,
+			updateCmd:   []string{"update", "docker"},
+			contains:    []string{`"github.com/shykes/daggerverse/docker@main`},
+			notContains: []string{`"github.com/shykes/daggerverse/docker"`, randomMainPin},
+		},
+		{
+			name:        "existing dep have version, update cmd use name without version",
+			daggerjson:  depHasOldVersion,
+			updateCmd:   []string{"update", "docker"},
+			contains:    []string{`github.com/shykes/daggerverse/docker@docker/v0.4.1`, v041DockerPin},
+			notContains: []string{`"github.com/shykes/daggerverse/docker"`},
+		},
+		{
+			name:       "existing dep dont have version, update cmd use name with version",
+			daggerjson: depHasNoVersion,
+			updateCmd:  []string{"update", "docker@v0.4.2"},
+			contains:   []string{`"github.com/shykes/daggerverse/docker@docker/v0.4.2"`, v042DockerPin},
+		},
+		{
+			name:        "existing dep use branch, update cmd use name with version",
+			daggerjson:  depHasBranch,
+			updateCmd:   []string{"update", "docker@v0.4.2"},
+			contains:    []string{`"github.com/shykes/daggerverse/docker@docker/v0.4.2`, v042DockerPin},
+			notContains: []string{`"github.com/shykes/daggerverse/docker@main"`},
+		},
+		{
+			name:        "existing dep have version, update cmd use name with version",
+			daggerjson:  depHasOldVersion,
+			updateCmd:   []string{"update", "docker@v0.4.2"},
+			contains:    []string{`github.com/shykes/daggerverse/docker@docker/v0.4.2`, v042DockerPin},
+			notContains: []string{`"github.com/shykes/daggerverse/docker@docker/v0.4.1"`, v041DockerPin},
+		},
+		{
+			name:          "update a dependency not configured in dagger.json",
+			daggerjson:    noDeps,
+			updateCmd:     []string{"update", "github.com/shykes/daggerverse/docker@v0.4.2"},
+			expectedError: `dependency "github.com/shykes/daggerverse/docker" was requested to be updated, but it is not found in the dependencies list`,
+		},
+		{
+			name:       "can update all dependencies",
+			daggerjson: multipleDeps,
+			updateCmd:  []string{"update"},
+			contains:   []string{`"github.com/shykes/daggerverse/docker@docker/v0.4.1"`, v041DockerPin, `"github.com/shykes/daggerverse/wolfi@wolfi/v0.1.3"`, v013WolfiPin},
+		},
+		{
+			name:          "cannot update a local dependency",
+			daggerjson:    depIsLocal,
+			updateCmd:     []string{"update", "bar"},
+			expectedError: `updating local deps is not supported`,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			ctr := c.Container().
+				From("alpine:latest").
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--sdk=go", "--name=foo", "--source=.")).
+				WithWorkdir("bar").
+				With(daggerExec("init", "--sdk=go", "--name=bar", "--source=.")).
+				WithWorkdir("/work").
+				WithNewFile("dagger.json", tc.daggerjson)
+
+			daggerjson, err := ctr.
+				With(daggerExec(tc.updateCmd...)).
+				File("dagger.json").
+				Contents(ctx)
+
+			if tc.expectedError != "" {
+				var execErr *dagger.ExecError
+				if errors.As(err, &execErr) {
+					require.Contains(t, execErr.Stderr, tc.expectedError)
+				} else {
+					require.ErrorContains(t, err, tc.expectedError)
+				}
+			} else {
+				require.NoError(t, err)
+				for _, s := range tc.contains {
+					require.Contains(t, daggerjson, s)
+				}
+
+				for _, s := range tc.notContains {
+					require.NotContains(t, daggerjson, s)
+				}
+			}
+		})
+	}
 }
