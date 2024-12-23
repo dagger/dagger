@@ -272,7 +272,7 @@ func (t *Test) publishTestResults(ctx context.Context, ctr *dagger.Container) er
 		CreatedAt string            `json:"createdAt" db:"created_at"`
 	}{
 		RunID:     uuid.NewString(), // a unique identifier per run
-		Repo:      payload.Repository,
+		Repo:      "github.com/" + payload.Repository,
 		Branch:    payload.Branch,
 		CommitSha: payload.Event.CommitSha,
 		JobName:   payload.Workflow,
