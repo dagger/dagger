@@ -16,6 +16,11 @@ engine:
   #     format = "json"
   labels: {}
 
+  ### `DaemonSet` guarantees a single Engine per K8s node (default behaviour)
+  #
+  # Set to `StatefulSet` for running multiple Engines per K8s node
+  kind: DaemonSet
+
   ### Customize Dagger Engine start args
   #
   args: []

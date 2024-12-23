@@ -117,7 +117,7 @@ jobs:
           upload-logs: true
 
   test-everything-else:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-1-16c-st' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-1-32c-st' || 'ubuntu-latest' }}"
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
