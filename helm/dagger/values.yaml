@@ -79,14 +79,3 @@ engine:
 
   existingServiceAccount: {}
     # name: "default"
-
-magicache:
-  enabled: false
-  url: https://api.dagger.cloud/magicache
-  ### Create your token via https://docs.dagger.io/manuals/user/cloud-get-started/#step-2-connect-to-dagger-cloud
-  #
-  # token: YOUR_DAGGER_CLOUD_TOKEN
-
-  ### If secretName is set, a new secret will NOT be created
-  #
-  # secretName: EXISTING_SECRET_NAME
