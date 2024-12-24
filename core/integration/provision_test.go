@@ -30,6 +30,11 @@ func (ProvisionSuite) TestDockerDriver(ctx context.Context, t *testctx.T) {
 		dockerc := dockerSetup(ctx, t, "provisioner", c, "", nil)
 		dockerc = dockerc.WithMountedFile("/bin/dagger", daggerCliFile(t, c))
 
+		// HACK: pre-load the engine image (since trying to pull if from the
+		// registry might not work if it hasn't been built yet)
+		dockerc, err := dockerLoadEngine(ctx, c, dockerc, "registry.dagger.io/engine:"+engine.Tag)
+		require.NoError(t, err)
+
 		out, err := dockerc.
 			WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{Stdin: "{version}"}).Stdout(ctx)
 		require.NoError(t, err)
