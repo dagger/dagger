@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -275,7 +276,11 @@ func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error)
 
 	paths := []string{}
 	for _, entry := range entries {
-		paths = append(paths, entry.GetPath())
+		path := entry.Path
+		if os.FileMode(entry.Mode).IsDir() {
+			path += "/"
+		}
+		paths = append(paths, path)
 	}
 
 	return paths, nil
@@ -325,7 +330,7 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 	err = ref.WalkDir(ctx, buildkit.WalkDirRequest{
 		IncludePattern: pattern,
 		Path:           dir.Dir,
-		Callback: func(path string, info *fstypes.Stat) error {
+		Callback: func(path string, info os.FileInfo) error {
 			// HACK: ideally, we'd have something like MatchesExact, which
 			// would skip the parent behavior that we don't really want here -
 			// oh well, let's just fake it with false
@@ -333,6 +338,10 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 			match, err := pm.MatchesUsingParentResult(filepath.Clean(path), false)
 			if err != nil {
 				return err
+			}
+
+			if info.Mode().IsDir() {
+				path += "/"
 			}
 			if match {
 				paths = append(paths, path)
