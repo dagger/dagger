@@ -165,7 +165,7 @@ exit $?
 
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
-	t = t.WithContext(ctx).(*testctx.T)
+	t = t.WithContext(ctx)
 	_, err := ctr.Sync(ctx)
 	require.NoError(t, err)
 }

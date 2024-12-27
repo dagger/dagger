@@ -65,9 +65,16 @@ func Middleware() []testctx.Middleware {
 	}
 }
 
-func connect(ctx context.Context, t *testctx.T, opts ...dagger.ClientOpt) *dagger.Client {
+func BenchMiddleware() []testctx.MiddlewareB {
+	return []testctx.MiddlewareB{
+		testctx.WithOTelLoggingB(Logger()),
+		testctx.WithOTelTracingB(Tracer()),
+	}
+}
+
+func connect(ctx context.Context, t testing.TB, opts ...dagger.ClientOpt) *dagger.Client {
 	opts = append([]dagger.ClientOpt{
-		dagger.WithLogOutput(testutil.NewTWriter(t.T)),
+		dagger.WithLogOutput(testutil.NewTWriter(t)),
 	}, opts...)
 	client, err := dagger.Connect(ctx, opts...)
 	require.NoError(t, err)
