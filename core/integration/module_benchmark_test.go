@@ -11,7 +11,6 @@ import (
 
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/testctx"
-	"github.com/dagger/dagger/testctx/benchctx"
 	"github.com/google/uuid"
 	"github.com/iancoleman/strcase"
 	"github.com/stretchr/testify/require"
@@ -19,14 +18,13 @@ import (
 )
 
 func BenchmarkModule(b *testing.B) {
-	benchctx.Run(testCtx, b, ModuleSuite{}, Middleware()...)
+	testctx.Bench(testCtx, b, ModuleSuite{}, BenchMiddleware()...)
 }
 
-func (ModuleSuite) TestLotsOfFunctions(ctx context.Context, t *testctx.T) {
+func (ModuleSuite) BenchmarkLotsOfFunctions(ctx context.Context, t *testctx.B) {
 	const funcCount = 100
-	t.SkipNow()
 
-	t.Run("go sdk", func(ctx context.Context, t *testctx.T) {
+	t.Run("go sdk", func(ctx context.Context, t *testctx.B) {
 		c := connect(ctx, t)
 
 		mainSrc := `
@@ -66,7 +64,7 @@ func (ModuleSuite) TestLotsOfFunctions(ctx context.Context, t *testctx.T) {
 		require.NoError(t, eg.Wait())
 	})
 
-	t.Run("python sdk", func(ctx context.Context, t *testctx.T) {
+	t.Run("python sdk", func(ctx context.Context, t *testctx.B) {
 		c := connect(ctx, t)
 
 		mainSrc := `import dagger
@@ -108,7 +106,7 @@ class PotatoSack:
 		require.NoError(t, eg.Wait())
 	})
 
-	t.Run("typescript sdk", func(ctx context.Context, t *testctx.T) {
+	t.Run("typescript sdk", func(ctx context.Context, t *testctx.B) {
 		c := connect(ctx, t)
 
 		mainSrc := `
@@ -156,8 +154,7 @@ export class PotatoSack {
 	})
 }
 
-func (ModuleSuite) TestLotsOfDeps(ctx context.Context, t *testctx.T) {
-	t.SkipNow()
+func (ModuleSuite) BenchmarkLotsOfDeps(ctx context.Context, t *testctx.B) {
 	c := connect(ctx, t)
 
 	modGen := goGitBase(t, c).
@@ -246,14 +243,13 @@ func (ModuleSuite) TestLotsOfDeps(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 }
 
-func (ModuleSuite) TestLargeObjectFieldVal(ctx context.Context, t *testctx.T) {
-	t.SkipNow()
+func (ModuleSuite) BenchmarkLargeObjectFieldVal(ctx context.Context, t *testctx.B) {
 	// make sure we don't hit any limits when an object field value is large
 
 	c := connect(ctx, t)
 
 	// put a timeout on this since failures modes could result in hangs
-	t = t.WithTimeout(60 * time.Second).(*testctx.T)
+	t = t.WithTimeout(60 * time.Second)
 
 	_, err := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -286,7 +282,7 @@ func (m *Test) Fn() string {
 
 // regression test for https://github.com/dagger/dagger/issues/7334
 // and https://github.com/dagger/dagger/pull/7336
-func (ModuleSuite) TestCallSameModuleInParallel(ctx context.Context, t *testctx.T) {
+func (ModuleSuite) BenchmarkCallSameModuleInParallel(ctx context.Context, t *testctx.B) {
 	c := connect(ctx, t)
 
 	ctr := goGitBase(t, c).
