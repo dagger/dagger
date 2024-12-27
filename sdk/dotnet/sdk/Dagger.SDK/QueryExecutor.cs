@@ -4,7 +4,7 @@ using Dagger.SDK.GraphQL;
 
 namespace Dagger.SDK;
 
-public static class Engine
+public static class QueryExecutor
 {
     /// <summary>
     /// Execute a GraphQL request and deserialize data into `T`.
@@ -12,10 +12,15 @@ public static class Engine
     /// <typeparam name="T"></typeparam>
     /// <param name="client">A GraphQL client.</param>
     /// <param name="queryBuilder">A QueryBuilder instance.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns></returns>
-    public static async Task<T> Execute<T>(GraphQLClient client, QueryBuilder queryBuilder)
+    public static async Task<T> ExecuteAsync<T>(
+        GraphQLClient client,
+        QueryBuilder queryBuilder,
+        CancellationToken cancellationToken = default
+    )
     {
-        var jsonElement = await Request(client, queryBuilder);
+        var jsonElement = await RequestAsync(client, queryBuilder, cancellationToken);
         jsonElement = TakeJsonElementUntilLast<T>(jsonElement, queryBuilder.Path);
         return jsonElement.GetProperty(queryBuilder.Path.Last().Name).Deserialize<T>()!;
     }
@@ -26,10 +31,15 @@ public static class Engine
     /// <typeparam name="T"></typeparam>
     /// <param name="client">A GraphQL client</param>
     /// <param name="queryBuilder">A QueryBuilder instance.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns></returns>
-    public static async Task<T[]> ExecuteList<T>(GraphQLClient client, QueryBuilder queryBuilder)
+    public static async Task<T[]> ExecuteListAsync<T>(
+        GraphQLClient client,
+        QueryBuilder queryBuilder,
+        CancellationToken cancellationToken = default
+    )
     {
-        var jsonElement = await Request(client, queryBuilder);
+        var jsonElement = await RequestAsync(client, queryBuilder, cancellationToken);
         jsonElement = TakeJsonElementUntilLast<T>(jsonElement, queryBuilder.Path);
         return jsonElement
             .EnumerateArray()
@@ -38,12 +48,16 @@ public static class Engine
             .ToArray();
     }
 
-    private static async Task<JsonElement> Request(GraphQLClient client, QueryBuilder queryBuilder)
+    private static async Task<JsonElement> RequestAsync(
+        GraphQLClient client,
+        QueryBuilder queryBuilder,
+        CancellationToken cancellationToken = default
+    )
     {
         var query = queryBuilder.Build();
-        var response = await client.RequestAsync(query);
+        var response = await client.RequestAsync(query, cancellationToken);
         // TODO: handle error here.
-        var data = await response.Content.ReadAsStringAsync();
+        var data = await response.Content.ReadAsStringAsync(cancellationToken);
         var jsonElement = JsonSerializer.Deserialize<JsonElement>(data);
         return jsonElement.GetProperty("data");
     }
