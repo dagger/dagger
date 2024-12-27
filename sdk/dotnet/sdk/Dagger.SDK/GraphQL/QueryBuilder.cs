@@ -58,9 +58,7 @@ public class QueryBuilder(ImmutableList<Field> path)
                 builder.Append(
                     string.Join(
                         ",",
-                        selection
-                            .Args.Select(async arg => $"{arg.Key}:{await arg.FormatValue()}")
-                            .Select(v => v.Result)
+                        selection.Args.Select(arg => $"{arg.Key}:{arg.FormatValue().Result}")
                     )
                 );
                 builder.Append(')');

@@ -3,7 +3,7 @@ using Dagger.SDK.GraphQL;
 namespace Dagger.SDK.Tests;
 
 [TestClass]
-public class EngineTest
+public class QueryExecutor
 {
     [TestMethod]
     public async Task TestExecute()
@@ -15,7 +15,7 @@ public class EngineTest
             .Select("from", [new Argument("address", new StringValue("alpine"))])
             .Select("id");
 
-        string id = await Engine.Execute<string>(gqlClient, queryBuilder);
+        string id = await SDK.QueryExecutor.ExecuteAsync<string>(gqlClient, queryBuilder);
 
         Assert.IsFalse(string.IsNullOrWhiteSpace(id));
     }
@@ -31,7 +31,7 @@ public class EngineTest
             .Select("envVariables")
             .Select("id");
 
-        var ids = await Engine.ExecuteList<EnvVariableId>(gqlClient, queryBuilder);
+        var ids = await SDK.QueryExecutor.ExecuteListAsync<EnvVariableId>(gqlClient, queryBuilder);
 
         Assert.IsTrue(ids.Length > 0);
         CollectionAssert.AllItemsAreNotNull(ids);
