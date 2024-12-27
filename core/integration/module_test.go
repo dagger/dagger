@@ -5437,7 +5437,7 @@ func inspectModuleObjects(ctx context.Context, t *testctx.T, ctr *dagger.Contain
 	return inspectModule(ctx, t, ctr).Get("objects.#.asObject")
 }
 
-func goGitBase(t *testctx.T, c *dagger.Client) *dagger.Container {
+func goGitBase(t testing.TB, c *dagger.Client) *dagger.Container {
 	t.Helper()
 	return c.Container().From(golangImage).
 		WithExec([]string{"apk", "add", "git"}).

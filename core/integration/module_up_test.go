@@ -21,7 +21,7 @@ func (ModuleSuite) TestDaggerUp(ctx context.Context, t *testctx.T) {
 		t.SkipNow()
 	}
 	// set timeout to 3m for each test
-	t = t.WithTimeout(3 * time.Minute).(*testctx.T)
+	t = t.WithTimeout(3 * time.Minute)
 
 	const defaultTrafficPortForContainerTests = "23100"
 	const defaultTrafficPortForServiceTests = "23200"
@@ -103,7 +103,7 @@ func (ModuleSuite) TestDaggerUp(ctx context.Context, t *testctx.T) {
 		},
 	}
 
-	t = t.WithTimeout(3 * time.Minute).(*testctx.T)
+	t = t.WithTimeout(3 * time.Minute)
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
