@@ -21,7 +21,7 @@ public class ClientTest
     {
         var cts = new CancellationTokenSource();
         cts.CancelAfter(5000);
-        await Assert.ThrowsExceptionAsync<OperationCanceledException>(() => _dag.Container().From("debian").WithExec(["bash", "-c", "sleep 10; echo hello"]).StdoutAsync(cts.Token));
+        await Assert.ThrowsExceptionAsync<TaskCanceledException>(() => _dag.Container().From("debian").WithExec(["bash", "-c", "sleep 10; echo hello"]).StdoutAsync(cts.Token));
     }
 
     [TestMethod]
