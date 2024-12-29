@@ -28,10 +28,6 @@ func (m *CoreMod) Name() string {
 	return core.ModuleName
 }
 
-func (m *CoreMod) Dependencies() []core.Mod {
-	return nil
-}
-
 func (m *CoreMod) View() (string, bool) {
 	return m.Dag.View, true
 }

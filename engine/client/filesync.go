@@ -63,6 +63,10 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 	}
 
 	switch {
+	case opts.GetAbsPathOnly:
+		return stream.SendMsg(&fstypes.Stat{
+			Path: filepath.ToSlash(absPath),
+		})
 	case opts.StatPathOnly:
 		stat, err := fsutil.Stat(absPath)
 		if err != nil {

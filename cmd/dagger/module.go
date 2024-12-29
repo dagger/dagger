@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -58,26 +57,28 @@ const (
 // then use `srcRootPath/.dagger` for source
 func inferSourcePathDir(srcRootPath string) (string, error) {
 	list, err := os.ReadDir(srcRootPath)
-	if err != nil {
-		return "", err
-	}
+	switch {
+	case err == nil:
+		for _, l := range list {
+			if l.Name() == "dagger.json" {
+				continue
+			}
 
-	for _, l := range list {
-		if l.Name() == "dagger.json" {
-			continue
-		}
+			// .dagger already exist, return that
+			if l.Name() == ".dagger" {
+				return ".dagger", nil
+			}
 
-		// .dagger already exist, return that
-		if l.Name() == ".dagger" {
+			// ignore hidden files
+			if strings.HasPrefix(l.Name(), ".") {
+				continue
+			}
+
 			return ".dagger", nil
 		}
-
-		// ignore hidden files
-		if strings.HasPrefix(l.Name(), ".") {
-			continue
-		}
-
-		return ".dagger", nil
+	case os.IsNotExist(err):
+	default:
+		return "", err
 	}
 
 	return ".", nil
@@ -144,71 +145,82 @@ If --sdk is specified, the given SDK is installed in the module. You can do this
 			if err != nil {
 				return fmt.Errorf("failed to get current working directory: %w", err)
 			}
-			srcRootPath := cwd
+			srcRootArg := cwd
 			if len(extraArgs) > 0 {
-				srcRootPath = extraArgs[0]
+				srcRootArg = extraArgs[0]
 			}
-			if filepath.IsAbs(srcRootPath) {
-				srcRootPath, err = filepath.Rel(cwd, srcRootPath)
+			if filepath.IsAbs(srcRootArg) {
+				srcRootArg, err = filepath.Rel(cwd, srcRootArg)
 				if err != nil {
 					return fmt.Errorf("failed to get relative path: %w", err)
 				}
 			}
 
-			modConf, err := getModuleConfigurationForSourceRef(ctx, dag, srcRootPath, false, false)
+			modSrc := dag.ModuleSource(srcRootArg)
+
+			kind, err := modSrc.Kind(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to get configured module: %w", err)
+				return fmt.Errorf("failed to get module ref kind: %w", err)
+			}
+			if kind != dagger.ModuleSourceKindLocalSource {
+				return fmt.Errorf("module must be local, not %s", kind)
 			}
 
-			if modConf.SourceKind != dagger.ModuleSourceKindLocalSource {
-				return fmt.Errorf("module must be local")
+			alreadyExists, err := modSrc.ConfigExists(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to check if module already exists: %w", err)
 			}
-			if modConf.ModuleSourceConfigExists {
+			if alreadyExists {
 				return fmt.Errorf("module already exists")
 			}
 
+			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get local context directory path: %w", err)
+			}
+			srcRootSubPath, err := modSrc.SourceRootSubpath(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get source root subpath: %w", err)
+			}
+			srcRootAbsPath := filepath.Join(contextDirPath, srcRootSubPath)
+
 			// default module name to directory of source root
 			if moduleName == "" {
-				moduleName = filepath.Base(modConf.LocalRootSourcePath)
+				moduleName = filepath.Base(srcRootAbsPath)
 			}
 
 			// only bother setting source path if there's an sdk at this time
 			if sdk != "" {
-				// if user didn't specified moduleSourcePath explicitly,
+				// if user didn't specify moduleSourcePath explicitly,
 				// check if current dir is non-empty and infer the source
 				// path accordingly.
 				if moduleSourcePath == "" {
-					inferredSourcePath, err := inferSourcePathDir(modConf.LocalRootSourcePath)
+					moduleSourcePath, err = inferSourcePathDir(srcRootAbsPath)
 					if err != nil {
 						return err
 					}
-
-					moduleSourcePath = filepath.Join(modConf.LocalRootSourcePath, inferredSourcePath)
-				}
-
-				if moduleSourcePath != "" {
+				} else {
 					// ensure source path is relative to the source root
 					sourceAbsPath, err := pathutil.Abs(moduleSourcePath)
 					if err != nil {
 						return fmt.Errorf("failed to get absolute source path for %s: %w", moduleSourcePath, err)
 					}
 
-					moduleSourcePath, err = filepath.Rel(modConf.LocalRootSourcePath, sourceAbsPath)
+					moduleSourcePath, err = filepath.Rel(srcRootAbsPath, sourceAbsPath)
 					if err != nil {
 						return fmt.Errorf("failed to get relative source path: %w", err)
 					}
 				}
 			}
 
-			_, err = modConf.Source.
+			_, err = modSrc.
 				WithName(moduleName).
 				WithSDK(sdk).
-				WithInit(dagger.ModuleSourceWithInitOpts{Merge: mergeDeps}).
+				WithInit(mergeDeps).
 				WithSourceSubpath(moduleSourcePath).
-				ResolveFromCaller().
-				AsModule(dagger.ModuleSourceAsModuleOpts{EngineVersion: modules.EngineVersionLatest}).
+				WithEngineVersion(modules.EngineVersionLatest).
 				GeneratedContextDiff().
-				Export(ctx, modConf.LocalContextPath)
+				Export(ctx, contextDirPath)
 			if err != nil {
 				return fmt.Errorf("failed to generate code: %w", err)
 			}
@@ -217,12 +229,12 @@ If --sdk is specified, the given SDK is installed in the module. You can do this
 				// If we're generating code by setting a SDK, we should also generate a license
 				// if it doesn't already exists.
 				searchExisting := !cmd.Flags().Lookup("license").Changed
-				if err := findOrCreateLicense(ctx, modConf.LocalRootSourcePath, searchExisting); err != nil {
+				if err := findOrCreateLicense(ctx, srcRootAbsPath, searchExisting); err != nil {
 					return err
 				}
 			}
 
-			fmt.Fprintln(cmd.OutOrStdout(), "Initialized module", moduleName, "in", srcRootPath)
+			fmt.Fprintln(cmd.OutOrStdout(), "Initialized module", moduleName, "in", srcRootAbsPath)
 
 			return nil
 		})
@@ -241,59 +253,50 @@ var moduleInstallCmd = &cobra.Command{
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
-			modConf, err := getDefaultModuleConfiguration(ctx, dag, true, false)
+
+			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault())
+
+			kind, err := modSrc.Kind(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to get configured module: %w", err)
+				return fmt.Errorf("failed to get module ref kind: %w", err)
 			}
-			if modConf.SourceKind != dagger.ModuleSourceKindLocalSource {
+			if kind != dagger.ModuleSourceKindLocalSource {
 				return fmt.Errorf("module must be local")
 			}
-			if !modConf.FullyInitialized() {
+
+			alreadyExists, err := modSrc.ConfigExists(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to check if module already exists: %w", err)
+			}
+			if !alreadyExists {
 				return fmt.Errorf("module must be fully initialized")
+			}
+
+			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get local context directory path: %w", err)
 			}
 
 			depRefStr := extraArgs[0]
 			depSrc := dag.ModuleSource(depRefStr)
-			depSrcKind, err := depSrc.Kind(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get module ref kind: %w", err)
-			}
-			if depSrcKind == dagger.ModuleSourceKindLocalSource {
-				// need to ensure that local dep paths are relative to the parent root source
-				depAbsPath, err := pathutil.Abs(depRefStr)
-				if err != nil {
-					return fmt.Errorf("failed to get dep absolute path for %s: %w", depRefStr, err)
-				}
-				depRelPath, err := filepath.Rel(modConf.LocalRootSourcePath, depAbsPath)
-				if err != nil {
-					return fmt.Errorf("failed to get dep relative path: %w", err)
-				}
 
-				depSrc = dag.ModuleSource(depRelPath)
-			}
-			dep := dag.ModuleDependency(depSrc, dagger.ModuleDependencyOpts{
-				Name: installName,
-			})
-
-			modSrc := modConf.Source.
-				WithDependencies([]*dagger.ModuleDependency{dep}).
-				ResolveFromCaller()
-
-			_, err = modSrc.
-				AsModule().
-				GeneratedContextDiff().
-				Export(ctx, modConf.LocalContextPath)
-			if err != nil {
-				return fmt.Errorf("failed to generate code: %w", err)
-			}
-
-			depSrc = modSrc.ResolveDependency(depSrc)
-
-			name, err := depSrc.ModuleName(ctx)
+			origDepName, err := depSrc.ModuleName(ctx)
 			if err != nil {
 				return err
 			}
-			sdk, err := depSrc.AsModule().SDK().Source(ctx)
+			if installName != "" {
+				depSrc = depSrc.WithName(installName)
+			}
+
+			_, err = modSrc.
+				WithDependencies([]*dagger.ModuleSource{depSrc}).
+				GeneratedContextDiff().
+				Export(ctx, contextDirPath)
+			if err != nil {
+				return fmt.Errorf("failed to update dependencies: %w", err)
+			}
+
+			sdk, err := depSrc.SDK(ctx)
 			if err != nil {
 				return err
 			}
@@ -301,9 +304,22 @@ var moduleInstallCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
+			depSrcKind, err := depSrc.Kind(ctx)
+			if err != nil {
+				return err
+			}
 
-			if depSrcKind == dagger.ModuleSourceKindGitSource {
-				git := depSrc.AsGitSource()
+			switch depSrcKind {
+			case dagger.ModuleSourceKindLocalSource:
+				analytics.Ctx(ctx).Capture(ctx, "module_install", map[string]string{
+					"module_name":   origDepName,
+					"install_name":  installName,
+					"module_sdk":    sdk,
+					"source_kind":   "local",
+					"local_subpath": depRootSubpath,
+				})
+			case dagger.ModuleSourceKindGitSource:
+				/* TODO: fix
 				gitURL, err := git.CloneRef(ctx)
 				if err != nil {
 					return err
@@ -316,25 +332,19 @@ var moduleInstallCmd = &cobra.Command{
 				if err != nil {
 					return err
 				}
+				*/
 
 				analytics.Ctx(ctx).Capture(ctx, "module_install", map[string]string{
-					"module_name":   name,
-					"install_name":  installName,
-					"module_sdk":    sdk,
-					"source_kind":   "git",
-					"git_symbolic":  filepath.Join(gitURL, depRootSubpath),
-					"git_clone_url": gitURL,
-					"git_subpath":   depRootSubpath,
-					"git_version":   gitVersion,
-					"git_commit":    gitCommit,
-				})
-			} else if depSrcKind == dagger.ModuleSourceKindLocalSource {
-				analytics.Ctx(ctx).Capture(ctx, "module_install", map[string]string{
-					"module_name":   name,
-					"install_name":  installName,
-					"module_sdk":    sdk,
-					"source_kind":   "local",
-					"local_subpath": depRootSubpath,
+					"module_name":  origDepName,
+					"install_name": installName,
+					"module_sdk":   sdk,
+					"source_kind":  "git",
+					"git_subpath":  depRootSubpath,
+					// TODO: fix
+					// "git_symbolic":  filepath.Join(gitURL, depRootSubpath),
+					// "git_clone_url": gitURL,
+					// "git_version":   gitVersion,
+					// "git_commit":    gitCommit,
 				})
 			}
 
@@ -354,25 +364,36 @@ var moduleUpdateCmd = &cobra.Command{
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
-			modConf, err := getDefaultModuleConfiguration(ctx, dag, true, false)
+
+			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault())
+
+			kind, err := modSrc.Kind(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to get configured module: %w", err)
+				return fmt.Errorf("failed to get module ref kind: %w", err)
 			}
-			if modConf.SourceKind != dagger.ModuleSourceKindLocalSource {
+			if kind != dagger.ModuleSourceKindLocalSource {
 				return fmt.Errorf("module must be local")
 			}
-			if !modConf.FullyInitialized() {
+
+			alreadyExists, err := modSrc.ConfigExists(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to check if module already exists: %w", err)
+			}
+			if !alreadyExists {
 				return fmt.Errorf("module must be fully initialized")
 			}
 
-			_, err = modConf.
-				Source.WithUpdateDependencies(extraArgs).
-				ResolveFromCaller().
-				AsModule().
-				GeneratedContextDiff().
-				Export(ctx, modConf.LocalContextPath)
+			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to generate code: %w", err)
+				return fmt.Errorf("failed to get local context directory path: %w", err)
+			}
+
+			_, err = modSrc.
+				WithUpdateDependencies(extraArgs).
+				GeneratedContextDiff().
+				Export(ctx, contextDirPath)
+			if err != nil {
+				return fmt.Errorf("failed to update dependencies: %w", err)
 			}
 
 			return nil
@@ -391,24 +412,35 @@ var moduleUnInstallCmd = &cobra.Command{
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
-			modConf, err := getDefaultModuleConfiguration(ctx, dag, true, false)
+			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault())
+
+			kind, err := modSrc.Kind(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to get configured module: %w", err)
+				return fmt.Errorf("failed to get module ref kind: %w", err)
 			}
-			if modConf.SourceKind != dagger.ModuleSourceKindLocalSource {
+			if kind != dagger.ModuleSourceKindLocalSource {
 				return fmt.Errorf("module must be local")
 			}
 
-			modSrc := modConf.Source.
-				WithoutDependencies([]string{extraArgs[0]}).
-				ResolveFromCaller()
+			alreadyExists, err := modSrc.ConfigExists(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to check if module already exists: %w", err)
+			}
+			if !alreadyExists {
+				return fmt.Errorf("module must be fully initialized")
+			}
+
+			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get local context directory path: %w", err)
+			}
 
 			_, err = modSrc.
-				AsModule().
+				WithoutDependencies(extraArgs).
 				GeneratedContextDiff().
-				Export(ctx, modConf.LocalContextPath)
+				Export(ctx, contextDirPath)
 			if err != nil {
-				return fmt.Errorf("failed to generate code: %w", err)
+				return fmt.Errorf("failed to update dependencies: %w", err)
 			}
 
 			return nil
@@ -441,26 +473,33 @@ This command is idempotent: you can run it at any time, any number of times. It 
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
-			modConf, err := getDefaultModuleConfiguration(ctx, dag, true, false)
+
+			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault())
+
+			kind, err := modSrc.Kind(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to get configured module: %w", err)
+				return fmt.Errorf("failed to get module ref kind: %w", err)
 			}
-			if modConf.SourceKind != dagger.ModuleSourceKindLocalSource {
+			if kind != dagger.ModuleSourceKindLocalSource {
 				return fmt.Errorf("module must be local")
 			}
 
-			src := modConf.Source
-			// use this one to read sdk/source path since they require the host filesystem be loaded.
-			// this is kind of inefficient, could update the engine to support these APIs without a full
-			// ResolveFromCaller call first
-			modConf.Source = modConf.Source.ResolveFromCaller()
+			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get local context directory path: %w", err)
+			}
+			srcRootSubPath, err := modSrc.SourceRootSubpath(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get source root subpath: %w", err)
+			}
+			srcRootAbsPath := filepath.Join(contextDirPath, srcRootSubPath)
 
 			engineVersion := compatVersion
 			if engineVersion == "skip" {
 				engineVersion = ""
 			}
 
-			modSDK, err := modConf.Source.AsModule(dagger.ModuleSourceAsModuleOpts{EngineVersion: engineVersion}).SDK().Source(ctx)
+			modSDK, err := modSrc.SDK(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get module SDK: %w", err)
 			}
@@ -469,21 +508,21 @@ This command is idempotent: you can run it at any time, any number of times. It 
 					return fmt.Errorf("cannot update module SDK that has already been set to %q", modSDK)
 				}
 				modSDK = developSDK
-				src = src.WithSDK(modSDK)
+				modSrc = modSrc.WithSDK(modSDK)
 			}
 
-			modSourcePath, err := modConf.Source.SourceSubpath(ctx)
+			modSourcePath, err := modSrc.SourceSubpath(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get module source subpath: %w", err)
 			}
 			// if SDK is set but source path isn't and the user didn't provide --source, we'll use the default source path
 			if modSDK != "" && modSourcePath == "" && developSourcePath == "" {
-				inferredSourcePath, err := inferSourcePathDir(modConf.LocalRootSourcePath)
+				inferredSourcePath, err := inferSourcePathDir(srcRootAbsPath)
 				if err != nil {
 					return err
 				}
 
-				developSourcePath = filepath.Join(modConf.LocalRootSourcePath, inferredSourcePath)
+				developSourcePath = filepath.Join(srcRootAbsPath, inferredSourcePath)
 			}
 
 			// if there's no SDK and the user isn't changing the source path, there's nothing to do.
@@ -497,7 +536,7 @@ This command is idempotent: you can run it at any time, any number of times. It 
 				if err != nil {
 					return fmt.Errorf("failed to get absolute source path for %s: %w", developSourcePath, err)
 				}
-				developSourcePath, err = filepath.Rel(modConf.LocalRootSourcePath, sourceAbsPath)
+				developSourcePath, err = filepath.Rel(srcRootAbsPath, sourceAbsPath)
 				if err != nil {
 					return fmt.Errorf("failed to get relative source path: %w", err)
 				}
@@ -507,13 +546,12 @@ This command is idempotent: you can run it at any time, any number of times. It 
 				}
 
 				modSourcePath = developSourcePath
-				src = src.WithSourceSubpath(modSourcePath)
+				modSrc = modSrc.WithSourceSubpath(modSourcePath)
 			}
 
-			_, err = src.ResolveFromCaller().
-				AsModule(dagger.ModuleSourceAsModuleOpts{EngineVersion: engineVersion}).
+			_, err = modSrc.
 				GeneratedContextDiff().
-				Export(ctx, modConf.LocalContextPath)
+				Export(ctx, contextDirPath)
 			if err != nil {
 				return fmt.Errorf("failed to generate code: %w", err)
 			}
@@ -521,7 +559,7 @@ This command is idempotent: you can run it at any time, any number of times. It 
 			// If no license has been created yet, and SDK is set, we should create one.
 			if developSDK != "" {
 				searchExisting := !cmd.Flags().Lookup("license").Changed
-				if err := findOrCreateLicense(ctx, modConf.LocalRootSourcePath, searchExisting); err != nil {
+				if err := findOrCreateLicense(ctx, srcRootAbsPath, searchExisting); err != nil {
 					return err
 				}
 			}
@@ -550,19 +588,37 @@ forced), to avoid mistakenly depending on uncommitted files.
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			slog := slog.SpanLogger(ctx, InstrumentationLibrary)
-
 			dag := engineClient.Dagger()
-			modConf, err := getDefaultModuleConfiguration(ctx, dag, true, true)
+
+			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault())
+
+			kind, err := modSrc.Kind(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to get configured module: %w", err)
+				return fmt.Errorf("failed to get module ref kind: %w", err)
 			}
-			if modConf.SourceKind != dagger.ModuleSourceKindLocalSource {
+			if kind != dagger.ModuleSourceKindLocalSource {
 				return fmt.Errorf("module must be local")
 			}
-			if !modConf.FullyInitialized() {
+
+			alreadyExists, err := modSrc.ConfigExists(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to check if module already exists: %w", err)
+			}
+			if !alreadyExists {
 				return fmt.Errorf("module must be fully initialized")
 			}
-			repo, err := git.PlainOpenWithOptions(modConf.LocalRootSourcePath, &git.PlainOpenOptions{
+
+			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get local context directory path: %w", err)
+			}
+			srcRootSubPath, err := modSrc.SourceRootSubpath(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get source root subpath: %w", err)
+			}
+			srcRootAbsPath := filepath.Join(contextDirPath, srcRootSubPath)
+
+			repo, err := git.PlainOpenWithOptions(srcRootAbsPath, &git.PlainOpenOptions{
 				DetectDotGit:          true,
 				EnableDotGitCommonDir: true,
 			})
@@ -596,7 +652,7 @@ forced), to avoid mistakenly depending on uncommitted files.
 
 			// calculate path relative to repo root
 			gitRoot := wt.Filesystem.Root()
-			pathFromRoot, err := filepath.Rel(gitRoot, modConf.LocalRootSourcePath)
+			pathFromRoot, err := filepath.Rel(gitRoot, srcRootAbsPath)
 			if err != nil {
 				return fmt.Errorf("failed to get path from git root: %w", err)
 			}
@@ -665,21 +721,6 @@ func originToPath(origin string) (string, error) {
 	return strings.TrimSuffix(path.Join(url.Host, url.Path), ".git"), nil
 }
 
-type configuredModule struct {
-	Source     *dagger.ModuleSource
-	SourceKind dagger.ModuleSourceKind
-
-	LocalContextPath    string
-	LocalRootSourcePath string
-
-	// whether the dagger.json in the module source dir exists yet
-	ModuleSourceConfigExists bool
-}
-
-func (c *configuredModule) FullyInitialized() bool {
-	return c.ModuleSourceConfigExists
-}
-
 func getExplicitModuleSourceRef() (string, bool) {
 	if moduleURL != "" {
 		return moduleURL, true
@@ -693,172 +734,11 @@ func getExplicitModuleSourceRef() (string, bool) {
 	return "", false
 }
 
-func getDefaultModuleConfiguration(
-	ctx context.Context,
-	dag *dagger.Client,
-	// if doFindUp is true, then the nearest module in parent dirs (up to the context root)
-	// will be used
-	doFindUp bool,
-	// if resolveFromCaller is true, will resolve local sources from the caller
-	// before returning the source. This should be set false
-	// if the caller wants to mutate configuration (sdk/dependency/etc.)
-	// since those changes require the source be resolved after
-	// they are made (due to the fact that they may result in more
-	// files needing to be loaded).
-	resolveFromCaller bool,
-) (*configuredModule, error) {
-	srcRefStr, ok := getExplicitModuleSourceRef()
-	if !ok {
-		srcRefStr = moduleURLDefault
+func getModuleSourceRefWithDefault() string {
+	if v, ok := getExplicitModuleSourceRef(); ok {
+		return v
 	}
-
-	return getModuleConfigurationForSourceRef(ctx, dag, srcRefStr, doFindUp, resolveFromCaller)
-}
-
-func getModuleConfigurationForSourceRef(
-	ctx context.Context,
-	dag *dagger.Client,
-	srcRefStr string,
-	doFindUp bool,
-	resolveFromCaller bool,
-	srcOpts ...dagger.ModuleSourceOpts,
-) (*configuredModule, error) {
-	conf := &configuredModule{}
-
-	conf.Source = dag.ModuleSource(srcRefStr, srcOpts...)
-	var err error
-	conf.SourceKind, err = conf.Source.Kind(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get module ref kind: %w", err)
-	}
-
-	if conf.SourceKind == dagger.ModuleSourceKindGitSource {
-		conf.ModuleSourceConfigExists, err = conf.Source.ConfigExists(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to check if module config exists: %w", err)
-		}
-		return conf, nil
-	}
-
-	if doFindUp {
-		// need to check if this is a named module from the *default* dagger.json found-up from the cwd
-		defaultFindupConfigDir, defaultFindupExists, err := findUp(moduleURLDefault)
-		if err != nil {
-			return nil, fmt.Errorf("error trying to find default config path for: %w", err)
-		}
-		if defaultFindupExists {
-			configPath := filepath.Join(defaultFindupConfigDir, modules.Filename)
-			contents, err := os.ReadFile(configPath)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read %s: %w", configPath, err)
-			}
-			var modCfg modules.ModuleConfig
-			if err := json.Unmarshal(contents, &modCfg); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal %s: %w", configPath, err)
-			}
-
-			namedDep, ok := modCfg.DependencyByName(srcRefStr)
-			if ok {
-				opts := dagger.ModuleSourceOpts{RefPin: namedDep.Pin}
-				depSrc := dag.ModuleSource(namedDep.Source, opts)
-				depKind, err := depSrc.Kind(ctx)
-				if err != nil {
-					return nil, err
-				}
-				depSrcRef := namedDep.Source
-				if depKind == dagger.ModuleSourceKindLocalSource {
-					depSrcRef = filepath.Join(defaultFindupConfigDir, namedDep.Source)
-				}
-				return getModuleConfigurationForSourceRef(ctx, dag, depSrcRef, false, resolveFromCaller, opts)
-			}
-		}
-
-		findupConfigDir, findupExists, err := findUp(srcRefStr)
-		if err != nil {
-			return nil, fmt.Errorf("error trying to find config path for %s: %w", srcRefStr, err)
-		}
-		if !findupExists {
-			return nil, fmt.Errorf("no %s found in directory %s or any parents up to git root", modules.Filename, srcRefStr)
-		}
-		srcRefStr = findupConfigDir
-	}
-
-	conf.LocalRootSourcePath, err = pathutil.Abs(srcRefStr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get absolute path for %s: %w", srcRefStr, err)
-	}
-	if filepath.IsAbs(srcRefStr) {
-		cwd, err := pathutil.Getwd()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get current working directory: %w", err)
-		}
-		srcRefStr, err = filepath.Rel(cwd, srcRefStr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get relative path for %s: %w", srcRefStr, err)
-		}
-	}
-	if err := os.MkdirAll(srcRefStr, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create directory for %s: %w", srcRefStr, err)
-	}
-
-	conf.Source = dag.ModuleSource(srcRefStr)
-
-	conf.LocalContextPath, err = conf.Source.ResolveContextPathFromCaller(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get local root path: %w", err)
-	}
-	_, err = os.Lstat(filepath.Join(conf.LocalRootSourcePath, modules.Filename))
-	conf.ModuleSourceConfigExists = err == nil
-
-	if resolveFromCaller {
-		conf.Source = conf.Source.ResolveFromCaller()
-	}
-
-	return conf, nil
-}
-
-// FIXME: huge refactor needed to remove this function - it shares a lot of
-// similarity with the engine-side callerHostFindUpContext, and it would be a
-// big simplification
-func findUp(curDirPath string) (string, bool, error) {
-	_, err := os.Lstat(curDirPath)
-	if err != nil {
-		return "", false, fmt.Errorf("failed to lstat %s: %w", curDirPath, err)
-	}
-
-	configPath := filepath.Join(curDirPath, modules.Filename)
-	stat, err := os.Lstat(configPath)
-	switch {
-	case os.IsNotExist(err):
-
-	case err == nil:
-		// make sure it's a file
-		if !stat.Mode().IsRegular() {
-			return "", false, fmt.Errorf("expected %s to be a file", configPath)
-		}
-		return curDirPath, true, nil
-
-	default:
-		return "", false, fmt.Errorf("failed to lstat %s: %w", configPath, err)
-	}
-
-	// didn't exist, try parent unless we've hit the root or a git repo checkout root
-	curDirAbsPath, err := pathutil.Abs(curDirPath)
-	if err != nil {
-		return "", false, fmt.Errorf("failed to get absolute path for %s: %w", curDirPath, err)
-	}
-	if curDirAbsPath[len(curDirAbsPath)-1] == os.PathSeparator {
-		// path ends in separator, we're at root
-		return "", false, nil
-	}
-
-	_, err = os.Lstat(filepath.Join(curDirPath, ".git"))
-	if err == nil {
-		return "", false, nil
-	}
-
-	parentDirPath := filepath.Join(curDirPath, "..")
-	return findUp(parentDirPath)
+	return moduleURLDefault
 }
 
 // Wraps a command with optional module loading. If a module was explicitly specified by the user,
@@ -874,17 +754,17 @@ func optionalModCmdWrapper(
 			SecretToken: presetSecretToken,
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			_, explicitModRefSet := getExplicitModuleSourceRef()
-			modConf, err := getDefaultModuleConfiguration(ctx, engineClient.Dagger(), true, true)
+			dag := engineClient.Dagger()
+			loadedMod, err := dag.ModuleSource(getModuleSourceRefWithDefault()).
+				AsModule().
+				Sync(ctx)
 			if err != nil {
 				if !explicitModRefSet {
 					// the user didn't explicitly try to run with a module, so just run in default mode
 					return fn(ctx, engineClient, nil, cmd, cmdArgs)
 				}
 				return fmt.Errorf("failed to get configured module: %w", err)
-			}
-			var loadedMod *dagger.Module
-			if modConf.FullyInitialized() {
-				loadedMod = modConf.Source.AsModule().Initialize()
+			} else {
 				err := loadedMod.Serve(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to serve module: %w", err)

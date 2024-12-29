@@ -15,4 +15,5 @@ enum ModuleSourceKind: string
 {
     case LOCAL_SOURCE = 'LOCAL_SOURCE';
     case GIT_SOURCE = 'GIT_SOURCE';
+    case DIR_SOURCE = 'DIR_SOURCE';
 }
