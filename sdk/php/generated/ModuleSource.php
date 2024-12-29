@@ -14,32 +14,11 @@ namespace Dagger;
 class ModuleSource extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * If the source is a of kind git, the git source representation of it.
-     */
-    public function asGitSource(): GitModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asGitSource');
-        return new \Dagger\GitModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * If the source is of kind local, the local source representation of it.
-     */
-    public function asLocalSource(): LocalModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asLocalSource');
-        return new \Dagger\LocalModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
      */
-    public function asModule(?string $engineVersion = null): Module
+    public function asModule(): Module
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asModule');
-        if (null !== $engineVersion) {
-        $innerQueryBuilder->setArgument('engineVersion', $engineVersion);
-        }
         return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -53,7 +32,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Returns whether the module source has a configuration file.
+     * TODO
      */
     public function configExists(): bool
     {
@@ -62,7 +41,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The directory containing everything needed to load and use the module.
+     * TODO
      */
     public function contextDirectory(): Directory
     {
@@ -71,7 +50,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The effective module source dependencies from the configuration, and calls to withDependencies and withoutDependencies.
+     * TODO
      */
     public function dependencies(): array
     {
@@ -80,7 +59,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Return the module source's content digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
+     * TODO
      */
     public function digest(): string
     {
@@ -89,12 +68,20 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The directory containing the module configuration and source code (source code may be in a subdir).
+     * TODO
      */
-    public function directory(string $path): Directory
+    public function engineVersion(): string
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
-        $innerQueryBuilder->setArgument('path', $path);
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('engineVersion');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'engineVersion');
+    }
+
+    /**
+     * The generated files and directories made on top of the module source's context directory.
+     */
+    public function generatedContextDiff(): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedContextDiff');
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -108,7 +95,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The kind of source (e.g. local, git, etc.)
+     * TODO
      */
     public function kind(): ModuleSourceKind
     {
@@ -117,7 +104,16 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * If set, the name of the module this source references, including any overrides at runtime by callers.
+     * TODO
+     */
+    public function localContextDirectoryPath(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('localContextDirectoryPath');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'localContextDirectoryPath');
+    }
+
+    /**
+     * TODO
      */
     public function moduleName(): string
     {
@@ -126,7 +122,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The original name of the module this source references, as defined in the module configuration.
+     * TODO
      */
     public function moduleOriginalName(): string
     {
@@ -144,54 +140,16 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The path to the module source's context directory on the caller's filesystem. Only valid for local sources.
+     * TODO
      */
-    public function resolveContextPathFromCaller(): string
+    public function sdk(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('resolveContextPathFromCaller');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'resolveContextPathFromCaller');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sdk');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'sdk');
     }
 
     /**
-     * Resolve the provided module source arg as a dependency relative to this module source.
-     */
-    public function resolveDependency(ModuleSourceId|ModuleSource $dep): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('resolveDependency');
-        $innerQueryBuilder->setArgument('dep', $dep);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Load a directory from the caller optionally with a given view applied.
-     */
-    public function resolveDirectoryFromCaller(
-        string $path,
-        ?string $viewName = null,
-        ?array $ignore = null,
-    ): Directory {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('resolveDirectoryFromCaller');
-        $innerQueryBuilder->setArgument('path', $path);
-        if (null !== $viewName) {
-        $innerQueryBuilder->setArgument('viewName', $viewName);
-        }
-        if (null !== $ignore) {
-        $innerQueryBuilder->setArgument('ignore', $ignore);
-        }
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Load the source from its path on the caller's filesystem, including only needed+configured files and directories. Only valid for local sources.
-     */
-    public function resolveFromCaller(): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('resolveFromCaller');
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * The path relative to context of the root of the module source, which contains dagger.json. It also contains the module implementation source code, but that may or may not being a subdir of this root.
+     * TODO
      */
     public function sourceRootSubpath(): string
     {
@@ -200,7 +158,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The path relative to context of the module implementation source code.
+     * TODO
      */
     public function sourceSubpath(): string
     {
@@ -209,32 +167,12 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieve a named view defined for this module source.
+     * TODO
      */
-    public function view(string $name): ModuleSourceView
+    public function sync(): ModuleSourceId
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('view');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\ModuleSourceView($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * The named views defined for this module source, which are sets of directory filters that can be applied to directory arguments provided to functions.
-     */
-    public function views(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('views');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'views');
-    }
-
-    /**
-     * Update the module source with a new context directory. Only valid for local sources.
-     */
-    public function withContextDirectory(DirectoryId|Directory $dir): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withContextDirectory');
-        $innerQueryBuilder->setArgument('dir', $dir);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
+        return new \Dagger\ModuleSourceId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
     }
 
     /**
@@ -248,14 +186,22 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * TODO
+     */
+    public function withEngineVersion(string $version): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEngineVersion');
+        $innerQueryBuilder->setArgument('version', $version);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Sets module init arguments
      */
-    public function withInit(?bool $merge = false): ModuleSource
+    public function withInit(bool $merge): ModuleSource
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withInit');
-        if (null !== $merge) {
         $innerQueryBuilder->setArgument('merge', $merge);
-        }
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -296,17 +242,6 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpdateDependencies');
         $innerQueryBuilder->setArgument('dependencies', $dependencies);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Update the module source with a new named view.
-     */
-    public function withView(string $name, array $patterns): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withView');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('patterns', $patterns);
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
