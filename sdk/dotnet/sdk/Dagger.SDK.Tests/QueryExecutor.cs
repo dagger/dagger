@@ -3,7 +3,7 @@ using Dagger.SDK.GraphQL;
 namespace Dagger.SDK.Tests;
 
 [TestClass]
-public class QueryExecutor
+public class QueryExecutorTest
 {
     [TestMethod]
     public async Task TestExecute()
