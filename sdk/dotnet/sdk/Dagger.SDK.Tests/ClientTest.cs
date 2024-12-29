@@ -5,7 +5,6 @@ namespace Dagger.SDK.Tests;
 [TestClass]
 public class ClientTest
 {
-    private readonly TestContext _context;
     private static readonly Query _dag = Dagger.Dag();
 
     [TestMethod]
