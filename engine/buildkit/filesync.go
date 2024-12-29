@@ -62,6 +62,19 @@ func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, e
 	return msg.Data, nil
 }
 
+// Return the absolute path of the given path as calculated by the caller's host using OS-specific rules.
+func (c *Client) AbsPath(ctx context.Context, path string) (string, error) {
+	msg := fsutiltypes.Stat{}
+	err := c.diffcopy(ctx, engine.LocalImportOpts{
+		Path:           path,
+		GetAbsPathOnly: true,
+	}, &msg)
+	if err != nil {
+		return "", fmt.Errorf("failed to stat path: %w", err)
+	}
+	return msg.Path, nil
+}
+
 func (c *Client) StatCallerHostPath(ctx context.Context, path string, returnAbsPath bool) (*fsutiltypes.Stat, error) {
 	msg := fsutiltypes.Stat{}
 	err := c.diffcopy(ctx, engine.LocalImportOpts{

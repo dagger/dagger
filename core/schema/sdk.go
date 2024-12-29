@@ -63,44 +63,37 @@ func (s *moduleSchema) sdkForModule(
 		return nil, err
 	}
 
-	var sdkSource dagql.Instance[*core.ModuleSource]
-	err = s.dag.Select(ctx, s.dag.Root(), &sdkSource,
-		dagql.Selector{
-			Field: "moduleSource",
-			Args: []dagql.NamedInput{
-				{Name: "refString", Value: dagql.String(sdk.Source)},
-			},
-		},
-	)
+	sdkRefStr := sdk
+	sdkRef, err := parseRefString(ctx, query, moduleSourceArgs{RefString: sdk})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get sdk source for %s: %w", sdk, err)
+		return nil, fmt.Errorf("failed to parse sdk ref %s: %w", sdk, err)
 	}
-
-	if sdkSource.Self.Kind == core.ModuleSourceKindLocal {
-		err = s.dag.Select(ctx, parentSrc, &sdkSource,
-			dagql.Selector{
-				Field: "resolveDependency",
-				Args: []dagql.NamedInput{
-					{Name: "dep", Value: dagql.NewID[*core.ModuleSource](sdkSource.ID())},
-				},
-			},
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load sdk module %s: %w", sdk, err)
+	if sdkRef.kind == core.ModuleSourceKindLocal {
+		switch parentSrc.Self.Kind {
+		case core.ModuleSourceKindLocal:
+			sdkRefStr = filepath.Join(parentSrc.Self.Local.ContextDirectoryPath, parentSrc.Self.SourceRootSubpath, sdk)
+		case core.ModuleSourceKindGit:
+			sdkRefStr = parentSrc.Self.Git.CloneRef + "/" + sdk
+			if sdkRef.git.modVersion == "" && parentSrc.Self.Git.Version != "" {
+				sdkRefStr += "@" + parentSrc.Self.Git.Version
+			}
 		}
 	}
 
 	var sdkMod dagql.Instance[*core.Module]
-	err = s.dag.Select(ctx, sdkSource, &sdkMod,
+	err = s.dag.Select(ctx, s.dag.Root(), &sdkMod,
+		dagql.Selector{
+			Field: "moduleSource",
+			Args: []dagql.NamedInput{
+				{Name: "refString", Value: dagql.String(sdkRefStr)},
+			},
+		},
 		dagql.Selector{
 			Field: "asModule",
 		},
-		dagql.Selector{
-			Field: "initialize",
-		},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load sdk module %s: %w", sdk, err)
+		return nil, fmt.Errorf("failed to get sdk source for %s: %w", sdk, err)
 	}
 
 	// TODO: include sdk source dir from module config dagger.json once we support default-args/scripts
@@ -354,30 +347,23 @@ func (s *moduleSchema) loadBuiltinSDK(
 		return nil, fmt.Errorf("failed to import full sdk source for sdk %s from engine container filesystem: %w", name, err)
 	}
 
-	var sdkModDir dagql.Instance[*core.Directory]
-	err := s.dag.Select(ctx, fullSDKDir, &sdkModDir,
+	var sdkMod dagql.Instance[*core.Module]
+	err := s.dag.Select(ctx, fullSDKDir, &sdkMod,
 		dagql.Selector{
 			Field: "directory",
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.String("runtime")},
 			},
 		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to import module sdk %s: %w", name, err)
-	}
-
-	var sdkMod dagql.Instance[*core.Module]
-	err = s.dag.Select(ctx, sdkModDir, &sdkMod,
+		dagql.Selector{
+			Field: "asModuleSource",
+		},
 		dagql.Selector{
 			Field: "asModule",
 		},
-		dagql.Selector{
-			Field: "initialize",
-		},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load embedded sdk module %q: %w", name, err)
+		return nil, fmt.Errorf("failed to import module sdk %s: %w", name, err)
 	}
 
 	return s.newModuleSDK(ctx, root, sdkMod, fullSDKDir)
@@ -544,6 +530,7 @@ func (sdk *goSDK) baseWithCodegen(
 		return ctr, fmt.Errorf("failed to get schema introspection json during module sdk codegen: %w", err)
 	}
 
+	/* TODO: cleanup
 	modName, err := src.Self.ModuleOriginalName(ctx)
 	if err != nil {
 		return ctr, fmt.Errorf("failed to get module name for go module sdk codegen: %w", err)
@@ -557,6 +544,10 @@ func (sdk *goSDK) baseWithCodegen(
 	if err != nil {
 		return ctr, fmt.Errorf("failed to get subpath for go module sdk codegen: %w", err)
 	}
+	*/
+	modName := src.Self.ModuleName
+	contextDir := src.Self.ContextDirectory
+	srcSubpath := src.Self.SourceSubpath
 
 	ctr, err = sdk.base(ctx)
 	if err != nil {
@@ -601,9 +592,9 @@ func (sdk *goSDK) baseWithCodegen(
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
 	}
 
-	if src.Self.WithInitConfig != nil {
+	if src.Self.InitConfig != nil {
 		codegenArgs = append(codegenArgs,
-			dagql.String("--merge="+strconv.FormatBool(src.Self.WithInitConfig.Merge)))
+			dagql.String("--merge="+strconv.FormatBool(src.Self.InitConfig.Merge)))
 	}
 
 	selectors := []dagql.Selector{
