@@ -96,14 +96,15 @@ func namespaceFromModule(ctx context.Context, m *core.Module) (string, error) {
 		return "mainClient", nil
 	}
 
-	name, err := m.Source.Self.ModuleName(ctx)
-	if err != nil {
-		return "", err
-	}
+	name := m.Source.Self.ModuleName
 
-	symbolic, err := m.Source.Self.Symbolic()
-	if err != nil {
-		return "", err
+	// TODO: cleanup
+	var symbolic string
+	switch m.Source.Self.Kind {
+	case core.ModuleSourceKindLocal:
+		symbolic = m.Source.Self.SourceRootSubpath
+	case core.ModuleSourceKindGit:
+		symbolic = m.Source.Self.Git.CloneRef
 	}
 
 	return "mod(" + name + symbolic + ")", nil

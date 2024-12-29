@@ -326,31 +326,7 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 	path := v.String()
 	path = strings.TrimPrefix(path, "file://")
 
-	// The core module doesn't have a ModuleSource.
-	if modSrc == nil {
-		return dag.Host().Directory(path), nil
-	}
-
-	// Check if there's a :view.
-	// This technically prevents use of paths containing a ":", but that's
-	// generally considered a no-no anyways since it isn't in the
-	// POSIX "portable filename character set":
-	// https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_282
-	path, viewName, _ := strings.Cut(path, ":")
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, err
-	}
-	path, err = pathutil.ExpandHomeDir(homeDir, path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to expand home directory: %w", err)
-	}
-	path = filepath.ToSlash(path) // make windows paths usable in the Linux engine container
-
-	return modSrc.ResolveDirectoryFromCaller(path, dagger.ModuleSourceResolveDirectoryFromCallerOpts{
-		ViewName: viewName,
-		Ignore:   modArg.Ignore,
-	}).Sync(ctx)
+	return dag.Host().Directory(path), nil
 }
 
 // makeGitDirectory creates a dagger.Directory object from a parsed gitutil.GitURL
@@ -689,11 +665,7 @@ func (v *moduleValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.Mod
 	if v.ref == "" {
 		return nil, fmt.Errorf("module ref cannot be empty")
 	}
-	modConf, err := getModuleConfigurationForSourceRef(ctx, dag, v.ref, true, true)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get module configuration: %w", err)
-	}
-	return modConf.Source.AsModule(), nil
+	return dag.ModuleSource(v.ref).AsModule().Sync(ctx)
 }
 
 type moduleSourceValue struct {
@@ -720,11 +692,7 @@ func (v *moduleSourceValue) Get(ctx context.Context, dag *dagger.Client, _ *dagg
 	if v.ref == "" {
 		return nil, fmt.Errorf("module source ref cannot be empty")
 	}
-	modConf, err := getModuleConfigurationForSourceRef(ctx, dag, v.ref, true, true)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get module configuration: %w", err)
-	}
-	return modConf.Source, nil
+	return dag.ModuleSource(v.ref).Sync(ctx)
 }
 
 type platformValue struct {

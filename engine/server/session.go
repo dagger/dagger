@@ -129,7 +129,8 @@ type daggerClient struct {
 	dagqlRoot *core.Query
 
 	// if the client is coming from a module, this is that module
-	mod *core.Module
+	mod     *core.Module
+	modName string
 
 	// the DAG of modules being served to this client
 	deps *core.ModDeps
@@ -404,6 +405,9 @@ type ClientInitOpts struct {
 	// that this client should have access to due to being set in the parent
 	// object.
 	ParentIDs map[digest.Digest]*resource.ID
+
+	// TODO: doc, somewhat silly workaround
+	ModuleName string
 }
 
 // requires that client.stateMu is held
@@ -555,6 +559,8 @@ func (srv *Server) initializeDaggerClient(
 	}
 	client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 
+	client.modName = opts.ModuleName
+
 	if opts.EncodedModuleID == "" {
 		client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 		coreMod.Dag.View = engine.BaseVersion(engine.NormalizeVersion(client.clientVersion))
@@ -571,10 +577,14 @@ func (srv *Server) initializeDaggerClient(
 
 		// this is needed to set the view of the core api as compatible
 		// with the module we're currently calling from
-		engineVersion, err := client.mod.Source.Self.ModuleEngineVersion(ctx)
-		if err != nil {
-			return err
-		}
+		// TODO: cleanup
+		/*
+			engineVersion, err := client.mod.Source.Self.ModuleEngineVersion(ctx)
+			if err != nil {
+				return err
+			}
+		*/
+		engineVersion := client.mod.Source.Self.EngineVersion
 		coreMod.Dag.View = engine.BaseVersion(engine.NormalizeVersion(engineVersion))
 
 		// NOTE: *technically* we should reload the module here, so that we can
@@ -904,6 +914,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 		EncodedModuleID:     execMD.EncodedModuleID,
 		EncodedFunctionCall: execMD.EncodedFunctionCall,
 		ParentIDs:           execMD.ParentIDs,
+		ModuleName:          execMD.ModuleName,
 	}).ServeHTTP(w, r)
 }
 
@@ -1227,11 +1238,15 @@ func (srv *Server) CurrentModule(ctx context.Context) (*core.Module, error) {
 	if client.clientID == client.daggerSession.mainClientCallerID {
 		return nil, fmt.Errorf("%w: main client caller has no current module", core.ErrNoCurrentModule)
 	}
-	if client.mod == nil {
-		return nil, core.ErrNoCurrentModule
+	if client.mod != nil {
+		return client.mod, nil
 	}
 
-	return client.mod, nil
+	if client.modName != "" {
+		return &core.Module{NameField: client.modName}, nil
+	}
+
+	return nil, core.ErrNoCurrentModule
 }
 
 // If the current client is coming from a function, return the function call metadata

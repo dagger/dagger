@@ -64,17 +64,18 @@ func initializeModule(
 	defer telemetry.End(span, func() error { return rerr })
 
 	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
-	conf, err := getModuleConfigurationForSourceRef(findCtx, dag, srcRef, doFindUp, true, srcOpts...)
+	modSrc := dag.ModuleSource(srcRef)
+	configExists, err := modSrc.ConfigExists(findCtx)
 	telemetry.End(findSpan, func() error { return err })
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get configured module: %w", err)
 	}
-	if !conf.FullyInitialized() {
+	if !configExists {
 		return nil, fmt.Errorf("module must be fully initialized")
 	}
 
-	return initializeModuleConfig(ctx, dag, conf)
+	return initializeModuleConfig(ctx, dag, modSrc)
 }
 
 // maybeInitializeModule optionally loads the module at the given source ref,
@@ -97,28 +98,29 @@ func tryInitializeModule(ctx context.Context, dag *dagger.Client, srcRef string)
 	defer telemetry.End(span, func() error { return rerr })
 
 	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
-	conf, _ := getModuleConfigurationForSourceRef(findCtx, dag, srcRef, true, true)
+	modSrc := dag.ModuleSource(srcRef)
+	configExists, _ := modSrc.ConfigExists(findCtx)
 	findSpan.End()
 
-	if conf == nil || !conf.FullyInitialized() {
+	if configExists {
 		return nil, nil
 	}
 
 	span.SetName("load module " + srcRef)
 
-	return initializeModuleConfig(ctx, dag, conf)
+	return initializeModuleConfig(ctx, dag, modSrc)
 }
 
 // initializeModuleConfig loads a module using a detected module configuration
-func initializeModuleConfig(ctx context.Context, dag *dagger.Client, conf *configuredModule) (rdef *moduleDef, rerr error) {
+func initializeModuleConfig(ctx context.Context, dag *dagger.Client, modSrc *dagger.ModuleSource) (rdef *moduleDef, rerr error) {
 	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())
-	err := conf.Source.AsModule().Initialize().Serve(serveCtx)
+	err := modSrc.AsModule().Serve(serveCtx)
 	telemetry.End(serveSpan, func() error { return err })
 	if err != nil {
 		return nil, fmt.Errorf("failed to serve module: %w", err)
 	}
 
-	def, err := inspectModule(ctx, dag, conf.Source)
+	def, err := inspectModule(ctx, dag, modSrc)
 	if err != nil {
 		return nil, err
 	}
@@ -186,10 +188,8 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 		Source struct {
 			AsString string
 			Module   struct {
-				Name       string
-				Initialize struct {
-					Description string
-				}
+				Name         string
+				Description  string
 				Dependencies []struct {
 					Name        string
 					Description string
@@ -233,7 +233,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 		Source:       source,
 		ModRef:       res.Source.AsString,
 		Name:         res.Source.Module.Name,
-		Description:  res.Source.Module.Initialize.Description,
+		Description:  res.Source.Module.Description,
 		Dependencies: deps,
 	}
 

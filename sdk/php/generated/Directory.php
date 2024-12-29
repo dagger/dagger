@@ -14,18 +14,15 @@ namespace Dagger;
 class Directory extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * Load the directory as a Dagger module
+     * Load the directory as a Dagger module source
      */
-    public function asModule(?string $sourceRootPath = '.', ?string $engineVersion = null): Module
+    public function asModuleSource(?string $sourceRootPath = '.'): ModuleSource
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asModule');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asModuleSource');
         if (null !== $sourceRootPath) {
         $innerQueryBuilder->setArgument('sourceRootPath', $sourceRootPath);
         }
-        if (null !== $engineVersion) {
-        $innerQueryBuilder->setArgument('engineVersion', $engineVersion);
-        }
-        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

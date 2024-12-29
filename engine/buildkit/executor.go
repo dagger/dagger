@@ -61,9 +61,9 @@ type ExecutionMetadata struct {
 	// Used when executing the module runtime itself.
 	Internal bool
 
-	// TODO: can rm EncodedModuleID now
 	CallID              *call.ID
 	EncodedModuleID     string
+	ModuleName          string
 	EncodedFunctionCall json.RawMessage
 	CallerClientID      string
 

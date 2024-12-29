@@ -18,13 +18,7 @@ type SecretID = dagql.ID[*Secret]
 
 type ModuleID = dagql.ID[*Module]
 
-type ModuleDependencyID = dagql.ID[*ModuleDependency]
-
 type ModuleSourceID = dagql.ID[*ModuleSource]
-
-type LocalModuleSourceID = dagql.ID[*LocalModuleSource]
-
-type GitModuleSourceID = dagql.ID[*GitModuleSource]
 
 type FunctionID = dagql.ID[*Function]
 
