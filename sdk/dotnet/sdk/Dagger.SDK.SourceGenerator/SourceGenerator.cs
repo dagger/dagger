@@ -3,10 +3,8 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
-
 using Dagger.SDK.SourceGenerator.Code;
 using Dagger.SDK.SourceGenerator.Types;
-
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 

@@ -10,17 +10,26 @@ public class ClientTest
     [TestMethod]
     public async Task TestSimple()
     {
-        var output = await _dag.Container().From("debian").WithExec(["echo", "hello"]).StdoutAsync();
+        var output = await _dag.Container()
+            .From("debian")
+            .WithExec(["echo", "hello"])
+            .StdoutAsync();
 
         Assert.AreEqual("hello\n", output, ignoreCase: true);
     }
-    
+
     [TestMethod]
     public async Task TestCancellation()
     {
         var cts = new CancellationTokenSource();
         cts.CancelAfter(5000);
-        await Assert.ThrowsExceptionAsync<TaskCanceledException>(() => _dag.Container().From("debian").WithExec(["bash", "-c", "sleep 10; echo hello"]).StdoutAsync(cts.Token));
+        await Assert.ThrowsExceptionAsync<TaskCanceledException>(
+            () =>
+                _dag.Container()
+                    .From("debian")
+                    .WithExec(["bash", "-c", "sleep 10; echo hello"])
+                    .StdoutAsync(cts.Token)
+        );
     }
 
     [TestMethod]
@@ -89,7 +98,9 @@ public class ClientTest
             .WithEnvVariable("C", "D")
             .EnvVariablesAsync();
 
-        ICollection envNames = envs.Select(env => env.NameAsync()).Select(task => task.Result).ToList();
+        ICollection envNames = envs.Select(env => env.NameAsync())
+            .Select(task => task.Result)
+            .ToList();
         ICollection expected = new[] { "A", "C" };
         CollectionAssert.AreEqual(expected, envNames);
     }

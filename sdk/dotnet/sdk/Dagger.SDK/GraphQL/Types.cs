@@ -8,7 +8,8 @@ public abstract class Value
     public abstract Task<string> FormatAsync(CancellationToken cancellationToken = default);
 }
 
-public class IdValue<TId>(IId<TId> value) : Value where TId : Scalar
+public class IdValue<TId>(IId<TId> value) : Value
+    where TId : Scalar
 {
     public override async Task<string> FormatAsync(CancellationToken cancellationToken = default)
     {
@@ -26,7 +27,7 @@ public class StringValue(string value) : Value
             return Task.FromResult("\"\"");
         }
 
-        var sb = new StringBuilder(value.Length + 2); 
+        var sb = new StringBuilder(value.Length + 2);
         sb.Append('"');
 
         foreach (char c in value)
@@ -59,7 +60,6 @@ public class StringValue(string value) : Value
     }
 }
 
-
 public class IntValue(int n) : Value
 {
     public override Task<string> FormatAsync(CancellationToken cancellationToken = default)
@@ -80,7 +80,7 @@ public class BooleanValue(bool b) : Value
 {
     const string TRUE = "true";
     const string FALSE = "false";
-    
+
     public override Task<string> FormatAsync(CancellationToken cancellationToken = default)
     {
         return Task.FromResult(b ? TRUE : FALSE);
@@ -91,7 +91,8 @@ public class ListValue(List<Value> list) : Value
 {
     public override async Task<string> FormatAsync(CancellationToken cancellationToken = default)
     {
-        Task<string>[] tasks = list.Select(element => element.FormatAsync(cancellationToken)).ToArray();
+        Task<string>[] tasks = list.Select(element => element.FormatAsync(cancellationToken))
+            .ToArray();
         string[] results = await Task.WhenAll(tasks);
 
         var builder = new StringBuilder();
@@ -108,7 +109,7 @@ public class ObjectValue(List<KeyValuePair<string, Value>> obj) : Value
     {
         Task<string>[] tasks = obj.Select(kv => kv.Value.FormatAsync(cancellationToken)).ToArray();
         string[] results = await Task.WhenAll(tasks);
-        
+
         var builder = new StringBuilder();
         builder.Append('{');
         builder.Append(string.Join(",", obj.Select((kv, i) => $"{kv.Key}:{results[i]}")));
