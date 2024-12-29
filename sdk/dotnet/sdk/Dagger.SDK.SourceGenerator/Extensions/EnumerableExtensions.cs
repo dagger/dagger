@@ -5,8 +5,6 @@ namespace Dagger.SDK.SourceGenerator.Extensions;
 
 public static class EnumerableExtensions
 {
-    #if NETSTANDARD2_0
-    
     public static IEnumerable<TSource> ExceptBy<TSource, TKey>(
         this IEnumerable<TSource> source,
         IEnumerable<TKey> second,
@@ -24,6 +22,4 @@ public static class EnumerableExtensions
             yield return element;
         }
     }
-
-    #endif
 }

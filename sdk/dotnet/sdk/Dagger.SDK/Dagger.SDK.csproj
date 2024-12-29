@@ -10,10 +10,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference
-                Include="..\Dagger.SDK.SourceGenerator\Dagger.SDK.SourceGenerator.csproj"
-                OutputItemType="Analyzer"
-                ReferenceOutputAssembly="false" />
+        <ProjectReference Include="..\Dagger.SDK.SourceGenerator\Dagger.SDK.SourceGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     </ItemGroup>
 
     <ItemGroup>
@@ -22,7 +19,6 @@
 
     <ItemGroup>
         <PackageReference Include="System.Collections.Immutable" Version="9.0.0" />
-        <PackageReference Include="System.Text.Json" Version="8.0.5" />
     </ItemGroup>
 
 </Project>

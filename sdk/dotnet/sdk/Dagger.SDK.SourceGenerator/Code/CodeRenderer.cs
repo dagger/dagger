@@ -91,7 +91,7 @@ public class CodeRenderer : ICodeRenderer
         {
             var isAsync = field.Type.IsLeaf() || field.Type.IsList();
             var methodName = Formatter.FormatMethod(field.Name);
-            
+
             if (type.Name.Equals(field.Name, StringComparison.CurrentCultureIgnoreCase))
             {
                 methodName = $"{methodName}_";
@@ -382,7 +382,7 @@ public class CodeRenderer : ICodeRenderer
         {
             var type = arg.Type.GetTypeName();
             var token = SyntaxFacts.GetKeywordKind(type);
-            
+
             switch (token)
             {
                 case SyntaxKind.StringKeyword:

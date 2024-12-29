@@ -10,7 +10,7 @@
 
         <RootNamespace>Dagger.SDK.SourceGenerator</RootNamespace>
         <PackageId>Dagger.SDK.SourceGenerator</PackageId>
-        <TargetFrameworks>net8.0;netstandard2.0</TargetFrameworks>
+        <TargetFramework>netstandard2.0</TargetFramework>
     </PropertyGroup>
 
     <ItemGroup>
@@ -18,8 +18,7 @@
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.3.0" />
-        <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.3.0" />
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" />
         <PackageReference Include="System.Text.Json" Version="8.0.5" />
     </ItemGroup>
 
