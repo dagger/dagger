@@ -248,7 +248,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <daggerengine.version>devel</daggerengine.version>
 
-        <assertj-core.version>3.26.3</assertj-core.version>
+        <assertj-core.version>3.27.0</assertj-core.version>
         <commons-compress.version>1.27.1</commons-compress.version>
         <commons-lang.version>3.17.0</commons-lang.version>
         <exec-maven-plugin.version>3.5.0</exec-maven-plugin.version>
@@ -259,7 +259,7 @@
         <jakarta.json.bind-api.version>3.0.1</jakarta.json.bind-api.version>
         <javapoet.version>1.13.0</javapoet.version>
         <json-path.version>2.9.0</json-path.version>
-        <junit.version>5.11.3</junit.version>
+        <junit.version>5.11.4</junit.version>
         <maven-assembly-plugin.version>3.7.1</maven-assembly-plugin.version>
         <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
         <maven-failsafe-plugin.version>3.5.2</maven-failsafe-plugin.version>
@@ -273,8 +273,8 @@
         <mockito-core.version>5.14.2</mockito-core.version>
         <slf4j-api.version>2.0.16</slf4j-api.version>
         <slf4j-simple.version>2.0.16</slf4j-simple.version>
-        <smallrye-graphql.version>2.11.0</smallrye-graphql.version>
-        <netty-common.version>4.1.115.Final</netty-common.version>
+        <smallrye-graphql.version>2.12.0</smallrye-graphql.version>
+        <netty-common.version>4.1.116.Final</netty-common.version>
         <system-stubs-jupiter.version>2.1.7</system-stubs-jupiter.version>
         <xdg-java.version>0.1.1</xdg-java.version>
         <yasson.version>3.0.4</yasson.version>
