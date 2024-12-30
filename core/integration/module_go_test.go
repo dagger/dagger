@@ -1481,7 +1481,7 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 		require.Regexp(t, "cannot define methods on objects from outside this module", logs.String())
 	})
 
-	t.Run("in same mod name", func(ctx context.Context, t *testctx.T) {
+	t.Run("in same mod name DONT COMMIT", func(ctx context.Context, t *testctx.T) {
 		var logs safeBuffer
 		c := connect(ctx, t, dagger.WithLogOutput(&logs))
 		_, err := c.Container().From(golangImage).
