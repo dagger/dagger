@@ -35,6 +35,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/testctx"
@@ -226,7 +227,7 @@ func (m *Hoster) Run(ctx context.Context) error {
 		WithDefaultArgs([]string{"httpd", "-v", "-f"}).
 		WithExposedPort(80).
 		AsService()
-	
+
 	hn, err := srv.Hostname(ctx)
 	if err != nil {
 		return err
@@ -401,7 +402,7 @@ func (m *Hoster) Run(ctx context.Context) error {
 		WithExposedPort(80).
 		AsService().
 		WithHostname("wwwhatsup0")
-	
+
 	_, err := srv.Start(ctx)
 	if err != nil {
 		return err
@@ -462,7 +463,7 @@ func (m *Caller) Run(ctx context.Context) error {
 		WithExposedPort(80).
 		AsService().
 		WithHostname("wwwhatsup1")
-	
+
 	_, err = srv.Start(ctx)
 	if err != nil {
 		return err
@@ -505,7 +506,7 @@ func (m *Hoster) Run(ctx context.Context) error {
 		WithExposedPort(80).
 		AsService().
 		WithHostname("wwwhatsup1")
-	
+
 	_, err := srv.Start(ctx)
 	if err != nil {
 		return err
@@ -2122,6 +2123,22 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 		}
 	}
 	require.True(t, found)
+}
+
+func (ServiceSuite) TestEntrypointCMDCheck(ctx context.Context, t *testctx.T) {
+	t.Run("return error when missing", func(ctx context.Context, t *testctx.T) {
+		c, err := dagger.Connect(ctx, dagger.WithLogOutput(testutil.NewTWriter(t.T)))
+		require.NoError(t, err)
+		t.Cleanup(func() { c.Close() })
+
+		s1 := c.Container().From("nginx").
+			AsService()
+
+		_, err = s1.Start(ctx)
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), core.ErrNoSvcCommand.Error())
+	})
 }
 
 func httpService(ctx context.Context, t *testctx.T, c *dagger.Client, content string) (*dagger.Service, string) {
