@@ -73,6 +73,7 @@ module.exports = {
           "collapsed": true,
           "items": [
             "api/clients-sdk",
+            "api/clients-shell",
             "api/clients-cli",
             "api/clients-http"
           ]
