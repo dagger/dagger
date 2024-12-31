@@ -1465,8 +1465,6 @@ dagger call test report contents
 
 ## Debugging
 
-Dagger provides two features that can help greatly when trying to debug a pipeline - opening an interactive terminal session at the failure point, or at explicit breakpoints throughout your pipeline code. All context is available at the point of failure. Multiple terminals are supported in the same Dagger Function; they will open in sequence.
-
 ### Debug container builds
 
 The following Dagger Function opens an interactive terminal session at different stages in a Dagger pipeline to debug a container build.
@@ -1560,4 +1558,38 @@ Execute another Dagger Function that does the same as the previous one, except u
 ```shell
 # inspect a directory
 dagger call advanced-directory
+```
+
+## Logging
+
+### Add custom log messages
+
+Dagger represents operations performed by a Dagger Function as [OpenTelemetry spans](https://opentelemetry.io/docs/concepts/signals/traces/#spans). If a Dagger Function emits custom OpenTelemetry spans, the related information will appear in the Dagger TUI and Traces. The following Dagger Function demonstrates this by emitting custom spans for various file operations.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=../api/snippets/logging/go/custom-spans/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+```python file=../api/snippets/logging/python/custom-spans/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=../api/snippets/logging/typescript/custom-spans/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Execute a Dagger Function to create three files in an `alpine` container and return the resulting directory, injecting a custom log message for each file operation using OpenTelemetry spans:
+
+```shell
+dagger call foo
 ```
