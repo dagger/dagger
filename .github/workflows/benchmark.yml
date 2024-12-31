@@ -26,8 +26,8 @@ jobs:
       - name: dagger init (go)
         shell: bash
         run: |
-          mkdir -p /tmp/benchmark
-          cd /tmp/benchmark
+          mkdir -p ${{ runner.temp }}/benchmark
+          cd ${{ runner.temp }}/benchmark
 
           dagger init --name=benchmark --sdk=go
         env:
@@ -37,7 +37,7 @@ jobs:
         shell: bash
         run: |
           dagger functions
-        working-directory: /tmp/benchmark
+        working-directory: ${{ runner.temp }}/benchmark
         env:
           DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
@@ -45,7 +45,7 @@ jobs:
         shell: bash
         run: |
           dagger functions
-        working-directory: /tmp/benchmark
+        working-directory: ${{ runner.temp }}/benchmark
         env:
           DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
@@ -56,7 +56,7 @@ jobs:
           [ -f "main.go" ] && echo >> main.go
 
           dagger functions
-        working-directory: /tmp/benchmark
+        working-directory: ${{ runner.temp }}/benchmark
         env:
           DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
@@ -69,8 +69,8 @@ jobs:
       - name: dagger init (python)
         shell: bash
         run: |
-          mkdir -p /tmp/benchmark
-          cd /tmp/benchmark
+          mkdir -p ${{ runner.temp }}/benchmark
+          cd ${{ runner.temp }}/benchmark
 
           dagger init --name=benchmark --sdk=python
         env:
@@ -80,7 +80,7 @@ jobs:
         shell: bash
         run: |
           dagger functions
-        working-directory: /tmp/benchmark
+        working-directory: ${{ runner.temp }}/benchmark
         env:
           DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
@@ -88,7 +88,7 @@ jobs:
         shell: bash
         run: |
           dagger functions
-        working-directory: /tmp/benchmark
+        working-directory: ${{ runner.temp }}/benchmark
         env:
           DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
@@ -99,7 +99,7 @@ jobs:
           [ -f "src/main/__init__.py" ] && echo >> src/main/__init__.py
 
           dagger functions
-        working-directory: /tmp/benchmark
+        working-directory: ${{ runner.temp }}/benchmark
         env:
           DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
@@ -116,8 +116,8 @@ jobs:
       - name: dagger init (typescript::${{ matrix.package-manager }})
         shell: bash
         run: |
-          mkdir -p /tmp/benchmark
-          cd /tmp/benchmark
+          mkdir -p ${{ runner.temp }}/benchmark
+          cd ${{ runner.temp }}/benchmark
 
           if [ "${{ matrix.package-manager }}" == "pnpm" ]; then
           cat << EOF > package.json
@@ -194,7 +194,7 @@ jobs:
         shell: bash
         run: |
           dagger functions
-        working-directory: /tmp/benchmark
+        working-directory: ${{ runner.temp }}/benchmark
         env:
           DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
@@ -202,7 +202,7 @@ jobs:
         shell: bash
         run: |
           dagger functions
-        working-directory: /tmp/benchmark
+        working-directory: ${{ runner.temp }}/benchmark
         env:
           DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
@@ -213,6 +213,6 @@ jobs:
           [ -f "src/index.ts" ] && echo >> src/index.ts
 
           dagger functions
-        working-directory: /tmp/benchmark
+        working-directory: ${{ runner.temp }}/benchmark
         env:
           DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
