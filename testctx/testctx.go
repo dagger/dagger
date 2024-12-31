@@ -14,13 +14,21 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-type Middleware = func(*T) *T
+type Middleware = func(*TB) *TB
 
-func WithParallel(t *T) *T {
-	t.Parallel()
+func WithParallel(t *TB) *TB {
+	if tt, ok := t.TB.(*testing.T); ok {
+		tt.Parallel()
+	} else {
+		t.Fatal("TB is not *testing.T, cannot call Parallel()")
+	}
 	return t.
-		BeforeEach(func(t *T) *T {
-			t.Parallel()
+		BeforeEach(func(t *TB) *TB {
+			if tt, ok := t.TB.(*testing.T); ok {
+				tt.Parallel()
+			} else {
+				t.Fatal("TB is not *testing.T, cannot call Parallel()")
+			}
 			return t
 		})
 }
@@ -53,7 +61,7 @@ func Run(ctx context.Context, testingT *testing.T, suite any, middleware ...Midd
 }
 
 func WithOTelTracing(tracer trace.Tracer) Middleware {
-	wrapSpan := func(t *T) *T {
+	wrapSpan := func(t *TB) *TB {
 		ctx, span := tracer.Start(t.Context(), t.BaseName())
 		t.Cleanup(func() {
 			if t.Failed() {
@@ -65,7 +73,7 @@ func WithOTelTracing(tracer trace.Tracer) Middleware {
 		})
 		return t.WithContext(ctx)
 	}
-	return func(t *T) *T {
+	return func(t *TB) *TB {
 		return t.
 			BeforeAll(wrapSpan).
 			BeforeEach(wrapSpan)
@@ -73,8 +81,8 @@ func WithOTelTracing(tracer trace.Tracer) Middleware {
 }
 
 func WithOTelLogging(logger log.Logger) Middleware {
-	return func(t *T) *T {
-		return t.WithLogger(func(t2 *T, msg string) {
+	return func(t *TB) *TB {
+		return t.WithLogger(func(t2 *TB, msg string) {
 			var rec log.Record
 			rec.SetBody(log.StringValue(msg))
 			rec.SetTimestamp(time.Now())
@@ -84,7 +92,7 @@ func WithOTelLogging(logger log.Logger) Middleware {
 }
 
 func Combine(middleware ...Middleware) Middleware {
-	return func(t *T) *T {
+	return func(t *TB) *TB {
 		for _, m := range middleware {
 			t = m(t)
 		}
@@ -97,46 +105,54 @@ func New(ctx context.Context, t *testing.T) *T {
 	ctx, cancel := context.WithCancel(ctx)
 	t.Cleanup(cancel)
 	return &T{
-		T:   t,
-		ctx: ctx,
-		mu:  new(sync.Mutex),
+		TB: &TB{
+			TB:  t,
+			ctx: ctx,
+			mu:  new(sync.Mutex),
+		},
+		T: t,
 	}
 }
 
-type T struct {
-	*testing.T
+type TB struct {
+	testing.TB
 
 	ctx        context.Context
 	baseName   string
-	logger     func(*T, string)
-	beforeEach []func(*T) *T
+	logger     func(*TB, string)
+	beforeEach []func(*TB) *TB
 	errors     []string
 	mu         *sync.Mutex
 }
 
-func (t *T) BaseName() string {
+type T struct {
+	*TB
+	*testing.T
+}
+
+func (t *TB) BaseName() string {
 	if t.baseName != "" {
 		return t.baseName
 	}
 	return t.Name()
 }
 
-func (t *T) Context() context.Context {
+func (t *TB) Context() context.Context {
 	return t.ctx
 }
 
-func (t T) WithContext(ctx context.Context) *T {
+func (t TB) WithContext(ctx context.Context) *TB {
 	t.ctx = ctx
 	return &t
 }
 
-func (t T) WithLogger(logger func(*T, string)) *T {
+func (t TB) WithLogger(logger func(*TB, string)) *TB {
 	t.logger = logger
 	return &t
 }
 
-func (t *T) WithTimeout(timeout time.Duration) *T {
-	return t.BeforeEach(func(t2 *T) *T {
+func (t *TB) WithTimeout(timeout time.Duration) *TB {
+	return t.BeforeEach(func(t2 *TB) *TB {
 		ctx, cancel := context.WithTimeout(t2.Context(), timeout)
 		t2.Cleanup(cancel)
 		return t2.WithContext(ctx)
@@ -146,12 +162,12 @@ func (t *T) WithTimeout(timeout time.Duration) *T {
 // BeforeAll calls f immediately with itself and returns the result.
 //
 // It is not inherited by subtests.
-func (t *T) BeforeAll(f func(*T) *T) *T {
+func (t *TB) BeforeAll(f func(*TB) *TB) *TB {
 	return f(t)
 }
 
 // BeforeEach configures f to run prior to each subtest.
-func (t T) BeforeEach(f Middleware) *T {
+func (t TB) BeforeEach(f Middleware) *TB {
 	cpM := make([]Middleware, len(t.beforeEach))
 	copy(cpM, t.beforeEach)
 	cpM = append(cpM, f)
@@ -177,66 +193,66 @@ func (t *T) sub(name string, testingT *testing.T) *T {
 	return sub
 }
 
-func (t *T) Log(vals ...any) {
+func (t *TB) Log(vals ...any) {
 	t.log(fmt.Sprintln(vals...))
-	t.T.Log(vals...)
+	t.TB.Log(vals...)
 }
 
-func (t *T) Logf(format string, vals ...any) {
+func (t *TB) Logf(format string, vals ...any) {
 	t.logf(format, vals...)
-	t.T.Logf(format, vals...)
+	t.TB.Logf(format, vals...)
 }
 
-func (t *T) Error(vals ...any) {
+func (t *TB) Error(vals ...any) {
 	msg := fmt.Sprint(vals...)
 	t.mu.Lock()
 	t.errors = append(t.errors, msg)
 	t.mu.Unlock()
 	t.log(msg)
-	t.T.Error(vals...)
+	t.TB.Error(vals...)
 }
 
-func (t *T) Errorf(format string, vals ...any) {
+func (t *TB) Errorf(format string, vals ...any) {
 	t.logf(format, vals...)
 	t.mu.Lock()
 	t.errors = append(t.errors, fmt.Sprintf(format, vals...))
 	t.mu.Unlock()
-	t.T.Errorf(format, vals...)
+	t.TB.Errorf(format, vals...)
 }
 
-func (t *T) Fatal(vals ...any) {
+func (t *TB) Fatal(vals ...any) {
 	t.log(fmt.Sprintln(vals...))
 	t.mu.Lock()
 	t.errors = append(t.errors, fmt.Sprint(vals...))
 	t.mu.Unlock()
-	t.T.Fatal(vals...)
+	t.TB.Fatal(vals...)
 }
 
-func (t *T) Fatalf(format string, vals ...any) {
+func (t *TB) Fatalf(format string, vals ...any) {
 	t.logf(format, vals...)
 	t.mu.Lock()
 	t.errors = append(t.errors, fmt.Sprintf(format, vals...))
 	t.mu.Unlock()
-	t.T.Fatalf(format, vals...)
+	t.TB.Fatalf(format, vals...)
 }
 
-func (t *T) Skip(vals ...any) {
+func (t *TB) Skip(vals ...any) {
 	t.log(fmt.Sprintln(vals...))
-	t.T.Skip(vals...)
+	t.TB.Skip(vals...)
 }
 
-func (t *T) Skipf(format string, vals ...any) {
+func (t *TB) Skipf(format string, vals ...any) {
 	t.logf(format, vals...)
-	t.T.Skipf(format, vals...)
+	t.TB.Skipf(format, vals...)
 }
 
-func (t *T) Errors() string {
+func (t *TB) Errors() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return strings.Join(t.errors, "\n")
 }
 
-func (t *T) log(out string) {
+func (t *TB) log(out string) {
 	if t.logger != nil {
 		if !strings.HasSuffix(out, "\n") {
 			out += "\n"
@@ -246,7 +262,7 @@ func (t *T) log(out string) {
 	}
 }
 
-func (t *T) logf(format string, vals ...any) {
+func (t *TB) logf(format string, vals ...any) {
 	if t.logger != nil {
 		out := fmt.Sprintf(format, vals...)
 		if !strings.HasSuffix(out, "\n") {
