@@ -1,17 +1,15 @@
 {
   "name": "ci",
-  "engineVersion": "v0.15.0",
+  "engineVersion": "v0.15.1",
   "sdk": "go",
   "dependencies": [
     {
       "name": "dirdiff",
-      "source": "../modules/dirdiff",
-      "pin": ""
+      "source": "../modules/dirdiff"
     },
     {
       "name": "gha",
-      "source": "../modules/gha",
-      "pin": ""
+      "source": "../modules/gha"
     }
   ],
   "source": "."

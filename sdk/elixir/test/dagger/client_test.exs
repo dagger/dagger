@@ -29,11 +29,11 @@ defmodule Dagger.ClientTest do
     assert {:ok, version} =
              dag
              |> Client.container()
-             |> Container.from("alpine:3.16.2")
+             |> Container.from("alpine:3.20.2")
              |> Container.with_exec(["cat", "/etc/alpine-release"])
              |> Container.stdout()
 
-    assert version == "3.16.2\n"
+    assert version == "3.20.2\n"
   end
 
   test "git_repository", %{dag: dag} do
@@ -67,7 +67,7 @@ defmodule Dagger.ClientTest do
 
   test "container build args", %{dag: dag} do
     dockerfile = """
-    FROM alpine:3.16.2
+    FROM alpine:3.20.2
     ARG SPAM=spam
     ENV SPAM=$SPAM
     CMD printenv
@@ -93,7 +93,7 @@ defmodule Dagger.ClientTest do
       assert {:ok, out} =
                dag
                |> Client.container()
-               |> Container.from("alpine:3.16.2")
+               |> Container.from("alpine:3.20.2")
                |> Container.with_env_variable("FOO", val)
                |> Container.with_exec(["sh", "-c", "echo -n $FOO"])
                |> Container.stdout()
@@ -112,7 +112,7 @@ defmodule Dagger.ClientTest do
     assert {:ok, out} =
              dag
              |> Client.container()
-             |> Container.from("alpine:3.16.2")
+             |> Container.from("alpine:3.20.2")
              |> Container.with_mounted_directory("/mnt", dir)
              |> Container.with_exec(["ls", "/mnt"])
              |> Container.stdout()
@@ -130,7 +130,7 @@ defmodule Dagger.ClientTest do
     container =
       dag
       |> Client.container()
-      |> Container.from("alpine:3.16.2")
+      |> Container.from("alpine:3.20.2")
       |> Container.with_mounted_cache("/cache", Client.cache_volume(dag, cache_key),
         sharing: CacheSharingMode.locked()
       )
@@ -182,7 +182,7 @@ defmodule Dagger.ClientTest do
     assert {:ok, envs} =
              dag
              |> Client.container()
-             |> Container.from("alpine:3.16.2")
+             |> Container.from("alpine:3.20.2")
              |> Container.env_variables()
 
     assert is_list(envs)
@@ -193,7 +193,7 @@ defmodule Dagger.ClientTest do
     assert {:ok, nil} =
              dag
              |> Client.container()
-             |> Container.from("alpine:3.16.2")
+             |> Container.from("alpine:3.20.2")
              |> Container.env_variable("NOTHING")
   end
 
@@ -227,7 +227,7 @@ defmodule Dagger.ClientTest do
     container =
       dag
       |> Client.container()
-      |> Container.from("alpine:3.16.2")
+      |> Container.from("alpine:3.20.2")
 
     assert {:error, %ExecError{}} =
              container |> Container.with_exec(["foobar"]) |> Sync.sync()
@@ -269,7 +269,7 @@ defmodule Dagger.ClientTest do
     {:ok, env} =
       dag
       |> Client.container()
-      |> Container.from("alpine:3.16.2")
+      |> Container.from("alpine:3.20.2")
       |> Container.with_env_variable("A", "B")
       |> Container.with_env_variable("A", "C:${A}", expand: true)
       |> Container.env_variable("A")
@@ -327,7 +327,7 @@ defmodule Dagger.ClientTest do
     assert {:error, error} =
              dag
              |> Client.container()
-             |> Container.from("alpine:3.16.2")
+             |> Container.from("alpine:3.20.2")
              |> Container.with_exec(["foobar"])
              |> Sync.sync()
 

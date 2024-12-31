@@ -1,0 +1,111 @@
+{{- if eq .Values.engine.kind "StatefulSet" -}}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "dagger.fullname" . }}-engine
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dagger.labels" . | nindent 4 }}
+spec:
+  # DO NOT RUN MORE THAN 1 REPLICA.
+  # Only one (1) Engine is able to hold the lock, other replicas will not be able to start.
+  replicas: 1
+  selector:
+    matchLabels:
+      name: {{ include "dagger.fullname" . }}-engine
+  template:
+    metadata:
+      {{- if (or .Values.engine.config .Values.magicache.enabled) }}
+      annotations:
+        {{- if .Values.engine.config }}
+        checksum/config: {{ include (print $.Template.BasePath "/engine-config.yaml") . | sha256sum }}
+        {{- end }}
+        {{- if .Values.magicache.enabled }}
+        checksum/secret: {{ include (print $.Template.BasePath "/magicache-secret.yaml") . | sha256sum }}
+        {{- end }}
+      {{- end }}
+      labels:
+        name: {{ include "dagger.fullname" . }}-engine
+        {{- include "dagger.labels" . | nindent 8 }}
+    spec:
+      {{- with .Values.engine.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.engine.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 1001
+        fsGroup: 1001
+        fsGroupChangePolicy: "OnRootMismatch"
+      serviceAccountName: {{ include "dagger.serviceAccountName" . }}
+      {{- if .Values.engine.priorityClassName }}
+      priorityClassName: {{ .Values.engine.priorityClassName }}
+      {{- end }}
+      containers:
+        - name: dagger-engine
+          image: {{ if .Values.engine.image.ref }}{{ .Values.engine.image.ref }}{{ else }}registry.dagger.io/engine:v{{ .Chart.Version }}{{ end }}
+          imagePullPolicy: {{ .Values.engine.image.pullPolicy }}
+          {{- if .Values.engine.args }}
+          args:
+            {{- toYaml .Values.engine.args | nindent 12 }}
+          {{- end }}
+          {{- if .Values.magicache.enabled }}
+          env:
+            - name: _EXPERIMENTAL_DAGGER_CACHESERVICE_URL
+              value: {{ required "A magicache url is required" .Values.magicache.url }}
+          envFrom:
+            - secretRef:
+                {{- if .Values.magicache.secretName }}
+                name: {{ .Values.magicache.secretName }}
+                {{- else }}
+                name: {{ include "dagger.fullname" . }}-magicache-token
+                {{- end }}
+          {{- end }}
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+                - ALL
+          resources: {{- toYaml .Values.engine.resources | nindent 12 }}
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -exc
+                - |-
+                  dagger core version
+            {{- if .Values.engine.readinessProbeSettings }}
+            {{- toYaml .Values.engine.readinessProbeSettings | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/dagger
+            - name: run
+              mountPath: /var/run/buildkit
+            {{- if .Values.engine.config }}
+            - name: config
+              mountPath: /etc/dagger/engine.toml
+              subPath: engine.toml
+            {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.engine.terminationGracePeriodSeconds }}
+      volumes:
+        - name: data
+          hostPath:
+            path: /var/lib/dagger-{{ include "dagger.fullname" . }}
+        - name: run
+          hostPath:
+            path: /var/run/dagger-{{ include "dagger.fullname" . }}
+        {{- if .Values.engine.config }}
+        - name: config
+          configMap:
+            name: {{ include "dagger.fullname" . }}-engine-config
+            items:
+              - key: engine.toml
+                path: engine.toml
+        {{- end }}
+{{- end }}

@@ -15,7 +15,7 @@ const (
 	sdkSrc           = "/sdk"
 	genDir           = "dagger_sdk"
 	schemaPath       = "/schema.json"
-	elixirImage      = "hexpm/elixir:1.17.2-erlang-27.0.1-alpine-3.20.2@sha256:7c8a13cbff321b7d6f54b4c9a21a10fc8b987974171231eaa77532b8e638b645"
+	elixirImage      = "hexpm/elixir:1.17.3-erlang-27.2-alpine-3.20.3@sha256:557156f12d23b0d2aa12d8955668cc3b9a981563690bb9ecabd7a5a951702afe"
 )
 
 func New(

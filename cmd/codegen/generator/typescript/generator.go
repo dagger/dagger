@@ -43,7 +43,7 @@ func (g *TypeScriptGenerator) Generate(_ context.Context, schema *introspection.
 		})
 	}
 
-	tmpl := templates.New(schemaVersion)
+	tmpl := templates.New(schemaVersion, g.Config.ModuleName, g.Config.ModuleParentPath)
 	data := struct {
 		Schema        *introspection.Schema
 		SchemaVersion string

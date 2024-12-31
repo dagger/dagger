@@ -3,7 +3,6 @@ package idtui
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"os"
 	"strings"
 	"time"
@@ -49,14 +48,15 @@ func FromCmdContext(ctx context.Context) (*cmdContext, bool) {
 	return nil, false
 }
 
-// having a bit of fun with these. cc @vito @jedevc
-var SkipLoggedOutTraceMsgEnvs = []string{"NOTHANKS", "SHUTUP", "GOAWAY", "STOPIT"}
+var SkipLoggedOutTraceMsgEnvs = []string{
+	"DAGGER_NO_NAG",
 
-// Keep this to one line, and 80 characters max (longest env var name is NOTHANKS)
-//
-//nolint:gosec
-var loggedOutTraceMsg = fmt.Sprintf("Setup tracing at %%s. To hide: export %s=1",
-	SkipLoggedOutTraceMsgEnvs[rand.Intn(len(SkipLoggedOutTraceMsgEnvs))])
+	// old envs kept for backwards compat
+	"NOTHANKS", "SHUTUP", "GOAWAY", "STOPIT",
+}
+
+// NOTE: keep this to one line, and 80 characters max
+var loggedOutTraceMsg = fmt.Sprintf("Setup tracing at %%s. To hide set %s=1", SkipLoggedOutTraceMsgEnvs[0])
 
 type Frontend interface {
 	// Run starts a frontend, and runs the target function.

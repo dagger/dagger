@@ -16,7 +16,7 @@
 {{""}}
 
 			{{- /* Write object name. */ -}}
-export class {{ .Name | QueryToClient | FormatName }} extends BaseClient {
+export class {{ .Name | QueryToClient | FormatName }} extends BaseClient { {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
             {{- /* Write private temporary field */ -}}
             {{ range $field := .Fields }}
                 {{- if $field.TypeRef.IsScalar }}

@@ -3,12 +3,16 @@ import ts from "typescript"
 import { IntrospectionError } from "../../../common/errors/index.js"
 import { AST } from "../typescript_module/index.js"
 import { DaggerEnumBase, DaggerEnumBaseValue } from "./enumBase.js"
+import { Locatable } from "./locatable.js"
 
 export type DaggerEnumClasses = { [name: string]: DaggerEnumClass }
 
 export type DaggerEnumClassValues = { [name: string]: DaggerEnumClassValue }
 
-export class DaggerEnumClassValue implements DaggerEnumBaseValue {
+export class DaggerEnumClassValue
+  extends Locatable
+  implements DaggerEnumBaseValue
+{
   public name: string
   public value: string
   public description: string
@@ -19,6 +23,7 @@ export class DaggerEnumClassValue implements DaggerEnumBaseValue {
     private readonly node: ts.PropertyDeclaration,
     private readonly ast: AST,
   ) {
+    super(node)
     this.name = this.node.name.getText()
     this.symbol = this.ast.getSymbolOrThrow(this.node.name)
     this.description = this.ast.getDocFromSymbol(this.symbol)
@@ -39,7 +44,7 @@ export class DaggerEnumClassValue implements DaggerEnumBaseValue {
   }
 }
 
-export class DaggerEnumClass implements DaggerEnumBase {
+export class DaggerEnumClass extends Locatable implements DaggerEnumBase {
   public name: string
   public description: string
   public values: DaggerEnumClassValues = {}
@@ -50,6 +55,8 @@ export class DaggerEnumClass implements DaggerEnumBase {
     private readonly node: ts.ClassDeclaration,
     private readonly ast: AST,
   ) {
+    super(node)
+
     if (!this.node.name) {
       throw new IntrospectionError(
         `could not resolve name of enum at ${AST.getNodePosition(node)}.`,
