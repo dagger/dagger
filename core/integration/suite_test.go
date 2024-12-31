@@ -65,10 +65,10 @@ func Middleware() []testctx.Middleware {
 	}
 }
 
-func BenchMiddleware() []testctx.MiddlewareB {
-	return []testctx.MiddlewareB{
-		testctx.WithOTelLoggingB(Logger()),
-		testctx.WithOTelTracingB(Tracer()),
+func BenchMiddleware() []testctx.Middleware {
+	return []testctx.Middleware{
+		testctx.WithOTelLogging(Logger()),
+		testctx.WithOTelTracing(Tracer()),
 	}
 }
 
