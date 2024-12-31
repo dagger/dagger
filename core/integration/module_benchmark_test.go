@@ -249,7 +249,7 @@ func (ModuleSuite) BenchmarkLargeObjectFieldVal(ctx context.Context, t *testctx.
 	c := connect(ctx, t)
 
 	// put a timeout on this since failures modes could result in hangs
-	t = t.WithTimeout(60 * time.Second)
+	t = t.WithTimeout(60 * time.Second).(*testctx.B)
 
 	_, err := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
