@@ -3,9 +3,8 @@ package main
 import (
 	"context"
 	"dagger/my-module/internal/dagger"
-
-	"dagger.io/dagger/dag"
-	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type MyModule struct{}
@@ -25,13 +24,11 @@ func (m *MyModule) Foo(ctx context.Context) *dagger.Directory {
 		WithDirectory("/results", dag.Directory()).
 		WithWorkdir("/results")
 	for name, content := range files {
-		// create files
+		// create a span for each file creation operation
+		_, span := Tracer().Start(ctx, "create-file", trace.WithAttributes(attribute.String("file.name", name)))
+		defer span.End()
+		// create the file and add it to the container
 		container = container.WithNewFile(name, content)
-		// emit custom spans for each file created
-		log := "Created file: " + name + " with contents: " + content
-		_, span := Tracer().Start(ctx, log)
-		span.SetStatus(codes.Ok, "STATUS")
-		span.End()
 	}
 	return container.Directory("/results")
 }

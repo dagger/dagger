@@ -1,11 +1,14 @@
 import dagger
 from dagger import dag, function, object_type
+from opentelemetry import trace
 
 
 @object_type
 class MyModule:
     @function
     async def foo(self) -> dagger.Directory:
+        tracer = trace.get_tracer(__name__)
+
         # define the files to be created and their contents
         files = {
             "file1.txt": "foo",
@@ -22,10 +25,11 @@ class MyModule:
         )
 
         for name, content in files.items():
-            # create files
-            container = container.with_new_file(name, content)
-            # emit custom spans for each file created
-            log = f"Created file: {name} with contents: {content}"
-            print(log)
+            # create a span for each file creation operation
+            with tracer.start_as_current_span(
+                "create-file", attributes={"file.name": name}
+            ) as span:
+                # create the file and add it to the container
+                container = container.with_new_file(name, content)
 
         return container.directory("/results")
