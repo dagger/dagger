@@ -1,4 +1,5 @@
 import dagger
+
 from dagger import dag, function, object_type
 from opentelemetry import trace
 
@@ -28,7 +29,7 @@ class MyModule:
             # create a span for each file creation operation
             with tracer.start_as_current_span(
                 "create-file", attributes={"file.name": name}
-            ) as span:
+            ):
                 # create the file and add it to the container
                 container = container.with_new_file(name, content)
 

@@ -15,7 +15,8 @@ class MyModule {
     }
 
     // set up an alpine container with the directory mounted
-    let container = dag.container()
+    let container = dag
+      .container()
       .from("alpine:latest")
       .withDirectory("/results", dag.directory())
       .withWorkdir("/results")
