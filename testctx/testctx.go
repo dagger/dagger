@@ -106,9 +106,16 @@ func Bench(ctx context.Context, testingB *testing.B, suite any, middleware ...Mi
 		}
 
 		methV := suiteV.Method(i)
-		bf, ok := methV.Interface().(func(context.Context, *B))
-		if !ok {
-			testingB.Fatalf("suite method %s does not have the right signature; must be func(context.Context, *testctx.B); have %T",
+		var bf func(context.Context, *B)
+		switch fn := methV.Interface().(type) {
+		case func(context.Context, *B):
+			bf = fn
+		case func(context.Context, ITB):
+			bf = func(ctx context.Context, b *B) {
+				fn(ctx, b)
+			}
+		default:
+			testingB.Fatalf("suite method %s does not have the right signature; must be func(context.Context, *testctx.B) or func(context.Context, ITB); have %T",
 				methT.Name,
 				methV.Interface())
 		}
@@ -234,6 +241,7 @@ type ITB interface {
 	Context() context.Context
 	WithContext(context.Context) ITB
 	WithLogger(func(ITB, string)) ITB
+	WithTimeout(timeout time.Duration) ITB
 }
 
 func (t *TB) TTB() testing.TB {
