@@ -213,6 +213,7 @@ class Constructor(Function[P, R]):
 @dataclasses.dataclass(slots=True)
 class ObjectType(Generic[T]):
     cls: type[T]
+    interface: bool = False
     fields: dict[APIName, Field] = dataclasses.field(default_factory=dict)
     functions: dict[APIName, Function] = dataclasses.field(default_factory=dict)
 
