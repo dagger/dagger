@@ -347,6 +347,43 @@ var moduleInstallCmd = &cobra.Command{
 	},
 }
 
+var moduleUpdateCmd = &cobra.Command{
+	Use:     "update [options] <module>",
+	Aliases: []string{"use"},
+	Short:   "Update a dependency",
+	Long:    "Update a dependency to the latest version (or the version specified). The target module must be local.",
+	Example: `"dagger update github.com/shykes/daggerverse/hello@v0.3.0" or "dagger update hello"`,
+	GroupID: moduleGroup.ID,
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+		ctx := cmd.Context()
+		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			dag := engineClient.Dagger()
+			modConf, err := getDefaultModuleConfiguration(ctx, dag, true, false)
+			if err != nil {
+				return fmt.Errorf("failed to get configured module: %w", err)
+			}
+			if modConf.SourceKind != dagger.ModuleSourceKindLocalSource {
+				return fmt.Errorf("module must be local")
+			}
+			if !modConf.FullyInitialized() {
+				return fmt.Errorf("module must be fully initialized")
+			}
+
+			_, err = modConf.
+				Source.WithUpdateDependencies(extraArgs).
+				ResolveFromCaller().
+				AsModule().
+				GeneratedContextDiff().
+				Export(ctx, modConf.LocalContextPath)
+			if err != nil {
+				return fmt.Errorf("failed to generate code: %w", err)
+			}
+
+			return nil
+		})
+	},
+}
+
 var moduleUnInstallCmd = &cobra.Command{
 	Use:     "uninstall [options] <module>",
 	Short:   "Uninstall a dependency",

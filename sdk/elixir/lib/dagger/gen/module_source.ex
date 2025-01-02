@@ -350,6 +350,20 @@ defmodule Dagger.ModuleSource do
     }
   end
 
+  @doc "Update one or more module dependencies."
+  @spec with_update_dependencies(t(), [String.t()]) :: Dagger.ModuleSource.t()
+  def with_update_dependencies(%__MODULE__{} = module_source, dependencies) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("withUpdateDependencies")
+      |> QB.put_arg("dependencies", dependencies)
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
   @doc "Update the module source with a new named view."
   @spec with_view(t(), String.t(), [String.t()]) :: Dagger.ModuleSource.t()
   def with_view(%__MODULE__{} = module_source, name, patterns) do
