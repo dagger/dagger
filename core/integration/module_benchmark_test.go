@@ -243,13 +243,13 @@ func (ModuleSuite) BenchmarkLotsOfDeps(ctx context.Context, t *testctx.B) {
 	require.NoError(t, err)
 }
 
-func (ModuleSuite) BenchmarkLargeObjectFieldVal(ctx context.Context, t *testctx.B) {
+func (ModuleSuite) BenchmarkLargeObjectFieldVal(ctx context.Context, t testctx.ITB) {
 	// make sure we don't hit any limits when an object field value is large
 
 	c := connect(ctx, t)
 
 	// put a timeout on this since failures modes could result in hangs
-	t = t.WithTimeout(60 * time.Second).(*testctx.B)
+	t = t.WithTimeout(60 * time.Second)
 
 	_, err := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
