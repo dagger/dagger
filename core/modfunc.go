@@ -18,6 +18,7 @@ import (
 	"github.com/moby/buildkit/util/bklog"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql"
@@ -169,25 +170,35 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 	}
 
 	// Load contextual arguments
+	var ctxArgs []*FunctionArg
 	for _, arg := range fn.metadata.Args {
-		name := arg.OriginalName
-
 		// Skip contextual arguments if already set.
-		if hasArg[name] || arg.DefaultPath == "" {
+		if hasArg[arg.OriginalName] || arg.DefaultPath == "" {
 			continue
 		}
+		ctxArgs = append(ctxArgs, arg)
+	}
+	ctxArgVals := make([]*FunctionCallArgValue, len(ctxArgs))
+	eg, ctx := errgroup.WithContext(ctx)
+	for i, arg := range ctxArgs {
+		eg.Go(func() error {
+			ctxVal, err := fn.loadContextualArg(ctx, opts.Server, arg)
+			if err != nil {
+				return fmt.Errorf("failed to load contextual arg %q: %w", arg.Name, err)
+			}
 
-		// Load contextual argument value.
-		ctxVal, err := fn.loadContextualArg(ctx, opts.Server, arg)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load contextual arg %q: %w", arg.Name, err)
-		}
+			ctxArgVals[i] = &FunctionCallArgValue{
+				Name:  arg.OriginalName,
+				Value: ctxVal,
+			}
 
-		callInputs = append(callInputs, &FunctionCallArgValue{
-			Name:  name,
-			Value: ctxVal,
+			return nil
 		})
 	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	callInputs = append(callInputs, ctxArgVals...)
 
 	return callInputs, nil
 }

@@ -25,6 +25,9 @@ type ModuleConfig struct {
 	// Paths to explicitly include from the module, relative to the configuration file.
 	Include []string `json:"include,omitempty"`
 
+	// TODO: deprecate Exclude and just use Include?
+	// TODO: deprecate Exclude and just use Include?
+	// TODO: deprecate Exclude and just use Include?
 	// Paths to explicitly exclude from the module, relative to the configuration file.
 	Exclude []string `json:"exclude,omitempty"`
 
@@ -33,10 +36,6 @@ type ModuleConfig struct {
 
 	// The path, relative to this config file, to the subdir containing the module's implementation source code.
 	Source string `json:"source,omitempty"`
-
-	// Named views defined for this module, which are sets of directory filters that can be applied to
-	// directory arguments provided to functions.
-	Views []*ModuleConfigView `json:"views,omitempty"`
 
 	// Codegen configuration for this module.
 	Codegen *ModuleCodegenConfig `json:"codegen,omitempty"`
@@ -113,11 +112,6 @@ func (depCfg *ModuleConfigDependency) UnmarshalJSON(data []byte) error {
 	}
 	*depCfg = ModuleConfigDependency(tmp)
 	return nil
-}
-
-type ModuleConfigView struct {
-	Name     string   `json:"name"`
-	Patterns []string `json:"patterns,omitempty"`
 }
 
 type ModuleCodegenConfig struct {
