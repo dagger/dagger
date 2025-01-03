@@ -7,6 +7,7 @@
         <TestingExtensionsProfile>Default</TestingExtensionsProfile>
         <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
         <TestingPlatformShowTestsFailure>true</TestingPlatformShowTestsFailure>
+        <LangVersion>default</LangVersion>
     </PropertyGroup>
 
     <ItemGroup>
