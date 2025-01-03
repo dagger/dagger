@@ -9,6 +9,7 @@ on:
       - synchronize
       - reopened
       - ready_for_review
+      - labeled
   # Enable manual trigger for easy debugging
   workflow_dispatch:
 
@@ -70,6 +71,21 @@ jobs:
   #       with:
   #         function: "test all --race=true --parallel=16"
   #         upload-logs: true
+
+  benchmark-engine:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-1-16c-st' || 'ubuntu-latest' }}"
+    concurrency:
+      group: dagger-engine-benchmarks
+    if: contains(github.event.pull_request.labels.*.name, 'benchmark')
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: "test"
+        uses: ./.github/actions/call
+        with:
+          function: "test all --bench"
+          upload-logs: true
+
   test-modules:
     runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-1-16c-st' || 'ubuntu-latest' }}"
     timeout-minutes: 30
