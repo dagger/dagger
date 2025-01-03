@@ -37,8 +37,11 @@ func (t *Test) All(
 	race bool,
 	// +optional
 	testVerbose bool,
+	// run benchmarks instead of tests
+	// +optional
+	bench bool,
 ) error {
-	return t.test(ctx, "", "", "./...", failfast, parallel, timeout, race, 1, testVerbose)
+	return t.test(ctx, "", "", "./...", failfast, parallel, timeout, race, 1, testVerbose, bench)
 }
 
 // Run telemetry tests
@@ -118,7 +121,20 @@ func (t *Test) Telemetry(
 		tests = tests.WithMountedSecret("/root/.docker/config.json", t.Dagger.DockerCfg)
 	}
 
-	ran := t.goTest(tests, run, skip, "./dagql/idtui/", failfast, parallel, timeout, race, count, update, verbose)
+	ran := t.goTest(
+		tests,
+		run,
+		skip,
+		"./dagql/idtui/",
+		failfast,
+		parallel,
+		timeout,
+		race,
+		count,
+		update,
+		verbose,
+		false,
+	)
 	ran, err = ran.Sync(ctx)
 	if err != nil {
 		return nil, err
@@ -170,8 +186,11 @@ func (t *Test) Specific(
 	// Enable verbose output
 	// +optional
 	testVerbose bool,
+	// Run benchmarks instead of tests
+	// +optional
+	bench bool,
 ) error {
-	return t.test(ctx, run, skip, pkg, failfast, parallel, timeout, race, count, testVerbose)
+	return t.test(ctx, run, skip, pkg, failfast, parallel, timeout, race, count, testVerbose, bench)
 }
 
 func (t *Test) test(
@@ -185,6 +204,7 @@ func (t *Test) test(
 	race bool,
 	count int,
 	testVerbose bool,
+	bench bool,
 ) error {
 	cmd, err := t.testCmd(ctx)
 	if err != nil {
@@ -202,6 +222,7 @@ func (t *Test) test(
 		count,
 		false, // -update
 		testVerbose,
+		bench,
 	).Sync(ctx)
 	return err
 }
@@ -218,6 +239,7 @@ func (t *Test) goTest(
 	count int,
 	update bool,
 	testVerbose bool,
+	bench bool,
 ) *dagger.Container {
 	cgoEnabledEnv := "0"
 	args := []string{
@@ -262,7 +284,13 @@ func (t *Test) goTest(
 	// Disable test caching, since these are integration tests
 	args = append(args, fmt.Sprintf("-count=%d", count))
 
-	if runTestRegex != "" {
+	// when bench is true, disable normal tests and select benchmarks based on runTestRegex instead
+	switch {
+	case bench && runTestRegex != "":
+		args = append(args, "-bench", runTestRegex, "-run", "^$")
+	case bench:
+		args = append(args, "-bench", ".", "-run", "^$")
+	case runTestRegex != "":
 		args = append(args, "-run", runTestRegex)
 	}
 
