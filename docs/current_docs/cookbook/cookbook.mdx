@@ -1462,3 +1462,37 @@ Execute another Dagger Function that does the same as the previous one, except u
 # inspect a directory
 dagger call advanced-directory
 ```
+
+## Logging
+
+### Add custom log messages
+
+Dagger represents operations performed by a Dagger Function as [OpenTelemetry spans](https://opentelemetry.io/docs/concepts/signals/traces/#spans). If a Dagger Function emits custom OpenTelemetry spans, the related information will appear in the Dagger TUI and Traces. The following Dagger Function demonstrates this by emitting custom spans for various file operations.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/custom-spans/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/custom-spans/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/custom-spans/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Execute a Dagger Function to create three files in an `alpine` container and return the resulting directory, injecting a custom log message for each file operation using OpenTelemetry spans:
+
+```shell
+dagger call foo
+```
