@@ -4731,10 +4731,10 @@ docusaurus-plugin-sass@^0.2.6:
   dependencies:
     sass-loader "^16.0.2"
 
-docusaurus-plugin-typedoc@^1.1.1:
-  version "1.1.1"
-  resolved "https://registry.yarnpkg.com/docusaurus-plugin-typedoc/-/docusaurus-plugin-typedoc-1.1.1.tgz#cac32cc4526da4a49e05a073b13e2b9f478c61cd"
-  integrity sha512-jaSHPA2iQVE60Mugr/pbHzIWVR/7tp77A+e9+oYvZylupdNCwZ/5BadqcqZHdLQCsUZSvu4SlE3ob/ynN6aUAw==
+docusaurus-plugin-typedoc@^1.2.0:
+  version "1.2.0"
+  resolved "https://registry.yarnpkg.com/docusaurus-plugin-typedoc/-/docusaurus-plugin-typedoc-1.2.0.tgz#ea0f85db10b8a7d850fb4525f01e7afb8cdaceb0"
+  integrity sha512-BScoTkX6soV5CPEaipDktrmYgFHRMhSWPLWHlbzeGA9PeUsPhKauUCgqCgL50WUFvETaOZ8qXJxWauVllCZRMA==
 
 dom-converter@^0.2.0:
   version "0.2.0"
@@ -9698,15 +9698,15 @@ typedoc-plugin-frontmatter@^1.1.2:
   dependencies:
     yaml "^2.3.4"
 
-typedoc-plugin-markdown@^4.3.2:
-  version "4.3.2"
-  resolved "https://registry.yarnpkg.com/typedoc-plugin-markdown/-/typedoc-plugin-markdown-4.3.2.tgz#85d38bc0109a3fbf2e3fad2ea78e6dd8e812e5a2"
-  integrity sha512-hCF3V0axzbzGDYFW21XigWIJQBOJ2ZRVWWs7X+e62ew/pXnvz7iKF/zVdkBm3w8Mk4bmXWp/FT0IF4Zn9uBRww==
+typedoc-plugin-markdown@^4.4.1:
+  version "4.4.1"
+  resolved "https://registry.yarnpkg.com/typedoc-plugin-markdown/-/typedoc-plugin-markdown-4.4.1.tgz#f57266fa6916cb3837a9c84f59f3aaced309be9a"
+  integrity sha512-fx23nSCvewI9IR8lzIYtzDphETcgTDuxKcmHKGD4lo36oexC+B1k4NaCOY58Snqb4OlE8OXDAGVcQXYYuLRCNw==
 
-typedoc@^0.27.5:
-  version "0.27.5"
-  resolved "https://registry.yarnpkg.com/typedoc/-/typedoc-0.27.5.tgz#a86c89589213d7b36301eeafb4ddf6ad9dfd1ab3"
-  integrity sha512-x+fhKJtTg4ozXwKayh/ek4wxZQI/+2hmZUdO2i2NGDBRUflDble70z+ewHod3d4gRpXSO6fnlnjbDTnJk7HlkQ==
+typedoc@^0.27.6:
+  version "0.27.6"
+  resolved "https://registry.yarnpkg.com/typedoc/-/typedoc-0.27.6.tgz#7e8d067bd5386b7908afcb12c9054a83e8bb326b"
+  integrity sha512-oBFRoh2Px6jFx366db0lLlihcalq/JzyCVp7Vaq1yphL/tbgx2e+bkpkCgJPunaPvPwoTOXSwasfklWHm7GfAw==
   dependencies:
     "@gerrit0/mini-shiki" "^1.24.0"
     lunr "^2.3.9"
