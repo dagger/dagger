@@ -6,6 +6,7 @@ metadata:
   name: {{ include "dagger.fullname" . }}-engine
   namespace: {{ .Release.Namespace }}
   labels:
+    app.kubernetes.io/name: {{ include "dagger.fullname" . }}-engine
     {{- include "dagger.labels" . | nindent 4 }}
 spec:
   # DO NOT RUN MORE THAN 1 REPLICA.
@@ -13,7 +14,8 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      name: {{ include "dagger.fullname" . }}-engine
+      app.kubernetes.io/name: {{ include "dagger.fullname" . }}-engine
+      {{- include "dagger.labels" . | nindent 6 }}
   template:
     metadata:
       {{- if (or .Values.engine.config .Values.magicache.enabled) }}
@@ -26,7 +28,7 @@ spec:
         {{- end }}
       {{- end }}
       labels:
-        name: {{ include "dagger.fullname" . }}-engine
+        app.kubernetes.io/name: {{ include "dagger.fullname" . }}-engine
         {{- include "dagger.labels" . | nindent 8 }}
     spec:
       {{- with .Values.engine.tolerations }}
@@ -45,6 +47,9 @@ spec:
       serviceAccountName: {{ include "dagger.serviceAccountName" . }}
       {{- if .Values.engine.priorityClassName }}
       priorityClassName: {{ .Values.engine.priorityClassName }}
+      {{- end }}
+      {{- if .Values.engine.runtimeClassName }}
+      runtimeClassName: {{ .Values.engine.runtimeClassName }}
       {{- end }}
       containers:
         - name: dagger-engine
