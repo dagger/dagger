@@ -243,7 +243,7 @@ func (ModuleSuite) BenchmarkLotsOfDeps(ctx context.Context, t *testctx.B) {
 	require.NoError(t, err)
 }
 
-func (ModuleSuite) BenchmarkLargeObjectFieldVal(ctx context.Context, t testctx.ITB) {
+func (ModuleSuite) BenchmarkLargeObjectFieldVal(ctx context.Context, t *testctx.B) {
 	// make sure we don't hit any limits when an object field value is large
 
 	c := connect(ctx, t)
