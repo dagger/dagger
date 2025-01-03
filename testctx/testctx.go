@@ -1,3 +1,49 @@
+// Package testctx provides a generic wrapper around Go's testing types that enables
+// context propagation and middleware-based test configuration. It allows for
+// structured test suites with OpenTelemetry tracing, timeouts, and other
+// context-aware features while maintaining compatibility with standard Go testing
+// patterns.
+//
+// The core type TB[Type] is a generic wrapper around testing.TB implementations
+// that preserves all the familiar testing.T and testing.B methods while adding
+// context management. Two concrete types are provided for convenience:
+//
+//	testctx.T = TB[*testing.T]  // For standard tests
+//	testctx.B = TB[*testing.B]  // For benchmarks
+//
+// The package provides two main entry points to integrate with Go's testing machinery:
+//
+//	testctx.Run()   // For running test suites
+//	testctx.Bench() // For running benchmark suites
+//
+// Example usage for a hypothetical suite named "Module":
+//
+//	var testCtx = context.Background()
+//
+//	func TestModule(t *testing.T) {
+//	    testctx.Run(testCtx, t, ModuleSuite{}, TestMiddleware()...)
+//	}
+//
+//	func BenchmarkModule(b *testing.B) {
+//	    testctx.Bench(testCtx, b, ModuleSuite{}, BenchMiddleware()...)
+//	}
+//
+// The generic Middleware[Type] system allows for writing test configuration code that
+// works across both test and benchmark contexts. Some middlewares like WithOTelTracing
+// and WithOTelLogging are generic and work with both types, while others like
+// WithParallel are specialized for specific test types.
+//
+// Test methods in suites receive a context.Context and either a *testctx.T or
+// *testctx.B, which implement all the familiar methods from testing.T/testing.B:
+//
+//	type ModuleSuite struct{}
+//
+//	func (s ModuleSuite) TestSomething(ctx context.Context, t *testctx.T) {
+//	    t.Run("subtest", func(ctx context.Context, t *testctx.T) {
+//	        // Use context for deadlines, tracing, etc
+//	        // Use t.Fatal, t.Error, etc as normal
+//	    })
+//	}
 package testctx
 
 import (
@@ -43,7 +89,7 @@ func Run(ctx context.Context, testingT *testing.T, suite any, middleware ...Midd
 		}
 
 		methV := suiteV.Method(i)
-		// TODO: also accept func(context.Context, *testing.T) ?
+		// is it possible to also accept func(context.Context, *testing.T) ?
 		tf, ok := methV.Interface().(func(context.Context, *TB[*testing.T]))
 		if !ok {
 			testingT.Fatalf("suite method %s does not have the right signature; must be func(testctx.T); have %T",
@@ -71,7 +117,6 @@ func Bench(ctx context.Context, testingB *testing.B, suite any, middleware ...Mi
 		}
 
 		methV := suiteV.Method(i)
-		// TODO: also accept func(context.Context, *testing.B) ?
 		bf, ok := methV.Interface().(func(context.Context, *TB[*testing.B]))
 		if !ok {
 			testingB.Fatalf("suite method %s does not have the right signature; must be func(*testctx.TB[*testing.B]); have %T",
