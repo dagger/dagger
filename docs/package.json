@@ -29,6 +29,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "remark-code-import": "^1.2.0",
+    "unist-util-visit": "^5.0.0",
     "sass": "^1.83.0",
     "typedoc": "^0.27.5",
     "typedoc-plugin-frontmatter": "^1.1.2",
