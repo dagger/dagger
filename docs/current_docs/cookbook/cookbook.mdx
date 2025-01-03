@@ -157,19 +157,19 @@ When working with private Git repositories, ensure that [SSH authentication is p
 - Clone the `main` branch of the public `dagger/dagger` GitHub repository to `/src` in the container:
 
     ```shell
-    dagger call clone --repository=https://github.com/dagger/dagger --locator=BRANCH --id=main
+    dagger call clone --repository=https://github.com/dagger/dagger --locator=BRANCH --ref=main
     ```
 
 - Clone the public `dagger/dagger` GitHub repository at tag `v0.12.1` to `/src` in the container and list the contents of the `CHANGELOG.md` file in the repository root directory:
 
     ```shell
-    dagger call clone --repository=https://github.com/dagger/dagger --locator=TAG --id=v0.12.1 file --path=/src/CHANGELOG.md contents
+    dagger call clone --repository=https://github.com/dagger/dagger --locator=TAG --ref=v0.12.1 file --path=/src/CHANGELOG.md contents
     ```
 
 - Clone the public `dagger/dagger` GitHub repository at commit id  `196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5` to `/src` in the container and open an interactive terminal to inspect the container filesystem:
 
     ```shell
-    dagger call clone --repository=https://github.com/dagger/dagger --locator=COMMIT --id=196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 terminal
+    dagger call clone --repository=https://github.com/dagger/dagger --locator=COMMIT --ref=196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 terminal
     ```
 
 ### Copy a file to a container

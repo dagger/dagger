@@ -15,21 +15,21 @@ const (
 	Commit Locator = "COMMIT"
 )
 
-func (m *MyModule) Clone(ctx context.Context, repository string, locator Locator, id string) *dagger.Container {
+func (m *MyModule) Clone(ctx context.Context, repository string, locator Locator, ref string) *dagger.Container {
 	r := dag.Git(repository)
-	var dir *dagger.Directory
+	var d *dagger.Directory
 
 	switch locator {
 	case Branch:
-		dir = r.Branch(id).Tree()
+		d = r.Branch(ref).Tree()
 	case Tag:
-		dir = r.Tag(id).Tree()
+		d = r.Tag(ref).Tree()
 	case Commit:
-		dir = r.Commit(id).Tree()
+		d = r.Commit(ref).Tree()
 	}
 
 	return dag.Container().
 		From("alpine:latest").
-		WithDirectory("/src", dir).
+		WithDirectory("/src", d).
 		WithWorkdir("/src")
 }

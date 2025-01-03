@@ -13,22 +13,22 @@ class Locator(dagger.Enum):
 class MyModule:
     @function
     async def clone(
-        self, repository: str, locator: Locator, id: str
+        self, repository: str, locator: Locator, ref: str
     ) -> dagger.Container:
         r = dag.git(repository)
 
         if locator == Locator.BRANCH:
-            dir = r.branch(id).tree()
+            d = r.branch(ref).tree()
         elif locator == Locator.TAG:
-            dir = r.tag(id).tree()
+            d = r.tag(ref).tree()
         elif locator == Locator.COMMIT:
-            dir = r.commit(id).tree()
+            d = r.commit(ref).tree()
         else:
-            raise ValueError("Invalid locator")
+            raise ValueError()
 
         return (
             dag.container()
             .from_("alpine:latest")
-            .with_directory("/src", dir)
+            .with_directory("/src", d)
             .with_workdir("/src")
         )
