@@ -14,17 +14,23 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-type Middleware = func(ITB) ITB
+type T = TB[*testing.T]
+type B = TB[*testing.B]
 
-func Run(ctx context.Context, testingT *testing.T, suite any, middleware ...Middleware) {
+type MiddlewareT = Middleware[*testing.T]
+type MiddlewareB = Middleware[*testing.B]
+
+type Middleware[T ITB[T]] func(*TB[T]) *TB[T]
+
+type ITB[T testing.TB] interface {
+	testing.TB
+	Run(string, func(T)) bool
+}
+
+func Run(ctx context.Context, testingT *testing.T, suite any, middleware ...Middleware[*testing.T]) {
 	t := New(ctx, testingT)
 	for _, m := range middleware {
-		result := m(t)
-		if mt, ok := result.(*TB); ok {
-			t.TB = mt
-		} else {
-			t.Fatalf("middleware returned wrong type, expected *TB, got %T", result)
-		}
+		t = m(t)
 	}
 
 	suiteT := reflect.TypeOf(suite)
@@ -37,7 +43,8 @@ func Run(ctx context.Context, testingT *testing.T, suite any, middleware ...Midd
 		}
 
 		methV := suiteV.Method(i)
-		tf, ok := methV.Interface().(func(context.Context, *T))
+		// TODO: also accept func(context.Context, *testing.T) ?
+		tf, ok := methV.Interface().(func(context.Context, *TB[*testing.T]))
 		if !ok {
 			testingT.Fatalf("suite method %s does not have the right signature; must be func(testctx.T); have %T",
 				methT.Name,
@@ -48,52 +55,10 @@ func Run(ctx context.Context, testingT *testing.T, suite any, middleware ...Midd
 	}
 }
 
-type T struct {
-	*TB
-	T *testing.T
-}
-
-func New(ctx context.Context, t *testing.T) *T {
-	// Interrupt the context when the test is done.
-	ctx, cancel := context.WithCancel(ctx)
-	t.Cleanup(cancel)
-	return &T{
-		TB: &TB{
-			TB:  t,
-			ctx: ctx,
-			mu:  new(sync.Mutex),
-		},
-		T: t,
-	}
-}
-
-func (t *T) Run(name string, f func(context.Context, *T)) bool {
-	return t.T.Run(name, func(testingT *testing.T) {
-		sub := t.sub(name, testingT)
-		for _, setup := range t.beforeEach {
-			sub.TB = setup(sub.TB).(*TB)
-		}
-		f(sub.Context(), sub)
-	})
-}
-
-func (t *T) sub(name string, testingT *testing.T) *T {
-	sub := New(t.ctx, testingT)
-	sub.baseName = name
-	sub.logger = t.logger
-	sub.beforeEach = t.beforeEach
-	return sub
-}
-
-func Bench(ctx context.Context, testingB *testing.B, suite any, middleware ...Middleware) {
-	b := NewBench(ctx, testingB)
+func Bench(ctx context.Context, testingB *testing.B, suite any, middleware ...Middleware[*testing.B]) {
+	b := New(ctx, testingB)
 	for _, m := range middleware {
-		result := m(b)
-		if mb, ok := result.(*TB); ok {
-			b.TB = mb
-		} else {
-			b.Fatalf("middleware returned wrong type, expected *B, got %T", result)
-		}
+		b = m(b)
 	}
 
 	suiteT := reflect.TypeOf(suite)
@@ -106,16 +71,10 @@ func Bench(ctx context.Context, testingB *testing.B, suite any, middleware ...Mi
 		}
 
 		methV := suiteV.Method(i)
-		var bf func(context.Context, *B)
-		switch fn := methV.Interface().(type) {
-		case func(context.Context, *B):
-			bf = fn
-		case func(context.Context, ITB):
-			bf = func(ctx context.Context, b *B) {
-				fn(ctx, b)
-			}
-		default:
-			testingB.Fatalf("suite method %s does not have the right signature; must be func(context.Context, *testctx.B) or func(context.Context, ITB); have %T",
+		// TODO: also accept func(context.Context, *testing.B) ?
+		bf, ok := methV.Interface().(func(context.Context, *TB[*testing.B]))
+		if !ok {
+			testingB.Fatalf("suite method %s does not have the right signature; must be func(*testctx.TB[*testing.B]); have %T",
 				methT.Name,
 				methV.Interface())
 		}
@@ -124,62 +83,28 @@ func Bench(ctx context.Context, testingB *testing.B, suite any, middleware ...Mi
 	}
 }
 
-type B struct {
-	*TB
-	B *testing.B
-}
-
-func (b *B) Run(name string, f func(context.Context, *B)) bool {
-	return b.B.Run(name, func(testingB *testing.B) {
-		sub := b.sub(name, testingB)
-		for _, setup := range b.beforeEach {
-			sub.TB = setup(sub.TB).(*TB)
-		}
-		f(sub.Context(), sub)
-	})
-}
-
-func (b *B) sub(name string, testingB *testing.B) *B {
-	sub := NewBench(b.ctx, testingB)
-	sub.baseName = name
-	sub.logger = b.logger
-	sub.beforeEach = b.beforeEach
-	return sub
-}
-
-func NewBench(ctx context.Context, b *testing.B) *B {
-	// Interrupt the context when the benchmark is done.
+func New[T ITB[T]](ctx context.Context, t T) *TB[T] {
+	// Interrupt the context when the test is done.
 	ctx, cancel := context.WithCancel(ctx)
-	b.Cleanup(cancel)
-	return &B{
-		TB: &TB{
-			TB:  b,
-			ctx: ctx,
-			mu:  new(sync.Mutex),
-		},
-		B: b,
+	t.Cleanup(cancel)
+	return &TB[T]{
+		ITB: t,
+		ctx: ctx,
+		mu:  new(sync.Mutex),
 	}
 }
 
-func WithParallel(t ITB) ITB {
-	if tt, ok := t.TTB().(*testing.T); ok {
-		tt.Parallel()
-	} else {
-		t.Fatal("TB is not *testing.T, cannot call Parallel()")
-	}
+func WithParallel(t *TB[*testing.T]) *TB[*testing.T] {
+	t.ITB.(*testing.T).Parallel()
 	return t.
-		BeforeEach(func(t ITB) ITB {
-			if tt, ok := t.TTB().(*testing.T); ok {
-				tt.Parallel()
-			} else {
-				t.Fatal("TB is not *testing.T, cannot call Parallel()")
-			}
+		BeforeEach(func(t *TB[*testing.T]) *TB[*testing.T] {
+			t.ITB.(*testing.T).Parallel()
 			return t
 		})
 }
 
-func WithOTelTracing(tracer trace.Tracer) Middleware {
-	wrapSpan := func(t ITB) ITB {
+func WithOTelTracing[T ITB[T]](tracer trace.Tracer) Middleware[T] {
+	wrapSpan := func(t *TB[T]) *TB[T] {
 		ctx, span := tracer.Start(t.Context(), t.BaseName())
 		t.Cleanup(func() {
 			if t.Failed() {
@@ -191,16 +116,16 @@ func WithOTelTracing(tracer trace.Tracer) Middleware {
 		})
 		return t.WithContext(ctx)
 	}
-	return func(t ITB) ITB {
+	return func(t *TB[T]) *TB[T] {
 		return t.
 			BeforeAll(wrapSpan).
 			BeforeEach(wrapSpan)
 	}
 }
 
-func WithOTelLogging(logger log.Logger) Middleware {
-	return func(t ITB) ITB {
-		return t.WithLogger(func(t2 ITB, msg string) {
+func WithOTelLogging[T ITB[T]](logger log.Logger) Middleware[T] {
+	return func(t *TB[T]) *TB[T] {
+		return t.WithLogger(func(t2 *TB[T], msg string) {
 			var rec log.Record
 			rec.SetBody(log.StringValue(msg))
 			rec.SetTimestamp(time.Now())
@@ -209,8 +134,8 @@ func WithOTelLogging(logger log.Logger) Middleware {
 	}
 }
 
-func Combine(middleware ...Middleware) Middleware {
-	return func(t ITB) ITB {
+func Combine[T ITB[T]](middleware ...Middleware[T]) Middleware[T] {
+	return func(t *TB[T]) *TB[T] {
 		for _, m := range middleware {
 			t = m(t)
 		}
@@ -218,59 +143,58 @@ func Combine(middleware ...Middleware) Middleware {
 	}
 }
 
-// TODO private
-type TB struct {
-	testing.TB
+type TB[T ITB[T]] struct {
+	ITB[T]
 
 	ctx        context.Context
 	baseName   string
-	logger     func(ITB, string)
-	beforeEach []Middleware
+	logger     func(*TB[T], string)
+	beforeEach []Middleware[T]
 	errors     []string
 	mu         *sync.Mutex
 }
 
-// TODO rename
-type ITB interface {
-	testing.TB
-	TTB() testing.TB
-
-	BaseName() string
-	BeforeEach(Middleware) ITB
-	BeforeAll(func(ITB) ITB) ITB
-	Context() context.Context
-	WithContext(context.Context) ITB
-	WithLogger(func(ITB, string)) ITB
-	WithTimeout(timeout time.Duration) ITB
+func (t *TB[T]) Run(name string, f func(context.Context, *TB[T])) bool {
+	return t.ITB.Run(name, func(testingT T) {
+		sub := t.sub(name, testingT)
+		for _, setup := range t.beforeEach {
+			sub = setup(sub)
+		}
+		f(sub.Context(), sub)
+	})
 }
 
-func (t *TB) TTB() testing.TB {
-	return t.TB
+func (t *TB[T]) sub(name string, testingT T) *TB[T] {
+	sub := New(t.ctx, testingT)
+	sub.baseName = name
+	sub.logger = t.logger
+	sub.beforeEach = t.beforeEach
+	return sub
 }
 
-func (t *TB) BaseName() string {
+func (t *TB[T]) BaseName() string {
 	if t.baseName != "" {
 		return t.baseName
 	}
 	return t.Name()
 }
 
-func (t *TB) Context() context.Context {
+func (t *TB[T]) Context() context.Context {
 	return t.ctx
 }
 
-func (t TB) WithContext(ctx context.Context) ITB {
+func (t TB[T]) WithContext(ctx context.Context) *TB[T] {
 	t.ctx = ctx
 	return &t
 }
 
-func (t TB) WithLogger(logger func(ITB, string)) ITB {
+func (t TB[T]) WithLogger(logger func(*TB[T], string)) *TB[T] {
 	t.logger = logger
 	return &t
 }
 
-func (t *TB) WithTimeout(timeout time.Duration) ITB {
-	return t.BeforeEach(func(t2 ITB) ITB {
+func (t *TB[T]) WithTimeout(timeout time.Duration) *TB[T] {
+	return t.BeforeEach(func(t2 *TB[T]) *TB[T] {
 		ctx, cancel := context.WithTimeout(t2.Context(), timeout)
 		t2.Cleanup(cancel)
 		return t2.WithContext(ctx)
@@ -280,79 +204,79 @@ func (t *TB) WithTimeout(timeout time.Duration) ITB {
 // BeforeAll calls f immediately with itself and returns the result.
 //
 // It is not inherited by subtests.
-func (t *TB) BeforeAll(f func(ITB) ITB) ITB {
+func (t *TB[T]) BeforeAll(f func(*TB[T]) *TB[T]) *TB[T] {
 	return f(t)
 }
 
 // BeforeEach configures f to run prior to each subtest.
-func (t TB) BeforeEach(f Middleware) ITB {
-	cpM := make([]Middleware, len(t.beforeEach))
+func (t TB[T]) BeforeEach(f Middleware[T]) *TB[T] {
+	cpM := make([]Middleware[T], len(t.beforeEach))
 	copy(cpM, t.beforeEach)
 	cpM = append(cpM, f)
 	t.beforeEach = cpM
 	return &t
 }
 
-func (t *TB) Log(vals ...any) {
+func (t *TB[T]) Log(vals ...any) {
 	t.log(fmt.Sprintln(vals...))
-	t.TB.Log(vals...)
+	t.ITB.Log(vals...)
 }
 
-func (t *TB) Logf(format string, vals ...any) {
+func (t *TB[T]) Logf(format string, vals ...any) {
 	t.logf(format, vals...)
-	t.TB.Logf(format, vals...)
+	t.ITB.Logf(format, vals...)
 }
 
-func (t *TB) Error(vals ...any) {
+func (t *TB[T]) Error(vals ...any) {
 	msg := fmt.Sprint(vals...)
 	t.mu.Lock()
 	t.errors = append(t.errors, msg)
 	t.mu.Unlock()
 	t.log(msg)
-	t.TB.Error(vals...)
+	t.ITB.Error(vals...)
 }
 
-func (t *TB) Errorf(format string, vals ...any) {
+func (t *TB[T]) Errorf(format string, vals ...any) {
 	t.logf(format, vals...)
 	t.mu.Lock()
 	t.errors = append(t.errors, fmt.Sprintf(format, vals...))
 	t.mu.Unlock()
-	t.TB.Errorf(format, vals...)
+	t.ITB.Errorf(format, vals...)
 }
 
-func (t *TB) Fatal(vals ...any) {
+func (t *TB[T]) Fatal(vals ...any) {
 	t.log(fmt.Sprintln(vals...))
 	t.mu.Lock()
 	t.errors = append(t.errors, fmt.Sprint(vals...))
 	t.mu.Unlock()
-	t.TB.Fatal(vals...)
+	t.ITB.Fatal(vals...)
 }
 
-func (t *TB) Fatalf(format string, vals ...any) {
+func (t *TB[T]) Fatalf(format string, vals ...any) {
 	t.logf(format, vals...)
 	t.mu.Lock()
 	t.errors = append(t.errors, fmt.Sprintf(format, vals...))
 	t.mu.Unlock()
-	t.TB.Fatalf(format, vals...)
+	t.ITB.Fatalf(format, vals...)
 }
 
-func (t *TB) Skip(vals ...any) {
+func (t *TB[T]) Skip(vals ...any) {
 	t.log(fmt.Sprintln(vals...))
-	t.TB.Skip(vals...)
+	t.ITB.Skip(vals...)
 }
 
-func (t *TB) Skipf(format string, vals ...any) {
+func (t *TB[T]) Skipf(format string, vals ...any) {
 	t.logf(format, vals...)
-	t.TB.Skipf(format, vals...)
+	t.ITB.Skipf(format, vals...)
 }
 
-func (t *TB) Errors() string {
+func (t *TB[T]) Errors() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return strings.Join(t.errors, "\n")
 }
 
-func (t *TB) log(out string) {
+func (t *TB[T]) log(out string) {
 	if t.logger != nil {
 		if !strings.HasSuffix(out, "\n") {
 			out += "\n"
@@ -362,7 +286,7 @@ func (t *TB) log(out string) {
 	}
 }
 
-func (t *TB) logf(format string, vals ...any) {
+func (t *TB[T]) logf(format string, vals ...any) {
 	if t.logger != nil {
 		out := fmt.Sprintf(format, vals...)
 		if !strings.HasSuffix(out, "\n") {
