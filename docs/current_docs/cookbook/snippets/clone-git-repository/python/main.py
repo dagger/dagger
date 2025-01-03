@@ -24,7 +24,7 @@ class MyModule:
         elif locator == Locator.COMMIT:
             d = r.commit(ref).tree()
         else:
-            raise ValueError()
+            raise ValueError
 
         return (
             dag.container()
