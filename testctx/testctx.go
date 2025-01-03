@@ -20,11 +20,11 @@ type B = TB[*testing.B]
 type MiddlewareT = Middleware[*testing.T]
 type MiddlewareB = Middleware[*testing.B]
 
-type Middleware[T ITB[T]] func(*TB[T]) *TB[T]
+type Middleware[Type RunnableTTB[Type]] func(*TB[Type]) *TB[Type]
 
-type ITB[T testing.TB] interface {
+type RunnableTTB[Type testing.TB] interface {
 	testing.TB
-	Run(string, func(T)) bool
+	Run(string, func(Type)) bool
 }
 
 func Run(ctx context.Context, testingT *testing.T, suite any, middleware ...Middleware[*testing.T]) {
@@ -83,28 +83,28 @@ func Bench(ctx context.Context, testingB *testing.B, suite any, middleware ...Mi
 	}
 }
 
-func New[T ITB[T]](ctx context.Context, t T) *TB[T] {
+func New[Type RunnableTTB[Type]](ctx context.Context, t Type) *TB[Type] {
 	// Interrupt the context when the test is done.
 	ctx, cancel := context.WithCancel(ctx)
 	t.Cleanup(cancel)
-	return &TB[T]{
-		ITB: t,
-		ctx: ctx,
-		mu:  new(sync.Mutex),
+	return &TB[Type]{
+		RunnableTTB: t,
+		ctx:         ctx,
+		mu:          new(sync.Mutex),
 	}
 }
 
 func WithParallel(t *TB[*testing.T]) *TB[*testing.T] {
-	t.ITB.(*testing.T).Parallel()
+	t.RunnableTTB.(*testing.T).Parallel()
 	return t.
 		BeforeEach(func(t *TB[*testing.T]) *TB[*testing.T] {
-			t.ITB.(*testing.T).Parallel()
+			t.RunnableTTB.(*testing.T).Parallel()
 			return t
 		})
 }
 
-func WithOTelTracing[T ITB[T]](tracer trace.Tracer) Middleware[T] {
-	wrapSpan := func(t *TB[T]) *TB[T] {
+func WithOTelTracing[Type RunnableTTB[Type]](tracer trace.Tracer) Middleware[Type] {
+	wrapSpan := func(t *TB[Type]) *TB[Type] {
 		ctx, span := tracer.Start(t.Context(), t.BaseName())
 		t.Cleanup(func() {
 			if t.Failed() {
@@ -116,16 +116,16 @@ func WithOTelTracing[T ITB[T]](tracer trace.Tracer) Middleware[T] {
 		})
 		return t.WithContext(ctx)
 	}
-	return func(t *TB[T]) *TB[T] {
+	return func(t *TB[Type]) *TB[Type] {
 		return t.
 			BeforeAll(wrapSpan).
 			BeforeEach(wrapSpan)
 	}
 }
 
-func WithOTelLogging[T ITB[T]](logger log.Logger) Middleware[T] {
-	return func(t *TB[T]) *TB[T] {
-		return t.WithLogger(func(t2 *TB[T], msg string) {
+func WithOTelLogging[Type RunnableTTB[Type]](logger log.Logger) Middleware[Type] {
+	return func(t *TB[Type]) *TB[Type] {
+		return t.WithLogger(func(t2 *TB[Type], msg string) {
 			var rec log.Record
 			rec.SetBody(log.StringValue(msg))
 			rec.SetTimestamp(time.Now())
@@ -134,8 +134,8 @@ func WithOTelLogging[T ITB[T]](logger log.Logger) Middleware[T] {
 	}
 }
 
-func Combine[T ITB[T]](middleware ...Middleware[T]) Middleware[T] {
-	return func(t *TB[T]) *TB[T] {
+func Combine[Type RunnableTTB[Type]](middleware ...Middleware[Type]) Middleware[Type] {
+	return func(t *TB[Type]) *TB[Type] {
 		for _, m := range middleware {
 			t = m(t)
 		}
@@ -143,19 +143,19 @@ func Combine[T ITB[T]](middleware ...Middleware[T]) Middleware[T] {
 	}
 }
 
-type TB[T ITB[T]] struct {
-	ITB[T]
+type TB[Type RunnableTTB[Type]] struct {
+	RunnableTTB[Type]
 
 	ctx        context.Context
 	baseName   string
-	logger     func(*TB[T], string)
-	beforeEach []Middleware[T]
+	logger     func(*TB[Type], string)
+	beforeEach []Middleware[Type]
 	errors     []string
 	mu         *sync.Mutex
 }
 
-func (t *TB[T]) Run(name string, f func(context.Context, *TB[T])) bool {
-	return t.ITB.Run(name, func(testingT T) {
+func (t *TB[Type]) Run(name string, f func(context.Context, *TB[Type])) bool {
+	return t.RunnableTTB.Run(name, func(testingT Type) {
 		sub := t.sub(name, testingT)
 		for _, setup := range t.beforeEach {
 			sub = setup(sub)
@@ -164,7 +164,7 @@ func (t *TB[T]) Run(name string, f func(context.Context, *TB[T])) bool {
 	})
 }
 
-func (t *TB[T]) sub(name string, testingT T) *TB[T] {
+func (t *TB[Type]) sub(name string, testingT Type) *TB[Type] {
 	sub := New(t.ctx, testingT)
 	sub.baseName = name
 	sub.logger = t.logger
@@ -172,29 +172,29 @@ func (t *TB[T]) sub(name string, testingT T) *TB[T] {
 	return sub
 }
 
-func (t *TB[T]) BaseName() string {
+func (t *TB[Type]) BaseName() string {
 	if t.baseName != "" {
 		return t.baseName
 	}
 	return t.Name()
 }
 
-func (t *TB[T]) Context() context.Context {
+func (t *TB[Type]) Context() context.Context {
 	return t.ctx
 }
 
-func (t TB[T]) WithContext(ctx context.Context) *TB[T] {
+func (t TB[Type]) WithContext(ctx context.Context) *TB[Type] {
 	t.ctx = ctx
 	return &t
 }
 
-func (t TB[T]) WithLogger(logger func(*TB[T], string)) *TB[T] {
+func (t TB[Type]) WithLogger(logger func(*TB[Type], string)) *TB[Type] {
 	t.logger = logger
 	return &t
 }
 
-func (t *TB[T]) WithTimeout(timeout time.Duration) *TB[T] {
-	return t.BeforeEach(func(t2 *TB[T]) *TB[T] {
+func (t *TB[Type]) WithTimeout(timeout time.Duration) *TB[Type] {
+	return t.BeforeEach(func(t2 *TB[Type]) *TB[Type] {
 		ctx, cancel := context.WithTimeout(t2.Context(), timeout)
 		t2.Cleanup(cancel)
 		return t2.WithContext(ctx)
@@ -204,79 +204,79 @@ func (t *TB[T]) WithTimeout(timeout time.Duration) *TB[T] {
 // BeforeAll calls f immediately with itself and returns the result.
 //
 // It is not inherited by subtests.
-func (t *TB[T]) BeforeAll(f func(*TB[T]) *TB[T]) *TB[T] {
+func (t *TB[Type]) BeforeAll(f func(*TB[Type]) *TB[Type]) *TB[Type] {
 	return f(t)
 }
 
 // BeforeEach configures f to run prior to each subtest.
-func (t TB[T]) BeforeEach(f Middleware[T]) *TB[T] {
-	cpM := make([]Middleware[T], len(t.beforeEach))
+func (t TB[Type]) BeforeEach(f Middleware[Type]) *TB[Type] {
+	cpM := make([]Middleware[Type], len(t.beforeEach))
 	copy(cpM, t.beforeEach)
 	cpM = append(cpM, f)
 	t.beforeEach = cpM
 	return &t
 }
 
-func (t *TB[T]) Log(vals ...any) {
+func (t *TB[Type]) Log(vals ...any) {
 	t.log(fmt.Sprintln(vals...))
-	t.ITB.Log(vals...)
+	t.RunnableTTB.Log(vals...)
 }
 
-func (t *TB[T]) Logf(format string, vals ...any) {
+func (t *TB[Type]) Logf(format string, vals ...any) {
 	t.logf(format, vals...)
-	t.ITB.Logf(format, vals...)
+	t.RunnableTTB.Logf(format, vals...)
 }
 
-func (t *TB[T]) Error(vals ...any) {
+func (t *TB[Type]) Error(vals ...any) {
 	msg := fmt.Sprint(vals...)
 	t.mu.Lock()
 	t.errors = append(t.errors, msg)
 	t.mu.Unlock()
 	t.log(msg)
-	t.ITB.Error(vals...)
+	t.RunnableTTB.Error(vals...)
 }
 
-func (t *TB[T]) Errorf(format string, vals ...any) {
+func (t *TB[Type]) Errorf(format string, vals ...any) {
 	t.logf(format, vals...)
 	t.mu.Lock()
 	t.errors = append(t.errors, fmt.Sprintf(format, vals...))
 	t.mu.Unlock()
-	t.ITB.Errorf(format, vals...)
+	t.RunnableTTB.Errorf(format, vals...)
 }
 
-func (t *TB[T]) Fatal(vals ...any) {
+func (t *TB[Type]) Fatal(vals ...any) {
 	t.log(fmt.Sprintln(vals...))
 	t.mu.Lock()
 	t.errors = append(t.errors, fmt.Sprint(vals...))
 	t.mu.Unlock()
-	t.ITB.Fatal(vals...)
+	t.RunnableTTB.Fatal(vals...)
 }
 
-func (t *TB[T]) Fatalf(format string, vals ...any) {
+func (t *TB[Type]) Fatalf(format string, vals ...any) {
 	t.logf(format, vals...)
 	t.mu.Lock()
 	t.errors = append(t.errors, fmt.Sprintf(format, vals...))
 	t.mu.Unlock()
-	t.ITB.Fatalf(format, vals...)
+	t.RunnableTTB.Fatalf(format, vals...)
 }
 
-func (t *TB[T]) Skip(vals ...any) {
+func (t *TB[Type]) Skip(vals ...any) {
 	t.log(fmt.Sprintln(vals...))
-	t.ITB.Skip(vals...)
+	t.RunnableTTB.Skip(vals...)
 }
 
-func (t *TB[T]) Skipf(format string, vals ...any) {
+func (t *TB[Type]) Skipf(format string, vals ...any) {
 	t.logf(format, vals...)
-	t.ITB.Skipf(format, vals...)
+	t.RunnableTTB.Skipf(format, vals...)
 }
 
-func (t *TB[T]) Errors() string {
+func (t *TB[Type]) Errors() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return strings.Join(t.errors, "\n")
 }
 
-func (t *TB[T]) log(out string) {
+func (t *TB[Type]) log(out string) {
 	if t.logger != nil {
 		if !strings.HasSuffix(out, "\n") {
 			out += "\n"
@@ -286,7 +286,7 @@ func (t *TB[T]) log(out string) {
 	}
 }
 
-func (t *TB[T]) logf(format string, vals ...any) {
+func (t *TB[Type]) logf(format string, vals ...any) {
 	if t.logger != nil {
 		out := fmt.Sprintf(format, vals...)
 		if !strings.HasSuffix(out, "\n") {
