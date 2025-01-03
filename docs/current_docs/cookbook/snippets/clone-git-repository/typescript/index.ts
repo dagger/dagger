@@ -3,7 +3,7 @@ import { dag, Directory, Container, object, func } from "@dagger.io/dagger"
 export enum Locator {
   Branch = "BRANCH",
   Tag = "TAG",
-  Commit = "COMMIT"
+  Commit = "COMMIT",
 }
 
 @object()
@@ -25,7 +25,8 @@ class MyModule {
         break
     }
 
-    return dag.container()
+    return dag
+      .container()
       .from("alpine:latest")
       .withDirectory("/src", dir)
       .withWorkdir("/src")
