@@ -16,7 +16,7 @@ import (
 )
 
 // Note: ensure each testcase use unique port, otherwise you might see flakes.
-func (ModuleSuite) TestDaggerUp(ctx context.Context, t testctx.ITB) {
+func (ModuleSuite) TestDaggerUp(ctx context.Context, t *testctx.T) {
 	if testing.Short() {
 		t.SkipNow()
 	}
@@ -103,9 +103,6 @@ func (ModuleSuite) TestDaggerUp(ctx context.Context, t testctx.ITB) {
 		},
 	}
 
-	t = t.WithTimeout(3 * time.Minute)
-	tt = testctx.New(ctx, t.TTB())
-
 	for _, tc := range testcases {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			endpoint := tc.endpointFn(ctx, t, tc.cachedModDir, tc.daggerArgs, tc.trafficPort)
@@ -182,7 +179,7 @@ func daggerUpAndGetEndpointFromLogs(ctx context.Context, t *testctx.T, modDir st
 }
 
 // create a dagger module for DaggerUp test
-func daggerUpInitModFn(ctx context.Context, t testctx.ITB, defaultPort string) string {
+func daggerUpInitModFn(ctx context.Context, t *testctx.T, defaultPort string) string {
 	mainGoTmpl := `package main
 	import (
 		"strconv"
