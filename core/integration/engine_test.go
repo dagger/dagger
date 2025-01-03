@@ -134,7 +134,7 @@ func engineClientContainer(ctx context.Context, t *testctx.T, c *dagger.Client, 
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint)
 }
 
-func (EngineSuite) TestExitsZeroOnSignal(ctx context.Context, t testctx.ITB) {
+func (EngineSuite) TestExitsZeroOnSignal(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// engine should shutdown with exit code 0 when receiving SIGTERM

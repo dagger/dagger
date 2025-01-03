@@ -57,18 +57,18 @@ func Logger() log.Logger {
 	return telemetry.Logger(testCtx, InstrumentationLibrary)
 }
 
-func Middleware() []testctx.Middleware {
-	return []testctx.Middleware{
+func Middleware() []testctx.MiddlewareT {
+	return []testctx.MiddlewareT{
 		testctx.WithParallel,
-		testctx.WithOTelLogging(Logger()),
-		testctx.WithOTelTracing(Tracer()),
+		testctx.WithOTelLogging[*testing.T](Logger()),
+		testctx.WithOTelTracing[*testing.T](Tracer()),
 	}
 }
 
-func BenchMiddleware() []testctx.Middleware {
-	return []testctx.Middleware{
-		testctx.WithOTelLogging(Logger()),
-		testctx.WithOTelTracing(Tracer()),
+func BenchMiddleware() []testctx.MiddlewareB {
+	return []testctx.MiddlewareB{
+		testctx.WithOTelLogging[*testing.B](Logger()),
+		testctx.WithOTelTracing[*testing.B](Tracer()),
 	}
 }
 
