@@ -25,7 +25,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: "test"
+      - name: "benchmark"
         uses: ./.github/actions/call
         with:
           function: "test all --bench"
