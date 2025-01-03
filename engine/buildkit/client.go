@@ -171,7 +171,7 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	}
 	llbRes, err := gw.Solve(ctx, req, c.ID())
 	if err != nil {
-		return nil, wrapError(ctx, err, c)
+		return nil, WrapError(ctx, err, c)
 	}
 
 	res, err := solverresult.ConvertResult(llbRes, func(rp bksolver.ResultProxy) (*ref, error) {
