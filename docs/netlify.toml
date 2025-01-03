@@ -157,6 +157,11 @@
   status = 301
 
 [[redirects]]
+  from = "/api/publish"
+  to = "/api/daggerverse"
+  status = 301
+
+[[redirects]]
   from = "/manuals/developer/publish-modules"
   to = "/api/publish"
   status = 301
