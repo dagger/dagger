@@ -6661,6 +6661,26 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Update one or more module dependencies.
+    ///
+    /// # Arguments
+    ///
+    /// * `dependencies` - The dependencies to update.
+    pub fn with_update_dependencies(&self, dependencies: Vec<impl Into<String>>) -> ModuleSource {
+        let mut query = self.selection.select("withUpdateDependencies");
+        query = query.arg(
+            "dependencies",
+            dependencies
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Update the module source with a new named view.
     ///
     /// # Arguments

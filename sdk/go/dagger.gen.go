@@ -6360,6 +6360,16 @@ func (r *ModuleSource) WithSourceSubpath(path string) *ModuleSource {
 	}
 }
 
+// Update one or more module dependencies.
+func (r *ModuleSource) WithUpdateDependencies(dependencies []string) *ModuleSource {
+	q := r.query.Select("withUpdateDependencies")
+	q = q.Arg("dependencies", dependencies)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 // Update the module source with a new named view.
 func (r *ModuleSource) WithView(name string, patterns []string) *ModuleSource {
 	q := r.query.Select("withView")
