@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -695,7 +694,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 			With(daggerExec("install", "github.com/shykes/daggerverse/wolfi@v0.1.4", "--name=docker")).
 			Sync(ctx)
 
-		require.ErrorContains(t, err, "two or more dependencies are trying to use the same name")
+		requireErrOut(t, err, "two or more dependencies are trying to use the same name")
 	})
 
 	t.Run("install dep from various places", func(ctx context.Context, t *testctx.T) {
@@ -1538,12 +1537,7 @@ func (CLISuite) TestDaggerUpdate(ctx context.Context, t *testctx.T) {
 				Contents(ctx)
 
 			if tc.expectedError != "" {
-				var execErr *dagger.ExecError
-				if errors.As(err, &execErr) {
-					require.Contains(t, execErr.Stderr, tc.expectedError)
-				} else {
-					require.ErrorContains(t, err, tc.expectedError)
-				}
+				requireErrOut(t, err, tc.expectedError)
 			} else {
 				require.NoError(t, err)
 				for _, s := range tc.contains {
