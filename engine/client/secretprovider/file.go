@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/mitchellh/go-homedir"
+	"github.com/dagger/dagger/engine/client/pathutil"
 )
 
 func fileProvider(_ context.Context, path string) ([]byte, error) {
-	path, err := homedir.Expand(path)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	path, err = pathutil.ExpandHomeDir(homeDir, path)
 	if err != nil {
 		return nil, err
 	}
@@ -17,6 +21,5 @@ func fileProvider(_ context.Context, path string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read secret file %q: %w", path, err)
 	}
-
 	return data, nil
 }

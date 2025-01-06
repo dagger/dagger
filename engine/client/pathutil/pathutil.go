@@ -1,4 +1,4 @@
-package client
+package pathutil
 
 import (
 	"errors"
