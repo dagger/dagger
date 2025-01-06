@@ -131,6 +131,10 @@ func (s *moduleSchema) Install() {
 		dagql.NodeFunc("dependencies", s.moduleSourceDependencies).
 			Doc(`The effective module source dependencies from the configuration, and calls to withDependencies and withoutDependencies.`),
 
+		dagql.Func("withUpdateDependencies", s.moduleSourceWithUpdateDependencies).
+			Doc(`Update one or more module dependencies.`).
+			ArgDoc("dependencies", `The dependencies to update.`),
+
 		dagql.Func("withDependencies", s.moduleSourceWithDependencies).
 			Doc(`Append the provided dependencies to the module source's dependency list.`).
 			ArgDoc("dependencies", `The dependencies to append.`),
@@ -892,7 +896,7 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 	}
 	// write dagger.json last so SDKs can't intentionally or unintentionally
 	// modify it during codegen in ways that would be hard to deal with
-	if err := s.writeDaggerConfig(ctx, mod, modCfg, modCfgPath); err != nil {
+	if err := s.writeDaggerConfig(ctx, mod, modCfg, modCfgPath, src); err != nil {
 		return nil, fmt.Errorf("failed to update dagger.json: %w", err)
 	}
 
@@ -1212,19 +1216,33 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 	return nil
 }
 
+func (s *moduleSchema) readDaggerConfig(
+	ctx context.Context,
+	src dagql.Instance[*core.ModuleSource],
+) (*modules.ModuleConfigWithUserFields, error) {
+	modCfg, exists, err := src.Self.ModuleConfigWithUserFields(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module config: %w", err)
+	}
+	if !exists {
+		return &modules.ModuleConfigWithUserFields{
+			ModuleConfig: modules.ModuleConfig{EngineVersion: engine.Version},
+		}, nil
+	}
+	return modCfg, nil
+}
+
 func (s *moduleSchema) updateDaggerConfig(
 	ctx context.Context,
 	engineVersion string,
 	mod *core.Module,
 	src dagql.Instance[*core.ModuleSource],
 ) (*modules.ModuleConfig, string, error) {
-	modCfg, ok, err := src.Self.ModuleConfig(ctx)
+	modCfgWithUserFields, err := s.readDaggerConfig(ctx, src)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get module config: %w", err)
+		return nil, "", err
 	}
-	if !ok {
-		modCfg = &modules.ModuleConfig{EngineVersion: engine.Version}
-	}
+	modCfg := &modCfgWithUserFields.ModuleConfig
 
 	modCfg.Name = mod.OriginalName
 	modCfg.SDK = mod.SDKConfig
@@ -1284,8 +1302,16 @@ func (s *moduleSchema) writeDaggerConfig(
 	mod *core.Module,
 	modCfg *modules.ModuleConfig,
 	modCfgPath string,
+	src dagql.Instance[*core.ModuleSource],
 ) error {
-	updatedModCfgBytes, err := json.MarshalIndent(modCfg, "", "  ")
+	modCfgWithUserFields, err := s.readDaggerConfig(ctx, src)
+	if err != nil {
+		return err
+	}
+
+	modCfgWithUserFields.ModuleConfig = *modCfg
+
+	updatedModCfgBytes, err := json.MarshalIndent(modCfgWithUserFields, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to encode module config: %w", err)
 	}

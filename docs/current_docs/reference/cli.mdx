@@ -37,6 +37,7 @@ A tool to run CI/CD pipelines in containers, anywhere
 * [dagger query](#dagger-query)	 - Send API queries to a dagger engine
 * [dagger run](#dagger-run)	 - Run a command in a Dagger session
 * [dagger uninstall](#dagger-uninstall)	 - Uninstall a dependency
+* [dagger update](#dagger-update)	 - Update a dependency
 * [dagger version](#dagger-version)	 - Print dagger version
 
 ## dagger call
@@ -528,6 +529,42 @@ dagger uninstall [options] <module>
 
 ```
 dagger uninstall hello
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
+
+## dagger update
+
+Update a dependency
+
+### Synopsis
+
+Update a dependency to the latest version (or the version specified). The target module must be local.
+
+```
+dagger update [options] <module>
+```
+
+### Examples
+
+```
+"dagger update github.com/shykes/daggerverse/hello@v0.3.0" or "dagger update hello"
 ```
 
 ### Options inherited from parent commands
