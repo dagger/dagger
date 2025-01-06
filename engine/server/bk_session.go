@@ -41,7 +41,7 @@ func (srv *Server) newBuildkitSession(ctx context.Context, c *daggerClient) (*bk
 		"oci:" + buildkit.BuiltinContentOCIStoreName: builtinStore,
 	}))
 
-	filesyncer, err := client.NewFilesyncer("", "", nil, nil)
+	filesyncer, err := client.NewFilesyncer()
 	if err != nil {
 		return nil, fmt.Errorf("new filesyncer: %w", err)
 	}

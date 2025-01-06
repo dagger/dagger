@@ -17,13 +17,6 @@ import (
 
 type SocketProvider struct {
 	EnableHostNetworkAccess bool
-
-	// Dialer to use for tcp/udp socket. Optional, defaults to net.Dial if not set
-	IPDialer func(network, addr string) (net.Conn, error)
-
-	// If unix sock paths need to be remapped (i.e. nested execs), use this function to do so.
-	// Otherwise paths are passed through as-is.
-	UnixPathMapper func(path string) (string, error)
 }
 
 func (p SocketProvider) Register(server *grpc.Server) {
@@ -44,13 +37,6 @@ func (p SocketProvider) CheckAgent(ctx context.Context, req *sshforward.CheckAge
 	switch u.Scheme {
 	case "unix":
 		path := u.Path
-		if p.UnixPathMapper != nil {
-			path, err = p.UnixPathMapper(path)
-			if err != nil {
-				return nil, status.Errorf(codes.Internal, "failed to map unix path: %s", err)
-			}
-		}
-
 		stat, err := os.Stat(path)
 		if err != nil {
 			return nil, status.Errorf(codes.NotFound, "socket %s not found: %s", u.Path, err)
@@ -88,18 +74,9 @@ func (p SocketProvider) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) e
 	case "unix":
 		network = "unix"
 		addr = connURL.Path
-		if p.UnixPathMapper != nil {
-			addr, err = p.UnixPathMapper(addr)
-			if err != nil {
-				return status.Errorf(codes.Internal, "failed to map unix path: %s", err)
-			}
-		}
 	case "tcp", "udp":
 		network = connURL.Scheme
 		addr = connURL.Host
-		if p.IPDialer != nil {
-			dialer = p.IPDialer
-		}
 	default:
 		return status.Errorf(codes.InvalidArgument, "invalid socket url: unsupported scheme %q", connURL.Scheme)
 	}

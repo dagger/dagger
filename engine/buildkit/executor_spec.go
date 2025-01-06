@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/containerd/containerd/mount"
@@ -29,7 +30,6 @@ import (
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
 	randid "github.com/moby/buildkit/identity"
-	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
 	bknetwork "github.com/moby/buildkit/util/network"
@@ -46,7 +46,6 @@ import (
 	"github.com/dagger/dagger/engine/buildkit/containerfs"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/dagger/dagger/engine/session"
 	"github.com/dagger/dagger/network"
 )
 
@@ -101,17 +100,18 @@ type execState struct {
 
 	cleanups *Cleanups
 
-	spec             *specs.Spec
-	networkNamespace bknetwork.Namespace
-	rootfsPath       string
-	uid              uint32
-	gid              uint32
-	sgids            []uint32
-	resolvConfPath   string
-	hostsFilePath    string
-	exitCodePath     string
-	metaMount        *specs.Mount
-	origEnvMap       map[string]string
+	spec               *specs.Spec
+	networkNamespace   bknetwork.Namespace
+	rootfsPath         string
+	uid                uint32
+	gid                uint32
+	sgids              []uint32
+	resolvConfPath     string
+	hostsFilePath      string
+	exitCodePath       string
+	metaMount          *specs.Mount
+	origEnvMap         map[string]string
+	sessionClientConnF *os.File
 
 	startedOnce *sync.Once
 	startedCh   chan<- struct{}
@@ -340,18 +340,18 @@ func (m hostBindMountRef) IdentityMapping() *idtools.IdentityMapping {
 	return nil
 }
 
-func (w *Worker) injectDumbInit(_ context.Context, state *execState) error {
+func (w *Worker) injectInit(_ context.Context, state *execState) error {
 	if w.execMD != nil && w.execMD.NoInit {
 		return nil
 	}
 
-	dumbInitPath := "/.init"
+	initPath := "/.init"
 	state.mounts = append(state.mounts, executor.Mount{
-		Src:      hostBindMount{srcPath: distconsts.DumbInitPath},
-		Dest:     dumbInitPath,
+		Src:      hostBindMount{srcPath: distconsts.DaggerInitPath},
+		Dest:     initPath,
 		Readonly: true,
 	})
-	state.procInfo.Meta.Args = append([]string{dumbInitPath}, state.procInfo.Meta.Args...)
+	state.procInfo.Meta.Args = append([]string{initPath}, state.procInfo.Meta.Args...)
 
 	return nil
 }
@@ -956,77 +956,19 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		}
 	}
 
-	filesyncer, err := client.NewFilesyncer(
-		state.rootfsPath,
-		strings.TrimPrefix(state.spec.Process.Cwd, "/"),
-		&state.uid, &state.gid,
-	)
+	sessionClientConnF, sessionSrvConnF, err := newSocketpair()
 	if err != nil {
-		return fmt.Errorf("create filesyncer: %w", err)
+		return fmt.Errorf("create session socket pair: %w", err)
 	}
+	// closing net.FileConn won't close the underlying fd, so do that here
+	state.cleanups.Add("close session client conn", sessionClientConnF.Close)
+	state.cleanups.Add("close session srv conn", sessionSrvConnF.Close)
+	state.sessionClientConnF = sessionClientConnF
 
-	attachables := []bksession.Attachable{
-		client.SocketProvider{
-			EnableHostNetworkAccess: true,
-			IPDialer: func(networkType, addr string) (net.Conn, error) {
-				// To handle the case where the host being looked up is another service container
-				// endpoint without any qualification, we check both the unqualified and
-				// search-domain-qualified hostnames.
-				// The alternative here would be to also enter into the container's mount namespace,
-				// which while entirely feasible is an annoyance that outweighs the annoyance of this.
-				hostName, port, err := net.SplitHostPort(addr)
-				if err != nil {
-					return nil, fmt.Errorf("split host port %s: %w", addr, err)
-				}
-				var resolvedHost string
-				var errs error
-				for _, searchDomain := range []string{"", network.SessionDomain(w.execMD.SessionID)} {
-					qualified := hostName
-					if searchDomain != "" {
-						qualified += "." + searchDomain
-					}
-					_, err := net.LookupIP(qualified)
-					if err == nil {
-						resolvedHost = qualified
-						break
-					}
-					errs = errors.Join(errs, err)
-				}
-				if resolvedHost == "" {
-					return nil, fmt.Errorf("resolve %s: %w", hostName, errors.Join(errs))
-				}
-				addr = net.JoinHostPort(resolvedHost, port)
-
-				return runInNetNS(ctx, state, func() (net.Conn, error) {
-					return net.Dial(networkType, addr)
-				})
-			},
-			UnixPathMapper: func(p string) (string, error) {
-				if !filepath.IsAbs(p) {
-					return "", fmt.Errorf("path %s is not absolute", p)
-				}
-				fullPath, err := fs.RootPath(state.rootfsPath, p)
-				if err != nil {
-					return "", fmt.Errorf("find full root path: %w", err)
-				}
-				return fullPath, nil
-			},
-		},
-		session.NewTunnelListenerAttachable(ctx, func(network, addr string) (net.Listener, error) {
-			return runInNetNS(ctx, state, func() (net.Listener, error) {
-				return net.Listen(network, addr)
-			})
-		}),
-		filesyncer.AsSource(),
-		filesyncer.AsTarget(),
+	sessionSrvConn, err := net.FileConn(sessionSrvConnF)
+	if err != nil {
+		return fmt.Errorf("convert session srv conn: %w", err)
 	}
-
-	sessionClientConn, sessionSrvConn := net.Pipe()
-	state.cleanups.Add("close session client conn", sessionClientConn.Close)
-	state.cleanups.Add("close session server conn", sessionSrvConn.Close)
-
-	sessionSrv := client.NewBuildkitSessionServer(ctx, sessionClientConn, attachables...)
-	stopSessionSrv := state.cleanups.Add("stop session server", Infallible(sessionSrv.Stop))
 
 	srvCtx, srvCancel := context.WithCancelCause(ctx)
 	state.cleanups.Add("cancel session server", Infallible(func() {
@@ -1034,15 +976,15 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	}))
 	srvPool := pool.New().WithContext(srvCtx).WithCancelOnError()
 	srvPool.Go(func(ctx context.Context) error {
-		sessionSrv.Run(ctx)
-		return nil
-	})
-	srvPool.Go(func(ctx context.Context) error {
 		return w.bkSessionManager.HandleConn(ctx, sessionSrvConn, map[string][]string{
-			engine.SessionIDMetaKey:         {w.execMD.ClientID},
-			engine.SessionNameMetaKey:       {w.execMD.ClientID},
-			engine.SessionSharedKeyMetaKey:  {""},
-			engine.SessionMethodNameMetaKey: sessionSrv.MethodURLs,
+			engine.SessionIDMetaKey:        {w.execMD.ClientID},
+			engine.SessionNameMetaKey:      {w.execMD.ClientID},
+			engine.SessionSharedKeyMetaKey: {""},
+			engine.SessionMethodNameMetaKey: {
+				// buildkit doesn't care about this, except one codepath where it insists on checking
+				// for FileSend/diffcopy, so include that here
+				"/moby.filesync.v1.FileSend/diffcopy",
+			},
 		})
 	})
 
@@ -1080,13 +1022,32 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	})
 
 	state.cleanups.Add("wait for nested client server pool", srvPool.Wait)
-	state.cleanups.ReAdd(stopSessionSrv)
+	// state.cleanups.ReAdd(stopSessionSrv)
 	state.cleanups.Add("close nested client http server", httpSrv.Close)
 	state.cleanups.Add("cancel nested client server pool", Infallible(func() {
 		srvCancel(errors.New("container cleanup"))
 	}))
 
 	return nil
+}
+
+func newSocketpair() (*os.File, *os.File, error) {
+	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+	if err != nil {
+		return nil, nil, fmt.Errorf("socketpair: %w", err)
+	}
+
+	fd0 := fds[0]
+	fd1 := fds[1]
+
+	if err := syscall.SetNonblock(fd0, true); err != nil {
+		return nil, nil, fmt.Errorf("set nonblock fd0: %w", err)
+	}
+	if err := syscall.SetNonblock(fd1, true); err != nil {
+		return nil, nil, fmt.Errorf("set nonblock fd1: %w", err)
+	}
+
+	return os.NewFile(uintptr(fd0), "socketpair0"), os.NewFile(uintptr(fd1), "socketpair1"), nil
 }
 
 func (w *Worker) installCACerts(ctx context.Context, state *execState) error {
@@ -1278,10 +1239,15 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 	killer := newRunProcKiller(w.runc, state.id)
 
 	runcCall := func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error {
+		var extraFiles []*os.File
+		if state.sessionClientConnF != nil {
+			extraFiles = append(extraFiles, state.sessionClientConnF)
+		}
 		_, err := w.runc.Run(ctx, state.id, bundle, &runc.CreateOpts{
-			Started:   started,
-			IO:        io,
-			ExtraArgs: []string{"--keep"},
+			Started:    started,
+			IO:         io,
+			ExtraArgs:  []string{"--keep"},
+			ExtraFiles: extraFiles,
 		})
 		return err
 	}

@@ -10,8 +10,8 @@ const (
 )
 
 const (
-	RuncPath     = "/usr/local/bin/runc"
-	DumbInitPath = "/usr/local/bin/dumb-init"
+	RuncPath       = "/usr/local/bin/runc"
+	DaggerInitPath = "/usr/local/bin/dagger-init"
 
 	EngineDefaultStateDir = "/var/lib/dagger"
 
