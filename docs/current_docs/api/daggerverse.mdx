@@ -4,13 +4,13 @@ slug: /api/daggerverse
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Daggerverse
+# The Daggerverse
 
 Dagger Functions are packaged and shared using Dagger [modules](../features/modules.mdx).
 
 ## Ranking
 
-Daggerverse is an index of all known public Dagger modules. To help users find the best quality modules, a basic rank is applied to modules for sorting the module index.
+The Daggerverse is a free service run by Dagger, which indexes all publicly available Dagger Functions, and lets you easily search and consume them. To help users find the best quality modules, a basic rank is applied to modules for sorting the module index.
 
 To make sure your module gets the best possible rank, consider the following for your module:
 
@@ -20,11 +20,11 @@ To make sure your module gets the best possible rank, consider the following for
 
 1. Modules versions should be tagged with [semver](./daggerverse.mdx#semantic-versioning)
 
-1. Modules should have hand crafted [examples](./daggerverse.mdx#examples)
+1. Modules should have hand-crafted [examples](./daggerverse.mdx#examples)
 
 ## Examples
 
-Daggerverse will automatically show basic examples for each function in a module. If you would like to provide personalized examples, the following section will describe how to set these up.
+Daggerverse will automatically show basic examples for each function in a module. If you would like to provide hand-crafted examples, the following section will describe how to set these up.
 
 
 <Tabs groupId="language">
@@ -34,11 +34,11 @@ A Go example must be a Dagger module located at `/examples/go` within the module
 
 If you have a module called `Foo` and a function called `Bar`, you can create the following functions in your example module:
 
-1. A function `Foo_Baz` will create a top level example for the `Foo` module called Baz
+1. A function `Foo_Baz` will create a top level example for the `Foo` module called Baz.
 
-1. A function `FooBar` will create an example for function `Bar`
+1. A function `FooBar` will create an example for function `Bar`.
 
-1. Functions `FooBar_Baz` will create a Baz example for the function `Bar`
+1. Functions `FooBar_Baz` will create a Baz example for the function `Bar`.
 
 </TabItem>
 <TabItem value="Python">
@@ -47,11 +47,11 @@ A Python example must be a Dagger module located at `/examples/python` within th
 
 If you have a module called `foo` and a function called `bar`, you can create the following functions in your example module:
 
-1. A function `foo__baz` will create a top level example for the `foo` module called baz
+1. A function `foo__baz` will create a top level example for the `foo` module called baz.
 
-1. A function `foo_bar` will create an example for function `bar`
+1. A function `foo_bar` will create an example for function `bar`.
 
-1. Functions `foo_bar__baz` will create a baz example for the function `bar`
+1. Functions `foo_bar__baz` will create a baz example for the function `bar`.
 
 </TabItem>
 <TabItem value="Typescript">
@@ -60,11 +60,11 @@ A Typescript example must be a Dagger module located at `/examples/typescript` w
 
 If you have a module called `foo` and a function called `bar`, you can create the following functions in your example module:
 
-1. A function `foo_baz` will create a top level example for the `foo` module called baz
+1. A function `foo_baz` will create a top level example for the `foo` module called baz.
 
-1. A function `fooBar` will create an example for function `bar`
+1. A function `fooBar` will create an example for function `bar`.
 
-1. Functions `fooBar_baz` and will create a baz example for the function `bar`
+1. Functions `fooBar_baz` and will create a baz example for the function `bar`.
 
 </TabItem>
 <TabItem value="Shell">
@@ -73,16 +73,16 @@ A Shell example must be a shell script located at `/examples/shell` within the m
 
 If you have a module called `foo` and a function called `bar`, you can create the following script in your example directory:
 
-1. A file `foo_baz.sh` will create a top level example for the `foo` module called baz
+1. A file `foo_baz.sh` will create a top level example for the `foo` module called baz.
 
-1. A file `foo_bar.sh` will create an example for function `bar`
+1. A file `foo_bar.sh` will create an example for function `bar`.
 
-1. Files `foo_bar_baz.sh` and will create a baz example for the function `bar`
+1. Files `foo_bar_baz.sh` and will create a baz example for the function `bar`.
 
 </TabItem>
 </Tabs>
 
-For an example of a module with hand crafted function examples, see the [proxy module](https://daggerverse.dev/mod/github.com/kpenfound/dagger-modules/proxy)
+For an example of a module with hand-crafted function examples, see the [proxy module](https://daggerverse.dev/mod/github.com/kpenfound/dagger-modules/proxy)
 
 ## Publishing
 
