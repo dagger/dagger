@@ -6659,8 +6659,8 @@ export class Client extends BaseClient {
    * Constructs a cache volume for a given cache key.
    * @param key A string identifier to target this cache volume (e.g., "modules-cache").
    */
-  cacheVolume = (key: string): CacheVolume => {
-    const ctx = this._ctx.select("cacheVolume", { key })
+  cacheVolume = (key: string, opts?: ClientCacheVolumeOpts): CacheVolume => {
+    const ctx = this._ctx.select("cacheVolume", { key, ...opts })
     return new CacheVolume(ctx)
   }
 
