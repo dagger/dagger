@@ -698,6 +698,27 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 		requireErrOut(t, err, "two or more dependencies are trying to use the same name")
 	})
 
+	t.Run("installing a dependency with implicit duplicate name is not allowed", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := c.Container().
+			From("alpine:latest").
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--sdk=go", "--source=.")).
+			With(daggerExec("install", "github.com/shykes/daggerverse/wolfi@v0.1.4"))
+
+		daggerjson, err := ctr.File("dagger.json").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, "github.com/shykes/daggerverse/wolfi@wolfi/v0.1.4")
+
+		_, err = ctr.
+			With(daggerExec("install", "github.com/dagger/dagger/modules/wolfi")).
+			Sync(ctx)
+
+		requireErrOut(t, err, "two or more dependencies are trying to use the same name")
+	})
+
 	t.Run("install dep from various places", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
