@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+option go_package = "session";
+
+service GitConfigSvc {
+  rpc GetGitConfig(GetGitConfigRequest) returns (GetGitConfigResponse);
+}
+
+message GetGitConfigRequest {}
+
+message GetGitConfigResponse {
+  oneof result {
+    GitConfig config = 1;
+    GitConfigErrorInfo error = 2;
+  }
+}
+
+message GitConfig {
+  string content = 1;
+  string goprivate = 2;
+}
+
+message GitConfigErrorInfo {
+  enum GitConfigErrorType {
+    GC_UNKNOWN = 0;
+    GC_INVALID_REQUEST = 1;
+    GC_NO_GIT = 2;
+    GC_TIMEOUT = 3;
+    GC_GIT_CONFIG_RETRIEVAL_FAILED = 4;
+}
+  GitConfigErrorType type = 1;
+  string message = 2;
+}
+

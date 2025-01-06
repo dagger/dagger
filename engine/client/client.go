@@ -348,6 +348,8 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		session.NewTerminalAttachable(ctx, c.Params.WithTerminal),
 		// Git credentials
 		session.NewGitCredentialAttachable(ctx),
+		// Git Config retriever
+		session.NewGitConfigAttachable(ctx),
 	}
 	// filesync
 	if !c.DisableHostRW {
