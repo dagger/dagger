@@ -87,6 +87,10 @@ updates:
     labels:
       - "kind/dependencies"
       - "area/sdk/python"
+    ignore:
+      # python needs to be manually bumped
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     groups:
       sdk-python-docker:
         applies-to: version-updates
