@@ -17,12 +17,12 @@
   },
   "main": "dist/src/index.js",
   "dependencies": {
-    "@grpc/grpc-js": "^1.12.4",
+    "@grpc/grpc-js": "^1.12.5",
     "@lifeomic/axios-fetch": "^3.1.0",
     "@opentelemetry/api": "^1.9.0",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.56.0",
-    "@opentelemetry/sdk-metrics": "^1.29.0",
-    "@opentelemetry/sdk-node": "^0.56.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.57.0",
+    "@opentelemetry/sdk-metrics": "^1.30.0",
+    "@opentelemetry/sdk-node": "^0.57.0",
     "@opentelemetry/semantic-conventions": "^1.25.1",
     "adm-zip": "^0.5.16",
     "env-paths": "^3.0.0",
@@ -50,13 +50,13 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
-    "@trivago/prettier-plugin-sort-imports": "^5.2.0",
+    "@trivago/prettier-plugin-sort-imports": "^5.2.1",
     "@types/adm-zip": "^0.5.7",
-    "@types/mocha": "^10.0.7",
-    "@types/node": "~22.10.2",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "~22.10.5",
     "@types/tar": "^6.1.13",
-    "@typescript-eslint/eslint-plugin": "^8.18.0",
-    "@typescript-eslint/parser": "^8.18.0",
+    "@typescript-eslint/eslint-plugin": "^8.19.0",
+    "@typescript-eslint/parser": "^8.19.0",
     "eslint": "^9.17.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.2.1",
@@ -64,6 +64,6 @@
     "prettier": "^3.4.2",
     "ts-node": "^10.9.2",
     "tsx": "^4.19.2",
-    "typescript-eslint": "^8.18.0"
+    "typescript-eslint": "^8.19.0"
   }
 }
