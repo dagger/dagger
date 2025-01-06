@@ -10,6 +10,19 @@ import { DaggerObjectBase } from "./objectBase.js"
 import { DaggerProperties, DaggerProperty } from "./property.js"
 import { References } from "./reference.js"
 
+/**
+ * Represents an object defined using the `class` keyword.
+ *
+ * The class may contains methods and fields, that may or may not be exposed to the Dagger API.
+ *
+ * @example
+ * ```ts
+ * type MyObject = {
+ *   name: string
+ *   age: number
+ * }
+ * ```
+ */
 export class DaggerObject extends Locatable implements DaggerObjectBase {
   public name: string
   public description: string
