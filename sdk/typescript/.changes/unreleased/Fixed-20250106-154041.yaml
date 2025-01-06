@@ -1,0 +1,6 @@
+kind: Fixed
+body: 'Type object with IDable properties are not correctly serialized when returned '
+time: 2025-01-06T15:40:41.947388+01:00
+custom:
+  Author: TomChv
+  PR: "9321"

@@ -10,6 +10,26 @@ import {
   DaggerObjectTypeProperty,
 } from "./typeObjectProperty.js"
 
+/**
+ * Represents an object defined using the `type` keyword.
+ *
+ * Type object can only contains fields, no methods are allowed.
+ * All fields are public and exposed to the Dagger API.
+ *
+ * @example
+ * ```ts
+ * @object()
+ * export class MyObject {
+ *  @func()
+ *  public name: string
+ *
+ *  @func()
+ *  async getName(): Promise<string> {
+ *    return this.name
+ *  }
+ * }
+ * ```
+ */
 export class DaggerTypeObject extends Locatable implements DaggerObjectBase {
   public name: string
   public description: string
