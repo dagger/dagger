@@ -1,7 +1,8 @@
 import ts from "typescript"
 
 import { IntrospectionError } from "../../../common/errors/index.js"
-import { AST } from "../typescript_module/index.js"
+import { AST, Location } from "../typescript_module/index.js"
+import { Locatable } from "./locatable.js"
 import { DaggerObjectBase } from "./objectBase.js"
 import { References } from "./reference.js"
 import {
@@ -9,7 +10,27 @@ import {
   DaggerObjectTypeProperty,
 } from "./typeObjectProperty.js"
 
-export class DaggerTypeObject implements DaggerObjectBase {
+/**
+ * Represents an object defined using the `type` keyword.
+ *
+ * Type object can only contains fields, no methods are allowed.
+ * All fields are public and exposed to the Dagger API.
+ *
+ * @example
+ * ```ts
+ * @object()
+ * export class MyObject {
+ *  @func()
+ *  public name: string
+ *
+ *  @func()
+ *  async getName(): Promise<string> {
+ *    return this.name
+ *  }
+ * }
+ * ```
+ */
+export class DaggerTypeObject extends Locatable implements DaggerObjectBase {
   public name: string
   public description: string
   public _constructor = undefined
@@ -26,6 +47,8 @@ export class DaggerTypeObject implements DaggerObjectBase {
     private readonly node: ts.TypeAliasDeclaration,
     private readonly ast: AST,
   ) {
+    super(node)
+
     if (!this.node.name) {
       throw new IntrospectionError(
         `could not resolve name of enum at ${AST.getNodePosition(node)}.`,
@@ -49,6 +72,10 @@ export class DaggerTypeObject implements DaggerObjectBase {
         this.properties[daggerProperty.name] = daggerProperty
       }
     }
+  }
+
+  public getLocation(): Location {
+    return AST.getNodeLocation(this.node)
   }
 
   public getReferences(): string[] {

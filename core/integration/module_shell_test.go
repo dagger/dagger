@@ -578,6 +578,28 @@ func (m *Test) DirectoryID(ctx context.Context) (string, error) {
 	require.Equal(t, "bar", out)
 }
 
+func (ShellSuite) TestStateCommand(ctx context.Context, t *testctx.T) {
+	setup := "FOO=$(directory | with-new-file foo bar); "
+
+	t.Run("state result", func(ctx context.Context, t *testctx.T) {
+		script := setup + "$FOO"
+
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).With(daggerShell(script)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "foo")
+	})
+
+	t.Run("pipeline from state value", func(ctx context.Context, t *testctx.T) {
+		script := setup + "$FOO | file foo | contents"
+
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).With(daggerShell(script)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "bar", out)
+	})
+}
+
 func (ShellSuite) TestArgsSpread(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen := daggerCliBase(t, c)
@@ -622,6 +644,16 @@ func (ShellSuite) TestArgsSpread(ctx context.Context, t *testctx.T) {
 			require.Equal(t, tc.expected, out)
 		})
 	}
+}
+
+func (ShellSuite) TestSliceFlag(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	script := fmt.Sprintf("directory | with-directory / $(container | from %s | directory /etc) --include=passwd,shadow | entries", alpineImage)
+	out, err := daggerCliBase(t, c).
+		With(daggerShell(script)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "passwd\nshadow\n", out)
 }
 
 func (ShellSuite) TestCommandStateArgs(ctx context.Context, t *testctx.T) {

@@ -28,7 +28,7 @@ the `engine.json` settings will take precedence.
 
 ## Configuration
 
-<Tabs>
+<Tabs groupId="config">
 <TabItem value="engine.json">
 To configure `engine.json` when using an automatically provisioned Dagger
 Engine (the default), you should write your desired JSON config to
@@ -95,7 +95,7 @@ want to extend the default configuration:
 
 Dagger supports various log verbosity levels. The default level is to enable `debug`.
 
-<Tabs>
+<Tabs groupId="config">
 <TabItem value="engine.json">
 The supported levels are (in ascending levels of verbosity, with the quietest
 first, and the noisiest last):
@@ -151,7 +151,7 @@ allows all operations root access (similar to [`docker run`'s --privileged` flag
 
 This capability can be disabled to lock down a Dagger installation.
 
-<Tabs>
+<Tabs groupId="config">
 <TabItem value="engine.json">
 To explicitly enable the use of `insecureRootCapabilities` (the default):
 
@@ -210,7 +210,6 @@ It is possible to use userspace TCP/IP implementations such as [slirp](https://g
 
 Newer options for more performant userspace network stacks have arisen in recent years, but they are generally either reliant on relatively recent kernel versions or in a nascent stage that would require significant validation around robustness+security.
 
-
 ### Garbage collection
 
 The Dagger Engine [caches various operations](./cache.mdx) to improve speed on
@@ -227,7 +226,7 @@ accidentally configure it to clean up *all* cache, since this will severely
 impact performance.
 :::
 
-<Tabs>
+<Tabs groupId="config">
 
 <TabItem value="engine.json">
 To disable the garbage collector:
@@ -259,6 +258,7 @@ to allow more fine-grained policies.
 
 Each policy defines the amount of space if can consume using the following
 parameters:
+
 - `maxUsedSpace` is the maximum amount of disk space that may be used by
   this buildkit worker - any usage above this threshold will be reclaimed
   during garbage collection.
@@ -273,7 +273,7 @@ All disk space parameters can be an integer number of bytes (e.g. `512000000`), 
 string with a unit (e.g. `"512MB"`), or a string percentage
 of the total disk space (e.g. `"10%"`)
 
-<Tabs>
+<Tabs groupId="config">
 <TabItem value="engine.json">
 To adjust the garbage collector default parameters:
 
@@ -308,11 +308,12 @@ however, the defaults for this are generally reasonable for most use-cases.
 
 Each policy takes the same disk space parameters as above, as well as the
 following filtering tools:
+
 - `all` is a boolean, that when set to `true` matches every cache record.
 - `keepDuration` is a duration, that matches cache records older than the given
   amount (e.g. `30s`, `5m`, `4h`).
 
-<Tabs>
+<Tabs groupId="config">
 <TabItem value="engine.json">
 To adjust the garbage collector's fine-grained policies:
 
@@ -364,7 +365,7 @@ Dagger can be configured to use container registry mirrors for any registry
 URL. This allows container images that refer to one registry to instead be
 redirected to a different one.
 
-<Tabs>
+<Tabs groupId="config">
 <TabItem value="engine.json">
 
 :::warning

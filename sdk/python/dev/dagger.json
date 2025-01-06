@@ -15,8 +15,7 @@
     },
     {
       "name": "wolfi",
-      "source": "../../../modules/wolfi",
-      "pin": ""
+      "source": "../../../modules/wolfi"
     }
   ],
   "source": "."

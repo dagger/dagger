@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -14,49 +15,68 @@ import (
 
 func TypescriptTemplateFuncs(
 	schemaVersion string,
+	moduleName string,
+	moduleParentPath string,
 ) template.FuncMap {
-	commonFunc := generator.NewCommonFunctions(schemaVersion, &FormatTypeFunc{})
+	return typescriptTemplateFuncs{
+		moduleName:       moduleName,
+		moduleParentPath: moduleParentPath,
+		schemaVersion:    schemaVersion,
+	}.FuncMap()
+}
+
+type typescriptTemplateFuncs struct {
+	moduleName       string
+	moduleParentPath string
+	schemaVersion    string
+}
+
+func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
+	commonFunc := generator.NewCommonFunctions(funcs.schemaVersion, &FormatTypeFunc{
+		formatNameFunc: funcs.formatName,
+	})
 	return template.FuncMap{
-		"CommentToLines":            commentToLines,
-		"FormatDeprecation":         formatDeprecation,
+		"CommentToLines":            funcs.commentToLines,
+		"FormatDeprecation":         funcs.formatDeprecation,
 		"FormatReturnType":          commonFunc.FormatReturnType,
 		"FormatInputType":           commonFunc.FormatInputType,
 		"FormatOutputType":          commonFunc.FormatOutputType,
-		"FormatEnum":                formatEnum,
-		"FormatName":                formatName,
-		"QueryToClient":             queryToClient,
-		"GetOptionalArgs":           getOptionalArgs,
-		"GetRequiredArgs":           getRequiredArgs,
+		"FormatEnum":                funcs.formatEnum,
+		"FormatName":                funcs.formatName,
+		"QueryToClient":             funcs.queryToClient,
+		"GetOptionalArgs":           funcs.getOptionalArgs,
+		"GetRequiredArgs":           funcs.getRequiredArgs,
 		"HasPrefix":                 strings.HasPrefix,
-		"PascalCase":                pascalCase,
-		"IsArgOptional":             isArgOptional,
-		"IsCustomScalar":            isCustomScalar,
-		"IsEnum":                    isEnum,
-		"IsKeyword":                 isKeyword,
-		"ArgsHaveDescription":       argsHaveDescription,
-		"SortInputFields":           sortInputFields,
-		"SortEnumFields":            sortEnumFields,
-		"Solve":                     solve,
-		"Subtract":                  subtract,
+		"PascalCase":                funcs.pascalCase,
+		"IsArgOptional":             funcs.isArgOptional,
+		"IsCustomScalar":            funcs.isCustomScalar,
+		"IsEnum":                    funcs.isEnum,
+		"IsKeyword":                 funcs.isKeyword,
+		"ArgsHaveDescription":       funcs.argsHaveDescription,
+		"SortInputFields":           funcs.sortInputFields,
+		"SortEnumFields":            funcs.sortEnumFields,
+		"Solve":                     funcs.solve,
+		"Subtract":                  funcs.subtract,
 		"ConvertID":                 commonFunc.ConvertID,
 		"IsSelfChainable":           commonFunc.IsSelfChainable,
 		"IsListOfObject":            commonFunc.IsListOfObject,
 		"GetArrayField":             commonFunc.GetArrayField,
 		"ToLowerCase":               commonFunc.ToLowerCase,
 		"ToUpperCase":               commonFunc.ToUpperCase,
-		"ToSingleType":              toSingleType,
-		"GetEnumValues":             getEnumValues,
+		"ToSingleType":              funcs.toSingleType,
+		"GetEnumValues":             funcs.getEnumValues,
 		"CheckVersionCompatibility": commonFunc.CheckVersionCompatibility,
+		"ModuleRelPath":             funcs.moduleRelPath,
 	}
 }
 
 // pascalCase change a type name into pascalCase
-func pascalCase(name string) string {
+func (funcs typescriptTemplateFuncs) pascalCase(name string) string {
 	return strcase.ToCamel(name)
 }
 
 // solve checks if a field is solvable.
-func solve(field introspection.Field) bool {
+func (funcs typescriptTemplateFuncs) solve(field introspection.Field) bool {
 	if field.TypeRef == nil {
 		return false
 	}
@@ -64,12 +84,12 @@ func solve(field introspection.Field) bool {
 }
 
 // subtract subtract integer a with integer b.
-func subtract(a, b int) int {
+func (funcs typescriptTemplateFuncs) subtract(a, b int) int {
 	return a - b
 }
 
 // commentToLines split a string by line breaks to be used in comments
-func commentToLines(s string) []string {
+func (funcs typescriptTemplateFuncs) commentToLines(s string) []string {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return []string{}
@@ -81,20 +101,20 @@ func commentToLines(s string) []string {
 
 // format the deprecation reason
 // Example: `Replaced by @foo.` -> `// Replaced by Foo\n`
-func formatDeprecation(s string) []string {
+func (funcs typescriptTemplateFuncs) formatDeprecation(s string) []string {
 	r := regexp.MustCompile("`[a-zA-Z0-9_]+`")
 	matches := r.FindAllString(s, -1)
 	for _, match := range matches {
 		replacement := strings.TrimPrefix(match, "`")
 		replacement = strings.TrimSuffix(replacement, "`")
-		replacement = formatName(replacement)
+		replacement = funcs.formatName(replacement)
 		s = strings.ReplaceAll(s, match, replacement)
 	}
-	return commentToLines("@deprecated " + s)
+	return funcs.commentToLines("@deprecated " + s)
 }
 
 // isCustomScalar checks if the type is actually custom.
-func isCustomScalar(t *introspection.Type) bool {
+func (funcs typescriptTemplateFuncs) isCustomScalar(t *introspection.Type) bool {
 	switch introspection.Scalar(t.Name) {
 	case introspection.ScalarString, introspection.ScalarInt, introspection.ScalarFloat, introspection.ScalarBoolean:
 		return false
@@ -104,13 +124,13 @@ func isCustomScalar(t *introspection.Type) bool {
 }
 
 // isEnum checks if the type is actually custom.
-func isEnum(t *introspection.Type) bool {
+func (funcs typescriptTemplateFuncs) isEnum(t *introspection.Type) bool {
 	return t.Kind == introspection.TypeKindEnum &&
 		// We ignore the internal GraphQL enums
 		!strings.HasPrefix(t.Name, "_")
 }
 
-func isKeyword(s string) bool {
+func (funcs typescriptTemplateFuncs) isKeyword(s string) bool {
 	_, isKeyword := jsKeywords[strings.ToLower(s)]
 
 	return isKeyword
@@ -118,7 +138,7 @@ func isKeyword(s string) bool {
 
 // formatName formats a GraphQL name (e.g. object, field, arg) into a TS
 // equivalent, avoiding collisions with reserved words.
-func formatName(s string) string {
+func (funcs typescriptTemplateFuncs) formatName(s string) string {
 	if _, isKeyword := jsKeywords[strings.ToLower(s)]; isKeyword {
 		// NB: this is case-insensitive; in JS, both function and Function cause
 		// problems (one straight up doesn't parse, the other causes lint errors)
@@ -127,7 +147,7 @@ func formatName(s string) string {
 	return s
 }
 
-func queryToClient(s string) string {
+func (funcs typescriptTemplateFuncs) queryToClient(s string) string {
 	if s == generator.QueryStructName {
 		return generator.QueryStructClientName
 	}
@@ -205,14 +225,14 @@ var jsKeywords = map[string]struct{}{
 }
 
 // formatEnum formats a GraphQL enum into a TS equivalent
-func formatEnum(s string) string {
+func (funcs typescriptTemplateFuncs) formatEnum(s string) string {
 	s = strings.ToLower(s)
 	return strcase.ToCamel(s)
 }
 
 // isArgOptional checks if some arg are optional.
 // They are, if all of there InputValues are optional.
-func isArgOptional(values introspection.InputValues) bool {
+func (funcs typescriptTemplateFuncs) isArgOptional(values introspection.InputValues) bool {
 	for _, v := range values {
 		if !v.IsOptional() {
 			return false
@@ -221,7 +241,7 @@ func isArgOptional(values introspection.InputValues) bool {
 	return true
 }
 
-func splitRequiredOptionalArgs(values introspection.InputValues) (required introspection.InputValues, optionals introspection.InputValues) {
+func (funcs typescriptTemplateFuncs) splitRequiredOptionalArgs(values introspection.InputValues) (required introspection.InputValues, optionals introspection.InputValues) {
 	for i, v := range values {
 		if !v.IsOptional() {
 			continue
@@ -232,7 +252,7 @@ func splitRequiredOptionalArgs(values introspection.InputValues) (required intro
 	return values, nil
 }
 
-func getEnumValues(values introspection.InputValues) introspection.InputValues {
+func (funcs typescriptTemplateFuncs) getEnumValues(values introspection.InputValues) introspection.InputValues {
 	enums := introspection.InputValues{}
 
 	for _, v := range values {
@@ -249,31 +269,31 @@ func getEnumValues(values introspection.InputValues) introspection.InputValues {
 	return enums
 }
 
-func getRequiredArgs(values introspection.InputValues) introspection.InputValues {
-	required, _ := splitRequiredOptionalArgs(values)
+func (funcs typescriptTemplateFuncs) getRequiredArgs(values introspection.InputValues) introspection.InputValues {
+	required, _ := funcs.splitRequiredOptionalArgs(values)
 	return required
 }
 
-func getOptionalArgs(values introspection.InputValues) introspection.InputValues {
-	_, optional := splitRequiredOptionalArgs(values)
+func (funcs typescriptTemplateFuncs) getOptionalArgs(values introspection.InputValues) introspection.InputValues {
+	_, optional := funcs.splitRequiredOptionalArgs(values)
 	return optional
 }
 
-func sortInputFields(s []introspection.InputValue) []introspection.InputValue {
+func (funcs typescriptTemplateFuncs) sortInputFields(s []introspection.InputValue) []introspection.InputValue {
 	sort.SliceStable(s, func(i, j int) bool {
 		return s[i].Name < s[j].Name
 	})
 	return s
 }
 
-func sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {
+func (funcs typescriptTemplateFuncs) sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {
 	sort.SliceStable(s, func(i, j int) bool {
 		return s[i].Name < s[j].Name
 	})
 	return s
 }
 
-func argsHaveDescription(values introspection.InputValues) bool {
+func (funcs typescriptTemplateFuncs) argsHaveDescription(values introspection.InputValues) bool {
 	for _, o := range values {
 		if strings.TrimSpace(o.Description) != "" {
 			return true
@@ -283,6 +303,17 @@ func argsHaveDescription(values introspection.InputValues) bool {
 	return false
 }
 
-func toSingleType(value string) string {
+func (funcs typescriptTemplateFuncs) toSingleType(value string) string {
 	return value[:len(value)-2]
+}
+
+func (funcs typescriptTemplateFuncs) moduleRelPath(path string) string {
+	return filepath.Join(
+		// Path to the root of this module (since we're at the codegen root sdk/src/api/).
+		"../../../",
+		// Path to the module's context directory.
+		funcs.moduleParentPath,
+		// Path from the context directory to the target path.
+		path,
+	)
 }

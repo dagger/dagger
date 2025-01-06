@@ -30,4 +30,4 @@ Error logs:
 Error: process "false" did not complete successfully: exit code: 1
 ! process "tsx --no-deprecation --tsconfig /src/tsconfig.json /src/src/__dagger.entrypoint.ts" did not complete successfully: exit code: 1
 
-Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1
+Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

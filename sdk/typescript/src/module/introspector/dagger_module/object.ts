@@ -1,15 +1,29 @@
 import ts from "typescript"
 
 import { IntrospectionError } from "../../../common/errors/index.js"
-import { AST } from "../typescript_module/index.js"
+import { AST, Location } from "../typescript_module/index.js"
 import { DaggerConstructor } from "./constructor.js"
 import { FUNCTION_DECORATOR, OBJECT_DECORATOR } from "./decorator.js"
 import { DaggerFunction, DaggerFunctions } from "./function.js"
+import { Locatable } from "./locatable.js"
 import { DaggerObjectBase } from "./objectBase.js"
 import { DaggerProperties, DaggerProperty } from "./property.js"
 import { References } from "./reference.js"
 
-export class DaggerObject implements DaggerObjectBase {
+/**
+ * Represents an object defined using the `class` keyword.
+ *
+ * The class may contains methods and fields, that may or may not be exposed to the Dagger API.
+ *
+ * @example
+ * ```ts
+ * type MyObject = {
+ *   name: string
+ *   age: number
+ * }
+ * ```
+ */
+export class DaggerObject extends Locatable implements DaggerObjectBase {
   public name: string
   public description: string
   public _constructor: DaggerConstructor | undefined = undefined
@@ -26,6 +40,8 @@ export class DaggerObject implements DaggerObjectBase {
     private readonly node: ts.ClassDeclaration,
     private readonly ast: AST,
   ) {
+    super(node)
+
     if (!this.node.name) {
       throw new IntrospectionError(
         `could not resolve name of class at ${AST.getNodePosition(node)}.`,
@@ -75,6 +91,10 @@ export class DaggerObject implements DaggerObjectBase {
         continue
       }
     }
+  }
+
+  public getLocation(): Location {
+    return AST.getNodeLocation(this.node)
   }
 
   public getReferences(): string[] {

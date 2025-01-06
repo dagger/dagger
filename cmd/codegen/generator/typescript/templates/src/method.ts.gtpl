@@ -23,11 +23,13 @@
 	{{- if $optionals }}
 		{{- /* Insert a comma if there was previous required arguments. */ -}}
 		{{- if $required }}, {{ end }}
-		{{- "" }}opts?: {{ $parentName | PascalCase }}{{ .Name | PascalCase }}Opts
+		{{- "" }}opts?: {{ $parentName | PascalCase }}{{ .Name | PascalCase }}Opts {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) 
+		{{ "" }} 
+		{{- end }}
 	{{- end }}
 
 	{{- /* Write return type. */ -}}
-	{{- "" }}){{- "" }}: {{ .TypeRef | FormatOutputType }} => {
+	{{- "" }}){{- "" }}: {{ .TypeRef | FormatOutputType }} => { {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 
 	{{- $enums := GetEnumValues .Args }}
 	{{- if gt (len $enums) 0 }}

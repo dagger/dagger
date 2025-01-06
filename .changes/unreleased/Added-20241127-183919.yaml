@@ -1,0 +1,6 @@
+kind: Added
+body: 'config: allow $schema in dagger.json'
+time: 2024-11-27T18:39:19.703543-06:00
+custom:
+    Author: JacobLey
+    PR: "9069"

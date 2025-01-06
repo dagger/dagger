@@ -19,9 +19,9 @@ import (
 type Distro string
 
 const (
-	DistroAlpine = "alpine"
-	DistroWolfi  = "wolfi"
-	DistroUbuntu = "ubuntu"
+	DistroAlpine Distro = "alpine"
+	DistroWolfi  Distro = "wolfi"
+	DistroUbuntu Distro = "ubuntu"
 )
 
 type DaggerEngine struct {
@@ -428,6 +428,7 @@ func (e *DaggerEngine) Scan(ctx context.Context) error {
 		src = src.
 			WithoutDirectory("docs").
 			WithoutDirectory("sdk/rust/crates/dagger-sdk/examples").
+			WithoutDirectory("core/integration/testdata").
 			WithoutDirectory("dagql/idtui/viztest")
 
 		_, err := ctr.

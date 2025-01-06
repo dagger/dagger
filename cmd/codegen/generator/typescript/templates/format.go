@@ -9,7 +9,8 @@ import (
 // FormatTypeFunc is an implementation of generator.FormatTypeFuncs interface
 // to format GraphQL type into Typescript.
 type FormatTypeFunc struct {
-	scope string
+	scope          string
+	formatNameFunc func(s string) string
 }
 
 func (f *FormatTypeFunc) WithScope(scope string) generator.FormatTypeFuncs {
@@ -49,7 +50,7 @@ func (f *FormatTypeFunc) FormatKindScalarBoolean(representation string) string {
 func (f *FormatTypeFunc) FormatKindScalarDefault(representation string, refName string, input bool) string {
 	if obj, rest, ok := strings.Cut(refName, "ID"); input && ok && rest == "" {
 		// map e.g. FooID to Foo
-		representation += f.scope + formatName(obj)
+		representation += f.scope + f.formatNameFunc(obj)
 	} else {
 		representation += f.scope + refName
 	}
@@ -63,12 +64,12 @@ func (f *FormatTypeFunc) FormatKindObject(representation string, refName string,
 		name = generator.QueryStructClientName
 	}
 
-	representation += f.scope + formatName(name)
+	representation += f.scope + f.formatNameFunc(name)
 	return representation
 }
 
 func (f *FormatTypeFunc) FormatKindInputObject(representation string, refName string, input bool) string {
-	representation += f.scope + formatName(refName)
+	representation += f.scope + f.formatNameFunc(refName)
 	return representation
 }
 

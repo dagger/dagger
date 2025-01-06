@@ -11,6 +11,7 @@ import {
   DaggerModule,
   DaggerObject,
   DaggerObjectBase,
+  DaggerTypeObject,
 } from "../introspector/dagger_module/index.js"
 import { TypeDef } from "../introspector/typedef.js"
 import { InvokeCtx } from "./context.js"
@@ -248,7 +249,10 @@ export async function loadResult(
   }
 
   // Handle objects
-  if (typeof result === "object" && object instanceof DaggerObject) {
+  if (
+    typeof result === "object" &&
+    (object instanceof DaggerObject || object instanceof DaggerTypeObject)
+  ) {
     const state: any = {}
 
     for (const [key, value] of Object.entries(result)) {

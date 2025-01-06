@@ -3,41 +3,48 @@ module github.com/dagger/dagger
 go 1.23.2
 
 require (
+	dagger.io/dagger v0.15.1
+	github.com/dagger/dagger/engine/distconsts v0.15.1
+	github.com/moby/buildkit v0.16.0-rc2.0.20240917172113-e15601a00fbe // https://github.com/moby/buildkit/commit/e15601a00fbef2805db1ed87be7bb88628ae926b
+)
+
+require (
 	github.com/99designs/gqlgen v0.17.57
 	github.com/Khan/genqlient v0.7.0
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2
 	github.com/adrg/xdg v0.5.3
 	github.com/cenkalti/backoff/v4 v4.3.0
-	github.com/charmbracelet/bubbletea v1.2.0
+	github.com/charmbracelet/bubbletea v1.2.4
 	github.com/charmbracelet/lipgloss v1.0.0
 	github.com/chzyer/readline v1.5.1
 	github.com/containerd/console v1.0.4
-	github.com/containerd/containerd v1.7.23
-	github.com/containerd/containerd/api v1.7.19
-	github.com/containerd/continuity v0.4.3
-	github.com/containerd/errdefs v0.3.0
+	github.com/containerd/containerd v1.7.24
+	github.com/containerd/containerd/api v1.8.0
+	github.com/containerd/continuity v0.4.5
+	github.com/containerd/errdefs v1.0.0
 	github.com/containerd/fuse-overlayfs-snapshotter v1.0.8
 	github.com/containerd/go-runc v1.1.0
 	github.com/containerd/platforms v0.2.1
 	github.com/containerd/stargz-snapshotter v0.15.1
 	github.com/containernetworking/cni v1.2.3
 	github.com/coreos/go-systemd/v22 v22.5.0
-	github.com/creack/pty v1.1.23
+	github.com/creack/pty v1.1.24
 	github.com/dave/jennifer v1.7.1
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/distribution/reference v0.6.0
-	github.com/docker/cli v27.3.1+incompatible
-	github.com/docker/docker v27.3.1+incompatible
+	github.com/docker/cli v27.4.0+incompatible
+	github.com/docker/docker v27.4.0+incompatible
 	github.com/dschmidt/go-layerfs v0.2.0
-	github.com/go-git/go-git/v5 v5.12.0
+	github.com/dustin/go-humanize v1.0.1
+	github.com/go-git/go-git/v5 v5.13.1
 	github.com/gofrs/flock v0.12.1
 	github.com/gogo/protobuf v1.3.2
 	github.com/google/go-containerregistry v0.20.2
 	github.com/google/go-github/v59 v59.0.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/google/uuid v1.6.0
-	github.com/goproxy/goproxy v0.17.2
+	github.com/goproxy/goproxy v0.18.2
 	github.com/iancoleman/strcase v0.3.0
 	github.com/invopop/jsonschema v0.12.0
 	github.com/jackpal/gateway v1.0.15
@@ -48,7 +55,6 @@ require (
 	github.com/mackerelio/go-osstat v0.2.5
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mitchellh/go-spdx v0.1.0
-	github.com/moby/buildkit v0.16.0-rc2.0.20240917172113-e15601a00fbe // https://github.com/moby/buildkit/commit/e15601a00fbef2805db1ed87be7bb88628ae926b
 	github.com/moby/locker v1.0.1
 	github.com/moby/patternmatcher v0.6.0
 	github.com/moby/sys/mount v0.3.4
@@ -76,7 +82,7 @@ require (
 	github.com/tidwall/gjson v1.18.0
 	github.com/tonistiigi/fsutil v0.0.0-20240424095704-91a3fc46842c
 	github.com/urfave/cli v1.22.16
-	github.com/vektah/gqlparser/v2 v2.5.19
+	github.com/vektah/gqlparser/v2 v2.5.20
 	github.com/vito/go-sse v1.1.2
 	github.com/vito/midterm v0.2.1-0.20241012205340-d5c6540bf1e1
 	github.com/zeebo/xxh3 v1.0.2
@@ -95,20 +101,21 @@ require (
 	go.opentelemetry.io/proto/otlp v1.3.1
 	golang.org/x/crypto v0.31.0
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0
-	golang.org/x/mod v0.21.0
-	golang.org/x/net v0.30.0
-	golang.org/x/oauth2 v0.23.0
+	golang.org/x/mod v0.22.0
+	golang.org/x/net v0.33.0
+	golang.org/x/oauth2 v0.24.0
 	golang.org/x/sync v0.10.0
 	golang.org/x/sys v0.28.0
 	golang.org/x/term v0.27.0
 	golang.org/x/text v0.21.0
-	golang.org/x/tools v0.26.0
+	golang.org/x/tools v0.28.0
 	google.golang.org/grpc v1.68.0
 	google.golang.org/protobuf v1.35.2
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools/v3 v3.5.1
-	modernc.org/sqlite v1.33.1
+	modernc.org/sqlite v1.34.2
 	mvdan.cc/sh/v3 v3.10.0
+	resenje.org/singleflight v0.4.3
 )
 
 require (
@@ -121,9 +128,9 @@ require (
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.2.2 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/Microsoft/hcsshim v0.11.7 // indirect
-	github.com/ProtonMail/go-crypto v1.0.0 // indirect
+	github.com/ProtonMail/go-crypto v1.1.3 // indirect
 	github.com/agext/levenshtein v1.2.3 // indirect
-	github.com/agnivade/levenshtein v1.1.1 // indirect
+	github.com/agnivade/levenshtein v1.2.0 // indirect
 	github.com/anchore/go-struct-converter v0.0.0-20221118182256-c68fdcfa2092 // indirect
 	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.24.1 // indirect
@@ -151,7 +158,7 @@ require (
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/x/ansi v0.4.5 // indirect
-	github.com/charmbracelet/x/term v0.2.0 // indirect
+	github.com/charmbracelet/x/term v0.2.1 // indirect
 	github.com/cloudflare/circl v1.3.7 // indirect
 	github.com/containerd/cgroups v1.1.0 // indirect
 	github.com/containerd/fifo v1.1.0 // indirect
@@ -163,7 +170,11 @@ require (
 	github.com/containerd/typeurl/v2 v2.2.0 // indirect
 	github.com/containernetworking/plugins v1.4.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
-	github.com/cyphar/filepath-securejoin v0.2.4 // indirect
+	github.com/cyphar/filepath-securejoin v0.3.6 // indirect
+	github.com/danielgatis/go-ansicode v1.0.6 // indirect
+	github.com/danielgatis/go-iterator v0.0.1 // indirect
+	github.com/danielgatis/go-utf8 v1.0.0 // indirect
+	github.com/danielgatis/go-vte v1.0.8 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dimchansky/utfbom v1.1.1 // indirect
 	github.com/docker/distribution v2.8.3+incompatible // indirect
@@ -176,9 +187,10 @@ require (
 	github.com/felixge/fgprof v0.9.3 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
-	github.com/go-git/go-billy/v5 v5.5.0 // indirect
+	github.com/go-git/go-billy/v5 v5.6.1 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
 	github.com/gogo/googleapis v1.4.1 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
@@ -201,7 +213,7 @@ require (
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
-	github.com/klauspost/cpuid/v2 v2.2.7 // indirect
+	github.com/klauspost/cpuid/v2 v2.2.8 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/lunixbochs/vtclean v1.0.0 // indirect
@@ -235,7 +247,7 @@ require (
 	github.com/secure-systems-lab/go-securesystemslib v0.4.0 // indirect
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/shibumi/go-pathspec v1.3.0 // indirect
-	github.com/skeema/knownhosts v1.2.2 // indirect
+	github.com/skeema/knownhosts v1.3.0 // indirect
 	github.com/sosodev/duration v1.3.1 // indirect
 	github.com/spdx/tools-golang v0.5.3 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
@@ -272,24 +284,10 @@ require (
 	modernc.org/token v1.1.0 // indirect
 )
 
-require (
-	dagger.io/dagger v0.15.0
-	github.com/dagger/dagger/engine/distconsts v0.15.0
-	github.com/dustin/go-humanize v1.0.1
-	resenje.org/singleflight v0.4.3
-)
-
-require (
-	github.com/danielgatis/go-ansicode v1.0.6 // indirect
-	github.com/danielgatis/go-iterator v0.0.1 // indirect
-	github.com/danielgatis/go-utf8 v1.0.0 // indirect
-	github.com/danielgatis/go-vte v1.0.8 // indirect
-	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
-)
-
 replace (
 	dagger.io/dagger => ./sdk/go
 	github.com/dagger/dagger/engine/distconsts => ./engine/distconsts
+	github.com/moby/buildkit => github.com/dagger/buildkit v0.0.0-20241204003515-0345b9a97709
 )
 
 replace (
@@ -298,5 +296,3 @@ replace (
 	go.opentelemetry.io/otel/log => go.opentelemetry.io/otel/log v0.3.0
 	go.opentelemetry.io/otel/sdk/log => go.opentelemetry.io/otel/sdk/log v0.3.0
 )
-
-replace github.com/moby/buildkit => github.com/dagger/buildkit v0.0.0-20241204003515-0345b9a97709

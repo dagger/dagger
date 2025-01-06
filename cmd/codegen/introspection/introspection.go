@@ -295,7 +295,7 @@ type SourceMap struct {
 }
 
 func (sourceMap *SourceMap) Filelink() string {
-	return fmt.Sprintf("%s:%s", sourceMap.Filename, sourceMap.Line)
+	return fmt.Sprintf("%s:%s:%s", sourceMap.Filename, sourceMap.Line, sourceMap.Column)
 }
 
 func (t *Directives) SourceMap() *SourceMap {

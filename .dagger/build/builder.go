@@ -351,11 +351,11 @@ func (build *Builder) runcBin() *dagger.File {
 		WithWorkdir("/src")
 
 	// TODO: runc v1.1.x uses an old version of golang.org/x/net, which has a CVE:
-	// https://github.com/advisories/GHSA-4374-p667-p6c8
+	// https://github.com/advisories/GHSA-w32m-9786-jp63
 	// We upgrade it here to avoid that showing up in our image scans. This can be removed
 	// once runc has released a new minor version and we upgrade to it (the go.mod in runc
 	// main branch already has the updated version).
-	buildCtr = buildCtr.WithExec([]string{"go", "get", "golang.org/x/net@v0.25.0"}).
+	buildCtr = buildCtr.WithExec([]string{"go", "get", "golang.org/x/net@v0.33.0"}).
 		WithExec([]string{"go", "mod", "tidy"}).
 		WithExec([]string{"go", "mod", "vendor"})
 

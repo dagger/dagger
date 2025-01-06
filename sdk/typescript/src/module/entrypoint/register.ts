@@ -5,12 +5,14 @@ import {
   ModuleID,
   TypeDef,
   TypeDefKind,
+  SourceMap,
 } from "../../api/client.gen.js"
 import {
   DaggerArguments as Arguments,
   DaggerConstructor as Constructor,
   DaggerFunction as Method,
   DaggerModule,
+  Locatable,
 } from "../introspector/dagger_module/index.js"
 import {
   EnumTypeDef,
@@ -40,6 +42,7 @@ export async function register(
     // Register the class Typedef object in Dagger
     let typeDef = dag.typeDef().withObject(object.name, {
       description: object.description,
+      sourceMap: addSourceMap(object),
     })
 
     // Register all functions (methods) to this object
@@ -55,6 +58,7 @@ export async function register(
           addTypeDef(field.type!),
           {
             description: field.description,
+            sourceMap: addSourceMap(field),
           },
         )
       }
@@ -74,11 +78,13 @@ export async function register(
   Object.values(module.enums).forEach((enum_) => {
     let typeDef = dag.typeDef().withEnum(enum_.name, {
       description: enum_.description,
+      sourceMap: addSourceMap(enum_),
     })
 
     Object.values(enum_.values).forEach((value) => {
       typeDef = typeDef.withEnumValue(value.value, {
         description: value.description,
+        sourceMap: addSourceMap(value),
       })
     })
 
@@ -103,6 +109,7 @@ function addFunction(fct: Method): Function_ {
   return dag
     .function_(fct.alias ?? fct.name, addTypeDef(fct.returnType!))
     .withDescription(fct.description)
+    .withSourceMap(addSourceMap(fct))
     .with(addArg(fct.arguments))
 }
 
@@ -114,6 +121,7 @@ function addArg(args: Arguments): (fct: Function_) => Function_ {
     Object.values(args).forEach((arg) => {
       const opts: FunctionWithArgOpts = {
         description: arg.description,
+        sourceMap: addSourceMap(arg),
       }
 
       let typeDef = addTypeDef(arg.type!)
@@ -184,6 +192,12 @@ function addTypeDef(type: ScannerTypeDef<TypeDefKind>): TypeDef {
     default:
       return dag.typeDef().withKind(type.kind)
   }
+}
+
+function addSourceMap(object: Locatable): SourceMap {
+  const { filepath, line, column } = object.getLocation()
+
+  return dag.sourceMap(filepath, line, column)
 }
 
 function isPrimitiveType(type: ScannerTypeDef<TypeDefKind>): boolean {

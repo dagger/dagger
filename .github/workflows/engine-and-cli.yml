@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   lint:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-15-0-16c' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-1-16c' || 'ubuntu-latest' }}"
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -36,7 +36,7 @@ jobs:
           function: "scripts lint"
 
   test-publish:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-15-0-16c' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-1-16c' || 'ubuntu-latest' }}"
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -50,7 +50,7 @@ jobs:
           function: "engine publish --image=dagger-engine.dev --tag=main --dry-run"
 
   scan-engine:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-15-0-8c' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-1-8c' || 'ubuntu-latest' }}"
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -61,7 +61,7 @@ jobs:
 
   # TEMPORARILY DISABLED. Context: https://github.com/dagger/dagger/pull/8998#issuecomment-2491426455
   # test:
-  #   runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-15-0-16c-st' || 'ubuntu-latest' }}"
+  #   runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-1-16c-st' || 'ubuntu-latest' }}"
   #   timeout-minutes: 30
   #   steps:
   #     - uses: actions/checkout@v4
@@ -71,7 +71,7 @@ jobs:
   #         function: "test all --race=true --parallel=16"
   #         upload-logs: true
   test-modules:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-15-0-16c-st' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-1-16c-st' || 'ubuntu-latest' }}"
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -82,7 +82,7 @@ jobs:
           upload-logs: true
 
   test-module-runtimes:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-15-0-16c-st' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-1-16c-st' || 'ubuntu-latest' }}"
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -93,7 +93,7 @@ jobs:
           upload-logs: true
 
   test-cli-engine:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-15-0-16c-st' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-1-16c-st' || 'ubuntu-latest' }}"
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -105,7 +105,7 @@ jobs:
 
   test-provision:
     # HACK: this is split out, since these tests require cgroupsv2
-    # runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-15-0-16c-st' || 'ubuntu-latest' }}"
+    # runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-1-16c-st' || 'ubuntu-latest' }}"
     runs-on: "ubuntu-latest"
     timeout-minutes: 30
     steps:
@@ -117,7 +117,7 @@ jobs:
           upload-logs: true
 
   test-everything-else:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-15-0-16c-st' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-1-32c-st' || 'ubuntu-latest' }}"
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -133,7 +133,7 @@ jobs:
   #
   # TEMPORARILY DISABLED. Context: https://github.com/dagger/dagger/pull/8998#issuecomment-2491426455
   # testdev:
-  #   runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-15-0-32c-dind-st' || 'ubuntu-latest' }}"
+  #   runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-1-32c-dind-st' || 'ubuntu-latest' }}"
   #   timeout-minutes: 30
   #   steps:
   #     - uses: actions/checkout@v4
@@ -145,7 +145,7 @@ jobs:
   #         upload-logs: true
 
   testdev-modules:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-15-0-32c-dind-st' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-1-32c-dind-st' || 'ubuntu-latest' }}"
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -157,7 +157,7 @@ jobs:
           upload-logs: true
 
   testdev-module-runtimes:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-15-0-32c-dind-st' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-1-32c-dind-st' || 'ubuntu-latest' }}"
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -169,7 +169,7 @@ jobs:
           upload-logs: true
 
   testdev-container:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-15-0-32c-dind-st' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-1-32c-dind-st' || 'ubuntu-latest' }}"
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4

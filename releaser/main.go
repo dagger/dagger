@@ -136,7 +136,7 @@ func (r Releaser) Notify(
 		return nil
 	}
 
-	if discordWebhook == nil {
+	if discordWebhook != nil {
 		message := fmt.Sprintf("%s: https://github.com/%s/releases/tag/%s", name, githubRepo, target)
 		_, err = dag.Notify().Discord(ctx, discordWebhook, message)
 		if err != nil {

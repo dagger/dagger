@@ -6245,6 +6245,15 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * Update one or more module dependencies.
+   * @param dependencies The dependencies to update.
+   */
+  withUpdateDependencies = (dependencies: string[]): ModuleSource => {
+    const ctx = this._ctx.select("withUpdateDependencies", { dependencies })
+    return new ModuleSource(ctx)
+  }
+
+  /**
    * Update the module source with a new named view.
    * @param name The name of the view to set.
    * @param patterns The patterns to set as the view filters.

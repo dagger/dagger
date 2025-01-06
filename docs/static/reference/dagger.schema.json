@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/dagger/dagger/core/modules/module-config",
-  "$ref": "#/$defs/ModuleConfig",
+  "$id": "https://github.com/dagger/dagger/core/modules/module-config-with-user-fields",
+  "$ref": "#/$defs/ModuleConfigWithUserFields",
   "$defs": {
     "ModuleCodegenConfig": {
       "properties": {
@@ -13,8 +13,52 @@
       "additionalProperties": false,
       "type": "object"
     },
-    "ModuleConfig": {
+    "ModuleConfigDependency": {
       "properties": {
+        "name": {
+          "type": "string",
+          "description": "The name to use for this dependency. By default, the same as the dependency module's name, but can also be overridden to use a different name."
+        },
+        "source": {
+          "type": "string",
+          "description": "The source ref of the module dependency."
+        },
+        "pin": {
+          "type": "string",
+          "description": "The pinned version of the module dependency."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "source"
+      ]
+    },
+    "ModuleConfigView": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "patterns": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name"
+      ]
+    },
+    "ModuleConfigWithUserFields": {
+      "properties": {
+        "$schema": {
+          "type": "string",
+          "description": "The self-describing json $schema"
+        },
         "name": {
           "type": "string",
           "description": "The name of the module."
@@ -70,47 +114,7 @@
         "name",
         "engineVersion"
       ],
-      "description": "ModuleConfig is the config for a single module as loaded from a dagger.json file."
-    },
-    "ModuleConfigDependency": {
-      "properties": {
-        "name": {
-          "type": "string",
-          "description": "The name to use for this dependency. By default, the same as the dependency module's name, but can also be overridden to use a different name."
-        },
-        "source": {
-          "type": "string",
-          "description": "The source ref of the module dependency."
-        },
-        "pin": {
-          "type": "string",
-          "description": "The pinned version of the module dependency."
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "name",
-        "source"
-      ]
-    },
-    "ModuleConfigView": {
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "patterns": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "name"
-      ]
+      "description": "ModuleConfigWithUserFields is the config for a single module as loaded from a dagger.json file."
     }
   }
 }

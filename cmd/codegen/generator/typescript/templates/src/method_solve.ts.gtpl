@@ -23,11 +23,13 @@
 	{{- if $optionals }}
 		{{- /* Insert a comma if there was previous required arguments. */ -}}
 		{{- if $required }}, {{ end }}
-		{{- "" }}opts?: {{ $parentName | PascalCase }}{{ .Name | PascalCase }}Opts
+    opts?: {{ $parentName | PascalCase }}{{ .Name | PascalCase }}Opts {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) 
+    {{ "" }} 
+    {{- end }}
 	{{- end }}
 
 	{{- /* Write return type */ -}}
-	{{- "" }}): Promise<{{ if .TypeRef.IsVoid }}void{{ else }}{{ . | FormatReturnType }}{{ end }}> => {
+	{{- "" }}): Promise<{{ if .TypeRef.IsVoid }}void{{ else }}{{ . | FormatReturnType }}{{ end }}> => { {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 
     {{- /* If it's a scalar, make possible to return its already filled value */ -}}
     {{- if and (.TypeRef.IsScalar) (ne .ParentObject.Name "Query") (not $convertID) }}

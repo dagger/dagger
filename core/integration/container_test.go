@@ -95,7 +95,10 @@ func (ContainerSuite) TestFrom(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestBuild(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	contextDir := c.Directory().
+	contextDir := c.Container().
+		From("golang:1.18.2-alpine").
+		WithWorkdir("/src").
+		WithExec([]string{"go", "mod", "init", "hello"}).
 		WithNewFile("main.go",
 			`package main
 import "fmt"
@@ -104,7 +107,8 @@ func main() {
 	for _, env := range os.Environ() {
 		fmt.Println(env)
 	}
-}`)
+}`).
+		Directory(".")
 
 	t.Run("default Dockerfile location", func(ctx context.Context, t *testctx.T) {
 		src := contextDir.
@@ -112,7 +116,6 @@ func main() {
 				`FROM golang:1.18.2-alpine
 WORKDIR /src
 COPY main.go .
-RUN go mod init hello
 RUN go build -o /usr/bin/goenv main.go
 ENV FOO=bar
 CMD goenv
@@ -130,7 +133,23 @@ CMD goenv
 FROM golang:1.18.2-alpine
 WORKDIR /src
 COPY main.go .
-RUN go mod init hello
+RUN go build -o /usr/bin/goenv main.go
+ENV FOO=bar
+CMD goenv
+`)
+
+		env, err := c.Container().Build(src).WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, env, "FOO=bar\n")
+	})
+
+	t.Run("with old syntax pragma", func(ctx context.Context, t *testctx.T) {
+		src := contextDir.
+			WithNewFile("Dockerfile",
+				`# syntax = docker/dockerfile:1.7
+FROM golang:1.18.2-alpine
+WORKDIR /src
+COPY main.go .
 RUN go build -o /usr/bin/goenv main.go
 ENV FOO=bar
 CMD goenv
@@ -147,7 +166,6 @@ CMD goenv
 				`FROM golang:1.18.2-alpine
 WORKDIR /src
 COPY main.go .
-RUN go mod init hello
 RUN go build -o /usr/bin/goenv main.go
 ENV FOO=bar
 CMD goenv
@@ -169,7 +187,6 @@ CMD goenv
 				`FROM golang:1.18.2-alpine
 WORKDIR /src
 COPY main.go .
-RUN go mod init hello
 RUN go build -o /usr/bin/goenv main.go
 ENV FOO=bar
 CMD goenv
@@ -188,7 +205,6 @@ CMD goenv
 				`FROM golang:1.18.2-alpine
 WORKDIR /src
 COPY main.go .
-RUN go mod init hello
 RUN go build -o /usr/bin/goenv main.go
 ENV FOO=bar
 CMD goenv
@@ -213,7 +229,6 @@ CMD goenv
 ARG FOOARG=bar
 WORKDIR /src
 COPY main.go .
-RUN go mod init hello
 RUN go build -o /usr/bin/goenv main.go
 ENV FOO=$FOOARG
 CMD goenv
