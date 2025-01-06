@@ -17,6 +17,7 @@ type SecretResolver func(context.Context, string) ([]byte, error)
 var resolvers = map[string]SecretResolver{
 	"env":  envProvider,
 	"file": fileProvider,
+	"cmd":  cmdProvider,
 	"op":   opProvider,
 }
 
@@ -28,7 +29,7 @@ func ResolverForID(id string) (SecretResolver, string, error) {
 
 	resolver, ok := resolvers[scheme]
 	if !ok {
-		return nil, "", fmt.Errorf("unsupported secret scheme: %s", scheme)
+		return nil, "", fmt.Errorf("unsupported secret provider: %q", scheme)
 	}
 	return resolver, path, nil
 }
