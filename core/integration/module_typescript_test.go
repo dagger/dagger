@@ -1725,7 +1725,7 @@ export class Test {
 		require.JSONEq(t, `[{"_type": "TestPerson", "age": 42, "name": "John"}, {"_type": "TestPerson", "age": 24, "name": "Jane"}]`, out)
 	})
 
-	t.Run("nested IDable object type definition", func (ctx context.Context, t *testctx.T) {
+	t.Run("nested IDable object type definition", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
