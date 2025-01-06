@@ -15,7 +15,7 @@ import (
 	"strings"
 
 	"github.com/containerd/platforms"
-	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/moby/buildkit/util/gitutil"
 	"github.com/spf13/pflag"
 
@@ -341,7 +341,7 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 	if err != nil {
 		return nil, err
 	}
-	path, err = client.ExpandHomeDir(homeDir, path)
+	path, err = pathutil.ExpandHomeDir(homeDir, path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to expand home directory: %w", err)
 	}
@@ -447,11 +447,11 @@ func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleS
 		if err != nil {
 			return nil, err
 		}
-		vStr, err = client.ExpandHomeDir(homeDir, vStr)
+		vStr, err = pathutil.ExpandHomeDir(homeDir, vStr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to expand home directory: %w", err)
 		}
-		vStr, err = client.Abs(vStr)
+		vStr, err = pathutil.Abs(vStr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve absolute path: %w", err)
 		}

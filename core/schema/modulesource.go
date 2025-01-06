@@ -18,7 +18,7 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/vcs"
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -57,7 +57,7 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 				return nil, fmt.Errorf("failed to stat caller's current working directory: %w", err)
 			}
 
-			relPath, err := client.LexicalRelativePath(cwdStat.Path, parsed.modPath)
+			relPath, err := pathutil.LexicalRelativePath(cwdStat.Path, parsed.modPath)
 			if err != nil {
 				return nil, err
 			}
