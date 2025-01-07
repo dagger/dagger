@@ -14,25 +14,25 @@ import (
 	grpc "google.golang.org/grpc"
 )
 
-var gitCredentialMutex sync.Mutex
+var gitMutex sync.Mutex
 
-type GitCredentialAttachable struct {
+type GitAttachable struct {
 	rootCtx context.Context
 
-	UnimplementedGitCredentialServer
+	UnimplementedGitServer
 }
 
-func NewGitCredentialAttachable(rootCtx context.Context) GitCredentialAttachable {
-	return GitCredentialAttachable{
+func NewGitAttachable(rootCtx context.Context) GitAttachable {
+	return GitAttachable{
 		rootCtx: rootCtx,
 	}
 }
 
-func (s GitCredentialAttachable) Register(srv *grpc.Server) {
-	RegisterGitCredentialServer(srv, s)
+func (s GitAttachable) Register(srv *grpc.Server) {
+	RegisterGitServer(srv, &s)
 }
 
-func newErrorResponse(errorType ErrorInfo_ErrorType, message string) *GitCredentialResponse {
+func newGitCredentialErrorResponse(errorType ErrorInfo_ErrorType, message string) *GitCredentialResponse {
 	return &GitCredentialResponse{
 		Result: &GitCredentialResponse_Error{
 			Error: &ErrorInfo{
@@ -52,23 +52,23 @@ func newErrorResponse(errorType ErrorInfo_ErrorType, message string) *GitCredent
 // - If the command times out: TIMEOUT
 // - If Git is not installed: NO_GIT
 // - If the request is invalid: INVALID_REQUEST
-func (s GitCredentialAttachable) GetCredential(ctx context.Context, req *GitCredentialRequest) (*GitCredentialResponse, error) {
+func (s GitAttachable) GetCredential(ctx context.Context, req *GitCredentialRequest) (*GitCredentialResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	// Validate request
 	if req.Host == "" || req.Protocol == "" {
-		return newErrorResponse(INVALID_REQUEST, "Host and protocol are required"), nil
+		return newGitCredentialErrorResponse(INVALID_REQUEST, "Host and protocol are required"), nil
 	}
 
 	// Check if git is installed
 	if _, err := exec.LookPath("git"); err != nil {
-		return newErrorResponse(NO_GIT, "Git is not installed or not in PATH"), nil
+		return newGitCredentialErrorResponse(NO_GIT, "Git is not installed or not in PATH"), nil
 	}
 
 	// Ensure no parallel execution of the git CLI happens
-	gitCredentialMutex.Lock()
-	defer gitCredentialMutex.Unlock()
+	gitMutex.Lock()
+	defer gitMutex.Unlock()
 
 	// Prepare the git credential fill command
 	cmd := exec.CommandContext(ctx, "git", "credential", "fill")
@@ -91,15 +91,15 @@ func (s GitCredentialAttachable) GetCredential(ctx context.Context, req *GitCred
 	// Run the command
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return newErrorResponse(TIMEOUT, "Git credential command timed out"), nil
+			return newGitCredentialErrorResponse(TIMEOUT, "Git credential command timed out"), nil
 		}
-		return newErrorResponse(CREDENTIAL_RETRIEVAL_FAILED, fmt.Sprintf("Failed to retrieve credentials: %v", err)), nil
+		return newGitCredentialErrorResponse(CREDENTIAL_RETRIEVAL_FAILED, fmt.Sprintf("Failed to retrieve credentials: %v", err)), nil
 	}
 
 	// Parse the output
 	cred, err := parseGitCredentialOutput(stdout.Bytes())
 	if err != nil {
-		return newErrorResponse(CREDENTIAL_RETRIEVAL_FAILED, fmt.Sprintf("Failed to retrieve credentials: %v", err)), nil
+		return newGitCredentialErrorResponse(CREDENTIAL_RETRIEVAL_FAILED, fmt.Sprintf("Failed to retrieve credentials: %v", err)), nil
 	}
 
 	return &GitCredentialResponse{

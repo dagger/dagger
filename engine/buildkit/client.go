@@ -632,7 +632,7 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 		return nil, fmt.Errorf("failed to get main client caller: %w", err)
 	}
 
-	response, err := session.NewGitCredentialClient(caller.Conn()).GetCredential(ctx, &session.GitCredentialRequest{
+	response, err := session.NewGitClient(caller.Conn()).GetCredential(ctx, &session.GitCredentialRequest{
 		Protocol: protocol,
 		Host:     host,
 		Path:     path,
