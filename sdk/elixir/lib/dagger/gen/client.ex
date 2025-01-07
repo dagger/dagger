@@ -728,21 +728,6 @@ defmodule Dagger.Client do
     }
   end
 
-  @doc "Maps a secret to an external secret store and returns the secret."
-  @spec map_secret(t(), String.t(), String.t()) :: Dagger.Secret.t()
-  def map_secret(%__MODULE__{} = client, name, uri) do
-    query_builder =
-      client.query_builder
-      |> QB.select("mapSecret")
-      |> QB.put_arg("name", name)
-      |> QB.put_arg("uri", uri)
-
-    %Dagger.Secret{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
   @doc "Create a new module."
   @spec module(t()) :: Dagger.Module.t()
   def module(%__MODULE__{} = client) do
@@ -787,6 +772,18 @@ defmodule Dagger.Client do
       |> QB.maybe_put_arg("relHostPath", optional_args[:rel_host_path])
 
     %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc "Creates a new secret."
+  @spec new_secret(t(), String.t()) :: Dagger.Secret.t()
+  def new_secret(%__MODULE__{} = client, uri) do
+    query_builder =
+      client.query_builder |> QB.select("newSecret") |> QB.put_arg("uri", uri)
+
+    %Dagger.Secret{
       query_builder: query_builder,
       client: client.client
     }

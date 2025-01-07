@@ -25,10 +25,9 @@ func (s *secretSchema) Install() {
 			ArgDoc("plaintext", `The plaintext of the secret`).
 			ArgSensitive("plaintext"),
 
-		dagql.Func("mapSecret", s.mapSecret).
-			Impure("`mapSecret` mutates state in the internal secret store.").
-			Doc(`Maps a secret to an external secret store and returns the secret.`).
-			ArgDoc("name", `The user defined name for this secret`).
+		dagql.Func("newSecret", s.newSecret).
+			Impure("`newSecret` mutates state in the internal secret store.").
+			Doc(`Creates a new secret.`).
 			ArgDoc("uri", `The URI of the secret store`),
 
 		dagql.Func("secret", s.secret).
@@ -38,6 +37,8 @@ func (s *secretSchema) Install() {
 	dagql.Fields[*core.Secret]{
 		dagql.Func("name", s.name).
 			Doc(`The name of this secret.`),
+		dagql.Func("uri", s.uri).
+			Doc(`The URI of this secret.`),
 		dagql.Func("plaintext", s.plaintext).
 			Impure("A secret's `plaintext` value in the internal secret store state can change.").
 			Doc(`The value of this secret.`),
@@ -101,12 +102,11 @@ func (s *secretSchema) setSecret(ctx context.Context, parent *core.Query, args s
 	return i, nil
 }
 
-type mapSecretArgs struct {
-	Name string
-	URI  string
+type newSecretArgs struct {
+	URI string
 }
 
-func (s *secretSchema) mapSecret(ctx context.Context, parent *core.Query, args mapSecretArgs) (i dagql.Instance[*core.Secret], err error) {
+func (s *secretSchema) newSecret(ctx context.Context, parent *core.Query, args newSecretArgs) (i dagql.Instance[*core.Secret], err error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return i, fmt.Errorf("failed to get client metadata from context: %w", err)
@@ -117,7 +117,7 @@ func (s *secretSchema) mapSecret(ctx context.Context, parent *core.Query, args m
 		return i, fmt.Errorf("failed to get secret store: %w", err)
 	}
 
-	accessor, err := core.GetClientResourceAccessor(ctx, parent, args.Name)
+	accessor, err := core.GetClientResourceAccessor(ctx, parent, args.URI)
 	if err != nil {
 		return i, fmt.Errorf("failed to get client resource name: %w", err)
 	}
@@ -129,7 +129,7 @@ func (s *secretSchema) mapSecret(ctx context.Context, parent *core.Query, args m
 		Args: []dagql.NamedInput{
 			{
 				Name:  "name",
-				Value: dagql.NewString(args.Name),
+				Value: dagql.NewString(args.URI),
 			},
 			{
 				Name:  "accessor",
@@ -140,7 +140,7 @@ func (s *secretSchema) mapSecret(ctx context.Context, parent *core.Query, args m
 		return i, fmt.Errorf("failed to select secret: %w", err)
 	}
 
-	if err := secretStore.MapSecret(i.Self, clientMetadata.ClientID, args.Name, args.URI); err != nil {
+	if err := secretStore.NewSecret(i.Self, clientMetadata.ClientID, args.URI); err != nil {
 		return i, fmt.Errorf("failed to map secret: %w", err)
 	}
 
@@ -153,6 +153,19 @@ func (s *secretSchema) name(ctx context.Context, secret *core.Secret, args struc
 		return "", fmt.Errorf("failed to get secret store: %w", err)
 	}
 	name, ok := secretStore.GetSecretName(secret.IDDigest)
+	if !ok {
+		return "", fmt.Errorf("secret not found: %s", secret.IDDigest)
+	}
+
+	return dagql.NewString(name), nil
+}
+
+func (s *secretSchema) uri(ctx context.Context, secret *core.Secret, args struct{}) (dagql.String, error) {
+	secretStore, err := secret.Query.Secrets(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get secret store: %w", err)
+	}
+	name, ok := secretStore.GetSecretURI(secret.IDDigest)
 	if !ok {
 		return "", fmt.Errorf("secret not found: %s", secret.IDDigest)
 	}

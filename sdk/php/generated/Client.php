@@ -598,17 +598,6 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Maps a secret to an external secret store and returns the secret.
-     */
-    public function mapSecret(string $name, string $uri): Secret
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('mapSecret');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('uri', $uri);
-        return new \Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Create a new module.
      */
     public function module(): Module
@@ -651,6 +640,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder->setArgument('relHostPath', $relHostPath);
         }
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Creates a new secret.
+     */
+    public function newSecret(string $uri): Secret
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('newSecret');
+        $innerQueryBuilder->setArgument('uri', $uri);
+        return new \Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

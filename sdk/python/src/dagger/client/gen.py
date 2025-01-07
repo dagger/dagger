@@ -7485,23 +7485,6 @@ class Client(Root):
         _ctx = self._select("loadTypeDefFromID", _args)
         return TypeDef(_ctx)
 
-    def map_secret(self, name: str, uri: str) -> "Secret":
-        """Maps a secret to an external secret store and returns the secret.
-
-        Parameters
-        ----------
-        name:
-            The user defined name for this secret
-        uri:
-            The URI of the secret store
-        """
-        _args = [
-            Arg("name", name),
-            Arg("uri", uri),
-        ]
-        _ctx = self._select("mapSecret", _args)
-        return Secret(_ctx)
-
     def module(self) -> Module:
         """Create a new module."""
         _args: list[Arg] = []
@@ -7563,6 +7546,20 @@ class Client(Root):
         ]
         _ctx = self._select("moduleSource", _args)
         return ModuleSource(_ctx)
+
+    def new_secret(self, uri: str) -> "Secret":
+        """Creates a new secret.
+
+        Parameters
+        ----------
+        uri:
+            The URI of the secret store
+        """
+        _args = [
+            Arg("uri", uri),
+        ]
+        _ctx = self._select("newSecret", _args)
+        return Secret(_ctx)
 
     def secret(
         self,
@@ -7813,6 +7810,27 @@ class Secret(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("plaintext", _args)
+        return await _ctx.execute(str)
+
+    async def uri(self) -> str:
+        """The URI of this secret.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("uri", _args)
         return await _ctx.execute(str)
 
 

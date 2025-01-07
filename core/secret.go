@@ -103,7 +103,7 @@ func (store *SecretStore) AddSecret(secret *Secret, name string, plaintext []byt
 	return nil
 }
 
-func (store *SecretStore) MapSecret(secret *Secret, buildkitSessionID, name, uri string) error {
+func (store *SecretStore) NewSecret(secret *Secret, buildkitSessionID, uri string) error {
 	if secret == nil {
 		return fmt.Errorf("secret must not be nil")
 	}
@@ -124,7 +124,6 @@ func (store *SecretStore) MapSecret(secret *Secret, buildkitSessionID, name, uri
 	store.secrets[secret.IDDigest] = &storedSecret{
 		Secret:            secret,
 		BuildkitSessionID: buildkitSessionID,
-		Name:              name,
 		URI:               uri,
 	}
 	return nil
@@ -165,6 +164,16 @@ func (store *SecretStore) GetSecretName(idDgst digest.Digest) (string, bool) {
 	return secret.Name, true
 }
 
+func (store *SecretStore) GetSecretURI(idDgst digest.Digest) (string, bool) {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	secret, ok := store.secrets[idDgst]
+	if !ok {
+		return "", false
+	}
+	return secret.URI, true
+}
+
 func (store *SecretStore) GetSecretPlaintext(ctx context.Context, idDgst digest.Digest) ([]byte, error) {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
@@ -172,7 +181,7 @@ func (store *SecretStore) GetSecretPlaintext(ctx context.Context, idDgst digest.
 	if !ok {
 		return nil, fmt.Errorf("secret %s: %w", idDgst, secrets.ErrNotFound)
 	}
-	if secret.Plaintext == nil {
+	if secret.URI != "" {
 		buildkitSessionID := secret.BuildkitSessionID
 		if buildkitSessionID == "" {
 			return nil, status.Errorf(codes.InvalidArgument, "missing buildkit session id")

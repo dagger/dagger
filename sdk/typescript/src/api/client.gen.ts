@@ -6919,16 +6919,6 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Maps a secret to an external secret store and returns the secret.
-   * @param name The user defined name for this secret
-   * @param uri The URI of the secret store
-   */
-  mapSecret = (name: string, uri: string): Secret => {
-    const ctx = this._ctx.select("mapSecret", { name, uri })
-    return new Secret(ctx)
-  }
-
-  /**
    * Create a new module.
    */
   module_ = (): Module_ => {
@@ -6962,6 +6952,15 @@ export class Client extends BaseClient {
   ): ModuleSource => {
     const ctx = this._ctx.select("moduleSource", { refString, ...opts })
     return new ModuleSource(ctx)
+  }
+
+  /**
+   * Creates a new secret.
+   * @param uri The URI of the secret store
+   */
+  newSecret = (uri: string): Secret => {
+    const ctx = this._ctx.select("newSecret", { uri })
+    return new Secret(ctx)
   }
 
   /**
@@ -7110,6 +7109,7 @@ export class Secret extends BaseClient {
   private readonly _id?: SecretID = undefined
   private readonly _name?: string = undefined
   private readonly _plaintext?: string = undefined
+  private readonly _uri?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -7119,12 +7119,14 @@ export class Secret extends BaseClient {
     _id?: SecretID,
     _name?: string,
     _plaintext?: string,
+    _uri?: string,
   ) {
     super(ctx)
 
     this._id = _id
     this._name = _name
     this._plaintext = _plaintext
+    this._uri = _uri
   }
 
   /**
@@ -7166,6 +7168,21 @@ export class Secret extends BaseClient {
     }
 
     const ctx = this._ctx.select("plaintext")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The URI of this secret.
+   */
+  uri = async (): Promise<string> => {
+    if (this._uri) {
+      return this._uri
+    }
+
+    const ctx = this._ctx.select("uri")
 
     const response: Awaited<string> = await ctx.execute()
 

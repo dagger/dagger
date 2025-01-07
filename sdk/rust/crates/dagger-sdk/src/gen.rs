@@ -7916,22 +7916,6 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Maps a secret to an external secret store and returns the secret.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The user defined name for this secret
-    /// * `uri` - The URI of the secret store
-    pub fn map_secret(&self, name: impl Into<String>, uri: impl Into<String>) -> Secret {
-        let mut query = self.selection.select("mapSecret");
-        query = query.arg("name", name.into());
-        query = query.arg("uri", uri.into());
-        Secret {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Create a new module.
     pub fn module(&self) -> Module {
         let query = self.selection.select("module");
@@ -8028,6 +8012,20 @@ impl Query {
             query = query.arg("relHostPath", rel_host_path);
         }
         ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Creates a new secret.
+    ///
+    /// # Arguments
+    ///
+    /// * `uri` - The URI of the secret store
+    pub fn new_secret(&self, uri: impl Into<String>) -> Secret {
+        let mut query = self.selection.select("newSecret");
+        query = query.arg("uri", uri.into());
+        Secret {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -8162,6 +8160,11 @@ impl Secret {
     /// The value of this secret.
     pub async fn plaintext(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("plaintext");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The URI of this secret.
+    pub async fn uri(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("uri");
         query.execute(self.graphql_client.clone()).await
     }
 }

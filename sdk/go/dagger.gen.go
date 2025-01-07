@@ -7454,17 +7454,6 @@ func (r *Client) LoadTypeDefFromID(id TypeDefID) *TypeDef {
 	}
 }
 
-// Maps a secret to an external secret store and returns the secret.
-func (r *Client) MapSecret(name string, uri string) *Secret {
-	q := r.query.Select("mapSecret")
-	q = q.Arg("name", name)
-	q = q.Arg("uri", uri)
-
-	return &Secret{
-		query: q,
-	}
-}
-
 // Create a new module.
 func (r *Client) Module() *Module {
 	q := r.query.Select("module")
@@ -7527,6 +7516,16 @@ func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *Modul
 	q = q.Arg("refString", refString)
 
 	return &ModuleSource{
+		query: q,
+	}
+}
+
+// Creates a new secret.
+func (r *Client) NewSecret(uri string) *Secret {
+	q := r.query.Select("newSecret")
+	q = q.Arg("uri", uri)
+
+	return &Secret{
 		query: q,
 	}
 }
@@ -7698,6 +7697,7 @@ type Secret struct {
 	id        *SecretID
 	name      *string
 	plaintext *string
+	uri       *string
 }
 
 func (r *Secret) WithGraphQLQuery(q *querybuilder.Selection) *Secret {
@@ -7765,6 +7765,19 @@ func (r *Secret) Plaintext(ctx context.Context) (string, error) {
 		return *r.plaintext, nil
 	}
 	q := r.query.Select("plaintext")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The URI of this secret.
+func (r *Secret) URI(ctx context.Context) (string, error) {
+	if r.uri != nil {
+		return *r.uri, nil
+	}
+	q := r.query.Select("uri")
 
 	var response string
 
