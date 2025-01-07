@@ -61,20 +61,25 @@ func (r *Span) Context(ctx context.Context) (context.Context, *Span) {
 func (r *Span) Run(ctx context.Context, cb func(context.Context, *Span) error) error {
 	ctx, span := r.Context(ctx)
 	err := cb(ctx, span)
+	var endErr error
 	if err != nil {
-		{{ if $supportsVoid }}
-		_ = span.End(ctx, SpanEndOpts{
+		{{- if $supportsVoid }}
+		endErr = span.End(ctx, SpanEndOpts{
 			Error: r.Query().Error(err.Error()),
 		})
-		{{ else }}
-		_, _ = span.End(ctx, SpanEndOpts{
+		{{- else }}
+		_, endErr = span.End(ctx, SpanEndOpts{
 			Error: r.Query().Error(err.Error()),
 		})
-		{{ end }}
-		return err
+		{{- end }}
 	} else {
-		return span.End(ctx)
+		{{- if $supportsVoid }}
+		endErr = span.End(ctx)
+		{{- else }}
+		_, endErr = span.End(ctx)
+		{{- end }}
 	}
+	return errors.Join(err, endErr)
 }
 {{- end }}
 
