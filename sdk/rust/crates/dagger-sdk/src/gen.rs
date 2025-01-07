@@ -7019,6 +7019,11 @@ pub struct QuerySecretOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub accessor: Option<&'a str>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct QuerySpanOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub key: Option<&'a str>,
+}
 impl Query {
     /// Retrieves a container builtin to the engine.
     ///
@@ -8184,6 +8189,10 @@ impl Query {
         }
     }
     /// Create a new OpenTelemetry span.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn span(&self, name: impl Into<String>) -> Span {
         let mut query = self.selection.select("span");
         query = query.arg("name", name.into());
@@ -8193,9 +8202,18 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    pub fn span_context(&self) -> SpanContext {
-        let query = self.selection.select("spanContext");
-        SpanContext {
+    /// Create a new OpenTelemetry span.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn span_opts<'a>(&self, name: impl Into<String>, opts: QuerySpanOpts<'a>) -> Span {
+        let mut query = self.selection.select("span");
+        query = query.arg("name", name.into());
+        if let Some(key) = opts.key {
+            query = query.arg("key", key);
+        }
+        Span {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -8472,6 +8490,11 @@ pub struct SpanEndOpts {
     #[builder(setter(into, strip_option), default)]
     pub error: Option<ErrorId>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct SpanStartOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub key: Option<&'a str>,
+}
 impl Span {
     /// End the OpenTelemetry span, with an optional error.
     ///
@@ -8499,6 +8522,15 @@ impl Span {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Returns the internal ID of the span.
+    pub async fn internal_id(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("internalId");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
     pub fn query(&self) -> Query {
         let query = self.selection.select("query");
         Query {
@@ -8506,6 +8538,37 @@ impl Span {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    /// Create a new OpenTelemetry span.
+    pub fn span(&self, name: impl Into<String>) -> Span {
+        let mut query = self.selection.select("span");
+        query = query.arg("name", name.into());
+        Span {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Start a new instance of the span.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn start(&self) -> Result<SpanId, DaggerError> {
+        let query = self.selection.select("start");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Start a new instance of the span.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn start_opts<'a>(&self, opts: SpanStartOpts<'a>) -> Result<SpanId, DaggerError> {
+        let mut query = self.selection.select("start");
+        if let Some(key) = opts.key {
+            query = query.arg("key", key);
+        }
+        query.execute(self.graphql_client.clone()).await
     }
 }
 #[derive(Clone)]
