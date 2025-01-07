@@ -37,6 +37,7 @@ const (
 	NO_GIT                      ErrorInfo_ErrorType = 2
 	TIMEOUT                     ErrorInfo_ErrorType = 3
 	CREDENTIAL_RETRIEVAL_FAILED ErrorInfo_ErrorType = 4
+	CONFIG_RETRIEVAL_FAILED     ErrorInfo_ErrorType = 5
 )
 
 var ErrorInfo_ErrorType_name = map[int32]string{
@@ -45,6 +46,7 @@ var ErrorInfo_ErrorType_name = map[int32]string{
 	2: "NO_GIT",
 	3: "TIMEOUT",
 	4: "CREDENTIAL_RETRIEVAL_FAILED",
+	5: "CONFIG_RETRIEVAL_FAILED",
 }
 
 var ErrorInfo_ErrorType_value = map[string]int32{
@@ -53,10 +55,11 @@ var ErrorInfo_ErrorType_value = map[string]int32{
 	"NO_GIT":                      2,
 	"TIMEOUT":                     3,
 	"CREDENTIAL_RETRIEVAL_FAILED": 4,
+	"CONFIG_RETRIEVAL_FAILED":     5,
 }
 
 func (ErrorInfo_ErrorType) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{3, 0}
+	return fileDescriptor_0d2ecb6e8d788208, []int{7, 0}
 }
 
 type GitCredentialRequest struct {
@@ -270,6 +273,221 @@ func (m *CredentialInfo) GetPassword() string {
 	return ""
 }
 
+type GitConfigRequest struct {
+}
+
+func (m *GitConfigRequest) Reset()      { *m = GitConfigRequest{} }
+func (*GitConfigRequest) ProtoMessage() {}
+func (*GitConfigRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{3}
+}
+func (m *GitConfigRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *GitConfigRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_GitConfigRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *GitConfigRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_GitConfigRequest.Merge(m, src)
+}
+func (m *GitConfigRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *GitConfigRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_GitConfigRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_GitConfigRequest proto.InternalMessageInfo
+
+type GitConfigResponse struct {
+	// Types that are valid to be assigned to Result:
+	//
+	//	*GitConfigResponse_Config
+	//	*GitConfigResponse_Error
+	Result isGitConfigResponse_Result `protobuf_oneof:"result"`
+}
+
+func (m *GitConfigResponse) Reset()      { *m = GitConfigResponse{} }
+func (*GitConfigResponse) ProtoMessage() {}
+func (*GitConfigResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{4}
+}
+func (m *GitConfigResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *GitConfigResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_GitConfigResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *GitConfigResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_GitConfigResponse.Merge(m, src)
+}
+func (m *GitConfigResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *GitConfigResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_GitConfigResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_GitConfigResponse proto.InternalMessageInfo
+
+type isGitConfigResponse_Result interface {
+	isGitConfigResponse_Result()
+	Equal(interface{}) bool
+	MarshalTo([]byte) (int, error)
+	Size() int
+}
+
+type GitConfigResponse_Config struct {
+	Config *GitConfig `protobuf:"bytes,1,opt,name=config,proto3,oneof" json:"config,omitempty"`
+}
+type GitConfigResponse_Error struct {
+	Error *ErrorInfo `protobuf:"bytes,2,opt,name=error,proto3,oneof" json:"error,omitempty"`
+}
+
+func (*GitConfigResponse_Config) isGitConfigResponse_Result() {}
+func (*GitConfigResponse_Error) isGitConfigResponse_Result()  {}
+
+func (m *GitConfigResponse) GetResult() isGitConfigResponse_Result {
+	if m != nil {
+		return m.Result
+	}
+	return nil
+}
+
+func (m *GitConfigResponse) GetConfig() *GitConfig {
+	if x, ok := m.GetResult().(*GitConfigResponse_Config); ok {
+		return x.Config
+	}
+	return nil
+}
+
+func (m *GitConfigResponse) GetError() *ErrorInfo {
+	if x, ok := m.GetResult().(*GitConfigResponse_Error); ok {
+		return x.Error
+	}
+	return nil
+}
+
+// XXX_OneofWrappers is for the internal use of the proto package.
+func (*GitConfigResponse) XXX_OneofWrappers() []interface{} {
+	return []interface{}{
+		(*GitConfigResponse_Config)(nil),
+		(*GitConfigResponse_Error)(nil),
+	}
+}
+
+type GitConfig struct {
+	Entries []*GitConfigEntry `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
+}
+
+func (m *GitConfig) Reset()      { *m = GitConfig{} }
+func (*GitConfig) ProtoMessage() {}
+func (*GitConfig) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{5}
+}
+func (m *GitConfig) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *GitConfig) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_GitConfig.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *GitConfig) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_GitConfig.Merge(m, src)
+}
+func (m *GitConfig) XXX_Size() int {
+	return m.Size()
+}
+func (m *GitConfig) XXX_DiscardUnknown() {
+	xxx_messageInfo_GitConfig.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_GitConfig proto.InternalMessageInfo
+
+func (m *GitConfig) GetEntries() []*GitConfigEntry {
+	if m != nil {
+		return m.Entries
+	}
+	return nil
+}
+
+type GitConfigEntry struct {
+	Key   string `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Value string `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+}
+
+func (m *GitConfigEntry) Reset()      { *m = GitConfigEntry{} }
+func (*GitConfigEntry) ProtoMessage() {}
+func (*GitConfigEntry) Descriptor() ([]byte, []int) {
+	return fileDescriptor_0d2ecb6e8d788208, []int{6}
+}
+func (m *GitConfigEntry) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *GitConfigEntry) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_GitConfigEntry.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *GitConfigEntry) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_GitConfigEntry.Merge(m, src)
+}
+func (m *GitConfigEntry) XXX_Size() int {
+	return m.Size()
+}
+func (m *GitConfigEntry) XXX_DiscardUnknown() {
+	xxx_messageInfo_GitConfigEntry.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_GitConfigEntry proto.InternalMessageInfo
+
+func (m *GitConfigEntry) GetKey() string {
+	if m != nil {
+		return m.Key
+	}
+	return ""
+}
+
+func (m *GitConfigEntry) GetValue() string {
+	if m != nil {
+		return m.Value
+	}
+	return ""
+}
+
 type ErrorInfo struct {
 	Type    ErrorInfo_ErrorType `protobuf:"varint,1,opt,name=type,proto3,enum=ErrorInfo_ErrorType" json:"type,omitempty"`
 	Message string              `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
@@ -278,7 +496,7 @@ type ErrorInfo struct {
 func (m *ErrorInfo) Reset()      { *m = ErrorInfo{} }
 func (*ErrorInfo) ProtoMessage() {}
 func (*ErrorInfo) Descriptor() ([]byte, []int) {
-	return fileDescriptor_0d2ecb6e8d788208, []int{3}
+	return fileDescriptor_0d2ecb6e8d788208, []int{7}
 }
 func (m *ErrorInfo) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -326,41 +544,52 @@ func init() {
 	proto.RegisterType((*GitCredentialRequest)(nil), "GitCredentialRequest")
 	proto.RegisterType((*GitCredentialResponse)(nil), "GitCredentialResponse")
 	proto.RegisterType((*CredentialInfo)(nil), "CredentialInfo")
+	proto.RegisterType((*GitConfigRequest)(nil), "GitConfigRequest")
+	proto.RegisterType((*GitConfigResponse)(nil), "GitConfigResponse")
+	proto.RegisterType((*GitConfig)(nil), "GitConfig")
+	proto.RegisterType((*GitConfigEntry)(nil), "GitConfigEntry")
 	proto.RegisterType((*ErrorInfo)(nil), "ErrorInfo")
 }
 
 func init() { proto.RegisterFile("git.proto", fileDescriptor_0d2ecb6e8d788208) }
 
 var fileDescriptor_0d2ecb6e8d788208 = []byte{
-	// 437 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x92, 0xcf, 0x6e, 0xd3, 0x40,
-	0x10, 0xc6, 0xbd, 0x4d, 0xc8, 0x9f, 0x89, 0x68, 0xad, 0xa5, 0x45, 0x56, 0x90, 0x16, 0xe4, 0x53,
-	0x4f, 0x96, 0x08, 0x67, 0x90, 0xd2, 0x66, 0x09, 0x2b, 0x82, 0x23, 0x16, 0xa7, 0x48, 0xbd, 0x44,
-	0xa6, 0x5d, 0x52, 0x4b, 0xa9, 0xd7, 0xec, 0x6e, 0x44, 0x7b, 0xe3, 0x11, 0x78, 0x0c, 0x1e, 0x81,
-	0x47, 0xe0, 0x98, 0x63, 0x8f, 0xc4, 0xb9, 0x70, 0xec, 0x23, 0x20, 0x6f, 0x8c, 0x5b, 0x50, 0x2f,
-	0xdc, 0xe6, 0xfb, 0xf6, 0xa7, 0x6f, 0x66, 0x34, 0x0b, 0xed, 0x59, 0x62, 0x82, 0x4c, 0x49, 0x23,
-	0xfd, 0x63, 0xd8, 0x1d, 0x26, 0xe6, 0x50, 0x89, 0x53, 0x91, 0x9a, 0x24, 0x9e, 0x73, 0xf1, 0x69,
-	0x21, 0xb4, 0xc1, 0x5d, 0x68, 0x59, 0xe0, 0x44, 0xce, 0x3d, 0xf4, 0x04, 0xed, 0xb7, 0x79, 0xa5,
-	0x31, 0x86, 0xfa, 0x99, 0xd4, 0xc6, 0xdb, 0xb2, 0xbe, 0xad, 0x0b, 0x2f, 0x8b, 0xcd, 0x99, 0x57,
-	0xdb, 0x78, 0x45, 0xed, 0x5f, 0xc0, 0xde, 0x3f, 0xd9, 0x3a, 0x93, 0xa9, 0x16, 0xf8, 0x29, 0xc0,
-	0x49, 0xe5, 0xda, 0xf8, 0x4e, 0x6f, 0x27, 0xb8, 0x01, 0x59, 0xfa, 0x51, 0xbe, 0x72, 0xf8, 0x2d,
-	0x08, 0xfb, 0x70, 0x4f, 0x28, 0x25, 0x95, 0x6d, 0xda, 0xe9, 0x41, 0x40, 0x0b, 0x55, 0x82, 0x9b,
-	0xa7, 0x83, 0x16, 0x34, 0x94, 0xd0, 0x8b, 0xb9, 0xf1, 0x2f, 0x60, 0xfb, 0xef, 0xb4, 0xff, 0xde,
-	0xa7, 0x0b, 0xad, 0x85, 0x16, 0x2a, 0x8d, 0xcf, 0x45, 0xb9, 0x53, 0xa5, 0x6d, 0x56, 0xac, 0xf5,
-	0x67, 0xa9, 0x4e, 0xbd, 0x7a, 0x99, 0x55, 0x6a, 0xff, 0x3b, 0x82, 0x76, 0x35, 0x1a, 0xde, 0x87,
-	0xba, 0xb9, 0xcc, 0x84, 0xed, 0xb8, 0xdd, 0xdb, 0xbd, 0x19, 0x7a, 0x53, 0x45, 0x97, 0x99, 0xe0,
-	0x96, 0xc0, 0x1e, 0x34, 0xcf, 0x85, 0xd6, 0xf1, 0x4c, 0x94, 0x63, 0xfc, 0x91, 0xfe, 0xac, 0x0c,
-	0x2c, 0x60, 0xdc, 0x81, 0xe6, 0x24, 0x7c, 0x1d, 0x8e, 0xdf, 0x87, 0xae, 0x83, 0x1f, 0xc0, 0x0e,
-	0x0b, 0x8f, 0xfa, 0x23, 0x36, 0x98, 0x72, 0xfa, 0x76, 0x42, 0xdf, 0x45, 0x2e, 0xc2, 0x00, 0x8d,
-	0x70, 0x3c, 0x1d, 0xb2, 0xc8, 0xdd, 0x2a, 0xe8, 0x88, 0xbd, 0xa1, 0xe3, 0x49, 0xe4, 0xd6, 0xf0,
-	0x63, 0x78, 0x74, 0xc8, 0xe9, 0x80, 0x86, 0x11, 0xeb, 0x8f, 0xa6, 0x9c, 0x46, 0x9c, 0xd1, 0xa3,
-	0xfe, 0x68, 0xfa, 0xb2, 0xcf, 0x46, 0x74, 0xe0, 0xd6, 0x7b, 0x14, 0x6a, 0xc3, 0xc4, 0xe0, 0x17,
-	0x70, 0x7f, 0x28, 0x6e, 0x5d, 0x0d, 0xef, 0x05, 0x77, 0xfd, 0x90, 0xee, 0xc3, 0xe0, 0xce, 0xe3,
-	0x1e, 0x3c, 0x5f, 0xae, 0x88, 0x73, 0xb5, 0x22, 0xce, 0xf5, 0x8a, 0xa0, 0x2f, 0x39, 0x41, 0xdf,
-	0x72, 0x82, 0x7e, 0xe4, 0x04, 0x2d, 0x73, 0x82, 0x7e, 0xe6, 0x04, 0xfd, 0xca, 0x89, 0x73, 0x9d,
-	0x13, 0xf4, 0x75, 0x4d, 0x9c, 0xe5, 0x9a, 0x38, 0x57, 0x6b, 0xe2, 0x1c, 0x37, 0xb5, 0xd0, 0x3a,
-	0x91, 0xe9, 0x87, 0x86, 0x3d, 0xcb, 0xb3, 0xdf, 0x01, 0x00, 0x00, 0xff, 0xff, 0x91, 0xef, 0xbf,
-	0x38, 0xa4, 0x02, 0x00, 0x00,
+	// 552 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x53, 0xcd, 0x6e, 0xd3, 0x40,
+	0x10, 0xf6, 0x36, 0x69, 0x7e, 0x26, 0x22, 0x75, 0x97, 0x14, 0xac, 0x54, 0x5a, 0x2a, 0x8b, 0x43,
+	0xb9, 0x58, 0x22, 0x48, 0x88, 0x0b, 0x48, 0x69, 0xe2, 0xa6, 0x16, 0xc1, 0x11, 0xc6, 0x29, 0x52,
+	0x2f, 0x91, 0x49, 0xb7, 0xa9, 0x45, 0x6a, 0x07, 0xef, 0x06, 0x9a, 0x1b, 0x07, 0x1e, 0x80, 0xc7,
+	0xe0, 0x51, 0x38, 0xe6, 0x84, 0x7a, 0x24, 0xce, 0x85, 0x63, 0x1f, 0x01, 0x79, 0xb3, 0x71, 0xd3,
+	0x9f, 0x4b, 0x6f, 0xf3, 0xfd, 0xec, 0xe7, 0x9d, 0xf1, 0x2c, 0x14, 0x07, 0x3e, 0x37, 0x46, 0x51,
+	0xc8, 0x43, 0xfd, 0x08, 0x2a, 0x2d, 0x9f, 0x37, 0x22, 0x7a, 0x4c, 0x03, 0xee, 0x7b, 0x43, 0x87,
+	0x7e, 0x19, 0x53, 0xc6, 0x71, 0x15, 0x0a, 0xc2, 0xd0, 0x0f, 0x87, 0x1a, 0xda, 0x41, 0xbb, 0x45,
+	0x27, 0xc5, 0x18, 0x43, 0xf6, 0x34, 0x64, 0x5c, 0x5b, 0x13, 0xbc, 0xa8, 0x13, 0x6e, 0xe4, 0xf1,
+	0x53, 0x2d, 0xb3, 0xe0, 0x92, 0x5a, 0x3f, 0x87, 0xad, 0x1b, 0xd9, 0x6c, 0x14, 0x06, 0x8c, 0xe2,
+	0xe7, 0x00, 0xfd, 0x94, 0x15, 0xf1, 0xa5, 0xda, 0x86, 0x71, 0x65, 0xb4, 0x82, 0x93, 0xf0, 0x40,
+	0x71, 0x56, 0x4c, 0x58, 0x87, 0x75, 0x1a, 0x45, 0x61, 0x24, 0x3e, 0x5a, 0xaa, 0x81, 0x61, 0x26,
+	0x48, 0x1a, 0x17, 0xd2, 0x5e, 0x01, 0x72, 0x11, 0x65, 0xe3, 0x21, 0xd7, 0xcf, 0xa1, 0x7c, 0x3d,
+	0xed, 0xde, 0xfd, 0x54, 0xa1, 0x30, 0x66, 0x34, 0x0a, 0xbc, 0x33, 0x2a, 0x7b, 0x4a, 0xb1, 0xc8,
+	0xf2, 0x18, 0xfb, 0x16, 0x46, 0xc7, 0x5a, 0x56, 0x66, 0x49, 0xac, 0x63, 0x50, 0x93, 0x9e, 0xc3,
+	0xe0, 0xc4, 0x1f, 0xc8, 0x59, 0xea, 0x03, 0xd8, 0x5c, 0xe1, 0xe4, 0x0c, 0x9e, 0x42, 0xae, 0x2f,
+	0x18, 0xd9, 0x3f, 0x18, 0xa9, 0xe7, 0x40, 0x71, 0xa4, 0x76, 0xcf, 0xb6, 0x5f, 0x42, 0x31, 0x0d,
+	0xc1, 0xcf, 0x20, 0x4f, 0x03, 0x1e, 0xf9, 0x94, 0x69, 0x68, 0x27, 0x23, 0x26, 0x9c, 0x8a, 0x66,
+	0xc0, 0xa3, 0x89, 0xb3, 0xd4, 0xf5, 0x57, 0x50, 0xbe, 0x2e, 0x61, 0x15, 0x32, 0x9f, 0xe9, 0x44,
+	0x4e, 0x2a, 0x29, 0x71, 0x05, 0xd6, 0xbf, 0x7a, 0xc3, 0x31, 0x95, 0x53, 0x5a, 0x00, 0xfd, 0x0f,
+	0x82, 0x62, 0x7a, 0x25, 0xbc, 0x0b, 0x59, 0x3e, 0x19, 0x51, 0x71, 0xac, 0x5c, 0xab, 0x5c, 0x5d,
+	0x76, 0x51, 0xb9, 0x93, 0x11, 0x75, 0x84, 0x03, 0x6b, 0x90, 0x3f, 0xa3, 0x8c, 0x79, 0x83, 0x65,
+	0xde, 0x12, 0xea, 0x3f, 0x96, 0x89, 0x89, 0x1b, 0x97, 0x20, 0xdf, 0xb5, 0xdf, 0xda, 0x9d, 0x8f,
+	0xb6, 0xaa, 0xe0, 0x87, 0xb0, 0x61, 0xd9, 0x87, 0xf5, 0xb6, 0xd5, 0xec, 0x39, 0xe6, 0xfb, 0xae,
+	0xf9, 0xc1, 0x55, 0x11, 0x06, 0xc8, 0xd9, 0x9d, 0x5e, 0xcb, 0x72, 0xd5, 0xb5, 0xc4, 0xed, 0x5a,
+	0xef, 0xcc, 0x4e, 0xd7, 0x55, 0x33, 0xf8, 0x09, 0x6c, 0x37, 0x1c, 0xb3, 0x69, 0xda, 0xae, 0x55,
+	0x6f, 0xf7, 0x1c, 0xd3, 0x75, 0x2c, 0xf3, 0xb0, 0xde, 0xee, 0xed, 0xd7, 0xad, 0xb6, 0xd9, 0x54,
+	0xb3, 0x78, 0x1b, 0x1e, 0x37, 0x3a, 0xf6, 0xbe, 0xd5, 0xba, 0x2d, 0xae, 0xd7, 0x26, 0x90, 0x69,
+	0xf9, 0x1c, 0xbf, 0x81, 0x07, 0x2d, 0xba, 0xb2, 0xc2, 0x78, 0xcb, 0xb8, 0xeb, 0xb9, 0x54, 0x1f,
+	0x19, 0x77, 0x6f, 0x7a, 0x0d, 0x8a, 0xc9, 0xf9, 0xc5, 0x1f, 0xd9, 0x34, 0x6e, 0xae, 0x46, 0x15,
+	0x1b, 0xb7, 0x36, 0x63, 0xef, 0xf5, 0x74, 0x46, 0x94, 0x8b, 0x19, 0x51, 0x2e, 0x67, 0x04, 0x7d,
+	0x8f, 0x09, 0xfa, 0x15, 0x13, 0xf4, 0x3b, 0x26, 0x68, 0x1a, 0x13, 0xf4, 0x37, 0x26, 0xe8, 0x5f,
+	0x4c, 0x94, 0xcb, 0x98, 0xa0, 0x9f, 0x73, 0xa2, 0x4c, 0xe7, 0x44, 0xb9, 0x98, 0x13, 0xe5, 0x28,
+	0xcf, 0x28, 0x63, 0x7e, 0x18, 0x7c, 0xca, 0x89, 0xbd, 0x7e, 0xf1, 0x3f, 0x00, 0x00, 0xff, 0xff,
+	0x7d, 0x23, 0x04, 0x65, 0xe5, 0x03, 0x00, 0x00,
 }
 
 func (x ErrorInfo_ErrorType) String() string {
@@ -511,6 +740,161 @@ func (this *CredentialInfo) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *GitConfigRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*GitConfigRequest)
+	if !ok {
+		that2, ok := that.(GitConfigRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	return true
+}
+func (this *GitConfigResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*GitConfigResponse)
+	if !ok {
+		that2, ok := that.(GitConfigResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if that1.Result == nil {
+		if this.Result != nil {
+			return false
+		}
+	} else if this.Result == nil {
+		return false
+	} else if !this.Result.Equal(that1.Result) {
+		return false
+	}
+	return true
+}
+func (this *GitConfigResponse_Config) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*GitConfigResponse_Config)
+	if !ok {
+		that2, ok := that.(GitConfigResponse_Config)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Config.Equal(that1.Config) {
+		return false
+	}
+	return true
+}
+func (this *GitConfigResponse_Error) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*GitConfigResponse_Error)
+	if !ok {
+		that2, ok := that.(GitConfigResponse_Error)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Error.Equal(that1.Error) {
+		return false
+	}
+	return true
+}
+func (this *GitConfig) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*GitConfig)
+	if !ok {
+		that2, ok := that.(GitConfig)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Entries) != len(that1.Entries) {
+		return false
+	}
+	for i := range this.Entries {
+		if !this.Entries[i].Equal(that1.Entries[i]) {
+			return false
+		}
+	}
+	return true
+}
+func (this *GitConfigEntry) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*GitConfigEntry)
+	if !ok {
+		that2, ok := that.(GitConfigEntry)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Key != that1.Key {
+		return false
+	}
+	if this.Value != that1.Value {
+		return false
+	}
+	return true
+}
 func (this *ErrorInfo) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -591,6 +975,66 @@ func (this *CredentialInfo) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
+func (this *GitConfigRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 4)
+	s = append(s, "&session.GitConfigRequest{")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *GitConfigResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&session.GitConfigResponse{")
+	if this.Result != nil {
+		s = append(s, "Result: "+fmt.Sprintf("%#v", this.Result)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *GitConfigResponse_Config) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&session.GitConfigResponse_Config{` +
+		`Config:` + fmt.Sprintf("%#v", this.Config) + `}`}, ", ")
+	return s
+}
+func (this *GitConfigResponse_Error) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&session.GitConfigResponse_Error{` +
+		`Error:` + fmt.Sprintf("%#v", this.Error) + `}`}, ", ")
+	return s
+}
+func (this *GitConfig) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&session.GitConfig{")
+	if this.Entries != nil {
+		s = append(s, "Entries: "+fmt.Sprintf("%#v", this.Entries)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *GitConfigEntry) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&session.GitConfigEntry{")
+	s = append(s, "Key: "+fmt.Sprintf("%#v", this.Key)+",\n")
+	s = append(s, "Value: "+fmt.Sprintf("%#v", this.Value)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
 func (this *ErrorInfo) GoString() string {
 	if this == nil {
 		return "nil"
@@ -624,6 +1068,7 @@ const _ = grpc.SupportPackageIsVersion4
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type GitClient interface {
 	GetCredential(ctx context.Context, in *GitCredentialRequest, opts ...grpc.CallOption) (*GitCredentialResponse, error)
+	GetConfig(ctx context.Context, in *GitConfigRequest, opts ...grpc.CallOption) (*GitConfigResponse, error)
 }
 
 type gitClient struct {
@@ -643,9 +1088,19 @@ func (c *gitClient) GetCredential(ctx context.Context, in *GitCredentialRequest,
 	return out, nil
 }
 
+func (c *gitClient) GetConfig(ctx context.Context, in *GitConfigRequest, opts ...grpc.CallOption) (*GitConfigResponse, error) {
+	out := new(GitConfigResponse)
+	err := c.cc.Invoke(ctx, "/Git/GetConfig", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GitServer is the server API for Git service.
 type GitServer interface {
 	GetCredential(context.Context, *GitCredentialRequest) (*GitCredentialResponse, error)
+	GetConfig(context.Context, *GitConfigRequest) (*GitConfigResponse, error)
 }
 
 // UnimplementedGitServer can be embedded to have forward compatible implementations.
@@ -654,6 +1109,9 @@ type UnimplementedGitServer struct {
 
 func (*UnimplementedGitServer) GetCredential(ctx context.Context, req *GitCredentialRequest) (*GitCredentialResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetCredential not implemented")
+}
+func (*UnimplementedGitServer) GetConfig(ctx context.Context, req *GitConfigRequest) (*GitConfigResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetConfig not implemented")
 }
 
 func RegisterGitServer(s *grpc.Server, srv GitServer) {
@@ -678,6 +1136,24 @@ func _Git_GetCredential_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Git_GetConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GitConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GitServer).GetConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/Git/GetConfig",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GitServer).GetConfig(ctx, req.(*GitConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _Git_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "Git",
 	HandlerType: (*GitServer)(nil),
@@ -685,6 +1161,10 @@ var _Git_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetCredential",
 			Handler:    _Git_GetCredential_Handler,
+		},
+		{
+			MethodName: "GetConfig",
+			Handler:    _Git_GetConfig_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -860,6 +1340,177 @@ func (m *CredentialInfo) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *GitConfigRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *GitConfigRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *GitConfigRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	return len(dAtA) - i, nil
+}
+
+func (m *GitConfigResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *GitConfigResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *GitConfigResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Result != nil {
+		{
+			size := m.Result.Size()
+			i -= size
+			if _, err := m.Result.MarshalTo(dAtA[i:]); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *GitConfigResponse_Config) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *GitConfigResponse_Config) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Config != nil {
+		{
+			size, err := m.Config.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintGit(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+func (m *GitConfigResponse_Error) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *GitConfigResponse_Error) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.Error != nil {
+		{
+			size, err := m.Error.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintGit(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x12
+	}
+	return len(dAtA) - i, nil
+}
+func (m *GitConfig) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *GitConfig) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *GitConfig) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Entries) > 0 {
+		for iNdEx := len(m.Entries) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Entries[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintGit(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *GitConfigEntry) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *GitConfigEntry) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *GitConfigEntry) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Value) > 0 {
+		i -= len(m.Value)
+		copy(dAtA[i:], m.Value)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.Value)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.Key) > 0 {
+		i -= len(m.Key)
+		copy(dAtA[i:], m.Key)
+		i = encodeVarintGit(dAtA, i, uint64(len(m.Key)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *ErrorInfo) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -988,6 +1639,83 @@ func (m *CredentialInfo) Size() (n int) {
 	return n
 }
 
+func (m *GitConfigRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	return n
+}
+
+func (m *GitConfigResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Result != nil {
+		n += m.Result.Size()
+	}
+	return n
+}
+
+func (m *GitConfigResponse_Config) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Config != nil {
+		l = m.Config.Size()
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+func (m *GitConfigResponse_Error) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Error != nil {
+		l = m.Error.Size()
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+func (m *GitConfig) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Entries) > 0 {
+		for _, e := range m.Entries {
+			l = e.Size()
+			n += 1 + l + sovGit(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *GitConfigEntry) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Key)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	l = len(m.Value)
+	if l > 0 {
+		n += 1 + l + sovGit(uint64(l))
+	}
+	return n
+}
+
 func (m *ErrorInfo) Size() (n int) {
 	if m == nil {
 		return 0
@@ -1061,6 +1789,71 @@ func (this *CredentialInfo) String() string {
 		`Host:` + fmt.Sprintf("%v", this.Host) + `,`,
 		`Username:` + fmt.Sprintf("%v", this.Username) + `,`,
 		`Password:` + fmt.Sprintf("%v", this.Password) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *GitConfigRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&GitConfigRequest{`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *GitConfigResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&GitConfigResponse{`,
+		`Result:` + fmt.Sprintf("%v", this.Result) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *GitConfigResponse_Config) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&GitConfigResponse_Config{`,
+		`Config:` + strings.Replace(fmt.Sprintf("%v", this.Config), "GitConfig", "GitConfig", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *GitConfigResponse_Error) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&GitConfigResponse_Error{`,
+		`Error:` + strings.Replace(fmt.Sprintf("%v", this.Error), "ErrorInfo", "ErrorInfo", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *GitConfig) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForEntries := "[]*GitConfigEntry{"
+	for _, f := range this.Entries {
+		repeatedStringForEntries += strings.Replace(f.String(), "GitConfigEntry", "GitConfigEntry", 1) + ","
+	}
+	repeatedStringForEntries += "}"
+	s := strings.Join([]string{`&GitConfig{`,
+		`Entries:` + repeatedStringForEntries + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *GitConfigEntry) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&GitConfigEntry{`,
+		`Key:` + fmt.Sprintf("%v", this.Key) + `,`,
+		`Value:` + fmt.Sprintf("%v", this.Value) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1506,6 +2299,374 @@ func (m *CredentialInfo) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.Password = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *GitConfigRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: GitConfigRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: GitConfigRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *GitConfigResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: GitConfigResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: GitConfigResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Config", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &GitConfig{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Result = &GitConfigResponse_Config{v}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Error", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &ErrorInfo{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Result = &GitConfigResponse_Error{v}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *GitConfig) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: GitConfig: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: GitConfig: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Entries", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Entries = append(m.Entries, &GitConfigEntry{})
+			if err := m.Entries[len(m.Entries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGit(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGit
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *GitConfigEntry) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGit
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: GitConfigEntry: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: GitConfigEntry: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Key", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Key = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Value", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGit
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGit
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGit
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Value = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
