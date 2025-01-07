@@ -544,7 +544,7 @@ func (srv *Server) initializeDaggerClient(
 	}
 
 	// setup the graphql server + module/function state for the client
-	client.dagqlRoot = core.NewRoot(srv)
+	client.dagqlRoot = core.NewRoot(ctx, srv)
 
 	dag := dagql.NewServer(client.dagqlRoot)
 	dag.Cache = client.daggerSession.dagqlCache

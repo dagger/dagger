@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/sources/blob"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // We don't expose these types to modules SDK codegen, but
@@ -66,6 +67,8 @@ func (s *querySchema) Install() {
 
 	dagql.Fields[Label]{}.Install(s.srv)
 
+	dagql.Fields[core.SpanContext]{}.Install(s.srv)
+
 	dagql.Fields[*core.Query]{
 		dagql.Func("pipeline", s.pipeline).
 			View(BeforeVersion("v0.13.0")).
@@ -77,6 +80,14 @@ func (s *querySchema) Install() {
 
 		dagql.Func("version", s.version).
 			Doc(`Get the current Dagger Engine version.`),
+
+		dagql.Func("span", s.start).
+			Doc(`Create a new OpenTelemetry span.`),
+	}.Install(s.srv)
+
+	dagql.Fields[*core.Span]{
+		dagql.Func("end", s.spanEnd).
+			Doc(`End the OpenTelemetry span, with an optional error.`),
 	}.Install(s.srv)
 }
 
@@ -146,4 +157,37 @@ func (s *querySchema) schemaJSONFile(ctx context.Context, parent dagql.Instance[
 	}
 
 	return fileInst.WithMetadata(dgst, true), nil
+}
+
+func (s *querySchema) start(ctx context.Context, parent *core.Query, args struct {
+	Name string
+}) (*core.Span, error) {
+	// First, grab the tracer based on the incoming (real) span.
+	tracer := core.Tracer(ctx)
+	// Overwrite the span in the context so we inherit from the query's span.
+	ctx = parent.SpanContext.ToContext(ctx)
+	// Start a span beneath the query span.
+	ctx, span := tracer.Start(ctx, args.Name)
+	// Update the query with the new span context.
+	child := parent.Clone()
+	child.SpanContext = core.SpanContextFromContext(ctx)
+	return &core.Span{
+		Span:  span,
+		Query: child,
+	}, nil
+}
+
+func (s *querySchema) spanEnd(ctx context.Context, parent *core.Span, args struct {
+	Error dagql.Optional[dagql.ID[*core.Error]]
+}) (dagql.Nullable[core.Void], error) {
+	if args.Error.Valid {
+		dagErr, err := args.Error.Value.Load(ctx, s.srv)
+		if err != nil {
+			parent.Span.SetStatus(codes.Error, fmt.Sprintf("failed to load error: %v", err))
+		} else {
+			parent.Span.SetStatus(codes.Error, dagErr.Self.Message)
+		}
+	}
+	parent.Span.End()
+	return dagql.Null[core.Void](), nil
 }
