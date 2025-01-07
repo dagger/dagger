@@ -39,13 +39,13 @@ func LogsToPB(dbLog []Log) []*otlplogsv1.ResourceLogs {
 			res = telemetry.ResourceFromPB(sd.ResourceSchemaUrl, &resPb)
 		}
 		if res.SchemaURL() == "" {
-			slog.Error("log has no resource", "log", sd)
+			slog.Error("log has no resource", "log", string(sd.Body), "trace", sd.TraceID, "span", sd.SpanID)
 			continue
 		}
 		var scope instrumentation.Scope
 		var scopePb otlpcommonv1.InstrumentationScope
 		if err := protojson.Unmarshal(sd.InstrumentationScope, &scopePb); err != nil {
-			slog.Error("failed to unmarshal instrumentation scope", "error", err, "log", sd)
+			slog.Error("failed to unmarshal instrumentation scope", "error", err, "log", string(sd.Body))
 			continue
 		} else {
 			scope = telemetry.InstrumentationScopeFromPB(&scopePb)
@@ -66,7 +66,7 @@ func LogsToPB(dbLog []Log) []*otlplogsv1.ResourceLogs {
 		}
 		var bodyPb otlpcommonv1.AnyValue
 		if err := proto.Unmarshal(sd.Body, &bodyPb); err != nil {
-			slog.Warn("failed to unmarshal log body", "error", err, "log", sd)
+			slog.Warn("failed to unmarshal log body", "error", err, "log", string(sd.Body))
 			continue
 		}
 		var attrs []*otlpcommonv1.KeyValue

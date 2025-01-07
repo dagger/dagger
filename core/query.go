@@ -123,6 +123,12 @@ type Server interface {
 
 	// Open a client's telemetry database.
 	ClientTelemetry(ctc context.Context, sessID, clientID string) (*clientdb.Queries, func() error, error)
+
+	// Start a status and return a status tied to its internal span ID.
+	StartStatus(context.Context, *Status) (*Status, error)
+
+	// Look up a started status by its internal span ID.
+	LookupStatus(context.Context, string) (*Status, bool, error)
 }
 
 type queryKey struct{}
@@ -164,7 +170,9 @@ func CurrentDagqlCache(ctx context.Context) (*dagql.SessionCache, error) {
 }
 
 func NewRoot(srv Server) *Query {
-	return &Query{Server: srv}
+	return &Query{
+		Server: srv,
+	}
 }
 
 func (*Query) Type() *ast.Type {

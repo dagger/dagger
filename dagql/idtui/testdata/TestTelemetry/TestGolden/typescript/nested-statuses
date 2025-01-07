@@ -1,0 +1,50 @@
+Expected stdout:
+
+done
+
+Expected stderr:
+
+▼ connect X.Xs
+├─● starting engine X.Xs
+├─● connecting to engine X.Xs
+╰─● starting session X.Xs
+ 
+▼ load module: ./viztest/typescript X.Xs
+├─● finding module configuration X.Xs
+├─● initializing module X.Xs
+├─● inspecting module metadata X.Xs
+╰─● loading type definitions X.Xs
+ 
+● parsing command line arguments X.Xs
+
+● typescript: Typescript! X.Xs
+▼ .nestedStatuses: String! X.Xs
+┃ done
+╰─▼ custom status X.Xs
+  ├─$ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
+  ├─▼ .withExec(args: ["echo", "outer: XXXX-XX-XXTXX:XX:XX.XXXZ"]): Container! X.Xs
+  │ ┃ outer: XXXX-XX-XXTXX:XX:XX.XXXZ
+  ├─▼ .stdout: String! X.Xs
+  │ ┃ outer: XXXX-XX-XXTXX:XX:XX.XXXZ
+  │
+  ├─▼ sub status X.Xs
+  │ ├─▼ Container.withExec(args: ["echo", "sub 1: XXXX-XX-XXTXX:XX:XX.XXXZ"]): Container! X.Xs
+  │ │ ┃ sub 1: XXXX-XX-XXTXX:XX:XX.XXXZ
+  │ ╰─▼ .stdout: String! X.Xs
+  │   ┃ sub 1: XXXX-XX-XXTXX:XX:XX.XXXZ
+  │  
+  ├─▼ sub status X.Xs
+  │ ├─▼ Container.withExec(args: ["echo", "sub 2: XXXX-XX-XXTXX:XX:XX.XXXZ"]): Container! X.Xs
+  │ │ ┃ sub 2: XXXX-XX-XXTXX:XX:XX.XXXZ
+  │ ╰─▼ .stdout: String! X.Xs
+  │   ┃ sub 2: XXXX-XX-XXTXX:XX:XX.XXXZ
+  │  
+  ╰─▼ another sub status X.Xs
+    ╰─▼ sub status X.Xs
+      ├─▼ Container.withExec(args: ["echo", "im even deeper: XXXX-XX-XXTXX:XX:XX.XXXZ"]): Container! X.Xs
+      │ ┃ im even deeper: XXXX-XX-XXTXX:XX:XX.XXXZ
+      ╰─▼ .stdout: String! X.Xs
+        ┃ im even deeper: XXXX-XX-XXTXX:XX:XX.XXXZ
+
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
