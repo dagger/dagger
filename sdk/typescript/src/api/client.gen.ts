@@ -1292,20 +1292,6 @@ export type SocketID = string & { __SocketID: never }
  */
 export type SourceMapID = string & { __SourceMapID: never }
 
-export type SpanEndOpts = {
-  error?: Error
-}
-
-/**
- * The `SpanContextID` scalar type represents an identifier for an object of type SpanContext.
- */
-export type SpanContextID = string & { __SpanContextID: never }
-
-/**
- * The `SpanID` scalar type represents an identifier for an object of type Span.
- */
-export type SpanID = string & { __SpanID: never }
-
 /**
  * The `TerminalID` scalar type represents an identifier for an object of type Terminal.
  */
@@ -6931,22 +6917,6 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Load a SpanContext from its ID.
-   */
-  loadSpanContextFromID = (id: SpanContextID): SpanContext => {
-    const ctx = this._ctx.select("loadSpanContextFromID", { id })
-    return new SpanContext(ctx)
-  }
-
-  /**
-   * Load a Span from its ID.
-   */
-  loadSpanFromID = (id: SpanID): Span => {
-    const ctx = this._ctx.select("loadSpanFromID", { id })
-    return new Span(ctx)
-  }
-
-  /**
    * Load a Terminal from its ID.
    */
   loadTerminalFromID = (id: TerminalID): Terminal => {
@@ -7028,18 +6998,6 @@ export class Client extends BaseClient {
   sourceMap = (filename: string, line: number, column: number): SourceMap => {
     const ctx = this._ctx.select("sourceMap", { filename, line, column })
     return new SourceMap(ctx)
-  }
-
-  /**
-   * Create a new OpenTelemetry span.
-   */
-  span = (name: string): Span => {
-    const ctx = this._ctx.select("span", { name })
-    return new Span(ctx)
-  }
-  spanContext = (): SpanContext => {
-    const ctx = this._ctx.select("spanContext")
-    return new SpanContext(ctx)
   }
 
   /**
@@ -7576,129 +7534,6 @@ export class SourceMap extends BaseClient {
     }
 
     const ctx = this._ctx.select("module")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-}
-
-/**
- * An OpenTelemetry span.
- */
-export class Span extends BaseClient {
-  private readonly _id?: SpanID = undefined
-  private readonly _end?: Void = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(ctx?: Context, _id?: SpanID, _end?: Void) {
-    super(ctx)
-
-    this._id = _id
-    this._end = _end
-  }
-
-  /**
-   * A unique identifier for this Span.
-   */
-  id = async (): Promise<SpanID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<SpanID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * End the OpenTelemetry span, with an optional error.
-   */
-  end = async (opts?: SpanEndOpts): Promise<void> => {
-    if (this._end) {
-      return
-    }
-
-    const ctx = this._ctx.select("end", { ...opts })
-
-    await ctx.execute()
-  }
-  query = (): Client => {
-    const ctx = this._ctx.select("query")
-    return new Client(ctx)
-  }
-}
-
-export class SpanContext extends BaseClient {
-  private readonly _id?: SpanContextID = undefined
-  private readonly _remote?: boolean = undefined
-  private readonly _spanId?: string = undefined
-  private readonly _traceId?: string = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(
-    ctx?: Context,
-    _id?: SpanContextID,
-    _remote?: boolean,
-    _spanId?: string,
-    _traceId?: string,
-  ) {
-    super(ctx)
-
-    this._id = _id
-    this._remote = _remote
-    this._spanId = _spanId
-    this._traceId = _traceId
-  }
-
-  /**
-   * A unique identifier for this SpanContext.
-   */
-  id = async (): Promise<SpanContextID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<SpanContextID> = await ctx.execute()
-
-    return response
-  }
-  remote = async (): Promise<boolean> => {
-    if (this._remote) {
-      return this._remote
-    }
-
-    const ctx = this._ctx.select("remote")
-
-    const response: Awaited<boolean> = await ctx.execute()
-
-    return response
-  }
-  spanId = async (): Promise<string> => {
-    if (this._spanId) {
-      return this._spanId
-    }
-
-    const ctx = this._ctx.select("spanId")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-  traceId = async (): Promise<string> => {
-    if (this._traceId) {
-      return this._traceId
-    }
-
-    const ctx = this._ctx.select("traceId")
 
     const response: Awaited<string> = await ctx.execute()
 

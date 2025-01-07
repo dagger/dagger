@@ -95,7 +95,6 @@
               <li><a href="#query-setSecret">setSecret</a></li>
               <li><a href="#query-sourceMap">sourceMap</a></li>
               <li><a href="#query-span">span</a></li>
-              <li><a href="#query-spanContext">spanContext</a></li>
               <li><a href="#query-typeDef">typeDef</a></li>
               <li><a href="#query-version">version</a></li>
             </ul>
@@ -3764,6 +3763,12 @@
                     <tbody>
                       <tr>
                         <td>
+                          <span class="property-name"><code>key</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
+                        </td>
+                        <td> Default = <code>""</code> </td>
+                      </tr>
+                      <tr>
+                        <td>
                           <span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
                         </td>
                         <td>
@@ -3771,31 +3776,6 @@
                       </tr>
                     </tbody>
                   </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="query-spanContext" class="operation operation-query" data-traverse-target="query-spanContext">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>spanContext</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-SpanContext"><code>SpanContext!</code></a>
-                  </p>
                 </div>
               </div>
             </div>
@@ -9605,8 +9585,49 @@
                         <td> A unique identifier for this Span. </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Span-internalId" href="#Span-internalId"><code>internalId</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Returns the internal ID of the span. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Span-name" href="#Span-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Span-query" href="#Span-query"><code>query</code></a> - <span class="property-type"><a href="#definition-Query"><code>Query!</code></a></span> </td>
                         <td>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Span-span" href="#Span-span"><code>span</code></a> - <span class="property-type"><a href="#definition-Span"><code>Span!</code></a></span> </td>
+                        <td> Create a new OpenTelemetry span. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Span-start" href="#Span-start"><code>start</code></a> - <span class="property-type"><a href="#definition-SpanID"><code>SpanID!</code></a></span> </td>
+                        <td> Start a new instance of the span. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>key</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
                         </td>
                       </tr>
                     </tbody>

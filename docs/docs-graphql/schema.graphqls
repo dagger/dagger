@@ -2951,8 +2951,7 @@ type Query {
   ): SourceMap!
 
   """Create a new OpenTelemetry span."""
-  span(name: String!): Span!
-  spanContext: SpanContext!
+  span(key: String = "", name: String!): Span!
 
   """Create a new TypeDef."""
   typeDef: TypeDef!
@@ -3144,7 +3143,17 @@ type Span {
 
   """A unique identifier for this Span."""
   id: SpanID!
+
+  """Returns the internal ID of the span."""
+  internalId: String!
+  name: String!
   query: Query!
+
+  """Create a new OpenTelemetry span."""
+  span(name: String!): Span!
+
+  """Start a new instance of the span."""
+  start(key: String = ""): SpanID!
 }
 
 type SpanContext {
