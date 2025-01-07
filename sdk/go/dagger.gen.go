@@ -7877,34 +7877,14 @@ func (r *Client) SourceMap(filename string, line int, column int) *SourceMap {
 }
 
 // Create a new OpenTelemetry span.
-func (r *Client) Span(ctx context.Context, name string) (context.Context, *Span) {
-	spanQ := r.query.
-		Select("span").
-		Arg("name", name)
+func (r *Client) Span(name string) *Span {
+	q := r.query.Select("span")
+	q = q.Arg("name", name)
 
-	var spanID string
-	q := spanQ.
-		Select("query").
-		Select("spanContext").
-		Select("spanId").
-		Bind(&spanID)
-	if err := q.Execute(ctx); err != nil {
-		panic(err)
+	return &Span{
+		query:  q,
+		client: r.client,
 	}
-
-	sc := trace.SpanContextFromContext(ctx)
-	tid := sc.TraceID()
-	sid, _ := trace.SpanIDFromHex(spanID)
-	return trace.ContextWithSpanContext(ctx, trace.NewSpanContext(trace.SpanContextConfig{
-			TraceID:    tid,
-			SpanID:     sid,
-			Remote:     true,
-			TraceFlags: sc.TraceFlags(),
-			TraceState: sc.TraceState(),
-		})), &Span{
-			query:  spanQ,
-			client: r.client,
-		}
 }
 
 func (r *Client) SpanContext() *SpanContext {
@@ -8607,6 +8587,25 @@ func (r *Span) WithGraphQLQuery(q *querybuilder.Selection) *Span {
 		query:  q,
 		client: r.client,
 	}
+}
+func (r *Span) Start(ctx context.Context) (context.Context, *Span) {
+	spanID, err := r.Query().SpanContext().SpanID(ctx)
+	if err != nil {
+		panic(err)
+	}
+	sc := trace.SpanContextFromContext(ctx)
+	tid := sc.TraceID()
+	sid, err := trace.SpanIDFromHex(spanID)
+	if err != nil {
+		panic(err)
+	}
+	return trace.ContextWithSpanContext(ctx, trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    tid,
+		SpanID:     sid,
+		Remote:     true,
+		TraceFlags: sc.TraceFlags(),
+		TraceState: sc.TraceState(),
+	})), r
 }
 
 // SpanEndOpts contains options for Span.End
