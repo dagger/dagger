@@ -1,0 +1,7 @@
+kind: Changed
+body: |
+    CacheVolumes are now namespaced between different modules.
+time: 2025-01-06T15:31:56.693249098Z
+custom:
+    Author: rajatjindal
+    PR: "8724"

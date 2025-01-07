@@ -109,7 +109,7 @@ module.exports = {
           "items": [
             "api/module-structure",
             "api/remote-modules",
-            "api/publish",
+            "api/daggerverse",
             {
               "type": "link",
               "label": "Module Configuration File Reference",

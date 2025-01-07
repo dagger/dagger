@@ -6888,7 +6888,12 @@ class Client(Root):
         _ctx = self._select("builtinContainer", _args)
         return Container(_ctx)
 
-    def cache_volume(self, key: str) -> CacheVolume:
+    def cache_volume(
+        self,
+        key: str,
+        *,
+        namespace: str | None = "",
+    ) -> CacheVolume:
         """Constructs a cache volume for a given cache key.
 
         Parameters
@@ -6896,9 +6901,11 @@ class Client(Root):
         key:
             A string identifier to target this cache volume (e.g., "modules-
             cache").
+        namespace:
         """
         _args = [
             Arg("key", key),
+            Arg("namespace", namespace, ""),
         ]
         _ctx = self._select("cacheVolume", _args)
         return CacheVolume(_ctx)

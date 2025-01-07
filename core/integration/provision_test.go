@@ -212,7 +212,7 @@ func dockerSetup(ctx context.Context, t *testctx.T, name string, dag *dagger.Cli
 		WithEnvVariable("CACHEBUSTER", identity.NewID())
 
 	t.Cleanup(func() {
-		_, err := dockerc.WithExec([]string{"sh", "-c", "docker rm -f $(docker ps -aq); docker system prune --all --volumes; true"}).Sync(ctx)
+		_, err := dockerc.WithExec([]string{"sh", "-c", "docker rm -f $(docker ps -aq); docker system prune --force --all --volumes; true"}).Sync(ctx)
 		require.NoError(t, err)
 
 		_, err = dockerd.Stop(ctx)

@@ -36,10 +36,13 @@ class Client extends Client\AbstractClient
     /**
      * Constructs a cache volume for a given cache key.
      */
-    public function cacheVolume(string $key): CacheVolume
+    public function cacheVolume(string $key, ?string $namespace = ''): CacheVolume
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('cacheVolume');
         $innerQueryBuilder->setArgument('key', $key);
+        if (null !== $namespace) {
+        $innerQueryBuilder->setArgument('namespace', $namespace);
+        }
         return new \Dagger\CacheVolume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
