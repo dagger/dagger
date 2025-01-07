@@ -877,23 +877,15 @@ defmodule Dagger.Client do
   end
 
   @doc "Create a new OpenTelemetry span."
-  @spec span(t(), String.t()) :: Dagger.Span.t()
-  def span(%__MODULE__{} = client, name) do
+  @spec span(t(), String.t(), [{:key, String.t() | nil}]) :: Dagger.Span.t()
+  def span(%__MODULE__{} = client, name, optional_args \\ []) do
     query_builder =
-      client.query_builder |> QB.select("span") |> QB.put_arg("name", name)
+      client.query_builder
+      |> QB.select("span")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("key", optional_args[:key])
 
     %Dagger.Span{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
-  @spec span_context(t()) :: Dagger.SpanContext.t()
-  def span_context(%__MODULE__{} = client) do
-    query_builder =
-      client.query_builder |> QB.select("spanContext")
-
-    %Dagger.SpanContext{
       query_builder: query_builder,
       client: client.client
     }

@@ -723,17 +723,14 @@ class Client extends Client\AbstractClient
     /**
      * Create a new OpenTelemetry span.
      */
-    public function span(string $name): Span
+    public function span(string $name, ?string $key = ''): Span
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('span');
         $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $key) {
+        $innerQueryBuilder->setArgument('key', $key);
+        }
         return new \Dagger\Span($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    public function spanContext(): SpanContext
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('spanContext');
-        return new \Dagger\SpanContext($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

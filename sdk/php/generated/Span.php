@@ -34,9 +34,46 @@ class Span extends Client\AbstractObject implements Client\IdAble
         return new \Dagger\SpanId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
+    /**
+     * Returns the internal ID of the span.
+     */
+    public function internalId(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('internalId');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'internalId');
+    }
+
+    public function name(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
     public function query(): Client
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('query');
         return new \Dagger\Client($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Create a new OpenTelemetry span.
+     */
+    public function span(string $name): Span
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('span');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Span($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Start a new instance of the span.
+     */
+    public function start(?string $key = ''): SpanId
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('start');
+        if (null !== $key) {
+        $leafQueryBuilder->setArgument('key', $key);
+        }
+        return new \Dagger\SpanId((string)$this->queryLeaf($leafQueryBuilder, 'start'));
     }
 }

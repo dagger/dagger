@@ -8624,10 +8624,17 @@ func (r *Span) Context(ctx context.Context) (context.Context, *Span) {
 	})), started
 }
 
-func (r *Span) Run(ctx context.Context, cb func(context.Context) error) error {
+func (r *Span) Run(ctx context.Context, cb func(context.Context, *Span) error) error {
 	ctx, span := r.Context(ctx)
-	defer span.End(ctx)
-	return cb(ctx)
+	err := cb(ctx, span)
+	if err != nil {
+		_ = span.End(ctx, SpanEndOpts{
+			Error: r.Query().Error(err.Error()),
+		})
+		return err
+	} else {
+		return span.End(ctx)
+	}
 }
 
 // SpanEndOpts contains options for Span.End

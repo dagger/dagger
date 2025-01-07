@@ -32,6 +32,23 @@ defmodule Dagger.Span do
     Client.execute(span.client, query_builder)
   end
 
+  @doc "Returns the internal ID of the span."
+  @spec internal_id(t()) :: {:ok, String.t()} | {:error, term()}
+  def internal_id(%__MODULE__{} = span) do
+    query_builder =
+      span.query_builder |> QB.select("internalId")
+
+    Client.execute(span.client, query_builder)
+  end
+
+  @spec name(t()) :: {:ok, String.t()} | {:error, term()}
+  def name(%__MODULE__{} = span) do
+    query_builder =
+      span.query_builder |> QB.select("name")
+
+    Client.execute(span.client, query_builder)
+  end
+
   @spec query(t()) :: Dagger.Client.t()
   def query(%__MODULE__{} = span) do
     query_builder =
@@ -41,5 +58,35 @@ defmodule Dagger.Span do
       query_builder: query_builder,
       client: span.client
     }
+  end
+
+  @doc "Create a new OpenTelemetry span."
+  @spec span(t(), String.t()) :: Dagger.Span.t()
+  def span(%__MODULE__{} = span, name) do
+    query_builder =
+      span.query_builder |> QB.select("span") |> QB.put_arg("name", name)
+
+    %Dagger.Span{
+      query_builder: query_builder,
+      client: span.client
+    }
+  end
+
+  @doc "Start a new instance of the span."
+  @spec start(t(), [{:key, String.t() | nil}]) :: {:ok, Dagger.Span.t()} | {:error, term()}
+  def start(%__MODULE__{} = span, optional_args \\ []) do
+    query_builder =
+      span.query_builder |> QB.select("start") |> QB.maybe_put_arg("key", optional_args[:key])
+
+    with {:ok, id} <- Client.execute(span.client, query_builder) do
+      {:ok,
+       %Dagger.Span{
+         query_builder:
+           QB.query()
+           |> QB.select("loadSpanFromID")
+           |> QB.put_arg("id", id),
+         client: span.client
+       }}
+    end
   end
 end

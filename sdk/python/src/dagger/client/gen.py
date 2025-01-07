@@ -7646,16 +7646,11 @@ class Client(Root):
         _ctx = self._select("sourceMap", _args)
         return SourceMap(_ctx)
 
-    def span(
-        self,
-        name: str,
-        *,
-        internal_id: str | None = "",
-    ) -> "Span":
+    def span(self, name: str, *, key: str | None = "") -> "Span":
         """Create a new OpenTelemetry span."""
         _args = [
             Arg("name", name),
-            Arg("internalId", internal_id, ""),
+            Arg("key", key, ""),
         ]
         _ctx = self._select("span", _args)
         return Span(_ctx)
@@ -8350,7 +8345,7 @@ class Span(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("internalID", _args)
+        _ctx = self._select("internalId", _args)
         return await _ctx.execute(str)
 
     async def name(self) -> str:
@@ -8406,6 +8401,7 @@ class Span(Type):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.token = None
+        self.started = None
 
     async def __aenter__(self) -> "Span":
         # Fetch the actual span ID created by the engine
@@ -8437,16 +8433,19 @@ class Span(Type):
         )
 
         # Attach the new context and save the token for detachment
-        started.token = opentelemetry.context.attach(new_context)
+        self.token = opentelemetry.context.attach(new_context)
+        self.started = started
         return started
 
     async def __aexit__(
         self, exception_type, exception_value, exception_traceback
     ) -> Void | None:
         error: Error | None = None
+        void: Void | None = None
         if exception_type:
             error = dag.error(f"{exception_type.__name__}: {exception_value}")
-        void = await self.end(error=error)
+        if self.started:
+            void = await self.started.end(error=error)
         if self.token:
             opentelemetry.context.detach(self.token)
         return void
