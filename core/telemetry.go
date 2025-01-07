@@ -35,7 +35,7 @@ func collectDefs(ctx context.Context, val dagql.Typed) []*pb.Definition {
 }
 
 func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Context, func(res dagql.Typed, cached bool, rerr error)) {
-	if isIntrospection(id) {
+	if isIntrospection(id) || isMeta(id) {
 		return ctx, dagql.NoopDone
 	}
 
@@ -79,8 +79,7 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 		attrs = append(attrs, attribute.Bool(telemetry.UIInternalAttr, true))
 	}
 
-	ctx, span := telemetry.Tracer(ctx, InstrumentationLibrary).
-		Start(ctx, spanName, trace.WithAttributes(attrs...))
+	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
 
 	return ctx, func(res dagql.Typed, cached bool, err error) {
 		defer telemetry.End(span, func() error {
@@ -186,6 +185,21 @@ func isIntrospection(id *call.ID) bool {
 		}
 	} else {
 		return isIntrospection(id.Receiver())
+	}
+}
+
+// isMeta returns true if any type in the ID is "too meta" to show to the user,
+// for example span and error APIs.
+func isMeta(id *call.ID) bool {
+	switch id.Type().NamedType() {
+	case "Span", "Error":
+		return true
+	default:
+		if id.Receiver() != nil {
+			return isMeta(id.Receiver())
+		} else {
+			return false
+		}
 	}
 }
 

@@ -23,6 +23,64 @@ import (
 // dependencies for evaluating queries.
 type Query struct {
 	Server
+
+	SpanContext SpanContext `field:"true"`
+}
+
+type SpanContext struct {
+	// TODO: ...can this just be an alias? with a custom scalar for these?
+	TraceID string `field:"true"`
+	SpanID  string `field:"true"`
+	Remote  bool   `field:"true"`
+
+	// TODO: do we need to support TraceFlags and TraceState?
+}
+
+func (c SpanContext) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "SpanContext",
+		NonNull:   true,
+	}
+}
+
+func SpanContextFromContext(ctx context.Context) SpanContext {
+	sc := trace.SpanContextFromContext(ctx)
+	return SpanContext{
+		TraceID: sc.TraceID().String(),
+		SpanID:  sc.SpanID().String(),
+		Remote:  sc.IsRemote(),
+	}
+}
+
+func (c SpanContext) ToContext(ctx context.Context) context.Context {
+	sc := trace.SpanContextFromContext(ctx)
+	tid, _ := trace.TraceIDFromHex(c.TraceID)
+	sid, _ := trace.SpanIDFromHex(c.SpanID)
+	return trace.ContextWithSpanContext(ctx, trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    tid,
+		SpanID:     sid,
+		Remote:     c.Remote,
+		TraceFlags: sc.TraceFlags(),
+		TraceState: sc.TraceState(),
+	}))
+}
+
+type Span struct {
+	Span trace.Span
+
+	Query *Query `field:"true"`
+}
+
+func (c *Span) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Span",
+		NonNull:   true,
+	}
+}
+
+func (*Span) TypeDescription() string {
+	// TODO: rename to Task and come up with a nice description
+	return "An OpenTelemetry span."
 }
 
 var ErrNoCurrentModule = fmt.Errorf("no current module")
@@ -98,8 +156,11 @@ type Server interface {
 	NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error)
 }
 
-func NewRoot(srv Server) *Query {
-	return &Query{Server: srv}
+func NewRoot(ctx context.Context, srv Server) *Query {
+	return &Query{
+		Server:      srv,
+		SpanContext: SpanContextFromContext(ctx),
+	}
 }
 
 func (*Query) Type() *ast.Type {

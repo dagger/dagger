@@ -3,6 +3,7 @@
 type {{ .Name | FormatName }} struct {
 {{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 	query *querybuilder.Selection
+	client graphql.Client
 
     {{ range $field := .Fields }}
         {{- if $field.TypeRef.IsScalar }}
@@ -28,9 +29,7 @@ func (r *{{ $.Name | FormatName }}) With(f With{{ .Name | FormatName }}Func) *{{
 func (r *{{ .Name | FormatName }}) WithGraphQLQuery(q *querybuilder.Selection) *{{ $.Name | FormatName }} {
 	return &{{ .Name | FormatName }}{
 		query: q,
-		{{- if eq .Name "Query" }}
 		client: r.client,
-		{{ end }}
 	}
 }
 
@@ -60,6 +59,37 @@ type {{ $field | FieldOptionsStructName }} struct {
 {{- end }}
 {{- $convertID := $field | ConvertID }}
 {{- $supportsVoid := CheckVersionCompatibility "v0.12.0" }}
+{{- if and (eq $field.ParentObject.Name "Query") (eq $field.Name "span") }}
+func (r *{{ $.Name | FormatName }}) Span(ctx context.Context, name string) (context.Context, *{{ $field.TypeRef | FormatOutputType }}) {
+	spanQ := r.query.
+		Select("span").
+		Arg("name", name)
+
+	var spanID string
+	q := spanQ.
+		Select("query").
+		Select("spanContext").
+		Select("spanId").
+		Bind(&spanID)
+	if err := q.Execute(ctx); err != nil {
+		panic(err)
+	}
+
+	sc := trace.SpanContextFromContext(ctx)
+	tid := sc.TraceID()
+	sid, _ := trace.SpanIDFromHex(spanID)
+	return trace.ContextWithSpanContext(ctx, trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: tid,
+		SpanID:  sid,
+		Remote:  true,
+		TraceFlags: sc.TraceFlags(),
+		TraceState: sc.TraceState(),
+	})), &{{ $field.TypeRef | FormatOutputType }}{
+		query: spanQ,
+		client: r.client,
+	}
+}
+{{- else }}
 {{ FieldFunction $field false $supportsVoid }} {
 {{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 	{{- range $arg := $field.Args }}
@@ -113,9 +143,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- else if $field.TypeRef.IsObject }}
 	return &{{ $typeName }} {
 		query: q,
-		{{- if eq $typeName "Client" }}
 		client: r.client,
-		{{ end }}
 	}
 
 	{{- else if or $field.TypeRef.IsScalar $field.TypeRef.IsList }}
@@ -187,7 +215,7 @@ func (r *{{ $.Name | FormatName }}) XXX_GraphQLID(ctx context.Context) (string, 
   if err != nil {
     return "", err
   }
-	return string(id), nil
+  return string(id), nil
 }
 
 func (r *{{ $.Name | FormatName }}) MarshalJSON() ([]byte, error) {
@@ -211,4 +239,5 @@ func (r *{{ $.Name | FormatName }}) UnmarshalJSON(bs []byte) error {
 {{- end }}
 
 {{ end }}
+{{ end -}}
 {{ end -}}

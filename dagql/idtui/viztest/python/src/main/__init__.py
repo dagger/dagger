@@ -1,9 +1,6 @@
-from opentelemetry import trace
 import datetime
 
 from dagger import dag, function, object_type
-
-tracer = trace.get_tracer(__name__)
 
 now = str(datetime.datetime.now())
 
@@ -20,8 +17,13 @@ class Python:
 
     @function
     async def custom_span(self) -> str:
-        with tracer.start_as_current_span("custom span"):
+        async with dag.span("custom span"):
             return await self.echo(f"hello from Python! it is currently {now}")
+
+    @function
+    async def exceptional_span(self) -> str:
+        async with dag.span("custom span"):
+            raise ValueError("oh no")
 
     @function
     async def pending(self):
