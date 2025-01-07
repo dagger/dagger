@@ -7646,18 +7646,19 @@ class Client(Root):
         _ctx = self._select("sourceMap", _args)
         return SourceMap(_ctx)
 
-    def span(self, name: str) -> "Span":
+    def span(
+        self,
+        name: str,
+        *,
+        internal_id: str | None = "",
+    ) -> "Span":
         """Create a new OpenTelemetry span."""
         _args = [
             Arg("name", name),
+            Arg("internalId", internal_id, ""),
         ]
         _ctx = self._select("span", _args)
         return Span(_ctx)
-
-    def span_context(self) -> "SpanContext":
-        _args: list[Arg] = []
-        _ctx = self._select("spanContext", _args)
-        return SpanContext(_ctx)
 
     def type_def(self) -> "TypeDef":
         """Create a new TypeDef."""
@@ -8331,10 +8332,76 @@ class Span(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(SpanID)
 
+    async def internal_id(self) -> str:
+        """Returns the internal ID of the span.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("internalID", _args)
+        return await _ctx.execute(str)
+
+    async def name(self) -> str:
+        """Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
     def query(self) -> Client:
         _args: list[Arg] = []
         _ctx = self._select("query", _args)
         return Client(_ctx)
+
+    def span(self, name: str) -> Self:
+        """Create a new OpenTelemetry span."""
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("span", _args)
+        return Span(_ctx)
+
+    async def start(self, *, key: str | None = "") -> Self:
+        """Start a new instance of the span.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("key", key, ""),
+        ]
+        _ctx = self._select("start", _args)
+        _id = await _ctx.execute(SpanID)
+        _ctx = Client.from_context(_ctx)._select("loadSpanFromID", [Arg("id", _id)])
+        return Span(_ctx)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -8342,12 +8409,8 @@ class Span(Type):
 
     async def __aenter__(self) -> "Span":
         # Fetch the actual span ID created by the engine
-        span_id_hex = (
-            await self._select("query", [])
-            .select("Query", "spanContext", [])
-            .select("SpanContext", "spanId", [])
-            .execute(str)
-        )
+        started = await self.start()
+        span_id_hex = await started.internal_id()
         span_id = int(span_id_hex, 16)
 
         # Get the current span context
@@ -8374,8 +8437,8 @@ class Span(Type):
         )
 
         # Attach the new context and save the token for detachment
-        self.token = opentelemetry.context.attach(new_context)
-        return self
+        started.token = opentelemetry.context.attach(new_context)
+        return started
 
     async def __aexit__(
         self, exception_type, exception_value, exception_traceback
@@ -8387,6 +8450,13 @@ class Span(Type):
         if self.token:
             opentelemetry.context.detach(self.token)
         return void
+
+    def with_(self, cb: Callable[["Span"], "Span"]) -> "Span":
+        """Call the provided callable with current Span.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck

@@ -7876,21 +7876,23 @@ func (r *Client) SourceMap(filename string, line int, column int) *SourceMap {
 	}
 }
 
+// SpanOpts contains options for Client.Span
+type SpanOpts struct {
+	Key string
+}
+
 // Create a new OpenTelemetry span.
-func (r *Client) Span(name string) *Span {
+func (r *Client) Span(name string, opts ...SpanOpts) *Span {
 	q := r.query.Select("span")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `key` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Key) {
+			q = q.Arg("key", opts[i].Key)
+		}
+	}
 	q = q.Arg("name", name)
 
 	return &Span{
-		query:  q,
-		client: r.client,
-	}
-}
-
-func (r *Client) SpanContext() *SpanContext {
-	q := r.query.Select("spanContext")
-
-	return &SpanContext{
 		query:  q,
 		client: r.client,
 	}
@@ -8578,8 +8580,19 @@ type Span struct {
 	query  *querybuilder.Selection
 	client graphql.Client
 
-	end *Void
-	id  *SpanID
+	end        *Void
+	id         *SpanID
+	internalId *string
+	name       *string
+	start      *SpanID
+}
+type WithSpanFunc func(r *Span) *Span
+
+// With calls the provided function with current Span.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Span) With(f WithSpanFunc) *Span {
+	return f(r)
 }
 
 func (r *Span) WithGraphQLQuery(q *querybuilder.Selection) *Span {
@@ -8588,24 +8601,33 @@ func (r *Span) WithGraphQLQuery(q *querybuilder.Selection) *Span {
 		client: r.client,
 	}
 }
-func (r *Span) Start(ctx context.Context) (context.Context, *Span) {
-	spanID, err := r.Query().SpanContext().SpanID(ctx)
+func (r *Span) Context(ctx context.Context) (context.Context, *Span) {
+	started, err := r.Start(ctx)
 	if err != nil {
 		panic(err)
 	}
-	sc := trace.SpanContextFromContext(ctx)
-	tid := sc.TraceID()
-	sid, err := trace.SpanIDFromHex(spanID)
+	spanIDHex, err := started.InternalID(ctx)
 	if err != nil {
 		panic(err)
 	}
+	spanID, err := trace.SpanIDFromHex(spanIDHex)
+	if err != nil {
+		panic(err)
+	}
+	spanCtx := trace.SpanContextFromContext(ctx)
 	return trace.ContextWithSpanContext(ctx, trace.NewSpanContext(trace.SpanContextConfig{
-		TraceID:    tid,
-		SpanID:     sid,
+		TraceID:    spanCtx.TraceID(),
+		SpanID:     spanID,
 		Remote:     true,
-		TraceFlags: sc.TraceFlags(),
-		TraceState: sc.TraceState(),
-	})), r
+		TraceFlags: spanCtx.TraceFlags(),
+		TraceState: spanCtx.TraceState(),
+	})), started
+}
+
+func (r *Span) Run(ctx context.Context, cb func(context.Context) error) error {
+	ctx, span := r.Context(ctx)
+	defer span.End(ctx)
+	return cb(ctx)
 }
 
 // SpanEndOpts contains options for Span.End
@@ -8669,6 +8691,31 @@ func (r *Span) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// Returns the internal ID of the span.
+func (r *Span) InternalID(ctx context.Context) (string, error) {
+	if r.internalId != nil {
+		return *r.internalId, nil
+	}
+	q := r.query.Select("internalId")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *Span) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 func (r *Span) Query() *Client {
 	q := r.query.Select("query")
 
@@ -8676,6 +8723,41 @@ func (r *Span) Query() *Client {
 		query:  q,
 		client: r.client,
 	}
+}
+
+// Create a new OpenTelemetry span.
+func (r *Span) Span(name string) *Span {
+	q := r.query.Select("span")
+	q = q.Arg("name", name)
+
+	return &Span{
+		query:  q,
+		client: r.client,
+	}
+}
+
+// SpanStartOpts contains options for Span.Start
+type SpanStartOpts struct {
+	Key string
+}
+
+// Start a new instance of the span.
+func (r *Span) Start(ctx context.Context, opts ...SpanStartOpts) (*Span, error) {
+	q := r.query.Select("start")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `key` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Key) {
+			q = q.Arg("key", opts[i].Key)
+		}
+	}
+
+	var id SpanID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Span{
+		query: q.Root().Select("loadSpanFromID").Arg("id", id),
+	}, nil
 }
 
 type SpanContext struct {

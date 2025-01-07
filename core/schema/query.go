@@ -81,11 +81,19 @@ func (s *querySchema) Install() {
 		dagql.Func("version", s.version).
 			Doc(`Get the current Dagger Engine version.`),
 
-		dagql.Func("span", s.start).
+		dagql.Func("span", s.span).
 			Doc(`Create a new OpenTelemetry span.`),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Span]{
+		dagql.NodeFunc("start", s.spanStart).
+			Doc(`Start a new instance of the span.`).
+			Impure("Creates a new span with each call."),
+		dagql.Func("internalId", s.spanInternalID).
+			Doc(`Returns the internal ID of the span.`),
+		dagql.Func("span", s.spanSpan).
+			Doc(`Create a new OpenTelemetry span.`).
+			Impure("Creates a new span with each call."),
 		dagql.Func("end", s.spanEnd).
 			Doc(`End the OpenTelemetry span, with an optional error.`),
 	}.Install(s.srv)
@@ -159,21 +167,53 @@ func (s *querySchema) schemaJSONFile(ctx context.Context, parent dagql.Instance[
 	return fileInst.WithMetadata(dgst, true), nil
 }
 
-func (s *querySchema) start(ctx context.Context, parent *core.Query, args struct {
+func (s *querySchema) span(ctx context.Context, parent *core.Query, args struct {
+	Name string
+	Key  string `default:""`
+}) (*core.Span, error) {
+	query := parent
+	if args.Key != "" {
+		span, found := query.LookupSpan(args.Key)
+		if !found {
+			return nil, fmt.Errorf("span not found: %s", args.Key)
+		}
+		return span, nil
+	}
+	return &core.Span{
+		Name:  args.Name,
+		Query: parent,
+	}, nil
+}
+
+func (s *querySchema) spanStart(ctx context.Context, parent dagql.Instance[*core.Span], args struct {
+	Key string `default:""`
+}) (dagql.ID[*core.Span], error) {
+	started := parent.Self.Start(ctx)
+	var inst dagql.Instance[*core.Span]
+	err := s.srv.Select(ctx, s.srv.Root(), &inst, dagql.Selector{
+		Field: "span",
+		Pure:  true,
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.NewString(started.Name)},
+			{Name: "key", Value: dagql.NewString(started.InternalID())},
+		},
+	})
+	if err != nil {
+		return dagql.ID[*core.Span]{}, err
+	}
+	return dagql.NewID[*core.Span](inst.ID()), nil
+}
+
+func (s *querySchema) spanInternalID(ctx context.Context, parent *core.Span, args struct{}) (string, error) {
+	return parent.Span.SpanContext().SpanID().String(), nil
+}
+
+func (s *querySchema) spanSpan(ctx context.Context, parent *core.Span, args struct {
 	Name string
 }) (*core.Span, error) {
-	// First, grab the tracer based on the incoming (real) span.
-	tracer := core.Tracer(ctx)
-	// Overwrite the span in the context so we inherit from the query's span.
-	ctx = parent.SpanContext.ToContext(ctx)
-	// Start a span beneath the query span.
-	ctx, span := tracer.Start(ctx, args.Name)
-	// Update the query with the new span context.
-	child := parent.Clone()
-	child.SpanContext = core.SpanContextFromContext(ctx)
 	return &core.Span{
-		Span:  span,
-		Query: child,
+		Name:  args.Name,
+		Query: parent.Query,
 	}, nil
 }
 

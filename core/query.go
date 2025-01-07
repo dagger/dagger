@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"github.com/containerd/containerd/content"
 	bkclient "github.com/moby/buildkit/client"
@@ -24,7 +25,23 @@ import (
 type Query struct {
 	Server
 
-	SpanContext SpanContext `field:"true"`
+	SpanContext SpanContext
+
+	spans  map[string]*Span
+	spansL *sync.Mutex
+}
+
+func (q *Query) LookupSpan(spanID string) (*Span, bool) {
+	q.spansL.Lock()
+	span, found := q.spans[spanID]
+	q.spansL.Unlock()
+	return span, found
+}
+
+func (q *Query) StoreSpan(s *Span) {
+	q.spansL.Lock()
+	q.spans[s.InternalID()] = s
+	q.spansL.Unlock()
 }
 
 type SpanContext struct {
@@ -66,9 +83,11 @@ func (c SpanContext) ToContext(ctx context.Context) context.Context {
 }
 
 type Span struct {
-	Span trace.Span
+	Name string `field:"true"`
 
 	Query *Query `field:"true"`
+
+	Span trace.Span
 }
 
 func (c *Span) Type() *ast.Type {
@@ -81,6 +100,34 @@ func (c *Span) Type() *ast.Type {
 func (*Span) TypeDescription() string {
 	// TODO: rename to Task and come up with a nice description
 	return "An OpenTelemetry span."
+}
+
+func (s Span) Clone() *Span {
+	cp := &s
+	cp.Query = cp.Query.Clone()
+	return cp
+}
+
+func (s *Span) Start(ctx context.Context) *Span {
+	started := s.Clone()
+	// First, grab the tracer based on the incoming (real) span.
+	tracer := Tracer(ctx)
+	// Overwrite the span in the context so we inherit from the query's span.
+	ctx = s.Query.SpanContext.ToContext(ctx)
+	// Start a span beneath the query span.
+	ctx, started.Span = tracer.Start(ctx, s.Name)
+	// Update the query with the new span context.
+	started.Query.SpanContext = SpanContextFromContext(ctx)
+	// Keep track of the new span so we can find it later.
+	started.Query.StoreSpan(started)
+	return started
+}
+
+func (s *Span) InternalID() string {
+	if s.Span == nil {
+		return ""
+	}
+	return s.Span.SpanContext().SpanID().String()
 }
 
 var ErrNoCurrentModule = fmt.Errorf("no current module")
@@ -160,6 +207,8 @@ func NewRoot(ctx context.Context, srv Server) *Query {
 	return &Query{
 		Server:      srv,
 		SpanContext: SpanContextFromContext(ctx),
+		spans:       map[string]*Span{},
+		spansL:      new(sync.Mutex),
 	}
 }
 
