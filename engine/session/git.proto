@@ -4,6 +4,7 @@ option go_package = "session";
 
 service Git {
   rpc GetCredential(GitCredentialRequest) returns (GitCredentialResponse);
+  rpc GetConfig(GitConfigRequest) returns (GitConfigResponse);
 }
 
 message GitCredentialRequest {
@@ -26,6 +27,24 @@ message CredentialInfo {
   string password = 4;
 }
 
+message GitConfigRequest {}
+
+message GitConfigResponse {
+  oneof result {
+    GitConfig config = 1;
+    ErrorInfo error = 2;
+  }
+}
+
+message GitConfig {
+  repeated GitConfigEntry entries = 1;
+}
+
+message GitConfigEntry {
+  string key = 1;
+  string value = 2;
+}
+
 message ErrorInfo {
   enum ErrorType {
     UNKNOWN = 0;
@@ -33,6 +52,7 @@ message ErrorInfo {
     NO_GIT = 2;
     TIMEOUT = 3;
     CREDENTIAL_RETRIEVAL_FAILED = 4;
+    CONFIG_RETRIEVAL_FAILED = 5;
 }
   ErrorType type = 1;
   string message = 2;
