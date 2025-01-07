@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -224,6 +225,12 @@ type SocketID string
 // The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
 type SourceMapID string
 
+// The `SpanContextID` scalar type represents an identifier for an object of type SpanContext.
+type SpanContextID string
+
+// The `SpanID` scalar type represents an identifier for an object of type Span.
+type SpanID string
+
 // The `TerminalID` scalar type represents an identifier for an object of type Terminal.
 type TerminalID string
 
@@ -267,14 +274,16 @@ type PortForward struct {
 
 // A directory whose contents persist across runs.
 type CacheVolume struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	id *CacheVolumeID
 }
 
 func (r *CacheVolume) WithGraphQLQuery(q *querybuilder.Selection) *CacheVolume {
 	return &CacheVolume{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -320,7 +329,8 @@ func (r *CacheVolume) MarshalJSON() ([]byte, error) {
 
 // An OCI-compatible container, also known as a Docker container.
 type Container struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	envVariable *string
 	exitCode    *int
@@ -348,7 +358,8 @@ func (r *Container) With(f WithContainerFunc) *Container {
 
 func (r *Container) WithGraphQLQuery(q *querybuilder.Selection) *Container {
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -407,7 +418,8 @@ func (r *Container) AsService(opts ...ContainerAsServiceOpts) *Service {
 	}
 
 	return &Service{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -446,7 +458,8 @@ func (r *Container) AsTarball(opts ...ContainerAsTarballOpts) *File {
 	}
 
 	return &File{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -491,7 +504,8 @@ func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Conta
 	q = q.Arg("context", context)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -525,7 +539,8 @@ func (r *Container) Directory(path string, opts ...ContainerDirectoryOpts) *Dire
 	q = q.Arg("path", path)
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -610,7 +625,8 @@ func (r *Container) ExperimentalWithAllGPUs() *Container {
 	q := r.query.Select("experimentalWithAllGPUs")
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -624,7 +640,8 @@ func (r *Container) ExperimentalWithGPU(devices []string) *Container {
 	q = q.Arg("devices", devices)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -735,7 +752,8 @@ func (r *Container) File(path string, opts ...ContainerFileOpts) *File {
 	q = q.Arg("path", path)
 
 	return &File{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -745,7 +763,8 @@ func (r *Container) From(address string) *Container {
 	q = q.Arg("address", address)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -821,7 +840,8 @@ func (r *Container) Import(source *File, opts ...ContainerImportOpts) *Container
 	q = q.Arg("source", source)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -948,7 +968,8 @@ func (r *Container) Rootfs() *Directory {
 	q := r.query.Select("rootfs")
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1028,7 +1049,8 @@ func (r *Container) Terminal(opts ...ContainerTerminalOpts) *Container {
 	}
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1126,7 +1148,8 @@ func (r *Container) WithAnnotation(name string, value string) *Container {
 	q = q.Arg("value", value)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1136,7 +1159,8 @@ func (r *Container) WithDefaultArgs(args []string) *Container {
 	q = q.Arg("args", args)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1166,7 +1190,8 @@ func (r *Container) WithDefaultTerminalCmd(args []string, opts ...ContainerWithD
 	q = q.Arg("args", args)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1212,7 +1237,8 @@ func (r *Container) WithDirectory(path string, directory *Directory, opts ...Con
 	q = q.Arg("directory", directory)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1234,7 +1260,8 @@ func (r *Container) WithEntrypoint(args []string, opts ...ContainerWithEntrypoin
 	q = q.Arg("args", args)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1257,7 +1284,8 @@ func (r *Container) WithEnvVariable(name string, value string, opts ...Container
 	q = q.Arg("value", value)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1331,7 +1359,8 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 	q = q.Arg("args", args)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1371,7 +1400,8 @@ func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOp
 	q = q.Arg("port", port)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1411,7 +1441,8 @@ func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFil
 	q = q.Arg("source", source)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1450,7 +1481,8 @@ func (r *Container) WithFiles(path string, sources []*File, opts ...ContainerWit
 	q = q.Arg("sources", sources)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1461,7 +1493,8 @@ func (r *Container) WithLabel(name string, value string) *Container {
 	q = q.Arg("value", value)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1509,7 +1542,8 @@ func (r *Container) WithMountedCache(path string, cache *CacheVolume, opts ...Co
 	q = q.Arg("cache", cache)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1543,7 +1577,8 @@ func (r *Container) WithMountedDirectory(path string, source *Directory, opts ..
 	q = q.Arg("source", source)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1577,7 +1612,8 @@ func (r *Container) WithMountedFile(path string, source *File, opts ...Container
 	q = q.Arg("source", source)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1619,7 +1655,8 @@ func (r *Container) WithMountedSecret(path string, source *Secret, opts ...Conta
 	q = q.Arg("source", source)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1647,7 +1684,8 @@ func (r *Container) WithMountedTemp(path string, opts ...ContainerWithMountedTem
 	q = q.Arg("path", path)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1686,7 +1724,8 @@ func (r *Container) WithNewFile(path string, contents string, opts ...ContainerW
 	q = q.Arg("contents", contents)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1699,7 +1738,8 @@ func (r *Container) WithRegistryAuth(address string, username string, secret *Se
 	q = q.Arg("secret", secret)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1710,7 +1750,8 @@ func (r *Container) WithRootfs(directory *Directory) *Container {
 	q = q.Arg("directory", directory)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1722,7 +1763,8 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 	q = q.Arg("secret", secret)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1740,7 +1782,8 @@ func (r *Container) WithServiceBinding(alias string, service *Service) *Containe
 	q = q.Arg("service", service)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1774,7 +1817,8 @@ func (r *Container) WithUnixSocket(path string, source *Socket, opts ...Containe
 	q = q.Arg("source", source)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1784,7 +1828,8 @@ func (r *Container) WithUser(name string) *Container {
 	q = q.Arg("name", name)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1806,7 +1851,8 @@ func (r *Container) WithWorkdir(path string, opts ...ContainerWithWorkdirOpts) *
 	q = q.Arg("path", path)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1816,7 +1862,8 @@ func (r *Container) WithoutAnnotation(name string) *Container {
 	q = q.Arg("name", name)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1825,7 +1872,8 @@ func (r *Container) WithoutDefaultArgs() *Container {
 	q := r.query.Select("withoutDefaultArgs")
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1847,7 +1895,8 @@ func (r *Container) WithoutDirectory(path string, opts ...ContainerWithoutDirect
 	q = q.Arg("path", path)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1868,7 +1917,8 @@ func (r *Container) WithoutEntrypoint(opts ...ContainerWithoutEntrypointOpts) *C
 	}
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1878,7 +1928,8 @@ func (r *Container) WithoutEnvVariable(name string) *Container {
 	q = q.Arg("name", name)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1900,7 +1951,8 @@ func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposed
 	q = q.Arg("port", port)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1922,7 +1974,8 @@ func (r *Container) WithoutFile(path string, opts ...ContainerWithoutFileOpts) *
 	q = q.Arg("path", path)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1944,7 +1997,8 @@ func (r *Container) WithoutFiles(paths []string, opts ...ContainerWithoutFilesOp
 	q = q.Arg("paths", paths)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1954,7 +2008,8 @@ func (r *Container) WithoutLabel(name string) *Container {
 	q = q.Arg("name", name)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1976,7 +2031,8 @@ func (r *Container) WithoutMount(path string, opts ...ContainerWithoutMountOpts)
 	q = q.Arg("path", path)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1986,7 +2042,8 @@ func (r *Container) WithoutRegistryAuth(address string) *Container {
 	q = q.Arg("address", address)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -1996,7 +2053,8 @@ func (r *Container) WithoutSecretVariable(name string) *Container {
 	q = q.Arg("name", name)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2018,7 +2076,8 @@ func (r *Container) WithoutUnixSocket(path string, opts ...ContainerWithoutUnixS
 	q = q.Arg("path", path)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2029,7 +2088,8 @@ func (r *Container) WithoutUser() *Container {
 	q := r.query.Select("withoutUser")
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2040,7 +2100,8 @@ func (r *Container) WithoutWorkdir() *Container {
 	q := r.query.Select("withoutWorkdir")
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2059,7 +2120,8 @@ func (r *Container) Workdir(ctx context.Context) (string, error) {
 
 // Reflective module API provided to functions at runtime.
 type CurrentModule struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	id   *CurrentModuleID
 	name *string
@@ -2067,7 +2129,8 @@ type CurrentModule struct {
 
 func (r *CurrentModule) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModule {
 	return &CurrentModule{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2129,7 +2192,8 @@ func (r *CurrentModule) Source() *Directory {
 	q := r.query.Select("source")
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2157,7 +2221,8 @@ func (r *CurrentModule) Workdir(path string, opts ...CurrentModuleWorkdirOpts) *
 	q = q.Arg("path", path)
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2167,13 +2232,15 @@ func (r *CurrentModule) WorkdirFile(path string) *File {
 	q = q.Arg("path", path)
 
 	return &File{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
 // A directory.
 type Directory struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	digest *string
 	export *string
@@ -2191,7 +2258,8 @@ func (r *Directory) With(f WithDirectoryFunc) *Directory {
 
 func (r *Directory) WithGraphQLQuery(q *querybuilder.Selection) *Directory {
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2222,7 +2290,8 @@ func (r *Directory) AsModule(opts ...DirectoryAsModuleOpts) *Module {
 	}
 
 	return &Module{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2233,7 +2302,8 @@ func (r *Directory) Diff(other *Directory) *Directory {
 	q = q.Arg("other", other)
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2256,7 +2326,8 @@ func (r *Directory) Directory(path string) *Directory {
 	q = q.Arg("path", path)
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2303,7 +2374,8 @@ func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
 	}
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2361,7 +2433,8 @@ func (r *Directory) File(path string) *File {
 	q = q.Arg("path", path)
 
 	return &File{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2466,7 +2539,8 @@ func (r *Directory) Terminal(opts ...DirectoryTerminalOpts) *Directory {
 	}
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2496,7 +2570,8 @@ func (r *Directory) WithDirectory(path string, directory *Directory, opts ...Dir
 	q = q.Arg("directory", directory)
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2520,7 +2595,8 @@ func (r *Directory) WithFile(path string, source *File, opts ...DirectoryWithFil
 	q = q.Arg("source", source)
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2543,7 +2619,8 @@ func (r *Directory) WithFiles(path string, sources []*File, opts ...DirectoryWit
 	q = q.Arg("sources", sources)
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2565,7 +2642,8 @@ func (r *Directory) WithNewDirectory(path string, opts ...DirectoryWithNewDirect
 	q = q.Arg("path", path)
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2588,7 +2666,8 @@ func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryW
 	q = q.Arg("contents", contents)
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2598,7 +2677,8 @@ func (r *Directory) WithTimestamps(timestamp int) *Directory {
 	q = q.Arg("timestamp", timestamp)
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2608,7 +2688,8 @@ func (r *Directory) WithoutDirectory(path string) *Directory {
 	q = q.Arg("path", path)
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2618,7 +2699,8 @@ func (r *Directory) WithoutFile(path string) *Directory {
 	q = q.Arg("path", path)
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2628,20 +2710,23 @@ func (r *Directory) WithoutFiles(paths []string) *Directory {
 	q = q.Arg("paths", paths)
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
 // The Dagger engine configuration and state
 type Engine struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	id *EngineID
 }
 
 func (r *Engine) WithGraphQLQuery(q *querybuilder.Selection) *Engine {
 	return &Engine{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2690,13 +2775,15 @@ func (r *Engine) LocalCache() *EngineCache {
 	q := r.query.Select("localCache")
 
 	return &EngineCache{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
 // A cache storage for the Dagger engine
 type EngineCache struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	id            *EngineCacheID
 	keepBytes     *int
@@ -2708,7 +2795,8 @@ type EngineCache struct {
 
 func (r *EngineCache) WithGraphQLQuery(q *querybuilder.Selection) *EngineCache {
 	return &EngineCache{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2728,7 +2816,8 @@ func (r *EngineCache) EntrySet(opts ...EngineCacheEntrySetOpts) *EngineCacheEntr
 	}
 
 	return &EngineCacheEntrySet{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2837,7 +2926,8 @@ func (r *EngineCache) ReservedSpace(ctx context.Context) (int, error) {
 
 // An individual cache entry in a cache entry set
 type EngineCacheEntry struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	activelyUsed              *bool
 	createdTimeUnixNano       *int
@@ -2849,7 +2939,8 @@ type EngineCacheEntry struct {
 
 func (r *EngineCacheEntry) WithGraphQLQuery(q *querybuilder.Selection) *EngineCacheEntry {
 	return &EngineCacheEntry{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -2960,7 +3051,8 @@ func (r *EngineCacheEntry) MostRecentUseTimeUnixNano(ctx context.Context) (int, 
 
 // A set of cache entries returned by a query to a cache
 type EngineCacheEntrySet struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	diskSpaceBytes *int
 	entryCount     *int
@@ -2969,7 +3061,8 @@ type EngineCacheEntrySet struct {
 
 func (r *EngineCacheEntrySet) WithGraphQLQuery(q *querybuilder.Selection) *EngineCacheEntrySet {
 	return &EngineCacheEntrySet{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -3074,7 +3167,8 @@ func (r *EngineCacheEntrySet) MarshalJSON() ([]byte, error) {
 
 // A definition of a custom enum defined in a Module.
 type EnumTypeDef struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	description      *string
 	id               *EnumTypeDefID
@@ -3084,7 +3178,8 @@ type EnumTypeDef struct {
 
 func (r *EnumTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *EnumTypeDef {
 	return &EnumTypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -3159,7 +3254,8 @@ func (r *EnumTypeDef) SourceMap() *SourceMap {
 	q := r.query.Select("sourceMap")
 
 	return &SourceMap{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -3211,7 +3307,8 @@ func (r *EnumTypeDef) Values(ctx context.Context) ([]EnumValueTypeDef, error) {
 
 // A definition of a value in a custom enum defined in a Module.
 type EnumValueTypeDef struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	description *string
 	id          *EnumValueTypeDefID
@@ -3220,7 +3317,8 @@ type EnumValueTypeDef struct {
 
 func (r *EnumValueTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *EnumValueTypeDef {
 	return &EnumValueTypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -3295,13 +3393,15 @@ func (r *EnumValueTypeDef) SourceMap() *SourceMap {
 	q := r.query.Select("sourceMap")
 
 	return &SourceMap{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
 // An environment variable name and value.
 type EnvVariable struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	id    *EnvVariableID
 	name  *string
@@ -3310,7 +3410,8 @@ type EnvVariable struct {
 
 func (r *EnvVariable) WithGraphQLQuery(q *querybuilder.Selection) *EnvVariable {
 	return &EnvVariable{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -3381,7 +3482,8 @@ func (r *EnvVariable) Value(ctx context.Context) (string, error) {
 }
 
 type Error struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	id      *ErrorID
 	message *string
@@ -3389,7 +3491,8 @@ type Error struct {
 
 func (r *Error) WithGraphQLQuery(q *querybuilder.Selection) *Error {
 	return &Error{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -3450,7 +3553,8 @@ func (r *Error) Message(ctx context.Context) (string, error) {
 //
 // A field on an object has a static value, as opposed to a function on an object whose value is computed by invoking code (and can accept arguments).
 type FieldTypeDef struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	description *string
 	id          *FieldTypeDefID
@@ -3459,7 +3563,8 @@ type FieldTypeDef struct {
 
 func (r *FieldTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *FieldTypeDef {
 	return &FieldTypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -3534,7 +3639,8 @@ func (r *FieldTypeDef) SourceMap() *SourceMap {
 	q := r.query.Select("sourceMap")
 
 	return &SourceMap{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -3543,13 +3649,15 @@ func (r *FieldTypeDef) TypeDef() *TypeDef {
 	q := r.query.Select("typeDef")
 
 	return &TypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
 // A file.
 type File struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	contents *string
 	digest   *string
@@ -3570,7 +3678,8 @@ func (r *File) With(f WithFileFunc) *File {
 
 func (r *File) WithGraphQLQuery(q *querybuilder.Selection) *File {
 	return &File{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -3723,7 +3832,8 @@ func (r *File) WithName(name string) *File {
 	q = q.Arg("name", name)
 
 	return &File{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -3733,7 +3843,8 @@ func (r *File) WithTimestamps(timestamp int) *File {
 	q = q.Arg("timestamp", timestamp)
 
 	return &File{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -3741,7 +3852,8 @@ func (r *File) WithTimestamps(timestamp int) *File {
 //
 // A function always evaluates against a parent object and is given a set of named arguments.
 type Function struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	description *string
 	id          *FunctionID
@@ -3758,7 +3870,8 @@ func (r *Function) With(f WithFunctionFunc) *Function {
 
 func (r *Function) WithGraphQLQuery(q *querybuilder.Selection) *Function {
 	return &Function{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -3866,7 +3979,8 @@ func (r *Function) ReturnType() *TypeDef {
 	q := r.query.Select("returnType")
 
 	return &TypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -3875,7 +3989,8 @@ func (r *Function) SourceMap() *SourceMap {
 	q := r.query.Select("sourceMap")
 
 	return &SourceMap{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -3923,7 +4038,8 @@ func (r *Function) WithArg(name string, typeDef *TypeDef, opts ...FunctionWithAr
 	q = q.Arg("typeDef", typeDef)
 
 	return &Function{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -3933,7 +4049,8 @@ func (r *Function) WithDescription(description string) *Function {
 	q = q.Arg("description", description)
 
 	return &Function{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -3944,7 +4061,8 @@ func (r *Function) WithSourceMap(sourceMap *SourceMap) *Function {
 	q = q.Arg("sourceMap", sourceMap)
 
 	return &Function{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -3952,7 +4070,8 @@ func (r *Function) WithSourceMap(sourceMap *SourceMap) *Function {
 //
 // This is a specification for an argument at function definition time, not an argument passed at function call time.
 type FunctionArg struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	defaultPath  *string
 	defaultValue *JSON
@@ -3963,7 +4082,8 @@ type FunctionArg struct {
 
 func (r *FunctionArg) WithGraphQLQuery(q *querybuilder.Selection) *FunctionArg {
 	return &FunctionArg{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -4074,7 +4194,8 @@ func (r *FunctionArg) SourceMap() *SourceMap {
 	q := r.query.Select("sourceMap")
 
 	return &SourceMap{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -4083,13 +4204,15 @@ func (r *FunctionArg) TypeDef() *TypeDef {
 	q := r.query.Select("typeDef")
 
 	return &TypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
 // An active function call.
 type FunctionCall struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	id          *FunctionCallID
 	name        *string
@@ -4101,7 +4224,8 @@ type FunctionCall struct {
 
 func (r *FunctionCall) WithGraphQLQuery(q *querybuilder.Selection) *FunctionCall {
 	return &FunctionCall{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -4242,7 +4366,8 @@ func (r *FunctionCall) ReturnValue(ctx context.Context, value JSON) error {
 
 // A value passed as a named argument to a function call.
 type FunctionCallArgValue struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	id    *FunctionCallArgValueID
 	name  *string
@@ -4251,7 +4376,8 @@ type FunctionCallArgValue struct {
 
 func (r *FunctionCallArgValue) WithGraphQLQuery(q *querybuilder.Selection) *FunctionCallArgValue {
 	return &FunctionCallArgValue{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -4323,7 +4449,8 @@ func (r *FunctionCallArgValue) Value(ctx context.Context) (JSON, error) {
 
 // The result of running an SDK's codegen.
 type GeneratedCode struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	id *GeneratedCodeID
 }
@@ -4338,7 +4465,8 @@ func (r *GeneratedCode) With(f WithGeneratedCodeFunc) *GeneratedCode {
 
 func (r *GeneratedCode) WithGraphQLQuery(q *querybuilder.Selection) *GeneratedCode {
 	return &GeneratedCode{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -4347,7 +4475,8 @@ func (r *GeneratedCode) Code() *Directory {
 	q := r.query.Select("code")
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -4417,7 +4546,8 @@ func (r *GeneratedCode) WithVCSGeneratedPaths(paths []string) *GeneratedCode {
 	q = q.Arg("paths", paths)
 
 	return &GeneratedCode{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -4427,13 +4557,15 @@ func (r *GeneratedCode) WithVCSIgnoredPaths(paths []string) *GeneratedCode {
 	q = q.Arg("paths", paths)
 
 	return &GeneratedCode{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
 // Module source originating from a git repo.
 type GitModuleSource struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	cloneRef    *string
 	commit      *string
@@ -4447,7 +4579,8 @@ type GitModuleSource struct {
 
 func (r *GitModuleSource) WithGraphQLQuery(q *querybuilder.Selection) *GitModuleSource {
 	return &GitModuleSource{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -4482,7 +4615,8 @@ func (r *GitModuleSource) ContextDirectory() *Directory {
 	q := r.query.Select("contextDirectory")
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -4593,7 +4727,8 @@ func (r *GitModuleSource) Version(ctx context.Context) (string, error) {
 
 // A git ref (tag, branch, or commit).
 type GitRef struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	commit *string
 	id     *GitRefID
@@ -4601,7 +4736,8 @@ type GitRef struct {
 
 func (r *GitRef) WithGraphQLQuery(q *querybuilder.Selection) *GitRef {
 	return &GitRef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -4675,13 +4811,15 @@ func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 	}
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
 // A git repository.
 type GitRepository struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	id *GitRepositoryID
 }
@@ -4696,7 +4834,8 @@ func (r *GitRepository) With(f WithGitRepositoryFunc) *GitRepository {
 
 func (r *GitRepository) WithGraphQLQuery(q *querybuilder.Selection) *GitRepository {
 	return &GitRepository{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -4706,7 +4845,8 @@ func (r *GitRepository) Branch(name string) *GitRef {
 	q = q.Arg("name", name)
 
 	return &GitRef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -4716,7 +4856,8 @@ func (r *GitRepository) Commit(id string) *GitRef {
 	q = q.Arg("id", id)
 
 	return &GitRef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -4725,7 +4866,8 @@ func (r *GitRepository) Head() *GitRef {
 	q := r.query.Select("head")
 
 	return &GitRef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -4775,7 +4917,8 @@ func (r *GitRepository) Ref(name string) *GitRef {
 	q = q.Arg("name", name)
 
 	return &GitRef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -4785,7 +4928,8 @@ func (r *GitRepository) Tag(name string) *GitRef {
 	q = q.Arg("name", name)
 
 	return &GitRef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -4818,7 +4962,8 @@ func (r *GitRepository) WithAuthHeader(header *Secret) *GitRepository {
 	q = q.Arg("header", header)
 
 	return &GitRepository{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -4829,20 +4974,23 @@ func (r *GitRepository) WithAuthToken(token *Secret) *GitRepository {
 	q = q.Arg("token", token)
 
 	return &GitRepository{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
 // Information about the host environment.
 type Host struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	id *HostID
 }
 
 func (r *Host) WithGraphQLQuery(q *querybuilder.Selection) *Host {
 	return &Host{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -4870,7 +5018,8 @@ func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 	q = q.Arg("path", path)
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -4880,7 +5029,8 @@ func (r *Host) File(path string) *File {
 	q = q.Arg("path", path)
 
 	return &File{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -4942,7 +5092,8 @@ func (r *Host) Service(ports []PortForward, opts ...HostServiceOpts) *Service {
 	q = q.Arg("ports", ports)
 
 	return &Service{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -4955,7 +5106,8 @@ func (r *Host) SetSecretFile(name string, path string) *Secret {
 	q = q.Arg("path", path)
 
 	return &Secret{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -4992,7 +5144,8 @@ func (r *Host) Tunnel(service *Service, opts ...HostTunnelOpts) *Service {
 	q = q.Arg("service", service)
 
 	return &Service{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5002,7 +5155,8 @@ func (r *Host) UnixSocket(path string) *Socket {
 	q = q.Arg("path", path)
 
 	return &Socket{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5011,7 +5165,8 @@ func (r *Host) UnixSocket(path string) *Socket {
 // in the core API. It is not used by user modules and shouldn't ever be as user
 // module accept input objects via their id rather than graphql input types.
 type InputTypeDef struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	id   *InputTypeDefID
 	name *string
@@ -5019,7 +5174,8 @@ type InputTypeDef struct {
 
 func (r *InputTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *InputTypeDef {
 	return &InputTypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5111,7 +5267,8 @@ func (r *InputTypeDef) Name(ctx context.Context) (string, error) {
 
 // A definition of a custom interface defined in a Module.
 type InterfaceTypeDef struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	description      *string
 	id               *InterfaceTypeDefID
@@ -5121,7 +5278,8 @@ type InterfaceTypeDef struct {
 
 func (r *InterfaceTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *InterfaceTypeDef {
 	return &InterfaceTypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5229,7 +5387,8 @@ func (r *InterfaceTypeDef) SourceMap() *SourceMap {
 	q := r.query.Select("sourceMap")
 
 	return &SourceMap{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5248,7 +5407,8 @@ func (r *InterfaceTypeDef) SourceModuleName(ctx context.Context) (string, error)
 
 // A simple key value object that represents a label.
 type Label struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	id    *LabelID
 	name  *string
@@ -5257,7 +5417,8 @@ type Label struct {
 
 func (r *Label) WithGraphQLQuery(q *querybuilder.Selection) *Label {
 	return &Label{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5329,14 +5490,16 @@ func (r *Label) Value(ctx context.Context) (string, error) {
 
 // A definition of a list type in a Module.
 type ListTypeDef struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	id *ListTypeDefID
 }
 
 func (r *ListTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *ListTypeDef {
 	return &ListTypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5345,7 +5508,8 @@ func (r *ListTypeDef) ElementTypeDef() *TypeDef {
 	q := r.query.Select("elementTypeDef")
 
 	return &TypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5391,7 +5555,8 @@ func (r *ListTypeDef) MarshalJSON() ([]byte, error) {
 
 // Module source that that originates from a path locally relative to an arbitrary directory.
 type LocalModuleSource struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	id          *LocalModuleSourceID
 	relHostPath *string
@@ -5400,7 +5565,8 @@ type LocalModuleSource struct {
 
 func (r *LocalModuleSource) WithGraphQLQuery(q *querybuilder.Selection) *LocalModuleSource {
 	return &LocalModuleSource{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5409,7 +5575,8 @@ func (r *LocalModuleSource) ContextDirectory() *Directory {
 	q := r.query.Select("contextDirectory")
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5481,7 +5648,8 @@ func (r *LocalModuleSource) RootSubpath(ctx context.Context) (string, error) {
 
 // A Dagger module.
 type Module struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	description *string
 	id          *ModuleID
@@ -5500,7 +5668,8 @@ func (r *Module) With(f WithModuleFunc) *Module {
 
 func (r *Module) WithGraphQLQuery(q *querybuilder.Selection) *Module {
 	return &Module{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5621,7 +5790,8 @@ func (r *Module) GeneratedContextDiff() *Directory {
 	q := r.query.Select("generatedContextDiff")
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5630,7 +5800,8 @@ func (r *Module) GeneratedContextDirectory() *Directory {
 	q := r.query.Select("generatedContextDirectory")
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5679,7 +5850,8 @@ func (r *Module) Initialize() *Module {
 	q := r.query.Select("initialize")
 
 	return &Module{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5767,7 +5939,8 @@ func (r *Module) Runtime() *Container {
 	q := r.query.Select("runtime")
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5801,7 +5974,8 @@ func (r *Module) Source() *ModuleSource {
 	q := r.query.Select("source")
 
 	return &ModuleSource{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5811,7 +5985,8 @@ func (r *Module) WithDescription(description string) *Module {
 	q = q.Arg("description", description)
 
 	return &Module{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5822,7 +5997,8 @@ func (r *Module) WithEnum(enum *TypeDef) *Module {
 	q = q.Arg("enum", enum)
 
 	return &Module{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5833,7 +6009,8 @@ func (r *Module) WithInterface(iface *TypeDef) *Module {
 	q = q.Arg("iface", iface)
 
 	return &Module{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5844,7 +6021,8 @@ func (r *Module) WithObject(object *TypeDef) *Module {
 	q = q.Arg("object", object)
 
 	return &Module{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5867,13 +6045,15 @@ func (r *Module) WithSource(source *ModuleSource, opts ...ModuleWithSourceOpts) 
 	q = q.Arg("source", source)
 
 	return &Module{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
 // The configuration of dependency of a module.
 type ModuleDependency struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	id   *ModuleDependencyID
 	name *string
@@ -5881,7 +6061,8 @@ type ModuleDependency struct {
 
 func (r *ModuleDependency) WithGraphQLQuery(q *querybuilder.Selection) *ModuleDependency {
 	return &ModuleDependency{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5943,13 +6124,15 @@ func (r *ModuleDependency) Source() *ModuleSource {
 	q := r.query.Select("source")
 
 	return &ModuleSource{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
 // The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
 type ModuleSource struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	asString                     *string
 	configExists                 *bool
@@ -5974,7 +6157,8 @@ func (r *ModuleSource) With(f WithModuleSourceFunc) *ModuleSource {
 
 func (r *ModuleSource) WithGraphQLQuery(q *querybuilder.Selection) *ModuleSource {
 	return &ModuleSource{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5983,7 +6167,8 @@ func (r *ModuleSource) AsGitSource() *GitModuleSource {
 	q := r.query.Select("asGitSource")
 
 	return &GitModuleSource{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -5992,7 +6177,8 @@ func (r *ModuleSource) AsLocalSource() *LocalModuleSource {
 	q := r.query.Select("asLocalSource")
 
 	return &LocalModuleSource{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6013,7 +6199,8 @@ func (r *ModuleSource) AsModule(opts ...ModuleSourceAsModuleOpts) *Module {
 	}
 
 	return &Module{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6048,7 +6235,8 @@ func (r *ModuleSource) ContextDirectory() *Directory {
 	q := r.query.Select("contextDirectory")
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6104,7 +6292,8 @@ func (r *ModuleSource) Directory(path string) *Directory {
 	q = q.Arg("path", path)
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6220,7 +6409,8 @@ func (r *ModuleSource) ResolveDependency(dep *ModuleSource) *ModuleSource {
 	q = q.Arg("dep", dep)
 
 	return &ModuleSource{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6248,7 +6438,8 @@ func (r *ModuleSource) ResolveDirectoryFromCaller(path string, opts ...ModuleSou
 	q = q.Arg("path", path)
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6257,7 +6448,8 @@ func (r *ModuleSource) ResolveFromCaller() *ModuleSource {
 	q := r.query.Select("resolveFromCaller")
 
 	return &ModuleSource{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6293,7 +6485,8 @@ func (r *ModuleSource) View(name string) *ModuleSourceView {
 	q = q.Arg("name", name)
 
 	return &ModuleSourceView{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6337,7 +6530,8 @@ func (r *ModuleSource) WithContextDirectory(dir *Directory) *ModuleSource {
 	q = q.Arg("dir", dir)
 
 	return &ModuleSource{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6347,7 +6541,8 @@ func (r *ModuleSource) WithDependencies(dependencies []*ModuleDependency) *Modul
 	q = q.Arg("dependencies", dependencies)
 
 	return &ModuleSource{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6368,7 +6563,8 @@ func (r *ModuleSource) WithInit(opts ...ModuleSourceWithInitOpts) *ModuleSource 
 	}
 
 	return &ModuleSource{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6378,7 +6574,8 @@ func (r *ModuleSource) WithName(name string) *ModuleSource {
 	q = q.Arg("name", name)
 
 	return &ModuleSource{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6388,7 +6585,8 @@ func (r *ModuleSource) WithSDK(sdk string) *ModuleSource {
 	q = q.Arg("sdk", sdk)
 
 	return &ModuleSource{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6398,7 +6596,8 @@ func (r *ModuleSource) WithSourceSubpath(path string) *ModuleSource {
 	q = q.Arg("path", path)
 
 	return &ModuleSource{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6419,7 +6618,8 @@ func (r *ModuleSource) WithView(name string, patterns []string) *ModuleSource {
 	q = q.Arg("patterns", patterns)
 
 	return &ModuleSource{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6429,13 +6629,15 @@ func (r *ModuleSource) WithoutDependencies(dependencies []string) *ModuleSource 
 	q = q.Arg("dependencies", dependencies)
 
 	return &ModuleSource{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
 // A named set of path filters that can be applied to directory arguments provided to functions.
 type ModuleSourceView struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	id   *ModuleSourceViewID
 	name *string
@@ -6443,7 +6645,8 @@ type ModuleSourceView struct {
 
 func (r *ModuleSourceView) WithGraphQLQuery(q *querybuilder.Selection) *ModuleSourceView {
 	return &ModuleSourceView{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6512,7 +6715,8 @@ func (r *ModuleSourceView) Patterns(ctx context.Context) ([]string, error) {
 
 // A definition of a custom object defined in a Module.
 type ObjectTypeDef struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	description      *string
 	id               *ObjectTypeDefID
@@ -6522,7 +6726,8 @@ type ObjectTypeDef struct {
 
 func (r *ObjectTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *ObjectTypeDef {
 	return &ObjectTypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6531,7 +6736,8 @@ func (r *ObjectTypeDef) Constructor() *Function {
 	q := r.query.Select("constructor")
 
 	return &Function{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6672,7 +6878,8 @@ func (r *ObjectTypeDef) SourceMap() *SourceMap {
 	q := r.query.Select("sourceMap")
 
 	return &SourceMap{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6691,7 +6898,8 @@ func (r *ObjectTypeDef) SourceModuleName(ctx context.Context) (string, error) {
 
 // A port exposed by a container.
 type Port struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	description                 *string
 	experimentalSkipHealthcheck *bool
@@ -6702,7 +6910,8 @@ type Port struct {
 
 func (r *Port) WithGraphQLQuery(q *querybuilder.Selection) *Port {
 	return &Port{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6811,7 +7020,8 @@ func (r *Client) Blob(digest string) *Directory {
 	q = q.Arg("digest", digest)
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6821,7 +7031,8 @@ func (r *Client) BuiltinContainer(digest string) *Container {
 	q = q.Arg("digest", digest)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6842,7 +7053,8 @@ func (r *Client) CacheVolume(key string, opts ...CacheVolumeOpts) *CacheVolume {
 	q = q.Arg("key", key)
 
 	return &CacheVolume{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6865,7 +7077,8 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 	}
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6876,7 +7089,8 @@ func (r *Client) CurrentFunctionCall() *FunctionCall {
 	q := r.query.Select("currentFunctionCall")
 
 	return &FunctionCall{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6885,7 +7099,8 @@ func (r *Client) CurrentModule() *CurrentModule {
 	q := r.query.Select("currentModule")
 
 	return &CurrentModule{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6937,7 +7152,8 @@ func (r *Client) Directory() *Directory {
 	q := r.query.Select("directory")
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6946,7 +7162,8 @@ func (r *Client) Engine() *Engine {
 	q := r.query.Select("engine")
 
 	return &Engine{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6956,7 +7173,8 @@ func (r *Client) Error(message string) *Error {
 	q = q.Arg("message", message)
 
 	return &Error{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6968,7 +7186,8 @@ func (r *Client) Function(name string, returnType *TypeDef) *Function {
 	q = q.Arg("returnType", returnType)
 
 	return &Function{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -6979,7 +7198,8 @@ func (r *Client) GeneratedCode(code *Directory) *GeneratedCode {
 	q = q.Arg("code", code)
 
 	return &GeneratedCode{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7019,7 +7239,8 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 	q = q.Arg("url", url)
 
 	return &GitRepository{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7028,7 +7249,8 @@ func (r *Client) Host() *Host {
 	q := r.query.Select("host")
 
 	return &Host{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7050,7 +7272,8 @@ func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	q = q.Arg("url", url)
 
 	return &File{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7060,7 +7283,8 @@ func (r *Client) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
 	q = q.Arg("id", id)
 
 	return &CacheVolume{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7070,7 +7294,8 @@ func (r *Client) LoadContainerFromID(id ContainerID) *Container {
 	q = q.Arg("id", id)
 
 	return &Container{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7080,7 +7305,8 @@ func (r *Client) LoadCurrentModuleFromID(id CurrentModuleID) *CurrentModule {
 	q = q.Arg("id", id)
 
 	return &CurrentModule{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7090,7 +7316,8 @@ func (r *Client) LoadDirectoryFromID(id DirectoryID) *Directory {
 	q = q.Arg("id", id)
 
 	return &Directory{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7100,7 +7327,8 @@ func (r *Client) LoadEngineCacheEntryFromID(id EngineCacheEntryID) *EngineCacheE
 	q = q.Arg("id", id)
 
 	return &EngineCacheEntry{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7110,7 +7338,8 @@ func (r *Client) LoadEngineCacheEntrySetFromID(id EngineCacheEntrySetID) *Engine
 	q = q.Arg("id", id)
 
 	return &EngineCacheEntrySet{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7120,7 +7349,8 @@ func (r *Client) LoadEngineCacheFromID(id EngineCacheID) *EngineCache {
 	q = q.Arg("id", id)
 
 	return &EngineCache{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7130,7 +7360,8 @@ func (r *Client) LoadEngineFromID(id EngineID) *Engine {
 	q = q.Arg("id", id)
 
 	return &Engine{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7140,7 +7371,8 @@ func (r *Client) LoadEnumTypeDefFromID(id EnumTypeDefID) *EnumTypeDef {
 	q = q.Arg("id", id)
 
 	return &EnumTypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7150,7 +7382,8 @@ func (r *Client) LoadEnumValueTypeDefFromID(id EnumValueTypeDefID) *EnumValueTyp
 	q = q.Arg("id", id)
 
 	return &EnumValueTypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7160,7 +7393,8 @@ func (r *Client) LoadEnvVariableFromID(id EnvVariableID) *EnvVariable {
 	q = q.Arg("id", id)
 
 	return &EnvVariable{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7170,7 +7404,8 @@ func (r *Client) LoadErrorFromID(id ErrorID) *Error {
 	q = q.Arg("id", id)
 
 	return &Error{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7180,7 +7415,8 @@ func (r *Client) LoadFieldTypeDefFromID(id FieldTypeDefID) *FieldTypeDef {
 	q = q.Arg("id", id)
 
 	return &FieldTypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7190,7 +7426,8 @@ func (r *Client) LoadFileFromID(id FileID) *File {
 	q = q.Arg("id", id)
 
 	return &File{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7200,7 +7437,8 @@ func (r *Client) LoadFunctionArgFromID(id FunctionArgID) *FunctionArg {
 	q = q.Arg("id", id)
 
 	return &FunctionArg{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7210,7 +7448,8 @@ func (r *Client) LoadFunctionCallArgValueFromID(id FunctionCallArgValueID) *Func
 	q = q.Arg("id", id)
 
 	return &FunctionCallArgValue{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7220,7 +7459,8 @@ func (r *Client) LoadFunctionCallFromID(id FunctionCallID) *FunctionCall {
 	q = q.Arg("id", id)
 
 	return &FunctionCall{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7230,7 +7470,8 @@ func (r *Client) LoadFunctionFromID(id FunctionID) *Function {
 	q = q.Arg("id", id)
 
 	return &Function{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7240,7 +7481,8 @@ func (r *Client) LoadGeneratedCodeFromID(id GeneratedCodeID) *GeneratedCode {
 	q = q.Arg("id", id)
 
 	return &GeneratedCode{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7250,7 +7492,8 @@ func (r *Client) LoadGitModuleSourceFromID(id GitModuleSourceID) *GitModuleSourc
 	q = q.Arg("id", id)
 
 	return &GitModuleSource{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7260,7 +7503,8 @@ func (r *Client) LoadGitRefFromID(id GitRefID) *GitRef {
 	q = q.Arg("id", id)
 
 	return &GitRef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7270,7 +7514,8 @@ func (r *Client) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
 	q = q.Arg("id", id)
 
 	return &GitRepository{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7280,7 +7525,8 @@ func (r *Client) LoadHostFromID(id HostID) *Host {
 	q = q.Arg("id", id)
 
 	return &Host{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7290,7 +7536,8 @@ func (r *Client) LoadInputTypeDefFromID(id InputTypeDefID) *InputTypeDef {
 	q = q.Arg("id", id)
 
 	return &InputTypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7300,7 +7547,8 @@ func (r *Client) LoadInterfaceTypeDefFromID(id InterfaceTypeDefID) *InterfaceTyp
 	q = q.Arg("id", id)
 
 	return &InterfaceTypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7310,7 +7558,8 @@ func (r *Client) LoadLabelFromID(id LabelID) *Label {
 	q = q.Arg("id", id)
 
 	return &Label{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7320,7 +7569,8 @@ func (r *Client) LoadListTypeDefFromID(id ListTypeDefID) *ListTypeDef {
 	q = q.Arg("id", id)
 
 	return &ListTypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7330,7 +7580,8 @@ func (r *Client) LoadLocalModuleSourceFromID(id LocalModuleSourceID) *LocalModul
 	q = q.Arg("id", id)
 
 	return &LocalModuleSource{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7340,7 +7591,8 @@ func (r *Client) LoadModuleDependencyFromID(id ModuleDependencyID) *ModuleDepend
 	q = q.Arg("id", id)
 
 	return &ModuleDependency{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7350,7 +7602,8 @@ func (r *Client) LoadModuleFromID(id ModuleID) *Module {
 	q = q.Arg("id", id)
 
 	return &Module{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7360,7 +7613,8 @@ func (r *Client) LoadModuleSourceFromID(id ModuleSourceID) *ModuleSource {
 	q = q.Arg("id", id)
 
 	return &ModuleSource{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7370,7 +7624,8 @@ func (r *Client) LoadModuleSourceViewFromID(id ModuleSourceViewID) *ModuleSource
 	q = q.Arg("id", id)
 
 	return &ModuleSourceView{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7380,7 +7635,8 @@ func (r *Client) LoadObjectTypeDefFromID(id ObjectTypeDefID) *ObjectTypeDef {
 	q = q.Arg("id", id)
 
 	return &ObjectTypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7390,7 +7646,8 @@ func (r *Client) LoadPortFromID(id PortID) *Port {
 	q = q.Arg("id", id)
 
 	return &Port{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7400,7 +7657,8 @@ func (r *Client) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
 	q = q.Arg("id", id)
 
 	return &ScalarTypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7410,7 +7668,8 @@ func (r *Client) LoadSecretFromID(id SecretID) *Secret {
 	q = q.Arg("id", id)
 
 	return &Secret{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7420,7 +7679,8 @@ func (r *Client) LoadServiceFromID(id ServiceID) *Service {
 	q = q.Arg("id", id)
 
 	return &Service{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7430,7 +7690,8 @@ func (r *Client) LoadSocketFromID(id SocketID) *Socket {
 	q = q.Arg("id", id)
 
 	return &Socket{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7440,7 +7701,30 @@ func (r *Client) LoadSourceMapFromID(id SourceMapID) *SourceMap {
 	q = q.Arg("id", id)
 
 	return &SourceMap{
-		query: q,
+		query:  q,
+		client: r.client,
+	}
+}
+
+// Load a SpanContext from its ID.
+func (r *Client) LoadSpanContextFromID(id SpanContextID) *SpanContext {
+	q := r.query.Select("loadSpanContextFromID")
+	q = q.Arg("id", id)
+
+	return &SpanContext{
+		query:  q,
+		client: r.client,
+	}
+}
+
+// Load a Span from its ID.
+func (r *Client) LoadSpanFromID(id SpanID) *Span {
+	q := r.query.Select("loadSpanFromID")
+	q = q.Arg("id", id)
+
+	return &Span{
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7450,7 +7734,8 @@ func (r *Client) LoadTerminalFromID(id TerminalID) *Terminal {
 	q = q.Arg("id", id)
 
 	return &Terminal{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7460,7 +7745,8 @@ func (r *Client) LoadTypeDefFromID(id TypeDefID) *TypeDef {
 	q = q.Arg("id", id)
 
 	return &TypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7469,7 +7755,8 @@ func (r *Client) Module() *Module {
 	q := r.query.Select("module")
 
 	return &Module{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7492,7 +7779,8 @@ func (r *Client) ModuleDependency(source *ModuleSource, opts ...ModuleDependency
 	q = q.Arg("source", source)
 
 	return &ModuleDependency{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7526,7 +7814,8 @@ func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *Modul
 	q = q.Arg("refString", refString)
 
 	return &ModuleSource{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7547,7 +7836,8 @@ func (r *Client) Secret(name string, opts ...SecretOpts) *Secret {
 	q = q.Arg("name", name)
 
 	return &Secret{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7560,7 +7850,8 @@ func (r *Client) SetSecret(name string, plaintext string) *Secret {
 	q = q.Arg("plaintext", plaintext)
 
 	return &Secret{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7572,7 +7863,48 @@ func (r *Client) SourceMap(filename string, line int, column int) *SourceMap {
 	q = q.Arg("column", column)
 
 	return &SourceMap{
-		query: q,
+		query:  q,
+		client: r.client,
+	}
+}
+
+// Create a new OpenTelemetry span.
+func (r *Client) Span(ctx context.Context, name string) (context.Context, *Span) {
+	spanQ := r.query.
+		Select("span").
+		Arg("name", name)
+
+	var spanID string
+	q := spanQ.
+		Select("query").
+		Select("spanContext").
+		Select("spanId").
+		Bind(&spanID)
+	if err := q.Execute(ctx); err != nil {
+		panic(err)
+	}
+
+	sc := trace.SpanContextFromContext(ctx)
+	tid := sc.TraceID()
+	sid, _ := trace.SpanIDFromHex(spanID)
+	return trace.ContextWithSpanContext(ctx, trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID:    tid,
+			SpanID:     sid,
+			Remote:     true,
+			TraceFlags: sc.TraceFlags(),
+			TraceState: sc.TraceState(),
+		})), &Span{
+			query:  spanQ,
+			client: r.client,
+		}
+}
+
+func (r *Client) SpanContext() *SpanContext {
+	q := r.query.Select("spanContext")
+
+	return &SpanContext{
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7581,7 +7913,8 @@ func (r *Client) TypeDef() *TypeDef {
 	q := r.query.Select("typeDef")
 
 	return &TypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7597,7 +7930,8 @@ func (r *Client) Version(ctx context.Context) (string, error) {
 
 // A definition of a custom scalar defined in a Module.
 type ScalarTypeDef struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	description      *string
 	id               *ScalarTypeDefID
@@ -7607,7 +7941,8 @@ type ScalarTypeDef struct {
 
 func (r *ScalarTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *ScalarTypeDef {
 	return &ScalarTypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7692,7 +8027,8 @@ func (r *ScalarTypeDef) SourceModuleName(ctx context.Context) (string, error) {
 
 // A reference to a secret value, which can be handled more safely than the value itself.
 type Secret struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	id        *SecretID
 	name      *string
@@ -7701,7 +8037,8 @@ type Secret struct {
 
 func (r *Secret) WithGraphQLQuery(q *querybuilder.Selection) *Secret {
 	return &Secret{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7773,7 +8110,8 @@ func (r *Secret) Plaintext(ctx context.Context) (string, error) {
 
 // A content-addressed service providing TCP connectivity.
 type Service struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	endpoint *string
 	hostname *string
@@ -7793,7 +8131,8 @@ func (r *Service) With(f WithServiceFunc) *Service {
 
 func (r *Service) WithGraphQLQuery(q *querybuilder.Selection) *Service {
 	return &Service{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7994,20 +8333,23 @@ func (r *Service) WithHostname(hostname string) *Service {
 	q = q.Arg("hostname", hostname)
 
 	return &Service{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
 // A Unix or TCP/IP socket that can be mounted into a container.
 type Socket struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	id *SocketID
 }
 
 func (r *Socket) WithGraphQLQuery(q *querybuilder.Selection) *Socket {
 	return &Socket{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -8053,7 +8395,8 @@ func (r *Socket) MarshalJSON() ([]byte, error) {
 
 // Source location information.
 type SourceMap struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	column   *int
 	filename *string
@@ -8064,7 +8407,8 @@ type SourceMap struct {
 
 func (r *SourceMap) WithGraphQLQuery(q *querybuilder.Selection) *SourceMap {
 	return &SourceMap{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -8160,9 +8504,189 @@ func (r *SourceMap) Module(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// An OpenTelemetry span.
+type Span struct {
+	query  *querybuilder.Selection
+	client graphql.Client
+
+	end *Void
+	id  *SpanID
+}
+
+func (r *Span) WithGraphQLQuery(q *querybuilder.Selection) *Span {
+	return &Span{
+		query:  q,
+		client: r.client,
+	}
+}
+
+// SpanEndOpts contains options for Span.End
+type SpanEndOpts struct {
+	Error *Error
+}
+
+// End the OpenTelemetry span, with an optional error.
+func (r *Span) End(ctx context.Context, opts ...SpanEndOpts) error {
+	if r.end != nil {
+		return nil
+	}
+	q := r.query.Select("end")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `error` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Error) {
+			q = q.Arg("error", opts[i].Error)
+		}
+	}
+
+	return q.Execute(ctx)
+}
+
+// A unique identifier for this Span.
+func (r *Span) ID(ctx context.Context) (SpanID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response SpanID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Span) XXX_GraphQLType() string {
+	return "Span"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Span) XXX_GraphQLIDType() string {
+	return "SpanID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Span) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Span) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+func (r *Span) Query() *Client {
+	q := r.query.Select("query")
+
+	return &Client{
+		query:  q,
+		client: r.client,
+	}
+}
+
+type SpanContext struct {
+	query  *querybuilder.Selection
+	client graphql.Client
+
+	id      *SpanContextID
+	remote  *bool
+	spanId  *string
+	traceId *string
+}
+
+func (r *SpanContext) WithGraphQLQuery(q *querybuilder.Selection) *SpanContext {
+	return &SpanContext{
+		query:  q,
+		client: r.client,
+	}
+}
+
+// A unique identifier for this SpanContext.
+func (r *SpanContext) ID(ctx context.Context) (SpanContextID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response SpanContextID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *SpanContext) XXX_GraphQLType() string {
+	return "SpanContext"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *SpanContext) XXX_GraphQLIDType() string {
+	return "SpanContextID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *SpanContext) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *SpanContext) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+func (r *SpanContext) Remote(ctx context.Context) (bool, error) {
+	if r.remote != nil {
+		return *r.remote, nil
+	}
+	q := r.query.Select("remote")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *SpanContext) SpanID(ctx context.Context) (string, error) {
+	if r.spanId != nil {
+		return *r.spanId, nil
+	}
+	q := r.query.Select("spanId")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *SpanContext) TraceID(ctx context.Context) (string, error) {
+	if r.traceId != nil {
+		return *r.traceId, nil
+	}
+	q := r.query.Select("traceId")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // An interactive terminal that clients can connect to.
 type Terminal struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	id   *TerminalID
 	sync *TerminalID
@@ -8170,7 +8694,8 @@ type Terminal struct {
 
 func (r *Terminal) WithGraphQLQuery(q *querybuilder.Selection) *Terminal {
 	return &Terminal{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -8231,7 +8756,8 @@ func (r *Terminal) Sync(ctx context.Context) (*Terminal, error) {
 
 // A definition of a parameter or return type in a Module.
 type TypeDef struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	id       *TypeDefID
 	kind     *TypeDefKind
@@ -8248,7 +8774,8 @@ func (r *TypeDef) With(f WithTypeDefFunc) *TypeDef {
 
 func (r *TypeDef) WithGraphQLQuery(q *querybuilder.Selection) *TypeDef {
 	return &TypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -8257,7 +8784,8 @@ func (r *TypeDef) AsEnum() *EnumTypeDef {
 	q := r.query.Select("asEnum")
 
 	return &EnumTypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -8266,7 +8794,8 @@ func (r *TypeDef) AsInput() *InputTypeDef {
 	q := r.query.Select("asInput")
 
 	return &InputTypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -8275,7 +8804,8 @@ func (r *TypeDef) AsInterface() *InterfaceTypeDef {
 	q := r.query.Select("asInterface")
 
 	return &InterfaceTypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -8284,7 +8814,8 @@ func (r *TypeDef) AsList() *ListTypeDef {
 	q := r.query.Select("asList")
 
 	return &ListTypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -8293,7 +8824,8 @@ func (r *TypeDef) AsObject() *ObjectTypeDef {
 	q := r.query.Select("asObject")
 
 	return &ObjectTypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -8302,7 +8834,8 @@ func (r *TypeDef) AsScalar() *ScalarTypeDef {
 	q := r.query.Select("asScalar")
 
 	return &ScalarTypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -8379,7 +8912,8 @@ func (r *TypeDef) WithConstructor(function *Function) *TypeDef {
 	q = q.Arg("function", function)
 
 	return &TypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -8409,7 +8943,8 @@ func (r *TypeDef) WithEnum(name string, opts ...TypeDefWithEnumOpts) *TypeDef {
 	q = q.Arg("name", name)
 
 	return &TypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -8437,7 +8972,8 @@ func (r *TypeDef) WithEnumValue(value string, opts ...TypeDefWithEnumValueOpts) 
 	q = q.Arg("value", value)
 
 	return &TypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -8467,7 +9003,8 @@ func (r *TypeDef) WithField(name string, typeDef *TypeDef, opts ...TypeDefWithFi
 	q = q.Arg("typeDef", typeDef)
 
 	return &TypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -8478,7 +9015,8 @@ func (r *TypeDef) WithFunction(function *Function) *TypeDef {
 	q = q.Arg("function", function)
 
 	return &TypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -8505,7 +9043,8 @@ func (r *TypeDef) WithInterface(name string, opts ...TypeDefWithInterfaceOpts) *
 	q = q.Arg("name", name)
 
 	return &TypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -8515,7 +9054,8 @@ func (r *TypeDef) WithKind(kind TypeDefKind) *TypeDef {
 	q = q.Arg("kind", kind)
 
 	return &TypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -8526,7 +9066,8 @@ func (r *TypeDef) WithListOf(elementType *TypeDef) *TypeDef {
 	q = q.Arg("elementType", elementType)
 
 	return &TypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -8555,7 +9096,8 @@ func (r *TypeDef) WithObject(name string, opts ...TypeDefWithObjectOpts) *TypeDe
 	q = q.Arg("name", name)
 
 	return &TypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -8565,7 +9107,8 @@ func (r *TypeDef) WithOptional(optional bool) *TypeDef {
 	q = q.Arg("optional", optional)
 
 	return &TypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -8586,7 +9129,8 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 	q = q.Arg("name", name)
 
 	return &TypeDef{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
