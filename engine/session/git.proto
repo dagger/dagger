@@ -2,7 +2,7 @@ syntax = "proto3";
 
 option go_package = "session";
 
-service GitCredential {
+service Git {
   rpc GetCredential(GitCredentialRequest) returns (GitCredentialResponse);
 }
 
