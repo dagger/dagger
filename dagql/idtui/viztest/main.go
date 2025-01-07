@@ -66,8 +66,38 @@ func (*Viztest) ManyLines(n int) {
 }
 
 func (v *Viztest) CustomSpan(ctx context.Context) (res string, rerr error) {
-	ctx, span := dag.Span("custom span").Start(ctx)
+	ctx, span := dag.Span("custom span").Context(ctx)
 	defer span.End(ctx)
+	return v.Echo(ctx, "hello from Go! it is currently "+time.Now().String())
+}
+
+func (v *Viztest) NestedSpans(ctx context.Context) (res string, rerr error) {
+	err := dag.Span("custom span").Run(ctx, func(ctx context.Context, outer *dagger.Span) error {
+		if _, err := v.Echo(ctx, "outer"); err != nil {
+			return err
+		}
+		if err := outer.Span("sub span").Run(ctx, func(ctx context.Context, _ *dagger.Span) error {
+			_, err := v.Echo(ctx, "sub 1")
+			return err
+		}); err != nil {
+			return err
+		}
+		if err := outer.Span("sub span").Run(ctx, func(ctx context.Context, _ *dagger.Span) error {
+			_, err := v.Echo(ctx, "sub 2")
+			return err
+		}); err != nil {
+			return err
+		}
+		return outer.Span("another sub span").Run(ctx, func(ctx context.Context, inner *dagger.Span) error {
+			return inner.Span("sub span").Run(ctx, func(ctx context.Context, _ *dagger.Span) error {
+				_, err := v.Echo(ctx, "im even deeper")
+				return err
+			})
+		})
+	})
+	if err != nil {
+		return "", err
+	}
 	return v.Echo(ctx, "hello from Go! it is currently "+time.Now().String())
 }
 
@@ -78,7 +108,7 @@ func (*Viztest) ManySpans(
 	delayMs int,
 ) {
 	for i := 1; i <= n; i++ {
-		ctx, span := dag.Span(fmt.Sprintf("span %d", i)).Start(ctx)
+		ctx, span := dag.Span(fmt.Sprintf("span %d", i)).Context(ctx)
 		time.Sleep(time.Duration(delayMs) * time.Millisecond)
 		span.End(ctx)
 	}

@@ -443,14 +443,9 @@ func SourceMap(filename string, line int, column int) *dagger.SourceMap {
 }
 
 // Create a new OpenTelemetry span.
-func Span(name string) *dagger.Span {
+func Span(name string, opts ...dagger.SpanOpts) *dagger.Span {
 	client := initClient()
-	return client.Span(name)
-}
-
-func SpanContext() *dagger.SpanContext {
-	client := initClient()
-	return client.SpanContext()
+	return client.Span(name, opts...)
 }
 
 // Create a new TypeDef.
