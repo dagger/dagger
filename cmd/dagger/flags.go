@@ -492,7 +492,7 @@ func (v *secretValue) String() string {
 }
 
 func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	return c.MapSecret(v.uri, v.uri), nil
+	return c.NewSecret(v.uri), nil
 }
 
 // serviceValue is a pflag.Value that builds a dagger.Service from a host:port
