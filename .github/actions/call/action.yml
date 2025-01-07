@@ -151,8 +151,3 @@ runs:
         name: engine-logs-${{ runner.name }}
         path: ${{ runner.temp }}/actions/call/engine.log
         overwrite: true
-
-    - name: Cleanup
-      shell: bash
-      run: |
-        rm -rf ${{ runner.temp }}/actions/call
