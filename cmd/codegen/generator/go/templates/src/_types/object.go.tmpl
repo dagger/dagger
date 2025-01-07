@@ -5,10 +5,10 @@ type {{ .Name | FormatName }} struct {
 	query *querybuilder.Selection
 	client graphql.Client
 
-    {{ range $field := .Fields }}
-        {{- if $field.TypeRef.IsScalar }}
-        {{ $field.Name }} *{{ $field.TypeRef | FormatOutputType }}
-        {{- end }}
+	{{ range $field := .Fields }}
+	{{- if $field.TypeRef.IsScalar }}
+	{{ $field.Name }} *{{ $field.TypeRef | FormatOutputType }}
+	{{- end }}
 	{{- end }}
 }
 {{- end }}
@@ -32,6 +32,28 @@ func (r *{{ .Name | FormatName }}) WithGraphQLQuery(q *querybuilder.Selection) *
 		client: r.client,
 	}
 }
+
+{{- if eq .Name "Span" }}
+func (r *Span) Start(ctx context.Context) (context.Context, *Span) {
+	spanID, err := r.Query().SpanContext().SpanID(ctx)
+	if err != nil {
+		panic(err)
+	}
+	sc := trace.SpanContextFromContext(ctx)
+	tid := sc.TraceID()
+	sid, err := trace.SpanIDFromHex(spanID)
+	if err != nil {
+		panic(err)
+	}
+	return trace.ContextWithSpanContext(ctx, trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    tid,
+		SpanID:     sid,
+		Remote:     true,
+		TraceFlags: sc.TraceFlags(),
+		TraceState: sc.TraceState(),
+	})), r
+}
+{{- end }}
 
 {{ range $field := .Fields }}
 {{- if HasOptionals $field.Args }}
@@ -59,66 +81,35 @@ type {{ $field | FieldOptionsStructName }} struct {
 {{- end }}
 {{- $convertID := $field | ConvertID }}
 {{- $supportsVoid := CheckVersionCompatibility "v0.12.0" }}
-{{- if and (eq $field.ParentObject.Name "Query") (eq $field.Name "span") }}
-func (r *{{ $.Name | FormatName }}) Span(ctx context.Context, name string) (context.Context, *{{ $field.TypeRef | FormatOutputType }}) {
-	spanQ := r.query.
-		Select("span").
-		Arg("name", name)
-
-	var spanID string
-	q := spanQ.
-		Select("query").
-		Select("spanContext").
-		Select("spanId").
-		Bind(&spanID)
-	if err := q.Execute(ctx); err != nil {
-		panic(err)
-	}
-
-	sc := trace.SpanContextFromContext(ctx)
-	tid := sc.TraceID()
-	sid, _ := trace.SpanIDFromHex(spanID)
-	return trace.ContextWithSpanContext(ctx, trace.NewSpanContext(trace.SpanContextConfig{
-		TraceID: tid,
-		SpanID:  sid,
-		Remote:  true,
-		TraceFlags: sc.TraceFlags(),
-		TraceState: sc.TraceState(),
-	})), &{{ $field.TypeRef | FormatOutputType }}{
-		query: spanQ,
-		client: r.client,
-	}
-}
-{{- else }}
 {{ FieldFunction $field false $supportsVoid }} {
 {{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 	{{- range $arg := $field.Args }}
-	    {{- if and (IsPointer $arg) (not (IsArgOptional $arg)) }}
-        assertNotNil("{{ $arg.Name}}", {{ $arg.Name }})
-        {{- end }}
-    {{- end }}
+	{{- if and (IsPointer $arg) (not (IsArgOptional $arg)) }}
+	assertNotNil("{{ $arg.Name}}", {{ $arg.Name }})
+	{{- end }}
+	{{- end }}
 
-    {{- if and ($field.TypeRef.IsScalar) (ne $field.ParentObject.Name "Query") (not $convertID) }}
-    if r.{{ $field.Name }} != nil {
-        {{- if and $supportsVoid $field.TypeRef.IsVoid }}
-        return nil
-        {{- else }}
-        return *r.{{ $field.Name }}, nil
-        {{- end }}
-    }
-    {{- end }}
+	{{- if and ($field.TypeRef.IsScalar) (ne $field.ParentObject.Name "Query") (not $convertID) }}
+	if r.{{ $field.Name }} != nil {
+		{{- if and $supportsVoid $field.TypeRef.IsVoid }}
+		return nil
+		{{- else }}
+		return *r.{{ $field.Name }}, nil
+		{{- end }}
+	}
+	{{- end }}
 	q := r.query.Select("{{ $field.Name }}")
 
 	{{- if HasOptionals $field.Args }}
 	for i := len(opts) - 1; i >= 0; i-- {
-	{{- range $arg := $field.Args }}
-	{{- if IsArgOptional $arg }}
-	// `{{ $arg.Name }}` optional argument
-	if !querybuilder.IsZeroValue(opts[i].{{ $arg.Name | FormatName }}) {
-		q = q.Arg("{{ $arg.Name }}", opts[i].{{ $arg.Name | FormatName }})
-	}
-	{{- end }}
-	{{- end }}
+		{{- range $arg := $field.Args }}
+		{{- if IsArgOptional $arg }}
+		// `{{ $arg.Name }}` optional argument
+		if !querybuilder.IsZeroValue(opts[i].{{ $arg.Name | FormatName }}) {
+			q = q.Arg("{{ $arg.Name }}", opts[i].{{ $arg.Name | FormatName }})
+		}
+		{{- end }}
+		{{- end }}
 	}
 	{{- end }}
 
@@ -130,7 +121,7 @@ func (r *{{ $.Name | FormatName }}) Span(ctx context.Context, name string) (cont
 	{{- end }}
 	{{- $typeName := $field.TypeRef | FormatOutputType }}
 	{{ if and $supportsVoid $field.TypeRef.IsVoid }}
-		return q.Execute(ctx)
+	return q.Execute(ctx)
 	{{- else if $convertID }}
 	var id {{ $typeName }}
 	if err := q.Bind(&id).Execute(ctx); err != nil {
@@ -147,51 +138,51 @@ func (r *{{ $.Name | FormatName }}) Span(ctx context.Context, name string) (cont
 	}
 
 	{{- else if or $field.TypeRef.IsScalar $field.TypeRef.IsList }}
-		{{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
-    q = q.Select("{{ range $i, $v := $field | GetArrayField }}{{ if $i }} {{ end }}{{ $v.Name }}{{ end }}")
+	{{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
+	q = q.Select("{{ range $i, $v := $field | GetArrayField }}{{ if $i }} {{ end }}{{ $v.Name }}{{ end }}")
 
-    type {{ $field.Name | ToLowerCase }} struct {
-      {{ range $v := $field | GetArrayField }}
-      {{ $v.Name | ToUpperCase }} {{ $v.TypeRef | FormatOutputType }}
-      {{- end }}
-    }
+	type {{ $field.Name | ToLowerCase }} struct {
+		{{ range $v := $field | GetArrayField }}
+		{{ $v.Name | ToUpperCase }} {{ $v.TypeRef | FormatOutputType }}
+		{{- end }}
+	}
 
-    {{$eleType := $field.TypeRef | InnerType}}
-    convert := func(fields []{{ $field.Name | ToLowerCase }}) {{ $field.TypeRef | FormatOutputType }} {
-        out := {{ $field.TypeRef | FormatOutputType }}{}
+	{{$eleType := $field.TypeRef | InnerType}}
+	convert := func(fields []{{ $field.Name | ToLowerCase }}) {{ $field.TypeRef | FormatOutputType }} {
+		out := {{ $field.TypeRef | FormatOutputType }}{}
 
-        for i := range fields {
-            val := {{ $field.TypeRef | FormatOutputType | FormatArrayToSingleType }}{{"{"}}{{ $field | GetArrayField | FormatArrayField }}{{"}"}}
-            {{- if $eleType | IsIDableObject }}
-              val.query = q.Root().Select("load{{$eleType | ObjectName}}FromID").Arg("id", fields[i].Id)
-            {{- end }}
-            out = append(out, val)
-        }
+		for i := range fields {
+			val := {{ $field.TypeRef | FormatOutputType | FormatArrayToSingleType }}{{"{"}}{{ $field | GetArrayField | FormatArrayField }}{{"}"}}
+			{{- if $eleType | IsIDableObject }}
+			val.query = q.Root().Select("load{{$eleType | ObjectName}}FromID").Arg("id", fields[i].Id)
+			{{- end }}
+			out = append(out, val)
+		}
 
-        return out
-    }
-    {{- end }}
+		return out
+	}
+	{{- end }}
 
-    {{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
+	{{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
 	var response []{{ $field.Name | ToLowerCase }}
-    {{- else }}
+	{{- else }}
 	var response {{ $field.TypeRef | FormatOutputType }}
-    {{- end  }}
+	{{- end }}
 
 	q = q.Bind(&response)
 	{{- $typeName := $field.TypeRef | FormatOutputType }}
 	{{- if ne $typeName "Client" }}
-	    {{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
+	{{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
 
 	err := q.Execute(ctx)
 	if err != nil {
-	    return nil, err
+		return nil, err
 	}
 
 	return convert(response), nil
-	    {{- else }}
+	{{- else }}
 	return response, q.Execute(ctx)
-	    {{- end }}
+	{{- end }}
 	{{- else }}
 	return response, q.Execute(ctx, r.gql)
 	{{- end }}
@@ -211,33 +202,32 @@ func (r *{{ $.Name | FormatName }}) XXX_GraphQLIDType() string {
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
 func (r *{{ $.Name | FormatName }}) XXX_GraphQLID(ctx context.Context) (string, error) {
-  id, err := r.ID(ctx)
-  if err != nil {
-    return "", err
-  }
-  return string(id), nil
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
 }
 
 func (r *{{ $.Name | FormatName }}) MarshalJSON() ([]byte, error) {
-  id, err := r.ID(marshalCtx)
-  if err != nil {
-    return nil, err
-  }
-  return json.Marshal(id)
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
 }
 
 {{- if IsModuleCode }}
 func (r *{{ $.Name | FormatName }}) UnmarshalJSON(bs []byte) error {
-  var id string
-  err := json.Unmarshal(bs, &id)
-  if err != nil {
-    return err
-  }
-  *r = *dag.Load{{ $.Name | FormatName }}FromID({{$.Name | FormatName}}ID(id))
-  return nil
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.Load{{ $.Name | FormatName }}FromID({{$.Name | FormatName}}ID(id))
+	return nil
 }
 {{- end }}
 
 {{ end }}
-{{ end -}}
 {{ end -}}
