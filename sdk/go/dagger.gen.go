@@ -8623,18 +8623,18 @@ func (r *Span) Context(ctx context.Context) (context.Context, *Span) {
 		TraceState: spanCtx.TraceState(),
 	})), started
 }
-
 func (r *Span) Run(ctx context.Context, cb func(context.Context, *Span) error) error {
 	ctx, span := r.Context(ctx)
 	err := cb(ctx, span)
+	var endErr error
 	if err != nil {
-		_ = span.End(ctx, SpanEndOpts{
+		endErr = span.End(ctx, SpanEndOpts{
 			Error: r.Query().Error(err.Error()),
 		})
-		return err
 	} else {
-		return span.End(ctx)
+		endErr = span.End(ctx)
 	}
+	return errors.Join(err, endErr)
 }
 
 // SpanEndOpts contains options for Span.End
