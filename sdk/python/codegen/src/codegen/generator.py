@@ -803,15 +803,12 @@ class Object(ObjectHandler[GraphQLObjectType]):
                 def __init__(self, *args, **kwargs):
                     super().__init__(*args, **kwargs)
                     self.token = None
+                    self.started = None
 
                 async def __aenter__(self) -> "{self_name}":
                     # Fetch the actual span ID created by the engine
-                    span_id_hex = (
-                        await self._select("query", [])
-                        .select("Query", "spanContext", [])
-                        .select("SpanContext", "spanId", [])
-                        .execute(str)
-                    )
+                    started = await self.start()
+                    span_id_hex = await started.internal_id()
                     span_id = int(span_id_hex, 16)
 
                     # Get the current span context
@@ -837,13 +834,16 @@ class Object(ObjectHandler[GraphQLObjectType]):
 
                     # Attach the new context and save the token for detachment
                     self.token = opentelemetry.context.attach(new_context)
-                    return self
+                    self.started = started
+                    return started
 
                 async def __aexit__(self, exception_type, exception_value, exception_traceback) -> Void | None:
                     error: Error | None = None
+                    void: Void | None = None
                     if exception_type:
                         error = dag.error(f"{{exception_type.__name__}}: {{exception_value}}")
-                    void = await self.end(error=error)
+                    if self.started:
+                        void = await self.started.end(error=error)
                     if self.token:
                         opentelemetry.context.detach(self.token)
                     return void
