@@ -1,0 +1,7 @@
+kind: Breaking
+body: |
+    `connect` now takes a callback to run over the connection, instead of directly returning the connection.
+time: 2025-01-07T14:02:36.043536593Z
+custom:
+    Author: kjuulh
+    PR: "7736"
