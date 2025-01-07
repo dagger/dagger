@@ -52,9 +52,12 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                     TypeElement typeElement = (TypeElement) element;
                     String qName = typeElement.getQualifiedName().toString();
                     String name = typeElement.getAnnotation(ModuleObject.class).value();
-                    String description = typeElement.getAnnotation(ModuleObject.class).description();
                     if (name.isEmpty()) {
                         name = typeElement.getSimpleName().toString();
+                    }
+                    String description = typeElement.getAnnotation(ModuleObject.class).description();
+                    if (description.isEmpty()) {
+                        description = trimDoc(processingEnv.getElementUtils().getDocComment(typeElement));
                     }
                     List<FunctionInfo> functionInfos = typeElement.getEnclosedElements().stream()
                         .filter(elt -> elt.getKind() == ElementKind.METHOD)
@@ -63,9 +66,12 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                             ModuleFunction moduleFunction = elt.getAnnotation(ModuleFunction.class);
                             String fName = moduleFunction.value();
                             String fqName = ((ExecutableElement)elt).getSimpleName().toString();
-                            String fDescription = moduleFunction.description();
                             if (fName.isEmpty()) {
                                 fName = fqName;
+                            }
+                            String fDescription = moduleFunction.description();
+                            if (fDescription.isEmpty()) {
+                                fDescription = trimDoc(processingEnv.getElementUtils().getDocComment(elt));
                             }
                             String returnType = ((ExecutableElement)elt).getReturnType().toString();
 
@@ -106,5 +112,12 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
         Jsonb jsonb = JsonbBuilder.create();
         String serialized = jsonb.toJson(moduleInfo);
         out.print(serialized);
+    }
+
+    private String trimDoc(String doc) {
+        if (doc == null) {
+            return null;
+        }
+        return String.join("\n", doc.lines().map(String::trim).toList());
     }
 }
