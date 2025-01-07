@@ -26,6 +26,23 @@ class Python:
             raise ValueError("oh no")
 
     @function
+    async def nested_spans(self) -> str:
+        async with dag.span("custom span") as outer:
+            await self.echo("outer")
+
+            async with outer.span("sub span"):
+                await self.echo("sub 1")
+
+            async with outer.span("sub span"):
+                await self.echo("sub 2")
+
+            async with outer.span("another sub span") as inner:
+                async with inner.span("sub span"):
+                    await self.echo("im even deeper")
+
+        return "done"
+
+    @function
     async def pending(self):
         return await (
             dag.container()
