@@ -1169,6 +1169,10 @@ export type ClientSecretOpts = {
   accessor?: string
 }
 
+export type ClientSpanOpts = {
+  key?: string
+}
+
 /**
  * Expected return type of an execution
  */
@@ -1248,6 +1252,10 @@ export type SourceMapID = string & { __SourceMapID: never }
 
 export type SpanEndOpts = {
   error?: Error
+}
+
+export type SpanStartOpts = {
+  key?: string
 }
 
 /**
@@ -7245,13 +7253,9 @@ export class Client extends BaseClient {
   /**
    * Create a new OpenTelemetry span.
    */
-  span = (name: string): Span => {
-    const ctx = this._ctx.select("span", { name })
+  span = (name: string, opts?: ClientSpanOpts): Span => {
+    const ctx = this._ctx.select("span", { name, ...opts })
     return new Span(ctx)
-  }
-  spanContext = (): SpanContext => {
-    const ctx = this._ctx.select("spanContext")
-    return new SpanContext(ctx)
   }
 
   /**
@@ -7769,15 +7773,28 @@ export class SourceMap extends BaseClient {
 export class Span extends BaseClient {
   private readonly _id?: SpanID = undefined
   private readonly _end?: Void = undefined
+  private readonly _internalId?: string = undefined
+  private readonly _name?: string = undefined
+  private readonly _start?: SpanID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: SpanID, _end?: Void) {
+  constructor(
+    ctx?: Context,
+    _id?: SpanID,
+    _end?: Void,
+    _internalId?: string,
+    _name?: string,
+    _start?: SpanID,
+  ) {
     super(ctx)
 
     this._id = _id
     this._end = _end
+    this._internalId = _internalId
+    this._name = _name
+    this._start = _start
   }
 
   /**
@@ -7807,9 +7824,73 @@ export class Span extends BaseClient {
 
     await ctx.execute()
   }
+
+  /**
+   * Returns the internal ID of the span.
+   */
+  internalId = async (): Promise<string> => {
+    if (this._internalId) {
+      return this._internalId
+    }
+
+    const ctx = this._ctx.select("internalId")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
   query = (): Client => {
     const ctx = this._ctx.select("query")
     return new Client(ctx)
+  }
+
+  /**
+   * Create a new OpenTelemetry span.
+   */
+  span = (name: string): Span => {
+    const ctx = this._ctx.select("span", { name })
+    return new Span(ctx)
+  }
+
+  /**
+   * Start a new instance of the span.
+   */
+  start = async (opts?: SpanStartOpts): Promise<Span> => {
+    const ctx = this._ctx.select("start", { ...opts })
+
+    const response: Awaited<SpanID> = await ctx.execute()
+
+    return new Span(
+      new Context(
+        [
+          {
+            operation: "loadSpanFromID",
+            args: { id: response },
+          },
+        ],
+        this._ctx.getConnection(),
+      ),
+    )
+  }
+
+  /**
+   * Call the provided function with current Span.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Span) => Span) => {
+    return arg(this)
   }
 }
 
