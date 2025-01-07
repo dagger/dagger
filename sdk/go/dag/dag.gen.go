@@ -486,6 +486,12 @@ func LoadSourceMapFromID(id dagger.SourceMapID) *dagger.SourceMap {
 	return client.LoadSourceMapFromID(id)
 }
 
+// Load a Status from its ID.
+func LoadStatusFromID(id dagger.StatusID) *dagger.Status {
+	client := initClient()
+	return client.LoadStatusFromID(id)
+}
+
 // Load a Terminal from its ID.
 func LoadTerminalFromID(id dagger.TerminalID) *dagger.Terminal {
 	client := initClient()
@@ -528,6 +534,16 @@ func SetSecret(name string, plaintext string) *dagger.Secret {
 func SourceMap(filename string, line int, column int) *dagger.SourceMap {
 	client := initClient()
 	return client.SourceMap(filename, line, column)
+}
+
+// Create a new status indicator.
+//
+// Experimental: The statuses API is experimental and subject to change.
+//
+// The current capabilities are limited. Please open an issue to request new UI controls.
+func Status(name string, opts ...dagger.StatusOpts) *dagger.Status {
+	client := initClient()
+	return client.Status(name, opts...)
 }
 
 // Create a new TypeDef.

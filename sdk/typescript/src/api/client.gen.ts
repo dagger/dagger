@@ -3,6 +3,7 @@
  * Do not make direct changes to the file.
  */
 import { Context } from "../common/context.js"
+import { runWithSpan } from "../telemetry/index.js"
 
 /**
  * Declare a number as float in the Dagger API.
@@ -1822,6 +1823,10 @@ export type ClientSecretOpts = {
   cacheKey?: string
 }
 
+export type ClientStatusOpts = {
+  key?: string
+}
+
 /**
  * Expected return type of an execution
  */
@@ -1951,6 +1956,15 @@ export type SocketID = string & { __SocketID: never }
  * The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
  */
 export type SourceMapID = string & { __SourceMapID: never }
+
+export type StatusEndOpts = {
+  error?: Error
+}
+
+/**
+ * The `StatusID` scalar type represents an identifier for an object of type Status.
+ */
+export type StatusID = string & { __StatusID: never }
 
 /**
  * The `TerminalID` scalar type represents an identifier for an object of type Terminal.
@@ -10444,6 +10458,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a Status from its ID.
+   */
+  loadStatusFromID = (id: StatusID): Status => {
+    const ctx = this._ctx.select("loadStatusFromID", { id })
+    return new Status(ctx)
+  }
+
+  /**
    * Load a Terminal from its ID.
    */
   loadTerminalFromID = (id: TerminalID): Terminal => {
@@ -10529,6 +10551,16 @@ export class Client extends BaseClient {
   sourceMap = (filename: string, line: number, column: number): SourceMap => {
     const ctx = this._ctx.select("sourceMap", { filename, line, column })
     return new SourceMap(ctx)
+  }
+
+  /**
+   * Create a new status indicator.
+   * @param name A display name for the status.
+   * @experimental
+   */
+  status = (name: string, opts?: ClientStatusOpts): Status => {
+    const ctx = this._ctx.select("status", { name, ...opts })
+    return new Status(ctx)
   }
 
   /**
@@ -11310,6 +11342,141 @@ export class SourceMap extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+}
+
+/**
+ * A status indicator to show to the user.
+ */
+export class Status extends BaseClient {
+  private readonly _id?: StatusID = undefined
+  private readonly _display?: StatusID = undefined
+  private readonly _end?: Void = undefined
+  private readonly _internalId?: string = undefined
+  private readonly _name?: string = undefined
+  private readonly _start?: StatusID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: StatusID,
+    _display?: StatusID,
+    _end?: Void,
+    _internalId?: string,
+    _name?: string,
+    _start?: StatusID,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._display = _display
+    this._end = _end
+    this._internalId = _internalId
+    this._name = _name
+    this._start = _start
+  }
+
+  /**
+   * A unique identifier for this Status.
+   */
+  id = async (): Promise<StatusID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<StatusID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Start and immediately finish the status, so that it just gets displayed to the user.
+   */
+  display = async (): Promise<Status> => {
+    const ctx = this._ctx.select("display")
+
+    const response: Awaited<StatusID> = await ctx.execute()
+
+    return new Client(ctx.copy()).loadStatusFromID(response)
+  }
+
+  /**
+   * Mark the status as complete, with an optional error.
+   */
+  end = async (opts?: StatusEndOpts): Promise<void> => {
+    if (this._end) {
+      return
+    }
+
+    const ctx = this._ctx.select("end", { ...opts })
+
+    await ctx.execute()
+  }
+
+  /**
+   * Returns the internal OpenTelemetry span ID of the status.
+   *
+   * (You probably don't need to use this, unless you're implementing OpenTelemetry integration for a Dagger SDK.)
+   */
+  internalId = async (): Promise<string> => {
+    if (this._internalId) {
+      return this._internalId
+    }
+
+    const ctx = this._ctx.select("internalId")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The display name of the status.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Start a new instance of the status.
+   */
+  start = async (): Promise<Status> => {
+    const ctx = this._ctx.select("start")
+
+    const response: Awaited<StatusID> = await ctx.execute()
+
+    return new Client(ctx.copy()).loadStatusFromID(response)
+  }
+
+  public async run<T>(fn: (span: Status) => Promise<T>) {
+    const started = await this.start()
+    const spanIdHex = await started.internalId()
+
+    let spanError: Error | undefined = undefined
+    try {
+      return await runWithSpan(fn, this, started, spanIdHex)
+    } catch (e: unknown) {
+      if (e instanceof globalThis.Error) {
+        spanError = dag.error(e.message)
+      } else {
+        spanError = dag.error(`Unknown error: ${e}`)
+      }
+      throw e
+    } finally {
+      await started.end({ error: spanError })
+    }
   }
 }
 

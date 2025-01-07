@@ -788,6 +788,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a Status from its ID.
+     */
+    public function loadStatusFromID(StatusId|Status $id): Status
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadStatusFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Status($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Terminal from its ID.
      */
     public function loadTerminalFromID(TerminalId|Terminal $id): Terminal
@@ -879,6 +889,19 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder->setArgument('line', $line);
         $innerQueryBuilder->setArgument('column', $column);
         return new \Dagger\SourceMap($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Create a new status indicator.
+     */
+    public function status(string $name, ?string $key = ''): Status
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('status');
+        $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $key) {
+        $innerQueryBuilder->setArgument('key', $key);
+        }
+        return new \Dagger\Status($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

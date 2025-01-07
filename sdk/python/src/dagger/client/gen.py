@@ -4,6 +4,9 @@ import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 
+import opentelemetry.context
+import opentelemetry.trace
+from opentelemetry.trace.span import TraceState
 from typing_extensions import Self
 
 from dagger.client._core import Arg
@@ -264,6 +267,11 @@ class SocketID(Scalar):
 class SourceMapID(Scalar):
     """The `SourceMapID` scalar type represents an identifier for an
     object of type SourceMap."""
+
+
+class StatusID(Scalar):
+    """The `StatusID` scalar type represents an identifier for an object
+    of type Status."""
 
 
 class TerminalID(Scalar):
@@ -10779,6 +10787,14 @@ class Client(Root):
         _ctx = self._select("loadSourceMapFromID", _args)
         return SourceMap(_ctx)
 
+    def load_status_from_id(self, id: StatusID) -> "Status":
+        """Load a Status from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadStatusFromID", _args)
+        return Status(_ctx)
+
     def load_terminal_from_id(self, id: TerminalID) -> "Terminal":
         """Load a Terminal from its ID."""
         _args = [
@@ -10913,6 +10929,27 @@ class Client(Root):
         ]
         _ctx = self._select("sourceMap", _args)
         return SourceMap(_ctx)
+
+    def status(self, name: str, *, key: str | None = "") -> "Status":
+        """Create a new status indicator.
+
+        .. caution::
+            Experimental: The statuses API is experimental and subject to
+            change.  The current capabilities are limited. Please open an
+            issue to request new UI controls.
+
+        Parameters
+        ----------
+        name:
+            A display name for the status.
+        key:
+        """
+        _args = [
+            Arg("name", name),
+            Arg("key", key, ""),
+        ]
+        _ctx = self._select("status", _args)
+        return Status(_ctx)
 
     def type_def(self) -> "TypeDef":
         """Create a new TypeDef."""
@@ -11768,6 +11805,181 @@ class SourceMap(Type):
 
 
 @typecheck
+class Status(Type):
+    """A status indicator to show to the user."""
+
+    async def display(self) -> Self:
+        """Start and immediately finish the status, so that it just gets
+        displayed to the user.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "display", _args)
+
+    async def end(self, *, error: Error | None = None) -> Void | None:
+        """Mark the status as complete, with an optional error.
+
+        Returns
+        -------
+        Void | None
+            The absence of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("error", error, None),
+        ]
+        _ctx = self._select("end", _args)
+        await _ctx.execute()
+
+    async def id(self) -> StatusID:
+        """A unique identifier for this Status.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        StatusID
+            The `StatusID` scalar type represents an identifier for an object
+            of type Status.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(StatusID)
+
+    async def internal_id(self) -> str:
+        """Returns the internal OpenTelemetry span ID of the status.
+
+        (You probably don't need to use this, unless you're implementing
+        OpenTelemetry integration for a Dagger SDK.)
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("internalId", _args)
+        return await _ctx.execute(str)
+
+    async def name(self) -> str:
+        """The display name of the status.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    async def start(self) -> Self:
+        """Start a new instance of the status.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        return await self._ctx.execute_sync(self, "start", _args)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.token = None
+        self.started = None
+
+    async def __aenter__(self) -> "Status":
+        # Fetch the actual span ID created by the engine
+        started = await self.start()
+        span_id_hex = await started.internal_id()
+        span_id = int(span_id_hex, 16)
+
+        # Get the current span context
+        current_span = opentelemetry.trace.get_current_span()
+        current_span_context = current_span.get_span_context()
+
+        # Extract trace ID and other fields from the current span context
+        trace_id = current_span_context.trace_id
+        trace_flags = current_span_context.trace_flags
+        trace_state = current_span_context.trace_state
+
+        # Construct the new SpanContext
+        new_span_context = opentelemetry.trace.SpanContext(
+            trace_id=trace_id,
+            span_id=span_id,
+            is_remote=True,
+            trace_flags=trace_flags,
+            trace_state=trace_state or TraceState(),
+        )
+
+        # Create a new context with the new SpanContext
+        new_context = opentelemetry.trace.set_span_in_context(
+            opentelemetry.trace.NonRecordingSpan(new_span_context)
+        )
+
+        # Attach the new context and save the token for detachment
+        self.token = opentelemetry.context.attach(new_context)
+        self.started = started
+        return started
+
+    async def __aexit__(
+        self, exception_type, exception_value, exception_traceback
+    ) -> Void | None:
+        error: Error | None = None
+        void: Void | None = None
+        if exception_type:
+            error = dag.error(f"{exception_type.__name__}: {exception_value}")
+        if self.started:
+            void = await self.started.end(error=error)
+        if self.token:
+            opentelemetry.context.detach(self.token)
+        return void
+
+
+@typecheck
 class Terminal(Type):
     """An interactive terminal that clients can connect to."""
 
@@ -12276,6 +12488,8 @@ __all__ = [
     "SocketID",
     "SourceMap",
     "SourceMapID",
+    "Status",
+    "StatusID",
     "Terminal",
     "TerminalID",
     "TypeDef",

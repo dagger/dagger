@@ -67,6 +67,27 @@ export class {{ .Name | QueryToClient | FormatName }} extends BaseClient { {{- w
 				{{- end }}
 			{{- end }}
 
+{{- if eq .Name "Status" }}
+
+  public async run<T>(fn: (span: Status) => Promise<T>) {
+    const started = await this.start()
+    const spanIdHex = await started.internalId()
+
+    let spanError: Error | undefined = undefined
+    try {
+      return await runWithSpan(fn, this, started, spanIdHex)
+    } catch (e: unknown) {
+      if (e instanceof globalThis.Error) {
+        spanError = dag.error(e.message)
+      } else {
+        spanError = dag.error(`Unknown error: ${e}`)
+      }
+      throw e
+    } finally {
+      await started.end({ error: spanError })
+    }
+  }
+{{- end }}
 {{- if . | IsSelfChainable }}
 {{""}}
   /**

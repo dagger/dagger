@@ -4359,6 +4359,9 @@ type Query {
   """Load a SourceMap from its ID."""
   loadSourceMapFromID(id: SourceMapID!): SourceMap!
 
+  """Load a Status from its ID."""
+  loadStatusFromID(id: StatusID!): Status!
+
   """Load a Terminal from its ID."""
   loadTerminalFromID(id: TerminalID!): Terminal!
 
@@ -4440,6 +4443,14 @@ type Query {
     """The column number within the line."""
     column: Int!
   ): SourceMap!
+
+  """Create a new status indicator."""
+  status(
+    """A display name for the status."""
+    name: String!
+
+    key: String = ""
+  ): Status! @experimental(reason: "The statuses API is experimental and subject to change.\n\nThe current capabilities are limited. Please open an issue to request new UI controls.")
 
   """Create a new TypeDef."""
   typeDef: TypeDef!
@@ -4677,6 +4688,38 @@ type SourceMap {
 The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
 """
 scalar SourceMapID
+
+"""A status indicator to show to the user."""
+type Status {
+  """
+  Start and immediately finish the status, so that it just gets displayed to the user.
+  """
+  display: StatusID!
+
+  """Mark the status as complete, with an optional error."""
+  end(error: ErrorID): Void
+
+  """A unique identifier for this Status."""
+  id: StatusID!
+
+  """
+  Returns the internal OpenTelemetry span ID of the status.
+
+  (You probably don't need to use this, unless you're implementing OpenTelemetry integration for a Dagger SDK.)
+  """
+  internalId: String!
+
+  """The display name of the status."""
+  name: String!
+
+  """Start a new instance of the status."""
+  start: StatusID!
+}
+
+"""
+The `StatusID` scalar type represents an identifier for an object of type Status.
+"""
+scalar StatusID
 
 """An interactive terminal that clients can connect to."""
 type Terminal {

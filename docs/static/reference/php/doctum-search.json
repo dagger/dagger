@@ -1208,6 +1208,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Status",
+			"p": "Dagger/Status.html",
+			"d": "<p>A status indicator to show to the user.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\StatusId",
+			"p": "Dagger/StatusId.html",
+			"d": "<p>The <code>StatusID</code> scalar type represents an identifier for an object of type Status.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Terminal",
 			"p": "Dagger/Terminal.html",
 			"d": "<p>An interactive terminal that clients can connect to.</p>",
@@ -2007,6 +2027,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::loadStatusFromID",
+			"p": "Dagger/Client.html#method_loadStatusFromID",
+			"d": "<p>Load a Status from its ID.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::loadTerminalFromID",
 			"p": "Dagger/Client.html#method_loadTerminalFromID",
 			"d": "<p>Load a Terminal from its ID.</p>"
@@ -2046,6 +2072,12 @@
 			"n": "Dagger\\Client::sourceMap",
 			"p": "Dagger/Client.html#method_sourceMap",
 			"d": "<p>Creates source map metadata.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::status",
+			"p": "Dagger/Client.html#method_status",
+			"d": "<p>Create a new status indicator.</p>"
 		},
 		{
 			"t": "M",
@@ -4992,6 +5024,42 @@
 			"n": "Dagger\\SourceMap::url",
 			"p": "Dagger/SourceMap.html#method_url",
 			"d": "<p>The URL to the file, if any. This can be used to link to the source map in the browser.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Status::display",
+			"p": "Dagger/Status.html#method_display",
+			"d": "<p>Start and immediately finish the status, so that it just gets displayed to the user.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Status::end",
+			"p": "Dagger/Status.html#method_end",
+			"d": "<p>Mark the status as complete, with an optional error.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Status::id",
+			"p": "Dagger/Status.html#method_id",
+			"d": "<p>A unique identifier for this Status.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Status::internalId",
+			"p": "Dagger/Status.html#method_internalId",
+			"d": "<p>Returns the internal OpenTelemetry span ID of the status.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Status::name",
+			"p": "Dagger/Status.html#method_name",
+			"d": "<p>The display name of the status.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Status::start",
+			"p": "Dagger/Status.html#method_start",
+			"d": "<p>Start a new instance of the status.</p>"
 		},
 		{
 			"t": "M",
