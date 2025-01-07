@@ -37,6 +37,13 @@ func (h *shellAutoComplete) Do(line []rune, pos int) (newLine [][]rune, length i
 				excluded[node.X] = struct{}{}
 				excluded[node.Y] = struct{}{}
 			}
+		case *syntax.CmdSubst:
+			if pos < int(node.Pos().Offset()) || pos > int(node.End().Offset()) {
+				break
+			}
+			if len(node.Stmts) == 0 {
+				stmt = nil
+			}
 		case *syntax.Stmt:
 			if stmt == nil {
 				stmt = node

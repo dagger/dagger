@@ -306,15 +306,17 @@ func parseShell(reader io.Reader, name string) (*syntax.File, error) {
 
 	syntax.Walk(file, func(node syntax.Node) bool {
 		if node, ok := node.(*syntax.CmdSubst); ok {
-			// Rewrite command substitutions from $(foo; bar) to $(exec <&-; foo; bar)
-			// so that all the original commands run with a closed (nil) standard input.
-			node.Stmts = append([]*syntax.Stmt{{
-				Cmd: &syntax.CallExpr{Args: []*syntax.Word{litWord("..exec")}},
-				Redirs: []*syntax.Redirect{{
-					Op:   syntax.DplIn,
-					Word: litWord("-"),
-				}},
-			}}, node.Stmts...)
+			if len(node.Stmts) > 0 {
+				// Rewrite command substitutions from $(foo; bar) to $(exec <&-; foo; bar)
+				// so that all the original commands run with a closed (nil) standard input.
+				node.Stmts = append([]*syntax.Stmt{{
+					Cmd: &syntax.CallExpr{Args: []*syntax.Word{litWord("..exec")}},
+					Redirs: []*syntax.Redirect{{
+						Op:   syntax.DplIn,
+						Word: litWord("-"),
+					}},
+				}}, node.Stmts...)
+			}
 		}
 		return true
 	})
