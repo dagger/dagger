@@ -4,7 +4,6 @@ updates:
     directories:
       - "/"
       - "/sdk/go"
-    directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
