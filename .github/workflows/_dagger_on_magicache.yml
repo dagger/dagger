@@ -1,9 +1,6 @@
 name: Dagger with Magicache
 
 on:
-  push:
-    branches:
-      - magicache_benchmark
   workflow_call:
     inputs:
       function:
@@ -25,21 +22,17 @@ jobs:
     if: ${{ github.repository == 'dagger/dagger' }}
     runs-on:
         - 'dagger-g3-v0-15-1-4c-st-magic'
-    #timeout-minutes: ${{ inputs.timeout }}
-    timeout-minutes: 15
+    timeout-minutes: ${{ inputs.timeout }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-      #- name: ${{ inputs.function }}
-      - name: docs lint
+      - name: ${{ inputs.function }}
         uses: ./.github/actions/call
         with:
-          #function: ${{ inputs.function }}
-          function: docs lint
+          function: ${{ inputs.function }}
           dev-engine: "false"
-      #- name: ${{ inputs.function }} (CACHE TEST)
-      - name: docs lint
+      - name: ${{ inputs.function }} (CACHE TEST)
         uses: ./.github/actions/call
         with:
-          #function: ${{ inputs.function }}
+          function: ${{ inputs.function }}
           dev-engine: "false"
