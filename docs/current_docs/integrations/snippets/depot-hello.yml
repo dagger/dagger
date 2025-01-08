@@ -6,7 +6,7 @@ on:
 jobs:
   hello:
     name: hello
-    runs-on: depot-ubuntu-22.04,dagger={{ version }}
+    runs-on: depot-ubuntu-24.04,dagger={{ version }}
     steps:
       - name: Call Dagger Function
         run: dagger -m github.com/shykes/daggerverse/hello@v0.3.0 call hello --greeting="bonjour" --name="monde"
