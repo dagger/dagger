@@ -1,39 +1,84 @@
-import { dag, Directory, object, func } from "@dagger.io/dagger"
+import { dag, Container, object, func } from "@dagger.io/dagger"
 import { trace } from "@opentelemetry/api"
 
 @object()
 class MyModule {
   @func()
-  async foo(): Promise<Directory> {
+  async foo(): Promise<void> {
+    // clone the source code repository
+    const source = dag.git("https://github.com/dagger/hello-dagger")
+      .branch("main")
+      .tree();
+
+    // set up a container with the source code mounted
+    // install dependencies
+    const container = dag.container()
+      .from("node:latest")
+      .withDirectory("/src", source)
+      .withWorkdir("/src")
+      .withExec(["npm", "install"]);
+
+    // run tasks in parallel
+    // emit a span for each
+    const tasks: Promise<void>[] = [
+      this.lintCode(container),
+      this.checkTypes(container),
+      this.formatCode(container),
+      this.runTests(container),
+    ];
+
+    await Promise.all(tasks);
+  }
+
+  private async lintCode(container: Container): Promise<void> {
     const tracer = trace.getTracer("dagger-otel")
-
-    // define the files to be created and their contents
-    const files = {
-      "file1.txt": "foo",
-      "file2.txt": "bar",
-      "file3.txt": "baz",
+    const span = tracer.startSpan("lint code")
+    try {
+      const result = await container.withExec(["npm", "run", "lint"]).sync();
+      if (result.exitCode !== 0) {
+        throw new Error(`Linting failed with exit code ${result.exitCode}`);
+      }
+    } finally {
+      span.end();
     }
+  }
 
-    // set up an alpine container with the directory mounted
-    let container = dag
-      .container()
-      .from("alpine:latest")
-      .withDirectory("/results", dag.directory())
-      .withWorkdir("/results")
-
-    for (const [name, content] of Object.entries(files)) {
-      // create a span for each file creation operation
-      const span = tracer.startSpan("create-file", {
-        attributes: {
-          "file.name": name,
-        },
-      })
-      // create the file and add it to the container
-      container = container.withNewFile(name, content)
-      // end the span
-      span.end()
+  private async checkTypes(container: Container): Promise<void> {
+    const tracer = trace.getTracer("dagger-otel")
+    const span = tracer.startSpan("check types");
+    try {
+      const result = await container.withExec(["npm", "run", "type-check"]).sync();
+      if (result.exitCode !== 0) {
+        throw new Error(`Type check failed with exit code ${result.exitCode}`);
+      }
+    } finally {
+      span.end();
     }
+  }
 
-    return container.directory("/results")
+  private async formatCode(container: Container): Promise<void> {
+    const tracer = trace.getTracer("dagger-otel")
+    const span = tracer.startSpan("format code");
+    try {
+      const result = await container.withExec(["npm", "run", "format"]).sync();
+      if (result.exitCode !== 0) {
+        throw new Error(`Code formatting failed with exit code ${result.exitCode}`);
+      }
+    } finally {
+      span.end();
+    }
+  }
+
+  private async runTests(container: Container): Promise<void> {
+    const tracer = trace.getTracer("dagger-otel")
+    const span = tracer.startSpan("run unit tests");
+    try {
+      const result = await container.withExec(["npm", "run", "test:unit"]).sync();
+      if (result.exitCode !== 0) {
+        throw new Error(`Tests failed with exit code ${result.exitCode}`);
+      }
+    } finally {
+      span.end();
+    }
   }
 }

@@ -2,33 +2,61 @@ package main
 
 import (
 	"context"
-	"dagger/my-module/internal/dagger"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
+
+	"golang.org/x/sync/errgroup"
 )
 
 type MyModule struct{}
 
-// Create an alpine container, write three files, and emit custom spans for each
-func (m *MyModule) Foo(ctx context.Context) *dagger.Directory {
-	// define the files to be created and their contents
-	files := map[string]string{
-		"file1.txt": "foo",
-		"file2.txt": "bar",
-		"file3.txt": "baz",
-	}
+func (m *MyModule) Foo(ctx context.Context) error {
+	// clone the source code repository
+	source := dag.
+		Git("https://github.com/dagger/hello-dagger").
+		Branch("main").Tree()
 
-	// set up an alpine container with the directory mounted
+	// set up a container with the source code mounted
+	// install dependencies
 	container := dag.Container().
-		From("alpine:latest").
-		WithDirectory("/results", dag.Directory()).
-		WithWorkdir("/results")
-	for name, content := range files {
-		// create a span for each file creation operation
-		_, span := Tracer().Start(ctx, "create-file", trace.WithAttributes(attribute.String("file.name", name)))
+		From("node:latest").
+		WithDirectory("/src", source).
+		WithWorkdir("/src").
+		WithExec([]string{"npm", "install"})
+
+	// run operations in parallel
+	// emit a span for each
+	eg, ctx := errgroup.WithContext(ctx)
+
+	eg.Go(func() error {
+		_, span := Tracer().Start(ctx, "lint code")
 		defer span.End()
-		// create the file and add it to the container
-		container = container.WithNewFile(name, content)
-	}
-	return container.Directory("/results")
+
+		_, err := container.WithExec([]string{"npm", "run", "lint"}).Sync(ctx)
+		return err
+	})
+
+	eg.Go(func() error {
+		_, span := Tracer().Start(ctx, "check types")
+		defer span.End()
+
+		_, err := container.WithExec([]string{"npm", "run", "type-check"}).Sync(ctx)
+		return err
+	})
+
+	eg.Go(func() error {
+		_, span := Tracer().Start(ctx, "format code")
+		defer span.End()
+
+		_, err := container.WithExec([]string{"npm", "run", "format"}).Sync(ctx)
+		return err
+	})
+
+	eg.Go(func() error {
+		_, span := Tracer().Start(ctx, "run unit tests")
+		defer span.End()
+
+		_, err := container.WithExec([]string{"npm", "run", "test:unit", "run"}).Sync(ctx)
+		return err
+	})
+
+	return eg.Wait()
 }
