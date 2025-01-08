@@ -1562,11 +1562,13 @@ Execute another Dagger Function that does the same as the previous one, except u
 dagger call advanced-directory
 ```
 
-## Tracing
+## Logging
 
 ### Create spans to group tasks
 
-Dagger represents operations performed by a Dagger Function as [OpenTelemetry spans](https://opentelemetry.io/docs/concepts/signals/traces/#spans). If a Dagger Function emits custom OpenTelemetry spans, the related information will appear in the Dagger TUI and Traces. The following Dagger Function demonstrates this by emitting custom spans for various file operations.
+Dagger represents operations performed by a Dagger Function as [OpenTelemetry spans](https://opentelemetry.io/docs/concepts/signals/traces/#spans). Spans are typically used to separate tasks that are running in parallel, with each branch waiting for completion.
+
+If a Dagger Function emits custom OpenTelemetry spans, the related information will appear in the Dagger TUI and Traces. The following Dagger Function demonstrates this by emitting custom spans for various tasks.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -1588,9 +1590,13 @@ Dagger represents operations performed by a Dagger Function as [OpenTelemetry sp
 </TabItem>
 </Tabs>
 
+:::warning
+When using spans to group and measure Dagger API function calls, ensure that the function calls are not [lazily evaluated](../api/internals.mdx#lazy-evaluation). The duration of the corresponding spans in this case will always be zero.
+:::
+
 #### Example
 
-Execute a Dagger Function to create three files in an `alpine` container and return the resulting directory, injecting a custom log message for each file operation using OpenTelemetry spans:
+Execute a Dagger Function to lint, format, type-check and run unit tests on the `dagger/hello-dagger` source code repository, emitting a custom span for each operation:
 
 ```shell
 dagger call foo

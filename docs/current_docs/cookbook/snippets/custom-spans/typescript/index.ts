@@ -21,16 +21,16 @@ class MyModule {
     // run tasks in parallel
     // emit a span for each
     const tasks: Promise<void>[] = [
-      this.lintCode(container),
-      this.checkTypes(container),
-      this.formatCode(container),
-      this.runTests(container),
+      this.lint(container),
+      this.typecheck(container),
+      this.format(container),
+      this.test(container),
     ];
 
     await Promise.all(tasks);
   }
 
-  private async lintCode(container: Container): Promise<void> {
+  private async lint(container: Container): Promise<void> {
     const tracer = trace.getTracer("dagger-otel")
     const span = tracer.startSpan("lint code")
     try {
@@ -43,7 +43,7 @@ class MyModule {
     }
   }
 
-  private async checkTypes(container: Container): Promise<void> {
+  private async typecheck(container: Container): Promise<void> {
     const tracer = trace.getTracer("dagger-otel")
     const span = tracer.startSpan("check types");
     try {
@@ -56,7 +56,7 @@ class MyModule {
     }
   }
 
-  private async formatCode(container: Container): Promise<void> {
+  private async format(container: Container): Promise<void> {
     const tracer = trace.getTracer("dagger-otel")
     const span = tracer.startSpan("format code");
     try {
@@ -69,7 +69,7 @@ class MyModule {
     }
   }
 
-  private async runTests(container: Container): Promise<void> {
+  private async test(container: Container): Promise<void> {
     const tracer = trace.getTracer("dagger-otel")
     const span = tracer.startSpan("run unit tests");
     try {
