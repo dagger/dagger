@@ -111,10 +111,9 @@ func (e *DaggerEngine) Container(
 		WithFile(engineEntrypointPath, entrypoint).
 		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
 
-	cli, err := builder.CLI(ctx)
-	if err != nil {
-		return nil, err
-	}
+	cli := dag.DaggerCli().Binary(dagger.DaggerCliBinaryOpts{
+		Platform: platform,
+	})
 	ctr = ctr.
 		WithFile(cliPath, cli).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "unix://"+engineUnixSocketPath)
