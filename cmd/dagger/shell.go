@@ -298,8 +298,9 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 	})
 }
 
-func parseShell(reader io.Reader, name string) (*syntax.File, error) {
-	file, err := syntax.NewParser(syntax.Variant(syntax.LangPOSIX)).Parse(reader, name)
+func parseShell(reader io.Reader, name string, opts ...syntax.ParserOption) (*syntax.File, error) {
+	opts = append([]syntax.ParserOption{syntax.Variant(syntax.LangPOSIX)}, opts...)
+	file, err := syntax.NewParser(opts...).Parse(reader, name)
 	if err != nil {
 		return nil, err
 	}
