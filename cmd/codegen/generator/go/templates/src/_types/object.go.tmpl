@@ -63,13 +63,17 @@ func (r *Span) Run(ctx context.Context, cb func(context.Context) error) error {
 	err := cb(ctx)
 	var endErr error
 	if err != nil {
+		errClient := &Client{
+			query: r.query,
+			client: r.client,
+		}
 		{{- if $supportsVoid }}
 		endErr = span.End(ctx, SpanEndOpts{
-			Error: r.Query().Error(err.Error()),
+			Error: errClient.Error(err.Error()),
 		})
 		{{- else }}
 		_, endErr = span.End(ctx, SpanEndOpts{
-			Error: r.Query().Error(err.Error()),
+			Error: errClient.Error(err.Error()),
 		})
 		{{- end }}
 	} else {
