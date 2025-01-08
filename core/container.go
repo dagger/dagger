@@ -100,6 +100,9 @@ type Container struct {
 	// (Internal-only for now) Environment variables from the engine container, prefixed
 	// with a special value, that will be inherited by this container if set.
 	SystemEnvNames []string `json:"system_envs,omitempty"`
+
+	// DefaultArgs have been explicitly set by the user
+	DefaultArgs bool `json:"defaultArgs,omitempty"`
 }
 
 func (*Container) Type() *ast.Type {
@@ -1717,7 +1720,7 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 	}
 
 	useEntrypoint := args.UseEntrypoint
-	if len(container.Config.Entrypoint) > 0 {
+	if len(container.Config.Entrypoint) > 0 && !container.DefaultArgs {
 		useEntrypoint = true
 	}
 

@@ -4818,8 +4818,11 @@ func main() {
 		WithExec([]string{"sh", "-c", "apk add curl"})
 
 	t.Run("use default args and entrypoint by default", func(ctx context.Context, t *testctx.T) {
+		// create new container with default values
+		defaultBin := c.Container().Import(binctr.AsTarball())
+
 		output, err := curlctr.
-			WithServiceBinding("myapp", binctr.AsService()).
+			WithServiceBinding("myapp", defaultBin.AsService()).
 			WithExec([]string{"sh", "-c", "curl -vXGET 'http://myapp:8080/hello'"}).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -4864,5 +4867,17 @@ func main() {
 			Stdout(ctx)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), core.ErrNoSvcCommand.Error())
+	})
+	t.Run("default args no entrypoint", func(ctx context.Context, t *testctx.T) {
+		withargsOverwritten := binctr.
+			WithDefaultArgs([]string{"sh", "-c", "/bin/app via-override-args"}).
+			AsService()
+
+		output, err := curlctr.
+			WithServiceBinding("myapp", withargsOverwritten).
+			WithExec([]string{"sh", "-c", "curl -vXGET 'http://myapp:8080/hello'"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "args: /bin/app,via-override-args", output)
 	})
 }
