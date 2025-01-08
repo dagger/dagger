@@ -464,9 +464,8 @@ to the currently loaded module.
 			},
 			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
 				return &CompletionContext{
-					Completer: ctx.Completer,
-					CmdRoot:   shellDepsCmdName,
-					root:      true,
+					Completer:   ctx.Completer,
+					CmdFunction: shellDepsCmdName,
 				}
 			},
 		},
@@ -480,9 +479,8 @@ to the currently loaded module.
 			},
 			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
 				return &CompletionContext{
-					Completer: ctx.Completer,
-					CmdRoot:   shellStdlibCmdName,
-					root:      true,
+					Completer:   ctx.Completer,
+					CmdFunction: shellStdlibCmdName,
 				}
 			},
 		},
@@ -495,9 +493,8 @@ to the currently loaded module.
 			},
 			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
 				return &CompletionContext{
-					Completer: ctx.Completer,
-					CmdRoot:   shellCoreCmdName,
-					root:      true,
+					Completer:   ctx.Completer,
+					CmdFunction: shellCoreCmdName,
 				}
 			},
 		},
@@ -551,7 +548,6 @@ to the currently loaded module.
 					return &CompletionContext{
 						Completer:   ctx.Completer,
 						ModFunction: fn,
-						root:        true,
 					}
 				},
 			},
