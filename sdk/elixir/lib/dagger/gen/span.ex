@@ -49,34 +49,11 @@ defmodule Dagger.Span do
     Client.execute(span.client, query_builder)
   end
 
-  @spec query(t()) :: Dagger.Client.t()
-  def query(%__MODULE__{} = span) do
-    query_builder =
-      span.query_builder |> QB.select("query")
-
-    %Dagger.Client{
-      query_builder: query_builder,
-      client: span.client
-    }
-  end
-
-  @doc "Create a new OpenTelemetry span."
-  @spec span(t(), String.t()) :: Dagger.Span.t()
-  def span(%__MODULE__{} = span, name) do
-    query_builder =
-      span.query_builder |> QB.select("span") |> QB.put_arg("name", name)
-
-    %Dagger.Span{
-      query_builder: query_builder,
-      client: span.client
-    }
-  end
-
   @doc "Start a new instance of the span."
-  @spec start(t(), [{:key, String.t() | nil}]) :: {:ok, Dagger.Span.t()} | {:error, term()}
-  def start(%__MODULE__{} = span, optional_args \\ []) do
+  @spec start(t()) :: {:ok, Dagger.Span.t()} | {:error, term()}
+  def start(%__MODULE__{} = span) do
     query_builder =
-      span.query_builder |> QB.select("start") |> QB.maybe_put_arg("key", optional_args[:key])
+      span.query_builder |> QB.select("start")
 
     with {:ok, id} <- Client.execute(span.client, query_builder) do
       {:ok,
