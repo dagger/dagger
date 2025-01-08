@@ -86,7 +86,7 @@ func (c SpanContext) ToContext(ctx context.Context) context.Context {
 type Span struct {
 	Name string `field:"true"`
 
-	Query *Query `field:"true"`
+	Query *Query
 
 	Span trace.Span
 }
