@@ -427,3 +427,9 @@ func (h *shellCallHandler) withTerminal(fn func(stdin io.Reader, stdout, stderr 
 	}
 	return fn(h.stdin, h.stdout, h.stderr)
 }
+
+func (*shellCallHandler) Print(ctx context.Context, args ...any) error {
+	hctx := interp.HandlerCtx(ctx)
+	_, err := fmt.Fprintln(hctx.Stdout, args...)
+	return err
+}

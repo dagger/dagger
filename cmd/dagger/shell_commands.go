@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"os/exec"
 	"slices"
 	"sort"
@@ -34,7 +33,7 @@ type ShellCommand struct {
 	State StateArg
 
 	// Run is the function that will be executed.
-	Run func(cmd *ShellCommand, args []string, st *ShellState) error
+	Run func(ctx context.Context, cmd *ShellCommand, args []string, st *ShellState) error
 
 	// Complete provides builtin completions
 	Complete func(ctx *CompletionContext, args []string) *CompletionContext
@@ -47,15 +46,6 @@ type ShellCommand struct {
 
 	// Hidden hides the command from `.help`
 	Hidden bool
-
-	ctx    context.Context
-	out    io.Writer
-	outErr io.Writer
-}
-
-// CleanName is the command name without the "." prefix.
-func (c *ShellCommand) CleanName() string {
-	return strings.TrimPrefix(c.Name(), ".")
 }
 
 // Name is the command name.
@@ -90,36 +80,6 @@ func (c *ShellCommand) defaultHelp() string {
 	doc.Add("Usage", c.Use)
 
 	return doc.String()
-}
-
-func (c *ShellCommand) Print(a ...any) error {
-	_, err := fmt.Fprint(c.out, a...)
-	return err
-}
-
-func (c *ShellCommand) Println(a ...any) error {
-	_, err := fmt.Fprintln(c.out, a...)
-	return err
-}
-
-func (c *ShellCommand) Printf(format string, a ...any) error {
-	_, err := fmt.Fprintf(c.out, format, a...)
-	return err
-}
-
-func (c *ShellCommand) SetContext(ctx context.Context) {
-	c.ctx = ctx
-	c.out = interp.HandlerCtx(ctx).Stdout
-	c.outErr = interp.HandlerCtx(ctx).Stderr
-}
-
-func (c *ShellCommand) Context() context.Context {
-	return c.ctx
-}
-
-// Send writes the state to the command's stdout.
-func (c *ShellCommand) Send(st *ShellState) error {
-	return st.WriteTo(c.out)
 }
 
 type PositionalArgs func(args []string) error
@@ -206,8 +166,7 @@ func (c *ShellCommand) Execute(ctx context.Context, h *shellCallHandler, args []
 	if h.debug {
 		shellDebug(ctx, "Command: "+c.Name(), a, st)
 	}
-	c.SetContext(ctx)
-	return c.Run(c, a, st)
+	return c.Run(ctx, c, a, st)
 }
 
 func (h *shellCallHandler) BuiltinCommand(name string) (*ShellCommand, error) {
@@ -261,7 +220,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 			Hidden: true,
 			Args:   NoArgs,
 			State:  NoState,
-			Run: func(cmd *ShellCommand, args []string, _ *ShellState) error {
+			Run: func(_ context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
 				// Toggles debug mode, which can be useful when in interactive mode
 				h.debug = !h.debug
 				return nil
@@ -272,7 +231,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 			Description: "Print this help message",
 			Args:        MaximumArgs(1),
 			State:       NoState,
-			Run: func(cmd *ShellCommand, args []string, _ *ShellState) error {
+			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
 				if len(args) == 1 {
 					c, err := h.BuiltinCommand(args[0])
 					if err != nil {
@@ -287,7 +246,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 						}
 						return err
 					}
-					return cmd.Println(c.Help())
+					return h.Print(ctx, c.Help())
 				}
 
 				var doc ShellDoc
@@ -307,7 +266,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 
 				doc.Add("", `Use ".help <command>" for more information.`)
 
-				return cmd.Println(doc.String())
+				return h.Print(ctx, doc)
 			},
 		},
 		&ShellCommand{
@@ -319,10 +278,8 @@ Local module paths are resolved relative to the workdir on the host, not relativ
 to the currently loaded module.
 `,
 			Args: MaximumArgs(1),
-			Run: func(cmd *ShellCommand, args []string, st *ShellState) error {
+			Run: func(ctx context.Context, cmd *ShellCommand, args []string, st *ShellState) error {
 				var err error
-
-				ctx := cmd.Context()
 
 				// First command in chain
 				if st == nil {
@@ -354,40 +311,40 @@ to the currently loaded module.
 						// Document stdlib
 						// Example: `.stdlib | .doc`
 						if len(args) == 0 {
-							return cmd.Println(h.StdlibHelp())
+							return h.Print(ctx, h.StdlibHelp())
 						}
 						// Example: .stdlib | .doc <command>`
 						c, err := h.StdlibCommand(args[0])
 						if err != nil {
 							return err
 						}
-						return cmd.Println(c.Help())
+						return h.Print(ctx, c.Help())
 
 					case st.IsDeps():
 						// Document dependency
 						// Example: `.deps | .doc`
 						if len(args) == 0 {
-							return cmd.Println(h.DepsHelp())
+							return h.Print(ctx, h.DepsHelp())
 						}
 						// Example: `.deps | .doc <dependency>`
 						depSt, depDef, err := h.GetDependency(ctx, args[0])
 						if err != nil {
 							return err
 						}
-						return cmd.Println(shellModuleDoc(depSt, depDef))
+						return h.Print(ctx, shellModuleDoc(depSt, depDef))
 
 					case st.IsCore():
 						// Document core
 						// Example: `.core | .doc`
 						if len(args) == 0 {
-							return cmd.Println(h.CoreHelp())
+							return h.Print(ctx, h.CoreHelp())
 						}
 						// Example: `.core | .doc <function>`
 						fn := def.GetCoreFunction(args[0])
 						if fn == nil {
 							return fmt.Errorf("core function %q not found", args[0])
 						}
-						return cmd.Println(shellFunctionDoc(def, fn))
+						return h.Print(ctx, shellFunctionDoc(def, fn))
 
 					case len(args) == 0:
 						if !def.HasModule() {
@@ -395,7 +352,7 @@ to the currently loaded module.
 						}
 						// Document module
 						// Example: `.doc [module]`
-						return cmd.Println(shellModuleDoc(st, def))
+						return h.Print(ctx, shellModuleDoc(st, def))
 					}
 				}
 
@@ -407,7 +364,7 @@ to the currently loaded module.
 				// Document type
 				// Example: `container | .doc`
 				if len(args) == 0 {
-					return cmd.Println(shellTypeDoc(t))
+					return h.Print(ctx, shellTypeDoc(t))
 				}
 
 				fp := t.AsFunctionProvider()
@@ -421,7 +378,7 @@ to the currently loaded module.
 				if err != nil {
 					return err
 				}
-				return cmd.Println(shellFunctionDoc(def, fn))
+				return h.Print(ctx, shellFunctionDoc(def, fn))
 			},
 		},
 		&ShellCommand{
@@ -434,9 +391,9 @@ to the currently loaded module.
 			GroupID: moduleGroup.ID,
 			Args:    ExactArgs(1),
 			State:   NoState,
-			Run: func(cmd *ShellCommand, args []string, _ *ShellState) error {
+			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
 				st, err := h.getOrInitDefState(args[0], func() (*moduleDef, error) {
-					return initializeModule(cmd.Context(), h.dag, args[0], true)
+					return initializeModule(ctx, h.dag, args[0], true)
 				})
 				if err != nil {
 					return err
@@ -455,12 +412,12 @@ to the currently loaded module.
 			GroupID:     moduleGroup.ID,
 			Args:        NoArgs,
 			State:       NoState,
-			Run: func(cmd *ShellCommand, _ []string, _ *ShellState) error {
+			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
 				_, err := h.GetModuleDef(nil)
 				if err != nil {
 					return err
 				}
-				return cmd.Send(h.newDepsState())
+				return h.newDepsState().Write(ctx)
 			},
 			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
 				return &CompletionContext{
@@ -475,8 +432,8 @@ to the currently loaded module.
 			Description: "Standard library functions",
 			Args:        NoArgs,
 			State:       NoState,
-			Run: func(cmd *ShellCommand, _ []string, _ *ShellState) error {
-				return cmd.Send(h.newStdlibState())
+			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
+				return h.newStdlibState().Write(ctx)
 			},
 			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
 				return &CompletionContext{
@@ -490,8 +447,8 @@ to the currently loaded module.
 			Use:         ".core [function]",
 			Description: "Load any core Dagger type",
 			State:       NoState,
-			Run: func(cmd *ShellCommand, args []string, _ *ShellState) error {
-				return cmd.Send(h.newCoreState())
+			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
+				return h.newCoreState().Write(ctx)
 			},
 			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
 				return &CompletionContext{
@@ -536,9 +493,7 @@ to the currently loaded module.
 				HelpFunc: func(cmd *ShellCommand) string {
 					return shellFunctionDoc(def, fn)
 				},
-				Run: func(cmd *ShellCommand, args []string, _ *ShellState) error {
-					ctx := cmd.Context()
-
+				Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
 					st := h.newState()
 					st, err := h.functionCall(ctx, st, fn.CmdName(), args)
 					if err != nil {
@@ -549,7 +504,7 @@ to the currently loaded module.
 						shellDebug(ctx, "Stdout (stdlib)", fn.CmdName(), args, st)
 					}
 
-					return cmd.Send(st)
+					return st.Write(ctx)
 				},
 				Complete: func(ctx *CompletionContext, args []string) *CompletionContext {
 					return &CompletionContext{
@@ -580,10 +535,9 @@ func cobraToShellCommand(c *cobra.Command) *ShellCommand {
 		Description: c.Short,
 		GroupID:     c.GroupID,
 		State:       NoState,
-		Run: func(cmd *ShellCommand, args []string, _ *ShellState) error {
+		Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
 			// Re-execute the dagger command (hack)
-			args = append([]string{cmd.CleanName()}, args...)
-			ctx := cmd.Context()
+			args = append([]string{c.Name()}, args...)
 			hctx := interp.HandlerCtx(ctx)
 			c := exec.CommandContext(ctx, "dagger", args...)
 			c.Stdout = hctx.Stdout
