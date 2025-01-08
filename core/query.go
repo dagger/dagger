@@ -25,8 +25,6 @@ import (
 type Query struct {
 	Server
 
-	SpanContext SpanContext
-
 	spans  map[string]*Span
 	spansL *sync.Mutex
 }
@@ -110,15 +108,7 @@ func (s Span) Clone() *Span {
 
 func (s *Span) Start(ctx context.Context) *Span {
 	started := s.Clone()
-	// First, grab the tracer based on the incoming (real) span.
-	tracer := Tracer(ctx)
-	// Overwrite the span in the context so we inherit from the query's span.
-	ctx = s.Query.SpanContext.ToContext(ctx)
-	// Start a span beneath the query span.
-	ctx, started.Span = tracer.Start(ctx, s.Name)
-	// Update the query with the new span context.
-	started.Query.SpanContext = SpanContextFromContext(ctx)
-	// Keep track of the new span so we can find it later.
+	ctx, started.Span = Tracer(ctx).Start(ctx, s.Name)
 	started.Query.StoreSpan(started)
 	return started
 }
@@ -203,12 +193,11 @@ type Server interface {
 	NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error)
 }
 
-func NewRoot(ctx context.Context, srv Server) *Query {
+func NewRoot(srv Server) *Query {
 	return &Query{
-		Server:      srv,
-		SpanContext: SpanContextFromContext(ctx),
-		spans:       map[string]*Span{},
-		spansL:      new(sync.Mutex),
+		Server: srv,
+		spans:  map[string]*Span{},
+		spansL: new(sync.Mutex),
 	}
 }
 
