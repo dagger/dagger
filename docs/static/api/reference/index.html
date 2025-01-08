@@ -84,7 +84,6 @@
               <li><a href="#query-loadServiceFromID">loadServiceFromID</a></li>
               <li><a href="#query-loadSocketFromID">loadSocketFromID</a></li>
               <li><a href="#query-loadSourceMapFromID">loadSourceMapFromID</a></li>
-              <li><a href="#query-loadSpanContextFromID">loadSpanContextFromID</a></li>
               <li><a href="#query-loadSpanFromID">loadSpanFromID</a></li>
               <li><a href="#query-loadTerminalFromID">loadTerminalFromID</a></li>
               <li><a href="#query-loadTypeDefFromID">loadTypeDefFromID</a></li>
@@ -196,8 +195,6 @@
               <li><a href="#definition-SourceMap">SourceMap</a></li>
               <li><a href="#definition-SourceMapID">SourceMapID</a></li>
               <li><a href="#definition-Span">Span</a></li>
-              <li><a href="#definition-SpanContext">SpanContext</a></li>
-              <li><a href="#definition-SpanContextID">SpanContextID</a></li>
               <li><a href="#definition-SpanID">SpanID</a></li>
               <li><a href="#definition-String">String</a></li>
               <li><a href="#definition-Terminal">Terminal</a></li>
@@ -3174,59 +3171,6 @@
               </div>
             </div>
           </section>
-          <section id="query-loadSpanContextFromID" class="operation operation-query" data-traverse-target="query-loadSpanContextFromID">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>loadSpanContextFromID</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Load a SpanContext from its ID.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-SpanContext"><code>SpanContext!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-SpanContextID"><code>SpanContextID!</code></a></span>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
           <section id="query-loadSpanFromID" class="operation operation-query" data-traverse-target="query-loadSpanFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -3771,8 +3715,7 @@
                         <td>
                           <span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
                         </td>
-                        <td>
-                        </td>
+                        <td> Name of the span. </td>
                       </tr>
                     </tbody>
                   </table>
@@ -9594,100 +9537,11 @@
                         </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Span-query" href="#Span-query"><code>query</code></a> - <span class="property-type"><a href="#definition-Query"><code>Query!</code></a></span> </td>
-                        <td>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Span-span" href="#Span-span"><code>span</code></a> - <span class="property-type"><a href="#definition-Span"><code>Span!</code></a></span> </td>
-                        <td> Create a new OpenTelemetry span. </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Span-start" href="#Span-start"><code>start</code></a> - <span class="property-type"><a href="#definition-SpanID"><code>SpanID!</code></a></span> </td>
                         <td> Start a new instance of the span. </td>
                       </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>key</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
                     </tbody>
                   </table>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-SpanContext" class="definition definition-object" data-traverse-target="definition-SpanContext">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">SpanContext</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-properties doc-copy-section">
-                  <h5>Fields</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Field Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="SpanContext-id" href="#SpanContext-id"><code>id</code></a> - <span class="property-type"><a href="#definition-SpanContextID"><code>SpanContextID!</code></a></span> </td>
-                        <td> A unique identifier for this SpanContext. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="SpanContext-remote" href="#SpanContext-remote"><code>remote</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
-                        <td>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="SpanContext-spanId" href="#SpanContext-spanId"><code>spanId</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="SpanContext-traceId" href="#SpanContext-traceId"><code>traceId</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-SpanContextID" class="definition definition-scalar" data-traverse-target="definition-SpanContextID">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">SpanContextID</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The <code>SpanContextID</code> scalar type represents an identifier for an object of type SpanContext.</p>
                 </div>
               </div>
             </div>
