@@ -42,44 +42,6 @@ func (q *Query) StoreSpan(s *Span) {
 	q.spansL.Unlock()
 }
 
-type SpanContext struct {
-	// TODO: ...can this just be an alias? with a custom scalar for these?
-	TraceID string `field:"true"`
-	SpanID  string `field:"true"`
-	Remote  bool   `field:"true"`
-
-	// TODO: do we need to support TraceFlags and TraceState?
-}
-
-func (c SpanContext) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "SpanContext",
-		NonNull:   true,
-	}
-}
-
-func SpanContextFromContext(ctx context.Context) SpanContext {
-	sc := trace.SpanContextFromContext(ctx)
-	return SpanContext{
-		TraceID: sc.TraceID().String(),
-		SpanID:  sc.SpanID().String(),
-		Remote:  sc.IsRemote(),
-	}
-}
-
-func (c SpanContext) ToContext(ctx context.Context) context.Context {
-	sc := trace.SpanContextFromContext(ctx)
-	tid, _ := trace.TraceIDFromHex(c.TraceID)
-	sid, _ := trace.SpanIDFromHex(c.SpanID)
-	return trace.ContextWithSpanContext(ctx, trace.NewSpanContext(trace.SpanContextConfig{
-		TraceID:    tid,
-		SpanID:     sid,
-		Remote:     c.Remote,
-		TraceFlags: sc.TraceFlags(),
-		TraceState: sc.TraceState(),
-	}))
-}
-
 type Span struct {
 	Name string `field:"true"`
 
