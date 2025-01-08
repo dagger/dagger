@@ -58,9 +58,9 @@ func (r *Span) Context(ctx context.Context) (context.Context, *Span) {
 }
 
 {{- $supportsVoid := CheckVersionCompatibility "v0.12.0" }}
-func (r *Span) Run(ctx context.Context, cb func(context.Context, *Span) error) error {
+func (r *Span) Run(ctx context.Context, cb func(context.Context) error) error {
 	ctx, span := r.Context(ctx)
-	err := cb(ctx, span)
+	err := cb(ctx)
 	var endErr error
 	if err != nil {
 		{{- if $supportsVoid }}
