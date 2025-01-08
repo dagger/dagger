@@ -601,16 +601,6 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Load a SpanContext from its ID.
-     */
-    public function loadSpanContextFromID(SpanContextId|SpanContext $id): SpanContext
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSpanContextFromID');
-        $innerQueryBuilder->setArgument('id', $id);
-        return new \Dagger\SpanContext($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Load a Span from its ID.
      */
     public function loadSpanFromID(SpanId|Span $id): Span

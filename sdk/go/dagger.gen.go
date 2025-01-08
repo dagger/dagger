@@ -228,9 +228,6 @@ type SocketID string
 // The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
 type SourceMapID string
 
-// The `SpanContextID` scalar type represents an identifier for an object of type SpanContext.
-type SpanContextID string
-
 // The `SpanID` scalar type represents an identifier for an object of type Span.
 type SpanID string
 
@@ -7725,17 +7722,6 @@ func (r *Client) LoadSourceMapFromID(id SourceMapID) *SourceMap {
 	}
 }
 
-// Load a SpanContext from its ID.
-func (r *Client) LoadSpanContextFromID(id SpanContextID) *SpanContext {
-	q := r.query.Select("loadSpanContextFromID")
-	q = q.Arg("id", id)
-
-	return &SpanContext{
-		query:  q,
-		client: r.client,
-	}
-}
-
 // Load a Span from its ID.
 func (r *Client) LoadSpanFromID(id SpanID) *Span {
 	q := r.query.Select("loadSpanFromID")
@@ -8586,14 +8572,6 @@ type Span struct {
 	name       *string
 	start      *SpanID
 }
-type WithSpanFunc func(r *Span) *Span
-
-// With calls the provided function with current Span.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *Span) With(f WithSpanFunc) *Span {
-	return f(r)
-}
 
 func (r *Span) WithGraphQLQuery(q *querybuilder.Selection) *Span {
 	return &Span{
@@ -8623,13 +8601,17 @@ func (r *Span) Context(ctx context.Context) (context.Context, *Span) {
 		TraceState: spanCtx.TraceState(),
 	})), started
 }
-func (r *Span) Run(ctx context.Context, cb func(context.Context, *Span) error) error {
+func (r *Span) Run(ctx context.Context, cb func(context.Context) error) error {
 	ctx, span := r.Context(ctx)
-	err := cb(ctx, span)
+	err := cb(ctx)
 	var endErr error
 	if err != nil {
+		errClient := &Client{
+			query:  r.query,
+			client: r.client,
+		}
 		endErr = span.End(ctx, SpanEndOpts{
-			Error: r.Query().Error(err.Error()),
+			Error: errClient.Error(err.Error()),
 		})
 	} else {
 		endErr = span.End(ctx)
@@ -8723,40 +8705,9 @@ func (r *Span) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-func (r *Span) Query() *Client {
-	q := r.query.Select("query")
-
-	return &Client{
-		query:  q,
-		client: r.client,
-	}
-}
-
-// Create a new OpenTelemetry span.
-func (r *Span) Span(name string) *Span {
-	q := r.query.Select("span")
-	q = q.Arg("name", name)
-
-	return &Span{
-		query:  q,
-		client: r.client,
-	}
-}
-
-// SpanStartOpts contains options for Span.Start
-type SpanStartOpts struct {
-	Key string
-}
-
 // Start a new instance of the span.
-func (r *Span) Start(ctx context.Context, opts ...SpanStartOpts) (*Span, error) {
+func (r *Span) Start(ctx context.Context) (*Span, error) {
 	q := r.query.Select("start")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `key` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Key) {
-			q = q.Arg("key", opts[i].Key)
-		}
-	}
 
 	var id SpanID
 	if err := q.Bind(&id).Execute(ctx); err != nil {
@@ -8765,99 +8716,6 @@ func (r *Span) Start(ctx context.Context, opts ...SpanStartOpts) (*Span, error) 
 	return &Span{
 		query: q.Root().Select("loadSpanFromID").Arg("id", id),
 	}, nil
-}
-
-type SpanContext struct {
-	query  *querybuilder.Selection
-	client graphql.Client
-
-	id      *SpanContextID
-	remote  *bool
-	spanId  *string
-	traceId *string
-}
-
-func (r *SpanContext) WithGraphQLQuery(q *querybuilder.Selection) *SpanContext {
-	return &SpanContext{
-		query:  q,
-		client: r.client,
-	}
-}
-
-// A unique identifier for this SpanContext.
-func (r *SpanContext) ID(ctx context.Context) (SpanContextID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response SpanContextID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *SpanContext) XXX_GraphQLType() string {
-	return "SpanContext"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *SpanContext) XXX_GraphQLIDType() string {
-	return "SpanContextID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *SpanContext) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *SpanContext) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-func (r *SpanContext) Remote(ctx context.Context) (bool, error) {
-	if r.remote != nil {
-		return *r.remote, nil
-	}
-	q := r.query.Select("remote")
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *SpanContext) SpanID(ctx context.Context) (string, error) {
-	if r.spanId != nil {
-		return *r.spanId, nil
-	}
-	q := r.query.Select("spanId")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *SpanContext) TraceID(ctx context.Context) (string, error) {
-	if r.traceId != nil {
-		return *r.traceId, nil
-	}
-	q := r.query.Select("traceId")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 // An interactive terminal that clients can connect to.

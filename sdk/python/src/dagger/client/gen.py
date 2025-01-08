@@ -224,11 +224,6 @@ class SourceMapID(Scalar):
     object of type SourceMap."""
 
 
-class SpanContextID(Scalar):
-    """The `SpanContextID` scalar type represents an identifier for an
-    object of type SpanContext."""
-
-
 class SpanID(Scalar):
     """The `SpanID` scalar type represents an identifier for an object of
     type Span."""
@@ -7493,14 +7488,6 @@ class Client(Root):
         _ctx = self._select("loadSourceMapFromID", _args)
         return SourceMap(_ctx)
 
-    def load_span_context_from_id(self, id: SpanContextID) -> "SpanContext":
-        """Load a SpanContext from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSpanContextFromID", _args)
-        return SpanContext(_ctx)
-
     def load_span_from_id(self, id: SpanID) -> "Span":
         """Load a Span from its ID."""
         _args = [
@@ -7647,7 +7634,14 @@ class Client(Root):
         return SourceMap(_ctx)
 
     def span(self, name: str, *, key: str | None = "") -> "Span":
-        """Create a new OpenTelemetry span."""
+        """Create a new OpenTelemetry span.
+
+        Parameters
+        ----------
+        name:
+            Name of the span.
+        key:
+        """
         _args = [
             Arg("name", name),
             Arg("key", key, ""),
@@ -8367,20 +8361,7 @@ class Span(Type):
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
 
-    def query(self) -> Client:
-        _args: list[Arg] = []
-        _ctx = self._select("query", _args)
-        return Client(_ctx)
-
-    def span(self, name: str) -> Self:
-        """Create a new OpenTelemetry span."""
-        _args = [
-            Arg("name", name),
-        ]
-        _ctx = self._select("span", _args)
-        return Span(_ctx)
-
-    async def start(self, *, key: str | None = "") -> Self:
+    async def start(self) -> Self:
         """Start a new instance of the span.
 
         Raises
@@ -8390,9 +8371,7 @@ class Span(Type):
         QueryError
             If the API returns an error.
         """
-        _args = [
-            Arg("key", key, ""),
-        ]
+        _args: list[Arg] = []
         _ctx = self._select("start", _args)
         _id = await _ctx.execute(SpanID)
         _ctx = Client.from_context(_ctx)._select("loadSpanFromID", [Arg("id", _id)])
@@ -8449,95 +8428,6 @@ class Span(Type):
         if self.token:
             opentelemetry.context.detach(self.token)
         return void
-
-    def with_(self, cb: Callable[["Span"], "Span"]) -> "Span":
-        """Call the provided callable with current Span.
-
-        This is useful for reusability and readability by not breaking the calling chain.
-        """
-        return cb(self)
-
-
-@typecheck
-class SpanContext(Type):
-    async def id(self) -> SpanContextID:
-        """A unique identifier for this SpanContext.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        SpanContextID
-            The `SpanContextID` scalar type represents an identifier for an
-            object of type SpanContext.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(SpanContextID)
-
-    async def remote(self) -> bool:
-        """Returns
-        -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("remote", _args)
-        return await _ctx.execute(bool)
-
-    async def span_id(self) -> str:
-        """Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("spanId", _args)
-        return await _ctx.execute(str)
-
-    async def trace_id(self) -> str:
-        """Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("traceId", _args)
-        return await _ctx.execute(str)
 
 
 @typecheck
@@ -8994,8 +8884,6 @@ __all__ = [
     "SourceMap",
     "SourceMapID",
     "Span",
-    "SpanContext",
-    "SpanContextID",
     "SpanID",
     "Terminal",
     "TerminalID",
