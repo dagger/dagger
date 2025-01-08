@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"os/exec"
@@ -105,6 +106,10 @@ func main() {
 	if filepath.Base(fullPath) == fullPath {
 		// search for the executable in $PATH
 		fullPath, err = exec.LookPath(fullPath)
+		if errors.Is(err, exec.ErrDot) {
+			// NOTE: backwards compat with dumb-init
+			err = nil
+		}
 		if err != nil {
 			panic(err)
 		}
