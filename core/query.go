@@ -90,7 +90,7 @@ type Span struct {
 	Span trace.Span
 }
 
-func (c *Span) Type() *ast.Type {
+func (*Span) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Span",
 		NonNull:   true,
