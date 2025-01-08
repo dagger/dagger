@@ -7,7 +7,7 @@ import java.lang.annotation.Target;
 
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.SOURCE)
-public @interface ModuleFunction {
+public @interface Function {
     String value() default "";
     String description() default "";
 }

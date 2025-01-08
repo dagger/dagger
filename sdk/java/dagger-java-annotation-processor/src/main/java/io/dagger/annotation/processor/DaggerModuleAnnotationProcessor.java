@@ -1,16 +1,17 @@
 package io.dagger.annotation.processor;
 
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import com.google.auto.service.AutoService;
+import io.dagger.module.annotation.Function;
+import io.dagger.module.annotation.Module;
+import io.dagger.module.annotation.Object;
+import io.dagger.module.info.FunctionInfo;
+import io.dagger.module.info.ModuleInfo;
+import io.dagger.module.info.ObjectInfo;
+import io.dagger.module.info.ParameterInfo;
+import jakarta.json.bind.Jsonb;
+import jakarta.json.bind.JsonbBuilder;
 
-import javax.annotation.processing.AbstractProcessor;
-import javax.annotation.processing.Processor;
-import javax.annotation.processing.RoundEnvironment;
-import javax.annotation.processing.SupportedAnnotationTypes;
-import javax.annotation.processing.SupportedSourceVersion;
+import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
@@ -18,19 +19,16 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.tools.FileObject;
 import javax.tools.StandardLocation;
-
-import com.google.auto.service.AutoService;
-
-import io.dagger.module.annotation.Module;
-import io.dagger.module.annotation.ModuleFunction;
-import io.dagger.module.annotation.ModuleObject;
-import jakarta.json.bind.Jsonb;
-import jakarta.json.bind.JsonbBuilder;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 @SupportedAnnotationTypes({
-    "io.dagger.module.annotation.Module",
-    "io.dagger.module.annotation.ModuleObject",
-    "io.dagger.module.annotation.ModuleFunction"
+        "io.dagger.module.annotation.Module",
+        "io.dagger.module.annotation.Object",
+        "io.dagger.module.annotation.Function"
 })
 @SupportedSourceVersion(SourceVersion.RELEASE_17)
 @AutoService(Processor.class)
@@ -51,41 +49,41 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                 } else if (element.getKind() == ElementKind.CLASS || element.getKind() == ElementKind.RECORD) {
                     TypeElement typeElement = (TypeElement) element;
                     String qName = typeElement.getQualifiedName().toString();
-                    String name = typeElement.getAnnotation(ModuleObject.class).value();
+                    String name = typeElement.getAnnotation(Object.class).value();
                     if (name.isEmpty()) {
                         name = typeElement.getSimpleName().toString();
                     }
-                    String description = typeElement.getAnnotation(ModuleObject.class).description();
+                    String description = typeElement.getAnnotation(Object.class).description();
                     if (description.isEmpty()) {
                         description = trimDoc(processingEnv.getElementUtils().getDocComment(typeElement));
                     }
                     List<FunctionInfo> functionInfos = typeElement.getEnclosedElements().stream()
-                        .filter(elt -> elt.getKind() == ElementKind.METHOD)
-                        .filter(elt -> elt.getAnnotation(ModuleFunction.class) != null)
-                        .map(elt -> {
-                            ModuleFunction moduleFunction = elt.getAnnotation(ModuleFunction.class);
-                            String fName = moduleFunction.value();
-                            String fqName = ((ExecutableElement)elt).getSimpleName().toString();
-                            if (fName.isEmpty()) {
-                                fName = fqName;
-                            }
-                            String fDescription = moduleFunction.description();
-                            if (fDescription.isEmpty()) {
-                                fDescription = trimDoc(processingEnv.getElementUtils().getDocComment(elt));
-                            }
-                            String returnType = ((ExecutableElement)elt).getReturnType().toString();
+                            .filter(elt -> elt.getKind() == ElementKind.METHOD)
+                            .filter(elt -> elt.getAnnotation(Function.class) != null)
+                            .map(elt -> {
+                                Function moduleFunction = elt.getAnnotation(Function.class);
+                                String fName = moduleFunction.value();
+                                String fqName = ((ExecutableElement) elt).getSimpleName().toString();
+                                if (fName.isEmpty()) {
+                                    fName = fqName;
+                                }
+                                String fDescription = moduleFunction.description();
+                                if (fDescription.isEmpty()) {
+                                    fDescription = trimDoc(processingEnv.getElementUtils().getDocComment(elt));
+                                }
+                                String returnType = ((ExecutableElement) elt).getReturnType().toString();
 
-                            List<ParameterInfo> parameterInfos = ((ExecutableElement)elt).getParameters().stream().map(param -> {
-                                String paramName = param.getSimpleName().toString();
-                                String paramType = param.asType().toString();
-                                return new ParameterInfo(paramName, paramType, null);
+                                List<ParameterInfo> parameterInfos = ((ExecutableElement) elt).getParameters().stream().map(param -> {
+                                    String paramName = param.getSimpleName().toString();
+                                    String paramType = param.asType().toString();
+                                    return new ParameterInfo(paramName, paramType, null);
+                                }).toList();
+
+                                FunctionInfo functionInfo = new FunctionInfo(fName, fqName, fDescription, returnType,
+                                        parameterInfos.toArray(new ParameterInfo[parameterInfos.size()]));
+                                return functionInfo;
                             }).toList();
-
-                            FunctionInfo functionInfo = new FunctionInfo(fName, fqName, fDescription, returnType,
-                                parameterInfos.toArray(new ParameterInfo[parameterInfos.size()]));
-                            return functionInfo;
-                        }).toList();
-                   annotatedObjects.add(new ObjectInfo(name, qName, description, functionInfos.toArray(new FunctionInfo[functionInfos.size()])));
+                    annotatedObjects.add(new ObjectInfo(name, qName, description, functionInfos.toArray(new FunctionInfo[functionInfos.size()])));
                 }
             }
         }
@@ -95,7 +93,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
         if (!annotatedObjects.isEmpty()) {
             try {
                 FileObject resource = processingEnv.getFiler().createResource(
-                    StandardLocation.CLASS_OUTPUT, "", "dagger_module_info.json");
+                        StandardLocation.CLASS_OUTPUT, "", "dagger_module_info.json");
                 try (PrintWriter out = new PrintWriter(resource.openWriter())) {
                     writeModule(moduleName, moduleDescription, annotatedObjects, out);
                 }
