@@ -1562,9 +1562,9 @@ Execute another Dagger Function that does the same as the previous one, except u
 dagger call advanced-directory
 ```
 
-## Logging
+## Tracing
 
-### Add custom log messages
+### Create spans to group tasks
 
 Dagger represents operations performed by a Dagger Function as [OpenTelemetry spans](https://opentelemetry.io/docs/concepts/signals/traces/#spans). If a Dagger Function emits custom OpenTelemetry spans, the related information will appear in the Dagger TUI and Traces. The following Dagger Function demonstrates this by emitting custom spans for various file operations.
 
