@@ -80,10 +80,10 @@ Here is another example, this time exporting the results of a `ruff` linter Dagg
 dagger -m github.com/dagger/dagger/dev/ruff@a29dadbb5d9968784847a15fccc5629daf2985ae call lint --source https://github.com/dagger/dagger report export --path=/tmp/report.json
 ```
 
-Here is an example of exporting a container returned by a Wolfi container builder Dagger Function as an OCI tarball named `/tmp/tarball.tar.gz` on the host:
+Here is an example of exporting a container returned by a Wolfi container builder Dagger Function as an OCI tarball named `/tmp/tarball.tar` on the host:
 
 ```shell
-dagger -m github.com/shykes/daggerverse/wolfi@v0.1.4 call container export --path=./tarball.tar.gz
+dagger -m github.com/shykes/daggerverse/wolfi@v0.1.4 call container export --path=./tarball.tar
 ```
 
 ## Inspect directories, files and containers
