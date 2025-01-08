@@ -1,7 +1,7 @@
 {
   "name": "php-sdk-dev",
-  "engineVersion": "v0.13.3",
-  "sdk": "php@05cab0d6502599671a9da7d338011edd3a76129c",
+  "engineVersion": "v0.15.1",
+  "sdk": "php",
   "dependencies": [
     {
       "name": "always-exec",
