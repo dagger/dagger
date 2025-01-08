@@ -38,6 +38,15 @@ func (container *Container) Terminal(
 	svcID *call.ID,
 	args *TerminalArgs,
 ) error {
+	container = container.Clone()
+
+	// HACK: ensure that container is entirely built before interrupting nice
+	// progress output with the terminal
+	_, err := container.Evaluate(ctx)
+	if err != nil {
+		return err
+	}
+
 	bk, err := container.Query.Buildkit(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get buildkit client: %w", err)
@@ -62,7 +71,6 @@ func (container *Container) Terminal(
 	}
 	fmt.Fprint(term.Stderr, dump.Newline)
 
-	container = container.Clone()
 	// Inject a custom shell prompt `dagger:<cwd>$`
 	container.Config.Env = append(container.Config.Env, fmt.Sprintf("PS1=%s %s $ ",
 		output.String("dagger").Foreground(termenv.ANSIYellow).String(),
