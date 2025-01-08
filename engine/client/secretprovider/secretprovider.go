@@ -15,10 +15,11 @@ import (
 type SecretResolver func(context.Context, string) ([]byte, error)
 
 var resolvers = map[string]SecretResolver{
-	"env":  envProvider,
-	"file": fileProvider,
-	"cmd":  cmdProvider,
-	"op":   opProvider,
+	"env":   envProvider,
+	"file":  fileProvider,
+	"cmd":   cmdProvider,
+	"op":    opProvider,
+	"vault": vaultProvider,
 }
 
 func ResolverForID(id string) (SecretResolver, string, error) {
