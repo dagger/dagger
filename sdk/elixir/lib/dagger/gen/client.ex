@@ -732,18 +732,6 @@ defmodule Dagger.Client do
     }
   end
 
-  @doc "Load a SpanContext from its ID."
-  @spec load_span_context_from_id(t(), Dagger.SpanContextID.t()) :: Dagger.SpanContext.t()
-  def load_span_context_from_id(%__MODULE__{} = client, id) do
-    query_builder =
-      client.query_builder |> QB.select("loadSpanContextFromID") |> QB.put_arg("id", id)
-
-    %Dagger.SpanContext{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
   @doc "Load a Span from its ID."
   @spec load_span_from_id(t(), Dagger.SpanID.t()) :: Dagger.Span.t()
   def load_span_from_id(%__MODULE__{} = client, id) do

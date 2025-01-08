@@ -380,12 +380,6 @@ func LoadSourceMapFromID(id dagger.SourceMapID) *dagger.SourceMap {
 	return client.LoadSourceMapFromID(id)
 }
 
-// Load a SpanContext from its ID.
-func LoadSpanContextFromID(id dagger.SpanContextID) *dagger.SpanContext {
-	client := initClient()
-	return client.LoadSpanContextFromID(id)
-}
-
 // Load a Span from its ID.
 func LoadSpanFromID(id dagger.SpanID) *dagger.Span {
 	client := initClient()
