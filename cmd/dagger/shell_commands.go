@@ -505,8 +505,7 @@ to the currently loaded module.
 		cobraToShellCommand(logoutCmd),
 		cobraToShellCommand(moduleInstallCmd),
 		cobraToShellCommand(moduleUnInstallCmd),
-		// TODO: Add update command when available:
-		// - https://github.com/dagger/dagger/pull/8839
+		cobraToShellCommand(moduleUpdateCmd),
 	)
 
 	def := h.modDef(nil)
