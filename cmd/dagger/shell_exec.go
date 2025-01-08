@@ -150,7 +150,7 @@ func (h *shellCallHandler) entrypointCall(ctx context.Context, cmd string, args 
 		if err != nil {
 			return nil, err
 		}
-		return st, cmd.Execute(ctx, h, args, nil)
+		return nil, cmd.Execute(ctx, h, args, nil)
 	}
 
 	if md, _ := h.GetModuleDef(st); md != nil {

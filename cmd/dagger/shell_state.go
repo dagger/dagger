@@ -41,7 +41,7 @@ type ShellState struct {
 	ModRef string `json:"modRef"`
 
 	// Cmd is non-empty if next command comes from a builtin instead of an API object
-	Cmd string `json:"ns"`
+	Cmd string `json:"cmd"`
 
 	// Calls is the list of functions for building an API query
 	Calls []FunctionCall `json:"calls,omitempty"`
