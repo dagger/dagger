@@ -2873,9 +2873,6 @@ type Query {
   """Load a SourceMap from its ID."""
   loadSourceMapFromID(id: SourceMapID!): SourceMap!
 
-  """Load a SpanContext from its ID."""
-  loadSpanContextFromID(id: SpanContextID!): SpanContext!
-
   """Load a Span from its ID."""
   loadSpanFromID(id: SpanID!): Span!
 
@@ -2951,7 +2948,12 @@ type Query {
   ): SourceMap!
 
   """Create a new OpenTelemetry span."""
-  span(key: String = "", name: String!): Span!
+  span(
+    key: String = ""
+
+    """Name of the span."""
+    name: String!
+  ): Span!
 
   """Create a new TypeDef."""
   typeDef: TypeDef!
@@ -3147,27 +3149,10 @@ type Span {
   """Returns the internal ID of the span."""
   internalId: String!
   name: String!
-  query: Query!
-
-  """Create a new OpenTelemetry span."""
-  span(name: String!): Span!
 
   """Start a new instance of the span."""
-  start(key: String = ""): SpanID!
+  start: SpanID!
 }
-
-type SpanContext {
-  """A unique identifier for this SpanContext."""
-  id: SpanContextID!
-  remote: Boolean!
-  spanId: String!
-  traceId: String!
-}
-
-"""
-The `SpanContextID` scalar type represents an identifier for an object of type SpanContext.
-"""
-scalar SpanContextID
 
 """
 The `SpanID` scalar type represents an identifier for an object of type Span.
