@@ -1039,13 +1039,13 @@ func (h *shellCallHandler) Result(
 		return nil, nil
 	}
 
-	resp, err := addTypeToResponse(fn.ReturnType, response)
-	if err != nil {
-		return nil, err
-	}
-	response = resp
-
 	if doPrintResponse {
+		resp, err := addTypeToResponse(fn.ReturnType, response)
+		if err != nil {
+			return nil, err
+		}
+		response = resp
+
 		buf := new(bytes.Buffer)
 		frmt := outputFormat(fn.ReturnType)
 		if err := printResponse(buf, response, frmt); err != nil {
