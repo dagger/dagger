@@ -123,6 +123,55 @@ When working with private Git repositories, ensure that [SSH authentication is p
     dagger call copy-and-modify-directory --source=https://github.com/dagger/dagger#main directory --path=/src entries
     ```
 
+### Clone a remote Git repository into a container by branch, tag or commit
+
+The following Dagger Function accepts a Git repository URL and a branch name, tag name or commit id. It copies the repository at the specified branch, tag or commit to the `/src` path in a container and returns the modified container.
+
+:::note
+When working with private Git repositories, ensure that [SSH authentication is properly configured](../api/remote-modules.mdx#configuring-ssh-authentication) on your Dagger host.
+:::
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/clone-git-repository/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/clone-git-repository/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/clone-git-repository/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Examples
+
+- Clone the `main` branch of the public `dagger/dagger` GitHub repository to `/src` in the container:
+
+    ```shell
+    dagger call clone --repository=https://github.com/dagger/dagger --locator=BRANCH --ref=main
+    ```
+
+- Clone the public `dagger/dagger` GitHub repository at tag `v0.12.1` to `/src` in the container and list the contents of the `CHANGELOG.md` file in the repository root directory:
+
+    ```shell
+    dagger call clone --repository=https://github.com/dagger/dagger --locator=TAG --ref=v0.12.1 file --path=/src/CHANGELOG.md contents
+    ```
+
+- Clone the public `dagger/dagger` GitHub repository at commit id  `196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5` to `/src` in the container and open an interactive terminal to inspect the container filesystem:
+
+    ```shell
+    dagger call clone --repository=https://github.com/dagger/dagger --locator=COMMIT --ref=196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 terminal
+    ```
+
 ### Copy a file to a container
 
 The following Dagger Function accepts a `File` argument representing the host file to be copied. It writes the specified file to a container in the `/src/` directory and returns the modified container.
