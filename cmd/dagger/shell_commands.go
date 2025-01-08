@@ -545,6 +545,10 @@ to the currently loaded module.
 						return err
 					}
 
+					if h.debug {
+						shellDebug(ctx, "Stdout (stdlib)", fn.CmdName(), args, st)
+					}
+
 					return cmd.Send(st)
 				},
 				Complete: func(ctx *CompletionContext, args []string) *CompletionContext {
