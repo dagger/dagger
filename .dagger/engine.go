@@ -191,7 +191,8 @@ func (e *DaggerEngine) Lint(
 				if strings.HasPrefix(pkg, "core/integration/") {
 					continue
 				}
-				if strings.HasPrefix(pkg, "dagql/idtui/viztest/broken/") {
+				if strings.HasPrefix(pkg, "dagql/idtui/viztest/") {
+					// either intentionally broken, or using unreleased features
 					continue
 				}
 				pkgs = append(pkgs, pkg)
