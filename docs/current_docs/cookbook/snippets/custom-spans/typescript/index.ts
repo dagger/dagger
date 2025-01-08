@@ -73,7 +73,7 @@ class MyModule {
     const tracer = trace.getTracer("dagger-otel")
     const span = tracer.startSpan("run unit tests");
     try {
-      const result = await container.withExec(["npm", "run", "test:unit"]).sync();
+      const result = await container.withExec(["npm", "run", "test:unit", "run"]).sync();
       if (result.exitCode !== 0) {
         throw new Error(`Tests failed with exit code ${result.exitCode}`);
       }
