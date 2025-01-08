@@ -67,8 +67,6 @@ func (s *querySchema) Install() {
 
 	dagql.Fields[Label]{}.Install(s.srv)
 
-	dagql.Fields[core.SpanContext]{}.Install(s.srv)
-
 	dagql.Fields[*core.Query]{
 		dagql.Func("pipeline", s.pipeline).
 			View(BeforeVersion("v0.13.0")).
@@ -82,18 +80,18 @@ func (s *querySchema) Install() {
 			Doc(`Get the current Dagger Engine version.`),
 
 		dagql.Func("span", s.span).
-			Doc(`Create a new OpenTelemetry span.`),
+			Doc(`Create a new OpenTelemetry span.`).
+			ArgDoc("name", "Name of the span."),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Span]{
 		dagql.NodeFunc("start", s.spanStart).
 			Doc(`Start a new instance of the span.`).
 			Impure("Creates a new span with each call."),
+
 		dagql.Func("internalId", s.spanInternalID).
 			Doc(`Returns the internal ID of the span.`),
-		dagql.Func("span", s.spanSpan).
-			Doc(`Create a new OpenTelemetry span.`).
-			Impure("Creates a new span with each call."),
+
 		dagql.Func("end", s.spanEnd).
 			Doc(`End the OpenTelemetry span, with an optional error.`),
 	}.Install(s.srv)
@@ -185,9 +183,7 @@ func (s *querySchema) span(ctx context.Context, parent *core.Query, args struct 
 	}, nil
 }
 
-func (s *querySchema) spanStart(ctx context.Context, parent dagql.Instance[*core.Span], args struct {
-	Key string `default:""`
-}) (dagql.ID[*core.Span], error) {
+func (s *querySchema) spanStart(ctx context.Context, parent dagql.Instance[*core.Span], args struct{}) (dagql.ID[*core.Span], error) {
 	started := parent.Self.Start(ctx)
 	var inst dagql.Instance[*core.Span]
 	err := s.srv.Select(ctx, s.srv.Root(), &inst, dagql.Selector{
@@ -208,18 +204,12 @@ func (s *querySchema) spanInternalID(ctx context.Context, parent *core.Span, arg
 	return parent.Span.SpanContext().SpanID().String(), nil
 }
 
-func (s *querySchema) spanSpan(ctx context.Context, parent *core.Span, args struct {
-	Name string
-}) (*core.Span, error) {
-	return &core.Span{
-		Name:  args.Name,
-		Query: parent.Query,
-	}, nil
-}
-
 func (s *querySchema) spanEnd(ctx context.Context, parent *core.Span, args struct {
 	Error dagql.Optional[dagql.ID[*core.Error]]
 }) (dagql.Nullable[core.Void], error) {
+	if parent.Span == nil {
+		return dagql.Null[core.Void](), fmt.Errorf("span not started")
+	}
 	if args.Error.Valid {
 		dagErr, err := args.Error.Value.Load(ctx, s.srv)
 		if err != nil {
