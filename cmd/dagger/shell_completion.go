@@ -18,7 +18,7 @@ type shellAutoComplete struct {
 var _ readline.AutoCompleter = (*shellAutoComplete)(nil)
 
 func (h *shellAutoComplete) Do(line []rune, pos int) (newLine [][]rune, length int) {
-	file, err := parseShell(strings.NewReader(string(line)), "")
+	file, err := parseShell(strings.NewReader(string(line)), "", syntax.RecoverErrors(1))
 	if err != nil {
 		return nil, 0
 	}
@@ -28,6 +28,9 @@ func (h *shellAutoComplete) Do(line []rune, pos int) (newLine [][]rune, length i
 	var stmt *syntax.Stmt
 	excluded := map[*syntax.Stmt]struct{}{}
 	syntax.Walk(file, func(node syntax.Node) bool {
+		if node == nil {
+			return false
+		}
 		switch node := node.(type) {
 		case *syntax.BinaryCmd:
 			if node.Op == syntax.Pipe {
@@ -62,7 +65,7 @@ func (h *shellAutoComplete) Do(line []rune, pos int) (newLine [][]rune, length i
 	var inprogressWord *syntax.Word
 	syntax.Walk(file, func(node syntax.Node) bool {
 		if node, ok := node.(*syntax.Word); ok {
-			if node.End().Offset() == uint(pos) {
+			if node.End().IsValid() && node.End().Offset() == uint(pos) {
 				inprogressWord = node
 				return false
 			}
