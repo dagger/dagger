@@ -7561,7 +7561,7 @@ class Client(Root):
         _ctx = self._select("moduleSource", _args)
         return ModuleSource(_ctx)
 
-    def new_secret(self, uri: str) -> "Secret":
+    def secret(self, uri: str) -> "Secret":
         """Creates a new secret.
 
         Parameters
@@ -7572,7 +7572,7 @@ class Client(Root):
         _args = [
             Arg("uri", uri),
         ]
-        _ctx = self._select("newSecret", _args)
+        _ctx = self._select("secret", _args)
         return Secret(_ctx)
 
     def set_secret(self, name: str, plaintext: str) -> "Secret":

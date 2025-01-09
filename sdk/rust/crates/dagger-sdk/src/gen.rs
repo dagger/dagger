@@ -8057,8 +8057,8 @@ impl Query {
     /// # Arguments
     ///
     /// * `uri` - The URI of the secret store
-    pub fn new_secret(&self, uri: impl Into<String>) -> Secret {
-        let mut query = self.selection.select("newSecret");
+    pub fn secret(&self, uri: impl Into<String>) -> Secret {
+        let mut query = self.selection.select("secret");
         query = query.arg("uri", uri.into());
         Secret {
             proc: self.proc.clone(),

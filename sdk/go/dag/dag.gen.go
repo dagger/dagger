@@ -405,9 +405,9 @@ func ModuleSource(refString string, opts ...dagger.ModuleSourceOpts) *dagger.Mod
 }
 
 // Creates a new secret.
-func NewSecret(uri string) *dagger.Secret {
+func Secret(uri string) *dagger.Secret {
 	client := initClient()
-	return client.NewSecret(uri)
+	return client.Secret(uri)
 }
 
 // Sets a secret given a user defined name to its plaintext and returns the secret.

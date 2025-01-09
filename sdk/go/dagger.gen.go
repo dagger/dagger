@@ -7542,8 +7542,8 @@ func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *Modul
 }
 
 // Creates a new secret.
-func (r *Client) NewSecret(uri string) *Secret {
-	q := r.query.Select("newSecret")
+func (r *Client) Secret(uri string) *Secret {
+	q := r.query.Select("secret")
 	q = q.Arg("uri", uri)
 
 	return &Secret{

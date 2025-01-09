@@ -25,8 +25,8 @@ func (s *secretSchema) Install() {
 			ArgDoc("plaintext", `The plaintext of the secret`).
 			ArgSensitive("plaintext"),
 
-		dagql.Func("newSecret", s.newSecret).
-			Impure("`newSecret` mutates state in the internal secret store.").
+		dagql.Func("secret", s.secret).
+			Impure("`secret` mutates state in the internal secret store.").
 			Doc(`Creates a new secret.`).
 			ArgDoc("uri", `The URI of the secret store`),
 
@@ -102,11 +102,11 @@ func (s *secretSchema) setSecret(ctx context.Context, parent *core.Query, args s
 	return i, nil
 }
 
-type newSecretArgs struct {
+type secretArgs struct {
 	URI string
 }
 
-func (s *secretSchema) newSecret(ctx context.Context, parent *core.Query, args newSecretArgs) (i dagql.Instance[*core.Secret], err error) {
+func (s *secretSchema) secret(ctx context.Context, parent *core.Query, args secretArgs) (i dagql.Instance[*core.Secret], err error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return i, fmt.Errorf("failed to get client metadata from context: %w", err)

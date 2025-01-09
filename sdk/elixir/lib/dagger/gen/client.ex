@@ -794,10 +794,10 @@ defmodule Dagger.Client do
   end
 
   @doc "Creates a new secret."
-  @spec new_secret(t(), String.t()) :: Dagger.Secret.t()
-  def new_secret(%__MODULE__{} = client, uri) do
+  @spec secret(t(), String.t()) :: Dagger.Secret.t()
+  def secret(%__MODULE__{} = client, uri) do
     query_builder =
-      client.query_builder |> QB.select("newSecret") |> QB.put_arg("uri", uri)
+      client.query_builder |> QB.select("secret") |> QB.put_arg("uri", uri)
 
     %Dagger.Secret{
       query_builder: query_builder,

@@ -88,7 +88,7 @@
               <li><a href="#query-module">module</a></li>
               <li><a href="#query-moduleDependency">moduleDependency</a></li>
               <li><a href="#query-moduleSource">moduleSource</a></li>
-              <li><a href="#query-newSecret">newSecret</a></li>
+              <li><a href="#query-secret">secret</a></li>
               <li><a href="#query-setSecret">setSecret</a></li>
               <li><a href="#query-sourceMap">sourceMap</a></li>
               <li><a href="#query-typeDef">typeDef</a></li>
@@ -3378,12 +3378,12 @@
               </div>
             </div>
           </section>
-          <section id="query-newSecret" class="operation operation-query" data-traverse-target="query-newSecret">
+          <section id="query-secret" class="operation operation-query" data-traverse-target="query-secret">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
             </div>
             <h2 class="operation-heading ">
-              <code>newSecret</code>
+              <code>secret</code>
             </h2>
             <div class="doc-row">
               <div class="doc-copy">
@@ -3426,6 +3426,12 @@
               <div class="doc-copy">
                 <div class="operation-example doc-copy-section">
                   <h5>Example</h5>
+                  <pre><code class="hljs language-gql"><span class="hljs-symbol"><span class="hljs-keyword">query</span> <span class="hljs-tag">{
+  <span class="hljs-symbol">secret<span class="hljs-tag">(id: &quot;eyJob3N0X2VudiI6IkhPTUUifQ==&quot;)</span> <span class="hljs-tag">{
+    <span class="hljs-symbol">plaintext</span>
+  }</span></span>
+}</span></span>
+</code></pre>
                 </div>
               </div>
             </div>

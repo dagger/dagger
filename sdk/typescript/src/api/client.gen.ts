@@ -6969,8 +6969,8 @@ export class Client extends BaseClient {
    * Creates a new secret.
    * @param uri The URI of the secret store
    */
-  newSecret = (uri: string): Secret => {
-    const ctx = this._ctx.select("newSecret", { uri })
+  secret = (uri: string): Secret => {
+    const ctx = this._ctx.select("secret", { uri })
     return new Secret(ctx)
   }
 

@@ -658,9 +658,9 @@ class Client extends Client\AbstractClient
     /**
      * Creates a new secret.
      */
-    public function newSecret(string $uri): Secret
+    public function secret(string $uri): Secret
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('newSecret');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('secret');
         $innerQueryBuilder->setArgument('uri', $uri);
         return new \Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
