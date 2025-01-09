@@ -24,6 +24,14 @@ export type EnumTypeDef = BaseTypeDef & {
 }
 
 /**
+ * Extends the base type def if it's an interface to add its name
+ */
+export type InterfaceTypeDef = BaseTypeDef & {
+  kind: TypeDefKind.InterfaceKind
+  name: string
+}
+
+/**
  * Extends the base typedef if it's a scalar to add its name and real type.
  */
 export type ScalarTypeDef = BaseTypeDef & {
@@ -56,4 +64,6 @@ export type TypeDef<T extends BaseTypeDef["kind"]> =
         ? ListTypeDef
         : T extends TypeDefKind.EnumKind
           ? EnumTypeDef
-          : BaseTypeDef
+          : T extends TypeDefKind.InterfaceKind
+            ? InterfaceTypeDef
+            : BaseTypeDef
