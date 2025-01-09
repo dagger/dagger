@@ -22,14 +22,12 @@ class MyModule {
 
     // run tasks in parallel
     // emit a span for each
-    const tasks: Promise<void>[] = [
-      this.lint(container),
-      this.typecheck(container),
-      this.format(container),
-      this.test(container),
-    ]
-
-    await Promise.all(tasks)
+    await Promise.all([
+      await this.lint(container),
+      await this.typecheck(container),
+      await this.format(container),
+      await this.test(container),
+    ])
   }
 
   private async lint(container: Container): Promise<void> {
@@ -37,7 +35,7 @@ class MyModule {
     const span = tracer.startSpan("lint code")
     try {
       const result = await container.withExec(["npm", "run", "lint"]).sync()
-      if (result.exitCode !== 0) {
+      if (await result.exitCode() !== 0) {
         throw new Error(`Linting failed with exit code ${result.exitCode}`)
       }
     } finally {
@@ -52,7 +50,7 @@ class MyModule {
       const result = await container
         .withExec(["npm", "run", "type-check"])
         .sync()
-      if (result.exitCode !== 0) {
+      if (await result.exitCode() !== 0) {
         throw new Error(`Type check failed with exit code ${result.exitCode}`)
       }
     } finally {
@@ -65,7 +63,7 @@ class MyModule {
     const span = tracer.startSpan("format code")
     try {
       const result = await container.withExec(["npm", "run", "format"]).sync()
-      if (result.exitCode !== 0) {
+      if (await result.exitCode() !== 0) {
         throw new Error(
           `Code formatting failed with exit code ${result.exitCode}`,
         )
@@ -82,7 +80,7 @@ class MyModule {
       const result = await container
         .withExec(["npm", "run", "test:unit", "run"])
         .sync()
-      if (result.exitCode !== 0) {
+      if (await result.exitCode() !== 0) {
         throw new Error(`Tests failed with exit code ${result.exitCode}`)
       }
     } finally {
