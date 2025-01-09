@@ -598,10 +598,14 @@ func (sdk *goSDK) baseWithCodegen(
 
 	// unfortunately git does not support export/import of git config
 	// so we basically have to translate the fetched git config into
-	// git config command for each fetched config
+	// git config command for each fetched config.
+	// Further, we could make all these separate withExec command, but
+	// that won't be very efficient as, in theory, we can have n number of
+	// config values here.
+	// TODO(rajatjindal): maybe we should do this in the attachable itself?
 	var gitconfigScriptBuffer bytes.Buffer
 	for _, entry := range gitconfig {
-		cmd := []string{"git", "config", entry.Key, entry.Value}
+		cmd := []string{"git", "config", "--global", "--add", entry.Key, entry.Value}
 		_, err := gitconfigScriptBuffer.WriteString(strings.Join(cmd, " "))
 		if err != nil {
 			return ctr, err
@@ -700,34 +704,34 @@ func (sdk *goSDK) baseWithCodegen(
 					Name:  "contents",
 					Value: dagql.String(gitconfigScriptBuffer.String()),
 				},
-				// {
-				// 	Name:  "permissions",
-				// 	Value: dagql.Int(0755),
-				// },
+				{
+					Name:  "permissions",
+					Value: dagql.Int(0755),
+				},
 			},
 		},
-		// dagql.Selector{
-		// 	Field: "withExec",
-		// 	Args: []dagql.NamedInput{
-		// 		{
-		// 			Name:  "args",
-		// 			Value: dagql.ArrayInput[dagql.String]{"/tmp/update-git-config.sh"},
-		// 		},
-		// 	},
-		// },
-		// dagql.Selector{
-		// 	Field: "withEnvVariable",
-		// 	Args: []dagql.NamedInput{
-		// 		{
-		// 			Name:  "name",
-		// 			Value: dagql.String("GOPRIVATE"),
-		// 		},
-		// 		{
-		// 			Name:  "value",
-		// 			Value: dagql.String(gitconfigData.Goprivate),
-		// 		},
-		// 	},
-		// },
+		dagql.Selector{
+			Field: "withExec",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "args",
+					Value: dagql.ArrayInput[dagql.String]{"sh", "-c", "/tmp/update-git-config.sh"},
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withEnvVariable",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "name",
+					Value: dagql.String("GOPRIVATE"),
+				},
+				{
+					Name:  "value",
+					Value: dagql.String("github.com"),
+				},
+			},
+		},
 		dagql.Selector{
 			Field: "withoutDefaultArgs",
 		},
