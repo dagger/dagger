@@ -98,12 +98,16 @@ public class Entrypoint extends Base {
     }
 
     private TypeDef typeDef(String name) {
+        if (name == null) {
+            throw new IllegalArgumentException("Type name cannot be null");
+        }
         TypeDef typeDef;
         try {
             var kind = TypeDefKind.valueOf((name + "_kind").toUpperCase());
             typeDef = dag.typeDef().withKind(kind);
         } catch (IllegalArgumentException e) {
-            typeDef = dag.typeDef().withObject(name);
+            // FIXME: correctly handle types to match Dagger ones, for instance regarding arrays
+            typeDef = dag.typeDef().withObject(name.substring(name.lastIndexOf('.') + 1));
         }
 
         return typeDef;
