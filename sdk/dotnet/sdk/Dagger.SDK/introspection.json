@@ -291,7 +291,94 @@
                 "enumValues": [],
                 "fields": [
                     {
-                        "args": [],
+                        "args": [
+                            {
+                                "defaultValue": "[]",
+                                "deprecationReason": null,
+                                "description": "Command to run instead of the container's default command (e.g., [\"go\", \"run\", \"main.go\"]).\n\nIf empty, the container's default command is used.",
+                                "directives": [],
+                                "isDeprecated": false,
+                                "name": "args",
+                                "type": {
+                                    "kind": "LIST",
+                                    "name": null,
+                                    "ofType": {
+                                        "kind": "NON_NULL",
+                                        "name": null,
+                                        "ofType": {
+                                            "kind": "SCALAR",
+                                            "name": "String",
+                                            "ofType": null
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                "defaultValue": "false",
+                                "deprecationReason": null,
+                                "description": "If the container has an entrypoint, prepend it to the args.",
+                                "directives": [],
+                                "isDeprecated": false,
+                                "name": "useEntrypoint",
+                                "type": {
+                                    "kind": "SCALAR",
+                                    "name": "Boolean",
+                                    "ofType": null
+                                }
+                            },
+                            {
+                                "defaultValue": "false",
+                                "deprecationReason": null,
+                                "description": "Provides Dagger access to the executed command.\n\nDo not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.",
+                                "directives": [],
+                                "isDeprecated": false,
+                                "name": "experimentalPrivilegedNesting",
+                                "type": {
+                                    "kind": "SCALAR",
+                                    "name": "Boolean",
+                                    "ofType": null
+                                }
+                            },
+                            {
+                                "defaultValue": "false",
+                                "deprecationReason": null,
+                                "description": "Execute the command with all root capabilities. This is similar to running a command with \"sudo\" or executing \"docker run\" with the \"--privileged\" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.",
+                                "directives": [],
+                                "isDeprecated": false,
+                                "name": "insecureRootCapabilities",
+                                "type": {
+                                    "kind": "SCALAR",
+                                    "name": "Boolean",
+                                    "ofType": null
+                                }
+                            },
+                            {
+                                "defaultValue": "false",
+                                "deprecationReason": null,
+                                "description": "Replace \"${VAR}\" or \"$VAR\" in the args according to the current environment variables defined in the container (e.g. \"/$VAR/foo\").",
+                                "directives": [],
+                                "isDeprecated": false,
+                                "name": "expand",
+                                "type": {
+                                    "kind": "SCALAR",
+                                    "name": "Boolean",
+                                    "ofType": null
+                                }
+                            },
+                            {
+                                "defaultValue": "false",
+                                "deprecationReason": null,
+                                "description": "If set, skip the automatic init process injected into containers by default.\n\nThis should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.",
+                                "directives": [],
+                                "isDeprecated": false,
+                                "name": "noInit",
+                                "type": {
+                                    "kind": "SCALAR",
+                                    "name": "Boolean",
+                                    "ofType": null
+                                }
+                            }
+                        ],
                         "deprecationReason": null,
                         "description": "Turn the container into a Service.\n\nBe sure to set any exposed ports before this conversion.",
                         "directives": [],
@@ -2229,23 +2316,6 @@
                         }
                     },
                     {
-                        "args": [],
-                        "deprecationReason": null,
-                        "description": "Indicate that subsequent operations should be featured more prominently in the UI.",
-                        "directives": [],
-                        "isDeprecated": false,
-                        "name": "withFocus",
-                        "type": {
-                            "kind": "NON_NULL",
-                            "name": null,
-                            "ofType": {
-                                "kind": "OBJECT",
-                                "name": "Container",
-                                "ofType": null
-                            }
-                        }
-                    },
-                    {
                         "args": [
                             {
                                 "defaultValue": null,
@@ -3477,23 +3547,6 @@
                         "directives": [],
                         "isDeprecated": false,
                         "name": "withoutFiles",
-                        "type": {
-                            "kind": "NON_NULL",
-                            "name": null,
-                            "ofType": {
-                                "kind": "OBJECT",
-                                "name": "Container",
-                                "ofType": null
-                            }
-                        }
-                    },
-                    {
-                        "args": [],
-                        "deprecationReason": null,
-                        "description": "Indicate that subsequent operations should not be featured more prominently in the UI.\n\nThis is the initial state of all containers.",
-                        "directives": [],
-                        "isDeprecated": false,
-                        "name": "withoutFocus",
                         "type": {
                             "kind": "NON_NULL",
                             "name": null,
@@ -11102,7 +11155,7 @@
                                 }
                             },
                             {
-                                "defaultValue": "false",
+                                "defaultValue": "true",
                                 "deprecationReason": "Set to true to keep .git directory.",
                                 "description": "DEPRECATED: Set to true to keep .git directory.",
                                 "directives": [
@@ -16136,5 +16189,5 @@
             }
         ]
     },
-    "__schemaVersion": "v0.13.3"
+    "__schemaVersion": "v0.15.1"
 }
