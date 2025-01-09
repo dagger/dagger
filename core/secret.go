@@ -181,28 +181,28 @@ func (store *SecretStore) GetSecretPlaintext(ctx context.Context, idDgst digest.
 	if !ok {
 		return nil, fmt.Errorf("secret %s: %w", idDgst, secrets.ErrNotFound)
 	}
-	if secret.URI != "" {
-		buildkitSessionID := secret.BuildkitSessionID
-		if buildkitSessionID == "" {
-			return nil, status.Errorf(codes.InvalidArgument, "missing buildkit session id")
-		}
-		caller, err := store.bkSessionManager.Get(ctx, buildkitSessionID, true)
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to get buildkit session: %s", err)
-		}
 
-		// urlEncoded := store.getSocketURLEncoded(sock)
-		// ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs(engine.SocketURLEncodedKey, urlEncoded))
-
-		resp, err := secrets.NewSecretsClient(caller.Conn()).GetSecret(ctx, &secrets.GetSecretRequest{
-			ID: secret.URI,
-		})
-		if err != nil {
-			return nil, err
-		}
-		return resp.Data, nil
+	// If the secret is stored locally (setSecret), return the plaintext.
+	if secret.URI == "" {
+		return secret.Plaintext, nil
 	}
-	return secret.Plaintext, nil
+
+	buildkitSessionID := secret.BuildkitSessionID
+	if buildkitSessionID == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "missing buildkit session id")
+	}
+	caller, err := store.bkSessionManager.Get(ctx, buildkitSessionID, true)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get buildkit session: %s", err)
+	}
+
+	resp, err := secrets.NewSecretsClient(caller.Conn()).GetSecret(ctx, &secrets.GetSecretRequest{
+		ID: secret.URI,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
 }
 
 func (store *SecretStore) AsBuildkitSecretStore() secrets.SecretStore {
