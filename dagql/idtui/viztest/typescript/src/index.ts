@@ -15,13 +15,6 @@ export class Typescript {
   }
 
   @func()
-  async customSpan(): Promise<string> {
-    return getTracer().startActiveSpan("custom span", async () => {
-      return this.echo(`hello from TypeScript! it is currently ${now}`)
-    })
-  }
-
-  @func()
   async pending(): Promise<void> {
     await dag.container().
       from("alpine:latest").
@@ -30,5 +23,45 @@ export class Typescript {
       withExec(["false"]).
       withExec(["sleep", "1"]).
       sync()
+  }
+
+  @func()
+  async customSpan(): Promise<string> {
+    return dag.span("custom span").run(async () => {
+      return this.echo(`hello from TypeScript! it is currently ${now}`)
+    })
+  }
+
+  @func()
+  async exceptionalSpan(): Promise<string> {
+    return dag.span("custom span").run(async () => {
+      throw new Error("oh no");
+    });
+  }
+
+  @func()
+  async nestedSpans(): Promise<string> {
+    return dag.span("custom span").run(async () => {
+      await this.echo("outer");
+
+      // First sub-span
+      await dag.span("sub span").run(async () => {
+        await this.echo("sub 1");
+      });
+
+      // Second sub-span
+      await dag.span("sub span").run(async () => {
+        await this.echo("sub 2");
+      });
+
+      // Nested sub-span
+      await dag.span("another sub span").run(async () => {
+        await dag.span("sub span").run(async () => {
+          await this.echo("im even deeper");
+        });
+      });
+
+      return "done";
+    });
   }
 }
