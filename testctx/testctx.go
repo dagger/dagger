@@ -55,6 +55,7 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
@@ -148,9 +149,16 @@ func WithParallel(t *TB[*testing.T]) *TB[*testing.T] {
 		})
 }
 
+const TestCtxTypeAttr = "dagger.io/testctx.type"
+const TestCtxNameAttr = "dagger.io/testctx.name"
+
 func WithOTelTracing[Type RunnableTTB[Type]](tracer trace.Tracer) Middleware[Type] {
 	wrapSpan := func(t *TB[Type]) *TB[Type] {
 		ctx, span := tracer.Start(t.Context(), t.BaseName())
+		span.SetAttributes(
+			attribute.String(TestCtxTypeAttr, fmt.Sprintf("%T", t.RunnableTTB)),
+			attribute.String(TestCtxNameAttr, t.Name()),
+		)
 		t.Cleanup(func() {
 			if t.Failed() {
 				span.SetStatus(codes.Error, "test failed")
@@ -158,6 +166,7 @@ func WithOTelTracing[Type RunnableTTB[Type]](tracer trace.Tracer) Middleware[Typ
 				span.SetStatus(codes.Ok, "")
 			}
 			span.End()
+			fmt.Printf("HOLY spanid: %s\n", span.SpanContext().SpanID())
 		})
 		return t.WithContext(ctx)
 	}
