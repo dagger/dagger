@@ -2,13 +2,13 @@ package io.dagger.client;
 
 public class Scalar<T> {
 
-  private final T value;
+    private final T value;
 
-  protected Scalar(T value) {
-    this.value = value;
-  }
+    protected Scalar(T value) {
+        this.value = value;
+    }
 
-  T convert() {
-    return value;
-  }
+    public T convert() {
+        return value;
+    }
 }

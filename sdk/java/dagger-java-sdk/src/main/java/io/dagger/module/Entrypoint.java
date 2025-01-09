@@ -50,7 +50,8 @@ public class Entrypoint extends Base {
 
             JSON result;
             if (parentName.isEmpty()) {
-                result = register(moduleInfo);
+                var modID = register(moduleInfo);
+                result = JSON.from(modID.convert());
             } else {
                 result = invoke(moduleInfo, parentJson, parentName, fnName, inputArgs);
             }
@@ -60,8 +61,7 @@ public class Entrypoint extends Base {
         }
     }
 
-    private JSON register(ModuleInfo moduleInfo) {
-        System.out.println("invoke module " + moduleInfo.name());
+    private ModuleID register(ModuleInfo moduleInfo) throws ExecutionException, DaggerQueryException, InterruptedException {
         var module = dag
                 .module();
         if (isNotBlank(moduleInfo.description())) {
@@ -85,12 +85,7 @@ public class Entrypoint extends Base {
             module = module.withObject(moduleObj);
         }
 
-        System.out.println(module);
-
-        Jsonb jsonb = JsonbBuilder.create();
-        String serialized = jsonb.toJson(module);
-        System.out.println(serialized);
-        return JSON.from(serialized);
+        return module.id();
     }
 
     private JSON invoke(ModuleInfo moduleInfo, JSON parentJson, String parentName, String fnName, Map<String, JSON> inputArgs) {
