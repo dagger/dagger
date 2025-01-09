@@ -2879,7 +2879,7 @@ type Query {
   ): ModuleSource!
 
   """Creates a new secret."""
-  newSecret(
+  secret(
     """The URI of the secret store"""
     uri: String!
   ): Secret!
