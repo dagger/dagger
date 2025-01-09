@@ -92,7 +92,8 @@ defmodule Dagger.Mod.ObjectTest do
                    ]
                  ],
                  return: :string
-               ]
+               ],
+               return_void: [self: false, args: [], return: Dagger.Void]
              ]
     end
 

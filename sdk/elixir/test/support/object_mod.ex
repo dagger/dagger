@@ -48,4 +48,8 @@ defmodule ObjectMod do
        ) :: String.t() do
     Dagger.Directory.id(dir)
   end
+
+  defn return_void() :: Dagger.Void.t() do
+    :ok
+  end
 end

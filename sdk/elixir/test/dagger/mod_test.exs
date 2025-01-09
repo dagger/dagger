@@ -38,6 +38,9 @@ defmodule Dagger.ModTest do
     assert {:ok, "[1,2,3]"} = Mod.encode([1, 2, 3], {:list, :integer})
     assert {:ok, id} = Mod.encode(Dagger.Client.container(dag), Dagger.Container)
     assert is_binary(id)
+    assert {:ok, "null"} = Mod.encode("hello", Dagger.Void)
+    assert {:ok, "null"} = Mod.encode(1, Dagger.Void)
+    assert {:ok, "null"} = Mod.encode(:ok, Dagger.Void)
 
     assert {:error, _} = Mod.encode(1, :string)
   end
