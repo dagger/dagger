@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
@@ -508,6 +509,9 @@ func (m *moduleDef) HasFunction(fp functionProvider, name string) bool {
 // object type with with one from the module's object type definitions, to
 // recover missing function definitions in those places when chaining functions.
 func (m *moduleDef) LoadTypeDef(typeDef *modTypeDef) {
+	typeDef.mu.Lock()
+	defer typeDef.mu.Unlock()
+
 	if typeDef.AsObject != nil && typeDef.AsObject.Functions == nil && typeDef.AsObject.Fields == nil {
 		obj := m.GetObject(typeDef.AsObject.Name)
 		if obj != nil {
@@ -556,6 +560,9 @@ type modTypeDef struct {
 	AsList      *modList
 	AsScalar    *modScalar
 	AsEnum      *modEnum
+
+	// mu protects concurrent update from LoadTypeDef
+	mu sync.Mutex
 }
 
 func (t *modTypeDef) String() string {
@@ -922,12 +929,13 @@ type modFunction struct {
 	ReturnType  *modTypeDef
 	Args        []*modFunctionArg
 	cmdName     string
+	once        sync.Once
 }
 
 func (f *modFunction) CmdName() string {
-	if f.cmdName == "" {
+	f.once.Do(func() {
 		f.cmdName = cliName(f.Name)
-	}
+	})
 	return f.cmdName
 }
 
@@ -1013,13 +1021,14 @@ type modFunctionArg struct {
 	DefaultPath  string
 	Ignore       []string
 	flagName     string
+	once         sync.Once
 }
 
 // FlagName returns the name of the argument using CLI naming conventions.
 func (r *modFunctionArg) FlagName() string {
-	if r.flagName == "" {
+	r.once.Do(func() {
 		r.flagName = cliName(r.Name)
-	}
+	})
 	return r.flagName
 }
 
