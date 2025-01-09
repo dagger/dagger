@@ -63,14 +63,17 @@ public class Entrypoint extends Base {
     private JSON register(ModuleInfo moduleInfo) {
         System.out.println("invoke module " + moduleInfo.name());
         var module = dag
-                .module()
-                .withDescription(moduleInfo.description());
+                .module();
+        if (isNotBlank(moduleInfo.description())) {
+            module = module.withDescription(moduleInfo.description());
+        }
         for (var obj : moduleInfo.objects()) {
-            System.out.println("object " + obj.name());
             var moduleObj = dag.typeDef().withObject(obj.name());
             for (var fn : obj.functions()) {
-                System.out.println("function " + fn.name());
-                var objFn = dag.function(fn.name(), typeDef(fn.returnType())).withDescription(fn.description());
+                var objFn = dag.function(fn.name(), typeDef(fn.returnType()));
+                if (isNotBlank(fn.description())) {
+                    objFn = objFn.withDescription(fn.description());
+                }
 
                 for (var arg : fn.parameters()) {
                     objFn = objFn.withArg(
@@ -104,5 +107,9 @@ public class Entrypoint extends Base {
         }
 
         return typeDef;
+    }
+
+    private Boolean isNotBlank(String str) {
+        return str != null && !str.isBlank();
     }
 }
