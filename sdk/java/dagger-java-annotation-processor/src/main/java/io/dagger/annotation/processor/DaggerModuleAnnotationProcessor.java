@@ -76,7 +76,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                 List<ParameterInfo> parameterInfos = ((ExecutableElement) elt).getParameters().stream().map(param -> {
                                     String paramName = param.getSimpleName().toString();
                                     String paramType = param.asType().toString();
-                                    return new ParameterInfo(paramName, paramType, null);
+                                    return new ParameterInfo(paramName, null, paramType);
                                 }).toList();
 
                                 FunctionInfo functionInfo = new FunctionInfo(fName, fqName, fDescription, returnType,
