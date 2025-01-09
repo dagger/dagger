@@ -67,6 +67,51 @@ export class {{ .Name | QueryToClient | FormatName }} extends BaseClient { {{- w
 				{{- end }}
 			{{- end }}
 
+{{- if eq .Name "Span" }}
+
+  public async run<T>(fn: (span: Span) => Promise<T>) {
+    const started = await this.start()
+    const spanIdHex = await started.internalId()
+
+    // Get the current span context
+    const currentSpan = opentelemetry.trace.getSpan(opentelemetry.context.active()) || undefined;
+    const currentSpanContext = currentSpan?.spanContext();
+
+    if (!currentSpanContext) {
+      return await fn(this)
+    }
+
+    // Extract trace ID and other fields
+    const traceId = currentSpanContext.traceId;
+    const traceFlags = currentSpanContext.traceFlags;
+    const traceState = currentSpanContext.traceState;
+
+    // Construct the new SpanContext
+    const newSpanContext: opentelemetry.SpanContext = {
+      traceId,
+      spanId: spanIdHex,
+      traceFlags,
+      isRemote: true,
+      traceState,
+    };
+
+    // Bind the new context
+    const newContext = opentelemetry.trace.setSpan(
+      opentelemetry.context.active(),
+      opentelemetry.trace.wrapSpanContext(newSpanContext),
+    );
+
+    let spanError: Error | undefined = undefined
+    try {
+      return await opentelemetry.context.with(newContext, fn, this, started)
+    } catch (e) {
+      spanError = dag.error(e.message)
+      throw e
+    } finally {
+      await started.end({ error: spanError })
+    }
+  }
+{{- end }}
 {{- if . | IsSelfChainable }}
 {{""}}
   /**
