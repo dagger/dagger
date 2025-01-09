@@ -799,7 +799,7 @@ class Object(ObjectHandler[GraphQLObjectType]):
 
         if self_name == "Span":
             yield textwrap.dedent(
-                f'''
+                f"""
                 def __init__(self, *args, **kwargs):
                     super().__init__(*args, **kwargs)
                     self.token = None
@@ -847,7 +847,7 @@ class Object(ObjectHandler[GraphQLObjectType]):
                     if self.token:
                         opentelemetry.context.detach(self.token)
                     return void
-                '''  # noqa: E501
+                """  # noqa: E501
             )
 
         if is_self_chainable(t):
