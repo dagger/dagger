@@ -11,17 +11,15 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
-public class Entrypoint {
+public class Entrypoint extends Base {
     public static void main(String... args) throws Exception {
         try (Client dag = Dagger.connect()) {
             new Entrypoint(dag).dispatch();
         }
     }
 
-    private final Client dag;
-
     Entrypoint(Client dag) {
-        this.dag = dag;
+        super(dag);
     }
 
     void dispatch() throws IOException, ExecutionException, DaggerQueryException, InterruptedException {
