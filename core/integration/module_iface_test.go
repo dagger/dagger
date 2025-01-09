@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -18,15 +19,29 @@ func TestInterface(t *testing.T) {
 }
 
 func (InterfaceSuite) TestIfaceBasic(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	type testCase struct {
+		sdk  string
+		path string
+	}
 
-	_, err := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithMountedDirectory("/work", c.Host().Directory("./testdata/modules/go/ifaces")).
-		WithWorkdir("/work").
-		With(daggerCall("test")).
-		Sync(ctx)
-	require.NoError(t, err)
+	for _, tc := range []testCase{
+		{sdk: "go", path: "./testdata/modules/go/ifaces"},
+		{sdk: "typescript", path: "./testdata/modules/typescript/ifaces"},
+	} {
+		tc := tc
+
+		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			_, err := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithMountedDirectory("/work", c.Host().Directory(tc.path)).
+				WithWorkdir("/work").
+				With(daggerCall("test")).
+				Sync(ctx)
+			require.NoError(t, err)
+		})
+	}
 }
 
 func (InterfaceSuite) TestIfaceGoSadPaths(ctx context.Context, t *testctx.T) {
@@ -94,44 +109,94 @@ type DanglingIface interface {
 }
 
 func (InterfaceSuite) TestIfaceCall(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	type testCase struct {
+		sdk        string
+		depSource  string
+		testSource string
+	}
 
-	out, err := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work/mallard").
-		With(daggerExec("init", "--source=.", "--name=mallard", "--sdk=go")).
-		WithNewFile("main.go", `package main
+	tests := []testCase{
+		{
+			sdk: "go",
+			depSource: `package main
+
 type Mallard struct {}
 
 func (m *Mallard) Quack() string {
-	return "mallard quack"
+  return "mallard quack"
 }
-	`,
-		).
-		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", `package main
+			`,
+			testSource: `package main
 
 import (
-	"context"
+  "context"
 )
 
 type Test struct {}
 
 type Duck interface {
-	DaggerObject
-	Quack(ctx context.Context) (string, error)
+  DaggerObject
+  Quack(ctx context.Context) (string, error)
 }
 
 func (m *Test) GetDuck() Duck {
-	return dag.Mallard()
-}
-	`,
-		).
-		With(daggerExec("install", "./mallard")).
-		With(daggerCall("get-duck", "quack")).
-		Stdout(ctx)
+  return dag.Mallard()
+}`,
+		},
+		{
+			sdk: "typescript",
+			depSource: `import { object, func } from "@dagger.io/dagger"
 
-	require.NoError(t, err)
-	require.Equal(t, "mallard quack", strings.TrimSpace(out))
+@object()
+export class Mallard {
+  @func()
+  quack(): string {
+    return "mallard quack"
+  }
+}
+			
+`,
+			testSource: `import { dag, object, func } from "@dagger.io/dagger"
+
+export interface Duck {
+  quack: () => Promise<string>
+}
+
+@object()
+export class Test {
+  @func()
+  getDuck(): Duck {
+    return dag.mallard()
+  }
+}
+`,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+
+		for _, rtc := range tests {
+			rtc := rtc
+
+			t.Run(fmt.Sprintf("%s iface called from %s", tc.sdk, rtc.sdk), func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+
+				out, err := c.Container().From(golangImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work/mallard").
+					With(daggerExec("init", "--source=.", "--name=mallard", fmt.Sprintf("--sdk=%s", tc.sdk))).
+					With(sdkSource(tc.sdk, tc.depSource)).
+					WithWorkdir("/work").
+					With(daggerExec("init", "--source=.", "--name=test", fmt.Sprintf("--sdk=%s", rtc.sdk))).
+					With(sdkSource(rtc.sdk, rtc.testSource)).
+					With(daggerExec("install", "./mallard")).
+					With(daggerCall("get-duck", "quack")).
+					Stdout(ctx)
+
+				require.NoError(t, err)
+				require.Equal(t, "mallard quack", strings.TrimSpace(out))
+			})
+		}
+	}
 }
