@@ -1611,20 +1611,8 @@ export class Container extends BaseClient {
 
     const response: Awaited<envVariables[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new EnvVariable(
-          new Context(
-            [
-              {
-                operation: "loadEnvVariableFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
+    return response.map((r) =>
+      new Client(ctx.copy()).loadEnvVariableFromID(r.id),
     )
   }
 
@@ -1726,21 +1714,7 @@ export class Container extends BaseClient {
 
     const response: Awaited<exposedPorts[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new Port(
-          new Context(
-            [
-              {
-                operation: "loadPortFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
-    )
+    return response.map((r) => new Client(ctx.copy()).loadPortFromID(r.id))
   }
 
   /**
@@ -1819,21 +1793,7 @@ export class Container extends BaseClient {
 
     const response: Awaited<labels[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new Label(
-          new Context(
-            [
-              {
-                operation: "loadLabelFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
-    )
+    return response.map((r) => new Client(ctx.copy()).loadLabelFromID(r.id))
   }
 
   /**
@@ -1957,17 +1917,7 @@ export class Container extends BaseClient {
 
     const response: Awaited<ContainerID> = await ctx.execute()
 
-    return new Container(
-      new Context(
-        [
-          {
-            operation: "loadContainerFromID",
-            args: { id: response },
-          },
-        ],
-        this._ctx.getConnection(),
-      ),
-    )
+    return new Client(ctx.copy()).loadContainerFromID(response)
   }
 
   /**
@@ -2878,17 +2828,7 @@ export class Directory extends BaseClient {
 
     const response: Awaited<DirectoryID> = await ctx.execute()
 
-    return new Directory(
-      new Context(
-        [
-          {
-            operation: "loadDirectoryFromID",
-            args: { id: response },
-          },
-        ],
-        this._ctx.getConnection(),
-      ),
-    )
+    return new Client(ctx.copy()).loadDirectoryFromID(response)
   }
 
   /**
@@ -3383,20 +3323,8 @@ export class EngineCacheEntrySet extends BaseClient {
 
     const response: Awaited<entries[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new EngineCacheEntry(
-          new Context(
-            [
-              {
-                operation: "loadEngineCacheEntryFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
+    return response.map((r) =>
+      new Client(ctx.copy()).loadEngineCacheEntryFromID(r.id),
     )
   }
 
@@ -3523,20 +3451,8 @@ export class EnumTypeDef extends BaseClient {
 
     const response: Awaited<values[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new EnumValueTypeDef(
-          new Context(
-            [
-              {
-                operation: "loadEnumValueTypeDefFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
+    return response.map((r) =>
+      new Client(ctx.copy()).loadEnumValueTypeDefFromID(r.id),
     )
   }
 }
@@ -3959,17 +3875,7 @@ export class File extends BaseClient {
 
     const response: Awaited<FileID> = await ctx.execute()
 
-    return new File(
-      new Context(
-        [
-          {
-            operation: "loadFileFromID",
-            args: { id: response },
-          },
-        ],
-        this._ctx.getConnection(),
-      ),
-    )
+    return new Client(ctx.copy()).loadFileFromID(response)
   }
 
   /**
@@ -4055,20 +3961,8 @@ export class Function_ extends BaseClient {
 
     const response: Awaited<args[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new FunctionArg(
-          new Context(
-            [
-              {
-                operation: "loadFunctionArgFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
+    return response.map((r) =>
+      new Client(ctx.copy()).loadFunctionArgFromID(r.id),
     )
   }
 
@@ -4359,20 +4253,8 @@ export class FunctionCall extends BaseClient {
 
     const response: Awaited<inputArgs[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new FunctionCallArgValue(
-          new Context(
-            [
-              {
-                operation: "loadFunctionCallArgValueFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
+    return response.map((r) =>
+      new Client(ctx.copy()).loadFunctionCallArgValueFromID(r.id),
     )
   }
 
@@ -5097,20 +4979,8 @@ export class InputTypeDef extends BaseClient {
 
     const response: Awaited<fields[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new FieldTypeDef(
-          new Context(
-            [
-              {
-                operation: "loadFieldTypeDefFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
+    return response.map((r) =>
+      new Client(ctx.copy()).loadFieldTypeDefFromID(r.id),
     )
   }
 
@@ -5199,21 +5069,7 @@ export class InterfaceTypeDef extends BaseClient {
 
     const response: Awaited<functions[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new Function_(
-          new Context(
-            [
-              {
-                operation: "loadFunction_FromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
-    )
+    return response.map((r) => new Client(ctx.copy()).loadFunctionFromID(r.id))
   }
 
   /**
@@ -5494,21 +5350,7 @@ export class Module_ extends BaseClient {
 
     const response: Awaited<dependencies[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new Module_(
-          new Context(
-            [
-              {
-                operation: "loadModule_FromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
-    )
+    return response.map((r) => new Client(ctx.copy()).loadModuleFromID(r.id))
   }
 
   /**
@@ -5523,20 +5365,8 @@ export class Module_ extends BaseClient {
 
     const response: Awaited<dependencyConfig[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new ModuleDependency(
-          new Context(
-            [
-              {
-                operation: "loadModuleDependencyFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
+    return response.map((r) =>
+      new Client(ctx.copy()).loadModuleDependencyFromID(r.id),
     )
   }
 
@@ -5567,21 +5397,7 @@ export class Module_ extends BaseClient {
 
     const response: Awaited<enums[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new TypeDef(
-          new Context(
-            [
-              {
-                operation: "loadTypeDefFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
-    )
+    return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
   }
 
   /**
@@ -5620,21 +5436,7 @@ export class Module_ extends BaseClient {
 
     const response: Awaited<interfaces[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new TypeDef(
-          new Context(
-            [
-              {
-                operation: "loadTypeDefFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
-    )
+    return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
   }
 
   /**
@@ -5664,21 +5466,7 @@ export class Module_ extends BaseClient {
 
     const response: Awaited<objects[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new TypeDef(
-          new Context(
-            [
-              {
-                operation: "loadTypeDefFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
-    )
+    return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
   }
 
   /**
@@ -5976,20 +5764,8 @@ export class ModuleSource extends BaseClient {
 
     const response: Awaited<dependencies[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new ModuleDependency(
-          new Context(
-            [
-              {
-                operation: "loadModuleDependencyFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
+    return response.map((r) =>
+      new Client(ctx.copy()).loadModuleDependencyFromID(r.id),
     )
   }
 
@@ -6177,20 +5953,8 @@ export class ModuleSource extends BaseClient {
 
     const response: Awaited<views[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new ModuleSourceView(
-          new Context(
-            [
-              {
-                operation: "loadModuleSourceViewFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
+    return response.map((r) =>
+      new Client(ctx.copy()).loadModuleSourceViewFromID(r.id),
     )
   }
 
@@ -6422,20 +6186,8 @@ export class ObjectTypeDef extends BaseClient {
 
     const response: Awaited<fields[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new FieldTypeDef(
-          new Context(
-            [
-              {
-                operation: "loadFieldTypeDefFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
+    return response.map((r) =>
+      new Client(ctx.copy()).loadFieldTypeDefFromID(r.id),
     )
   }
 
@@ -6451,21 +6203,7 @@ export class ObjectTypeDef extends BaseClient {
 
     const response: Awaited<functions[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new Function_(
-          new Context(
-            [
-              {
-                operation: "loadFunction_FromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
-    )
+    return response.map((r) => new Client(ctx.copy()).loadFunctionFromID(r.id))
   }
 
   /**
@@ -6705,21 +6443,7 @@ export class Client extends BaseClient {
 
     const response: Awaited<currentTypeDefs[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new TypeDef(
-          new Context(
-            [
-              {
-                operation: "loadTypeDefFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
-    )
+    return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
   }
 
   /**
@@ -7486,21 +7210,7 @@ export class Service extends BaseClient {
 
     const response: Awaited<ports[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new Port(
-          new Context(
-            [
-              {
-                operation: "loadPortFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
-    )
+    return response.map((r) => new Client(ctx.copy()).loadPortFromID(r.id))
   }
 
   /**
@@ -7513,17 +7223,7 @@ export class Service extends BaseClient {
 
     const response: Awaited<ServiceID> = await ctx.execute()
 
-    return new Service(
-      new Context(
-        [
-          {
-            operation: "loadServiceFromID",
-            args: { id: response },
-          },
-        ],
-        this._ctx.getConnection(),
-      ),
-    )
+    return new Client(ctx.copy()).loadServiceFromID(response)
   }
 
   /**
@@ -7535,17 +7235,7 @@ export class Service extends BaseClient {
 
     const response: Awaited<ServiceID> = await ctx.execute()
 
-    return new Service(
-      new Context(
-        [
-          {
-            operation: "loadServiceFromID",
-            args: { id: response },
-          },
-        ],
-        this._ctx.getConnection(),
-      ),
-    )
+    return new Client(ctx.copy()).loadServiceFromID(response)
   }
 
   /**
@@ -7763,17 +7453,7 @@ export class Terminal extends BaseClient {
 
     const response: Awaited<TerminalID> = await ctx.execute()
 
-    return new Terminal(
-      new Context(
-        [
-          {
-            operation: "loadTerminalFromID",
-            args: { id: response },
-          },
-        ],
-        this._ctx.getConnection(),
-      ),
-    )
+    return new Client(ctx.copy()).loadTerminalFromID(response)
   }
 }
 
