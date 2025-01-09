@@ -7,6 +7,7 @@ import (
 	fmt "fmt"
 	"os"
 	"os/exec"
+	"slices"
 	strings "strings"
 	"sync"
 	"time"
@@ -147,6 +148,24 @@ func parseGitCredentialOutput(output []byte) (*CredentialInfo, error) {
 	}, nil
 }
 
+var gitConfigAllowedKeys = []string{}
+
+func matchesURLInsteadOf(input string) bool {
+	return strings.HasPrefix(input, "url.") && strings.HasSuffix(input, ".insteadof")
+}
+
+func isGitConfigKeyAllowed(key string) bool {
+	if slices.Contains(gitConfigAllowedKeys, key) {
+		return true
+	}
+
+	if matchesURLInsteadOf(key) {
+		return true
+	}
+
+	return false
+}
+
 // GetConfig retrieves Git config using the local Git config system.
 // The function has a timeout of 30 seconds and ensures thread-safe execution.
 //
@@ -216,10 +235,12 @@ func parseGitConfigOutput(output []byte) (*GitConfig, error) {
 			return nil, fmt.Errorf("invalid format: line doesn't match key=value pattern")
 		}
 
-		entries = append(entries, &GitConfigEntry{
-			Key:   parts[0],
-			Value: parts[1],
-		})
+		if isGitConfigKeyAllowed(strings.ToLower(parts[0])) {
+			entries = append(entries, &GitConfigEntry{
+				Key:   parts[0],
+				Value: parts[1],
+			})
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
