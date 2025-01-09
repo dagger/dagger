@@ -4,11 +4,6 @@ go 1.23.2
 
 require (
 	dagger.io/dagger v0.15.1
-	github.com/dagger/dagger/engine/distconsts v0.15.1
-	github.com/moby/buildkit v0.16.0-rc2.0.20240917172113-e15601a00fbe // https://github.com/moby/buildkit/commit/e15601a00fbef2805db1ed87be7bb88628ae926b
-)
-
-require (
 	github.com/1password/onepassword-sdk-go v0.1.3
 	github.com/99designs/gqlgen v0.17.57
 	github.com/Khan/genqlient v0.7.0
@@ -31,6 +26,7 @@ require (
 	github.com/containernetworking/cni v1.2.3
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/creack/pty v1.1.24
+	github.com/dagger/dagger/engine/distconsts v0.15.1
 	github.com/dave/jennifer v1.7.1
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/distribution/reference v0.6.0
@@ -58,6 +54,7 @@ require (
 	github.com/mackerelio/go-osstat v0.2.5
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mitchellh/go-spdx v0.1.0
+	github.com/moby/buildkit v0.16.0-rc2.0.20240917172113-e15601a00fbe // https://github.com/moby/buildkit/commit/e15601a00fbef2805db1ed87be7bb88628ae926b
 	github.com/moby/locker v1.0.1
 	github.com/moby/patternmatcher v0.6.0
 	github.com/moby/sys/mount v0.3.4
