@@ -70,7 +70,7 @@ func (s Span) Clone() *Span {
 
 func (s *Span) Start(ctx context.Context) *Span {
 	started := s.Clone()
-	ctx, started.Span = Tracer(ctx).Start(ctx, s.Name)
+	_, started.Span = Tracer(ctx).Start(ctx, s.Name)
 	started.Query.StoreSpan(started)
 	return started
 }
