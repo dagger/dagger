@@ -190,7 +190,7 @@ func (t TypescriptSDK) Publish(
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/typescript/")
 	versionFlag := strings.TrimPrefix(version, "v")
-	if dryRun {
+	if !semver.IsValid(version) {
 		versionFlag = "prepatch"
 	}
 
