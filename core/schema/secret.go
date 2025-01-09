@@ -30,8 +30,8 @@ func (s *secretSchema) Install() {
 			Doc(`Creates a new secret.`).
 			ArgDoc("uri", `The URI of the secret store`),
 
-		dagql.Func("secret", s.secret).
-			Doc(`Reference a secret by name.`),
+		dagql.Func("loadSecretFromName", s.loadSecretFromName).
+			Doc(`Load a Secret from its Name.`),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Secret]{
@@ -45,7 +45,7 @@ func (s *secretSchema) Install() {
 	}.Install(s.srv)
 }
 
-type secretArgs struct {
+type loadSecretFromNameArgs struct {
 	Name string
 
 	// Accessor is the scoped per-module name, which should guarantee uniqueness.
@@ -54,7 +54,7 @@ type secretArgs struct {
 	Accessor dagql.Optional[dagql.String]
 }
 
-func (s *secretSchema) secret(ctx context.Context, parent *core.Query, args secretArgs) (*core.Secret, error) {
+func (s *secretSchema) loadSecretFromName(ctx context.Context, parent *core.Query, args loadSecretFromNameArgs) (*core.Secret, error) {
 	return &core.Secret{
 		Query:    parent,
 		IDDigest: dagql.CurrentID(ctx).Digest(),
@@ -80,7 +80,7 @@ func (s *secretSchema) setSecret(ctx context.Context, parent *core.Query, args s
 	// NB: to avoid putting the plaintext value in the graph, return a freshly
 	// minted Object that just gets the secret by name
 	if err := s.srv.Select(ctx, s.srv.Root(), &i, dagql.Selector{
-		Field: "secret",
+		Field: "loadSecretFromName",
 		Args: []dagql.NamedInput{
 			{
 				Name:  "name",
@@ -125,7 +125,7 @@ func (s *secretSchema) newSecret(ctx context.Context, parent *core.Query, args n
 	// NB: to avoid putting the plaintext value in the graph, return a freshly
 	// minted Object that just gets the secret by name
 	if err := s.srv.Select(ctx, s.srv.Root(), &i, dagql.Selector{
-		Field: "secret",
+		Field: "loadSecretFromName",
 		Args: []dagql.NamedInput{
 			{
 				Name:  "name",

@@ -350,6 +350,12 @@ func LoadSecretFromID(id dagger.SecretID) *dagger.Secret {
 	return client.LoadSecretFromID(id)
 }
 
+// Load a Secret from its Name.
+func LoadSecretFromName(name string, opts ...dagger.LoadSecretFromNameOpts) *dagger.Secret {
+	client := initClient()
+	return client.LoadSecretFromName(name, opts...)
+}
+
 // Load a Service from its ID.
 func LoadServiceFromID(id dagger.ServiceID) *dagger.Service {
 	client := initClient()
@@ -402,12 +408,6 @@ func ModuleSource(refString string, opts ...dagger.ModuleSourceOpts) *dagger.Mod
 func NewSecret(uri string) *dagger.Secret {
 	client := initClient()
 	return client.NewSecret(uri)
-}
-
-// Reference a secret by name.
-func Secret(name string, opts ...dagger.SecretOpts) *dagger.Secret {
-	client := initClient()
-	return client.Secret(name, opts...)
 }
 
 // Sets a secret given a user defined name to its plaintext and returns the secret.

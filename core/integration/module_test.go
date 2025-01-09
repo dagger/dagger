@@ -3115,7 +3115,7 @@ import (
 type Leaker struct {}
 
 func (l *Leaker) Leak(ctx context.Context) error {
-	secret, _ := dag.Secret("mysecret").Plaintext(ctx)
+	secret, _ := dag.LoadSecretFromName("mysecret").Plaintext(ctx)
 	fmt.Println("trying to read secret:", secret)
 	return nil
 }

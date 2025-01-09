@@ -1182,6 +1182,10 @@ export type ClientHttpOpts = {
   experimentalServiceHost?: Service
 }
 
+export type ClientLoadSecretFromNameOpts = {
+  accessor?: string
+}
+
 export type ClientModuleDependencyOpts = {
   /**
    * If set, the name to use for the dependency. Otherwise, once installed to a parent module, the name of the dependency module will be used by default.
@@ -1204,10 +1208,6 @@ export type ClientModuleSourceOpts = {
    * The relative path to the module root from the host directory
    */
   relHostPath?: string
-}
-
-export type ClientSecretOpts = {
-  accessor?: string
 }
 
 /**
@@ -6879,6 +6879,17 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a Secret from its Name.
+   */
+  loadSecretFromName = (
+    name: string,
+    opts?: ClientLoadSecretFromNameOpts,
+  ): Secret => {
+    const ctx = this._ctx.select("loadSecretFromName", { name, ...opts })
+    return new Secret(ctx)
+  }
+
+  /**
    * Load a Service from its ID.
    */
   loadServiceFromID = (id: ServiceID): Service => {
@@ -6960,14 +6971,6 @@ export class Client extends BaseClient {
    */
   newSecret = (uri: string): Secret => {
     const ctx = this._ctx.select("newSecret", { uri })
-    return new Secret(ctx)
-  }
-
-  /**
-   * Reference a secret by name.
-   */
-  secret = (name: string, opts?: ClientSecretOpts): Secret => {
-    const ctx = this._ctx.select("secret", { name, ...opts })
     return new Secret(ctx)
   }
 
