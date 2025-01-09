@@ -128,10 +128,6 @@ func (build *Builder) WithGPUSupport() *Builder {
 	return &b
 }
 
-func (build *Builder) CLI(ctx context.Context) (*dagger.File, error) {
-	return build.binary("./cmd/dagger", true, build.race), nil
-}
-
 func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 
