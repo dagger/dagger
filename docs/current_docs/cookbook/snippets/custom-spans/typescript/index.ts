@@ -1,5 +1,5 @@
 import { dag, Container, object, func } from "@dagger.io/dagger"
-import { trace } from "@opentelemetry/api"
+import * as trace from '@dagger.io/dagger/telemetry'
 
 @object()
 class MyModule {
@@ -32,59 +32,55 @@ class MyModule {
 
   private async lint(container: Container): Promise<void> {
     const tracer = trace.getTracer("dagger-otel")
-    const span = tracer.startSpan("lint code")
-    try {
-      const result = await container.withExec(["npm", "run", "lint"]).sync()
+
+    await tracer.startActiveSpan("lint code", async () => {
+      const result = await container
+        .withExec(["npm", "run", "lint"])
+        .sync()
       if (await result.exitCode() !== 0) {
         throw new Error(`Linting failed with exit code ${result.exitCode}`)
       }
-    } finally {
-      span.end()
-    }
+    })
   }
 
   private async typecheck(container: Container): Promise<void> {
     const tracer = trace.getTracer("dagger-otel")
-    const span = tracer.startSpan("check types")
-    try {
+
+    await tracer.startActiveSpan("check types", async () => {
       const result = await container
         .withExec(["npm", "run", "type-check"])
         .sync()
       if (await result.exitCode() !== 0) {
         throw new Error(`Type check failed with exit code ${result.exitCode}`)
       }
-    } finally {
-      span.end()
-    }
+    })
   }
 
   private async format(container: Container): Promise<void> {
     const tracer = trace.getTracer("dagger-otel")
-    const span = tracer.startSpan("format code")
-    try {
-      const result = await container.withExec(["npm", "run", "format"]).sync()
+
+    await tracer.startActiveSpan("format code", async () => {
+      const result = await container
+        .withExec(["npm", "run", "format"])
+        .sync()
       if (await result.exitCode() !== 0) {
         throw new Error(
           `Code formatting failed with exit code ${result.exitCode}`,
         )
       }
-    } finally {
-      span.end()
-    }
+    })
   }
 
   private async test(container: Container): Promise<void> {
     const tracer = trace.getTracer("dagger-otel")
-    const span = tracer.startSpan("run unit tests")
-    try {
+
+    await tracer.startActiveSpan("run unit tests", async () => {
       const result = await container
         .withExec(["npm", "run", "test:unit", "run"])
         .sync()
       if (await result.exitCode() !== 0) {
         throw new Error(`Tests failed with exit code ${result.exitCode}`)
       }
-    } finally {
-      span.end()
-    }
+    })
   }
 }
