@@ -71,27 +71,34 @@ func (v *Viztest) CustomSpan(ctx context.Context) (res string, rerr error) {
 	return v.Echo(ctx, "hello from Go! it is currently "+time.Now().String())
 }
 
-func (v *Viztest) NestedSpans(ctx context.Context) (res string, rerr error) {
+func (v *Viztest) NestedSpans(ctx context.Context,
+	// +default=false
+	fail bool,
+) (res string, rerr error) {
 	err := dag.Span("custom span").Run(ctx, func(ctx context.Context) error {
-		if _, err := v.Echo(ctx, "outer"); err != nil {
+		if _, err := v.Echo(ctx, "outer: "+time.Now().String()); err != nil {
 			return err
 		}
 		if err := dag.Span("sub span").Run(ctx, func(ctx context.Context) error {
-			_, err := v.Echo(ctx, "sub 1")
+			_, err := v.Echo(ctx, "sub 1: "+time.Now().String())
 			return err
 		}); err != nil {
 			return err
 		}
 		if err := dag.Span("sub span").Run(ctx, func(ctx context.Context) error {
-			_, err := v.Echo(ctx, "sub 2")
+			_, err := v.Echo(ctx, "sub 2: "+time.Now().String())
 			return err
 		}); err != nil {
 			return err
 		}
 		return dag.Span("another sub span").Run(ctx, func(ctx context.Context) error {
 			return dag.Span("sub span").Run(ctx, func(ctx context.Context) error {
-				_, err := v.Echo(ctx, "im even deeper")
-				return err
+				if fail {
+					return errors.New("oh no")
+				} else {
+					_, err := v.Echo(ctx, "im even deeper: "+time.Now().String())
+					return err
+				}
 			})
 		})
 	})

@@ -33,31 +33,28 @@ export class Typescript {
   }
 
   @func()
-  async exceptionalSpan(): Promise<string> {
+  async nestedSpans(fail = false): Promise<string> {
     return dag.span("custom span").run(async () => {
-      throw new Error("oh no");
-    });
-  }
-
-  @func()
-  async nestedSpans(): Promise<string> {
-    return dag.span("custom span").run(async () => {
-      await this.echo("outer");
+      await this.echo(`outer: ${now}`);
 
       // First sub-span
       await dag.span("sub span").run(async () => {
-        await this.echo("sub 1");
+        await this.echo(`sub 1: ${now}`);
       });
 
       // Second sub-span
       await dag.span("sub span").run(async () => {
-        await this.echo("sub 2");
+        await this.echo(`sub 2: ${now}`);
       });
 
       // Nested sub-span
       await dag.span("another sub span").run(async () => {
         await dag.span("sub span").run(async () => {
-          await this.echo("im even deeper");
+          if (fail) {
+            throw new Error("oh no");
+          } else {
+            await this.echo(`im even deeper: ${now}`);
+          }
         });
       });
 

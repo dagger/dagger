@@ -21,24 +21,22 @@ class Python:
             return await self.echo(f"hello from Python! it is currently {now}")
 
     @function
-    async def exceptional_span(self) -> str:
+    async def nested_spans(self, fail: bool = False) -> str:
         async with dag.span("custom span"):
-            raise ValueError("oh no")
+            await self.echo(f"outer: {now}")
 
-    @function
-    async def nested_spans(self) -> str:
-        async with dag.span("custom span") as outer:
-            await self.echo("outer")
+            async with dag.span("sub span"):
+                await self.echo(f"sub 1: {now}")
 
-            async with outer.span("sub span"):
-                await self.echo("sub 1")
+            async with dag.span("sub span"):
+                await self.echo(f"sub 2: {now}")
 
-            async with outer.span("sub span"):
-                await self.echo("sub 2")
-
-            async with outer.span("another sub span") as inner:
-                async with inner.span("sub span"):
-                    await self.echo("im even deeper")
+            async with dag.span("another sub span"):
+                async with dag.span("sub span"):
+                    if fail:
+                        raise ValueError("oh no")
+                    else:
+                        await self.echo(f"im even deeper: {now}")
 
         return "done"
 
