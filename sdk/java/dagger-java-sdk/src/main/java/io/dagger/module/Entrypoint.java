@@ -1,12 +1,13 @@
 package io.dagger.module;
 
+import com.google.gson.Gson;
 import io.dagger.client.*;
 import io.dagger.module.info.ModuleInfo;
-import jakarta.json.bind.Jsonb;
-import jakarta.json.bind.JsonbBuilder;
 
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -39,8 +40,12 @@ public class Entrypoint extends Base {
             ModuleInfo moduleInfo;
             ClassLoader classloader = Thread.currentThread().getContextClassLoader();
             try (InputStream is = classloader.getResourceAsStream("dagger_module_info.json")) {
-                Jsonb jsonb = JsonbBuilder.create();
-                moduleInfo = jsonb.fromJson(is, ModuleInfo.class);
+                if (is == null) {
+                    throw new IOException("dagger_module_info.json not found");
+                }
+                BufferedReader reader = new BufferedReader(new InputStreamReader(is));
+                Gson gson = new Gson();
+                moduleInfo = gson.fromJson(reader, ModuleInfo.class);
             }
 
             JSON result;
