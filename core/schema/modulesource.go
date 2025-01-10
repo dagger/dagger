@@ -613,6 +613,44 @@ func (s *moduleSchema) moduleSourceDependencies(
 		return nil, fmt.Errorf("failed to get module config: %w", err)
 	}
 
+	resolveDep := func(ctx context.Context, depName string, depSrc dagql.Instance[*core.ModuleSource]) (inst dagql.Instance[*core.ModuleDependency], err error) {
+		var resolvedDepSrc dagql.Instance[*core.ModuleSource]
+		err = s.dag.Select(ctx, src, &resolvedDepSrc,
+			dagql.Selector{
+				Field: "resolveDependency",
+				Args: []dagql.NamedInput{
+					{Name: "dep", Value: dagql.NewID[*core.ModuleSource](depSrc.ID())},
+				},
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to resolve dependency: %w", err)
+		}
+
+		if depName == "" {
+			// this happens if installing a new module without an explicit
+			// name or upgrading from an old config that doesn't have a name set
+			depName, err = resolvedDepSrc.Self.ModuleName(ctx)
+			if err != nil {
+				return inst, fmt.Errorf("failed to load module name: %w", err)
+			}
+		}
+
+		err = s.dag.Select(ctx, s.dag.Root(), &inst,
+			dagql.Selector{
+				Field: "moduleDependency",
+				Args: []dagql.NamedInput{
+					{Name: "source", Value: dagql.NewID[*core.ModuleSource](resolvedDepSrc.ID())},
+					{Name: "name", Value: dagql.String(depName)},
+				},
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to create module dependency: %w", err)
+		}
+		return inst, nil
+	}
+
 	var existingDeps []dagql.Instance[*core.ModuleDependency]
 	if ok {
 		bk, err := src.Self.Query.Buildkit(ctx)
@@ -648,32 +686,8 @@ func (s *moduleSchema) moduleSourceDependencies(
 					return fmt.Errorf("failed to create module source from dependency: %w", err)
 				}
 
-				var resolvedDepSrc dagql.Instance[*core.ModuleSource]
-				err = s.dag.Select(ctx, src, &resolvedDepSrc,
-					dagql.Selector{
-						Field: "resolveDependency",
-						Args: []dagql.NamedInput{
-							{Name: "dep", Value: dagql.NewID[*core.ModuleSource](depSrc.ID())},
-						},
-					},
-				)
-				if err != nil {
-					return fmt.Errorf("failed to resolve dependency: %w", err)
-				}
-
-				err = s.dag.Select(ctx, s.dag.Root(), &existingDeps[i],
-					dagql.Selector{
-						Field: "moduleDependency",
-						Args: []dagql.NamedInput{
-							{Name: "source", Value: dagql.NewID[*core.ModuleSource](resolvedDepSrc.ID())},
-							{Name: "name", Value: dagql.String(depCfg.Name)},
-						},
-					},
-				)
-				if err != nil {
-					return fmt.Errorf("failed to create module dependency: %w", err)
-				}
-				return nil
+				existingDeps[i], err = resolveDep(ctx, depCfg.Name, depSrc)
+				return err
 			})
 		}
 		if err := eg.Wait(); err != nil {
@@ -685,32 +699,8 @@ func (s *moduleSchema) moduleSourceDependencies(
 	var eg errgroup.Group
 	for i, dep := range src.Self.WithDependencies {
 		eg.Go(func() error {
-			var resolvedDepSrc dagql.Instance[*core.ModuleSource]
-			err := s.dag.Select(ctx, src, &resolvedDepSrc,
-				dagql.Selector{
-					Field: "resolveDependency",
-					Args: []dagql.NamedInput{
-						{Name: "dep", Value: dagql.NewID[*core.ModuleSource](dep.Self.Source.ID())},
-					},
-				},
-			)
-			if err != nil {
-				return fmt.Errorf("failed to resolve dependency: %w", err)
-			}
-
-			err = s.dag.Select(ctx, s.dag.Root(), &newDeps[i],
-				dagql.Selector{
-					Field: "moduleDependency",
-					Args: []dagql.NamedInput{
-						{Name: "source", Value: dagql.NewID[*core.ModuleSource](resolvedDepSrc.ID())},
-						{Name: "name", Value: dagql.String(dep.Self.Name)},
-					},
-				},
-			)
-			if err != nil {
-				return fmt.Errorf("failed to create module dependency: %w", err)
-			}
-			return nil
+			newDeps[i], err = resolveDep(ctx, dep.Self.Name, dep.Self.Source)
+			return err
 		})
 	}
 	if err := eg.Wait(); err != nil {
