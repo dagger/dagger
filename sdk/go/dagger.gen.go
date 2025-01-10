@@ -6604,7 +6604,8 @@ func (r *ModuleSource) WithUpdateDependencies(dependencies []string) *ModuleSour
 	q = q.Arg("dependencies", dependencies)
 
 	return &ModuleSource{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -8518,7 +8519,7 @@ func (r *Span) Run(ctx context.Context, cb func(context.Context) error) error {
 	var endErr error
 	if err != nil {
 		errClient := &Client{
-			query:  r.query,
+			query:  querybuilder.Query().Client(r.client),
 			client: r.client,
 		}
 		endErr = span.End(ctx, SpanEndOpts{
