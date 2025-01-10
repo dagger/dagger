@@ -62,6 +62,15 @@
             }
           }
         },
+        "self": {
+          "name": "self",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "INTERFACE_KIND",
+            "name": "IFace"
+          }
+        },
         "withClass": {
           "name": "withClass",
           "description": "",
@@ -107,6 +116,14 @@
               "isOptional": false
             }
           },
+          "returnType": {
+            "kind": "VOID_KIND"
+          }
+        },
+        "method": {
+          "name": "method",
+          "description": "",
+          "arguments": {},
           "returnType": {
             "kind": "VOID_KIND"
           }

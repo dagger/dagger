@@ -34,12 +34,15 @@ export class DaggerInterface extends Locatable {
     this.description = this.ast.getDocFromSymbol(this.symbol)
 
     for (const member of this.node.members) {
-      if (!ts.isPropertySignature(member)) {
+      if (!ts.isPropertySignature(member) && !ts.isMethodSignature(member)) {
         continue
       }
 
       // Check if it's a function
-      if (member.type && ts.isFunctionTypeNode(member.type)) {
+      if (
+        (member.type && ts.isFunctionTypeNode(member.type)) ||
+        ts.isMethodSignature(member)
+      ) {
         const daggerInterfaceFunction = new DaggerInterfaceFunction(
           member,
           this.ast,

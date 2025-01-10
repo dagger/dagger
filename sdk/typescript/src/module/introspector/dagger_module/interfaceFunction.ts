@@ -28,7 +28,7 @@ export class DaggerInterfaceFunction extends Locatable {
   private signature?: ts.Signature
 
   constructor(
-    private readonly node: ts.PropertySignature,
+    private readonly node: ts.PropertySignature | ts.MethodSignature,
     private readonly ast: AST,
   ) {
     super(node)
@@ -43,23 +43,33 @@ export class DaggerInterfaceFunction extends Locatable {
     this.symbol = this.ast.getSymbolOrThrow(this.node.name)
     this.description = this.ast.getDocFromSymbol(this.symbol)
 
-    if (this.node.type && ts.isFunctionTypeNode(this.node.type)) {
-      const signature = this.ast.getSignatureFromFunctionOrThrow(this.node.type)
+    // If it's a method signature, we can directly use it to get the signature props
+    // If it's a property kind signature, we need to get the signature from the type
+    // Examle:
+    // interface Foo {
+    //   bar(): void       // <- this is a method signature
+    //   baz: () => string // <- this is a property kind signature
+    // }
+    const nodeType: ts.SignatureDeclaration =
+      this.node.type && ts.isFunctionTypeNode(this.node.type)
+        ? (this.node.type as ts.FunctionTypeNode)
+        : (this.node as ts.MethodSignature)
 
-      for (const parameter of this.node.type.parameters) {
-        this.arguments[parameter.name.getText()] = new DaggerArgument(
-          parameter,
-          this.ast,
-        )
-      }
+    const signature = this.ast.getSignatureFromFunctionOrThrow(nodeType)
 
-      const signatureReturnType = signature.getReturnType()
-      const typedef = this.ast.tsTypeToTypeDef(this.node, signatureReturnType)
-      if (typedef === undefined || !isTypeDefResolved(typedef)) {
-        this._returnTypeRef = this.ast.typeToStringType(signatureReturnType)
-      }
-      this.returnType = typedef
+    for (const parameter of nodeType.parameters) {
+      this.arguments[parameter.name.getText()] = new DaggerArgument(
+        parameter,
+        this.ast,
+      )
     }
+
+    const signatureReturnType = signature.getReturnType()
+    const typedef = this.ast.tsTypeToTypeDef(this.node, signatureReturnType)
+    if (typedef === undefined || !isTypeDefResolved(typedef)) {
+      this._returnTypeRef = this.ast.typeToStringType(signatureReturnType)
+    }
+    this.returnType = typedef
   }
 
   public getReferences(): string[] {

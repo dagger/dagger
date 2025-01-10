@@ -1858,7 +1858,7 @@ export interface Duck {
   /**
    * A super quack sound
    */
-  superQuack: () => Promise<string>
+  superQuack(): Promise<string>
 }
 
 @object()

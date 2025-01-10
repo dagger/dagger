@@ -14,6 +14,8 @@ export interface IFace {
   outClass: () => Container
   self(): IFace
   withSelf: (i: IFace) => void
+
+  method(): void
 }
 
 @object()
@@ -32,6 +34,7 @@ export class Interface {
       outClass: () => dag.container(),
       self: () => iface,
       withSelf: (i: IFace) => {},
+      method: () => {},
     }
 
     return iface

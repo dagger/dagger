@@ -1,7 +1,7 @@
 import { Directory, func, object } from "@dagger.io/dagger";
 
 export interface CustomIface {
-  void: () => Promise<void>;
+  void(): Promise<void>;
 
   str: () => Promise<string>;
   withStr: (str: string) => Promise<CustomIface>;
@@ -36,7 +36,7 @@ export interface CustomIface {
   withOtherIface: (other: OtherIface) => Promise<CustomIface>;
   dynamicOtherIfaceList: () => Promise<OtherIface[]>;
 
-  withOtherIfaceByIface: (other: OtherIface) => Promise<CustomIface>;
+  withOtherIfaceByIface(other: OtherIface): Promise<CustomIface>;
   dynamicOtherIfaceByIfaceList: () => Promise<OtherIface[]>;
 }
 
