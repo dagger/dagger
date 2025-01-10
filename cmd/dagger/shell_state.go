@@ -216,10 +216,6 @@ func shellState(ctx context.Context) (*ShellState, []byte, error) {
 	return readShellState(interp.HandlerCtx(ctx).Stdin)
 }
 
-func (h *shellCallHandler) isDefaultState(st *ShellState) bool {
-	return st == nil || st.ModRef == "" || st.ModRef == h.modRef
-}
-
 func (h *shellCallHandler) newModState(ref string) *ShellState {
 	return &ShellState{
 		ModRef: ref,

@@ -204,11 +204,7 @@ func (ctx *CompletionContext) completions(prefix string) []string {
 				results = append(results, dep.Name)
 			}
 		}
-		for modRef := range ctx.Completer.modDefs {
-			if modRef != "" {
-				results = append(results, modRef)
-			}
-		}
+		results = append(results, ctx.Completer.LoadedModulesList()...)
 
 	case ctx.CmdRoot == shellStdlibCmdName:
 		for _, cmd := range ctx.Completer.Stdlib() {
@@ -299,7 +295,7 @@ func (ctx *CompletionContext) lookupField(field string, args []string) *Completi
 
 	// 4. Module reference
 	// TODO: loading other modules isn't supported yet
-	if field == ctx.Completer.modRef {
+	if ctx.Completer.IsDefaultModule(field) {
 		return &CompletionContext{
 			Completer:   ctx.Completer,
 			ModFunction: def.MainObject.AsObject.Constructor,

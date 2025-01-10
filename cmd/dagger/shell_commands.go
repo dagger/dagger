@@ -399,9 +399,11 @@ to the currently loaded module.
 					return err
 				}
 
+				h.mu.Lock()
 				if st.ModRef != h.modRef {
 					h.modRef = st.ModRef
 				}
+				h.mu.Unlock()
 
 				return nil
 			},

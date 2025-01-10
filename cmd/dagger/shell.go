@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"dagger.io/dagger"
 	"github.com/adrg/xdg"
@@ -76,14 +77,6 @@ type shellCallHandler struct {
 	stdout io.Writer
 	stderr io.Writer
 
-	// modRef is a key from modDefs, to set the corresponding module as the default
-	// when no state is present, or when the state's ModRef is empty
-	modRef string
-
-	// modDefs has the cached module definitions, after loading, and keyed by
-	// module reference as inputed by the user
-	modDefs map[string]*moduleDef
-
 	// switch to Frontend.Background for rendering output while the TUI is
 	// running when in interactive mode
 	tui bool
@@ -103,6 +96,17 @@ type shellCallHandler struct {
 
 	// stdlib is the list of standard library commands
 	stdlib []*ShellCommand
+
+	// modRef is a key from modDefs, to set the corresponding module as the default
+	// when no state is present, or when the state's ModRef is empty
+	modRef string
+
+	// modDefs has the cached module definitions, after loading, and keyed by
+	// module reference as inputed by the user
+	modDefs sync.Map
+
+	// mu is used to synchronize access to the default module's definitions via modRef
+	mu sync.RWMutex
 }
 
 // RunAll is the entry point for the shell command
@@ -151,7 +155,6 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 		return err
 	}
 	h.runner = r
-	h.modDefs = make(map[string]*moduleDef)
 
 	var def *moduleDef
 	var ref string
@@ -164,7 +167,7 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 		return err
 	}
 	h.modRef = ref
-	h.modDefs[ref] = def
+	h.modDefs.Store(ref, def)
 	h.registerCommands()
 
 	// Example: `dagger shell -c 'container | workdir'`
