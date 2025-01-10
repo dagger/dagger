@@ -1,5 +1,5 @@
 # This file was generated. See https://daggerverse.dev/mod/github.com/dagger/dagger/modules/gha
-name: Docs
+name: docs
 "on":
     push:
         branches:
@@ -20,7 +20,7 @@ jobs:
     docs:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-1-4c' || 'ubuntu-latest' }}
-        name: Docs
+        name: docs
         steps:
             - name: Checkout
               uses: actions/checkout@v4
