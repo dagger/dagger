@@ -116,13 +116,28 @@ runs:
           fi
         }
 
+        ENGINE_VERSION=`dagger core version -q -s | tr -d '\n'`
+        CLI_VERSION=`dagger version | tr -d '\n' | awk -F'(' '{print $1}'`
+
+        echo "$GITHUB_CONTEXT" > github_context.json
+        
         set -x
         if [[ "${{ inputs.module }}" == "." ]]; then
           # set some sane defaults for the current module
           if [[ -f $HOME/.docker/config.json ]]; then
-            redirect_logs dagger -m "${{ inputs.module }}" call --docker-cfg=file:"$HOME/.docker/config.json" ${{ inputs.function }}
+            redirect_logs dagger -m "${{ inputs.module }}" call \
+              --tags "engine_version=$ENGINE_VERSION" \
+              --tags "cli_version=$CLI_VERSION" \
+              --tags "runner=${{ runner.name }}" \
+              --github-event-file="github_context.json" \
+              --docker-cfg=file:"$HOME/.docker/config.json" \
+              ${{ inputs.function }} 
           else
-            redirect_logs dagger -m "${{ inputs.module }}" call ${{ inputs.function }}
+            redirect_logs dagger -m "${{ inputs.module }}" call \
+              --tags "engine_version=$ENGINE_VERSION" \
+              --tags "cli_version=$CLI_VERSION" \
+              --tags "runner=${{ runner.name }}" \
+              --github-event-file="github_context.json" ${{ inputs.function }}            
           fi
         else
           redirect_logs dagger -m "${{ inputs.module }}" call ${{ inputs.function }}
