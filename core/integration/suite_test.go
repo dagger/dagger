@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"sync"
 	"testing"
@@ -19,21 +18,15 @@ import (
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.25.0"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/testctx"
-
-	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
 var testCtx = context.Background()
@@ -44,7 +37,7 @@ func TestMain(m *testing.M) {
 	origAuthSock := os.Getenv("SSH_AUTH_SOCK")
 	os.Unsetenv("SSH_AUTH_SOCK")
 
-	testCtx = telemetry.InitEmbedded(testCtx, OTelResource())
+	testCtx = telemetry.InitEmbedded(testCtx, nil)
 	res := m.Run()
 	telemetry.Close()
 
@@ -55,35 +48,6 @@ func TestMain(m *testing.M) {
 }
 
 const InstrumentationLibrary = "dagger.io/integration"
-
-func OTelResource() *resource.Resource {
-	attrs := []attribute.KeyValue{
-		semconv.ServiceName("dagger-core-integration-tests"),
-		semconv.ServiceVersion(engine.Version),
-	}
-
-	_, currentFile, _, ok := runtime.Caller(0)
-	if !ok {
-		panic("failed to get current file path while setting up otel resource")
-	}
-
-	for k, v := range enginetel.LoadDefaultLabels(filepath.Dir(currentFile), engine.Version) {
-		attrs = append(attrs, attribute.String(k, v))
-	}
-	res, err := resource.New(testCtx,
-		resource.WithSchemaURL(semconv.SchemaURL),
-		resource.WithAttributes(attrs...),
-		resource.WithFromEnv(),
-		resource.WithOSType(),
-		resource.WithContainer(),
-		resource.WithProcessCommandArgs(),
-	)
-	if err != nil {
-		panic(fmt.Errorf("failed setting up otel resource: %w", err))
-	}
-
-	return res
-}
 
 func Tracer() trace.Tracer {
 	return otel.Tracer(InstrumentationLibrary)
