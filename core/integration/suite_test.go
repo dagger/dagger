@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"testing"
@@ -18,15 +19,21 @@ import (
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.25.0"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/testctx"
+
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
 var testCtx = context.Background()
@@ -37,7 +44,7 @@ func TestMain(m *testing.M) {
 	origAuthSock := os.Getenv("SSH_AUTH_SOCK")
 	os.Unsetenv("SSH_AUTH_SOCK")
 
-	testCtx = telemetry.InitEmbedded(testCtx, nil)
+	testCtx = telemetry.InitEmbedded(testCtx, OTelResource())
 	res := m.Run()
 	telemetry.Close()
 
@@ -49,6 +56,35 @@ func TestMain(m *testing.M) {
 
 const InstrumentationLibrary = "dagger.io/integration"
 
+func OTelResource() *resource.Resource {
+	attrs := []attribute.KeyValue{
+		semconv.ServiceName("dagger-core-integration-tests"),
+		semconv.ServiceVersion(engine.Version),
+	}
+
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		panic("failed to get current file path while setting up otel resource")
+	}
+
+	for k, v := range enginetel.LoadDefaultLabels(filepath.Dir(currentFile), engine.Version) {
+		attrs = append(attrs, attribute.String(k, v))
+	}
+	res, err := resource.New(testCtx,
+		resource.WithSchemaURL(semconv.SchemaURL),
+		resource.WithAttributes(attrs...),
+		resource.WithFromEnv(),
+		resource.WithOSType(),
+		resource.WithContainer(),
+		resource.WithProcessCommandArgs(),
+	)
+	if err != nil {
+		panic(fmt.Errorf("failed setting up otel resource: %w", err))
+	}
+
+	return res
+}
+
 func Tracer() trace.Tracer {
 	return otel.Tracer(InstrumentationLibrary)
 }
@@ -57,17 +93,24 @@ func Logger() log.Logger {
 	return telemetry.Logger(testCtx, InstrumentationLibrary)
 }
 
-func Middleware() []testctx.Middleware {
-	return []testctx.Middleware{
+func Middleware() []testctx.MiddlewareT {
+	return []testctx.MiddlewareT{
 		testctx.WithParallel,
-		testctx.WithOTelLogging(Logger()),
-		testctx.WithOTelTracing(Tracer()),
+		testctx.WithOTelLogging[*testing.T](Logger()),
+		testctx.WithOTelTracing[*testing.T](Tracer()),
 	}
 }
 
-func connect(ctx context.Context, t *testctx.T, opts ...dagger.ClientOpt) *dagger.Client {
+func BenchMiddleware() []testctx.MiddlewareB {
+	return []testctx.MiddlewareB{
+		testctx.WithOTelLogging[*testing.B](Logger()),
+		testctx.WithOTelTracing[*testing.B](Tracer()),
+	}
+}
+
+func connect(ctx context.Context, t testing.TB, opts ...dagger.ClientOpt) *dagger.Client {
 	opts = append([]dagger.ClientOpt{
-		dagger.WithLogOutput(testutil.NewTWriter(t.T)),
+		dagger.WithLogOutput(testutil.NewTWriter(t)),
 	}, opts...)
 	client, err := dagger.Connect(ctx, opts...)
 	require.NoError(t, err)
