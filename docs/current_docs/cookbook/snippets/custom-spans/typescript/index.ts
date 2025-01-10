@@ -21,7 +21,7 @@ class MyModule {
     for (const version of versions) {
       await tracer.startActiveSpan(
         `running unit tests with Node ${version}`,
-         async () => {
+        async () => {
           await dag
             .container()
             .from(`node:${version}`)
@@ -30,9 +30,8 @@ class MyModule {
             .withExec(["npm", "install"])
             .withExec(["npm", "run", "test:unit", "run"])
             .sync()
-        }
+        },
       )
     }
   }
-
 }
