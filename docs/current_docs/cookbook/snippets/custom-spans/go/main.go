@@ -22,7 +22,7 @@ func (m *MyModule) Foo(ctx context.Context) error {
 		WithWorkdir("/src").
 		WithExec([]string{"npm", "install"})
 
-	// run operations in parallel
+	// run operations concurrently
 	// emit a span for each
 	eg, ctx := errgroup.WithContext(ctx)
 
@@ -39,14 +39,6 @@ func (m *MyModule) Foo(ctx context.Context) error {
 		defer span.End()
 
 		_, err := container.WithExec([]string{"npm", "run", "type-check"}).Sync(ctx)
-		return err
-	})
-
-	eg.Go(func() error {
-		_, span := Tracer().Start(ctx, "format code")
-		defer span.End()
-
-		_, err := container.WithExec([]string{"npm", "run", "format"}).Sync(ctx)
 		return err
 	})
 

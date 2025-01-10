@@ -28,7 +28,6 @@ class MyModule:
         async with anyio.create_task_group() as tg:
             tg.start_soon(self._lint, container)
             tg.start_soon(self._typecheck, container)
-            tg.start_soon(self._format, container)
             tg.start_soon(self._test, container)
 
     async def _lint(self, container):
@@ -38,10 +37,6 @@ class MyModule:
     async def _typecheck(self, container):
         with tracer.start_as_current_span("check types"):
             await container.with_exec(["npm", "run", "type-check"]).sync()
-
-    async def _format(self, container):
-        with tracer.start_as_current_span("format code"):
-            await container.with_exec(["npm", "run", "format"]).sync()
 
     async def _test(self, container):
         with tracer.start_as_current_span("run unit tests"):
