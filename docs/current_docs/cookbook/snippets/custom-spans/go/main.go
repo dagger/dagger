@@ -14,41 +14,27 @@ func (m *MyModule) Foo(ctx context.Context) error {
 		Git("https://github.com/dagger/hello-dagger").
 		Branch("main").Tree()
 
-	// set up a container with the source code mounted
-	// install dependencies
-	container := dag.Container().
-		From("node:latest").
-		WithDirectory("/src", source).
-		WithWorkdir("/src").
-		WithExec([]string{"npm", "install"})
+	// list versions to test against
+	versions := []string{"20", "22", "23"}
 
-	// run operations concurrently
-	// emit a span for each
+	// define errorgroup
 	eg, ctx := errgroup.WithContext(ctx)
 
-	eg.Go(func() error {
-		_, span := Tracer().Start(ctx, "lint code")
-		defer span.End()
-
-		_, err := container.WithExec([]string{"npm", "run", "lint"}).Sync(ctx)
-		return err
-	})
-
-	eg.Go(func() error {
-		_, span := Tracer().Start(ctx, "check types")
-		defer span.End()
-
-		_, err := container.WithExec([]string{"npm", "run", "type-check"}).Sync(ctx)
-		return err
-	})
-
-	eg.Go(func() error {
-		_, span := Tracer().Start(ctx, "run unit tests")
-		defer span.End()
-
-		_, err := container.WithExec([]string{"npm", "run", "test:unit", "run"}).Sync(ctx)
-		return err
-	})
+	// run tests concurrently
+	// emit a span for each
+	for _, version := range versions {
+		eg.Go(func() error {
+			_, span := Tracer().Start(ctx, "running unit tests with Node "+version)
+			defer span.End()
+			_, err := dag.Container().
+				From("node:"+version).
+				WithDirectory("/src", source).
+				WithWorkdir("/src").
+				WithExec([]string{"npm", "install"}).
+				WithExec([]string{"npm", "run", "test:unit", "run"}).Sync(ctx)
+			return err
+		})
+	}
 
 	return eg.Wait()
 }

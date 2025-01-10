@@ -11,46 +11,25 @@ class MyModule {
       .branch("main")
       .tree()
 
-    // set up a container with the source code mounted
-    // install dependencies
-    const container = dag
-      .container()
-      .from("node:latest")
-      .withDirectory("/src", source)
-      .withWorkdir("/src")
-      .withExec(["npm", "install"])
+    // list versions to test against
+    const versions = ["20", "22", "23"]
 
-    // run tasks concurrently
+    const tracer = trace.getTracer(MyModule.name)
+
+    // run tests concurrently
     // emit a span for each
-    await Promise.all([
-      this.lint(container),
-      this.typecheck(container),
-      this.test(container),
-    ])
+    for (const version of versions) {
+      await tracer.startActiveSpan(`running unit tests with Node ${version}`, async () => {
+        await dag
+          .container()
+          .from(`node:${version}`)
+          .withDirectory("/src", source)
+          .withWorkdir("/src")
+          .withExec(["npm", "install"])
+          .withExec(["npm", "run", "test:unit", "run"])
+          .sync()
+      })
+    }
   }
 
-  private async lint(container: Container): Promise<void> {
-    const tracer = trace.getTracer(MyModule.name)
-    await tracer.startActiveSpan("lint code", async () => {
-      const result = await container.withExec(["npm", "run", "lint"]).sync()
-    })
-  }
-
-  private async typecheck(container: Container): Promise<void> {
-    const tracer = trace.getTracer(MyModule.name)
-    await tracer.startActiveSpan("check types", async () => {
-      const result = await container
-        .withExec(["npm", "run", "type-check"])
-        .sync()
-    })
-  }
-
-  private async test(container: Container): Promise<void> {
-    const tracer = trace.getTracer(MyModule.name)
-    await tracer.startActiveSpan("run unit tests", async () => {
-      const result = await container
-        .withExec(["npm", "run", "test:unit", "run"])
-        .sync()
-    })
-  }
 }
