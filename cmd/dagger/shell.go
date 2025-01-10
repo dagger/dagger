@@ -69,6 +69,41 @@ var shellCmd = &cobra.Command{
 	},
 }
 
+type safeBuffer struct {
+	bu bytes.Buffer
+	mu sync.Mutex
+}
+
+func (s *safeBuffer) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bu.Write(p)
+}
+
+func (s *safeBuffer) Read(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bu.Read(p)
+}
+
+func (s *safeBuffer) HasUnread() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bu.Len() > 0
+}
+
+func (s *safeBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bu.String()
+}
+
+func (s *safeBuffer) Reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.bu.Reset()
+}
+
 type shellCallHandler struct {
 	dag    *dagger.Client
 	runner *interp.Runner
@@ -82,10 +117,10 @@ type shellCallHandler struct {
 	tui bool
 
 	// stdoutBuf is used to capture the final stdout that the runner produces
-	stdoutBuf *bytes.Buffer
+	stdoutBuf *safeBuffer
 
 	// stderrBuf is used to capture the final stderr that the runner produces
-	stderrBuf *bytes.Buffer
+	stderrBuf *safeBuffer
 
 	// debug writes to the handler context's stderr what the arguments, input,
 	// and output are for each command that the exec handler processes
@@ -118,8 +153,8 @@ type shellCallHandler struct {
 func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 	h.tui = !silent && (hasTTY && progress == "auto" || progress == "tty")
 
-	h.stdoutBuf = new(bytes.Buffer)
-	h.stderrBuf = new(bytes.Buffer)
+	h.stdoutBuf = new(safeBuffer)
+	h.stderrBuf = new(safeBuffer)
 
 	r, err := interp.New(
 		interp.StdIO(nil, h.stdoutBuf, h.stderrBuf),
@@ -227,7 +262,7 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 		h.withTerminal(func(_ io.Reader, stdout, stderr io.Writer) error {
 			// We could also have missing output in stdoutBuf, but probably
 			// for propagating a ShellState.Error. Just ignore those.
-			if h.stderrBuf.Len() > 0 {
+			if h.stderrBuf.HasUnread() {
 				fmt.Fprintln(stderr, h.stderrBuf.String())
 				h.stderrBuf.Reset()
 			}
