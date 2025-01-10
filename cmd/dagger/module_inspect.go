@@ -103,7 +103,7 @@ func tryInitializeModule(ctx context.Context, dag *dagger.Client, srcRef string)
 		return nil, nil
 	}
 
-	span.SetName("load module")
+	span.SetName("load module " + srcRef)
 
 	return initializeModuleConfig(ctx, dag, conf)
 }

@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
+	"sync"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
@@ -17,6 +19,11 @@ import (
 const (
 	shellHandlerExit = 200
 )
+
+// First command in pipeline: e.g., `cmd1 | cmd2 | cmd3`
+func isFirstShellCommand(ctx context.Context) bool {
+	return interp.HandlerCtx(ctx).Stdin == nil
+}
 
 // Exec is the main handler function, that prepares the command to be executed
 // and wraps any returned errors
@@ -217,16 +224,9 @@ func (h *shellCallHandler) stateLookup(ctx context.Context, name string) (*Shell
 }
 
 func (h *shellCallHandler) getOrInitDefState(ref string, fn func() (*moduleDef, error)) (*ShellState, error) {
-	_, exists := h.modDefs[ref]
-	if !exists {
-		if fn == nil {
-			return nil, fmt.Errorf("module %q not loaded", ref)
-		}
-		def, err := fn()
-		if err != nil || def == nil {
-			return nil, err
-		}
-		h.modDefs[ref] = def
+	def, err := h.getOrInitDef(ref, fn)
+	if err != nil || def == nil {
+		return nil, err
 	}
 	return h.newModState(ref), nil
 }
@@ -583,19 +583,72 @@ func (h *shellCallHandler) Result(
 	return response, nil
 }
 
-// First command in pipeline: e.g., `cmd1 | cmd2 | cmd3`
-func isFirstShellCommand(ctx context.Context) bool {
-	return interp.HandlerCtx(ctx).Stdin == nil
+func (h *shellCallHandler) getOrInitDef(ref string, fn func() (*moduleDef, error)) (*moduleDef, error) {
+	// Fast path
+	if def := h.loadModDef(ref); def != nil {
+		return def, nil
+	}
+	if fn == nil {
+		return nil, fmt.Errorf("module %q not loaded", ref)
+	}
+
+	// Each ref can go through multiple initialization functions until the
+	// module is found but we don't want to duplicate the effort in running
+	// the same function for the same ref, so we cache by ref+fn.
+	v, _ := h.modDefs.LoadOrStore(ref, &sync.Map{})
+
+	switch t := v.(type) {
+	case *moduleDef:
+		// Some other goroutine has already stored the initialized module.
+		return t, nil
+	case *sync.Map:
+		// A map means this ref is in the process of initialization.
+		// Ensure this function is only called once.
+		fnKey := fmt.Sprintf("%p", fn)
+		once, _ := t.LoadOrStore(fnKey, sync.OnceValues(fn))
+		switch f := once.(type) {
+		case func() (*moduleDef, error):
+			def, err := f()
+			if err != nil || def == nil {
+				return nil, err
+			}
+			// Module found. If multiple goroutines reach this point they should
+			// have the same result from the onced function anyway.
+			h.modDefs.Store(ref, def)
+			return def, nil
+		default:
+			return nil, fmt.Errorf("unexpected initialization type %T for module definitions: %s", once, ref)
+		}
+	default:
+		return nil, fmt.Errorf("unexpected loaded type %T for module definitions: %s", v, ref)
+	}
 }
 
+// loadModDef returns the module definition for a module ref, if it exists
+func (h *shellCallHandler) loadModDef(ref string) *moduleDef {
+	if v, exists := h.modDefs.Load(ref); exists {
+		if def, ok := v.(*moduleDef); ok {
+			return def
+		}
+	}
+	return nil
+}
+
+// modDef returns the module definition for a given state
+//
+// This is the main getter function for a module definition.
 func (h *shellCallHandler) modDef(st *ShellState) *moduleDef {
+	h.mu.RLock()
 	ref := h.modRef
-	if !h.isDefaultState(st) {
+	h.mu.RUnlock()
+
+	if st != nil && st.ModRef != "" && st.ModRef != ref {
 		ref = st.ModRef
 	}
-	if modDef, ok := h.modDefs[ref]; ok {
-		return modDef
+	if def := h.loadModDef(ref); def != nil {
+		return def
 	}
+
 	// Every time h.modRef is set, there should be a corresponding value in
 	// h.modDefs. Otherwise there's a bug in the CLI.
 	panic(fmt.Sprintf("module %q not loaded", ref))
@@ -632,4 +685,27 @@ func (h *shellCallHandler) GetDependency(ctx context.Context, name string) (*She
 		return nil, nil, err
 	}
 	return st, def, nil
+}
+
+// LoadedModulesList returns a sorted list of module references that are loaded and cached
+func (h *shellCallHandler) LoadedModulesList() []string {
+	var mods []string
+	h.modDefs.Range(func(key, val any) bool {
+		if modRef, ok := key.(string); ok && modRef != "" {
+			// ignore modules that aren't fully loaded yet
+			if _, ok := val.(*moduleDef); ok {
+				mods = append(mods, modRef)
+			}
+		}
+		return true
+	})
+	slices.Sort(mods)
+	return mods
+}
+
+// IsDefaultModule returns true if the given module reference is the default loaded module
+func (h *shellCallHandler) IsDefaultModule(ref string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return ref == "" || ref == h.modRef
 }
