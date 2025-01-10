@@ -10,10 +10,11 @@ body: |-
   ```ts
   import { func, object } from "@dagger.io/dagger"
 
-  // Use the `interface` keyword to define an interface
+  // Use the `interface` keyword to define an interface.
+  // Both method and properties style notation are supported.
   export interface Duck {
     quack: () => string
-    superQuack: () => Promise<string>
+    superQuack(): Promise<string>
   }
 
   @object()
