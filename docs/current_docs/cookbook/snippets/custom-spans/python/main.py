@@ -1,5 +1,6 @@
 import anyio
 from opentelemetry import trace
+
 from dagger import dag, function, object_type
 
 tracer = trace.get_tracer(__name__)
