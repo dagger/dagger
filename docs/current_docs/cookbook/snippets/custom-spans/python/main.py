@@ -36,24 +36,14 @@ class MyModule:
 
     async def _typecheck(self, container):
         with tracer.start_as_current_span("check types"):
-            result = await container.with_exec(["npm", "run", "type-check"]).sync()
-            if result.exit_code != 0:
-                raise Exception(
-                    f"Type checking failed with exit code {result.exit_code}"
-                )
+            await container.with_exec(["npm", "run", "type-check"]).sync()
 
     async def _format(self, container):
         with tracer.start_as_current_span("format code"):
-            result = await container.with_exec(["npm", "run", "format"]).sync()
-            if result.exit_code != 0:
-                raise Exception(
-                    f"Code formatting failed with exit code {result.exit_code}"
-                )
+            await container.with_exec(["npm", "run", "format"]).sync()
 
     async def _test(self, container):
         with tracer.start_as_current_span("run unit tests"):
-            result = await container.with_exec(
-                ["npm", "run", "test:unit", "run"]
+            await container.with_exec(
+                ["npm", "run", "test:unit", "run"],
             ).sync()
-            if result.exit_code != 0:
-                raise Exception(f"Tests failed with exit code {result.exit_code}")

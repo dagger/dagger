@@ -1,5 +1,5 @@
 import { dag, Container, object, func } from "@dagger.io/dagger"
-import * as trace from '@dagger.io/dagger/telemetry'
+import * as trace from "@dagger.io/dagger/telemetry"
 
 @object()
 class MyModule {
@@ -34,10 +34,8 @@ class MyModule {
     const tracer = trace.getTracer("dagger-otel")
 
     await tracer.startActiveSpan("lint code", async () => {
-      const result = await container
-        .withExec(["npm", "run", "lint"])
-        .sync()
-      if (await result.exitCode() !== 0) {
+      const result = await container.withExec(["npm", "run", "lint"]).sync()
+      if ((await result.exitCode()) !== 0) {
         throw new Error(`Linting failed with exit code ${result.exitCode}`)
       }
     })
@@ -50,7 +48,7 @@ class MyModule {
       const result = await container
         .withExec(["npm", "run", "type-check"])
         .sync()
-      if (await result.exitCode() !== 0) {
+      if ((await result.exitCode()) !== 0) {
         throw new Error(`Type check failed with exit code ${result.exitCode}`)
       }
     })
@@ -60,10 +58,8 @@ class MyModule {
     const tracer = trace.getTracer("dagger-otel")
 
     await tracer.startActiveSpan("format code", async () => {
-      const result = await container
-        .withExec(["npm", "run", "format"])
-        .sync()
-      if (await result.exitCode() !== 0) {
+      const result = await container.withExec(["npm", "run", "format"]).sync()
+      if ((await result.exitCode()) !== 0) {
         throw new Error(
           `Code formatting failed with exit code ${result.exitCode}`,
         )
@@ -78,7 +74,7 @@ class MyModule {
       const result = await container
         .withExec(["npm", "run", "test:unit", "run"])
         .sync()
-      if (await result.exitCode() !== 0) {
+      if ((await result.exitCode()) !== 0) {
         throw new Error(`Tests failed with exit code ${result.exitCode}`)
       }
     })
