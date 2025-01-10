@@ -18,10 +18,10 @@ on:
         default: "false"
         required: false
 jobs:
-  local-dagger-engine:
+  remote-dagger-engine:
     if: ${{ github.repository == 'dagger/dagger' }}
     runs-on:
-        - 'dagger-g3-v0-15-1-4c-st-magic'
+        - 'dagger-g3-v0-15-1-16c-st-magic'
     timeout-minutes: ${{ inputs.timeout }}
     steps:
       - name: Checkout repo
