@@ -1,4 +1,4 @@
-import asyncio
+import anyio
 from dagger import dag, function, object_type
 from opentelemetry import trace
 
@@ -22,22 +22,17 @@ class MyModule:
             .with_exec(["npm", "install"])
         )
 
-        # run tasks in parallel
+        # run tasks concurrently
         # emit a span for each
-        tasks = [
-            self._lint(container),
-            self._typecheck(container),
-            self._format(container),
-            self._test(container),
-        ]
-
-        await asyncio.gather(*tasks)
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(self._lint, container)
+            tg.start_soon(self._typecheck, container)
+            tg.start_soon(self._format, container)
+            tg.start_soon(self._test, container)
 
     async def _lint(self, container):
         with tracer.start_as_current_span("lint code"):
-            result = await container.with_exec(["npm", "run", "lint"]).sync()
-            if result.exit_code != 0:
-                raise Exception(f"Linting failed with exit code {result.exit_code}")
+            await container.with_exec(["npm", "run", "lint"]).sync()
 
     async def _typecheck(self, container):
         with tracer.start_as_current_span("check types"):
