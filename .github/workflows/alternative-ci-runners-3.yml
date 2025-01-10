@@ -14,32 +14,32 @@ permissions:
 
 jobs:
   docs-lint-on-magicache:
-    uses: ./.github/workflows/_dagger_on_magicache.yml
+    uses: ./.github/workflows/_dagger_on_magicache_remote_engine.yml
     with:
       function: docs lint
       timeout: 20
 
   test-cli-engine-on-magicache:
     needs: docs-lint-on-magicache
-    uses: ./.github/workflows/_dagger_on_magicache.yml
+    uses: ./.github/workflows/_dagger_on_magicache_remote_engine.yml
     with:
       function: test specific --run='TestCLI|TestEngine' --race=true --parallel=16
       timeout: 20
 
   sdk-go-on-magicache:
     needs: docs-lint-on-magicache
-    uses: ./.github/workflows/_dagger_on_magicache.yml
+    uses: ./.github/workflows/_dagger_on_magicache_remote_engine.yml
     with:
       function: check --targets=sdk/go
 
   sdk-python-on-magicache:
     needs: docs-lint-on-magicache
-    uses: ./.github/workflows/_dagger_on_magicache.yml
+    uses: ./.github/workflows/_dagger_on_magicache_remote_engine.yml
     with:
       function: check --targets=sdk/python
 
   sdk-typescript-on-magicache:
     needs: docs-lint-on-magicache
-    uses: ./.github/workflows/_dagger_on_magicache.yml
+    uses: ./.github/workflows/_dagger_on_magicache_remote_engine.yml
     with:
       function: check --targets=sdk/typescript
