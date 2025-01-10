@@ -90,6 +90,7 @@ func New() *CI {
 			"elixir",
 			"rust",
 			"php",
+			"dotnet",
 		).
 		withPrepareReleaseWorkflow()
 }
