@@ -26,7 +26,7 @@ public class CodeGenerator(ICodeRenderer renderer)
         return renderer.Format(builder.ToString());
     }
 
-    private bool NotInternalTypes(Type type) => !type.Name.StartsWith("__");
+    private bool NotInternalTypes(Type type) => !type.Name.StartsWith("_");
 
     private string Render(Type type)
     {

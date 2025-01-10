@@ -1,5 +1,9 @@
-﻿{
+{
   "msbuild-sdks": {
-    "MSTest.Sdk": "3.4.0"
+    "MSTest.Sdk": "3.7.0"
+  },
+  "sdk": {
+    "version": "8.0.404",
+    "rollForward": "latestFeature"
   }
 }
