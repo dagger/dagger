@@ -93,7 +93,7 @@ func (r RustSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 
 // Test the publishing process
 func (r RustSDK) TestPublish(ctx context.Context, tag string) error {
-	return r.Publish(ctx, tag, true, nil, "https://github.com/dagger/dagger.git", nil, nil)
+	return r.Publish(ctx, tag, true, nil)
 }
 
 // Publish the Rust SDK
@@ -106,15 +106,6 @@ func (r RustSDK) Publish(
 
 	// +optional
 	cargoRegistryToken *dagger.Secret,
-
-	// +optional
-	// +default="https://github.com/dagger/dagger.git"
-	gitRepoSource string,
-
-	// +optional
-	githubToken *dagger.Secret,
-	// +optional
-	discordWebhook *dagger.Secret,
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/rust/")
 
@@ -188,23 +179,6 @@ func (r RustSDK) Publish(
 	_, err := base.Sync(ctx)
 	if err != nil {
 		return err
-	}
-
-	if semver.IsValid(version) {
-		if err := dag.Releaser().GithubRelease(ctx, gitRepoSource, "sdk/rust/"+version, tag, dagger.ReleaserGithubReleaseOpts{
-			Notes:  dag.Releaser().ChangeNotes("sdk/rust", version),
-			Token:  githubToken,
-			DryRun: dryRun,
-		}); err != nil {
-			return err
-		}
-
-		if err := dag.Releaser().Notify(ctx, gitRepoSource, "sdk/rust/"+version, "⚙️ Rust SDK", dagger.ReleaserNotifyOpts{
-			DiscordWebhook: discordWebhook,
-			DryRun:         dryRun,
-		}); err != nil {
-			return err
-		}
 	}
 
 	return nil

@@ -53,10 +53,6 @@
       "source": "sdk/python/dev"
     },
     {
-      "name": "releaser",
-      "source": "releaser"
-    },
-    {
       "name": "shellcheck",
       "source": "modules/shellcheck"
     },

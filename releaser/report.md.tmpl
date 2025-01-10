@@ -1,0 +1,46 @@
+# Dagger {{ with .Version -}}
+    [{{ . }}](https://github.com/dagger/dagger/releases/tag/{{ . }})
+{{- else -}}
+    [`{{ .Ref }}` (`{{ .Commit }}`])(https://github.com/dagger/dagger/commit/{{ .Commit }})
+{{- end }}
+
+*Ran at {{ .Date }}*
+
+{{ with .Artifacts -}}
+Published:
+{{ range . -}}
+- {{ if .Errors }}[ ] {{ else }}[x] {{ end -}}
+  {{ .Name }}{{ with .Tag }} ([`{{ . }}`](https://github.com/dagger/dagger/releases/tag/{{ . }})){{ end }}
+  {{- with .Link }}
+  - Available at <{{ . }}>
+  {{- end }}
+{{ end }}
+{{ range . -}}
+{{- $artifact := . -}}
+{{ range .Errors -}}
+> [!CAUTION]
+> Error while publishing {{ $artifact.Name }}:
+>
+> ```
+> {{ .Message $.Context | trim }}
+> ```
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{ with .FollowUps -}}
+Follow-ups:
+{{ range . -}}
+- {{ .Name }}
+  {{- with .Link }}
+  - At <{{ . }}>
+  {{- end }}
+{{ end }}
+{{- end }}
+{{ range .Errors -}}
+> [!CAUTION]
+> ```
+> {{ .Message $.Context | trim -}}
+> ```
+{{- end }}
+Refer back to [RELEASING.md](https://github.com/dagger/dagger/blob/main/RELEASING.md) for next steps.
