@@ -747,12 +747,11 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				ExecCommand: cmd,
 				before: func() error {
 					if stdin, ok := fe.stdin.(*os.File); ok {
-						ttyFd := int(os.Stdout.Fd())
 						oldState, err := term.MakeRaw(int(stdin.Fd()))
 						if err != nil {
 							return err
 						}
-						restore = func() error { return term.Restore(ttyFd, oldState) }
+						restore = func() error { return term.Restore(int(stdin.Fd()), oldState) }
 					}
 
 					return nil
