@@ -107,6 +107,8 @@ export class {{ .Name | QueryToClient | FormatName }} extends BaseClient { {{- w
     } catch (e: unknown) {
       if (e instanceof globalThis.Error) {
         spanError = dag.error(e.message)
+      } else {
+        spanError = dag.error(`Unknown error: ${e}`)
       }
       throw e
     } finally {
