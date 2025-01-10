@@ -42,14 +42,12 @@ func TestShellAutocomplete(t *testing.T) {
 		`container | directory "./path" | <f$ile >`,
 
 		// subshells
-		// FIXME: the commented out cases need some more information from the
-		// shell parser to resolve
 		`container | with-directory $(<$container >)`,
 		`container | with-directory $(<con$tainer >)`,
-		// `container | with-directory $(container | <$directory >)`,
+		`container | with-directory $(container | <$directory >)`,
 		`container | with-directory $(container | <dir$ectory >)`,
-		// `container | with-directory $(container | <$directory >`,
-		// `container | with-directory $(container | <dir$ectory >`,
+		`container | with-directory $(container | <$directory >`,
+		`container | with-directory $(container | <dir$ectory >`,
 
 		// args
 		`container <--$packages >`,

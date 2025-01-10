@@ -18,7 +18,9 @@ type shellAutoComplete struct {
 var _ readline.AutoCompleter = (*shellAutoComplete)(nil)
 
 func (h *shellAutoComplete) Do(line []rune, pos int) (newLine [][]rune, length int) {
-	file, err := parseShell(strings.NewReader(string(line)), "", syntax.RecoverErrors(1))
+	line = line[:pos]
+
+	file, err := parseShell(strings.NewReader(string(line)), "", syntax.RecoverErrors(5))
 	if err != nil {
 		return nil, 0
 	}
@@ -26,11 +28,26 @@ func (h *shellAutoComplete) Do(line []rune, pos int) (newLine [][]rune, length i
 	// find the smallest stmt next to the cursor - this allows accurate
 	// completion inside subshells, for example
 	var stmt *syntax.Stmt
+	stmtSize := len(line) + 1
 	excluded := map[*syntax.Stmt]struct{}{}
 	syntax.Walk(file, func(node syntax.Node) bool {
 		if node == nil {
 			return false
 		}
+
+		start := int(node.Pos().Offset())
+		end := int(node.End().Offset())
+		if node.End().IsRecovered() {
+			end = pos
+		}
+		if pos < start || pos > end {
+			return true
+		}
+		size := end - start
+		if size > stmtSize {
+			return true
+		}
+
 		switch node := node.(type) {
 		case *syntax.BinaryCmd:
 			if node.Op == syntax.Pipe {
@@ -41,23 +58,21 @@ func (h *shellAutoComplete) Do(line []rune, pos int) (newLine [][]rune, length i
 				excluded[node.Y] = struct{}{}
 			}
 		case *syntax.CmdSubst:
-			if pos < int(node.Pos().Offset()) || pos > int(node.End().Offset()) {
+			if len(node.Stmts) > 0 {
 				break
 			}
-			if len(node.Stmts) == 0 {
-				stmt = nil
-			}
+			stmt = nil
+			stmtSize = size
 		case *syntax.Stmt:
 			if stmt == nil {
 				stmt = node
 				break
 			}
-			if pos < int(node.Pos().Offset()) || pos > int(node.End().Offset()) {
-				return false
+			if _, ok := excluded[node]; ok {
+				break
 			}
-			if _, ok := excluded[node]; !ok {
-				stmt = node
-			}
+			stmt = node
+			stmtSize = size
 		}
 		return true
 	})
