@@ -8,7 +8,7 @@ on:
       - "Alternative CI Runners 3"
       - "Benchmark"
       - "daggerverse-preview"
-      - "Docs"
+      - "docs"
       - "Engine & CLI"
       - "Github"
       - "Helm"

@@ -71,7 +71,7 @@ func New() *CI {
 		withWorkflow(
 			ci.DaggerRunner,
 			false,
-			"Docs",
+			"docs",
 			"docs lint",
 		).
 		withWorkflow(
