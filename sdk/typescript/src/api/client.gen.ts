@@ -7894,8 +7894,10 @@ export class Span extends BaseClient {
     let spanError: Error | undefined = undefined
     try {
       return await opentelemetry.context.with(newContext, fn, this, started)
-    } catch (e) {
-      spanError = dag.error(e.message)
+    } catch (e: unknown) {
+      if (e instanceof globalThis.Error) {
+        spanError = dag.error(e.message)
+      }
       throw e
     } finally {
       await started.end({ error: spanError })
