@@ -8,7 +8,6 @@ import (
 	"dagger/helm/internal/dagger"
 
 	"github.com/moby/buildkit/identity"
-	"golang.org/x/mod/semver"
 	"helm.sh/helm/v3/pkg/chart"
 	"sigs.k8s.io/yaml"
 )
@@ -196,8 +195,6 @@ func (h *Helm) Publish(
 
 	// +optional
 	githubToken *dagger.Secret,
-	// +optional
-	discordWebhook *dagger.Secret,
 
 	// Test as much as possible without actually publishing anything
 	// +optional
@@ -225,25 +222,5 @@ func (h *Helm) Publish(
 			return c.WithExec([]string{"sh", "-c", script})
 		}).
 		Sync(ctx)
-	if err != nil {
-		return err
-	}
-	// 2. Publish on github release
-	if semver.IsValid(version) {
-		if err := dag.Releaser().GithubRelease(ctx, gitRepoSource, "helm/chart/"+version, target, dagger.ReleaserGithubReleaseOpts{
-			Notes:  dag.Releaser().ChangeNotes("helm/dagger", version),
-			Token:  githubToken,
-			DryRun: dryRun,
-		}); err != nil {
-			return err
-		}
-
-		if err := dag.Releaser().Notify(ctx, gitRepoSource, "helm/chart/"+version, "☸️ Helm Chart", dagger.ReleaserNotifyOpts{
-			DiscordWebhook: discordWebhook,
-			DryRun:         dryRun,
-		}); err != nil {
-			return err
-		}
-	}
-	return nil
+	return err
 }

@@ -13,10 +13,6 @@
       "pin": "f4851a9c308410d58c5199dfd1b65e4f3ccae813"
     },
     {
-      "name": "releaser",
-      "source": "../releaser"
-    },
-    {
       "name": "wolfi",
       "source": "../modules/wolfi"
     }
