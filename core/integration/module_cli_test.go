@@ -60,11 +60,11 @@ func (CLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 			},
 			{
 				sdk:          "python",
-				sourceDirEnt: "src",
+				sourceDirEnt: "src/",
 			},
 			{
 				sdk:          "typescript",
-				sourceDirEnt: "src",
+				sourceDirEnt: "src/",
 			},
 		} {
 			tc := tc
