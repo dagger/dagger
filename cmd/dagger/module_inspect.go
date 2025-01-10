@@ -63,7 +63,7 @@ func initializeModule(
 
 	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
 	conf, err := getModuleConfigurationForSourceRef(findCtx, dag, srcRef, doFindUp, true, srcOpts...)
-	defer telemetry.End(findSpan, func() error { return err })
+	telemetry.End(findSpan, func() error { return err })
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get configured module: %w", err)
