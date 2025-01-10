@@ -449,12 +449,18 @@ func (h *shellCallHandler) Prompt(out *termenv.Output, fg termenv.Color) string 
 	return sb.String()
 }
 
-// withTerminal handles using stdin, stdout, and stderr when the TUI is runnin
+// withTerminal handles using stdin, stdout, and stderr when the TUI is running
 func (h *shellCallHandler) withTerminal(fn func(stdin io.Reader, stdout, stderr io.Writer) error) error {
+	// unclear if just skipping h.tui on !stdoutIsTTY is the correct thing to do
+	effectiveStdout := h.stdout
 	if h.tui {
 		return Frontend.Background(&terminalSession{
 			fn: func(stdin io.Reader, stdout, stderr io.Writer) error {
-				return fn(stdin, stdout, stderr)
+				// suspecting there's good reason to satisfy the tea.ExecCommand interface
+				if stdoutIsTTY {
+					effectiveStdout = stdout
+				}
+				return fn(stdin, effectiveStdout, stderr)
 			},
 		}, false)
 	}
@@ -1034,6 +1040,12 @@ func (h *shellCallHandler) Result(
 	}
 
 	if doPrintResponse {
+		resp, err := addTypeToResponse(fn.ReturnType, response)
+		if err != nil {
+			return nil, err
+		}
+		response = resp
+
 		buf := new(bytes.Buffer)
 		frmt := outputFormat(fn.ReturnType)
 		if err := printResponse(buf, response, frmt); err != nil {
