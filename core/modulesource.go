@@ -323,13 +323,13 @@ func (src *ModuleSource) AutomaticGitignore(ctx context.Context) (*bool, error) 
 // If the module is git, it will load the directory from the git repository
 // using its context directory.
 func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, path string, ignore []string) (inst dagql.Instance[*Directory], err error) {
+	bk, err := src.Query.Buildkit(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get buildkit api: %w", err)
+	}
+
 	switch src.Kind {
 	case ModuleSourceKindLocal:
-		bk, err := src.Query.Buildkit(ctx)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get buildkit api: %w", err)
-		}
-
 		localSourceClientMetadata, err := src.Query.NonModuleParentClientMetadata(ctx)
 		if err != nil {
 			return inst, fmt.Errorf("failed to get client metadata: %w", err)
@@ -364,61 +364,67 @@ func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, pat
 			return inst, fmt.Errorf("path %q is outside of context directory %q, path should be relative to the context directory", path, ctxPath)
 		}
 
-		dgst, err := bk.LocalImport(localSourceCtx, src.Query.Platform().Spec(), path, ignore, []string{})
-		if err != nil {
-			return inst, fmt.Errorf("failed to import local module src: %w", err)
-		}
-
-		inst, err = LoadBlob(localSourceCtx, dag, dgst)
-		if err != nil {
-			return inst, fmt.Errorf("failed to load local module src: %w", err)
-		}
-
-		return inst, nil
-	case ModuleSourceKindGit:
-		slog.Debug("moduleSource.LoadContext: loading contextual directory from git", "path", path, "kind", src.Kind, "repo", src.AsGitSource.Value.HTMLURL())
-
-		// Use the Git context directory.
-		ctxDir := src.AsGitSource.Value.ContextDirectory.Self
-
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(src.AsGitSource.Value.RootSubpath, path)
-		}
-
-		dir, err := ctxDir.Directory(ctx, path)
-		if err != nil {
-			return inst, fmt.Errorf("failed to load contextual directory %q: %w", path, err)
-		}
-
-		loadedDir, err := dir.AsBlob(ctx, dag)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get dir instance: %w", err)
-		}
-
-		if len(ignore) == 0 {
-			return loadedDir, nil
-		}
-
-		var ignoredDir dagql.Instance[*Directory]
-
-		err = dag.Select(ctx, dag.Root(), &ignoredDir,
+		err = dag.Select(localSourceCtx, dag.Root(), &inst,
 			dagql.Selector{
-				Field: "directory",
+				Field: "host",
 			},
 			dagql.Selector{
-				Field: "withDirectory",
+				Field: "directory",
 				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String("/")},
-					{Name: "directory", Value: dagql.NewID[*Directory](loadedDir.ID())},
+					{Name: "path", Value: dagql.String(path)},
 					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(ignore...))},
 				},
 			},
 		)
 		if err != nil {
-			return inst, fmt.Errorf("failed to apply ignore pattern on contextual directory %q: %w", path, err)
+			return inst, fmt.Errorf("failed to select directory: %w", err)
 		}
 
-		return ignoredDir, nil
+		return inst, nil
+
+	case ModuleSourceKindGit:
+		slog.Debug("moduleSource.LoadContext: loading contextual directory from git", "path", path, "kind", src.Kind, "repo", src.AsGitSource.Value.HTMLURL())
+
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(src.AsGitSource.Value.RootSubpath, path)
+		}
+
+		// Use the Git context directory.
+		ctxDir := src.AsGitSource.Value.ContextDirectory
+
+		if path != "/" {
+			if err := dag.Select(ctx, ctxDir, &ctxDir,
+				dagql.Selector{
+					Field: "directory",
+					Args: []dagql.NamedInput{
+						{Name: "path", Value: dagql.String(path)},
+					},
+				},
+			); err != nil {
+				return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
+			}
+		}
+
+		if len(ignore) > 0 {
+			if err := dag.Select(ctx, dag.Root(), &ctxDir,
+				dagql.Selector{
+					Field: "directory",
+				},
+				dagql.Selector{
+					Field: "withDirectory",
+					Args: []dagql.NamedInput{
+						{Name: "path", Value: dagql.String("/")},
+						{Name: "directory", Value: dagql.NewID[*Directory](ctxDir.ID())},
+						{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(ignore...))},
+					},
+				},
+			); err != nil {
+				return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
+			}
+		}
+
+		return MakeDirectoryContentHashed(ctx, bk, ctxDir)
+
 	default:
 		return inst, fmt.Errorf("unsupported module src kind: %q", src.Kind)
 	}
