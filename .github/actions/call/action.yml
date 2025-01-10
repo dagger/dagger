@@ -98,7 +98,7 @@ runs:
         echo "::endgroup::"
 
         echo "::group::Dagger server version"
-        echo "{version}" | dagger --silent query
+        dagger --silent core version
         echo "::endgroup::"
 
     - name: ${{ inputs.function }}
