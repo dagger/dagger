@@ -4855,6 +4855,21 @@ func main() {
 		require.Equal(t, "args: /bin/app,via-entrypoint,/bin/app,via-default-args", output)
 	})
 
+	t.Run("use both args and entrypoint", func(ctx context.Context, t *testctx.T) {
+		withargsOverwritten := binctr.
+			AsService(dagger.ContainerAsServiceOpts{
+				UseEntrypoint: true,
+				Args:          []string{"/bin/app via-service-override"},
+			})
+
+		output, err := curlctr.
+			WithServiceBinding("myapp", withargsOverwritten).
+			WithExec([]string{"sh", "-c", "curl -vXGET 'http://myapp:8080/hello'"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "args: /bin/app,via-entrypoint,/bin/app via-service-override", output)
+	})
+
 	t.Run("error when no cmd and entrypoint is set", func(ctx context.Context, t *testctx.T) {
 		withargsOverwritten := binctr.
 			WithoutEntrypoint().

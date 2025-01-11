@@ -1727,7 +1727,9 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 	var cmdargs = container.Config.Cmd
 	if len(args.Args) > 0 {
 		cmdargs = args.Args
-		useEntrypoint = false
+		if !args.UseEntrypoint {
+			useEntrypoint = false
+		}
 	}
 
 	container, err := container.WithExec(ctx, ContainerExecOpts{
