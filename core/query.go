@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"github.com/containerd/containerd/content"
 	bkclient "github.com/moby/buildkit/client"
@@ -23,6 +24,62 @@ import (
 // dependencies for evaluating queries.
 type Query struct {
 	Server
+
+	spans  map[string]*Span
+	spansL *sync.Mutex
+}
+
+func (q *Query) LookupSpan(spanID string) (*Span, bool) {
+	q.spansL.Lock()
+	span, found := q.spans[spanID]
+	q.spansL.Unlock()
+	return span, found
+}
+
+func (q *Query) StoreSpan(s *Span) {
+	q.spansL.Lock()
+	q.spans[s.InternalID()] = s
+	q.spansL.Unlock()
+}
+
+type Span struct {
+	Name string `field:"true"`
+
+	Query *Query
+
+	Span trace.Span
+}
+
+func (*Span) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Span",
+		NonNull:   true,
+	}
+}
+
+func (*Span) TypeDescription() string {
+	// TODO: rename to Task and come up with a nice description
+	return "An OpenTelemetry span."
+}
+
+func (s Span) Clone() *Span {
+	cp := &s
+	cp.Query = cp.Query.Clone()
+	return cp
+}
+
+func (s *Span) Start(ctx context.Context) *Span {
+	started := s.Clone()
+	_, started.Span = Tracer(ctx).Start(ctx, s.Name)
+	started.Query.StoreSpan(started)
+	return started
+}
+
+func (s *Span) InternalID() string {
+	if s.Span == nil {
+		return ""
+	}
+	return s.Span.SpanContext().SpanID().String()
 }
 
 var ErrNoCurrentModule = fmt.Errorf("no current module")
@@ -99,7 +156,11 @@ type Server interface {
 }
 
 func NewRoot(srv Server) *Query {
-	return &Query{Server: srv}
+	return &Query{
+		Server: srv,
+		spans:  map[string]*Span{},
+		spansL: new(sync.Mutex),
+	}
 }
 
 func (*Query) Type() *ast.Type {
