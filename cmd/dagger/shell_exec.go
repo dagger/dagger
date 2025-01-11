@@ -22,10 +22,6 @@ const (
 // and wraps any returned errors
 func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 	return func(ctx context.Context, args []string) error {
-		if h.debug {
-			shellDebug(ctx, "Exec(%v)", args)
-		}
-
 		// This avoids interpreter builtins running first, which would make it
 		// impossible to have a function named "echo", for example. We can
 		// remove `.dag` from this point onward.
@@ -44,14 +40,14 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 		st, err := h.cmd(ctx, args)
 		if err == nil && st != nil {
 			if h.debug {
-				shellDebug(ctx, "└ OUT(%v): %+v", args, st)
+				shellDebug(ctx, "Stdout", args[0], args[1:], st)
 			}
 			err = st.Write(ctx)
 		}
 		if err != nil {
 			m := err.Error()
 			if h.debug {
-				shellDebug(ctx, "Error(%v): %s", args, m)
+				shellDebug(ctx, "Error", m, args)
 			}
 			// Ensure any error from the handler is written to stdout so that
 			// the next command in the chain knows about it.
@@ -86,12 +82,12 @@ func (h *shellCallHandler) cmd(ctx context.Context, args []string) (*ShellState,
 	}
 	if st == nil {
 		if h.debug {
-			shellDebug(ctx, "IN(%v): %q", args, string(b))
+			shellDebug(ctx, "InvalidStdin", args, b)
 		}
 		return nil, fmt.Errorf("unexpected input for command %q", c)
 	}
 	if h.debug {
-		shellDebug(ctx, "└ IN(%v): %+v", args, st)
+		shellDebug(ctx, "Stdin", c, a, st)
 	}
 
 	builtin, err := h.BuiltinCommand(c)
@@ -137,10 +133,6 @@ func (h *shellCallHandler) cmd(ctx context.Context, args []string) (*ShellState,
 
 // entrypointCall is executed when it's the first command in a pipeline
 func (h *shellCallHandler) entrypointCall(ctx context.Context, cmd string, args []string) (*ShellState, error) {
-	if h.debug {
-		shellDebug(ctx, "└ Entrypoint(%s, %v)", cmd, args)
-	}
-
 	if cmd, _ := h.BuiltinCommand(cmd); cmd != nil {
 		return nil, cmd.Execute(ctx, h, args, nil)
 	}
@@ -150,7 +142,7 @@ func (h *shellCallHandler) entrypointCall(ctx context.Context, cmd string, args 
 		return nil, err
 	}
 	if h.debug {
-		shellDebug(ctx, "└ Found(%s, %v): %+v", cmd, args, st)
+		shellDebug(ctx, "Entrypoint", cmd, args, st)
 	}
 
 	if st.IsStdlib() {
@@ -188,23 +180,18 @@ func (h *shellCallHandler) isCurrentContextFunction(name string) bool {
 
 func (h *shellCallHandler) stateLookup(ctx context.Context, name string) (*ShellState, error) {
 	if h.debug {
-		shellDebug(ctx, "  └ StateLookup(%v)", name)
+		shellDebug(ctx, "StateLookup", name)
 	}
+
 	// Is current context a loaded module?
 	if md, _ := h.GetModuleDef(nil); md != nil {
 		// 1. Function in current context
 		if md.HasMainFunction(name) {
-			if h.debug {
-				shellDebug(ctx, "    - found in current context")
-			}
 			return h.newState(), nil
 		}
 
 		// 2. Dependency short name
 		if dep := md.GetDependency(name); dep != nil {
-			if h.debug {
-				shellDebug(ctx, "    - found dependency (%s)", dep.ModRef)
-			}
 			depSt, _, err := h.GetDependency(ctx, name)
 			return depSt, err
 		}
@@ -212,9 +199,6 @@ func (h *shellCallHandler) stateLookup(ctx context.Context, name string) (*Shell
 
 	// 3. Standard library command
 	if cmd, _ := h.StdlibCommand(name); cmd != nil {
-		if h.debug {
-			shellDebug(ctx, "    - found stdlib command")
-		}
 		return h.newStdlibState(), nil
 	}
 
@@ -228,9 +212,6 @@ func (h *shellCallHandler) stateLookup(ctx context.Context, name string) (*Shell
 	}
 	if st == nil {
 		return nil, fmt.Errorf("function or module %q not found", name)
-	}
-	if h.debug {
-		shellDebug(ctx, "    - found module reference")
 	}
 	return st, nil
 }
@@ -383,13 +364,13 @@ func shellPreprocessArgs(fn *modFunction, args []string) ([]string, error) {
 
 // parseArgumentValues returns a map of argument names and their parsed values
 func (h *shellCallHandler) parseArgumentValues(ctx context.Context, md *moduleDef, fn *modFunction, args []string) (map[string]any, error) {
-	args, err := shellPreprocessArgs(fn, args)
+	newArgs, err := shellPreprocessArgs(fn, args)
 	if err != nil {
 		return nil, err
 	}
 
 	if h.debug {
-		shellDebug(ctx, "preprocessed arguments: %v", args)
+		shellDebug(ctx, "Process args", fn.CmdName(), args, newArgs)
 	}
 
 	flags := pflag.NewFlagSet(fn.CmdName(), pflag.ContinueOnError)
@@ -450,7 +431,7 @@ func (h *shellCallHandler) parseArgumentValues(ctx context.Context, md *moduleDe
 		}
 		return nil
 	}
-	if err := flags.ParseAll(args, f); err != nil {
+	if err := flags.ParseAll(newArgs, f); err != nil {
 		return nil, err
 	}
 

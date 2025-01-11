@@ -204,7 +204,7 @@ func (c *ShellCommand) Execute(ctx context.Context, h *shellCallHandler, args []
 		a = append(a, arg)
 	}
 	if h.debug {
-		shellDebug(ctx, "└ CmdExec(%v)", a)
+		shellDebug(ctx, "Command: "+c.Name(), a, st)
 	}
 	c.SetContext(ctx)
 	return c.Run(c, a, st)
