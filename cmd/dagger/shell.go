@@ -427,14 +427,3 @@ func (h *shellCallHandler) withTerminal(fn func(stdin io.Reader, stdout, stderr 
 	}
 	return fn(h.stdin, h.stdout, h.stderr)
 }
-
-func shellDebug(ctx context.Context, msg string, args ...any) {
-	hctx := interp.HandlerCtx(ctx)
-	shellFDebug(hctx.Stderr, msg, args...)
-}
-
-func shellFDebug(w io.Writer, msg string, args ...any) {
-	cat := termenv.String("[DBG]").Foreground(termenv.ANSIMagenta).String()
-	msg = termenv.String(fmt.Sprintf(msg, args...)).Faint().String()
-	fmt.Fprintln(w, cat, msg)
-}
