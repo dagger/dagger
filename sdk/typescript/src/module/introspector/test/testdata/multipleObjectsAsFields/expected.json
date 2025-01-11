@@ -60,5 +60,6 @@
       }
     }
   },
-  "enums": {}
+  "enums": {},
+  "interfaces": {}
 }

@@ -1834,3 +1834,50 @@ class Test {
 		require.JSONEq(t, `{"test": {"foo": "bar"}}`, out)
 	})
 }
+
+func (TypescriptSuite) TestInterface(ctx context.Context, t *testctx.T) {
+	t.Run("doc", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+import { func, object } from "@dagger.io/dagger"
+
+/**
+ * A simple Duck interface
+ */
+export interface Duck {
+  /**
+   * A small quack sound
+    */
+  quack: () => string
+
+  /**
+   * A super quack sound
+   */
+  superQuack(): Promise<string>
+}
+
+@object()
+export class Test {
+  @func()
+  duckQuack(duck: Duck): string {
+    return duck.quack()
+  }
+
+  @func()
+  async duckSuperQuack(duck: Duck): Promise<string> {
+    return await duck.superQuack()
+  }
+}`))
+
+		schema := inspectModule(ctx, t, modGen)
+
+		require.Equal(t, "A simple Duck interface", schema.Get("interfaces.#.asInterface|#(name=TestDuck).description").String())
+		require.Equal(t, "A small quack sound", schema.Get("interfaces.#.asInterface|#(name=TestDuck).functions.#(name=quack).description").String())
+		require.Equal(t, "A super quack sound", schema.Get("interfaces.#.asInterface|#(name=TestDuck).functions.#(name=superQuack).description").String())
+	})
+}

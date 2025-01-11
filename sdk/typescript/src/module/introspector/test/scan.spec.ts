@@ -90,6 +90,10 @@ describe("scan by reference TypeScript", function () {
       name: "Should correctly scan minimal",
       directory: "minimal",
     },
+    {
+      name: "Should correctly scan interfaces",
+      directory: "interface",
+    },
   ]
 
   for (const test of testCases) {
