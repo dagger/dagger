@@ -29,7 +29,7 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/client/pathutil"
 )
 
 type Opt struct {
@@ -216,7 +216,7 @@ func (ls *localSourceHandler) snapshot(ctx context.Context, session session.Grou
 	}
 	diffCopyClient.CloseSend()
 	clientPath = filepath.Clean(statMsg.Path)
-	drive := client.GetDrive(clientPath)
+	drive := pathutil.GetDrive(clientPath)
 	if drive != "" {
 		clientPath = clientPath[len(drive):]
 	}
