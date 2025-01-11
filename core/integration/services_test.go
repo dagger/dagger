@@ -226,7 +226,7 @@ func (m *Hoster) Run(ctx context.Context) error {
 		WithDefaultArgs([]string{"httpd", "-v", "-f"}).
 		WithExposedPort(80).
 		AsService()
-	
+
 	hn, err := srv.Hostname(ctx)
 	if err != nil {
 		return err
@@ -401,7 +401,7 @@ func (m *Hoster) Run(ctx context.Context) error {
 		WithExposedPort(80).
 		AsService().
 		WithHostname("wwwhatsup0")
-	
+
 	_, err := srv.Start(ctx)
 	if err != nil {
 		return err
@@ -462,7 +462,7 @@ func (m *Caller) Run(ctx context.Context) error {
 		WithExposedPort(80).
 		AsService().
 		WithHostname("wwwhatsup1")
-	
+
 	_, err = srv.Start(ctx)
 	if err != nil {
 		return err
@@ -505,7 +505,7 @@ func (m *Hoster) Run(ctx context.Context) error {
 		WithExposedPort(80).
 		AsService().
 		WithHostname("wwwhatsup1")
-	
+
 	_, err := srv.Start(ctx)
 	if err != nil {
 		return err

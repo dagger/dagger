@@ -54,6 +54,7 @@ func (HTTPSuite) TestHTTPServiceStableDigest(ctx context.Context, t *testctx.T) 
 			WithMountedFile("/index.html", c.HTTP(url, dagger.HTTPOpts{
 				ExperimentalServiceHost: svc,
 			})).
+			WithDefaultArgs([]string{"sleep"}).
 			AsService().
 			Hostname(ctx)
 		require.NoError(t, err)
