@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"dagger.io/dagger"
 	"github.com/adrg/xdg"
@@ -68,6 +69,41 @@ var shellCmd = &cobra.Command{
 	},
 }
 
+type safeBuffer struct {
+	bu bytes.Buffer
+	mu sync.Mutex
+}
+
+func (s *safeBuffer) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bu.Write(p)
+}
+
+func (s *safeBuffer) Read(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bu.Read(p)
+}
+
+func (s *safeBuffer) HasUnread() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bu.Len() > 0
+}
+
+func (s *safeBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bu.String()
+}
+
+func (s *safeBuffer) Reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.bu.Reset()
+}
+
 type shellCallHandler struct {
 	dag    *dagger.Client
 	runner *interp.Runner
@@ -76,23 +112,15 @@ type shellCallHandler struct {
 	stdout io.Writer
 	stderr io.Writer
 
-	// modRef is a key from modDefs, to set the corresponding module as the default
-	// when no state is present, or when the state's ModRef is empty
-	modRef string
-
-	// modDefs has the cached module definitions, after loading, and keyed by
-	// module reference as inputed by the user
-	modDefs map[string]*moduleDef
-
 	// switch to Frontend.Background for rendering output while the TUI is
 	// running when in interactive mode
 	tui bool
 
 	// stdoutBuf is used to capture the final stdout that the runner produces
-	stdoutBuf *bytes.Buffer
+	stdoutBuf *safeBuffer
 
 	// stderrBuf is used to capture the final stderr that the runner produces
-	stderrBuf *bytes.Buffer
+	stderrBuf *safeBuffer
 
 	// debug writes to the handler context's stderr what the arguments, input,
 	// and output are for each command that the exec handler processes
@@ -103,6 +131,17 @@ type shellCallHandler struct {
 
 	// stdlib is the list of standard library commands
 	stdlib []*ShellCommand
+
+	// modRef is a key from modDefs, to set the corresponding module as the default
+	// when no state is present, or when the state's ModRef is empty
+	modRef string
+
+	// modDefs has the cached module definitions, after loading, and keyed by
+	// module reference as inputed by the user
+	modDefs sync.Map
+
+	// mu is used to synchronize access to the default module's definitions via modRef
+	mu sync.RWMutex
 }
 
 // RunAll is the entry point for the shell command
@@ -114,8 +153,8 @@ type shellCallHandler struct {
 func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 	h.tui = !silent && (hasTTY && progress == "auto" || progress == "tty")
 
-	h.stdoutBuf = new(bytes.Buffer)
-	h.stderrBuf = new(bytes.Buffer)
+	h.stdoutBuf = new(safeBuffer)
+	h.stderrBuf = new(safeBuffer)
 
 	r, err := interp.New(
 		interp.StdIO(nil, h.stdoutBuf, h.stderrBuf),
@@ -151,7 +190,6 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 		return err
 	}
 	h.runner = r
-	h.modDefs = make(map[string]*moduleDef)
 
 	var def *moduleDef
 	var ref string
@@ -164,7 +202,7 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 		return err
 	}
 	h.modRef = ref
-	h.modDefs[ref] = def
+	h.modDefs.Store(ref, def)
 	h.registerCommands()
 
 	// Example: `dagger shell -c 'container | workdir'`
@@ -224,7 +262,7 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 		h.withTerminal(func(_ io.Reader, stdout, stderr io.Writer) error {
 			// We could also have missing output in stdoutBuf, but probably
 			// for propagating a ShellState.Error. Just ignore those.
-			if h.stderrBuf.Len() > 0 {
+			if h.stderrBuf.HasUnread() {
 				fmt.Fprintln(stderr, h.stderrBuf.String())
 				h.stderrBuf.Reset()
 			}
@@ -428,13 +466,8 @@ func (h *shellCallHandler) withTerminal(fn func(stdin io.Reader, stdout, stderr 
 	return fn(h.stdin, h.stdout, h.stderr)
 }
 
-func shellDebug(ctx context.Context, msg string, args ...any) {
+func (*shellCallHandler) Print(ctx context.Context, args ...any) error {
 	hctx := interp.HandlerCtx(ctx)
-	shellFDebug(hctx.Stderr, msg, args...)
-}
-
-func shellFDebug(w io.Writer, msg string, args ...any) {
-	cat := termenv.String("[DBG]").Foreground(termenv.ANSIMagenta).String()
-	msg = termenv.String(fmt.Sprintf(msg, args...)).Faint().String()
-	fmt.Fprintln(w, cat, msg)
+	_, err := fmt.Fprintln(hctx.Stdout, args...)
+	return err
 }

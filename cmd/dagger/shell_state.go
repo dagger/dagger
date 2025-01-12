@@ -41,7 +41,7 @@ type ShellState struct {
 	ModRef string `json:"modRef"`
 
 	// Cmd is non-empty if next command comes from a builtin instead of an API object
-	Cmd string `json:"ns"`
+	Cmd string `json:"cmd"`
 
 	// Calls is the list of functions for building an API query
 	Calls []FunctionCall `json:"calls,omitempty"`
@@ -214,10 +214,6 @@ func readShellState(r io.Reader) (*ShellState, []byte, error) {
 
 func shellState(ctx context.Context) (*ShellState, []byte, error) {
 	return readShellState(interp.HandlerCtx(ctx).Stdin)
-}
-
-func (h *shellCallHandler) isDefaultState(st *ShellState) bool {
-	return st == nil || st.ModRef == "" || st.ModRef == h.modRef
 }
 
 func (h *shellCallHandler) newModState(ref string) *ShellState {
