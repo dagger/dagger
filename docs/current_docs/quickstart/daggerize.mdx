@@ -53,7 +53,6 @@ Once you confirm your authentication code, your Dagger CLI will be authenticated
 After successfully creating your organization, all future `dagger call` pipelines
 can be inspected in Dagger Cloud.
 
-
 ### Initialize a Dagger module
 
 Bootstrap a new Dagger module in Go, Python or TypeScript by running `dagger init` in the application's root directory, using the `--source` flag to specify a directory for the module's source code.
@@ -84,6 +83,10 @@ dagger init --sdk=typescript --source=./dagger
 This will generate a `dagger.json` module metadata file, initial `dagger/src/index.ts` source code template, `dagger/package.json` and `dagger/tsconfig.json` files, as well as a generated `dagger/sdk` folder for local development.
 </TabItem>
 </Tabs>
+
+:::important
+By default, the Dagger module name is automatically generated from the name of the directory in which `dagger init` runs. In this case, the default name of the cloned application directory is `hello-dagger`, so the module name is `HelloDagger`. If you cloned the application into a different directory, add the `--name=hello-dagger` flag to `dagger init` to correctly set the Dagger module name.
+:::
 
 ### Construct a pipeline using Dagger Functions
 
