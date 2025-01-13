@@ -4737,10 +4737,10 @@ docusaurus-plugin-sass@^0.2.6:
   dependencies:
     sass-loader "^16.0.2"
 
-docusaurus-plugin-typedoc@^1.2.0:
-  version "1.2.0"
-  resolved "https://registry.yarnpkg.com/docusaurus-plugin-typedoc/-/docusaurus-plugin-typedoc-1.2.0.tgz#ea0f85db10b8a7d850fb4525f01e7afb8cdaceb0"
-  integrity sha512-BScoTkX6soV5CPEaipDktrmYgFHRMhSWPLWHlbzeGA9PeUsPhKauUCgqCgL50WUFvETaOZ8qXJxWauVllCZRMA==
+docusaurus-plugin-typedoc@^1.2.1:
+  version "1.2.1"
+  resolved "https://registry.yarnpkg.com/docusaurus-plugin-typedoc/-/docusaurus-plugin-typedoc-1.2.1.tgz#c58c4bac63709f6ff636cc8f23135170372997dc"
+  integrity sha512-4GlqhT1btGEjB94RzIRbkgsGtENvOMKnliWEXcPIUcbaV6zzq4py4GsLoD67QrLtAFAx6W9N1CbVh6yJ7ZXrDA==
 
 dom-converter@^0.2.0:
   version "0.2.0"
@@ -9706,10 +9706,10 @@ typedoc@^0.27.6:
     minimatch "^9.0.5"
     yaml "^2.6.1"
 
-typescript@^5.6.3:
-  version "5.7.2"
-  resolved "https://registry.yarnpkg.com/typescript/-/typescript-5.7.2.tgz#3169cf8c4c8a828cde53ba9ecb3d2b1d5dd67be6"
-  integrity sha512-i5t66RHxDvVN40HfDd1PsEThGNnlMCMT3jMUuoh9/0TaqWevNontacunWyN02LA9/fIbEWlcHZcgTKb9QoaLfg==
+typescript@^5.7.3:
+  version "5.7.3"
+  resolved "https://registry.yarnpkg.com/typescript/-/typescript-5.7.3.tgz#919b44a7dbb8583a9b856d162be24a54bf80073e"
+  integrity sha512-84MVSjMEHP+FQRPy3pX9sTVV/INIex71s9TL2Gm5FG/WG1SqXeKyZ0k7/blY/4FdOzI12CBy1vGc4og/eus0fw==
 
 uc.micro@^2.0.0, uc.micro@^2.1.0:
   version "2.1.0"
