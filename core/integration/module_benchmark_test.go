@@ -11,7 +11,6 @@ import (
 
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/testctx"
-	"github.com/google/uuid"
 	"github.com/iancoleman/strcase"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -97,7 +96,6 @@ class PotatoSack:
 			}
 			eg.Go(func() error {
 				_, err := modGen.
-					WithEnvVariable("CACHE_BUST", uuid.NewString()).
 					With(daggerCall(fmt.Sprintf("potato-%d", i))).
 					Sync(ctx)
 				return err
@@ -144,7 +142,6 @@ export class PotatoSack {
 			}
 			eg.Go(func() error {
 				_, err := modGen.
-					WithEnvVariable("CACHE_BUST", uuid.NewString()).
 					With(daggerCall(fmt.Sprintf("potato-%d", i))).
 					Sync(ctx)
 				return err
@@ -206,7 +203,6 @@ func (ModuleSuite) BenchmarkLotsOfDeps(ctx context.Context, t *testctx.B) {
 			newModNames = append(newModNames, name)
 			modGen = modGen.
 				WithWorkdir("/work/"+name).
-				WithEnvVariable("CACHE_BUST", uuid.NewString()).
 				WithNewFile("./main.go", getModMainSrc(name, depNames))
 
 			var depCfgs []*modules.ModuleConfigDependency
