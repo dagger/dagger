@@ -124,9 +124,6 @@ func (labels Labels) WithGitLabels(workdir string) Labels {
 		EnableDotGitCommonDir: true,
 	})
 	if err != nil {
-		fmt.Println("HOLY fail")
-		fmt.Println(workdir)
-		fmt.Println(err)
 		if !errors.Is(err, git.ErrRepositoryNotExists) {
 			slog.Warn("failed to open git repository", "err", err)
 		}

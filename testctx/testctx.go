@@ -166,7 +166,6 @@ func WithOTelTracing[Type RunnableTTB[Type]](tracer trace.Tracer) Middleware[Typ
 				span.SetStatus(codes.Ok, "")
 			}
 			span.End()
-			fmt.Printf("HOLY spanid: %s\n", span.SpanContext().SpanID())
 		})
 		return t.WithContext(ctx)
 	}
