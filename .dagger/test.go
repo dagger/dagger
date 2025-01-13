@@ -40,11 +40,8 @@ func (t *Test) All(
 	// run benchmarks instead of tests
 	// +optional
 	bench bool,
-	// Runs selected tests once prior to the "real" run to warm the cache
-	// +optional
-	prewarm bool,
 ) error {
-	return t.test(ctx, "", "", "./...", failfast, parallel, timeout, race, 1, testVerbose, bench, prewarm)
+	return t.test(ctx, "", "", "./...", failfast, parallel, timeout, race, 1, testVerbose, bench)
 }
 
 // Run telemetry tests
@@ -192,24 +189,8 @@ func (t *Test) Specific(
 	// Run benchmarks instead of tests
 	// +optional
 	bench bool,
-	// Runs selected tests once prior to the "real" run to warm the cache
-	// +optional
-	prewarm bool,
 ) error {
-	return t.test(
-		ctx,
-		run,
-		skip,
-		pkg,
-		failfast,
-		parallel,
-		timeout,
-		race,
-		count,
-		testVerbose,
-		bench,
-		prewarm,
-	)
+	return t.test(ctx, run, skip, pkg, failfast, parallel, timeout, race, count, testVerbose, bench)
 }
 
 func (t *Test) test(
@@ -224,37 +205,25 @@ func (t *Test) test(
 	count int,
 	testVerbose bool,
 	bench bool,
-	prewarm bool,
 ) error {
 	cmd, err := t.testCmd(ctx)
 	if err != nil {
 		return err
 	}
-
-	run := func(count int) *dagger.Container {
-		return t.goTest(
-			cmd,
-			runTestRegex,
-			skipTestRegex,
-			pkg,
-			failfast,
-			parallel,
-			timeout,
-			race,
-			count,
-			false, // -update
-			testVerbose,
-			bench)
-	}
-
-	if prewarm {
-		_, err = run(1).WithEnvVariable("PREWARM", "true").Sync(ctx)
-		if err != nil {
-			return fmt.Errorf("failed on initial warmup run: %w", err)
-		}
-	}
-
-	_, err = run(count).Sync(ctx)
+	_, err = t.goTest(
+		cmd,
+		runTestRegex,
+		skipTestRegex,
+		pkg,
+		failfast,
+		parallel,
+		timeout,
+		race,
+		count,
+		false, // -update
+		testVerbose,
+		bench,
+	).Sync(ctx)
 	return err
 }
 
