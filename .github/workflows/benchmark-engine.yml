@@ -1,4 +1,4 @@
-name: Benchmark
+name: Benchmark Engine
 
 on:
   # Run the workflow every day at 5AM UTC
@@ -26,6 +26,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: "benchmark (prewarm)"
+        shell: bash
+        environment:
+            TESTCTX_PREWARM: "true"
+        run: |
+          dagger call test all --bench
       - name: "benchmark"
         shell: bash
         run: |

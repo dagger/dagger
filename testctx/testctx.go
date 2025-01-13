@@ -49,6 +49,7 @@ package testctx
 import (
 	"context"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -151,6 +152,7 @@ func WithParallel(t *TB[*testing.T]) *TB[*testing.T] {
 
 const TestCtxTypeAttr = "dagger.io/testctx.type"
 const TestCtxNameAttr = "dagger.io/testctx.name"
+const TestCtxPrewarmAttr = "dagger.io/testctx.prewarm"
 
 func WithOTelTracing[Type RunnableTTB[Type]](tracer trace.Tracer) Middleware[Type] {
 	wrapSpan := func(t *TB[Type]) *TB[Type] {
@@ -158,6 +160,7 @@ func WithOTelTracing[Type RunnableTTB[Type]](tracer trace.Tracer) Middleware[Typ
 		span.SetAttributes(
 			attribute.String(TestCtxTypeAttr, fmt.Sprintf("%T", t.RunnableTTB)),
 			attribute.String(TestCtxNameAttr, t.Name()),
+			attribute.String(TestCtxPrewarmAttr, isPrewarm()),
 		)
 		t.Cleanup(func() {
 			if t.Failed() {
@@ -174,6 +177,14 @@ func WithOTelTracing[Type RunnableTTB[Type]](tracer trace.Tracer) Middleware[Typ
 			BeforeAll(wrapSpan).
 			BeforeEach(wrapSpan)
 	}
+}
+
+func isPrewarm() string {
+	_, ok := os.LookupEnv("TESTCTX_PREWARM")
+	if !ok {
+		return "false"
+	}
+	return "true"
 }
 
 func WithOTelLogging[Type RunnableTTB[Type]](logger log.Logger) Middleware[Type] {
