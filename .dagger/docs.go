@@ -67,7 +67,7 @@ func (d Docs) Server() *dagger.Container {
 
 // Lint documentation files
 func (d Docs) Lint(ctx context.Context) (rerr error) {
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 
 	// Markdown
 	eg.Go(func() (rerr error) {
@@ -104,10 +104,7 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 			span.End()
 		}()
 		before := d.Dagger.Source()
-		after, err := d.Generate(ctx)
-		if err != nil {
-			return err
-		}
+		after := d.Generate()
 		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{
 			generatedSchemaPath,
 			generatedCliZenPath,
@@ -157,41 +154,12 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 }
 
 // Regenerate the API schema and CLI reference docs
-func (d Docs) Generate(ctx context.Context) (*dagger.Directory, error) {
-	eg, ctx := errgroup.WithContext(ctx)
-	_ = ctx
-
-	var sdl *dagger.Directory
-	eg.Go(func() error {
-		sdl = d.GenerateSchema()
-		return nil
-	})
-	var cli *dagger.Directory
-	eg.Go(func() error {
-		cli = d.GenerateCli()
-		return nil
-	})
-	var apiRef *dagger.Directory
-	eg.Go(func() error {
-		apiRef = d.GenerateSchemaReference()
-		return nil
-	})
-	var configSchemas *dagger.Directory
-	eg.Go(func() error {
-		configSchemas = d.GenerateConfigSchemas()
-		return nil
-	})
-
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
-
-	result := dag.Directory().
-		WithDirectory("", sdl).
-		WithDirectory("", cli).
-		WithDirectory("", apiRef).
-		WithDirectory("", configSchemas)
-	return result, nil
+func (d Docs) Generate() *dagger.Directory {
+	return dag.Directory().
+		WithDirectory("", d.GenerateSchema()).
+		WithDirectory("", d.GenerateCli()).
+		WithDirectory("", d.GenerateSchemaReference()).
+		WithDirectory("", d.GenerateConfigSchemas())
 }
 
 // Regenerate the CLI reference docs

@@ -171,9 +171,8 @@ func (dev *DaggerDev) Generate(ctx context.Context) (*dagger.Directory, error) {
 	var eg errgroup.Group
 
 	eg.Go(func() error {
-		var err error
-		docs, err = dev.Docs().Generate(ctx)
-		return err
+		docs = dev.Docs().Generate()
+		return nil
 	})
 
 	eg.Go(func() error {
