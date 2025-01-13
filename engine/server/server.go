@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -620,6 +621,10 @@ func (srv *Server) gcClientDBs() {
 			slog.Error("failed to GC client DBs", "error", err)
 		}
 	}
+}
+
+func (srv *Server) OpenClientDB(clientID string) (*sql.DB, error) {
+	return srv.clientDBs.Open(clientID)
 }
 
 func (srv *Server) activeClientIDs() map[string]bool {

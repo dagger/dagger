@@ -118,6 +118,8 @@ type SpanSnapshot struct {
 
 	ChildCount int  `json:",omitempty"`
 	HasLogs    bool `json:",omitempty"`
+
+	Actor string `json:",omitempty"`
 }
 
 func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
@@ -154,6 +156,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 
 	case telemetry.UIPassthroughAttr:
 		snapshot.Passthrough = val.(bool)
+
+	case telemetry.UIActorAttr:
+		snapshot.Actor = val.(string)
 
 	case telemetry.DagInputsAttr:
 		snapshot.Inputs = sliceOf[string](val)
