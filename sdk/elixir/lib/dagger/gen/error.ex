@@ -29,3 +29,16 @@ defmodule Dagger.Error do
     Client.execute(error.client, query_builder)
   end
 end
+
+defimpl Jason.Encoder, for: Dagger.Error do
+  def encode(error, opts) do
+    {:ok, id} = Dagger.Error.id(error)
+    Jason.Encode.string(id, opts)
+  end
+end
+
+defimpl Nestru.Decoder, for: Dagger.Error do
+  def decode_fields_hint(_struct, _context, id) do
+    {:ok, Dagger.Client.load_error_from_id(Dagger.Global.dag(), id)}
+  end
+end

@@ -10,7 +10,9 @@ defmodule Dagger.Mod.ModuleTest do
     %{dag: dag}
   end
 
-  test "define/1", %{dag: dag} do
-    assert {:ok, _} = Module.define(dag, ObjectMod) |> Dagger.Module.id()
+  describe "define/1" do
+    test "register module", %{dag: dag} do
+      assert {:ok, _} = Module.define(dag, ObjectMod) |> Dagger.Module.id()
+    end
   end
 end
