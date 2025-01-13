@@ -13,7 +13,7 @@ type Scripts struct {
 
 // Lint scripts files
 func (s Scripts) Lint(ctx context.Context) error {
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 	eg.Go(func() error {
 		return dag.Shellcheck().
 			Check(s.Dagger.Source().File("install.sh")).

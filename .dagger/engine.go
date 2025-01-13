@@ -176,7 +176,7 @@ func (e *DaggerEngine) Lint(
 	ctx context.Context,
 	pkgs []string, // +optional
 ) error {
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 	eg.Go(func() error {
 		if len(pkgs) == 0 {
 			allPkgs, err := e.Dagger.containing(ctx, "go.mod")
@@ -301,7 +301,7 @@ func (e *DaggerEngine) Publish(
 		Platforms []*dagger.Container
 		Tags      []string
 	}, len(targets))
-	eg, egCtx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 	for i, target := range targets {
 		// determine the target tags
 		for _, tag := range tag {
@@ -311,7 +311,7 @@ func (e *DaggerEngine) Publish(
 		// build all the target platforms
 		targetResults[i].Platforms = make([]*dagger.Container, len(target.Platforms))
 		for j, platform := range target.Platforms {
-			egCtx, span := Tracer().Start(egCtx, fmt.Sprintf("building %s [%s]", target.Name, platform))
+			egCtx, span := Tracer().Start(ctx, fmt.Sprintf("building %s [%s]", target.Name, platform))
 			eg.Go(func() (rerr error) {
 				defer func() {
 					if rerr != nil {
@@ -409,7 +409,7 @@ func (e *DaggerEngine) Scan(ctx context.Context) error {
 		commonArgs = append(commonArgs, "--ignorefile=/mnt/ignores/"+ignoreFileNames[0])
 	}
 
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 
 	eg.Go(func() error {
 		// scan the source code

@@ -33,7 +33,7 @@ type TypescriptSDK struct {
 
 // Lint the Typescript SDK
 func (t TypescriptSDK) Lint(ctx context.Context) (rerr error) {
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 
 	base := t.nodeJsBase()
 
@@ -119,7 +119,7 @@ func (t TypescriptSDK) Test(ctx context.Context) (rerr error) {
 		return err
 	}
 
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 
 	// Loop over the LTS and Maintenance versions and test them
 	for _, version := range []string{nodeCurrentLTS, nodePreviousLTS} {

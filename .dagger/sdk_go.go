@@ -17,7 +17,7 @@ type GoSDK struct {
 
 // Lint the Go SDK
 func (t GoSDK) Lint(ctx context.Context) (rerr error) {
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 	eg.Go(func() (rerr error) {
 		ctx, span := Tracer().Start(ctx, "lint the go source")
 		defer func() {
