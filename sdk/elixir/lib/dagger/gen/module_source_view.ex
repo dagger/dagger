@@ -38,3 +38,16 @@ defmodule Dagger.ModuleSourceView do
     Client.execute(module_source_view.client, query_builder)
   end
 end
+
+defimpl Jason.Encoder, for: Dagger.ModuleSourceView do
+  def encode(module_source_view, opts) do
+    {:ok, id} = Dagger.ModuleSourceView.id(module_source_view)
+    Jason.Encode.string(id, opts)
+  end
+end
+
+defimpl Nestru.Decoder, for: Dagger.ModuleSourceView do
+  def decode_fields_hint(_struct, _context, id) do
+    {:ok, Dagger.Client.load_module_source_view_from_id(Dagger.Global.dag(), id)}
+  end
+end

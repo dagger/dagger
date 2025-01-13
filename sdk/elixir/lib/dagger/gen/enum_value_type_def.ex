@@ -50,3 +50,16 @@ defmodule Dagger.EnumValueTypeDef do
     }
   end
 end
+
+defimpl Jason.Encoder, for: Dagger.EnumValueTypeDef do
+  def encode(enum_value_type_def, opts) do
+    {:ok, id} = Dagger.EnumValueTypeDef.id(enum_value_type_def)
+    Jason.Encode.string(id, opts)
+  end
+end
+
+defimpl Nestru.Decoder, for: Dagger.EnumValueTypeDef do
+  def decode_fields_hint(_struct, _context, id) do
+    {:ok, Dagger.Client.load_enum_value_type_def_from_id(Dagger.Global.dag(), id)}
+  end
+end
