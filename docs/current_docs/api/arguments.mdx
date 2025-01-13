@@ -133,6 +133,37 @@ The result will look like this:
 HELLO, WORLD
 ```
 
+## Array arguments
+
+To pass an array argument to a Dagger Function, add the corresponding flag, followed by a comma-separated list of values.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-array/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-array/python/main.py
+```
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/arguments-array/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call hello --names=John,Jane
+```
+
+The result will look like this:
+
+```shell
+Hello John, Jane
+```
+
 ## Directory arguments
 
 You can also pass a directory argument from the command-line. To do so, add the corresponding flag, followed by a local filesystem path or a remote Git reference. In both cases, the CLI will convert it to an object referencing the contents of that filesystem path or Git repository location, and pass the resulting `Directory` object as argument to the Dagger Function.
