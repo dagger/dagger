@@ -82,15 +82,28 @@ func (s *querySchema) Install() {
 		dagql.Func("span", s.span).
 			Doc(`Create a new OpenTelemetry span.`).
 			ArgDoc("name", "Name of the span."),
+
+		//
+		// dagql.Func("log", s.log).
+		// 	Doc(`Log a message.`).
+		// 	ArgDoc("message", "The message to log.").
+		// 	Impure("Always evaluated for side effects (logging)."),
+		dagql.Func("currentSpan", s.span),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Span]{
-		dagql.NodeFunc("start", s.spanStart).
-			Doc(`Start a new instance of the span.`).
-			Impure("Creates a new span with each call."),
+		// dagql.Func("logs", s.spanLogs),
+
+		dagql.Func("withActor", s.spanWithActor),
+
+		dagql.Func("withInternal", s.spanWithInternal),
 
 		dagql.Func("internalId", s.spanInternalID).
 			Doc(`Returns the internal ID of the span.`),
+
+		dagql.NodeFunc("start", s.spanStart).
+			Doc(`Start a new instance of the span.`).
+			Impure("Creates a new span with each call."),
 
 		dagql.Func("end", s.spanEnd).
 			Doc(`End the OpenTelemetry span, with an optional error.`),
@@ -200,10 +213,6 @@ func (s *querySchema) spanStart(ctx context.Context, parent dagql.Instance[*core
 	return dagql.NewID[*core.Span](inst.ID()), nil
 }
 
-func (s *querySchema) spanInternalID(ctx context.Context, parent *core.Span, args struct{}) (string, error) {
-	return parent.Span.SpanContext().SpanID().String(), nil
-}
-
 func (s *querySchema) spanEnd(ctx context.Context, parent *core.Span, args struct {
 	Error dagql.Optional[dagql.ID[*core.Error]]
 }) (dagql.Nullable[core.Void], error) {
@@ -220,4 +229,35 @@ func (s *querySchema) spanEnd(ctx context.Context, parent *core.Span, args struc
 	}
 	parent.Span.End()
 	return dagql.Null[core.Void](), nil
+}
+
+//	func (s *querySchema) spanLogs(ctx context.Context, parent dagql.Instance[*core.Span], args struct{}) (dagql.ID[*core.Span], error) {
+//		started := parent.Self.Start(ctx)
+//		var inst dagql.Instance[*core.Span]
+//		err := s.srv.Select(ctx, s.srv.Root(), &inst, dagql.Selector{
+//			Field: "span",
+//			Pure:  true,
+//			Args: []dagql.NamedInput{
+//				{Name: "name", Value: dagql.NewString(started.Name)},
+//				{Name: "key", Value: dagql.NewString(started.InternalID())},
+//			},
+//		})
+//		if err != nil {
+//			return dagql.ID[*core.Span]{}, err
+//		}
+//		return dagql.NewID[*core.Span](inst.ID()), nil
+//	}
+
+func (s *querySchema) spanInternalID(ctx context.Context, parent *core.Span, args struct{}) (string, error) {
+	return parent.Span.SpanContext().SpanID().String(), nil
+}
+
+func (s *querySchema) spanWithActor(ctx context.Context, parent *core.Span, args struct {
+	Actor string
+}) (*core.Span, error) {
+	return parent.WithActor(args.Actor), nil
+}
+
+func (s *querySchema) spanWithInternal(ctx context.Context, parent *core.Span, args struct{}) (*core.Span, error) {
+	return parent.WithInternal(), nil
 }
