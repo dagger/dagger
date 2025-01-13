@@ -7,6 +7,8 @@ import { daggerVersion } from './version';
 The Dagger CLI is available for installation on macOS, Linux, and Windows to run locally or in a CI environment.
 :::
 
+### Released versions
+
 Install the Dagger CLI following the steps below.
 
 <Tabs>
@@ -146,3 +148,17 @@ where.exe dagger
 
 </TabItem>
 </Tabs>
+
+### Development versions
+
+:::warning
+Development versions should be considered unstable and may produce unexpected results.
+:::
+
+To install the latest development version, use the following command:
+
+```shell
+curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_COMMIT=head sh
+```
+
+This will replace your current Dagger CLI version, so you may prefer to install it in an isolated environment so as to avoid conflicts.
