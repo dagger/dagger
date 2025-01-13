@@ -16,7 +16,7 @@ class MyModule:
             .from_("python:3.11")
             .with_directory("/src", source)
             .with_workdir("/src")
-            .with_mounted_cache("/root/.cache/poetry", dag.cache_volume("poetry_cache"))
+            .with_mounted_cache("/root/.cache/pypoetry", dag.cache_volume("poetry_cache"))
             .with_exec(
                 [
                     "pip",
