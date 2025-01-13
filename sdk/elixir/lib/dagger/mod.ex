@@ -20,7 +20,7 @@ defmodule Dagger.Mod do
     with {:ok, parent_name} <- Dagger.FunctionCall.parent_name(fn_call),
          {:ok, fn_name} <- Dagger.FunctionCall.name(fn_call),
          {:ok, parent_json} <- Dagger.FunctionCall.parent(fn_call),
-         {:ok, parent} <- Jason.decode(parent_json),
+         {:ok, parent} <- Decoder.decode(parent_json, {:optional, module}, dag),
          {:ok, input_args} <- Dagger.FunctionCall.input_args(fn_call),
          input_args = fetch_args!(input_args),
          {:ok, json} <- invoke(dag, module, parent, parent_name, fn_name, input_args) do
@@ -42,11 +42,13 @@ defmodule Dagger.Mod do
   end
 
   # Invoke function.
-  def invoke(dag, module, _parent, _parent_name, fn_name, input_args) do
+
+  def invoke(dag, module, parent, _parent_name, fn_name, input_args) do
     fun_name = fn_name |> Macro.underscore() |> String.to_existing_atom()
     fun_def = module.__object__(:function, fun_name)
-    args = decode_args!(dag, input_args, fun_def[:args])
-    return_type = fun_def[:return]
+    args = decode_args!(dag, input_args, fun_def.args)
+    args = if(fun_def.self, do: [parent | args], else: args)
+    return_type = fun_def.return
 
     case apply(module, fun_name, args) do
       {:error, _} = error -> error

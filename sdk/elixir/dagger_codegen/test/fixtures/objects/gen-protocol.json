@@ -1,0 +1,397 @@
+{
+  "description": "A Dagger module.",
+  "directives": [],
+  "enumValues": [],
+  "fields": [
+    {
+      "args": [],
+      "deprecationReason": null,
+      "description": "The dependencies of the module.",
+      "directives": [],
+      "isDeprecated": false,
+      "name": "dependencies",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "LIST",
+          "name": null,
+          "ofType": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Module",
+              "ofType": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "args": [],
+      "deprecationReason": null,
+      "description": "The doc string of the module, if any",
+      "directives": [],
+      "isDeprecated": false,
+      "name": "description",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "SCALAR",
+          "name": "String",
+          "ofType": null
+        }
+      }
+    },
+    {
+      "args": [],
+      "deprecationReason": null,
+      "description": "Enumerations served by this module.",
+      "directives": [],
+      "isDeprecated": false,
+      "name": "enums",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "LIST",
+          "name": null,
+          "ofType": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "TypeDef",
+              "ofType": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "args": [],
+      "deprecationReason": null,
+      "description": "The generated files and directories made on top of the module source's context directory.",
+      "directives": [],
+      "isDeprecated": false,
+      "name": "generatedContextDirectory",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "OBJECT",
+          "name": "Directory",
+          "ofType": null
+        }
+      }
+    },
+    {
+      "args": [],
+      "deprecationReason": null,
+      "description": "A unique identifier for this Module.",
+      "directives": [],
+      "isDeprecated": false,
+      "name": "id",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "SCALAR",
+          "name": "ModuleID",
+          "ofType": null
+        }
+      }
+    },
+    {
+      "args": [],
+      "deprecationReason": null,
+      "description": "Interfaces served by this module.",
+      "directives": [],
+      "isDeprecated": false,
+      "name": "interfaces",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "LIST",
+          "name": null,
+          "ofType": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "TypeDef",
+              "ofType": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "args": [],
+      "deprecationReason": null,
+      "description": "The name of the module",
+      "directives": [],
+      "isDeprecated": false,
+      "name": "name",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "SCALAR",
+          "name": "String",
+          "ofType": null
+        }
+      }
+    },
+    {
+      "args": [],
+      "deprecationReason": null,
+      "description": "Objects served by this module.",
+      "directives": [],
+      "isDeprecated": false,
+      "name": "objects",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "LIST",
+          "name": null,
+          "ofType": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "TypeDef",
+              "ofType": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "args": [],
+      "deprecationReason": null,
+      "description": "The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.",
+      "directives": [],
+      "isDeprecated": false,
+      "name": "runtime",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "OBJECT",
+          "name": "Container",
+          "ofType": null
+        }
+      }
+    },
+    {
+      "args": [],
+      "deprecationReason": null,
+      "description": "The SDK config used by this module.",
+      "directives": [],
+      "isDeprecated": false,
+      "name": "sdk",
+      "type": {
+        "kind": "OBJECT",
+        "name": "SDKConfig",
+        "ofType": null
+      }
+    },
+    {
+      "args": [],
+      "deprecationReason": null,
+      "description": "Serve a module's API in the current session.\n\nNote: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.",
+      "directives": [],
+      "isDeprecated": false,
+      "name": "serve",
+      "type": {
+        "kind": "SCALAR",
+        "name": "Void",
+        "ofType": null
+      }
+    },
+    {
+      "args": [],
+      "deprecationReason": null,
+      "description": "The source for the module.",
+      "directives": [],
+      "isDeprecated": false,
+      "name": "source",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "OBJECT",
+          "name": "ModuleSource",
+          "ofType": null
+        }
+      }
+    },
+    {
+      "args": [],
+      "deprecationReason": null,
+      "description": "Forces evaluation of the module, including any loading into the engine and associated validation.",
+      "directives": [],
+      "isDeprecated": false,
+      "name": "sync",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "SCALAR",
+          "name": "ModuleID",
+          "ofType": null
+        }
+      }
+    },
+    {
+      "args": [
+        {
+          "defaultValue": null,
+          "deprecationReason": null,
+          "description": "The description to set",
+          "directives": [],
+          "isDeprecated": false,
+          "name": "description",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "String",
+              "ofType": null
+            }
+          }
+        }
+      ],
+      "deprecationReason": null,
+      "description": "Retrieves the module with the given description",
+      "directives": [],
+      "isDeprecated": false,
+      "name": "withDescription",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "OBJECT",
+          "name": "Module",
+          "ofType": null
+        }
+      }
+    },
+    {
+      "args": [
+        {
+          "defaultValue": null,
+          "deprecationReason": null,
+          "description": "",
+          "directives": [],
+          "isDeprecated": false,
+          "name": "enum",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "TypeDefID",
+              "ofType": null
+            }
+          }
+        }
+      ],
+      "deprecationReason": null,
+      "description": "This module plus the given Enum type and associated values",
+      "directives": [],
+      "isDeprecated": false,
+      "name": "withEnum",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "OBJECT",
+          "name": "Module",
+          "ofType": null
+        }
+      }
+    },
+    {
+      "args": [
+        {
+          "defaultValue": null,
+          "deprecationReason": null,
+          "description": "",
+          "directives": [],
+          "isDeprecated": false,
+          "name": "iface",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "TypeDefID",
+              "ofType": null
+            }
+          }
+        }
+      ],
+      "deprecationReason": null,
+      "description": "This module plus the given Interface type and associated functions",
+      "directives": [],
+      "isDeprecated": false,
+      "name": "withInterface",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "OBJECT",
+          "name": "Module",
+          "ofType": null
+        }
+      }
+    },
+    {
+      "args": [
+        {
+          "defaultValue": null,
+          "deprecationReason": null,
+          "description": "",
+          "directives": [],
+          "isDeprecated": false,
+          "name": "object",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "TypeDefID",
+              "ofType": null
+            }
+          }
+        }
+      ],
+      "deprecationReason": null,
+      "description": "This module plus the given Object type and associated functions.",
+      "directives": [],
+      "isDeprecated": false,
+      "name": "withObject",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "OBJECT",
+          "name": "Module",
+          "ofType": null
+        }
+      }
+    }
+  ],
+  "inputFields": [],
+  "interfaces": [],
+  "kind": "OBJECT",
+  "name": "Module",
+  "possibleTypes": []
+}

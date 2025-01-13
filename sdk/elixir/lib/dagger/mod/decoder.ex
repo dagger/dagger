@@ -47,8 +47,14 @@ defmodule Dagger.Mod.Decoder do
   defp cast(nil, {:optional, _type}, _dag), do: {:ok, nil}
   defp cast(value, {:optional, type}, dag), do: cast(value, type, dag)
 
-  defp cast(value, module, dag) when is_atom(module) do
-    Nestru.decode(value, module, dag)
+  defp cast(value, module, dag) when (is_map(value) or is_binary(value)) and is_atom(module) do
+    Code.ensure_loaded!(module)
+
+    if function_exported?(module, :__struct__, 0) do
+      Nestru.decode(value, module, dag)
+    else
+      {:ok, value}
+    end
   end
 
   defp cast(value, type, _) do
