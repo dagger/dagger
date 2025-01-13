@@ -184,7 +184,7 @@ type CompletionContext struct {
 	// CmdType indicates the completions should be performed in the new
 	// namespace set by a namespace-setting command.
 	CmdType string
-	// CmdFunction indicates the completions should be performend on the
+	// CmdFunction indicates the completions should be performed on the
 	// arguments of the namespace-setting command.
 	CmdFunction string
 
