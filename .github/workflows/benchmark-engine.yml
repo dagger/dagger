@@ -22,17 +22,23 @@ concurrency:
 jobs:
   benchdev:
     if: ${{ github.repository == 'dagger/dagger' && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'benchmark')) }}
-    runs-on: dagger-g3-main-16c-st-benchmark
+    runs-on:
+        - 'dagger-g3-v0-15-1-16c-st-benchmark'
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - name: "benchmark (prewarm)"
-        shell: bash
-        environment:
-            TESTCTX_PREWARM: "true"
-        run: |
-          dagger call test all --bench
-      - name: "benchmark"
-        shell: bash
-        run: |
-          dagger call test all --bench
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      - name: Warm up Engine
+        run: dagger core version
+      - name: Benchmark Engine (prewarm)
+        uses: ./.github/actions/call
+        env:
+          TESTCTX_PREWARM: "true"
+        with:
+          function: test all --bench
+          dev-engine: "false"
+      - name: Benchmark Engine
+        uses: ./.github/actions/call
+        with:
+          function: test all --bench
+          dev-engine: "false"
