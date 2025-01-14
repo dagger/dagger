@@ -3,7 +3,7 @@ package main
 
 import "github.com/dagger/dagger/sdk/dotnet/dev/internal/dagger"
 
-const daggerVersion = "0.13.3"
+const daggerVersion = "0.15.1"
 
 func installDaggerCli(ctr *dagger.Container) *dagger.Container {
 	return ctr.

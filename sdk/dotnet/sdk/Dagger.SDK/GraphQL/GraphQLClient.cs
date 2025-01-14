@@ -42,14 +42,18 @@ public class GraphQLClient
     /// Perform GraphQL request.
     /// </summary>
     /// <param name="query">GraphQL query.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Raw HTTP response.</returns>
-    public async Task<HttpResponseMessage> RequestAsync(string query)
+    public async Task<HttpResponseMessage> RequestAsync(
+        string query,
+        CancellationToken cancellationToken = default
+    )
     {
         var content = new StringContent(
             JsonSerializer.Serialize(new { query }),
             Encoding.UTF8,
             "application/json"
         );
-        return await _httpClient.PostAsync("/query", content);
+        return await _httpClient.PostAsync("/query", content, cancellationToken);
     }
 }

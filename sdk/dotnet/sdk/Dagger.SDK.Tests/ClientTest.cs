@@ -5,14 +5,31 @@ namespace Dagger.SDK.Tests;
 [TestClass]
 public class ClientTest
 {
-    private static readonly Query _dag = Dagger.Connect();
+    private static readonly Query _dag = Dagger.Dag();
 
     [TestMethod]
     public async Task TestSimple()
     {
-        var output = await _dag.Container().From("debian").WithExec(["echo", "hello"]).Stdout();
+        var output = await _dag.Container()
+            .From("debian")
+            .WithExec(["echo", "hello"])
+            .StdoutAsync();
 
-        Assert.AreEqual("hello\n", output);
+        Assert.AreEqual("hello\n", output, ignoreCase: true);
+    }
+
+    [TestMethod]
+    public async Task TestCancellation()
+    {
+        var cts = new CancellationTokenSource();
+        cts.CancelAfter(5000);
+        await Assert.ThrowsExceptionAsync<TaskCanceledException>(
+            () =>
+                _dag.Container()
+                    .From("debian")
+                    .WithExec(["bash", "-c", "sleep 10; echo hello"])
+                    .StdoutAsync(cts.Token)
+        );
     }
 
     [TestMethod]
@@ -23,16 +40,16 @@ public class ClientTest
             .WithEnvVariable("A", "a")
             .WithEnvVariable("B", "b")
             .WithEnvVariable("C", "$A:$B", expand: true)
-            .EnvVariable("C");
+            .EnvVariableAsync("C");
 
-        Assert.AreEqual("a:b", env);
+        Assert.AreEqual("a:b", env, ignoreCase: false);
     }
 
     [TestMethod]
     public async Task TestScalarIdSerialization()
     {
         var cache = _dag.CacheVolume("hello");
-        var id = await cache.Id();
+        var id = await cache.IdAsync();
         Assert.IsTrue(id.Value.Length > 0);
     }
 
@@ -50,7 +67,7 @@ public class ClientTest
         var output = await _dag.Container()
             .Build(dockerDir, buildArgs: [new BuildArg("SPAM", "egg")])
             .WithExec([])
-            .Stdout();
+            .StdoutAsync();
 
         StringAssert.Contains(output, "SPAM=egg");
     }
@@ -70,7 +87,7 @@ public class ClientTest
                              0.0 mm
                 """
             )
-            .Sync();
+            .SyncAsync();
     }
 
     [TestMethod]
@@ -79,9 +96,11 @@ public class ClientTest
         var envs = await _dag.Container()
             .WithEnvVariable("A", "B")
             .WithEnvVariable("C", "D")
-            .EnvVariables();
+            .EnvVariablesAsync();
 
-        ICollection envNames = envs.Select(env => env.Name()).Select(task => task.Result).ToList();
+        ICollection envNames = envs.Select(env => env.NameAsync())
+            .Select(task => task.Result)
+            .ToList();
         ICollection expected = new[] { "A", "C" };
         CollectionAssert.AreEqual(expected, envNames);
     }

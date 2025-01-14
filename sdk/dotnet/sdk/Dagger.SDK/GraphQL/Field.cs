@@ -7,10 +7,8 @@ public class Argument(string key, Value value)
     public string Key { get; } = key;
     private Value Value { get; } = value;
 
-    public Task<string> FormatValue()
-    {
-        return Value.Format();
-    }
+    public Task<string> FormatValue(CancellationToken cancellationToken = default) =>
+        Value.FormatAsync(cancellationToken);
 }
 
 public class Field(string name, ImmutableList<Argument> args)
