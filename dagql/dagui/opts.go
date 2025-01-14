@@ -45,6 +45,10 @@ type FrontendOpts struct {
 
 	// FocusedSpan is the currently selected span, i.e. the cursor position.
 	FocusedSpan SpanID
+
+	// SiftedSpans is a set of spans whose children should be filtered to only
+	// show non-Call spans, skipping through any intermediate Calls.
+	SiftedSpans map[SpanID]struct{}
 }
 
 const (
@@ -57,6 +61,13 @@ const (
 	ShowDigestsVerbosity      = 4
 	ShowMetricsVerbosity      = 3
 )
+
+func (opts *FrontendOpts) Sift(id SpanID) {
+	if opts.SiftedSpans == nil {
+		opts.SiftedSpans = make(map[SpanID]struct{})
+	}
+	opts.SiftedSpans[id] = struct{}{}
+}
 
 func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
 	if opts.Debug {
@@ -78,14 +89,14 @@ func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
 		// prioritize showing failed things, even if they're internal
 		return true
 	}
-	if span.Call != nil {
-		if span.Call.ReceiverDigest == "" {
-			if ShouldSkipFunction("Query", span.Call.Field) {
+	if span.Call() != nil {
+		if span.Call().ReceiverDigest == "" {
+			if ShouldSkipFunction("Query", span.Call().Field) {
 				return false
 			}
 		} else {
-			rcvr := db.MustCall(span.Call.ReceiverDigest)
-			if ShouldSkipFunction(rcvr.Type.NamedType, span.Call.Field) {
+			rcvr := db.MustCall(span.Call().ReceiverDigest)
+			if ShouldSkipFunction(rcvr.Type.NamedType, span.Call().Field) {
 				return false
 			}
 		}

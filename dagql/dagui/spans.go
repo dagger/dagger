@@ -87,6 +87,40 @@ func (span *Span) Base() *callpbv1.Call {
 	return nil
 }
 
+func (span *Span) Sift() SpanSet {
+	set := NewSpanSet()
+	span.siftInto(set)
+	return set
+}
+
+func (span *Span) Children(opts FrontendOpts) iter.Seq[*Span] {
+	return func(f func(*Span) bool) {
+		if _, sifted := opts.SiftedSpans[span.ID]; sifted {
+			for _, child := range span.Sift().Order {
+				if !f(child) {
+					break
+				}
+			}
+		} else {
+			for _, child := range span.ChildSpans.Order {
+				if !f(child) {
+					break
+				}
+			}
+		}
+	}
+}
+
+func (span *Span) siftInto(set SpanSet) {
+	for _, child := range span.ChildSpans.Order {
+		if child.Call() != nil || child.Passthrough {
+			child.siftInto(set)
+		} else {
+			set.Add(child)
+		}
+	}
+}
+
 func countChildren(set SpanSet) int {
 	count := 0
 	for _, child := range set.Order {
