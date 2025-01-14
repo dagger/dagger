@@ -191,15 +191,41 @@ func isIntrospection(id *call.ID) bool {
 // isMeta returns true if any type in the ID is "too meta" to show to the user,
 // for example span and error APIs.
 func isMeta(id *call.ID) bool {
-	switch id.Type().NamedType() {
-	case "Span", "Error":
+	if anyReturns(id, "Span", "Error") {
+		return true
+	}
+	switch id.Field() {
+	case
+		// Seeing loadFooFromID is only really interesting if it actually
+		// resulted in evaluating the ID, so we don't need to give it its own
+		// span.
+		fmt.Sprintf("load%sFromID", id.Type().NamedType()),
+		// We also don't care about seeing the id field selection itself,
+		// since it's more noisy and confusing than helpful. We'll still show
+		// all the spans leading up to it, just not the ID selection.
+		"id",
+		// We don't care about seeing the sync span itself - all relevant
+		// info should show up somewhere more familiar.
+		"sync":
 		return true
 	default:
-		if id.Receiver() != nil {
-			return isMeta(id.Receiver())
-		} else {
-			return false
+		return false
+	}
+}
+
+// anyReturns returns true if the call or any of its ancestors return any of
+// the given types.
+func anyReturns(id *call.ID, types ...string) bool {
+	ret := id.Type().NamedType()
+	for _, t := range types {
+		if ret == t {
+			return true
 		}
+	}
+	if id.Receiver() != nil {
+		return anyReturns(id.Receiver(), types...)
+	} else {
+		return false
 	}
 }
 
