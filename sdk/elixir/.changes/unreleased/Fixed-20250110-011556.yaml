@@ -1,6 +1,0 @@
-kind: Fixed
-body: Fix function works incorrectly when return `Dagger.Void.t()` type.
-time: 2025-01-10T01:15:56.781065125+07:00
-custom:
-    Author: wingyplus
-    PR: "9251"
