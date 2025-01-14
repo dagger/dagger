@@ -687,7 +687,11 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], er
 		Args: []dagql.NamedInput{
 			{
 				Name:  "key",
-				Value: dagql.String("modgomodcache"),
+				Value: dagql.String("gomodcache"),
+			},
+			{
+				Name:  "namespace",
+				Value: dagql.String("mod"),
 			},
 		},
 	}); err != nil {
@@ -713,7 +717,11 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], er
 		Args: []dagql.NamedInput{
 			{
 				Name:  "key",
-				Value: dagql.String("modgobuildcache"),
+				Value: dagql.String("gobuildcache"),
+			},
+			{
+				Name:  "namespace",
+				Value: dagql.String("mod"),
 			},
 		},
 	}); err != nil {
