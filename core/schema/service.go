@@ -54,6 +54,7 @@ func (s *serviceSchema) Install() {
 
 		dagql.NodeFunc("up", s.containerUpLegacy).
 			View(BeforeVersion("v0.15.2")).
+			Impure("Starts a host tunnel, possibly with ports that change each time it's started.").
 			Doc(`Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.`,
 				`Be sure to set any exposed ports before calling this api.`).
 			ArgDoc("random", `Bind each tunnel port to a random port on the host.`).
@@ -62,6 +63,7 @@ func (s *serviceSchema) Install() {
 
 		dagql.NodeFunc("up", s.containerUp).
 			View(AfterVersion("v0.15.2")).
+			Impure("Starts a host tunnel, possibly with ports that change each time it's started.").
 			Doc(`Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.`,
 				`Be sure to set any exposed ports before calling this api.`).
 			ArgDoc("random", `Bind each tunnel port to a random port on the host.`).
