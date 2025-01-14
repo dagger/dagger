@@ -78,14 +78,14 @@ func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
 		// prioritize showing failed things, even if they're internal
 		return true
 	}
-	if span.Call != nil {
-		if span.Call.ReceiverDigest == "" {
-			if ShouldSkipFunction("Query", span.Call.Field) {
+	if span.Call() != nil {
+		if span.Call().ReceiverDigest == "" {
+			if ShouldSkipFunction("Query", span.Call().Field) {
 				return false
 			}
 		} else {
-			rcvr := db.MustCall(span.Call.ReceiverDigest)
-			if ShouldSkipFunction(rcvr.Type.NamedType, span.Call.Field) {
+			rcvr := db.MustCall(span.Call().ReceiverDigest)
+			if ShouldSkipFunction(rcvr.Type.NamedType, span.Call().Field) {
 				return false
 			}
 		}
