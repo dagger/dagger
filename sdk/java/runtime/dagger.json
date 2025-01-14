@@ -2,5 +2,5 @@
   "name": "java-sdk",
   "sdk": "go",
   "engineVersion": "v0.15.1",
-  "source": "runtime"
+  "source": "."
 }
