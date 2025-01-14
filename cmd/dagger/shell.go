@@ -298,23 +298,26 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 	})
 }
 
-func parseShell(reader io.Reader, name string) (*syntax.File, error) {
-	file, err := syntax.NewParser(syntax.Variant(syntax.LangPOSIX)).Parse(reader, name)
+func parseShell(reader io.Reader, name string, opts ...syntax.ParserOption) (*syntax.File, error) {
+	opts = append([]syntax.ParserOption{syntax.Variant(syntax.LangPOSIX)}, opts...)
+	file, err := syntax.NewParser(opts...).Parse(reader, name)
 	if err != nil {
 		return nil, err
 	}
 
 	syntax.Walk(file, func(node syntax.Node) bool {
 		if node, ok := node.(*syntax.CmdSubst); ok {
-			// Rewrite command substitutions from $(foo; bar) to $(exec <&-; foo; bar)
-			// so that all the original commands run with a closed (nil) standard input.
-			node.Stmts = append([]*syntax.Stmt{{
-				Cmd: &syntax.CallExpr{Args: []*syntax.Word{litWord("..exec")}},
-				Redirs: []*syntax.Redirect{{
-					Op:   syntax.DplIn,
-					Word: litWord("-"),
-				}},
-			}}, node.Stmts...)
+			if len(node.Stmts) > 0 {
+				// Rewrite command substitutions from $(foo; bar) to $(exec <&-; foo; bar)
+				// so that all the original commands run with a closed (nil) standard input.
+				node.Stmts = append([]*syntax.Stmt{{
+					Cmd: &syntax.CallExpr{Args: []*syntax.Word{litWord("..exec")}},
+					Redirs: []*syntax.Redirect{{
+						Op:   syntax.DplIn,
+						Word: litWord("-"),
+					}},
+				}}, node.Stmts...)
+			}
 		}
 		return true
 	})
