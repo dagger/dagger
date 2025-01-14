@@ -14,5 +14,5 @@ class HelloDagger:
         # call Dagger Function to build the application image
         # publish the image to ttl.sh
         return await self.build(source).publish(
-            f"ttl.sh/myapp-{random.randrange(10 ** 8)}"
+            f"ttl.sh/myapp-{random.randrange(10**8)}"
         )
