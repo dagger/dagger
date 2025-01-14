@@ -2,7 +2,6 @@ package dagui
 
 import (
 	"context"
-	"fmt"
 	"iter"
 	"slices"
 	"sort"
@@ -31,7 +30,9 @@ type DB struct {
 
 	Resources map[attribute.Distinct]*resource.Resource
 
-	Calls     map[string]*callpbv1.Call
+	CallPayloads map[string]string
+	Calls        map[string]*callpbv1.Call
+
 	Outputs   map[string]map[string]struct{}
 	OutputOf  map[string]map[string]struct{}
 	Intervals map[string]map[time.Time]*Span
@@ -65,7 +66,9 @@ func NewDB() *DB {
 		Spans:     NewSpanSet(),
 		Resources: make(map[attribute.Distinct]*resource.Resource),
 
-		Calls:     make(map[string]*callpbv1.Call),
+		CallPayloads: make(map[string]string),
+		Calls:        make(map[string]*callpbv1.Call),
+
 		OutputOf:  make(map[string]map[string]struct{}),
 		Outputs:   make(map[string]map[string]struct{}),
 		Intervals: make(map[string]map[time.Time]*Span),
@@ -320,7 +323,6 @@ func (db *DB) newSpan(spanID SpanID) *Span {
 		FailedLinks:     NewSpanSet(),
 		causesViaLinks:  NewSpanSet(),
 		effectsViaLinks: NewSpanSet(),
-		effectsViaAttrs: map[string]SpanSet{},
 		db:              db,
 	}
 }
@@ -576,48 +578,8 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		db.Intervals[span.CallDigest][span.StartTime] = span
 	}
 
-	if span.Call == nil && span.CallPayload != "" {
-		var call callpbv1.Call
-		if err := call.Decode(span.CallPayload); err != nil {
-			slog.Warn("failed to decode id", "err", err)
-		} else {
-			span.Call = &call
-
-			if span.CallDigest != "" {
-				db.Calls[span.CallDigest] = &call
-			}
-		}
-	}
-
-	if call := span.Call; call != nil {
-		// Seeing loadFooFromID is only really interesting if it actually
-		// resulted in evaluating the ID, so we set Passthrough, which will only
-		// show its children.
-		if call.Field == fmt.Sprintf("load%sFromID", call.Type.ToAST().Name()) {
-			span.Passthrough = true
-		}
-
-		// We also don't care about seeing the id field selection itself, since
-		// it's more noisy and confusing than helpful. We'll still show all the
-		// spans leading up to it, just not the ID selection.
-		if call.Field == "id" {
-			span.Ignore = true
-		}
-
-		// We don't care about seeing the sync span itself - all relevant info
-		// should show up somewhere more familiar.
-		if call.Field == "sync" {
-			span.Passthrough = true
-		}
-	}
-
-	// TODO: respect an already-set base value computed server-side, and client
-	// subsequently requests necessary DAG
-	if span.Call != nil && span.Call.ReceiverDigest != "" {
-		parentCall, ok := db.Calls[span.Call.ReceiverDigest]
-		if ok {
-			span.Base = db.Simplify(parentCall, span.Internal)
-		}
+	if span.CallDigest != "" && span.CallPayload != "" {
+		db.CallPayloads[span.CallDigest] = span.CallPayload
 	}
 
 	if !span.ParentID.IsValid() {
@@ -657,6 +619,9 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		if effects == nil {
 			effects = NewSpanSet()
 			db.EffectSpans[id] = effects
+		}
+		if span.effectsViaAttrs == nil {
+			span.effectsViaAttrs = make(map[string]SpanSet)
 		}
 		span.effectsViaAttrs[id] = effects
 	}
@@ -759,15 +724,29 @@ func (*DB) Close() error {
 	return nil
 }
 
-func (db *DB) MustCall(dig string) *callpbv1.Call {
-	call, ok := db.Calls[dig]
+func (db *DB) Call(dig string) *callpbv1.Call {
+	cached, ok := db.Calls[dig]
+	if ok {
+		return cached
+	}
+	callPayload, ok := db.CallPayloads[dig]
 	if !ok {
-		// Sometimes may see a call's digest before the call itself.
-		//
-		// The loadFooFromID APIs for example will emit their call via their span
-		// before loading the ID, and its ID argument will just be a digest like
-		// anything else.
-		return &callpbv1.Call{
+		return nil
+	}
+	var call callpbv1.Call
+	if err := call.Decode(callPayload); err != nil {
+		slog.Warn("failed to decode call", "err", err)
+	} else {
+		db.Calls[dig] = &call
+	}
+	return &call
+}
+
+func (db *DB) MustCall(dig string) *callpbv1.Call {
+	call := db.Call(dig)
+	if call == nil {
+		// Rather than blowing up, fill in an "easter egg."
+		call = &callpbv1.Call{
 			Field: "no",
 			Type: &callpbv1.Type{
 				NamedType: "Missing",
@@ -810,11 +789,14 @@ func (db *DB) litSize(lit *callpbv1.Literal) int {
 
 func (db *DB) idSize(id *callpbv1.Call) int {
 	size := 0
-	for id := id; id != nil; id = db.Calls[id.ReceiverDigest] {
+	for id := id; id != nil; id = db.MustCall(id.ReceiverDigest) {
 		size++
 		size += len(id.Args)
 		for _, arg := range id.Args {
 			size += db.litSize(arg.GetValue())
+		}
+		if id.ReceiverDigest == "" {
+			break
 		}
 	}
 	return size
@@ -839,23 +821,25 @@ loop:
 			// can't be simplified to itself
 			continue
 		}
-		creator, ok := db.Calls[creatorDig]
-		if ok {
-			for _, creatorArg := range creator.Args {
-				if creatorArg, ok := creatorArg.Value.Value.(*callpbv1.Literal_CallDigest); ok {
-					if creatorArg.CallDigest == call.Digest {
-						// can't be simplified to a call that references itself
-						// in it's argument - which would loop endlessly
-						continue loop
-					}
+		creator := db.Call(creatorDig)
+		if creator == nil {
+			// creator not found? skip
+			continue
+		}
+		for _, creatorArg := range creator.Args {
+			if creatorArg, ok := creatorArg.Value.Value.(*callpbv1.Literal_CallDigest); ok {
+				if creatorArg.CallDigest == call.Digest {
+					// can't be simplified to a call that references itself
+					// in it's argument - which would loop endlessly
+					continue loop
 				}
 			}
+		}
 
-			if size := db.idSize(creator); smallestSize == -1 || size < smallestSize {
-				smallest = creator
-				smallestSize = size
-				simplified = true
-			}
+		if size := db.idSize(creator); smallestSize == -1 || size < smallestSize {
+			smallest = creator
+			smallestSize = size
+			simplified = true
 		}
 	}
 	if simplified {

@@ -104,12 +104,12 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans []*Span, f func(*TraceTree)) {
 			Span:   span,
 			Parent: parent,
 		}
-		if span.Base != nil && lastTree != nil {
-			tree.Chained = span.Base.Digest == lastTree.Span.CallDigest ||
-				span.Base.Digest == lastTree.Span.Output
+		if base := span.Base(); base != nil && lastTree != nil {
+			tree.Chained = base.Digest == lastTree.Span.CallDigest ||
+				base.Digest == lastTree.Span.Output
 			lastTree.Final = !tree.Chained
 		}
-		if lastTree != nil && lastTree.Span.Call != nil && tree.Span.Call == nil {
+		if lastTree != nil && lastTree.Span.Call() != nil && tree.Span.Call() == nil {
 			lastTree.Final = true
 		}
 		if span.IsRunningOrEffectsRunning() {
