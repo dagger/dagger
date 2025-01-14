@@ -505,29 +505,31 @@ func (activity *Activity) updateEarliest() (changed bool) {
 
 // mergeIntervals merges overlapping intervals in the activity.
 func (activity *Activity) mergeIntervals() {
-	merged := []Interval{}
-	var lastIval *Interval
-	for _, ival := range activity.CompletedIntervals {
-		ival := ival
-		if lastIval == nil {
-			merged = append(merged, ival)
-			lastIval = &merged[len(merged)-1]
-			continue
-		}
-		if ival.Start.Before(lastIval.End) {
-			if ival.End.After(lastIval.End) {
-				// extend
-				lastIval.End = ival.End
-			} else {
-				// wholly subsumed; skip
-				continue
+	// If there are no intervals, there's nothing to merge.
+	if len(activity.CompletedIntervals) == 0 {
+		return
+	}
+
+	// Keep track of the index of the last merged interval.
+	lastIndex := 0
+	for i := 1; i < len(activity.CompletedIntervals); i++ {
+		ival := activity.CompletedIntervals[i]
+		// If the current interval overlaps with the last one, merge them.
+		if ival.Start.Before(activity.CompletedIntervals[lastIndex].End) {
+			if ival.End.After(activity.CompletedIntervals[lastIndex].End) {
+				// Extend the last interval.
+				activity.CompletedIntervals[lastIndex].End = ival.End
 			}
+			// If ival is wholly subsumed, do nothing (continue).
 		} else {
-			merged = append(merged, ival)
-			lastIval = &merged[len(merged)-1]
+			// No overlap, move the lastIndex forward.
+			lastIndex++
+			activity.CompletedIntervals[lastIndex] = ival
 		}
 	}
-	activity.CompletedIntervals = merged
+
+	// Resize the slice to only include the merged intervals.
+	activity.CompletedIntervals = activity.CompletedIntervals[:lastIndex+1]
 }
 
 // integrateSpan takes a possibly newly created span and updates
