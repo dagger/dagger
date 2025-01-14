@@ -73,6 +73,7 @@ type RunningService struct {
 type ServiceKey struct {
 	Digest    digest.Digest
 	SessionID string
+	ClientID  string
 }
 
 // NewServices returns a new Services.
@@ -88,7 +89,7 @@ func NewServices() *Services {
 // starting, it waits for it and either returns the running service or an error
 // if it failed to start. If the service is not running or starting, an error
 // is returned.
-func (ss *Services) Get(ctx context.Context, id *call.ID) (*RunningService, error) {
+func (ss *Services) Get(ctx context.Context, id *call.ID, clientSpecific bool) (*RunningService, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -99,6 +100,9 @@ func (ss *Services) Get(ctx context.Context, id *call.ID) (*RunningService, erro
 	key := ServiceKey{
 		Digest:    dig,
 		SessionID: clientMetadata.SessionID,
+	}
+	if clientSpecific {
+		key.ClientID = clientMetadata.ClientID
 	}
 
 	notRunningErr := fmt.Errorf("service %s is not running", network.HostHash(dig))
@@ -135,7 +139,7 @@ type Startable interface {
 // service is already running, it is returned immediately. If the service is
 // already starting, it waits for it to finish and returns the running service.
 // If the service failed to start, it tries again.
-func (ss *Services) Start(ctx context.Context, id *call.ID, svc Startable) (*RunningService, error) {
+func (ss *Services) Start(ctx context.Context, id *call.ID, svc Startable, clientSpecific bool) (*RunningService, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -145,6 +149,9 @@ func (ss *Services) Start(ctx context.Context, id *call.ID, svc Startable) (*Run
 	key := ServiceKey{
 		Digest:    dig,
 		SessionID: clientMetadata.SessionID,
+	}
+	if clientSpecific {
+		key.ClientID = clientMetadata.ClientID
 	}
 
 dance:
@@ -183,6 +190,7 @@ dance:
 		ss.l.Unlock()
 		return nil, err
 	}
+	running.Key = key
 
 	ss.l.Lock()
 	delete(ss.starting, key)
@@ -217,7 +225,7 @@ func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings)
 	eg := new(errgroup.Group)
 	for i, bnd := range bindings {
 		eg.Go(func() error {
-			runningSvc, err := ss.Start(ctx, bnd.ID, bnd.Service)
+			runningSvc, err := ss.Start(ctx, bnd.ID, bnd.Service, false)
 			if err != nil {
 				return fmt.Errorf("start %s (%s): %w", bnd.Hostname, bnd.Aliases, err)
 			}
@@ -236,7 +244,7 @@ func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings)
 }
 
 // Stop stops the given service. If the service is not running, it is a no-op.
-func (ss *Services) Stop(ctx context.Context, id *call.ID, kill bool) error {
+func (ss *Services) Stop(ctx context.Context, id *call.ID, kill bool, clientSpecific bool) error {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return err
@@ -246,6 +254,9 @@ func (ss *Services) Stop(ctx context.Context, id *call.ID, kill bool) error {
 	key := ServiceKey{
 		Digest:    dig,
 		SessionID: clientMetadata.SessionID,
+	}
+	if clientSpecific {
+		key.ClientID = clientMetadata.ClientID
 	}
 
 	ss.l.Lock()

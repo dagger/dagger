@@ -34,16 +34,16 @@ func TestServicesStartHappy(t *testing.T) {
 	svc2 := newStartable("fake-2")
 
 	startOne := func(t *testing.T, stub *fakeStartable) {
-		_, err := services.Get(ctx, stub.ID())
+		_, err := services.Get(ctx, stub.ID(), false)
 		require.Error(t, err)
 
 		expected := stub.Succeed()
 
-		running, err := services.Start(ctx, stub.ID(), stub)
+		running, err := services.Start(ctx, stub.ID(), stub, false)
 		require.NoError(t, err)
 		require.Equal(t, expected, running)
 
-		running, err = services.Get(ctx, stub.ID())
+		running, err = services.Get(ctx, stub.ID(), false)
 		require.NoError(t, err)
 		require.Equal(t, expected, running)
 	}
@@ -73,14 +73,14 @@ func TestServicesStartHappyDifferentServers(t *testing.T) {
 
 		expected := stub.Succeed()
 
-		_, err := services.Get(ctx, stub.ID())
+		_, err := services.Get(ctx, stub.ID(), false)
 		require.Error(t, err)
 
-		running, err := services.Start(ctx, stub.ID(), stub)
+		running, err := services.Start(ctx, stub.ID(), stub, false)
 		require.NoError(t, err)
 		require.Equal(t, expected, running)
 
-		running, err = services.Get(ctx, stub.ID())
+		running, err = services.Get(ctx, stub.ID(), false)
 		require.NoError(t, err)
 		require.Equal(t, expected, running)
 	}
@@ -108,10 +108,10 @@ func TestServicesStartSad(t *testing.T) {
 
 	expected := stub.Fail()
 
-	_, err := services.Start(ctx, stub.ID(), stub)
+	_, err := services.Start(ctx, stub.ID(), stub, false)
 	require.Equal(t, expected, err)
 
-	_, err = services.Get(ctx, stub.ID())
+	_, err = services.Get(ctx, stub.ID(), false)
 	require.Error(t, err)
 }
 
@@ -129,7 +129,7 @@ func TestServicesStartConcurrentHappy(t *testing.T) {
 
 	eg := new(errgroup.Group)
 	eg.Go(func() error {
-		_, err := services.Start(ctx, stub.ID(), stub)
+		_, err := services.Start(ctx, stub.ID(), stub, false)
 		return err
 	})
 
@@ -140,7 +140,7 @@ func TestServicesStartConcurrentHappy(t *testing.T) {
 
 	// start another attempt
 	eg.Go(func() error {
-		_, err := services.Start(ctx, stub.ID(), stub)
+		_, err := services.Start(ctx, stub.ID(), stub, false)
 		return err
 	})
 
@@ -175,7 +175,7 @@ func TestServicesStartConcurrentSad(t *testing.T) {
 
 	errs := make(chan error, 100)
 	go func() {
-		_, err := services.Start(ctx, stub.ID(), stub)
+		_, err := services.Start(ctx, stub.ID(), stub, false)
 		errs <- err
 	}()
 
@@ -186,7 +186,7 @@ func TestServicesStartConcurrentSad(t *testing.T) {
 
 	// start another attempt
 	go func() {
-		_, err := services.Start(ctx, stub.ID(), stub)
+		_, err := services.Start(ctx, stub.ID(), stub, false)
 		errs <- err
 	}()
 
@@ -212,7 +212,7 @@ func TestServicesStartConcurrentSad(t *testing.T) {
 	require.Equal(t, 2, stub.Starts())
 
 	// make sure Get doesn't wait for any attempts, as they've all failed
-	_, err := services.Get(ctx, stub.ID())
+	_, err := services.Get(ctx, stub.ID(), false)
 	require.Error(t, err)
 }
 
@@ -230,7 +230,7 @@ func TestServicesStartConcurrentSadThenHappy(t *testing.T) {
 
 	errs := make(chan error, 100)
 	go func() {
-		_, err := services.Start(ctx, stub.ID(), stub)
+		_, err := services.Start(ctx, stub.ID(), stub, false)
 		errs <- err
 	}()
 
@@ -242,7 +242,7 @@ func TestServicesStartConcurrentSadThenHappy(t *testing.T) {
 	// start a few more attempts
 	for range 3 {
 		go func() {
-			_, err := services.Start(ctx, stub.ID(), stub)
+			_, err := services.Start(ctx, stub.ID(), stub, false)
 			errs <- err
 		}()
 	}
