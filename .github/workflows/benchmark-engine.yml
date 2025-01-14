@@ -30,16 +30,9 @@ jobs:
         uses: actions/checkout@v4
       - name: Warm up Engine
         run: dagger core version
-      - name: Benchmark Engine (prewarm)
-        uses: ./.github/actions/call
-        env:
-          TESTCTX_PREWARM: "true"
-        with:
-          function: test all --bench
-          dev-engine: "false"
       - name: Benchmark Engine
         uses: ./.github/actions/call
         with:
-          function: test all --bench
-          dev-engine: "false"
+          function: bench all --prewarm
+          dev-engine: false
           upload-logs: true
