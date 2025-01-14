@@ -1004,8 +1004,8 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, r *renderer, row *dagui
 	if row.Previous != nil &&
 		row.Previous.Depth >= row.Depth &&
 		!row.Chained &&
-		(row.Previous.Depth > row.Depth || row.Span.Call != nil ||
-			(row.Previous.Span.Call != nil && row.Span.Call == nil) ||
+		(row.Previous.Depth > row.Depth || row.Span.Call() != nil ||
+			(row.Previous.Span.Call() != nil && row.Span.Call() == nil) ||
 			row.Previous.Span.Message != "") {
 		fmt.Fprint(out, prefix)
 		r.indent(out, row.Depth)
@@ -1064,9 +1064,8 @@ func (fe *frontendPretty) renderStepError(out *termenv.Output, r *renderer, span
 func (fe *frontendPretty) renderStep(out *termenv.Output, r *renderer, span *dagui.Span, chained bool, depth int, prefix string) error {
 	isFocused := span.ID == fe.FocusedSpan
 
-	id := span.Call
-	if id != nil {
-		if err := r.renderCall(out, span, id, prefix, chained, depth, false, span.Internal, isFocused); err != nil {
+	if call := span.Call(); call != nil {
+		if err := r.renderCall(out, span, call, prefix, chained, depth, false, span.Internal, isFocused); err != nil {
 			return err
 		}
 	} else if span != nil {
