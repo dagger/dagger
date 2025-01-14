@@ -65,8 +65,8 @@ func (ModuleSuite) TestDaggerUp(ctx context.Context, t *testctx.T) {
 		{
 			name:         "container port map with explicit args",
 			endpointFn:   daggerUpAndGetEndpoint,
-			trafficPort:  "23102",
-			daggerArgs:   []string{"call", "ctr", "without-exposed-port", "--port", defaultTrafficPortForContainerTests, "with-exposed-port", "--port", "23102", "up", "--args", "python,-m,http.server,23102", "--ports", "23102:23102"},
+			trafficPort:  "23103",
+			daggerArgs:   []string{"call", "ctr", "without-exposed-port", "--port", defaultTrafficPortForContainerTests, "with-exposed-port", "--port", "23103", "up", "--args", "python,-m,http.server,23103", "--ports", "23103:23103"},
 			cachedModDir: modDirForAsContainerTests,
 		},
 		{
