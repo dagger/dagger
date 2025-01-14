@@ -36,7 +36,7 @@ func collectDefs(ctx context.Context, val dagql.Typed) []*pb.Definition {
 }
 
 func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Context, func(res dagql.Typed, cached bool, rerr error)) {
-	if isIntrospection(id) {
+	if isIntrospection(id) || isMeta(id) {
 		return ctx, dagql.NoopDone
 	}
 
@@ -143,19 +143,20 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 				break
 			}
 			items := x.Len()
-			for n := 1; n <= items; n++ {
-				item, err := x.Nth(n)
-				if err != nil {
-					break
-				}
-				if _, isObj := item.(dagql.Object); isObj {
-					fmt.Fprintf(stdio.Stdout, "%d %ss", items, item.Type().Name())
-				} else {
-					enc := json.NewEncoder(stdio.Stdout)
-					enc.SetIndent("", "  ")
-					enc.Encode(x)
-				}
+			if items == 0 {
 				break
+			}
+			// peek at the first item to determine the type
+			peek, err := x.Nth(1)
+			if err != nil {
+				break
+			}
+			if _, isObj := peek.(dagql.Object); isObj {
+				fmt.Fprintf(stdio.Stdout, "%d %ss", items, peek.Type().Name())
+			} else {
+				enc := json.NewEncoder(stdio.Stdout)
+				enc.SetIndent("", "  ")
+				enc.Encode(x)
 			}
 		case dagql.String:
 			if !sensitive {
@@ -223,6 +224,47 @@ func isIntrospection(id *call.ID) bool {
 		}
 	} else {
 		return isIntrospection(id.Receiver())
+	}
+}
+
+// isMeta returns true if any type in the ID is "too meta" to show to the user,
+// for example span and error APIs.
+func isMeta(id *call.ID) bool {
+	if anyReturns(id, "Error") {
+		return true
+	}
+	switch id.Field() {
+	case
+		// Seeing loadFooFromID is only really interesting if it actually
+		// resulted in evaluating the ID, so we don't need to give it its own
+		// span.
+		fmt.Sprintf("load%sFromID", id.Type().NamedType()),
+		// We also don't care about seeing the id field selection itself,
+		// since it's more noisy and confusing than helpful. We'll still show
+		// all the spans leading up to it, just not the ID selection.
+		"id",
+		// We don't care about seeing the sync span itself - all relevant
+		// info should show up somewhere more familiar.
+		"sync":
+		return true
+	default:
+		return false
+	}
+}
+
+// anyReturns returns true if the call or any of its ancestors return any of
+// the given types.
+func anyReturns(id *call.ID, types ...string) bool {
+	ret := id.Type().NamedType()
+	for _, t := range types {
+		if ret == t {
+			return true
+		}
+	}
+	if id.Receiver() != nil {
+		return anyReturns(id.Receiver(), types...)
+	} else {
+		return false
 	}
 }
 
