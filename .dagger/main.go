@@ -165,6 +165,11 @@ func (dev *DaggerDev) Test() *Test {
 	return &Test{Dagger: dev}
 }
 
+// Run all benchmarks
+func (dev *DaggerDev) Bench() *Bench {
+	return &Bench{Test: dev.Test()}
+}
+
 // Run all code generation - SDKs, docs, etc
 func (dev *DaggerDev) Generate(ctx context.Context) (*dagger.Directory, error) {
 	var docs, sdks, engine *dagger.Directory

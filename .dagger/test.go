@@ -37,11 +37,19 @@ func (t *Test) All(
 	race bool,
 	// +optional
 	testVerbose bool,
-	// run benchmarks instead of tests
-	// +optional
-	bench bool,
 ) error {
-	return t.test(ctx, "", "", "./...", failfast, parallel, timeout, race, 1, testVerbose, bench)
+	return t.test(
+		ctx,
+		"",
+		"",
+		"./...",
+		failfast,
+		parallel,
+		timeout,
+		race,
+		1,
+		testVerbose,
+	)
 }
 
 // Run telemetry tests
@@ -186,11 +194,19 @@ func (t *Test) Specific(
 	// Enable verbose output
 	// +optional
 	testVerbose bool,
-	// Run benchmarks instead of tests
-	// +optional
-	bench bool,
 ) error {
-	return t.test(ctx, run, skip, pkg, failfast, parallel, timeout, race, count, testVerbose, bench)
+	return t.test(
+		ctx,
+		run,
+		skip,
+		pkg,
+		failfast,
+		parallel,
+		timeout,
+		race,
+		count,
+		testVerbose,
+	)
 }
 
 func (t *Test) test(
@@ -204,7 +220,6 @@ func (t *Test) test(
 	race bool,
 	count int,
 	testVerbose bool,
-	bench bool,
 ) error {
 	cmd, err := t.testCmd(ctx)
 	if err != nil {
@@ -222,7 +237,7 @@ func (t *Test) test(
 		count,
 		false, // -update
 		testVerbose,
-		bench,
+		false,
 	).Sync(ctx)
 	return err
 }
