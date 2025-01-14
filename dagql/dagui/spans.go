@@ -2,6 +2,7 @@ package dagui
 
 import (
 	"fmt"
+	"iter"
 	"math"
 	"time"
 
@@ -18,19 +19,20 @@ type SpanSet = *OrderedSet[SpanID, *Span]
 type Span struct {
 	SpanSnapshot
 
-	ParentSpan   *Span          `json:"-"`
-	ChildSpans   SpanSet        `json:"-"`
-	RunningSpans SpanSet        `json:"-"`
-	FailedLinks  SpanSet        `json:"-"`
-	Call         *callpbv1.Call `json:"-"`
-	Base         *callpbv1.Call `json:"-"`
+	ParentSpan   *Span   `json:"-"`
+	ChildSpans   SpanSet `json:"-"`
+	RunningSpans SpanSet `json:"-"`
+	FailedLinks  SpanSet `json:"-"`
+
+	callCache *callpbv1.Call
+	baseCache *callpbv1.Call
 
 	// v0.15+
-	causesViaLinks  SpanSet `json:"-"`
-	effectsViaLinks SpanSet `json:"-"`
+	causesViaLinks  SpanSet
+	effectsViaLinks SpanSet
 	// v0.14 and below
-	causesViaAttrs  SpanSet            `json:"-"`
-	effectsViaAttrs map[string]SpanSet `json:"-"`
+	causesViaAttrs  SpanSet
+	effectsViaAttrs map[string]SpanSet
 
 	// Indicates that this span was actually exported to the database, and not
 	// just allocated due to a span parent or other relationship.
@@ -49,6 +51,40 @@ func (span *Span) Snapshot() SpanSnapshot {
 	snapshot := span.SpanSnapshot
 	snapshot.Final = true // NOTE: applied to copy
 	return snapshot
+}
+
+func (span *Span) Call() *callpbv1.Call {
+	if span.callCache != nil {
+		return span.callCache
+	}
+	if span.CallDigest == "" {
+		return nil
+	}
+	span.callCache = span.db.Call(span.CallDigest)
+	return span.callCache
+}
+
+func (span *Span) Base() *callpbv1.Call {
+	if span.baseCache != nil {
+		return span.baseCache
+	}
+
+	call := span.Call()
+	if call == nil {
+		return nil
+	}
+
+	// TODO: respect an already-set base value computed server-side, and client
+	// subsequently requests necessary DAG
+	if call.ReceiverDigest != "" {
+		parentCall := span.db.Call(call.ReceiverDigest)
+		if parentCall != nil {
+			span.baseCache = span.db.Simplify(parentCall, span.Internal)
+			return span.baseCache
+		}
+	}
+
+	return nil
 }
 
 func countChildren(set SpanSet) int {
