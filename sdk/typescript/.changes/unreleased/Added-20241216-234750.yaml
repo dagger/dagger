@@ -1,9 +1,0 @@
-kind: Added
-body: |-
-  Add SourceMap support on client generation which allows easy navigation when working with local module dependencies.
-
-  Any local implementation in the client gen will have its implementation path generated next to the binding.
-time: 2024-12-16T23:47:50.752246+01:00
-custom:
-  Author: TomChv
-  PR: "9123"
