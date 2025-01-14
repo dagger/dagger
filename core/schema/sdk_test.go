@@ -113,6 +113,7 @@ The "foobar" SDK does not exist. The available SDKs are:
 - typescript
 - php
 - elixir
+- java
 - any non-bundled SDK from its git ref (e.g. github.com/dagger/dagger/sdk/elixir@main)`)
 
 	require.Equal(t, expected.Error(), err.Error())

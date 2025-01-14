@@ -1,13 +1,14 @@
 package io.dagger.codegen.introspection;
 
-import static org.apache.commons.lang3.StringUtils.capitalize;
-
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.MethodSpec;
 import com.squareup.javapoet.ParameterSpec;
 import com.squareup.javapoet.TypeName;
-import java.util.List;
+
 import javax.lang.model.element.Modifier;
+import java.util.List;
+
+import static org.apache.commons.lang3.StringUtils.capitalize;
 
 public class Helpers {
 
@@ -76,13 +77,13 @@ public class Helpers {
     return !"id".equals(field.getName())
         && field.getTypeRef().isScalar()
         && field
-            .getParentObject()
-            .getName()
-            .equals(
-                field
-                    .getTypeRef()
-                    .getTypeName()
-                    .substring(0, field.getTypeRef().getTypeName().length() - 2));
+        .getParentObject()
+        .getName()
+        .equals(
+            field
+                .getTypeRef()
+                .getTypeName()
+                .substring(0, field.getTypeRef().getTypeName().length() - 2));
   }
 
   static List<Field> getArrayField(Field field, Schema schema) {
@@ -171,6 +172,9 @@ public class Helpers {
 
   /** Fix using '$' char in javadoc */
   static String escapeJavadoc(String str) {
+    if (str == null) {
+      return "";
+    }
     return str.replace("$", "$$").replace("&", "&amp;");
   }
 }

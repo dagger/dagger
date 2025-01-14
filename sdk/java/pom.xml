@@ -12,7 +12,7 @@
     <modules>
         <module>dagger-codegen-maven-plugin</module>
         <module>dagger-java-sdk</module>
-        <module>dagger-java-samples</module>
+<!--        <module>dagger-java-samples</module>-->
         <module>dagger-java-annotation-processor</module>
     </modules>
 
@@ -259,6 +259,7 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <daggerengine.version>devel</daggerengine.version>
+        <daggerengine.schema></daggerengine.schema>
 
         <assertj-core.version>3.27.2</assertj-core.version>
         <auto-service.version>1.1.1</auto-service.version>

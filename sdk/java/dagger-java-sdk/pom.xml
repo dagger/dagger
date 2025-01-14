@@ -137,6 +137,7 @@
                 <artifactId>dagger-codegen-maven-plugin</artifactId>
                 <configuration>
                     <version>${daggerengine.version}</version>
+                    <introspectionJson>${daggerengine.schema}</introspectionJson>
                 </configuration>
                 <executions>
                     <execution>
