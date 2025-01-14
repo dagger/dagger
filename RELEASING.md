@@ -219,6 +219,7 @@ git commit -s -m "chore: bump dependencies to $ENGINE_VERSION"
 - [ ] Push to `dagger/dagger` - we need access to secrets that PRs coming from forks will not have. Open the PR as a draft and capture the PR number:
 
 ```console
+git push $DAGGER_REPO_REMOTE
 gh pr create --draft --title "chore: prep for $ENGINE_VERSION" --body "" | tee /tmp/prep-pr.txt
 export RELEASE_PREP_PR=$(cat /tmp/prep-pr.txt | sed -r 's/^[^0-9]*([0-9]+).*/\1/')
 ```
@@ -368,6 +369,7 @@ git push
 git add .  # or any other files changed during the last few steps
 git commit -s -m "Improve releasing during $ENGINE_VERSION"
 git push
+gh pr create --draft --title "Improve releasing during $ENGINE_VERSION" --body ""
 ```
 
 ## 🚨 Non-main branch release only
@@ -395,17 +397,18 @@ Be sure to use "Rebase and Merge" when merging the PR to `main` to preserve the 
 - [ ] Mention in the release thread on Discord that Dagger Cloud can be updated
       to the just-released version. cc @marcosnils @matipan @sipsma
 
-## 🪣 Install scripts ⏱ `2mins`
-
-- [ ] If the install scripts `install.sh` or `install.ps1` have changed since
-      the last release, they must be manually updated on Amazon S3 (CloudFront
-      should also be manually invalidated). cc @gerhard
-
 ## 🐙 dagger-for-github ⏱ `10mins`
 
-- [ ] Submit PR with the version bump, e.g.
-      https://github.com/dagger/dagger-for-github/pull/123
-  - e.g. if bumping 0.12.5->0.12.6, can run `find . -type f -exec sed -i 's/0\.12\.5/0\.12\.6/g' {} +`
+- [ ] Submit PR with the version bump.
+
+```console
+dagger call -m dev bump --version=$ENGINE_VERSION -o .
+git checkout -b bump-dagger-$ENGINE_VERSION
+git add .
+git commit -s -m "chore: bump default dagger version to $ENGINE_VERSION"
+gh pr create --title "chore: bump default dagger version to $ENGINE_VERSION" --body ""
+```
+
 - [ ] Ask @gerhard or @jpadams to review it
 
 > [!TIP]
