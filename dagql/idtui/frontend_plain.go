@@ -498,12 +498,12 @@ func (fe *frontendPlain) renderStep(span *dagui.Span, depth int, done bool) {
 	r := newRenderer(fe.db, plainMaxLiteralLen, fe.FrontendOpts)
 
 	prefix := fe.stepPrefix(span, spanDt)
-	if span.Call != nil {
+	if spanCall := span.Call(); spanCall != nil {
 		call := &callpbv1.Call{
-			Field:          span.Call.Field,
-			Args:           span.Call.Args,
-			Type:           span.Call.Type,
-			ReceiverDigest: span.Call.ReceiverDigest,
+			Field:          spanCall.Field,
+			Args:           spanCall.Args,
+			Type:           spanCall.Type,
+			ReceiverDigest: spanCall.ReceiverDigest,
 		}
 		if done {
 			call.Args = nil
@@ -676,14 +676,14 @@ func sampleContext(rows []*dagui.TraceTree) []int {
 	for i := range len(rows) {
 		row := rows[i]
 		result = append(result, i)
-		if row.Span.Call != nil {
+		if row.Span.Call() != nil {
 			break
 		}
 	}
 	// iterate backwards to find the last call
 	for i := len(rows) - 1; i > result[len(result)-1]; i-- {
 		row := rows[i]
-		if row.Span.Call != nil {
+		if row.Span.Call() != nil {
 			result = append(result, i)
 			break
 		}
