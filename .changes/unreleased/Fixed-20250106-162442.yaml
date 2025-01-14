@@ -1,7 +1,0 @@
-kind: Fixed
-body: |
-    Prevent interactive terminal sessions from crashing in Windows terminal
-time: 2025-01-06T16:24:42.762297531Z
-custom:
-    Author: rajatjindal
-    PR: "9244"
