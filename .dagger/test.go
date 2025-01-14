@@ -296,17 +296,19 @@ func (t *Test) goTest(
 		cgoEnabledEnv = "1"
 	}
 
-	// Disable test caching, since these are integration tests
-	args = append(args, fmt.Sprintf("-count=%d", count))
-
 	// when bench is true, disable normal tests and select benchmarks based on runTestRegex instead
-	switch {
-	case bench && runTestRegex != "":
+	if bench {
+		if runTestRegex == "" {
+			runTestRegex = "."
+		}
 		args = append(args, "-bench", runTestRegex, "-run", "^$")
-	case bench:
-		args = append(args, "-bench", ".", "-run", "^$")
-	case runTestRegex != "":
-		args = append(args, "-run", runTestRegex)
+		args = append(args, fmt.Sprintf("-benchtime=%dx", count))
+	} else {
+		// Disable test caching, since these are integration tests
+		args = append(args, fmt.Sprintf("-count=%d", count))
+		if runTestRegex != "" {
+			args = append(args, "-run", runTestRegex)
+		}
 	}
 
 	if skipTestRegex != "" {
