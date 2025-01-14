@@ -42,3 +42,4 @@ jobs:
         with:
           function: test all --bench
           dev-engine: "false"
+          upload-logs: true
