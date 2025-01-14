@@ -21,6 +21,10 @@
       "pin": "47f5206067011dad0f581d4e7db7afddda32acd0"
     },
     {
+      "name": "dotnet-sdk-dev",
+      "source": "sdk/dotnet/dev"
+    },
+    {
       "name": "elixir-sdk-dev",
       "source": "sdk/elixir/dev"
     },

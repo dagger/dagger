@@ -30,6 +30,8 @@ type SDK struct {
 	PHP *PHPSDK
 	// Develop the Dagger Java SDK (experimental)
 	Java *JavaSDK
+	// Develop the Dagger Dotnet SDK (experimental)
+	Dotnet *DotnetSDK
 }
 
 func (sdk *SDK) All() *AllSDK {
@@ -56,6 +58,7 @@ func (sdk *SDK) allSDKs() []sdkBase {
 		sdk.PHP,
 		// java isn't properly integrated to our release process yet
 		// sdk.Java,
+		sdk.Dotnet,
 	}
 }
 
