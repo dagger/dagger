@@ -84,10 +84,10 @@ const (
 	ProgressUnitsAttr = "dagger.io/progress.units"
 
 	// The stdio stream a log corresponds to (1 for stdout, 2 for stderr).
-	StdioStreamAttr = "dagger.io/stdio.stream"
+	StdioStreamAttr = "stdio.stream"
 
 	// Indicates whether the log stream has ended.
-	StdioEOFAttr = "dagger.io/stdio.eof"
+	StdioEOFAttr = "stdio.eof"
 
 	// The MIME type of the associated content (i.e. log message).
 	//
