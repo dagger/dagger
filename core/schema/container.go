@@ -563,7 +563,9 @@ func (s *containerSchema) Install() {
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 
-		dagql.Func("asTarball", s.asTarball).
+		dagql.NodeFunc("asTarball", s.asTarball).
+			// XXX: remove this!
+			Impure("HACK").
 			Doc(`Returns a File representing the container serialized to a tarball.`).
 			ArgDoc("platformVariants",
 				`Identifiers for other platform specific containers.`,
@@ -1799,12 +1801,54 @@ type containerAsTarballArgs struct {
 	MediaTypes        core.ImageMediaTypes `default:"OCIMediaTypes"`
 }
 
-func (s *containerSchema) asTarball(ctx context.Context, parent *core.Container, args containerAsTarballArgs) (*core.File, error) {
-	variants, err := dagql.LoadIDs(ctx, s.srv, args.PlatformVariants)
-	if err != nil {
-		return nil, err
+func (s *containerSchema) asTarball(ctx context.Context, parent dagql.Instance[*core.Container], args containerAsTarballArgs) (inst dagql.Instance[*core.File], err error) {
+	if core.IsDagOp(ctx) {
+		variants, err := dagql.LoadIDs(ctx, s.srv, args.PlatformVariants)
+		if err != nil {
+			return inst, err
+		}
+		res, err := parent.Self.AsTarball(ctx, s.srv, variants, args.ForcedCompression.Value, args.MediaTypes)
+		if err != nil {
+			return inst, err
+		}
+		return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, res)
 	}
-	return parent.AsTarball(ctx, s.srv, variants, args.ForcedCompression.Value, args.MediaTypes)
+
+	fs, err := parent.Self.FSState()
+	if err != nil {
+		return inst, err
+	}
+
+	filename := "/container.tar"
+	st, err := core.DagLLB(ctx, s.srv,
+		[]dagql.Selector{
+			{
+				Field: "directory",
+			},
+			{
+				Field: "withFile",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "path",
+						Value: dagql.String(filename),
+					},
+					{
+						Name:  "source",
+						Value: dagql.NewID[*core.File](dagql.CurrentID(ctx)),
+					},
+				},
+			},
+		}, []llb.State{fs},
+	)
+	if err != nil {
+		return inst, err
+	}
+
+	f, err := core.NewFileSt(ctx, parent.Self.Query, st, filename, parent.Self.Platform, parent.Self.Services)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, f)
 }
 
 type containerImportArgs struct {

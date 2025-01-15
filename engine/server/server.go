@@ -463,6 +463,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		TelemetryPubSub:  srv.telemetryPubSub,
 		BKSessionManager: srv.bkSessionManager,
 		SessionHandler:   srv,
+		DaggerServer:     srv,
 
 		Runc:                srv.runc,
 		DefaultCgroupParent: srv.cgroupParent,

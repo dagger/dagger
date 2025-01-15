@@ -337,6 +337,35 @@ func (r Instance[T]) Select(ctx context.Context, sel Selector) (val Typed, err e
 	return val, nil
 }
 
+func (r Instance[T]) SelectType(ctx context.Context, sel Selector) (val Typed, err error) {
+	field, ok := r.Class.Field(sel.Field, sel.View)
+	if !ok {
+		return nil, fmt.Errorf("Select: %s has no such field: %q", r.Class.TypeName(), sel.Field)
+	}
+	val = field.Spec.Type
+
+	if n, ok := val.(Derefable); ok {
+		val, ok = n.Deref()
+		if !ok {
+			return nil, nil
+		}
+	}
+	if sel.Nth != 0 {
+		enum, ok := val.(Enumerable)
+		if !ok {
+			return nil, fmt.Errorf("cannot sub-select %dth item from %T", sel.Nth, val)
+		}
+		val = enum.Element()
+		if n, ok := val.(Derefable); ok {
+			val, ok = n.Deref()
+			if !ok {
+				return nil, nil
+			}
+		}
+	}
+	return val, nil
+}
+
 type View interface {
 	Contains(string) bool
 }
