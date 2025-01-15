@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client/pathutil"
 )
 
 type Filesyncer struct {
@@ -238,7 +239,7 @@ func (f Filesyncer) fullRootPathAndBaseName(reqPath string, fullyResolvePath boo
 	// NOTE: filepath.Clean also handles calling FromSlash (relevant when this is a Windows client)
 	reqPath = filepath.Clean(reqPath)
 
-	rootPath, err := Abs(reqPath)
+	rootPath, err := pathutil.Abs(reqPath)
 	if err != nil {
 		return "", fmt.Errorf("get abs path: %w", err)
 	}

@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/dagger/dagger/engine/client/secretprovider"
+	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/secrets"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Secret is a content-addressed secret.
@@ -40,8 +44,9 @@ func (secret *Secret) LLBID() string {
 }
 
 type SecretStore struct {
-	secrets map[digest.Digest]*storedSecret
-	mu      sync.RWMutex
+	bkSessionManager *bksession.Manager
+	secrets          map[digest.Digest]*storedSecret
+	mu               sync.RWMutex
 }
 
 // storedSecret has the actual metadata of the Secret. The Secret type is just it's key into the
@@ -56,11 +61,24 @@ type storedSecret struct {
 
 	// The plaintext value of the secret.
 	Plaintext []byte
+
+	// The URI of the secret, if it's stored in a remote store.
+	URI string
+
+	// The id of the buildkit session the secret will be retrieved through.
+	BuildkitSessionID string
 }
 
-func NewSecretStore() *SecretStore {
+func (s *storedSecret) Clone() *storedSecret {
+	cp := *s
+	cp.Secret = s.Secret.Clone()
+	return &cp
+}
+
+func NewSecretStore(bkSessionManager *bksession.Manager) *SecretStore {
 	return &SecretStore{
-		secrets: map[digest.Digest]*storedSecret{},
+		secrets:          map[digest.Digest]*storedSecret{},
+		bkSessionManager: bkSessionManager,
 	}
 }
 
@@ -85,6 +103,32 @@ func (store *SecretStore) AddSecret(secret *Secret, name string, plaintext []byt
 	return nil
 }
 
+func (store *SecretStore) NewSecret(secret *Secret, buildkitSessionID, uri string) error {
+	if secret == nil {
+		return fmt.Errorf("secret must not be nil")
+	}
+	if secret.Query == nil {
+		return fmt.Errorf("secret must have a query")
+	}
+	if secret.IDDigest == "" {
+		return fmt.Errorf("secret must have an ID digest")
+	}
+
+	_, _, err := secretprovider.ResolverForID(uri)
+	if err != nil {
+		return err
+	}
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	store.secrets[secret.IDDigest] = &storedSecret{
+		Secret:            secret,
+		BuildkitSessionID: buildkitSessionID,
+		URI:               uri,
+	}
+	return nil
+}
+
 func (store *SecretStore) AddSecretFromOtherStore(secret *Secret, otherStore *SecretStore) error {
 	otherStore.mu.RLock()
 	secretVals, ok := otherStore.secrets[secret.IDDigest]
@@ -92,7 +136,15 @@ func (store *SecretStore) AddSecretFromOtherStore(secret *Secret, otherStore *Se
 	if !ok {
 		return fmt.Errorf("secret %s not found in other store", secret.IDDigest)
 	}
-	return store.AddSecret(secret, secretVals.Name, secretVals.Plaintext)
+
+	secretVals = secretVals.Clone()
+	secretVals.Secret = secret
+
+	store.mu.Lock()
+	store.secrets[secret.IDDigest] = secretVals
+	store.mu.Unlock()
+
+	return nil
 }
 
 func (store *SecretStore) HasSecret(idDgst digest.Digest) bool {
@@ -112,14 +164,45 @@ func (store *SecretStore) GetSecretName(idDgst digest.Digest) (string, bool) {
 	return secret.Name, true
 }
 
-func (store *SecretStore) GetSecretPlaintext(idDgst digest.Digest) ([]byte, bool) {
+func (store *SecretStore) GetSecretURI(idDgst digest.Digest) (string, bool) {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
 	secret, ok := store.secrets[idDgst]
 	if !ok {
-		return nil, false
+		return "", false
 	}
-	return secret.Plaintext, true
+	return secret.URI, true
+}
+
+func (store *SecretStore) GetSecretPlaintext(ctx context.Context, idDgst digest.Digest) ([]byte, error) {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	secret, ok := store.secrets[idDgst]
+	if !ok {
+		return nil, fmt.Errorf("secret %s: %w", idDgst, secrets.ErrNotFound)
+	}
+
+	// If the secret is stored locally (setSecret), return the plaintext.
+	if secret.URI == "" {
+		return secret.Plaintext, nil
+	}
+
+	buildkitSessionID := secret.BuildkitSessionID
+	if buildkitSessionID == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "missing buildkit session id")
+	}
+	caller, err := store.bkSessionManager.Get(ctx, buildkitSessionID, true)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get buildkit session: %s", err)
+	}
+
+	resp, err := secrets.NewSecretsClient(caller.Conn()).GetSecret(ctx, &secrets.GetSecretRequest{
+		ID: secret.URI,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
 }
 
 func (store *SecretStore) AsBuildkitSecretStore() secrets.SecretStore {
@@ -133,10 +216,6 @@ type buildkitSecretStore struct {
 
 var _ secrets.SecretStore = &buildkitSecretStore{}
 
-func (bkStore *buildkitSecretStore) GetSecret(_ context.Context, llbID string) ([]byte, error) {
-	plaintext, ok := bkStore.inner.GetSecretPlaintext(digest.Digest(llbID))
-	if !ok {
-		return nil, fmt.Errorf("secret %s: %w", llbID, secrets.ErrNotFound)
-	}
-	return plaintext, nil
+func (bkStore *buildkitSecretStore) GetSecret(ctx context.Context, llbID string) ([]byte, error) {
+	return bkStore.inner.GetSecretPlaintext(ctx, digest.Digest(llbID))
 }

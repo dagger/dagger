@@ -1177,6 +1177,10 @@ export type ClientHttpOpts = {
   experimentalServiceHost?: Service
 }
 
+export type ClientLoadSecretFromNameOpts = {
+  accessor?: string
+}
+
 export type ClientModuleDependencyOpts = {
   /**
    * If set, the name to use for the dependency. Otherwise, once installed to a parent module, the name of the dependency module will be used by default.
@@ -1199,10 +1203,6 @@ export type ClientModuleSourceOpts = {
    * The relative path to the module root from the host directory
    */
   relHostPath?: string
-}
-
-export type ClientSecretOpts = {
-  accessor?: string
 }
 
 /**
@@ -7154,6 +7154,17 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a Secret from its Name.
+   */
+  loadSecretFromName = (
+    name: string,
+    opts?: ClientLoadSecretFromNameOpts,
+  ): Secret => {
+    const ctx = this._ctx.select("loadSecretFromName", { name, ...opts })
+    return new Secret(ctx)
+  }
+
+  /**
    * Load a Service from its ID.
    */
   loadServiceFromID = (id: ServiceID): Service => {
@@ -7230,10 +7241,11 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Reference a secret by name.
+   * Creates a new secret.
+   * @param uri The URI of the secret store
    */
-  secret = (name: string, opts?: ClientSecretOpts): Secret => {
-    const ctx = this._ctx.select("secret", { name, ...opts })
+  secret = (uri: string): Secret => {
+    const ctx = this._ctx.select("secret", { uri })
     return new Secret(ctx)
   }
 
@@ -7375,6 +7387,7 @@ export class Secret extends BaseClient {
   private readonly _id?: SecretID = undefined
   private readonly _name?: string = undefined
   private readonly _plaintext?: string = undefined
+  private readonly _uri?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -7384,12 +7397,14 @@ export class Secret extends BaseClient {
     _id?: SecretID,
     _name?: string,
     _plaintext?: string,
+    _uri?: string,
   ) {
     super(ctx)
 
     this._id = _id
     this._name = _name
     this._plaintext = _plaintext
+    this._uri = _uri
   }
 
   /**
@@ -7431,6 +7446,21 @@ export class Secret extends BaseClient {
     }
 
     const ctx = this._ctx.select("plaintext")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The URI of this secret.
+   */
+  uri = async (): Promise<string> => {
+    if (this._uri) {
+      return this._uri
+    }
+
+    const ctx = this._ctx.select("uri")
 
     const response: Awaited<string> = await ctx.execute()
 

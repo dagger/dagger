@@ -16,6 +16,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/client/secretprovider"
 	"github.com/dagger/dagger/engine/session"
 )
 
@@ -183,6 +184,8 @@ func serveSession() {
 	ctx := context.Background()
 
 	attachables := []bksession.Attachable{
+		// secrets
+		secretprovider.NewSecretProvider(),
 		// sockets
 		client.SocketProvider{EnableHostNetworkAccess: true},
 		// host=>container networking
