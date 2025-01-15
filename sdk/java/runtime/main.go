@@ -94,12 +94,20 @@ func (m *JavaSdk) ModuleRuntime(
 
 	mvnCtr = mvnCtr.
 		WithWorkdir(m.moduleConfig.modulePath()).
-		WithExec([]string{"mvn", "clean", "compile"}).
-		WithExec([]string{"cat", "target/classes/dagger_module_info.json"}).
-		WithExec([]string{"mvn", "package", "-DskipTests"})
+		WithExec([]string{"mvn", "clean", "package", "-DskipTests"})
 
+	artifactID, err := mvnCtr.
+		WithExec([]string{"mvn", "org.apache.maven.plugins:maven-help-plugin:3.2.0:evaluate", "-Dexpression=project.artifactId", "-q", "-DforceStdout"}).
+		Stdout(ctx)
+	if err != nil {
+		return nil, err
+	}
+	version, err := mvnCtr.
+		WithExec([]string{"mvn", "org.apache.maven.plugins:maven-help-plugin:3.2.0:evaluate", "-Dexpression=project.version", "-q", "-DforceStdout"}).
+		Stdout(ctx)
+	jarFileName := fmt.Sprintf("%s-%s.jar", artifactID, version)
 	jar := mvnCtr.
-		File(filepath.Join(m.moduleConfig.modulePath(), "target", "dagger-java-module-1.0-SNAPSHOT.jar"))
+		File(filepath.Join(m.moduleConfig.modulePath(), "target", jarFileName))
 
 	javaCtr := dag.Container().
 		From(fmt.Sprintf("%s@%s", JavaImage, JavaDigest)).
