@@ -1,0 +1,20 @@
+name: Alternative CI Runners 4
+
+on:
+  # Run the workflow every day TWICE:
+  # 1. 9:06AM UTC (low activity)
+  # 2. 9:26AM UTC (cache test - high chance of no code changes)
+  schedule:
+    - cron: "6,26 9 * * *"
+  # Enable manual trigger for on-demand runs - helps when debugging
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docs-lint-on-x1-tmpfs:
+    uses: ./.github/workflows/_dagger_on_x1.yml
+    with:
+      function: docs lint
+      timeout: 20
