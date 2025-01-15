@@ -1,9 +1,10 @@
 package io.dagger.codegen.introspection;
 
-import com.squareup.javapoet.*;
+import com.palantir.javapoet.*;
+
+import javax.lang.model.element.Modifier;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
-import javax.lang.model.element.Modifier;
 
 public class EnumVisitor extends AbstractVisitor {
 

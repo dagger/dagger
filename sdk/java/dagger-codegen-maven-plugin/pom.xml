@@ -42,7 +42,7 @@
             <artifactId>jakarta.json.bind-api</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.squareup</groupId>
+            <groupId>com.palantir.javapoet</groupId>
             <artifactId>javapoet</artifactId>
         </dependency>
         <dependency>

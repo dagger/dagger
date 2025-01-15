@@ -59,7 +59,7 @@
                 <version>${yasson.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.squareup</groupId>
+                <groupId>com.palantir.javapoet</groupId>
                 <artifactId>javapoet</artifactId>
                 <version>${javapoet.version}</version>
             </dependency>
@@ -271,7 +271,7 @@
         <inject-maven-plugin.version>1.7</inject-maven-plugin.version>
         <jakarta.json-api.version>2.1.3</jakarta.json-api.version>
         <jakarta.json.bind-api.version>3.0.1</jakarta.json.bind-api.version>
-        <javapoet.version>1.13.0</javapoet.version>
+        <javapoet.version>0.6.0</javapoet.version>
         <json-path.version>2.9.0</json-path.version>
         <junit.version>5.11.4</junit.version>
         <maven-assembly-plugin.version>3.7.1</maven-assembly-plugin.version>
