@@ -1,22 +1,24 @@
 package io.dagger.client;
 
-import jakarta.json.bind.JsonbBuilder;
+import com.google.gson.Gson;
+import com.google.gson.annotations.Expose;
 
 public class Scalar<T> {
 
-  private final T value;
+  @Expose
+  private T value;
 
   protected Scalar(T value) {
     this.value = value;
   }
 
-  public T convert() {
+  T convert() {
     return value;
   }
 
   public JSON toJSON() throws Exception {
-    try (var jsonb = JsonbBuilder.create()) {
-      return JSON.from(jsonb.toJson(value));
-    }
+    Gson gson = new Gson();
+    String json = gson.toJson(value);
+    return JSON.from(json);
   }
 }
