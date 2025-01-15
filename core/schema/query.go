@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/sources/blob"
 )
 
 // We don't expose these types to modules SDK codegen, but
@@ -130,6 +131,13 @@ func (s *querySchema) schemaJSONFile(ctx context.Context, parent dagql.Instance[
 	dgst, err := core.GetContentHashFromDef(ctx, bk, f.LLB, "/")
 	if err != nil {
 		return inst, fmt.Errorf("failed to get content hash: %w", err)
+	}
+
+	// LLB marshalling takes up too much memory when file ops have a ton of contents, so we still go through
+	// the blob source for now simply to avoid that.
+	f, err = core.NewFileSt(ctx, parent.Self, blob.LLB(dgst), f.File, f.Platform, f.Services)
+	if err != nil {
+		return inst, err
 	}
 
 	fileInst, err := dagql.NewInstanceForCurrentID(ctx, s.srv, parent, f)

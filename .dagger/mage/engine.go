@@ -116,12 +116,16 @@ func (t Engine) Dev(ctx context.Context) error {
 		"-e", "DAGGER_CLOUD_URL",
 		"-e", util.GPUSupportEnvName,
 		"-v", volumeName + ":" + distconsts.EngineDefaultStateDir,
-		// "-p", "6060:6060",
+		"-p", "6060:6060",
 		"--name", containerName,
 		"--privileged",
 	}...)
 
-	runArgs = append(runArgs, imageName, "--extra-debug", "--debugaddr=0.0.0.0:6060")
+	runArgs = append(runArgs,
+		imageName,
+		"--extra-debug",
+		"--debugaddr=0.0.0.0:6060",
+	)
 
 	if output, err := exec.CommandContext(ctx, "docker", runArgs...).CombinedOutput(); err != nil {
 		return fmt.Errorf("docker run: %w: %s", err, output)
