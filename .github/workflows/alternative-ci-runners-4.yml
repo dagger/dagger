@@ -13,8 +13,40 @@ permissions:
   contents: read
 
 jobs:
-  docs-lint-on-x1-tmpfs:
-    uses: ./.github/workflows/_dagger_on_x1.yml
+  docs-lint-on-x1-nvme:
+    uses: ./.github/workflows/_dagger_on_x1_nvme.yml
     with:
       function: docs lint
       timeout: 20
+      nvme: 1
+
+  test-cli-engine-on-x1-nvme:
+    uses: ./.github/workflows/_dagger_on_x1_nvme.yml
+    with:
+      function: test specific --run='TestCLI|TestEngine' --race=true --parallel=16
+      timeout: 20
+      nvme: 2
+  test-module-runtimes-on-x1-nvme:
+    uses: ./.github/workflows/_dagger_on_x1_nvme.yml
+    with:
+      function: test specific --run='TestGo|TestPython|TestTypescript|TestElixir|TestPHP' --race=true --parallel=16
+      timeout: 20
+      nvme: 2
+
+  sdk-go-on-x1-nvme:
+    uses: ./.github/workflows/_dagger_on_x1_nvme.yml
+    with:
+      function: check --targets=sdk/go
+      nvme: 3
+
+  sdk-python-on-x1-nvme:
+    uses: ./.github/workflows/_dagger_on_x1_nvme.yml
+    with:
+      function: check --targets=sdk/python
+      nvme: 4
+
+  sdk-typescript-on-x1-nvme:
+    uses: ./.github/workflows/_dagger_on_x1_nvme.yml
+    with:
+      function: check --targets=sdk/typescript
+      nvme: 4

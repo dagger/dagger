@@ -1,4 +1,4 @@
-name: Dagger on Experimental 1
+name: Dagger on Experimental 1 NVMe
 
 on:
   workflow_call:
@@ -12,10 +12,14 @@ on:
         type: number
         default: 10
         required: false
+      nvme:
+        description: "NVMe instance"
+        type: number
+        default: 1
 jobs:
-  remote-dagger-engine-tmpfs:
+  remote-dagger-engine-nvme:
     if: ${{ github.repository == 'dagger/dagger' }}
-    runs-on: dagger-x1-v0-15-2-16c-tmpfs
+    runs-on: dagger-x1-v0-15-2-16c-nvme-${{ inputs.nvme }}
     timeout-minutes: ${{ inputs.timeout }}
     steps:
       - name: Checkout repo
