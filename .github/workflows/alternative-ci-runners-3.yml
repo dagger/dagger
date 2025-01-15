@@ -13,33 +13,26 @@ permissions:
   contents: read
 
 jobs:
-  docs-lint-on-magicache:
-    uses: ./.github/workflows/_dagger_on_magicache_remote_engine.yml
+  docs-lint-on-x1-nvme:
+    uses: ./.github/workflows/_dagger_on_x1_nvme.yml
     with:
       function: docs lint
       timeout: 20
+      nvme: 1
 
-  test-cli-engine-on-magicache:
-    needs: docs-lint-on-magicache
-    uses: ./.github/workflows/_dagger_on_magicache_remote_engine.yml
+  test-cli-engine-on-x1-nvme:
+    uses: ./.github/workflows/_dagger_on_x1_nvme.yml
     with:
       function: test specific --run='TestCLI|TestEngine' --race=true --parallel=16
       timeout: 20
+      nvme: 2
 
-  sdk-go-on-magicache:
-    needs: docs-lint-on-magicache
-    uses: ./.github/workflows/_dagger_on_magicache_remote_engine.yml
+  sdk-go-on-x1-nvme:
+    uses: ./.github/workflows/_dagger_on_x1_nvme.yml
     with:
       function: check --targets=sdk/go
-
-  sdk-python-on-magicache:
-    needs: docs-lint-on-magicache
-    uses: ./.github/workflows/_dagger_on_magicache_remote_engine.yml
+      nvme: 3
+  sdk-go-on-x1-tmpfs:
+    uses: ./.github/workflows/_dagger_on_x1_tmpfs.yml
     with:
-      function: check --targets=sdk/python
-
-  sdk-typescript-on-magicache:
-    needs: docs-lint-on-magicache
-    uses: ./.github/workflows/_dagger_on_magicache_remote_engine.yml
-    with:
-      function: check --targets=sdk/typescript
+      function: check --targets=sdk/go
