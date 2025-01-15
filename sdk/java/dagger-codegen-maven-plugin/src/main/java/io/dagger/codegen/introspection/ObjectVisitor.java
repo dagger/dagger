@@ -1,14 +1,15 @@
 package io.dagger.codegen.introspection;
 
-import static org.apache.commons.lang3.StringUtils.capitalize;
+import com.palantir.javapoet.*;
 
-import com.squareup.javapoet.*;
+import javax.lang.model.element.Modifier;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.function.UnaryOperator;
-import javax.lang.model.element.Modifier;
+
+import static org.apache.commons.lang3.StringUtils.capitalize;
 
 class ObjectVisitor extends AbstractVisitor {
   public ObjectVisitor(Schema schema, Path targetDirectory, Charset encoding) {
@@ -120,7 +121,7 @@ class ObjectVisitor extends AbstractVisitor {
                 arg ->
                     ParameterSpec.builder(
                             "Query".equals(field.getParentObject().getName())
-                                    && "id".equals(arg.getName())
+                                && "id".equals(arg.getName())
                                 ? arg.getType().formatOutput()
                                 : arg.getType().formatInput(),
                             Helpers.formatName(arg))
@@ -237,7 +238,7 @@ class ObjectVisitor extends AbstractVisitor {
                 arg ->
                     FieldSpec.builder(
                             "id".equals(arg.getName())
-                                    && "Query".equals(field.getParentObject().getName())
+                                && "Query".equals(field.getParentObject().getName())
                                 ? arg.getType().formatOutput()
                                 : arg.getType().formatInput(),
                             Helpers.formatName(arg),
@@ -253,7 +254,7 @@ class ObjectVisitor extends AbstractVisitor {
                     Helpers.withSetter(
                         arg, // arg.getName(),
                         "id".equals(arg.getName())
-                                && "Query".equals(field.getParentObject().getName())
+                            && "Query".equals(field.getParentObject().getName())
                             ? arg.getType().formatOutput()
                             : arg.getType().formatInput(),
                         ClassName.bestGuess(fieldArgumentsClassName),

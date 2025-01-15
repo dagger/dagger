@@ -1,15 +1,12 @@
 package io.dagger.codegen.introspection;
 
-import com.squareup.javapoet.ClassName;
-import com.squareup.javapoet.FieldSpec;
-import com.squareup.javapoet.MethodSpec;
-import com.squareup.javapoet.ParameterizedTypeName;
-import com.squareup.javapoet.TypeSpec;
+import com.palantir.javapoet.*;
+
+import javax.lang.model.element.Modifier;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
-import javax.lang.model.element.Modifier;
 
 class InputVisitor extends AbstractVisitor {
 
