@@ -55,5 +55,6 @@
       "properties": {}
     }
   },
-  "enums": {}
+  "enums": {},
+  "interfaces": {}
 }

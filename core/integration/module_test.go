@@ -5730,6 +5730,20 @@ query { host { directory(path: ".") { asModule { initialize {
             }
         }
     }
+		interfaces {
+		  asInterface {
+			  name
+				description
+				functions {
+				  name
+					description
+					args {
+					  name
+						description
+					}
+				}
+			}
+		}
     enums {
         asEnum {
             name

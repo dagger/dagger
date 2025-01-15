@@ -177,6 +177,11 @@ export async function loadValue(
 
       return executor.buildClass(objectType, value)
     }
+    case TypeDefKind.InterfaceKind: {
+      const interfaceType = (type as TypeDef<TypeDefKind.InterfaceKind>).name
+
+      return executor.buildInterface(interfaceType, value)
+    }
     // Cannot use `,` to specify multiple matching case so instead we use fallthrough.
     case TypeDefKind.StringKind:
     case TypeDefKind.IntegerKind:
@@ -236,7 +241,7 @@ export async function loadResult(
 ): Promise<any> {
   // Handle IDable objects
   if (result && typeof result?.id === "function") {
-    result = await result.id()
+    return await result.id()
   }
 
   // Handle arrays

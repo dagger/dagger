@@ -1,0 +1,77 @@
+kind: Added
+body: |-
+  Add interface support in Typescript SDK.
+
+  This allows to define an abstract object that can be implemented by any module.
+  This is specially useful for monorepos or for modules that are not dependend on
+  a specific implementation to perform its operations.
+
+  Example of definition:
+  ```ts
+  import { func, object } from "@dagger.io/dagger"
+
+  // Use the `interface` keyword to define an interface.
+  // Both method and properties style notation are supported.
+  export interface Duck {
+    quack: () => string
+    superQuack(): Promise<string>
+  }
+
+  @object()
+  export class Example {
+    @func()
+    duckQuack(duck: Duck): string {
+      return duck.quack()
+    }
+
+    @func()
+    async duckSuperQuack(duck: Duck): Promise<string> {
+      return duck.superQuack()
+    }
+  }
+  ```
+
+  Any module with a dagger object that implements the interface will be passable
+  as parameter to the function that uses the interface.
+
+  Example of implementation:
+  ```ts
+  import { object, func } from "@dagger.io/dagger"
+
+  @object()
+  export class TsImpl {
+    @func()
+    async quack(): Promise<string> {
+      return "quack"
+    }
+
+    @func()
+    async superQuack(): Promise<string> {
+      return "QUACK"
+    }
+  }
+  ```
+
+  Example of usage from a 3rd party module:
+  ```ts
+  import { dag, object, func } from "@dagger.io/dagger"
+
+  @object()
+  export class Test {
+    @func()
+    async tsQuack(): Promise<string> {
+      // We call the definition module and provide as argument an implementation of this interface
+      return await dag.Example().duckQuack(dag.tsImpl().asExampleDuck())
+    }
+
+    @func()
+    async tsSuperQuack(): Promise<string> {
+      // We call the definition module and provide as argument an implementation of this interface
+      return await dag.Example().duckSuperQuack(dag.tsImpl().asExampleDuck())
+    }
+  }
+  ```
+time: 2025-01-09T17:03:22.15271+01:00
+custom:
+  Author: TomChv
+  PR: "9347"
