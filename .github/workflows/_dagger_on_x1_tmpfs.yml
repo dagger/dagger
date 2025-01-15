@@ -1,4 +1,4 @@
-name: Dagger with Magicache
+name: Dagger on Experimental TMPFS
 
 on:
   workflow_call:
@@ -13,10 +13,9 @@ on:
         default: 10
         required: false
 jobs:
-  remote-dagger-engine:
+  remote-dagger-engine-tmpfs:
     if: ${{ github.repository == 'dagger/dagger' }}
-    runs-on:
-        - 'dagger-g3-v0-15-3-16c-st-magic'
+    runs-on: dagger-x1-v0-15-3-16c-tmpfs-1
     timeout-minutes: ${{ inputs.timeout }}
     steps:
       - name: Checkout repo
