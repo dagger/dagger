@@ -632,9 +632,6 @@ func (span *Span) CanceledReason() (bool, []string) {
 	if span.Canceled {
 		reasons = append(reasons, "span says it is canceled")
 	}
-	if !span.db.RootSpan.IsRunning() && span.IsRunningOrEffectsRunning() {
-		reasons = append(reasons, "root span completed, leaving span running")
-	}
 	return len(reasons) > 0, reasons
 }
 
