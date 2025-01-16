@@ -3263,6 +3263,9 @@ enum TypeDefKind {
   """A string value."""
   STRING_KIND
 
+  """A float value."""
+  FLOAT_KIND
+
   """An integer value."""
   INTEGER_KIND
 
