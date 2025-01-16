@@ -151,8 +151,6 @@ type shellCallHandler struct {
 // - File: when a file path is provided as an argument
 // - Code: when code is passed inline using the `-c,--code` flag or via stdin
 func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
-	h.tui = !silent && (hasTTY && progress == "auto" || progress == "tty")
-
 	h.stdoutBuf = new(safeBuffer)
 	h.stderrBuf = new(safeBuffer)
 
@@ -337,6 +335,8 @@ func (h *shellCallHandler) runPath(ctx context.Context, path string) error {
 
 // runInteractive executes the runner on a REPL (Read-Eval-Print Loop)
 func (h *shellCallHandler) runInteractive(ctx context.Context) error {
+	h.tui = !silent && (hasTTY && progress == "auto" || progress == "tty")
+
 	h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
 		fmt.Fprintln(stderr, `Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`)
 		return nil
@@ -457,7 +457,7 @@ func (h *shellCallHandler) Prompt(out *termenv.Output, fg termenv.Color) string 
 	return sb.String()
 }
 
-// withTerminal handles using stdin, stdout, and stderr when the TUI is runnin
+// withTerminal handles using stdin, stdout, and stderr when the TUI is running
 func (h *shellCallHandler) withTerminal(fn func(stdin io.Reader, stdout, stderr io.Writer) error) error {
 	if h.tui {
 		return Frontend.Background(&terminalSession{
