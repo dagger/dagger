@@ -596,6 +596,19 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			// span" in a nested scenario.
 			db.PrimarySpan = span.ID
 		}
+
+		if !span.IsRunning() {
+			for _, span := range db.Spans.Order {
+				if span.IsRunning() {
+					span.Canceled = true
+					span.EndTime = db.RootSpan.EndTime
+					db.update(span)
+				}
+			}
+		}
+	} else if db.RootSpan != nil && !db.RootSpan.IsRunning() && span.IsRunning() {
+		span.Canceled = true
+		span.EndTime = db.RootSpan.EndTime
 	}
 
 	if span.EffectID != "" {
