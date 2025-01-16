@@ -27,15 +27,17 @@ func (b *Bench) All(
 ) error {
 	return b.bench(
 		ctx,
-		"",
-		"",
-		"./...",
-		failfast,
-		timeout,
-		race,
-		1,
-		testVerbose,
-		prewarm,
+		&benchOpts{
+			runTestRegex:  "",
+			skipTestRegex: "",
+			pkg:           "./...",
+			failfast:      failfast,
+			timeout:       timeout,
+			race:          race,
+			count:         1,
+			testVerbose:   testVerbose,
+			prewarm:       prewarm,
+		},
 	)
 }
 
@@ -70,44 +72,52 @@ func (b *Bench) Specific(
 ) error {
 	return b.bench(
 		ctx,
-		run,
-		skip,
-		pkg,
-		failfast,
-		timeout,
-		race,
-		count,
-		testVerbose,
-		prewarm,
+		&benchOpts{
+			runTestRegex:  run,
+			skipTestRegex: skip,
+			pkg:           pkg,
+			failfast:      failfast,
+			timeout:       timeout,
+			race:          race,
+			count:         count,
+			testVerbose:   testVerbose,
+			prewarm:       prewarm,
+		},
 	)
+}
+
+type benchOpts struct {
+	runTestRegex  string
+	skipTestRegex string
+	pkg           string
+	failfast      bool
+	timeout       string
+	race          bool
+	count         int
+	testVerbose   bool
+	prewarm       bool
 }
 
 func (b *Bench) bench(
 	ctx context.Context,
-	runTestRegex string,
-	skipTestRegex string,
-	pkg string,
-	failfast bool,
-	timeout string,
-	race bool,
-	count int,
-	testVerbose bool,
-	prewarm bool,
+	opts *benchOpts,
 ) error {
 	run := func(cmdBase *dagger.Container) *dagger.Container {
 		return b.Test.goTest(
 			cmdBase,
-			runTestRegex,
-			skipTestRegex,
-			pkg,
-			failfast,
-			0,
-			timeout,
-			race,
-			count,
-			false, // -update
-			testVerbose,
-			true,
+			&goTestOpts{
+				runTestRegex:  opts.runTestRegex,
+				skipTestRegex: opts.skipTestRegex,
+				pkg:           opts.pkg,
+				failfast:      opts.failfast,
+				parallel:      0,
+				timeout:       opts.timeout,
+				race:          opts.race,
+				count:         opts.count,
+				update:        false,
+				testVerbose:   opts.testVerbose,
+				bench:         true,
+			},
 		)
 	}
 
@@ -116,7 +126,7 @@ func (b *Bench) bench(
 		return err
 	}
 
-	if prewarm {
+	if opts.prewarm {
 		_, err = run(cmd.WithEnvVariable("TESTCTX_PREWARM", "true")).
 			Sync(ctx)
 		if err != nil {
