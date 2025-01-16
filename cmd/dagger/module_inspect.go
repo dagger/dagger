@@ -571,6 +571,8 @@ func (t *modTypeDef) String() string {
 		return "string"
 	case dagger.TypeDefKindIntegerKind:
 		return "int"
+	case dagger.TypeDefKindFloatKind:
+		return "float"
 	case dagger.TypeDefKindBooleanKind:
 		return "bool"
 	case dagger.TypeDefKindVoidKind:
@@ -598,6 +600,7 @@ func (t *modTypeDef) KindDisplay() string {
 	switch t.Kind {
 	case dagger.TypeDefKindStringKind,
 		dagger.TypeDefKindIntegerKind,
+		dagger.TypeDefKindFloatKind,
 		dagger.TypeDefKindBooleanKind:
 		return "Scalar"
 	case dagger.TypeDefKindScalarKind,
@@ -622,6 +625,7 @@ func (t *modTypeDef) Description() string {
 	switch t.Kind {
 	case dagger.TypeDefKindStringKind,
 		dagger.TypeDefKindIntegerKind,
+		dagger.TypeDefKindFloatKind,
 		dagger.TypeDefKindBooleanKind:
 		return "Primitive type."
 	case dagger.TypeDefKindVoidKind:

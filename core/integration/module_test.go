@@ -5183,6 +5183,84 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 	})
 }
 
+func (ModuleSuite) TestFloat(ctx context.Context, t *testctx.T) {
+	depSrc := `package main
+
+type Dep struct{}
+
+func (m *Dep) Dep(n float64) float32 {
+	return float32(n)
+}
+`
+
+	type testCase struct {
+		sdk    string
+		source string
+	}
+
+	testCases := []testCase{
+		{
+			sdk: "go",
+			source: `package main
+
+import "context"
+
+type Test struct{}
+
+func (m *Test) Test(n float64) float64 {
+	return n
+}
+
+func (m *Test) TestFloat32(n float32) float32 {
+	return n
+}
+
+func (m *Test) Dep(ctx context.Context, n float64) (float64, error) {
+	return dag.Dep().Dep(ctx, n)
+}
+
+`,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			modGen := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work/dep").
+				With(daggerExec("init", "--name=dep", "--sdk=go", "--source=.")).
+				WithNewFile("/work/dep/main.go", depSrc).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--name=test", "--sdk="+tc.sdk, "--source=.")).
+				With(sdkSource(tc.sdk, tc.source)).
+				With(daggerExec("install", "./dep"))
+
+
+			t.Run("float64", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test", "--n=3.14")).Stdout(ctx)
+				require.NoError(t, err)
+				require.JSONEq(t, `3.14`, out)
+			})
+
+			t.Run("float32", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-float-32", "--n=1.73424")).Stdout(ctx)
+				require.NoError(t, err)
+				require.JSONEq(t, `1.73424`, out)
+			})
+
+			t.Run("call dep with float64 to float32 conversion", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("dep", "--n=232.3454")).Stdout(ctx)
+				require.NoError(t, err)
+				require.JSONEq(t, `232.3454`, out)
+			})
+		})
+	}
+}
+
 func (ModuleSuite) TestModuleDevelopVersion(ctx context.Context, t *testctx.T) {
 	moduleSrc := `package main
 
