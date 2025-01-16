@@ -9,7 +9,6 @@ on:
       - synchronize
       - reopened
       - ready_for_review
-      - labeled
   # Enable manual trigger for easy debugging
   workflow_dispatch:
 
