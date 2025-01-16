@@ -68,9 +68,9 @@ type B = TB[*testing.B]
 type MiddlewareT = Middleware[*testing.T]
 type MiddlewareB = Middleware[*testing.B]
 
-type Middleware[Type RunnableTTB[Type]] func(*TB[Type]) *TB[Type]
+type Middleware[Type RunnableTB[Type]] func(*TB[Type]) *TB[Type]
 
-type RunnableTTB[Type testing.TB] interface {
+type RunnableTB[Type testing.TB] interface {
 	testing.TB
 	Run(string, func(Type)) bool
 }
@@ -130,22 +130,22 @@ func Bench(ctx context.Context, testingB *testing.B, suite any, middleware ...Mi
 	}
 }
 
-func New[Type RunnableTTB[Type]](ctx context.Context, t Type) *TB[Type] {
+func New[Type RunnableTB[Type]](ctx context.Context, t Type) *TB[Type] {
 	// Interrupt the context when the test is done.
 	ctx, cancel := context.WithCancel(ctx)
 	t.Cleanup(cancel)
 	return &TB[Type]{
-		RunnableTTB: t,
-		ctx:         ctx,
-		mu:          new(sync.Mutex),
+		RunnableTB: t,
+		ctx:        ctx,
+		mu:         new(sync.Mutex),
 	}
 }
 
 func WithParallel(t *TB[*testing.T]) *TB[*testing.T] {
-	t.RunnableTTB.(*testing.T).Parallel()
+	t.RunnableTB.(*testing.T).Parallel()
 	return t.
 		BeforeEach(func(t *TB[*testing.T]) *TB[*testing.T] {
-			t.RunnableTTB.(*testing.T).Parallel()
+			t.RunnableTB.(*testing.T).Parallel()
 			return t
 		})
 }
@@ -154,11 +154,11 @@ const TestCtxTypeAttr = "dagger.io/testctx.type"
 const TestCtxNameAttr = "dagger.io/testctx.name"
 const TestCtxPrewarmAttr = "dagger.io/testctx.prewarm"
 
-func WithOTelTracing[Type RunnableTTB[Type]](tracer trace.Tracer) Middleware[Type] {
+func WithOTelTracing[Type RunnableTB[Type]](tracer trace.Tracer) Middleware[Type] {
 	wrapSpan := func(t *TB[Type]) *TB[Type] {
 		ctx, span := tracer.Start(t.Context(), t.BaseName())
 		span.SetAttributes(
-			attribute.String(TestCtxTypeAttr, fmt.Sprintf("%T", t.RunnableTTB)),
+			attribute.String(TestCtxTypeAttr, fmt.Sprintf("%T", t.RunnableTB)),
 			attribute.String(TestCtxNameAttr, t.Name()),
 			attribute.String(TestCtxPrewarmAttr, isPrewarm()),
 		)
@@ -187,7 +187,7 @@ func isPrewarm() string {
 	return "true"
 }
 
-func WithOTelLogging[Type RunnableTTB[Type]](logger log.Logger) Middleware[Type] {
+func WithOTelLogging[Type RunnableTB[Type]](logger log.Logger) Middleware[Type] {
 	return func(t *TB[Type]) *TB[Type] {
 		return t.WithLogger(func(t2 *TB[Type], msg string) {
 			var rec log.Record
@@ -198,7 +198,7 @@ func WithOTelLogging[Type RunnableTTB[Type]](logger log.Logger) Middleware[Type]
 	}
 }
 
-func Combine[Type RunnableTTB[Type]](middleware ...Middleware[Type]) Middleware[Type] {
+func Combine[Type RunnableTB[Type]](middleware ...Middleware[Type]) Middleware[Type] {
 	return func(t *TB[Type]) *TB[Type] {
 		for _, m := range middleware {
 			t = m(t)
@@ -207,8 +207,8 @@ func Combine[Type RunnableTTB[Type]](middleware ...Middleware[Type]) Middleware[
 	}
 }
 
-type TB[Type RunnableTTB[Type]] struct {
-	RunnableTTB[Type]
+type TB[Type RunnableTB[Type]] struct {
+	RunnableTB[Type]
 
 	ctx        context.Context
 	baseName   string
@@ -219,7 +219,7 @@ type TB[Type RunnableTTB[Type]] struct {
 }
 
 func (t *TB[Type]) Run(name string, f func(context.Context, *TB[Type])) bool {
-	return t.RunnableTTB.Run(name, func(testingT Type) {
+	return t.RunnableTB.Run(name, func(testingT Type) {
 		sub := t.sub(name, testingT)
 		for _, setup := range t.beforeEach {
 			sub = setup(sub)
@@ -283,12 +283,12 @@ func (t TB[Type]) BeforeEach(f Middleware[Type]) *TB[Type] {
 
 func (t *TB[Type]) Log(vals ...any) {
 	t.log(fmt.Sprintln(vals...))
-	t.RunnableTTB.Log(vals...)
+	t.RunnableTB.Log(vals...)
 }
 
 func (t *TB[Type]) Logf(format string, vals ...any) {
 	t.logf(format, vals...)
-	t.RunnableTTB.Logf(format, vals...)
+	t.RunnableTB.Logf(format, vals...)
 }
 
 func (t *TB[Type]) Error(vals ...any) {
@@ -297,7 +297,7 @@ func (t *TB[Type]) Error(vals ...any) {
 	t.errors = append(t.errors, msg)
 	t.mu.Unlock()
 	t.log(msg)
-	t.RunnableTTB.Error(vals...)
+	t.RunnableTB.Error(vals...)
 }
 
 func (t *TB[Type]) Errorf(format string, vals ...any) {
@@ -305,7 +305,7 @@ func (t *TB[Type]) Errorf(format string, vals ...any) {
 	t.mu.Lock()
 	t.errors = append(t.errors, fmt.Sprintf(format, vals...))
 	t.mu.Unlock()
-	t.RunnableTTB.Errorf(format, vals...)
+	t.RunnableTB.Errorf(format, vals...)
 }
 
 func (t *TB[Type]) Fatal(vals ...any) {
@@ -313,7 +313,7 @@ func (t *TB[Type]) Fatal(vals ...any) {
 	t.mu.Lock()
 	t.errors = append(t.errors, fmt.Sprint(vals...))
 	t.mu.Unlock()
-	t.RunnableTTB.Fatal(vals...)
+	t.RunnableTB.Fatal(vals...)
 }
 
 func (t *TB[Type]) Fatalf(format string, vals ...any) {
@@ -321,17 +321,17 @@ func (t *TB[Type]) Fatalf(format string, vals ...any) {
 	t.mu.Lock()
 	t.errors = append(t.errors, fmt.Sprintf(format, vals...))
 	t.mu.Unlock()
-	t.RunnableTTB.Fatalf(format, vals...)
+	t.RunnableTB.Fatalf(format, vals...)
 }
 
 func (t *TB[Type]) Skip(vals ...any) {
 	t.log(fmt.Sprintln(vals...))
-	t.RunnableTTB.Skip(vals...)
+	t.RunnableTB.Skip(vals...)
 }
 
 func (t *TB[Type]) Skipf(format string, vals ...any) {
 	t.logf(format, vals...)
-	t.RunnableTTB.Skipf(format, vals...)
+	t.RunnableTB.Skipf(format, vals...)
 }
 
 func (t *TB[Type]) Errors() string {
