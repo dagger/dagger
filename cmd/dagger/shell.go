@@ -352,7 +352,7 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 	var runErr error
 	for {
 		Frontend.SetPrimary(dagui.SpanID{})
-		Frontend.Opts().CustomExit = func() {}
+		Frontend.SetCustomExit(func() {})
 		fg := termenv.ANSIGreen
 
 		if runErr != nil {
@@ -399,8 +399,8 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 		if err != nil {
 			// EOF or Ctrl+D to exit
 			if errors.Is(err, io.EOF) {
-				Frontend.Opts().Verbosity = 0
-				Frontend.Opts().CustomExit = nil
+				Frontend.SetCustomExit(nil)
+				Frontend.SetVerbosity(0)
 				break
 			}
 			// Ctrl+C should move to the next line
@@ -414,11 +414,11 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 			continue
 		}
 
-		ctx, span := Tracer().Start(ctx, line)
-		ctx, cancel := context.WithCancel(ctx)
+		spanCtx, span := Tracer().Start(ctx, line)
+		newCtx, cancel := context.WithCancel(spanCtx)
 		Frontend.SetPrimary(dagui.SpanID{SpanID: span.SpanContext().SpanID()})
-		Frontend.Opts().CustomExit = cancel
-		runErr = h.run(ctx, strings.NewReader(line), "")
+		Frontend.SetCustomExit(cancel)
+		runErr = h.run(newCtx, strings.NewReader(line), "")
 		if runErr != nil {
 			span.SetStatus(codes.Error, runErr.Error())
 		}
