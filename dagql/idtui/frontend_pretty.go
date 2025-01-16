@@ -179,6 +179,18 @@ func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
 	return &fe.FrontendOpts
 }
 
+func (fe *frontendPretty) SetCustomExit(fn func()) {
+	fe.mu.Lock()
+	fe.Opts().CustomExit = fn
+	fe.mu.Unlock()
+}
+
+func (fe *frontendPretty) SetVerbosity(n int) {
+	fe.mu.Lock()
+	fe.Opts().Verbosity = n
+	fe.mu.Unlock()
+}
+
 func (fe *frontendPretty) SetPrimary(spanID dagui.SpanID) {
 	fe.mu.Lock()
 	fe.db.SetPrimarySpan(spanID)
