@@ -665,6 +665,15 @@ func (ShellSuite) TestCommandStateArgs(ctx context.Context, t *testctx.T) {
 	requireErrOut(t, err, `"foo" not found`)
 }
 
+func (ShellSuite) TestExecStderr(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	script := fmt.Sprintf("container | from %s | with-exec ls wat | stdout", alpineImage)
+	_, err := daggerCliBase(t, c).
+		With(daggerShell(script)).
+		Sync(ctx)
+	requireErrOut(t, err, "ls: wat: No such file or directory")
+}
+
 func (ShellSuite) TestInstall(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
