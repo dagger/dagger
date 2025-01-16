@@ -2,7 +2,7 @@ module github.com/dagger/dagger/.dagger
 
 go 1.23.2
 
-require github.com/dagger/dagger/engine/distconsts v0.15.1
+require github.com/dagger/dagger/engine/distconsts v0.15.2
 
 replace github.com/dagger/dagger/engine/distconsts => ../engine/distconsts
 
@@ -15,7 +15,7 @@ require (
 	github.com/moby/buildkit v0.14.0-rc1.0.20240603193914-3d789eb740a9
 	github.com/netlify/open-api/v2 v2.35.0
 	github.com/opencontainers/image-spec v1.1.0
-	github.com/vektah/gqlparser/v2 v2.5.19
+	github.com/vektah/gqlparser/v2 v2.5.20
 	go.opentelemetry.io/otel v1.27.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.0.0-20240518090000-14441aefdf88
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.3.0
@@ -66,7 +66,6 @@ require (
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/sosodev/duration v1.3.1 // indirect
-	github.com/stretchr/testify v1.10.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.27.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.27.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.27.0 // indirect
