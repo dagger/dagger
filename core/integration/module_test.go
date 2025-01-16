@@ -5217,9 +5217,7 @@ func (m *Test) TestFloat32(n float32) float32 {
 
 func (m *Test) Dep(ctx context.Context, n float64) (float64, error) {
 	return dag.Dep().Dep(ctx, n)
-}
-
-`,
+}`,
 		},
 	}
 
@@ -5238,7 +5236,6 @@ func (m *Test) Dep(ctx context.Context, n float64) (float64, error) {
 				With(daggerExec("init", "--name=test", "--sdk="+tc.sdk, "--source=.")).
 				With(sdkSource(tc.sdk, tc.source)).
 				With(daggerExec("install", "./dep"))
-
 
 			t.Run("float64", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.With(daggerCall("test", "--n=3.14")).Stdout(ctx)
