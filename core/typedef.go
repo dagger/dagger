@@ -557,7 +557,7 @@ func (typeDef *TypeDef) IsSubtypeOf(otherDef *TypeDef) bool {
 	}
 
 	switch typeDef.Kind {
-	case TypeDefKindString, TypeDefKindInteger, TypeDefKindFloat,TypeDefKindBoolean, TypeDefKindVoid:
+	case TypeDefKindString, TypeDefKindInteger, TypeDefKindFloat, TypeDefKindBoolean, TypeDefKindVoid:
 		return typeDef.Kind == otherDef.Kind
 	case TypeDefKindScalar:
 		return typeDef.AsScalar.Value.Name == otherDef.AsScalar.Value.Name
