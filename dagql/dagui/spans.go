@@ -77,7 +77,7 @@ func (span *Span) Base() *callpbv1.Call {
 	// TODO: respect an already-set base value computed server-side, and client
 	// subsequently requests necessary DAG
 	if call.ReceiverDigest != "" {
-		parentCall := span.db.Call(call.ReceiverDigest)
+		parentCall := span.db.MustCall(call.ReceiverDigest)
 		if parentCall != nil {
 			span.baseCache = span.db.Simplify(parentCall, span.Internal)
 			return span.baseCache
