@@ -39,6 +39,8 @@ type cacheArgs struct {
 }
 
 func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.Instance[*core.Query], args cacheArgs) (dagql.Instance[*core.CacheVolume], error) {
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, core.NewCache(args.Key))
+
 	var inst dagql.Instance[*core.CacheVolume]
 
 	if args.Namespace != "" {
