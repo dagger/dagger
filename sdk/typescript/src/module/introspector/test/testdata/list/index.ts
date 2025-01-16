@@ -1,4 +1,4 @@
-import { float } from "../../../../../api/client.gen.js"
+import type { float } from "../../../../../api/client.gen.js"
 import { func, object } from "../../../../decorators.js"
 
 @object()
