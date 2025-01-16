@@ -706,9 +706,12 @@ func (ModuleSuite) TestConflictingSameNameDeps(ctx context.Context, t *testctx.T
 	// A -> B -> Dint
 	// A -> C -> Dstr
 	// where Dint and Dstr are modules with the same name and same object names but conflicting types
+
+	// this test is often slow if you're running locally, skip if -short is specified
 	if testing.Short() {
 		t.SkipNow()
 	}
+
 	c := connect(ctx, t)
 
 	ctr := goGitBase(t, c).
@@ -1723,6 +1726,8 @@ func (ModuleSuite) TestNamespacing(ctx context.Context, t *testctx.T) {
 
 func (ModuleSuite) TestLoops(ctx context.Context, t *testctx.T) {
 	// verify circular module dependencies result in an error
+
+	// this test is often slow if you're running locally, skip if -short is specified
 	if testing.Short() {
 		t.SkipNow()
 	}
