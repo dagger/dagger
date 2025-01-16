@@ -222,6 +222,7 @@ function isPrimitiveType(type: ScannerTypeDef<TypeDefKind>): boolean {
     type.kind === TypeDefKind.BooleanKind ||
     type.kind === TypeDefKind.IntegerKind ||
     type.kind === TypeDefKind.StringKind ||
+    type.kind === TypeDefKind.FloatKind ||
     type.kind === TypeDefKind.EnumKind
   )
 }

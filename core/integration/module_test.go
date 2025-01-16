@@ -5219,6 +5219,28 @@ func (m *Test) Dep(ctx context.Context, n float64) (float64, error) {
 	return dag.Dep().Dep(ctx, n)
 }`,
 		},
+		{
+			sdk: "typescript",
+			source: `import { dag, float, object, func } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+  @func()
+  test(n: float): float {
+    return n
+  }
+
+  @func()
+  testFloat32(n: float): float {
+    return n
+  }
+
+  @func()
+  async dep(n: float): Promise<float> {
+    return dag.dep().dep(n)
+  }
+}`,
+		},
 	}
 
 	for _, tc := range testCases {

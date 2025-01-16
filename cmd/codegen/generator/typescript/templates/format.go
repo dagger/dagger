@@ -38,7 +38,7 @@ func (f *FormatTypeFunc) FormatKindScalarInt(representation string) string {
 }
 
 func (f *FormatTypeFunc) FormatKindScalarFloat(representation string) string {
-	representation += "number"
+	representation += "float"
 	return representation
 }
 

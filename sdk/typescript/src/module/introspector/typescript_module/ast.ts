@@ -285,8 +285,16 @@ export class AST {
   ): TypeDef<TypeDefKind> | undefined {
     if (type.flags & ts.TypeFlags.String)
       return { kind: TypeDefKind.StringKind }
-    if (type.flags & ts.TypeFlags.Number)
+    if (type.flags & ts.TypeFlags.Number) {
+      // Float will be interpreted as number by the TypeScript compiler so we need to check if the
+      // text is "float" to know if it's a float or an integer.
+      // It can also be interpreted as a reference, but this is handled separately at an upper level.
+      if (node.getText().includes("float")) {
+        return { kind: TypeDefKind.FloatKind }
+      }
+
       return { kind: TypeDefKind.IntegerKind }
+    }
     if (type.flags & ts.TypeFlags.Boolean)
       return { kind: TypeDefKind.BooleanKind }
     if (type.flags & ts.TypeFlags.Void) return { kind: TypeDefKind.VoidKind }
@@ -342,7 +350,7 @@ export class AST {
 
     switch (type) {
       case "string":
-      case "number":
+      case "number": // float is also included here
       case "bigint":
       case "boolean":
       case "object":

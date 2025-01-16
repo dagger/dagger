@@ -4,6 +4,11 @@
  */
 import { Context } from "../common/context.js"
 
+/**
+ * Declare a number as float in the Dagger API.
+ */
+export type float = number
+
 class BaseClient {
   /**
    * @hidden
@@ -1357,6 +1362,11 @@ export enum TypeDefKind {
    * Always paired with an EnumTypeDef.
    */
   EnumKind = "ENUM_KIND",
+
+  /**
+   * A float value.
+   */
+  FloatKind = "FLOAT_KIND",
 
   /**
    * A graphql input type, used only when representing the core API via TypeDefs.
