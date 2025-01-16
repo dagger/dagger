@@ -17,6 +17,7 @@ import (
 
 // Note: ensure each testcase use unique port, otherwise you might see flakes.
 func (ModuleSuite) TestDaggerUp(ctx context.Context, t *testctx.T) {
+	// these tests are slow if you're running locally, skip if -short is specified
 	if testing.Short() {
 		t.SkipNow()
 	}
