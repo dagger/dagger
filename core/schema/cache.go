@@ -62,12 +62,12 @@ func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.Instance[*co
 			return inst, err
 		}
 
-		namespaceKey = name + symbolic
+		namespaceKey = "mod(" + name + symbolic + ")"
 	}
 
 	// if no namespace key, just return the NewCache based on key
 	if namespaceKey == "" {
-		return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, core.NewCache(args.Key))
+		return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, core.NewCache(":"+args.Key))
 	}
 
 	err = s.srv.Select(ctx, s.srv.Root(), &inst, dagql.Selector{
