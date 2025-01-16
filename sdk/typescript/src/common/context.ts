@@ -13,8 +13,8 @@ export class Context {
     return this._connection.getGQLClient()
   }
 
-  getConnection() {
-    return this._connection
+  copy(): Context {
+    return new Context([], this._connection)
   }
 
   select(operation: string, args?: Record<string, unknown>): Context {
