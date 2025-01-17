@@ -12,7 +12,7 @@
     <modules>
         <module>dagger-codegen-maven-plugin</module>
         <module>dagger-java-sdk</module>
-<!--        <module>dagger-java-samples</module>-->
+        <module>dagger-java-samples</module>
         <module>dagger-java-annotation-processor</module>
     </modules>
 
