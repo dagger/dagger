@@ -111,6 +111,22 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 			return
 		}
 
+		if opts.Filter != nil {
+			switch opts.Filter(span) {
+			case WalkContinue:
+			case WalkSkip, WalkStop:
+				lastTree.Final = true
+				return
+			case WalkPassthrough:
+				// TODO: this Final field is a bit tedious...
+				lastTree.Final = true
+				for child := range span.Children(opts) {
+					walk(child, parent)
+				}
+				return
+			}
+		}
+
 		tree := &TraceTree{
 			Span:   span,
 			Parent: parent,
