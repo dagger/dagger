@@ -291,8 +291,8 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 		exitCode := 1
 		var ex *dagger.ExecError
 		if errors.As(err, &ex) {
-			if ex.Stderr != "" && (h.repl || !h.tty) {
-				return fmt.Errorf("%w\n%s", err, ex.Stderr)
+			if h.repl || !h.tty {
+				return wrapExecError(ex)
 			}
 			exitCode = ex.ExitCode
 		}
@@ -312,6 +312,20 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 		}
 		return nil
 	})
+}
+
+func wrapExecError(e *dagger.ExecError) error {
+	out := make([]string, 0, 2)
+	if e.Stdout != "" {
+		out = append(out, "Stdout:\n"+e.Stdout)
+	}
+	if e.Stderr != "" {
+		out = append(out, "Stderr:\n"+e.Stderr)
+	}
+	if len(out) > 0 {
+		return fmt.Errorf("%w\n%s", e, strings.Join(out, "\n"))
+	}
+	return e
 }
 
 func parseShell(reader io.Reader, name string, opts ...syntax.ParserOption) (*syntax.File, error) {
