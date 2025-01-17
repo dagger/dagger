@@ -155,6 +155,7 @@ class EntrypointCommand extends Command
         switch ($type->typeDefKind) {
             case TypeDefKind::BOOLEAN_KIND:
             case TypeDefKind::INTEGER_KIND:
+	    case TypeDefKind::FLOAT_KIND:
             case TypeDefKind::STRING_KIND:
             case TypeDefKind::VOID_KIND:
                 return $typeDef->withKind($type->typeDefKind);

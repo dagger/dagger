@@ -26,14 +26,6 @@ use ReflectionType;
 class TypeTest extends TestCase
 {
     #[Test]
-    public function itCannotSupportFloat(): void
-    {
-        self::expectException(Dagger\Exception\UnsupportedType::class);
-
-        new Type('float');
-    }
-
-    #[Test]
     public function itShouldNotBeConstructedForArrays(): void
     {
         self::expectException(\DomainException::class);

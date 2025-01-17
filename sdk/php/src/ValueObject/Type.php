@@ -55,6 +55,8 @@ final readonly class Type
                 return TypeDefKind::BOOLEAN_KIND;
             case 'int':
                 return TypeDefKind::INTEGER_KIND;
+	    case 'float':
+                return TypeDefKind::FLOAT_KIND;
             case 'string':
                 return TypeDefKind::STRING_KIND;
             case 'null':
