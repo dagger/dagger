@@ -553,6 +553,40 @@ func (m *Test) Insecure(ctx context.Context, token *dagger.Secret) (string, erro
 			_, err := modGen.With(daggerCall("insecure", "--token", "wtf:HUH")).Stdout(ctx)
 			requireErrOut(t, err, `unsupported secret provider: "wtf"`)
 		})
+
+		t.Run("vault", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			vaultImage := c.Container().From("hashicorp/vault:1.18")
+
+			// Configure a Vault server
+			vaultServer := vaultImage.
+				WithEnvVariable("VAULT_DEV_ROOT_TOKEN_ID", "myroot").
+				WithEnvVariable("VAULT_DEV_LISTEN_ADDRESS", "0.0.0.0:8200").
+				WithEnvVariable("SKIP_SETCAP", "1").
+				AsService(dagger.ContainerAsServiceOpts{
+					Args: []string{"vault", "server", "-dev"},
+				})
+
+			// Create a secret with a client
+			_, err := vaultImage.
+				WithEnvVariable("VAULT_ADDR", "http://vault:8200").
+				WithServiceBinding("vault", vaultServer).
+				WithEnvVariable("VAULT_SKIP_VERIFY", "1").
+				WithEnvVariable("VAULT_TOKEN", "myroot").
+				WithExec([]string{"sleep", "5"}).
+				WithExec([]string{"vault", "kv", "put", "/secret/testsecret", "foo=bar"}).
+				Sync(ctx)
+			require.NoError(t, err)
+			// Test Vault provider with token auth
+			out, err := modGen.
+				WithEnvVariable("VAULT_ADDR", "http://vault:8200").
+				WithServiceBinding("vault", vaultServer).
+				WithEnvVariable("VAULT_SKIP_VERIFY", "1").
+				WithEnvVariable("VAULT_TOKEN", "myroot").
+				With(daggerCall("insecure", "--token", "vault://testsecret.foo")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "bar", out)
+		})
 	})
 
 	t.Run("cache volume args", func(ctx context.Context, t *testctx.T) {
@@ -1258,11 +1292,11 @@ import (
 type Test struct{}
 
 type SocketIDResponse struct {
-	Host struct{ 
-		UnixSocket struct{ 
-			Id string 
-		} 
-	} 
+	Host struct{
+		UnixSocket struct{
+			Id string
+		}
+	}
 }
 
 func (m *Test) Fn(ctx context.Context, sockPath string, runContainerQuery string) error {
@@ -2409,7 +2443,7 @@ from dagger import dag
 
 @dagger.enum_type
 class Language(dagger.Enum):
-    GO = "GO" 
+    GO = "GO"
     PYTHON = "PYTHON"
     TYPESCRIPT = "TYPESCRIPT"
     PHP = "PHP"
