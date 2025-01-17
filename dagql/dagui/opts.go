@@ -49,6 +49,9 @@ type FrontendOpts struct {
 	// SiftedSpans is a set of spans whose children should be filtered to only
 	// show non-Call spans, skipping through any intermediate Calls.
 	SiftedSpans map[SpanID]struct{}
+
+	// Filter is applied while constructing the tree.
+	Filter func(*Span) WalkDecision
 }
 
 const (
