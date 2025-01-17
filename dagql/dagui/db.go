@@ -874,14 +874,29 @@ func isOrContains(row, target *TraceTree) bool {
 	return false
 }
 
-func WalkTree(tree []*TraceTree, f func(*TraceTree, int) bool) {
+type WalkDecision int
+
+const (
+	WalkContinue WalkDecision = iota
+	WalkSkip
+	WalkPassthrough
+	WalkStop
+)
+
+func WalkTree(tree []*TraceTree, f func(*TraceTree, int) WalkDecision) {
 	var walk func([]*TraceTree, int)
 	walk = func(rows []*TraceTree, depth int) {
 		for _, row := range rows {
-			if f(row, depth) {
+			switch f(row, depth) {
+			case WalkContinue:
+				walk(row.Children, depth+1)
+			case WalkPassthrough:
+				walk(row.Children, depth)
+			case WalkSkip:
+				continue
+			case WalkStop:
 				return
 			}
-			walk(row.Children, depth+1)
 		}
 	}
 	walk(tree, 0)

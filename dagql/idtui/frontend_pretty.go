@@ -268,19 +268,19 @@ func (fe *frontendPretty) renderErrorLogs(out *termenv.Output, r *renderer) bool
 	})
 	errTree := fe.db.CollectErrors(rowsView)
 	var anyHasLogs bool
-	dagui.WalkTree(errTree, func(row *dagui.TraceTree, _ int) bool {
+	dagui.WalkTree(errTree, func(row *dagui.TraceTree, _ int) dagui.WalkDecision {
 		logs := fe.logs.Logs[row.Span.ID]
 		if logs != nil && logs.UsedHeight() > 0 {
 			anyHasLogs = true
-			return true
+			return dagui.WalkStop
 		}
-		return false
+		return dagui.WalkContinue
 	})
 	if anyHasLogs {
 		fmt.Fprintln(out)
 		fmt.Fprintln(out, out.String("Error logs:").Bold())
 	}
-	dagui.WalkTree(errTree, func(tree *dagui.TraceTree, _ int) bool {
+	dagui.WalkTree(errTree, func(tree *dagui.TraceTree, _ int) dagui.WalkDecision {
 		logs := fe.logs.Logs[tree.Span.ID]
 		if logs != nil && logs.UsedHeight() > 0 {
 			fmt.Fprintln(out)
@@ -288,7 +288,7 @@ func (fe *frontendPretty) renderErrorLogs(out *termenv.Output, r *renderer) bool
 			fe.renderLogs(out, r, logs, -1, logs.UsedHeight(), "")
 			fe.renderStepError(out, r, tree.Span, 0, "")
 		}
-		return false
+		return dagui.WalkContinue
 	})
 	return len(errTree) > 0
 }
