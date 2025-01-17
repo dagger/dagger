@@ -5,6 +5,7 @@ go 1.23
 require (
 	github.com/99designs/gqlgen v0.17.57
 	github.com/Khan/genqlient v0.7.0
+	github.com/iancoleman/strcase v0.3.0
 	github.com/vektah/gqlparser/v2 v2.5.19
 	go.opentelemetry.io/otel v1.27.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.0.0-20240518090000-14441aefdf88
