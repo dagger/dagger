@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 
 	"java-sdk/internal/dagger"
+
+	"github.com/iancoleman/strcase"
 )
 
 const (
@@ -99,6 +101,11 @@ func (m *JavaSdk) codegenBase(
 		// Set the working directory to the one containing the sources to build, not just the module root
 		WithWorkdir(m.moduleConfig.modulePath())
 
+	ctr, err := m.addTemplate(ctx, ctr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add template: %w", err)
+	}
+
 	return ctr, nil
 }
 
@@ -138,6 +145,42 @@ func (m *JavaSdk) buildJavaDependencies(
 			// "-e", // this is just for debug purpose, uncomment if needed
 		}).
 		Directory("/root/.m2")
+}
+
+// addTemplate creates all the necessary files to start a new Java module
+func (m *JavaSdk) addTemplate(
+	ctx context.Context,
+	ctr *dagger.Container,
+) (*dagger.Container, error) {
+	name := m.moduleConfig.name
+	snakeName := strcase.ToSnake(name)
+	camelName := strcase.ToCamel(name)
+
+	// Check if there's a pom.xml inside the module path. If a file exist, no need to add the templates
+	if _, err := ctr.File(filepath.Join(m.moduleConfig.modulePath(), "pom.xml")).Name(ctx); err == nil {
+		return ctr, nil
+	}
+
+	absPath := func(rel ...string) string {
+		return filepath.Join(append([]string{m.moduleConfig.modulePath()}, rel...)...)
+	}
+
+	ctr = ctr.
+		// Get the files from the template
+		WithDirectory(
+			m.moduleConfig.modulePath(),
+			dag.CurrentModule().Source().Directory("template"),
+			dagger.ContainerWithDirectoryOpts{Include: []string{
+				"pom.xml",
+				"**/*.java",
+			}}).
+		// And rename everything so that they match the dagger module name
+		WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/dagger-module/%s/g", snakeName), absPath("pom.xml")}).
+		WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/DaggerModule/%s/g", camelName), absPath("src", "main", "java", "io", "dagger", "sample", "module", "DaggerModule.java")}).
+		WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/DaggerModule/%s/g", camelName), absPath("src", "main", "java", "io", "dagger", "sample", "module", "package-info.java")}).
+		WithExec([]string{"mv", absPath("src", "main", "java", "io", "dagger", "sample", "module", "DaggerModule.java"), absPath("src", "main", "java", "io", "dagger", "sample", "module", fmt.Sprintf("%s.java", camelName))})
+
+	return ctr, nil
 }
 
 func (m *JavaSdk) ModuleRuntime(
