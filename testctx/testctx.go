@@ -150,6 +150,10 @@ func WithParallel(t *TB[*testing.T]) *TB[*testing.T] {
 		})
 }
 
+func N(b *TB[*testing.B]) int {
+	return b.RunnableTB.(*testing.B).N
+}
+
 const TestCtxTypeAttr = "dagger.io/testctx.type"
 const TestCtxNameAttr = "dagger.io/testctx.name"
 const TestCtxPrewarmAttr = "dagger.io/testctx.prewarm"
