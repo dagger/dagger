@@ -19,7 +19,7 @@ concurrency:
 jobs:
     dotnet:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-1-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-2-4c' || 'ubuntu-latest' }}
         name: dotnet
         steps:
             - name: Checkout
@@ -49,7 +49,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin sh
               env:
-                DAGGER_VERSION: v0.15.1
+                DAGGER_VERSION: v0.15.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -190,7 +190,7 @@ jobs:
         timeout-minutes: 10
     dotnet-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-1-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-2-8c-dind' || 'ubuntu-latest' }}
         name: dotnet-dev
         steps:
             - name: Checkout
