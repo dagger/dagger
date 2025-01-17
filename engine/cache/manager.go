@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/mount"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/moby/buildkit/cache"
 	cacheconfig "github.com/moby/buildkit/cache/config"
@@ -43,8 +44,9 @@ type manager struct {
 }
 
 type syncedCacheMount struct {
-	init  sync.Once
-	mount SyncedCacheMountConfig
+	init        sync.Once
+	mountConfig SyncedCacheMountConfig
+	mount       *mount.Mount
 }
 
 type ManagerConfig struct {
@@ -467,7 +469,7 @@ func (m *manager) Import(ctx context.Context) error {
 // Close will block until the final export has finished or ctx is canceled.
 func (m *manager) Close(ctx context.Context) (rerr error) {
 	close(m.startCloseCh)
-	m.UploadCacheMounts(ctx)
+	rerr = m.UploadCacheMounts(ctx)
 	select {
 	case <-m.doneCh:
 	case <-ctx.Done():
@@ -546,7 +548,7 @@ func (m *manager) descriptorProviderPair(layerMetadata remotecache.CacheLayer) (
 
 type Manager interface {
 	solver.CacheManager
-	DownloadCacheMounts(context.Context, []string) error
+	DownloadCacheMounts(context.Context, []*CacheVolume) error
 	UploadCacheMounts(context.Context) error
 	ReleaseUnreferenced(context.Context) error
 	Close(context.Context) error
@@ -558,7 +560,7 @@ type defaultCacheManager struct {
 
 var _ Manager = defaultCacheManager{}
 
-func (defaultCacheManager) DownloadCacheMounts(ctx context.Context, _ []string) error {
+func (defaultCacheManager) DownloadCacheMounts(ctx context.Context, _ []*CacheVolume) error {
 	return nil
 }
 

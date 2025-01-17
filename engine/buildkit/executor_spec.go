@@ -413,6 +413,18 @@ func (w *Worker) setupCacheVolumes(ctx context.Context, state *execState) error 
 		return nil
 	}
 
+	for _, m := range state.spec.Mounts {
+		for _, cv := range w.execMD.CacheVolumes {
+			if cv.Target == m.Destination {
+				cv.Mount = &mount.Mount{
+					Type:    m.Type,
+					Source:  m.Source,
+					Options: m.Options,
+				}
+			}
+		}
+	}
+
 	if err := w.daggerCacheManager.DownloadCacheMounts(ctx, w.execMD.CacheVolumes); err != nil {
 		bklog.G(ctx).Warnf("optional cache volume synchronization failed: %v", err)
 	}

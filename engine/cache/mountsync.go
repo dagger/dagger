@@ -28,14 +28,20 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+type CacheVolume struct {
+	Name   string
+	Target string
+	Mount  *mount.Mount
+}
+
 func (m *manager) syncAllCacheMounts(ctx context.Context) error {
-	cacheMounts := []string{}
+	cacheMounts := []*CacheVolume{}
 	for _, cm := range m.syncedCacheMounts {
 		// skip all cache mounts that do not have a sync URL
-		if cm.mount.URL == "" {
+		if cm.mountConfig.URL == "" {
 			continue
 		}
-		cacheMounts = append(cacheMounts, cm.mount.Name)
+		cacheMounts = append(cacheMounts, &CacheVolume{Name: cm.mountConfig.Name})
 	}
 
 	return m.downloadCacheMounts(ctx, cacheMounts)
@@ -56,8 +62,8 @@ func (m *manager) initSyncedCacheMounts(ctx context.Context) {
 
 		for _, mount := range response.SyncedCacheMounts {
 			m.syncedCacheMounts[mount.Name] = &syncedCacheMount{
-				init:  sync.Once{},
-				mount: mount,
+				init:        sync.Once{},
+				mountConfig: mount,
 			}
 		}
 	})
@@ -66,7 +72,7 @@ func (m *manager) initSyncedCacheMounts(ctx context.Context) {
 // DownloadCacheMounts synchronizes the specified list of cache mounts.
 // NOTE: this is a synchronous operation that will download data from object storage
 // providers.
-func (m *manager) DownloadCacheMounts(ctx context.Context, cacheMounts []string) error {
+func (m *manager) DownloadCacheMounts(ctx context.Context, cacheMounts []*CacheVolume) error {
 	// if SyncOnBoot is on then we skip synchronizing the cache mounts
 	// NOTE: each cache mount is synchronized only once using sync.Once, technically
 	// we don't need this check since the function won't actually do anything. However
@@ -79,16 +85,17 @@ func (m *manager) DownloadCacheMounts(ctx context.Context, cacheMounts []string)
 	return m.downloadCacheMounts(ctx, cacheMounts)
 }
 
-func (m *manager) downloadCacheMounts(ctx context.Context, cacheMounts []string) error {
+func (m *manager) downloadCacheMounts(ctx context.Context, cacheMounts []*CacheVolume) error {
 	var eg errgroup.Group
-	for _, cacheMountName := range cacheMounts {
-		m.seenCacheMounts.Store(cacheMountName, true)
+	for _, cm := range cacheMounts {
+		m.seenCacheMounts.Store(cm.Name, true)
 
-		cacheMount, ok := m.syncedCacheMounts[cacheMountName]
+		cacheMount, ok := m.syncedCacheMounts[cm.Name]
 		if !ok {
-			bklog.G(ctx).Infof("cache mount %s not in config", cacheMountName)
+			bklog.G(ctx).Infof("cache mount %s not in config", cm.Name)
 			continue
 		}
+		cacheMount.mount = cm.Mount
 
 		eg.Go(func() error {
 			cacheMount.init.Do(func() {
@@ -96,8 +103,8 @@ func (m *manager) downloadCacheMounts(ctx context.Context, cacheMounts []string)
 				// the engine to fail if this fail. This function is being called
 				// while a container is being executed so its important we handle
 				// errors gracefully.
-				if err := m.downloadCacheMount(ctx, cacheMount.mount); err != nil {
-					bklog.G(ctx).Warnf("(optional) failed to sync cache mount %s: %v", cacheMount.mount.Name, err)
+				if err := m.downloadCacheMount(ctx, cacheMount); err != nil {
+					bklog.G(ctx).Warnf("(optional) failed to sync cache mount %s: %v", cacheMount.mountConfig.Name, err)
 				}
 			})
 			return nil
@@ -107,11 +114,16 @@ func (m *manager) downloadCacheMounts(ctx context.Context, cacheMounts []string)
 	return eg.Wait()
 }
 
-func (m *manager) downloadCacheMount(ctx context.Context, syncedCacheMount SyncedCacheMountConfig) error {
-	bklog.G(ctx).Debugf("downloading cache mount %s", syncedCacheMount.Name)
+func (m *manager) downloadCacheMount(ctx context.Context, syncedCacheMount *syncedCacheMount) error {
+	if syncedCacheMount == nil {
+		return nil
+	}
 
-	cacheKey := cacheKeyFromMountName(syncedCacheMount.Name)
-	return withCacheMount(ctx, m.MountManager, cacheKey, func(ctx context.Context, mnt mount.Mount) error {
+	mc := syncedCacheMount.mountConfig
+
+	bklog.G(ctx).Debugf("downloading cache mount %s", mc.Name)
+
+	remoteApplierFunc := func(ctx context.Context, mnt mount.Mount) error {
 		cacheMountDir := mnt.Source // relies on our check that this is a bind mount in withCacheMount
 
 		// if there's any existing data in the cache mount, we'll just leave it alone
@@ -123,18 +135,18 @@ func (m *manager) downloadCacheMount(ctx context.Context, syncedCacheMount Synce
 			return fmt.Errorf("failed to read cache mount dir: %w", err)
 		}
 		if len(dirents) > 0 {
-			bklog.G(ctx).Debugf("cache mount %q already has data, skipping", syncedCacheMount.Name)
+			bklog.G(ctx).Debugf("cache mount %q already has data, skipping", mc.Name)
 			return nil
 		}
 
 		fsApplier := apply.NewFileSystemApplier(&cacheMountProvider{
 			httpClient: m.httpClient,
-			url:        syncedCacheMount.URL,
+			url:        mc.URL,
 		})
 		_, err = fsApplier.Apply(ctx, ocispecs.Descriptor{
-			Digest:    syncedCacheMount.Digest,
-			Size:      syncedCacheMount.Size,
-			MediaType: syncedCacheMount.MediaType,
+			Digest:    mc.Digest,
+			Size:      mc.Size,
+			MediaType: mc.MediaType,
 		}, []mount.Mount{mnt})
 		if err != nil {
 			if removeErr := removeAllUnderDir(cacheMountDir); removeErr != nil {
@@ -143,9 +155,17 @@ func (m *manager) downloadCacheMount(ctx context.Context, syncedCacheMount Synce
 			return fmt.Errorf("failed to apply cache mount: %w", err)
 		}
 
-		bklog.G(ctx).Debugf("downloaded cache mount %s", syncedCacheMount.Name)
+		bklog.G(ctx).Debugf("downloaded cache mount %s", mc.Name)
 		return nil
-	})
+	}
+
+	if syncedCacheMount.mount != nil {
+		return remoteApplierFunc(ctx, *syncedCacheMount.mount)
+	}
+
+	cacheKey := cacheKeyFromMountName(mc.Name)
+
+	return withCacheMount(ctx, m.MountManager, cacheKey, remoteApplierFunc)
 }
 
 func (m *manager) UploadCacheMounts(ctx context.Context) error {

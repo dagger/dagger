@@ -240,7 +240,7 @@ type ContainerMount struct {
 	CacheVolumeID string `json:"cache_volume_id,omitempty"`
 
 	// Name of the underlying cache volume for this container mount.
-	CacheVolumeName string `json:"-"`
+	CacheVolumeName string `json:"cache_volume_name,omitempty"`
 
 	// How to share the cache across concurrent runs.
 	CacheSharingMode CacheSharingMode `json:"cache_sharing,omitempty"`

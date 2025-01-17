@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/network"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/identity"
@@ -255,7 +256,10 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 		if mnt.CacheVolumeID != "" {
 			// append the list of cache volumes
-			execMD.CacheVolumes = append(execMD.CacheVolumes, mnt.CacheVolumeName)
+			execMD.CacheVolumes = append(execMD.CacheVolumes, &cache.CacheVolume{
+				Name:   mnt.CacheVolumeName,
+				Target: mnt.Target,
+			})
 
 			var sharingMode llb.CacheMountSharingMode
 			switch mnt.CacheSharingMode {
