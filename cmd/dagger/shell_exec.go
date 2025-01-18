@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -59,7 +58,7 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 			// Ensure any error from the handler is written to stdout so that
 			// the next command in the chain knows about it.
 			if e := (ShellState{Error: &m}.Write(ctx)); e != nil {
-				return fmt.Errorf("failed to encode error (%q): %w", m, e)
+				return e
 			}
 			// There's a bug in the library where a handler that does `return err`
 			// is fatal but NewExitStatus` is not. With a fatal error, if this
@@ -489,7 +488,7 @@ func (h *shellCallHandler) parseFlagValue(ctx context.Context, value string, arg
 
 		return q, nil
 	}
-	v, err := h.Result(ctx, strings.NewReader(value), false, handleObjectID)
+	v, _, err := h.Result(ctx, strings.NewReader(value), handleObjectID)
 	return v, bypass, err
 }
 
@@ -498,35 +497,32 @@ func (h *shellCallHandler) Result(
 	ctx context.Context,
 	// r is the reader to read the shell state from
 	r io.Reader,
-	// doPrintResponse prepares the response for printing according to an output
-	// format
-	doPrintResponse bool,
-	// beforeRequest is a callback that allows modifying the query before making
+	// doPrintResponse prep	// beforeRequest is a callback that allows modifying the query before making
 	// the request
 	//
 	// It's also useful for validating the query with the function's
 	// return type.
 	beforeRequest func(context.Context, *querybuilder.Selection, *modTypeDef) (*querybuilder.Selection, error),
-) (any, error) {
+) (any, *modTypeDef, error) {
 	st, b, err := readShellState(r)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if st == nil {
-		return string(b), nil
+		return string(b), nil, nil
 	}
 
 	if st.IsCommandRoot() {
 		switch {
 		case st.IsStdlib():
-			return h.CommandsList(st.Cmd, h.Stdlib()), nil
+			return h.CommandsList(st.Cmd, h.Stdlib()), nil, nil
 		case st.IsDeps():
-			return h.DependenciesList(), nil
+			return h.DependenciesList(), nil, nil
 		case st.IsCore():
 			def := h.modDef(nil)
-			return h.FunctionsList(st.Cmd, def.GetCoreFunctions()), nil
+			return h.FunctionsList(st.Cmd, def.GetCoreFunctions()), nil, nil
 		default:
-			return nil, fmt.Errorf("unexpected namespace %q", st.Cmd)
+			return nil, nil, fmt.Errorf("unexpected namespace %q", st.Cmd)
 		}
 	}
 
@@ -536,20 +532,20 @@ func (h *shellCallHandler) Result(
 	if def.HasModule() && st.IsEmpty() {
 		st, err = h.constructorCall(ctx, def, st, nil)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	fn, err := st.Function().GetDef(def)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	q := st.QueryBuilder(h.dag)
 	if beforeRequest != nil {
 		q, err = beforeRequest(ctx, q, fn.ReturnType)
 		if err != nil {
-			return nil, err
+			return nil, fn.ReturnType, err
 		}
 	}
 
@@ -558,29 +554,20 @@ func (h *shellCallHandler) Result(
 	// possible  that a pipeline ending in an object doesn't have anything
 	// to sub-select.
 	if q == nil {
-		return nil, nil
+		return nil, fn.ReturnType, nil
 	}
 
 	var response any
 
 	if err := makeRequest(ctx, q, &response); err != nil {
-		return nil, err
+		return nil, fn.ReturnType, err
 	}
 
 	if fn.ReturnType.Kind == dagger.TypeDefKindVoidKind {
-		return nil, nil
+		return nil, fn.ReturnType, nil
 	}
 
-	if doPrintResponse {
-		buf := new(bytes.Buffer)
-		frmt := outputFormat(fn.ReturnType)
-		if err := printResponse(buf, response, frmt); err != nil {
-			return nil, err
-		}
-		return buf.String(), nil
-	}
-
-	return response, nil
+	return response, fn.ReturnType, nil
 }
 
 func (h *shellCallHandler) getOrInitDef(ref string, fn func() (*moduleDef, error)) (*moduleDef, error) {

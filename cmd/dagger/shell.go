@@ -69,39 +69,41 @@ var shellCmd = &cobra.Command{
 	},
 }
 
-type safeBuffer struct {
-	bu bytes.Buffer
+func newTerminalWriter(fn func([]byte) (int, error)) *terminalWriter {
+	return &terminalWriter{
+		fn: fn,
+	}
+}
+
+// terminalWriter is a custom io.Writer that synchronously calls the handler's
+// withTerminal on each write from the runner
+type terminalWriter struct {
 	mu sync.Mutex
+	fn func([]byte) (int, error)
+
+	// processFn is a function that can be used to process the incoming data
+	// before writing to the terminal
+	//
+	// This can be used to resolve shell state just before printing to screen,
+	// and make necessary API requests.
+	processFn func([]byte) ([]byte, error)
 }
 
-func (s *safeBuffer) Write(p []byte) (n int, err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.bu.Write(p)
+func (o *terminalWriter) Write(p []byte) (n int, err error) {
+	if o.processFn != nil {
+		r, err := o.processFn(p)
+		if err != nil {
+			return 0, err
+		}
+		p = r
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.fn(p)
 }
 
-func (s *safeBuffer) Read(p []byte) (n int, err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.bu.Read(p)
-}
-
-func (s *safeBuffer) HasUnread() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.bu.Len() > 0
-}
-
-func (s *safeBuffer) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.bu.String()
-}
-
-func (s *safeBuffer) Reset() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.bu.Reset()
+func (o *terminalWriter) SetProcessFunc(fn func([]byte) ([]byte, error)) {
+	o.processFn = fn
 }
 
 type shellCallHandler struct {
@@ -118,11 +120,11 @@ type shellCallHandler struct {
 	// repl is set to true when running in interactive mode
 	repl bool
 
-	// stdoutBuf is used to capture the final stdout that the runner produces
-	stdoutBuf *safeBuffer
+	// stdoutWriter is used to call withTerminal on each write the runner makes to stdout
+	stdoutWriter *terminalWriter
 
-	// stderrBuf is used to capture the final stderr that the runner produces
-	stderrBuf *safeBuffer
+	// stderrWriter is used to call withTerminal on each write the runner makes to stderr
+	stderrWriter *terminalWriter
 
 	// debug writes to the handler context's stderr what the arguments, input,
 	// and output are for each command that the exec handler processes
@@ -155,11 +157,28 @@ type shellCallHandler struct {
 func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 	h.tty = !silent && (hasTTY && progress == "auto" || progress == "tty")
 
-	h.stdoutBuf = new(safeBuffer)
-	h.stderrBuf = new(safeBuffer)
+	h.stdoutWriter = newTerminalWriter(func(b []byte) (int, error) {
+		var written int
+		err := h.withTerminal(func(_ io.Reader, stdout, _ io.Writer) error {
+			n, err := stdout.Write(b)
+			written = n
+			return err
+		})
+		return written, err
+	})
+
+	h.stderrWriter = newTerminalWriter(func(b []byte) (int, error) {
+		var written int
+		err := h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
+			n, err := stderr.Write(b)
+			written = n
+			return err
+		})
+		return written, err
+	})
 
 	r, err := interp.New(
-		interp.StdIO(nil, h.stdoutBuf, h.stderrBuf),
+		interp.StdIO(nil, h.stdoutWriter, h.stderrWriter),
 		interp.Params("-e", "-u", "-o", "pipefail"),
 
 		// The "Interactive" option is useful even when not running dagger shell
@@ -256,62 +275,49 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 		return err
 	}
 
-	h.stdoutBuf.Reset()
-	h.stderrBuf.Reset()
+	// Shell state is piped between exec handlers and only in the end the runner
+	// writes the final output to the stdoutWriter. We need to check if that
+	// state needs to be resolved into an API request and handle the response
+	// appropriately. Note that this can happen in parallel if commands are
+	// separated with a '&'.
 
-	// Make sure every run flushes any stderr output.
-	defer func() {
-		h.withTerminal(func(_ io.Reader, stdout, stderr io.Writer) error {
-			// We could also have missing output in stdoutBuf, but probably
-			// for propagating a ShellState.Error. Just ignore those.
-			if h.stderrBuf.HasUnread() {
-				fmt.Fprintln(stderr, h.stderrBuf.String())
-				h.stderrBuf.Reset()
-			}
-			return nil
-		})
-	}()
-
-	var handlerError bool
+	h.stdoutWriter.SetProcessFunc(func(b []byte) ([]byte, error) {
+		resp, typeDef, err := h.Result(ctx, bytes.NewReader(b), handleObjectLeaf)
+		if err != nil {
+			return nil, h.checkExecError(err)
+		}
+		if typeDef != nil && typeDef.Kind == dagger.TypeDefKindVoidKind {
+			return nil, nil
+		}
+		buf := new(bytes.Buffer)
+		frmt := outputFormat(typeDef)
+		err = printResponse(buf, resp, frmt)
+		return buf.Bytes(), err
+	})
 
 	err = h.runner.Run(ctx, file)
 	if exit, ok := interp.IsExitStatus(err); ok {
-		handlerError = int(exit) == shellHandlerExit
-		if !handlerError {
+		if int(exit) != shellHandlerExit {
 			return ExitError{Code: int(exit)}
 		}
 		err = nil
 	}
-	if err != nil {
-		return err
-	}
+	return err
+}
 
-	resp, err := h.Result(ctx, h.stdoutBuf, true, handleObjectLeaf)
-	if err != nil {
-		exitCode := 1
-		var ex *dagger.ExecError
-		if errors.As(err, &ex) {
-			if h.repl || !h.tty {
-				return wrapExecError(ex)
-			}
-			exitCode = ex.ExitCode
+func (h *shellCallHandler) checkExecError(err error) error {
+	exitCode := 1
+	var ex *dagger.ExecError
+	if errors.As(err, &ex) {
+		if h.repl || !h.tty {
+			return wrapExecError(ex)
 		}
-		if !h.repl && h.tty {
-			return ExitError{Code: exitCode}
-		}
-		return err
+		exitCode = ex.ExitCode
 	}
-	if resp == nil {
-		return nil
+	if !h.repl && h.tty {
+		err = ExitError{Code: exitCode}
 	}
-
-	return h.withTerminal(func(_ io.Reader, stdout, _ io.Writer) error {
-		fmt.Fprint(stdout, resp)
-		if sval, ok := resp.(string); ok && stdoutIsTTY && !strings.HasSuffix(sval, "\n") {
-			fmt.Fprintln(stdout)
-		}
-		return nil
-	})
+	return err
 }
 
 func wrapExecError(e *dagger.ExecError) error {
