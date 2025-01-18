@@ -89,17 +89,25 @@ public class CodeRenderer : ICodeRenderer
     {
         var methods = type.Fields.Select(field =>
         {
+            var isAsync = field.Type.IsLeaf() || field.Type.IsList();
             var methodName = Formatter.FormatMethod(field.Name);
+
             if (type.Name.Equals(field.Name, StringComparison.CurrentCultureIgnoreCase))
             {
                 methodName = $"{methodName}_";
+            }
+
+            if (isAsync)
+            {
+                methodName = $"{methodName}Async";
             }
 
             var requiredArgs = field.RequiredArgs();
             var optionalArgs = field.OptionalArgs();
             var args = requiredArgs
                 .Select(RenderArgument)
-                .Concat(optionalArgs.Select(RenderOptionalArgument));
+                .Concat(optionalArgs.Select(RenderOptionalArgument))
+                .Concat(isAsync ? new[] { "CancellationToken cancellationToken = default" } : []);
 
             return $$"""
             {{RenderDocComment(field)}}
@@ -233,7 +241,29 @@ public class CodeRenderer : ICodeRenderer
 
     private static string RenderOptionalArgument(InputValue arg)
     {
-        return $"{GetNormalizedTypeName(arg)}? {arg.GetVarName()} = null";
+        var nullableType = GetNormalizedTypeName(arg) + "?";
+
+        if (arg.DefaultValue != null)
+        {
+            if (arg.Type.IsList() && arg.DefaultValue == "[]")
+            {
+                return $"{nullableType} {arg.GetVarName()} = null";
+            }
+
+            if (arg.Type.IsScalar() && string.IsNullOrWhiteSpace(arg.DefaultValue.Trim('"')))
+            {
+                return $"{nullableType} {arg.GetVarName()} = null";
+            }
+
+            if (arg.Type.IsEnum() && !string.IsNullOrWhiteSpace(arg.DefaultValue.Trim('"')))
+            {
+                return $"{nullableType} {arg.GetVarName()} = {GetNormalizedTypeName(arg)}.{arg.DefaultValue}";
+            }
+
+            return $"{nullableType} {arg.GetVarName()} = {arg.DefaultValue}";
+        }
+
+        return $"{nullableType} {arg.GetVarName()} = null";
     }
 
     private static string RenderReturnType(TypeRef type)
@@ -252,14 +282,14 @@ public class CodeRenderer : ICodeRenderer
 
         if (type.IsLeaf())
         {
-            return $"await Engine.Execute<{field.Type.GetTypeName()}>(GraphQLClient, queryBuilder)";
+            return $"await QueryExecutor.ExecuteAsync<{field.Type.GetTypeName()}>(GraphQLClient, queryBuilder, cancellationToken)";
         }
 
         if (type.IsList() && type.GetType_().OfType.IsObject())
         {
             var typeName = type.GetType_().OfType.GetTypeName();
             return $"""
-                (await Engine.ExecuteList<{typeName}Id>(GraphQLClient, queryBuilder))
+                (await QueryExecutor.ExecuteListAsync<{typeName}Id>(GraphQLClient, queryBuilder, cancellationToken))
                     .Select(id =>
                         new {typeName}(
                             QueryBuilder.Builder().Select("load{typeName}FromID", ImmutableList.Create<Argument>(new Argument("id", new StringValue(id.Value)))),
@@ -273,7 +303,7 @@ public class CodeRenderer : ICodeRenderer
         if (type.IsList() && type.GetType_().OfType.IsScalar())
         {
             var typeName = type.GetType_().OfType.GetTypeName();
-            return $"await Engine.ExecuteList<{typeName}>(GraphQLClient, queryBuilder);";
+            return $"await QueryExecutor.ExecuteListAsync<{typeName}>(GraphQLClient, queryBuilder, cancellationToken)";
         }
 
         return $"new {field.Type.GetTypeName()}(queryBuilder, GraphQLClient)";
@@ -351,15 +381,17 @@ public class CodeRenderer : ICodeRenderer
         if (arg.Type.IsScalar())
         {
             var type = arg.Type.GetTypeName();
-            switch (type)
+            var token = SyntaxFacts.GetKeywordKind(type);
+
+            switch (token)
             {
-                case "string":
+                case SyntaxKind.StringKeyword:
                     return $"new StringValue({argName})";
-                case "bool":
+                case SyntaxKind.BoolKeyword:
                     return $"new BooleanValue({argName})";
-                case "int":
+                case SyntaxKind.IntKeyword:
                     return $"new IntValue({argName})";
-                case "float":
+                case SyntaxKind.FloatKeyword:
                     return $"new FloatValue({argName})";
                 default:
                     // // a type but needs to convert into id value before sending it.

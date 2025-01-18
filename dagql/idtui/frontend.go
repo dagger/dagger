@@ -64,6 +64,8 @@ type Frontend interface {
 
 	// Opts returns the opts of the currently running frontend.
 	Opts() *dagui.FrontendOpts
+	SetCustomExit(fn func())
+	SetVerbosity(n int)
 
 	// SetPrimary tells the frontend which span should be treated like the focal
 	// point of the command. Its output will be displayed at the end, and its

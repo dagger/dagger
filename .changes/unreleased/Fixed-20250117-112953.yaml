@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+    Allow automatic CA certificate provisioning to work in Wolfi containers
+time: 2025-01-17T11:29:53.04917029Z
+custom:
+    Author: jedevc
+    PR: "9404"

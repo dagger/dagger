@@ -204,6 +204,18 @@ func (fe *frontendPlain) Opts() *dagui.FrontendOpts {
 	return &fe.FrontendOpts
 }
 
+func (fe *frontendPlain) SetCustomExit(fn func()) {
+	fe.mu.Lock()
+	fe.Opts().CustomExit = fn
+	fe.mu.Unlock()
+}
+
+func (fe *frontendPlain) SetVerbosity(n int) {
+	fe.mu.Lock()
+	fe.Opts().Verbosity = n
+	fe.mu.Unlock()
+}
+
 func (fe *frontendPlain) SetPrimary(spanID dagui.SpanID) {
 	fe.mu.Lock()
 	fe.db.PrimarySpan = spanID
@@ -504,6 +516,8 @@ func (fe *frontendPlain) renderStep(span *dagui.Span, depth int, done bool) {
 	if done {
 		if span.IsFailedOrCausedFailure() {
 			fmt.Fprint(fe.output, fe.output.String(" ERROR").Foreground(termenv.ANSIYellow))
+		} else if span.IsCached() {
+			fmt.Fprint(fe.output, fe.output.String(" CACHED").Foreground(termenv.ANSIBlue))
 		} else {
 			fmt.Fprint(fe.output, fe.output.String(" DONE").Foreground(termenv.ANSIGreen))
 		}

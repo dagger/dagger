@@ -9,7 +9,9 @@ import DaggerModuleInit from '../partials/_dagger_module_init.mdx';
 
 <DaggerModuleInit />
 
-## Module layout
+## File layout
+
+### Multiple files
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -227,6 +229,44 @@ class MyModule {
 
 </TabItem>
 </Tabs>
+
+### Monorepos
+
+A monorepo typically contains multiple independent projects, each of which has different test, build and deployment requirements. Managing these requirements in a single CI workflow or YAML file can be incredibly complex and time-consuming.
+
+Dagger modules provide a framework that you can use to break up this complexity and cleanly separate CI responsibilities in a monorepo without losing reusability or performance. There are two possible patterns you can follow:
+
+1. One top-level Dagger module per project, with sub-modules for the various CI workflows in that project. This pattern is suitable when there are significant differences between the projects in the monorepo (e.g. a monorepo with SDKs, CLIs, web applications, docs, all of which have different CI requirements).
+
+```mermaid
+graph TD
+    A[Top-level orchestrator module] --> B[Webapp frontend module]
+    A[Top-level orchestrator module] --> C[Webapp backend module]
+    A[Top-level orchestrator module] --> D[Utilities module]
+    A[Top-level orchestrator module] --> E[Docs module]
+```
+
+Benefits of this pattern include:
+
+- Easier debugging: Sub-modules provide a way to separate, and therefore easily debug, the business logic for different CI tasks.
+- Code reuse: There may be opportunities for sub-modules in different projects to import each other to reuse existing functionality.
+- Improved performance: The top-level module of a project can orchestrate the sub-modules using the language’s native concurrency features.
+
+2. A single, shared CI / automation module which all projects use and contribute to. This pattern is suitable when there are significant commonalities between the projects in the monorepo (e.g. a monorepo with only micro-services or only front-end applications).
+
+```mermaid
+graph TD
+    A[Shared module] --> B[Microservice 1]
+    A[Shared module] --> C[Microservice 2]
+    A[Shared module] --> D[Microservice 3]
+```
+
+Benefits of this pattern include:
+
+- Code reuse: This reduces code duplication and ensures a consistent CI environment for all projects. For example, the shared module could create a common build environment and leverage this for multiple projects in the monorepo.
+- Reduced onboarding friction: There is no need to create a new CI module when adding a new project or component. New projects can get started faster with their CI implementation.
+- Best practices: All projects benefit from the best practices implemented in the shared module.
+- Knowledge sharing: By contributing to a shared CI module, project teams can learn from each other's CI strategies.
 
 ## Runtime container
 

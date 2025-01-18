@@ -9,6 +9,7 @@ use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use RuntimeException;
 use Symfony\Component\Process\Process;
+use Symfony\Component\Process\InputStream;
 
 /**
  * @deprecated
@@ -49,7 +50,7 @@ class ProcessSessionConnection extends Connection implements LoggerAwareInterfac
         ]);
 
         $process->setTimeout(null);
-        $process->setPty(true);
+        $process->setInput(new InputStream());
         $process->start(function ($type, $output) {
             if (Process::ERR === $type) {
                 $this->logger->error($output);

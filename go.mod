@@ -3,8 +3,8 @@ module github.com/dagger/dagger
 go 1.23.2
 
 require (
-	dagger.io/dagger v0.15.1
-	github.com/dagger/dagger/engine/distconsts v0.15.1
+	dagger.io/dagger v0.15.2
+	github.com/dagger/dagger/engine/distconsts v0.15.2
 	github.com/moby/buildkit v0.16.0-rc2.0.20240917172113-e15601a00fbe // https://github.com/moby/buildkit/commit/e15601a00fbef2805db1ed87be7bb88628ae926b
 )
 
@@ -114,7 +114,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools/v3 v3.5.1
 	modernc.org/sqlite v1.34.2
-	mvdan.cc/sh/v3 v3.10.0
+	mvdan.cc/sh/v3 v3.10.1-0.20250103084315-5e4be7920b8b
 	resenje.org/singleflight v0.4.3
 )
 

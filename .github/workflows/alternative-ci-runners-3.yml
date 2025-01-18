@@ -1,0 +1,45 @@
+name: Alternative CI Runners 3
+
+on:
+  # Run the workflow every day TWICE:
+  # 1. 9:06AM UTC (low activity)
+  # 2. 9:26AM UTC (cache test - high chance of no code changes)
+  schedule:
+    - cron: "6,26 9 * * *"
+  # Enable manual trigger for on-demand runs - helps when debugging
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docs-lint-on-magicache:
+    uses: ./.github/workflows/_dagger_on_magicache_remote_engine.yml
+    with:
+      function: docs lint
+      timeout: 20
+
+  test-cli-engine-on-magicache:
+    needs: docs-lint-on-magicache
+    uses: ./.github/workflows/_dagger_on_magicache_remote_engine.yml
+    with:
+      function: test specific --run='TestCLI|TestEngine' --race=true --parallel=16
+      timeout: 20
+
+  sdk-go-on-magicache:
+    needs: docs-lint-on-magicache
+    uses: ./.github/workflows/_dagger_on_magicache_remote_engine.yml
+    with:
+      function: check --targets=sdk/go
+
+  sdk-python-on-magicache:
+    needs: docs-lint-on-magicache
+    uses: ./.github/workflows/_dagger_on_magicache_remote_engine.yml
+    with:
+      function: check --targets=sdk/python
+
+  sdk-typescript-on-magicache:
+    needs: docs-lint-on-magicache
+    uses: ./.github/workflows/_dagger_on_magicache_remote_engine.yml
+    with:
+      function: check --targets=sdk/typescript

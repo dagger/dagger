@@ -219,6 +219,7 @@ git commit -s -m "chore: bump dependencies to $ENGINE_VERSION"
 - [ ] Push to `dagger/dagger` - we need access to secrets that PRs coming from forks will not have. Open the PR as a draft and capture the PR number:
 
 ```console
+git push $DAGGER_REPO_REMOTE
 gh pr create --draft --title "chore: prep for $ENGINE_VERSION" --body "" | tee /tmp/prep-pr.txt
 export RELEASE_PREP_PR=$(cat /tmp/prep-pr.txt | sed -r 's/^[^0-9]*([0-9]+).*/\1/')
 ```
@@ -227,7 +228,7 @@ export RELEASE_PREP_PR=$(cat /tmp/prep-pr.txt | sed -r 's/^[^0-9]*([0-9]+).*/\1/
 
 ```console
 export GITHUB_USERNAME=$(gh api /user --jq .login)
-find sdk/go sdk/python sdk/typescript sdk/elixir sdk/php helm/dagger -maxdepth 1 -name .changie.yaml -execdir \
+find sdk/go sdk/python sdk/typescript sdk/elixir sdk/php sdk/rust helm/dagger -maxdepth 1 -name .changie.yaml -execdir \
       changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom PR="$RELEASE_PREP_PR" --custom Author="$GITHUB_USERNAME" \;
 ```
 
@@ -235,14 +236,14 @@ find sdk/go sdk/python sdk/typescript sdk/elixir sdk/php helm/dagger -maxdepth 1
       running `changie batch $ENGINE_VERSION`:
 
 ```console
-find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie batch $ENGINE_VERSION \;
+find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php sdk/rust helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie batch $ENGINE_VERSION \;
 ```
 
 - [ ] Make any necessary edits to the newly generated file, e.g. `.changes/v0.12.4.md`
 - [ ] Update `CHANGELOG.md` by running `changie merge`.
 
 ```console
-find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie merge \;
+find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php sdk/rust helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie merge \;
 git add **/.changes
 git add **/CHANGELOG.md
 git commit -s -m "chore: add release notes for $ENGINE_VERSION"
@@ -293,6 +294,7 @@ This will kick off [`.github/workflows/publish.yml`](https://github.com/dagger/d
 - Python packages to [🐍 dagger-io](https://pypi.org/project/dagger-io).
 - Typescript packages to [⬢ npmjs.com/package/@dagger.io/dagger](https://www.npmjs.com/package/@dagger.io/dagger).
 - Elixir packages to [🧪 hex.pm/packages/dagger](https://hex.pm/packages/dagger).
+- Rust crates to [⚙️ crates.io/crate/dagger-sdk](https://crates.io/crates/dagger-sdk).
 - PHP packages to [🐘 packagist.org/packages/dagger/dagger](https://packagist.org/packages/dagger/dagger) via [github.com/dagger/dagger-php-sdk](https://github.com/dagger/dagger-php-sdk/tags).
 - Helm charts to [☸️ registry.dagger.io/dagger-helm](https://github.com/dagger/dagger/pkgs/container/dagger-helm).
 
@@ -367,6 +369,7 @@ git push
 git add .  # or any other files changed during the last few steps
 git commit -s -m "Improve releasing during $ENGINE_VERSION"
 git push
+gh pr create --draft --title "Improve releasing during $ENGINE_VERSION" --body ""
 ```
 
 ## 🚨 Non-main branch release only
@@ -394,17 +397,18 @@ Be sure to use "Rebase and Merge" when merging the PR to `main` to preserve the 
 - [ ] Mention in the release thread on Discord that Dagger Cloud can be updated
       to the just-released version. cc @marcosnils @matipan @sipsma
 
-## 🪣 Install scripts ⏱ `2mins`
-
-- [ ] If the install scripts `install.sh` or `install.ps1` have changed since
-      the last release, they must be manually updated on Amazon S3 (CloudFront
-      should also be manually invalidated). cc @gerhard
-
 ## 🐙 dagger-for-github ⏱ `10mins`
 
-- [ ] Submit PR with the version bump, e.g.
-      https://github.com/dagger/dagger-for-github/pull/123
-  - e.g. if bumping 0.12.5->0.12.6, can run `find . -type f -exec sed -i 's/0\.12\.5/0\.12\.6/g' {} +`
+- [ ] Submit PR with the version bump.
+
+```console
+dagger call -m dev bump --version=$ENGINE_VERSION -o .
+git checkout -b bump-dagger-$ENGINE_VERSION
+git add .
+git commit -s -m "chore: bump default dagger version to $ENGINE_VERSION"
+gh pr create --title "chore: bump default dagger version to $ENGINE_VERSION" --body ""
+```
+
 - [ ] Ask @gerhard or @jpadams to review it
 
 > [!TIP]
@@ -453,7 +457,7 @@ git push origin v7 --force #need to force since moving this tag
 - [ ] Check that Dagger nix flake has been updated to latest, e.g. [dagger: ->
       v0.12.5](https://github.com/dagger/nix/commit/5053689af7d18e67254ba0b2d60fa916b7370104)
 
-## ⚙️ Improvements ⏱ `2mins` 
+## ⚙️ Improvements ⏱ `2mins`
 
 - [ ] When all the above done, remember to add the `RELEASING.md` changes to
       the `improve-releasing-during-v...` PR that you have opened earlier (remember

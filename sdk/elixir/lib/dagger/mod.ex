@@ -136,6 +136,10 @@ defmodule Dagger.Mod do
     {:ok, values}
   end
 
+  defp dump(_, Dagger.Void) do
+    {:ok, nil}
+  end
+
   defp dump(%module{} = struct, module) do
     value =
       if function_exported?(module, :id, 1) do

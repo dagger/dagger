@@ -4832,13 +4832,16 @@ func main() {
 		From(alpineImage).
 		WithExec([]string{"sh", "-c", "apk add curl"})
 
-	t.Run("use default args by default", func(ctx context.Context, t *testctx.T) {
+	t.Run("use default args and entrypoint by default", func(ctx context.Context, t *testctx.T) {
+		// create new container with default values
+		defaultBin := c.Container().Import(binctr.AsTarball())
+
 		output, err := curlctr.
-			WithServiceBinding("myapp", binctr.AsService()).
+			WithServiceBinding("myapp", defaultBin.AsService()).
 			WithExec([]string{"sh", "-c", "curl -vXGET 'http://myapp:8080/hello'"}).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "args: /bin/app,via-default-args", output)
+		require.Equal(t, "args: /bin/app,via-entrypoint,/bin/app,via-default-args", output)
 	})
 
 	t.Run("can override default args", func(ctx context.Context, t *testctx.T) {
@@ -4865,5 +4868,46 @@ func main() {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "args: /bin/app,via-entrypoint,/bin/app,via-default-args", output)
+	})
+
+	t.Run("use both args and entrypoint", func(ctx context.Context, t *testctx.T) {
+		withargsOverwritten := binctr.
+			AsService(dagger.ContainerAsServiceOpts{
+				UseEntrypoint: true,
+				Args:          []string{"/bin/app via-service-override"},
+			})
+
+		output, err := curlctr.
+			WithServiceBinding("myapp", withargsOverwritten).
+			WithExec([]string{"sh", "-c", "curl -vXGET 'http://myapp:8080/hello'"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "args: /bin/app,via-entrypoint,/bin/app via-service-override", output)
+	})
+
+	t.Run("error when no cmd and entrypoint is set", func(ctx context.Context, t *testctx.T) {
+		withargsOverwritten := binctr.
+			WithoutEntrypoint().
+			WithoutDefaultArgs().
+			AsService()
+
+		_, err := curlctr.
+			WithServiceBinding("myapp", withargsOverwritten).
+			WithExec([]string{"sh", "-c", "curl -vXGET 'http://myapp:8080/hello'"}).
+			Stdout(ctx)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), core.ErrNoSvcCommand.Error())
+	})
+	t.Run("default args no entrypoint", func(ctx context.Context, t *testctx.T) {
+		withargsOverwritten := binctr.
+			WithDefaultArgs([]string{"sh", "-c", "/bin/app via-override-args"}).
+			AsService()
+
+		output, err := curlctr.
+			WithServiceBinding("myapp", withargsOverwritten).
+			WithExec([]string{"sh", "-c", "curl -vXGET 'http://myapp:8080/hello'"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "args: /bin/app,via-override-args", output)
 	})
 }

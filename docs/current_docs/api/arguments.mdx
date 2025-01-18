@@ -133,11 +133,40 @@ The result will look like this:
 HELLO, WORLD
 ```
 
+## Array arguments
+
+To pass an array argument to a Dagger Function, add the corresponding flag, followed by a comma-separated list of values.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-array/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-array/python/main.py
+```
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/arguments-array/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call hello --names=John,Jane
+```
+
+The result will look like this:
+
+```shell
+Hello John, Jane
+```
+
 ## Directory arguments
 
 You can also pass a directory argument from the command-line. To do so, add the corresponding flag, followed by a local filesystem path or a remote Git reference. In both cases, the CLI will convert it to an object referencing the contents of that filesystem path or Git repository location, and pass the resulting `Directory` object as argument to the Dagger Function.
-
-### Local directories
 
 Dagger Functions do not have access to the filesystem of the host you invoke the Dagger Function from (i.e. the host you execute a CLI command like `dagger call` from). Instead, host directories need to be explicitly passed as arguments to Dagger Functions.
 
@@ -180,31 +209,6 @@ The result will look like this:
 2 directories, 5 files
 ```
 
-### Remote repositories
-
-Dagger supports the use of HTTP and SSH protocols for accessing remote repositories, compatible with all major Git hosting platforms such as GitHub, GitLab, BitBucket, Azure DevOps, Codeberg, and Sourcehut. Dagger supports authentication via both HTTPS (using Git credential managers) and SSH (using a unified authentication approach).
-
-Dagger supports the following reference schemes for directory arguments:
-
-| Protocol | Scheme     | Authentication | Example |
-|----------|------------|----------------|---------|
-| HTTP(S)  | Git HTTP   | Git credential manager | `https://github.com/username/repo.git[#version[:subdir]]` |
-| SSH      | Explicit   | SSH keys | `ssh://git@github.com/username/repo.git[#version[:subdir]]` |
-| SSH      | SCP-like   | SSH keys | `git@github.com:username/repo.git[#version[:subdir]]`     |
-
-:::note
-The reference scheme for directory arguments is currently under discussion [here](https://github.com/dagger/dagger/issues/6957) and [here](https://github.com/dagger/dagger/issues/6944) and may change in future.
-:::
-
-Dagger provides additional flexibility in referencing directory arguments through the following options:
-
-- Version specification: Add `#version` to target a particular version of the repository. This can be a tag, branch name, or full commit hash. If omitted, the default branch is used.
-- Monorepo support: Append `:subpath` after the version specification to access a specific subdirectory within the repository. Note that specifying a version is mandatory when including a subpath.
-
-:::important
-When referencing a specific subdirectory (subpath) within a repository, you must always include a version specification. The format is always `#version:subpath`.
-:::
-
 Here is an example of passing a remote repository (Dagger's open-source repository) over HTTPS as a `Directory` argument:
 
 ```shell
@@ -225,7 +229,46 @@ dagger core container \
   stdout
 ```
 
-For more information about authentication methods, best practices, and current limitations, refer to the [documentation on using modules from remote repositories](./remote-modules.mdx).
+:::tip
+For more information about remote repository access, refer to the documentation on [reference schemes](#reference-schemes-for-remote-repositories) and [authentication methods](./remote-modules.mdx#authentication-methods).
+:::
+
+## File arguments
+
+File arguments work in the same way as [directory arguments](#directory-arguments). To pass a file to a Dagger Function as an argument, add the corresponding flag, followed by a local filesystem path or a remote Git reference. In both cases, the CLI will convert it to an object referencing that filesystem path or Git repository location, and pass the resulting `File` object as argument to the Dagger Function.
+
+Here's an example of a Dagger Function that accepts a `File` as argument, reads it, and returns its contents:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-file/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-file/python/main.py
+```
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/arguments-file/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+Here is an example of passing a local file to this Dagger Function as argument:
+
+```shell
+dagger call read-file --source=/my/file/path/README.md
+```
+
+And here is an example of passing a file from a remote Git repository as argument:
+
+```shell
+dagger call read-file --source=https://github.com/dagger/dagger.git#main:README.md
+```
+
+:::tip
+For more information about remote repository access, refer to the documentation on [reference schemes](#reference-schemes-for-remote-repositories) and [authentication methods](./remote-modules.mdx#authentication-methods).
+:::
 
 ## Container arguments
 
@@ -527,4 +570,29 @@ If a value is explicitly passed to the Dagger Function argument, it always overr
 
 :::tip
 It's also possible to provide an `ignore` parameter to a contextual argument of type `Directory` to [automatically ignore or include files in the directory](./fs-filters.mdx).
+:::
+
+## Reference schemes for remote repositories
+
+Dagger supports the use of HTTP and SSH protocols for accessing files and directories in remote repositories, compatible with all major Git hosting platforms such as GitHub, GitLab, BitBucket, Azure DevOps, Codeberg, and Sourcehut. Dagger supports authentication via both HTTPS (using Git credential managers) and SSH (using a unified authentication approach).
+
+Dagger supports the following reference schemes for file and directory arguments:
+
+| Protocol | Scheme     | Authentication | Example |
+|----------|------------|----------------|---------|
+| HTTP(S)  | Git HTTP   | Git credential manager | `https://github.com/username/repo.git[#version[:subpath]]` |
+| SSH      | Explicit   | SSH keys | `ssh://git@github.com/username/repo.git[#version[:subpath]]` |
+| SSH      | SCP-like   | SSH keys | `git@github.com:username/repo.git[#version[:subpath]]`     |
+
+:::note
+The reference scheme for directory arguments is currently under discussion [here](https://github.com/dagger/dagger/issues/6957) and [here](https://github.com/dagger/dagger/issues/6944) and may change in future.
+:::
+
+Dagger provides additional flexibility in referencing file and directory arguments through the following options:
+
+- Version specification: Add `#version` to target a particular version of the repository. This can be a tag, branch name, or full commit hash. If omitted, the default branch is used.
+- Monorepo support: Append `:subpath` after the version specification to access a specific subdirectory within the repository. Note that specifying a version is mandatory when including a subpath.
+
+:::important
+When referencing a specific subdirectory (subpath) within a repository, you must always include a version specification. The format is always `#version:subpath`.
 :::

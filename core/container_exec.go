@@ -19,6 +19,7 @@ import (
 )
 
 var ErrNoCommand = errors.New("no command has been set")
+var ErrNoSvcCommand = errors.New("no service command has been set")
 
 type ContainerExecOpts struct {
 	// Command to run instead of the container's default command

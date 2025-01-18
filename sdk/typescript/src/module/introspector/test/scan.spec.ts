@@ -90,6 +90,10 @@ describe("scan by reference TypeScript", function () {
       name: "Should correctly scan minimal",
       directory: "minimal",
     },
+    {
+      name: "Should correctly scan interfaces",
+      directory: "interface",
+    },
   ]
 
   for (const test of testCases) {
@@ -123,6 +127,8 @@ ${jsonResult}
 
   describe("Should throw error on invalid module", function () {
     it("Should throw an error when no files are provided", async function () {
+      this.timeout(60000)
+
       try {
         await scan([], "")
         assert.fail("Should throw an error")
@@ -132,6 +138,8 @@ ${jsonResult}
     })
 
     it("Should throw an error if the module is invalid", async function () {
+      this.timeout(60000)
+
       try {
         const files = await listFiles(`${rootDirectory}/invalid`)
 
@@ -143,6 +151,8 @@ ${jsonResult}
     })
 
     it("Should throw an error if the module class has no decorators", async function () {
+      this.timeout(60000)
+
       try {
         const files = await listFiles(`${rootDirectory}/noDecorators`)
 
@@ -157,6 +167,8 @@ ${jsonResult}
     })
 
     it("Should throw an error if a primitive type is used", async function () {
+      this.timeout(60000)
+
       try {
         const files = await listFiles(`${rootDirectory}/primitives`)
 

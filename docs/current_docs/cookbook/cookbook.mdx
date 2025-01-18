@@ -123,9 +123,58 @@ When working with private Git repositories, ensure that [SSH authentication is p
     dagger call copy-and-modify-directory --source=https://github.com/dagger/dagger#main directory --path=/src entries
     ```
 
-### Copy a file to a container
+### Clone a remote Git repository into a container by branch, tag or commit
 
-The following Dagger Function accepts a `File` argument representing the host file to be copied. It writes the specified file to a container in the `/src/` directory and returns the modified container.
+The following Dagger Function accepts a Git repository URL and a branch name, tag name or commit id. It copies the repository at the specified branch, tag or commit to the `/src` path in a container and returns the modified container.
+
+:::note
+When working with private Git repositories, ensure that [SSH authentication is properly configured](../api/remote-modules.mdx#configuring-ssh-authentication) on your Dagger host.
+:::
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/clone-git-repository/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/clone-git-repository/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/clone-git-repository/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Examples
+
+- Clone the `main` branch of the public `dagger/dagger` GitHub repository to `/src` in the container:
+
+    ```shell
+    dagger call clone --repository=https://github.com/dagger/dagger --locator=BRANCH --ref=main
+    ```
+
+- Clone the public `dagger/dagger` GitHub repository at tag `v0.12.1` to `/src` in the container and list the contents of the `CHANGELOG.md` file in the repository root directory:
+
+    ```shell
+    dagger call clone --repository=https://github.com/dagger/dagger --locator=TAG --ref=v0.12.1 file --path=/src/CHANGELOG.md contents
+    ```
+
+- Clone the public `dagger/dagger` GitHub repository at commit id  `196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5` to `/src` in the container and open an interactive terminal to inspect the container filesystem:
+
+    ```shell
+    dagger call clone --repository=https://github.com/dagger/dagger --locator=COMMIT --ref=196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 terminal
+    ```
+
+### Copy a local or remote file to a container
+
+The following Dagger Function accepts a `File` argument, which could reference either a file from the local filesystem or from a [remote Git repository](../api/arguments.mdx#remote-repositories). It writes the specified file to a container in the `/src/` directory and returns the modified container.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -160,6 +209,18 @@ The following Dagger Function accepts a `File` argument representing the host fi
 
     ```shell
     dagger call copy-file --f=/home/admin/archives.zip directory --path=/src entries
+    ```
+
+-  Copy the `README.md` file from the public `dagger/dagger` GitHub repository to the `/src` directory in the container:
+
+    ```shell
+    dagger call copy-file --f=https://github.com/dagger/dagger.git#main:README.md
+    ```
+
+-  Copy the `README.md` file from the public `dagger/dagger` GitHub repository to the `/src` directory in the container and display its contents:
+
+    ```shell
+    dagger call copy-file --f=https://github.com/dagger/dagger.git#main:README.md file --path=/src/README.md contents
     ```
 
 ### Copy a subset of a directory or remote repository to a container using filters specified at run-time
@@ -214,6 +275,44 @@ This is an example of [post-call filtering](../api/fs-filters.mdx#post-call-filt
     ```shell
     dagger call copy-directory-with-exclusions --source=ssh://git@github.com/user/foo#main --exclude-file='*.md' directory --path=/src entries
     ```
+
+### Request a file over HTTP/HTTPS and save it in a container
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/read-file-http/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/read-file-http/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/read-file-http/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Examples
+
+-  Request the `README.md` file from the public `dagger/dagger` GitHub repository over HTTPS and save it as `/src/myfile` in the container:
+
+    ```shell
+    dagger call read-file-http --url=https://raw.githubusercontent.com/dagger/dagger/refs/heads/main/README.md
+    ```
+
+-  Request the `README.md` file from the public `dagger/dagger` GitHub repository over HTTPS, save it as `/src/myfile` in the container, and display its contents:
+
+    ```shell
+    dagger call read-file-http --url=https://raw.githubusercontent.com/dagger/dagger/refs/heads/main/README.md file --path=/src/myfile contents
+    ```
+
 ### Copy a file to the Dagger module runtime container for custom processing
 
 The following Dagger Function accepts a `File` argument and copies the specified file to the Dagger module runtime container. This makes it possible to add one or more files to the runtime container and manipulate them using custom logic.
@@ -221,19 +320,19 @@ The following Dagger Function accepts a `File` argument and copies the specified
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/copy-dir-runtime/go/main.go
+```go file=./snippets/copy-file-runtime/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./snippets/copy-dir-runtime/python/main.py
+```python file=./snippets/copy-file-runtime/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./snippets/copy-dir-runtime/typescript/index.ts
+```typescript file=./snippets/copy-file-runtime/typescript/index.ts
 ```
 
 </TabItem>

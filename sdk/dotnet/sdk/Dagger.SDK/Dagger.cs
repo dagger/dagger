@@ -4,11 +4,12 @@ namespace Dagger.SDK;
 
 public static class Dagger
 {
-    static readonly Lazy<Query> Query =
-        new(() => new Query(QueryBuilder.Builder(), new GraphQLClient()));
+    static readonly Lazy<Query> Query = new(
+        () => new Query(QueryBuilder.Builder(), new GraphQLClient())
+    );
 
     // <summary>
-    // Connect to the Dagger Engine.
+    // Get a Query instance to start building a dag.
     // </summary>
-    public static Query Connect() => Query.Value;
+    public static Query Dag() => Query.Value;
 }

@@ -52,12 +52,47 @@ func (s *serviceSchema) Install() {
 				pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
 			),
 
-		dagql.NodeFunc("up", s.containerUp).
+		dagql.NodeFunc("up", s.containerUpLegacy).
+			View(BeforeVersion("v0.15.2")).
+			Impure("Starts a host tunnel, possibly with ports that change each time it's started.").
 			Doc(`Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.`,
 				`Be sure to set any exposed ports before calling this api.`).
 			ArgDoc("random", `Bind each tunnel port to a random port on the host.`).
 			ArgDoc("ports", `List of frontend/backend port mappings to forward.`,
 				`Frontend is the port accepting traffic on the host, backend is the service port.`),
+
+		dagql.NodeFunc("up", s.containerUp).
+			View(AfterVersion("v0.15.2")).
+			Impure("Starts a host tunnel, possibly with ports that change each time it's started.").
+			Doc(`Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.`,
+				`Be sure to set any exposed ports before calling this api.`).
+			ArgDoc("random", `Bind each tunnel port to a random port on the host.`).
+			ArgDoc("ports", `List of frontend/backend port mappings to forward.`,
+				`Frontend is the port accepting traffic on the host, backend is the service port.`).
+			ArgDoc("args",
+				`Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).`,
+				`If empty, the container's default command is used.`).
+			ArgDoc("useEntrypoint",
+				`If the container has an entrypoint, prepend it to the args.`).
+			ArgDoc("experimentalPrivilegedNesting",
+				`Provides Dagger access to the executed command.`,
+				`Do not use this option unless you trust the command being executed;
+				the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
+				FILESYSTEM.`).
+			ArgDoc("insecureRootCapabilities",
+				`Execute the command with all root capabilities. This is similar to
+				running a command with "sudo" or executing "docker run" with the
+				"--privileged" flag. Containerization does not provide any security
+				guarantees when using this option. It should only be used when
+				absolutely necessary and only with trusted commands.`).
+			ArgDoc("expand",
+				`Replace "${VAR}" or "$VAR" in the args according to the current `+
+					`environment variables defined in the container (e.g. "/$VAR/foo").`).
+			ArgDoc("noInit",
+				`If set, skip the automatic init process injected into containers by default.`,
+				`This should only be used if the user requires that their exec process be the
+				pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
+			),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Service]{
@@ -118,19 +153,78 @@ func (s *serviceSchema) containerAsService(ctx context.Context, parent *core.Con
 	return parent.AsService(ctx, args)
 }
 
-func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.Instance[*core.Container], args upArgs) (dagql.Nullable[core.Void], error) {
+func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.Instance[*core.Container], args struct {
+	UpArgs
+	core.ContainerAsServiceArgs
+}) (dagql.Nullable[core.Void], error) {
 	void := dagql.Null[core.Void]()
+
+	var inputs []dagql.NamedInput
+	if args.Args != nil {
+		inputs = append(inputs, dagql.NamedInput{
+			Name:  "args",
+			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(args.Args...)),
+		})
+	}
+	if args.UseEntrypoint {
+		inputs = append(inputs, dagql.NamedInput{
+			Name:  "useEntrypoint",
+			Value: dagql.Boolean(true),
+		})
+	}
+	if args.ExperimentalPrivilegedNesting {
+		inputs = append(inputs, dagql.NamedInput{
+			Name:  "experimentalPrivilegedNesting",
+			Value: dagql.Boolean(true),
+		})
+	}
+	if args.InsecureRootCapabilities {
+		inputs = append(inputs, dagql.NamedInput{
+			Name:  "insecureRootCapabilities",
+			Value: dagql.Boolean(true),
+		})
+	}
+	if args.Expand {
+		inputs = append(inputs, dagql.NamedInput{
+			Name:  "expand",
+			Value: dagql.Boolean(true),
+		})
+	}
+	if args.NoInit {
+		inputs = append(inputs, dagql.NamedInput{
+			Name:  "noInit",
+			Value: dagql.Boolean(true),
+		})
+	}
 
 	var svc dagql.Instance[*core.Service]
 	err := s.srv.Select(ctx, ctr, &svc,
 		dagql.Selector{
 			Field: "asService",
+			View:  s.srv.View,
+			Args:  inputs,
 		},
 	)
 	if err != nil {
 		return void, err
 	}
 
+	return s.up(ctx, svc, args.UpArgs)
+}
+
+func (s *serviceSchema) containerUpLegacy(ctx context.Context, ctr dagql.Instance[*core.Container], args UpArgs) (dagql.Nullable[core.Void], error) {
+	void := dagql.Null[core.Void]()
+
+	var svc dagql.Instance[*core.Service]
+	err := s.srv.Select(ctx, ctr, &svc,
+		dagql.Selector{
+			Field: "asService",
+			View:  s.srv.View,
+		},
+	)
+	if err != nil {
+		return void, err
+	}
 	return s.up(ctx, svc, args)
 }
 
@@ -191,14 +285,14 @@ func (s *serviceSchema) stop(ctx context.Context, parent dagql.Instance[*core.Se
 	return dagql.NewID[*core.Service](parent.ID()), nil
 }
 
-type upArgs struct {
+type UpArgs struct {
 	Ports  []dagql.InputObject[core.PortForward] `default:"[]"`
 	Random bool                                  `default:"false"`
 }
 
 const InstrumentationLibrary = "dagger.io/engine.schema"
 
-func (s *serviceSchema) up(ctx context.Context, svc dagql.Instance[*core.Service], args upArgs) (dagql.Nullable[core.Void], error) {
+func (s *serviceSchema) up(ctx context.Context, svc dagql.Instance[*core.Service], args UpArgs) (dagql.Nullable[core.Void], error) {
 	void := dagql.Null[core.Void]()
 
 	useNative := !args.Random && len(args.Ports) == 0

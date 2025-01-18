@@ -1200,6 +1200,12 @@ class Container(Type):
         *,
         ports: list[PortForward] | None = None,
         random: bool | None = False,
+        args: list[str] | None = None,
+        use_entrypoint: bool | None = False,
+        experimental_privileged_nesting: bool | None = False,
+        insecure_root_capabilities: bool | None = False,
+        expand: bool | None = False,
+        no_init: bool | None = False,
     ) -> Void | None:
         """Starts a Service and creates a tunnel that forwards traffic from the
         caller's network to that service.
@@ -1214,6 +1220,32 @@ class Container(Type):
             service port.
         random:
             Bind each tunnel port to a random port on the host.
+        args:
+            Command to run instead of the container's default command (e.g.,
+            ["go", "run", "main.go"]).
+            If empty, the container's default command is used.
+        use_entrypoint:
+            If the container has an entrypoint, prepend it to the args.
+        experimental_privileged_nesting:
+            Provides Dagger access to the executed command.
+            Do not use this option unless you trust the command being
+            executed; the command being executed WILL BE GRANTED FULL ACCESS
+            TO YOUR HOST FILESYSTEM.
+        insecure_root_capabilities:
+            Execute the command with all root capabilities. This is similar to
+            running a command with "sudo" or executing "docker run" with the "
+            --privileged" flag. Containerization does not provide any security
+            guarantees when using this option. It should only be used when
+            absolutely necessary and only with trusted commands.
+        expand:
+            Replace "${VAR}" or "$VAR" in the args according to the current
+            environment variables defined in the container (e.g. "/$VAR/foo").
+        no_init:
+            If set, skip the automatic init process injected into containers
+            by default.
+            This should only be used if the user requires that their exec
+            process be the pid 1 process in the container. Otherwise it may
+            result in unexpected behavior.
 
         Returns
         -------
@@ -1231,6 +1263,14 @@ class Container(Type):
         _args = [
             Arg("ports", () if ports is None else ports, ()),
             Arg("random", random, False),
+            Arg("args", () if args is None else args, ()),
+            Arg("useEntrypoint", use_entrypoint, False),
+            Arg(
+                "experimentalPrivilegedNesting", experimental_privileged_nesting, False
+            ),
+            Arg("insecureRootCapabilities", insecure_root_capabilities, False),
+            Arg("expand", expand, False),
+            Arg("noInit", no_init, False),
         ]
         _ctx = self._select("up", _args)
         await _ctx.execute()
@@ -6888,7 +6928,12 @@ class Client(Root):
         _ctx = self._select("builtinContainer", _args)
         return Container(_ctx)
 
-    def cache_volume(self, key: str) -> CacheVolume:
+    def cache_volume(
+        self,
+        key: str,
+        *,
+        namespace: str | None = "",
+    ) -> CacheVolume:
         """Constructs a cache volume for a given cache key.
 
         Parameters
@@ -6896,9 +6941,11 @@ class Client(Root):
         key:
             A string identifier to target this cache volume (e.g., "modules-
             cache").
+        namespace:
         """
         _args = [
             Arg("key", key),
+            Arg("namespace", namespace, ""),
         ]
         _ctx = self._select("cacheVolume", _args)
         return CacheVolume(_ctx)

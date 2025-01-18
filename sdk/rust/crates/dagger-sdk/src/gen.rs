@@ -1623,7 +1623,25 @@ pub struct ContainerTerminalOpts<'a> {
     pub insecure_root_capabilities: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct ContainerUpOpts {
+pub struct ContainerUpOpts<'a> {
+    /// Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
+    /// If empty, the container's default command is used.
+    #[builder(setter(into, strip_option), default)]
+    pub args: Option<Vec<&'a str>>,
+    /// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
+    /// Provides Dagger access to the executed command.
+    /// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+    #[builder(setter(into, strip_option), default)]
+    pub experimental_privileged_nesting: Option<bool>,
+    /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+    #[builder(setter(into, strip_option), default)]
+    pub insecure_root_capabilities: Option<bool>,
+    /// If set, skip the automatic init process injected into containers by default.
+    /// This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+    #[builder(setter(into, strip_option), default)]
+    pub no_init: Option<bool>,
     /// List of frontend/backend port mappings to forward.
     /// Frontend is the port accepting traffic on the host, backend is the service port.
     #[builder(setter(into, strip_option), default)]
@@ -1631,6 +1649,9 @@ pub struct ContainerUpOpts {
     /// Bind each tunnel port to a random port on the host.
     #[builder(setter(into, strip_option), default)]
     pub random: Option<bool>,
+    /// If the container has an entrypoint, prepend it to the args.
+    #[builder(setter(into, strip_option), default)]
+    pub use_entrypoint: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDefaultTerminalCmdOpts {
@@ -2447,13 +2468,34 @@ impl Container {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn up_opts(&self, opts: ContainerUpOpts) -> Result<Void, DaggerError> {
+    pub async fn up_opts<'a>(&self, opts: ContainerUpOpts<'a>) -> Result<Void, DaggerError> {
         let mut query = self.selection.select("up");
         if let Some(ports) = opts.ports {
             query = query.arg("ports", ports);
         }
         if let Some(random) = opts.random {
             query = query.arg("random", random);
+        }
+        if let Some(args) = opts.args {
+            query = query.arg("args", args);
+        }
+        if let Some(use_entrypoint) = opts.use_entrypoint {
+            query = query.arg("useEntrypoint", use_entrypoint);
+        }
+        if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
+            query = query.arg(
+                "experimentalPrivilegedNesting",
+                experimental_privileged_nesting,
+            );
+        }
+        if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
+            query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
+        }
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
+        if let Some(no_init) = opts.no_init {
+            query = query.arg("noInit", no_init);
         }
         query.execute(self.graphql_client.clone()).await
     }
@@ -6855,6 +6897,11 @@ pub struct Query {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct QueryCacheVolumeOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub namespace: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct QueryContainerOpts {
     /// Platform to initialize the container with.
     #[builder(setter(into, strip_option), default)]
@@ -6938,9 +6985,32 @@ impl Query {
     /// # Arguments
     ///
     /// * `key` - A string identifier to target this cache volume (e.g., "modules-cache").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn cache_volume(&self, key: impl Into<String>) -> CacheVolume {
         let mut query = self.selection.select("cacheVolume");
         query = query.arg("key", key.into());
+        CacheVolume {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Constructs a cache volume for a given cache key.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - A string identifier to target this cache volume (e.g., "modules-cache").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn cache_volume_opts<'a>(
+        &self,
+        key: impl Into<String>,
+        opts: QueryCacheVolumeOpts<'a>,
+    ) -> CacheVolume {
+        let mut query = self.selection.select("cacheVolume");
+        query = query.arg("key", key.into());
+        if let Some(namespace) = opts.namespace {
+            query = query.arg("namespace", namespace);
+        }
         CacheVolume {
             proc: self.proc.clone(),
             selection: query,

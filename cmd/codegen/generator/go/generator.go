@@ -213,6 +213,9 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 	//
 	// if this fails, then the go.mod version is too high! and in that case, we
 	// won't be able to load the resulting package
+	if mod.Go == nil {
+		return nil, false, fmt.Errorf("go.mod has no go directive")
+	}
 	if semver.Compare("v"+mod.Go.Version, "v"+goVersion) > 0 {
 		return nil, false, fmt.Errorf("existing go.mod has unsupported version %v (highest supported version is %v)", mod.Go.Version, goVersion)
 	}

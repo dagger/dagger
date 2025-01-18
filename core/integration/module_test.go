@@ -3677,7 +3677,8 @@ func (m *Test) Fn(ctx context.Context) *dagger.Container {
 	redis := dag.Container().
 		From("redis").
 		WithExposedPort(6379).
-		AsService()
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+
 	cli := dag.Container().
 		From("redis").
 		WithoutEntrypoint().
@@ -5729,6 +5730,20 @@ query { host { directory(path: ".") { asModule { initialize {
             }
         }
     }
+		interfaces {
+		  asInterface {
+			  name
+				description
+				functions {
+				  name
+					description
+					args {
+					  name
+						description
+					}
+				}
+			}
+		}
     enums {
         asEnum {
             name
