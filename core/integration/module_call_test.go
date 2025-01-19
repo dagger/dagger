@@ -1747,6 +1747,13 @@ func (t *Test) Files() []*dagger.File {
     }
 }
 
+func (t *Test) Containers() []*dagger.Container {
+    return []*dagger.Container{
+		dag.Container(dagger.ContainerOpts{Platform: "linux/arm64"}).From("alpine:latest"),
+		dag.Container(dagger.ContainerOpts{Platform: "linux/amd64"}).From("alpine:latest"),
+	}
+}
+
 func (*Test) Deploy() string {
     return "here be dragons!"
 }
@@ -1771,7 +1778,7 @@ type Foo struct {
 		require.JSONEq(t, `{"_type": "TestFoo"}`, out)
 	})
 
-	t.Run("list of objects", func(ctx context.Context, t *testctx.T) {
+	t.Run("list of objects (File)", func(ctx context.Context, t *testctx.T) {
 		expected := []string{"foo.txt", "bar.txt"}
 		out, err := modGen.With(daggerCall("files")).Stdout(ctx)
 		require.NoError(t, err)
@@ -1780,6 +1787,19 @@ type Foo struct {
 		for i, res := range actual {
 			require.Equal(t, "File", res.Get("_type").String())
 			require.Equal(t, expected[i], res.Get("name").String())
+		}
+	})
+
+	t.Run("list of objects (Container)", func(ctx context.Context, t *testctx.T) {
+		// expected := []string{"foo.txt", "bar.txt"}
+		out, err := modGen.With(daggerCall("containers")).Stdout(ctx)
+		require.NoError(t, err)
+		actual := gjson.Get(out, "@this").Array()
+		// FIXME: ...
+		require.Len(t, actual, 2)
+		for _, res := range actual {
+			require.Equal(t, "Container", res.Get("_type").String())
+			// require.Equal(t, expected[i], res.Get("name").String())
 		}
 	})
 }

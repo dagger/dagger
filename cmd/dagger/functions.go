@@ -571,16 +571,18 @@ func handleObjectLeaf(ctx context.Context, q *querybuilder.Selection, typeDef *m
 
 	switch typeName {
 	case Container, Terminal:
-		// There's no fields in `Container` that trigger container execution so
-		// we use `sync` first to evaluate, and then load the new `Container`
-		// from that response before continuing.
-		// TODO: Use an interface when possible.
-		var id string
-		q = q.Select("sync")
-		if err := makeRequest(ctx, q, &id); err != nil {
-			return nil, err
+		if typeDef.Kind != dagger.TypeDefKindListKind {
+			// There's no fields in `Container` that trigger container execution so
+			// we use `sync` first to evaluate, and then load the new `Container`
+			// from that response before continuing.
+			// TODO: Use an interface when possible.
+			var id string
+			q = q.Select("sync")
+			if err := makeRequest(ctx, q, &id); err != nil {
+				return nil, err
+			}
+			q = q.Root().Select(fmt.Sprintf("load%sFromID", typeName)).Arg("id", id)
 		}
-		q = q.Root().Select(fmt.Sprintf("load%sFromID", typeName)).Arg("id", id)
 	}
 
 	fns := GetLeafFunctions(obj)
