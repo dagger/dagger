@@ -72,11 +72,11 @@ func (m *JavaSdk) Codegen(
 	if err != nil {
 		return nil, err
 	}
+
 	return dag.
-		GeneratedCode(dag.Directory().WithDirectory("/", mvnCtr.Directory(ModSourceDirPath))).
+		GeneratedCode(dag.Directory().WithDirectory("/", m.generateCode(mvnCtr, introspectionJSON))).
 		WithVCSGeneratedPaths([]string{
 			GenPath + "/**",
-			//			"pom.xml",
 		}).
 		WithVCSIgnoredPaths([]string{
 			GenPath,
@@ -96,7 +96,7 @@ func (m *JavaSdk) codegenBase(
 		// We need maven to build the user module
 		mvnContainer().
 		// Mount the maven folder where we installed all the generated dependencies
-		WithMountedDirectory("/root/.m2", m.buildJavaDependencies(introspectionJSON)).
+		WithMountedDirectory("/root/.m2", m.buildJavaDependencies(introspectionJSON).Directory("/root/.m2")).
 		// Copy the user module directory under /src
 		WithDirectory(ModSourceDirPath, modSource.ContextDirectory()).
 		// Set the working directory to the one containing the sources to build, not just the module root
@@ -113,11 +113,9 @@ func (m *JavaSdk) codegenBase(
 // buildJavaDependencies builds and install the needed dependencies
 // used to build, package and run the user module.
 // Everything will be done under ModSourceDirPath/<subPath>/sdk (m.moduleConfig.sdkPath()).
-// There's no real necessity here, it's just a choice to keep it close to the rest but the only
-// thing we care about is the resulting /root/.m2 folder
 func (m *JavaSdk) buildJavaDependencies(
 	introspectionJSON *dagger.File,
-) *dagger.Directory {
+) *dagger.Container {
 	return m.
 		// We need maven to build the dependencies
 		mvnContainer().
@@ -144,8 +142,7 @@ func (m *JavaSdk) buildJavaDependencies(
 			// specify the introspection json file
 			"-Ddaggerengine.schema=/schema.json",
 			// "-e", // this is just for debug purpose, uncomment if needed
-		}).
-		Directory("/root/.m2")
+		})
 }
 
 // addTemplate creates all the necessary files to start a new Java module
@@ -182,6 +179,40 @@ func (m *JavaSdk) addTemplate(
 		WithExec([]string{"mv", absPath("src", "main", "java", "io", "dagger", "sample", "module", "DaggerModule.java"), absPath("src", "main", "java", "io", "dagger", "sample", "module", fmt.Sprintf("%s.java", camelName))})
 
 	return ctr, nil
+}
+
+// generateCode builds and returns the generated source code and java classes
+func (m *JavaSdk) generateCode(
+	ctr *dagger.Container,
+	introspectionJSON *dagger.File,
+) *dagger.Directory {
+	// generate the java sdk dependencies
+	javaDeps := m.buildJavaDependencies(introspectionJSON)
+	// generate the entrypoint class based on the user module
+	entrypoint := ctr.WithExec([]string{"mvn", "clean", "compile"})
+	return dag.
+		Directory().
+		// copy all user files
+		WithDirectory(
+			m.moduleConfig.modulePath(),
+			ctr.Directory(m.moduleConfig.modulePath())).
+		// copy the generated entrypoint under target/generated-sources/annotations
+		WithDirectory(
+			filepath.Join(m.moduleConfig.modulePath(), "target", "generated-sources", "entrypoint"),
+			entrypoint.Directory(filepath.Join(m.moduleConfig.modulePath(), "target", "generated-sources", "annotations"))).
+		// copy the sdk source code under target/generated-sources/sdk
+		// this is not really generated-sources, this is the sdk. But we don't want it as the user source code
+		// and we don't want to install it on the user machine. That way the java classes are made available
+		// to a build system or an IDE without to interfere with the user source code
+		WithDirectory(
+			filepath.Join(m.moduleConfig.modulePath(), "target", "generated-sources", "sdk"),
+			javaDeps.Directory(filepath.Join(m.moduleConfig.sdkPath(), "dagger-java-sdk", "src", "main", "java"))).
+		// copy the generated SDK files to target/generated-sources/dagger
+		// those are all the types generated from the introspection
+		WithDirectory(
+			filepath.Join(m.moduleConfig.modulePath(), "target", "generated-sources", "dagger"),
+			javaDeps.Directory(filepath.Join(m.moduleConfig.sdkPath(), "dagger-java-sdk", "target", "generated-sources", "dagger"))).
+		Directory(ModSourceDirPath)
 }
 
 func (m *JavaSdk) ModuleRuntime(
