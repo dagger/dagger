@@ -133,6 +133,86 @@ The result will look like this:
 HELLO, WORLD
 ```
 
+## Integer arguments
+
+To pass an integer argument to a Dagger function, add the corresponding flag to the `dagger call` command, followed by the integer value.
+
+Here is an example of a Dagger function that accepts an integer argument:
+
+<Tabs groupId="language">
+
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-return-values-integer/go/main.go
+```
+</TabItem>
+
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-return-values-integer/python/main.py
+```
+</TabItem>
+
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/arguments-return-values-integer/typescript/index.ts
+```
+</TabItem>
+
+</Tabs>
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call add-integer --a 1 --b 2
+```
+
+The result will look like this:
+
+```shell
+3
+```
+
+## Floating-point number arguments
+
+To pass a floating-point number as argument to a Dagger function, add the corresponding flag to the `dagger call` command, followed by the value.
+
+Here is an example of a Dagger function that accepts a floating-point number as argument:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-return-values-float/go/main.go
+```
+</TabItem>
+
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-return-values-float/python/main.py
+```
+</TabItem>
+
+<TabItem value="TypeScript">
+
+:::note
+There's no `float` type keyword in TypeScript because the type keyword `number` already supports floating point numbers.
+
+To declare a `float` argument on the function signature, import `float` from `@dagger.io/dagger` and use it as an argument's type.
+The imported `float` type is a `number` underneath, so you can use it as you would use a `number` inside your function.
+:::
+
+```typescript file=./snippets/functions/arguments-return-values-float/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call add-float --a 1.4 --b 2.7
+```
+
+The result will look like this:
+
+```shell
+4.1
+```
+
 ## Array arguments
 
 To pass an array argument to a Dagger Function, add the corresponding flag, followed by a comma-separated list of values.
