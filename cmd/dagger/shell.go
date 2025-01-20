@@ -112,9 +112,11 @@ type shellCallHandler struct {
 	stdout io.Writer
 	stderr io.Writer
 
-	// switch to Frontend.Background for rendering output while the TUI is
-	// running when in interactive mode
-	tui bool
+	// tty is set to true when running the TUI (pretty frontend)
+	tty bool
+
+	// repl is set to true when running in interactive mode
+	repl bool
 
 	// stdoutBuf is used to capture the final stdout that the runner produces
 	stdoutBuf *safeBuffer
@@ -151,7 +153,7 @@ type shellCallHandler struct {
 // - File: when a file path is provided as an argument
 // - Code: when code is passed inline using the `-c,--code` flag or via stdin
 func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
-	h.tui = !silent && (hasTTY && progress == "auto" || progress == "tty")
+	h.tty = !silent && (hasTTY && progress == "auto" || progress == "tty")
 
 	h.stdoutBuf = new(safeBuffer)
 	h.stderrBuf = new(safeBuffer)
@@ -285,8 +287,22 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 	}
 
 	resp, err := h.Result(ctx, h.stdoutBuf, true, handleObjectLeaf)
-	if err != nil || resp == nil {
+	if err != nil {
+		exitCode := 1
+		var ex *dagger.ExecError
+		if errors.As(err, &ex) {
+			if h.repl || !h.tty {
+				return wrapExecError(ex)
+			}
+			exitCode = ex.ExitCode
+		}
+		if !h.repl && h.tty {
+			return ExitError{Code: exitCode}
+		}
 		return err
+	}
+	if resp == nil {
+		return nil
 	}
 
 	return h.withTerminal(func(_ io.Reader, stdout, _ io.Writer) error {
@@ -296,6 +312,20 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 		}
 		return nil
 	})
+}
+
+func wrapExecError(e *dagger.ExecError) error {
+	out := make([]string, 0, 2)
+	if e.Stdout != "" {
+		out = append(out, "Stdout:\n"+e.Stdout)
+	}
+	if e.Stderr != "" {
+		out = append(out, "Stderr:\n"+e.Stderr)
+	}
+	if len(out) > 0 {
+		return fmt.Errorf("%w\n%s", e, strings.Join(out, "\n"))
+	}
+	return e
 }
 
 func parseShell(reader io.Reader, name string, opts ...syntax.ParserOption) (*syntax.File, error) {
@@ -337,6 +367,8 @@ func (h *shellCallHandler) runPath(ctx context.Context, path string) error {
 
 // runInteractive executes the runner on a REPL (Read-Eval-Print Loop)
 func (h *shellCallHandler) runInteractive(ctx context.Context) error {
+	h.repl = true
+
 	h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
 		fmt.Fprintln(stderr, `Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`)
 		return nil
@@ -352,7 +384,7 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 	var runErr error
 	for {
 		Frontend.SetPrimary(dagui.SpanID{})
-		Frontend.Opts().CustomExit = func() {}
+		Frontend.SetCustomExit(func() {})
 		fg := termenv.ANSIGreen
 
 		if runErr != nil {
@@ -399,8 +431,8 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 		if err != nil {
 			// EOF or Ctrl+D to exit
 			if errors.Is(err, io.EOF) {
-				Frontend.Opts().Verbosity = 0
-				Frontend.Opts().CustomExit = nil
+				Frontend.SetCustomExit(nil)
+				Frontend.SetVerbosity(0)
 				break
 			}
 			// Ctrl+C should move to the next line
@@ -414,11 +446,11 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 			continue
 		}
 
-		ctx, span := Tracer().Start(ctx, line)
-		ctx, cancel := context.WithCancel(ctx)
+		spanCtx, span := Tracer().Start(ctx, line)
+		newCtx, cancel := context.WithCancel(spanCtx)
 		Frontend.SetPrimary(dagui.SpanID{SpanID: span.SpanContext().SpanID()})
-		Frontend.Opts().CustomExit = cancel
-		runErr = h.run(ctx, strings.NewReader(line), "")
+		Frontend.SetCustomExit(cancel)
+		runErr = h.run(newCtx, strings.NewReader(line), "")
 		if runErr != nil {
 			span.SetStatus(codes.Error, runErr.Error())
 		}
@@ -457,9 +489,9 @@ func (h *shellCallHandler) Prompt(out *termenv.Output, fg termenv.Color) string 
 	return sb.String()
 }
 
-// withTerminal handles using stdin, stdout, and stderr when the TUI is runnin
+// withTerminal handles using stdin, stdout, and stderr when the TUI is running
 func (h *shellCallHandler) withTerminal(fn func(stdin io.Reader, stdout, stderr io.Writer) error) error {
-	if h.tui {
+	if h.repl && h.tty {
 		return Frontend.Background(&terminalSession{
 			fn: func(stdin io.Reader, stdout, stderr io.Writer) error {
 				return fn(stdin, stdout, stderr)
