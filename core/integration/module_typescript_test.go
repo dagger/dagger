@@ -1903,6 +1903,6 @@ export class Test {
 		`))
 
 		_, err := modGen.With(daggerCall("test")).Stdout(ctx)
-		requireErrOut(t, err, "cannot return float '4.4' if return type is number (integer), please use 'float' as return type instead")
+		requireErrOut(t, err, "Error: cannot return float '4.4' if return type is 'number' (integer), please use 'float' as return type instead")
 	})
 }
