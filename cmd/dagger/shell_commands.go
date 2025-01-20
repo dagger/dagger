@@ -152,7 +152,7 @@ func (c *ShellCommand) Execute(ctx context.Context, h *shellCallHandler, args []
 	for i, arg := range args {
 		if strings.HasPrefix(arg, shellStatePrefix) {
 			w := strings.NewReader(arg)
-			v, err := h.Result(ctx, w, false, nil)
+			v, _, err := h.Result(ctx, w, nil)
 			if err != nil {
 				return fmt.Errorf("cannot expand command argument at %d", i)
 			}

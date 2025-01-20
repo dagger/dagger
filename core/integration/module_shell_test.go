@@ -685,3 +685,34 @@ func (ShellSuite) TestInstall(ctx context.Context, t *testctx.T) {
 
 	require.NoError(t, err)
 }
+
+func (ShellSuite) TestMultipleCommandOutputs(ctx context.Context, t *testctx.T) {
+	t.Run("sync", func(ctx context.Context, t *testctx.T) {
+		script := `
+directory | with-new-file test foo | file test | contents
+directory | with-new-file test bar | file test | contents
+`
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(script)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foobar", out)
+	})
+
+	t.Run("async", func(ctx context.Context, t *testctx.T) {
+		script := `
+directory | with-new-file test foo | file test | contents &
+directory | with-new-file test bar | file test | contents & ..wait
+`
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(script)).
+			Stdout(ctx)
+		require.NoError(t, err)
+
+		if out != "foobar" && out != "barfoo" {
+			t.Errorf("unexpected output: %q", out)
+		}
+	})
+}
