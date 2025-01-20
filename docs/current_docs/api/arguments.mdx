@@ -142,17 +142,17 @@ Here is an example of a Dagger function that accepts an integer argument:
 <Tabs groupId="language">
 
 <TabItem value="Go">
-```go file=./snippets/functions/arguments-integer/go/main.go
+```go file=./snippets/functions/arguments-return-values-integer/go/main.go
 ```
 </TabItem>
 
 <TabItem value="Python">
-```python file=./snippets/functions/arguments-integer/python/main.py
+```python file=./snippets/functions/arguments-return-values-integer/python/main.py
 ```
 </TabItem>
 
 <TabItem value="TypeScript">
-```typescript file=./snippets/functions/arguments-integer/typescript/index.ts
+```typescript file=./snippets/functions/arguments-return-values-integer/typescript/index.ts
 ```
 </TabItem>
 
@@ -172,19 +172,21 @@ The result will look like this:
 
 ## Floating-point number arguments
 
-:::warning
-Floats are currently only supported in Go and TypeScript SDKs for now.
-:::
-
 To pass a floating-point number as argument to a Dagger function, add the corresponding flag to the `dagger call` command, followed by the value.
 
 Here is an example of a Dagger function that accepts a floating-point number as argument:
 
 <Tabs groupId="language">
 <TabItem value="Go">
-```go file=./snippets/functions/arguments-float/go/main.go
+```go file=./snippets/functions/arguments-return-values-float/go/main.go
 ```
 </TabItem>
+
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-return-values-float/python/main.py
+```
+</TabItem>
+
 <TabItem value="TypeScript">
 
 :::note
@@ -194,7 +196,7 @@ To declare a `float` argument on the function signature, import `float` from `@d
 The imported `float` type is a `number` underneath, so you can use it as you would use a `number` inside your function.
 :::
 
-```typescript file=./snippets/functions/arguments-float/typescript/index.ts
+```typescript file=./snippets/functions/arguments-return-values-float/typescript/index.ts
 ```
 </TabItem>
 </Tabs>
