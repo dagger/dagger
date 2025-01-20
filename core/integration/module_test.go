@@ -4884,6 +4884,18 @@ func (m *Test) GetRelDepSource() *dagger.Directory {
 		out, err = ctr.With(daggerCall("get-rel-dep-source", "entries")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "yo\n", out)
+
+		// now try calling from outside
+
+		ctr = ctr.WithWorkdir("/")
+
+		out, err = ctr.With(daggerCallAt("work", "get-dep-source", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo\n", out)
+
+		out, err = ctr.With(daggerCallAt("work", "get-rel-dep-source", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo\n", out)
 	})
 
 	t.Run("as module", func(ctx context.Context, t *testctx.T) {
