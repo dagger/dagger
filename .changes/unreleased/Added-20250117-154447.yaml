@@ -1,0 +1,10 @@
+kind: Added
+body: |
+  Add float support in the engine.
+
+  Note: the precision of float is limited to float64 inside the engine.
+  And any call will serialize/deserialize the value to float64.
+time: 2025-01-17T15:44:47.089106+01:00
+custom:
+  Author: TomChv
+  PR: "9396"

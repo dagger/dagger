@@ -305,6 +305,9 @@ class TypeDefKind(Enum):
     Always paired with an EnumTypeDef.
     """
 
+    FLOAT_KIND = "FLOAT_KIND"
+    """A float value."""
+
     INPUT_KIND = "INPUT_KIND"
     """A graphql input type, used only when representing the core API via TypeDefs."""
 

@@ -8875,6 +8875,8 @@ pub enum TypeDefKind {
     BooleanKind,
     #[serde(rename = "ENUM_KIND")]
     EnumKind,
+    #[serde(rename = "FLOAT_KIND")]
+    FloatKind,
     #[serde(rename = "INPUT_KIND")]
     InputKind,
     #[serde(rename = "INTEGER_KIND")]

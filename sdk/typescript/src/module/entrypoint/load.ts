@@ -186,6 +186,7 @@ export async function loadValue(
     case TypeDefKind.StringKind:
     case TypeDefKind.IntegerKind:
     case TypeDefKind.BooleanKind:
+    case TypeDefKind.FloatKind:
     case TypeDefKind.VoidKind:
     case TypeDefKind.ScalarKind:
     case TypeDefKind.EnumKind:

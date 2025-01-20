@@ -91,7 +91,12 @@ export class DaggerModule {
 
   public description: string | undefined
 
-  private references: References = {}
+  private references: References = {
+    // Float is a special case, it's an alias of number but it serves to declare a float type
+    // in the Dagger API.
+    // So we auto register it because it will be detected as a referenced type by the introspector.
+    float: { kind: TypeDefKind.FloatKind },
+  }
 
   constructor(
     public name: string,

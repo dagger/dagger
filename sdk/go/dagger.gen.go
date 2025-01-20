@@ -8684,6 +8684,9 @@ const (
 	// Always paired with an EnumTypeDef.
 	TypeDefKindEnumKind TypeDefKind = "ENUM_KIND"
 
+	// A float value.
+	TypeDefKindFloatKind TypeDefKind = "FLOAT_KIND"
+
 	// A graphql input type, used only when representing the core API via TypeDefs.
 	TypeDefKindInputKind TypeDefKind = "INPUT_KIND"
 

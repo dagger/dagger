@@ -13,6 +13,9 @@ var Samples = map[TypeDefKind]*TypeDef{
 	TypeDefKindString: {
 		Kind: TypeDefKindString,
 	},
+	TypeDefKindFloat: {
+		Kind: TypeDefKindFloat,
+	},
 	TypeDefKindInteger: {
 		Kind: TypeDefKindInteger,
 	},
