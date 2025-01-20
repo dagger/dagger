@@ -1881,3 +1881,28 @@ export class Test {
 		require.Equal(t, "A super quack sound", schema.Get("interfaces.#.asInterface|#(name=TestDuck).functions.#(name=superQuack).description").String())
 	})
 }
+
+func (TypescriptSuite) TestFloatReturnTypeSuggestion(ctx context.Context, t *testctx.T) {
+	t.Run("suggest to use float instead of number if function returns a float", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=typescript", "--source=.")).
+			With(sdkSource("typescript", `import { dag, object, func } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+  @func()
+  test(): number {
+    return 4.4
+  }
+}
+		
+		`))
+
+		_, err := modGen.With(daggerCall("test")).Stdout(ctx)
+		requireErrOut(t, err, "cannot return float '4.4' if return type is number (integer), please use 'float' as return type instead")
+	})
+}
