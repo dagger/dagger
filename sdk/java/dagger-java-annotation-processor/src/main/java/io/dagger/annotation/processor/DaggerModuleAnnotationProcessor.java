@@ -172,7 +172,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                   "clazz.getMethod(\"setClient\", $T.class).invoke(obj, dag)", Client.class);
           var firstFn = true;
           for (var fnInfo : objectInfo.functions()) {
-            var fnReturnClass = Class.forName(fnInfo.returnType());
+            var fnReturnClass = classForName(fnInfo.returnType());
             if (firstFn) {
               firstFn = false;
               im.beginControlFlow("if (fnName.equals($S))", fnInfo.name());
@@ -180,12 +180,12 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
               im.nextControlFlow("else if (fnName.equals($S))", fnInfo.name());
             }
             var fnBlock =
-                CodeBlock.builder().add("$T fn = clazz.getMethod($S", Method.class, fnInfo.name());
+                CodeBlock.builder().add("$T fn = clazz.getMethod($S", Method.class, fnInfo.qName());
             var invokeBlock =
                 CodeBlock.builder()
                     .add("$T res = ($T) fn.invoke(obj", fnReturnClass, fnReturnClass);
             for (var parameterInfo : fnInfo.parameters()) {
-              Class<?> paramClazz = Class.forName(parameterInfo.type());
+              Class<?> paramClazz = classForName(parameterInfo.type());
               fnBlock.add(", $T.class", paramClazz);
 
               invokeBlock.add(", $L", parameterInfo.name());
@@ -202,19 +202,13 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
             fnBlock.add(")");
             invokeBlock.add(")");
             im.addStatement(fnBlock.build()).addStatement(invokeBlock.build());
-            if (fnInfo.returnType().startsWith("java.lang")) {
-              im.addStatement("return $T.toJSON(res)", Convert.class);
-            } else {
-              im.addStatement("return res.id().toJSON()");
-            }
+            im.addStatement("return $T.toJSON(res)", Convert.class);
           }
           if (!firstFn) {
             im.endControlFlow(); // functions
           }
         }
-        if (!firstObj) {
-          im.endControlFlow(); // objects
-        }
+        im.endControlFlow(); // objects
         im.endControlFlow() // try json
             .addStatement("return null");
 
@@ -297,7 +291,27 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     return true;
   }
 
-  private CodeBlock typeDef(String name) {
+  static CodeBlock typeDef(String name) throws ClassNotFoundException {
+    if (name.equals("int")) {
+      return CodeBlock.of(
+          "dag.typeDef().withKind($T.$L)", TypeDefKind.class, TypeDefKind.INTEGER_KIND.name());
+    } else if (name.equals("boolean")) {
+      return CodeBlock.of(
+          "dag.typeDef().withKind($T.$L)", TypeDefKind.class, TypeDefKind.BOOLEAN_KIND.name());
+    } else if (name.startsWith("java.util.List<")) {
+      name = name.substring("java.util.List<".length(), name.length() - 1);
+      return CodeBlock.of("dag.typeDef().withListOf($L)", typeDef(name).toString());
+    } else if (name.endsWith("[]")) {
+      name = name.substring(0, name.length() - 2);
+      return CodeBlock.of("dag.typeDef().withListOf($L)", typeDef(name).toString());
+    }
+
+    var clazz = Class.forName(name);
+    if (clazz.isEnum()) {
+      String typeName = name.substring(name.lastIndexOf('.') + 1);
+      return CodeBlock.of("dag.typeDef().withEnum($S)", typeName);
+    }
+
     try {
       if (name.startsWith("java.lang.")) {
         name = name.substring(name.lastIndexOf('.') + 1);
@@ -309,6 +323,19 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
       String typeName = name.substring(name.lastIndexOf('.') + 1);
       return CodeBlock.of("dag.typeDef().withObject($S)", typeName);
     }
+  }
+
+  static Class<?> classForName(String name) throws ClassNotFoundException {
+    if (name.equals("int")) {
+      return int.class;
+    } else if (name.equals("boolean")) {
+      return boolean.class;
+    } else if (name.startsWith("java.util.List<")) {
+      return List.class;
+    } else if (name.endsWith("[]")) {
+      return Class.forName("[L" + name.substring(0, name.length() - 2) + ";");
+    }
+    return Class.forName(name);
   }
 
   private String trimDoc(String doc) {
