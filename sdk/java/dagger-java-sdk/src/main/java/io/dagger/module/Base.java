@@ -2,7 +2,7 @@ package io.dagger.module;
 
 import io.dagger.client.Client;
 
-public class Base {
+public abstract class Base {
   protected transient Client dag;
 
   public void setClient(Client dag) {
