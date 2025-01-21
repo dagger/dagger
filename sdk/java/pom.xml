@@ -261,7 +261,7 @@
         <daggerengine.version>devel</daggerengine.version>
         <daggerengine.schema></daggerengine.schema>
 
-        <assertj-core.version>3.27.2</assertj-core.version>
+        <assertj-core.version>3.27.3</assertj-core.version>
         <auto-service.version>1.1.1</auto-service.version>
         <commons-compress.version>1.27.1</commons-compress.version>
         <commons-lang.version>3.17.0</commons-lang.version>
@@ -277,7 +277,7 @@
         <maven-assembly-plugin.version>3.7.1</maven-assembly-plugin.version>
         <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
         <maven-failsafe-plugin.version>3.5.2</maven-failsafe-plugin.version>
-        <maven-javadoc-plugin.version>3.11.1</maven-javadoc-plugin.version>
+        <maven-javadoc-plugin.version>3.11.2</maven-javadoc-plugin.version>
         <maven-plugin-api.version>3.9.9</maven-plugin-api.version>
         <maven-plugin-annotations.version>3.15.1</maven-plugin-annotations.version>
         <maven-project.version>2.2.1</maven-project.version>
@@ -289,7 +289,7 @@
         <slf4j-api.version>2.0.16</slf4j-api.version>
         <slf4j-simple.version>2.0.16</slf4j-simple.version>
         <smallrye-graphql.version>2.12.0</smallrye-graphql.version>
-        <netty-common.version>4.1.116.Final</netty-common.version>
+        <netty-common.version>4.1.117.Final</netty-common.version>
         <system-stubs-jupiter.version>2.1.7</system-stubs-jupiter.version>
         <xdg-java.version>0.1.1</xdg-java.version>
         <yasson.version>3.0.4</yasson.version>
