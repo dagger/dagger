@@ -1,14 +1,15 @@
-> **Warning** This SDK is experimental. Please do not use it for anything
+> [!WARNING]
+> This SDK is experimental. Please do not use it for anything
 > mission-critical. Possible issues include:
+>
+> - Missing features
+> - Stability issues
+> - Performance issues
+> - Lack of polish
+> - Upcoming breaking changes
+> - Incomplete or out-of-date documentation
 
-- Missing features
-- Stability issues
-- Performance issues
-- Lack of polish
-- Upcoming breaking changes
-- Incomplete or out-of-date documentation
-
-> **Warning**
+> [!IMPORTANT]
 > The Dagger Java SDK requires Dagger v0.9.0 or later
 
 # dagger-java-sdk
@@ -16,6 +17,60 @@
 ![main workflow](https://github.com/dagger/dagger/actions/workflows/test.yml/badge.svg?branch=main)
 
 A [Dagger.io](https://dagger.io) SDK written in Java.
+
+## Modules
+
+> [!WARNING]
+> Support of Dagger modules is in progress and might be incomplete.
+
+### Create a new module
+
+```console
+$ dagger init --sdk=java my-java-module
+
+$ tree my-java-module
+my-java-module
+├── dagger.json
+├── pom.xml
+└── src
+    └── main
+        └── java
+            └── io
+                └── dagger
+                    └── sample
+                        └── module
+                            ├── MyJavaModule.java
+                            └── package-info.java
+
+8 directories, 4 files
+```
+
+### List functions and call them
+
+```console
+$ dagger functions -m my-java-module
+
+Name             Description
+container-echo   Returns a container that echoes whatever string argument is provided
+grep-dir         Returns lines that match a pattern in the files of the provided Directory
+```
+
+```console
+$ dagger call -q -m my-java-module container-echo "hello dagger" stdout
+
+hello dagger
+
+```
+
+### Develop modules
+
+In addition to the module source files, the SDK java files and all the generated source files like the entrypoint are available under `target/` directory.
+
+If they are missing or to refresh them, run:
+
+```bash
+dagger develop
+```
 
 ## Build
 
