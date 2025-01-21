@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"java-sdk/internal/dagger"
 
@@ -74,7 +75,7 @@ func (m *JavaSdk) Codegen(
 	}
 
 	return dag.
-		GeneratedCode(dag.Directory().WithDirectory("/", m.generateCode(mvnCtr, introspectionJSON))).
+		GeneratedCode(dag.Directory().WithDirectory("/", m.generateCode(ctx, mvnCtr, introspectionJSON))).
 		WithVCSGeneratedPaths([]string{
 			GenPath + "/**",
 		}).
@@ -94,9 +95,9 @@ func (m *JavaSdk) codegenBase(
 ) (*dagger.Container, error) {
 	ctr := m.
 		// We need maven to build the user module
-		mvnContainer().
+		mvnContainer(ctx).
 		// Mount the maven folder where we installed all the generated dependencies
-		WithMountedDirectory("/root/.m2", m.buildJavaDependencies(introspectionJSON).Directory("/root/.m2")).
+		WithMountedDirectory("/root/.m2", m.buildJavaDependencies(ctx, introspectionJSON).Directory("/root/.m2")).
 		// Copy the user module directory under /src
 		WithDirectory(ModSourceDirPath, modSource.ContextDirectory()).
 		// Set the working directory to the one containing the sources to build, not just the module root
@@ -114,11 +115,12 @@ func (m *JavaSdk) codegenBase(
 // used to build, package and run the user module.
 // Everything will be done under ModSourceDirPath/<subPath>/sdk (m.moduleConfig.sdkPath()).
 func (m *JavaSdk) buildJavaDependencies(
+	ctx context.Context,
 	introspectionJSON *dagger.File,
 ) *dagger.Container {
 	return m.
 		// We need maven to build the dependencies
-		mvnContainer().
+		mvnContainer(ctx).
 		// Mount the introspection JSON file used to generate the SDK
 		WithMountedFile("/schema.json", introspectionJSON).
 		// Copy the SDK source directory, so all the files needed to build the dependencies
@@ -183,11 +185,12 @@ func (m *JavaSdk) addTemplate(
 
 // generateCode builds and returns the generated source code and java classes
 func (m *JavaSdk) generateCode(
+	ctx context.Context,
 	ctr *dagger.Container,
 	introspectionJSON *dagger.File,
 ) *dagger.Directory {
 	// generate the java sdk dependencies
-	javaDeps := m.buildJavaDependencies(introspectionJSON)
+	javaDeps := m.buildJavaDependencies(ctx, introspectionJSON)
 	// generate the entrypoint class based on the user module
 	entrypoint := ctr.WithExec([]string{"mvn", "clean", "compile"})
 	return dag.
@@ -235,10 +238,10 @@ func (m *JavaSdk) ModuleRuntime(
 		return nil, err
 	}
 
-	javaCtr := m.jreContainer().
+	javaCtr := m.jreContainer(ctx).
 		WithFile(filepath.Join(ModDirPath, "module.jar"), jar).
 		WithWorkdir(ModDirPath).
-		WithEntrypoint([]string{"java", "-XX:UseSVE=0", "-jar", filepath.Join(ModDirPath, "module.jar")})
+		WithEntrypoint([]string{"java", "-jar", filepath.Join(ModDirPath, "module.jar")})
 
 	return javaCtr, nil
 }
@@ -275,16 +278,24 @@ func (m *JavaSdk) finalJar(
 	return ctr.File(filepath.Join(m.moduleConfig.modulePath(), "target", jarFileName)), nil
 }
 
-func (m *JavaSdk) mvnContainer() *dagger.Container {
-	return dag.
+func (m *JavaSdk) mvnContainer(ctx context.Context) *dagger.Container {
+	ctr := dag.
 		Container().
 		From(fmt.Sprintf("%s@%s", MavenImage, MavenDigest))
+	if platform, err := ctr.Platform(ctx); err == nil && strings.Contains(string(platform), "arm64") {
+		ctr = ctr.WithEnvVariable("MAVEN_OPTS", "-XX:UseSVE=0")
+	}
+	return ctr
 }
 
-func (m *JavaSdk) jreContainer() *dagger.Container {
-	return dag.
+func (m *JavaSdk) jreContainer(ctx context.Context) *dagger.Container {
+	ctr := dag.
 		Container().
 		From(fmt.Sprintf("%s@%s", JavaImage, JavaDigest))
+	if platform, err := ctr.Platform(ctx); err == nil && strings.Contains(string(platform), "arm64") {
+		ctr = ctr.WithEnvVariable("JAVA_OPTS", "-XX:UseSVE=0")
+	}
+	return ctr
 }
 
 func (m *JavaSdk) setModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) error {
