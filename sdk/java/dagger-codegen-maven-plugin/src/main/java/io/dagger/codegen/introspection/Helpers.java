@@ -1,14 +1,13 @@
 package io.dagger.codegen.introspection;
 
+import static org.apache.commons.lang3.StringUtils.capitalize;
+
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterSpec;
 import com.palantir.javapoet.TypeName;
-
-import javax.lang.model.element.Modifier;
 import java.util.List;
-
-import static org.apache.commons.lang3.StringUtils.capitalize;
+import javax.lang.model.element.Modifier;
 
 public class Helpers {
 
@@ -77,13 +76,13 @@ public class Helpers {
     return !"id".equals(field.getName())
         && field.getTypeRef().isScalar()
         && field
-        .getParentObject()
-        .getName()
-        .equals(
-            field
-                .getTypeRef()
-                .getTypeName()
-                .substring(0, field.getTypeRef().getTypeName().length() - 2));
+            .getParentObject()
+            .getName()
+            .equals(
+                field
+                    .getTypeRef()
+                    .getTypeName()
+                    .substring(0, field.getTypeRef().getTypeName().length() - 2));
   }
 
   static List<Field> getArrayField(Field field, Schema schema) {

@@ -2,11 +2,10 @@ package io.dagger.codegen.introspection;
 
 import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.TypeSpec;
-
-import javax.lang.model.element.Modifier;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
+import javax.lang.model.element.Modifier;
 
 public class VersionVisitor extends CodeWriter {
 

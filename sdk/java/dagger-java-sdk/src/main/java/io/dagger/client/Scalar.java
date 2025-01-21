@@ -5,8 +5,7 @@ import com.google.gson.annotations.Expose;
 
 public class Scalar<T> {
 
-  @Expose
-  private T value;
+  @Expose private T value;
 
   protected Scalar(T value) {
     this.value = value;
