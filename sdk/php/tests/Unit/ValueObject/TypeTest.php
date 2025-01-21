@@ -100,16 +100,6 @@ class TypeTest extends TestCase
             $reflectReturnType(fn(): ?bool => false),
         ];
 
-        yield 'int' =>  [
-            new Type('int', false),
-            $reflectReturnType(fn(): int => 1),
-        ];
-
-        yield 'nullable int' =>  [
-            new Type('int', true),
-            $reflectReturnType(fn(): ?int => 1),
-        ];
-
         yield 'float' =>  [
             new Type('float', false),
             $reflectReturnType(fn(): float => 3.14),
@@ -118,6 +108,16 @@ class TypeTest extends TestCase
         yield 'nullable float' =>  [
             new Type('float', true),
             $reflectReturnType(fn(): ?float => 3.14),
+        ];
+
+        yield 'int' =>  [
+            new Type('int', false),
+            $reflectReturnType(fn(): int => 1),
+        ];
+
+        yield 'nullable int' =>  [
+            new Type('int', true),
+            $reflectReturnType(fn(): ?int => 1),
         ];
 
         yield 'string' =>  [
