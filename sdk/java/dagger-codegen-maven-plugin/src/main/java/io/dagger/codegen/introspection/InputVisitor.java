@@ -1,12 +1,11 @@
 package io.dagger.codegen.introspection;
 
 import com.palantir.javapoet.*;
-
-import javax.lang.model.element.Modifier;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
+import javax.lang.model.element.Modifier;
 
 class InputVisitor extends AbstractVisitor {
 

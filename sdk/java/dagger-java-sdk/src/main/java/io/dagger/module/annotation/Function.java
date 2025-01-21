@@ -8,6 +8,7 @@ import java.lang.annotation.Target;
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.SOURCE)
 public @interface Function {
-    String value() default "";
-    String description() default "";
+  String value() default "";
+
+  String description() default "";
 }

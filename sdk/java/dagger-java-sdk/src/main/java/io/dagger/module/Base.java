@@ -13,6 +13,5 @@ public class Base {
     this.dag = dag;
   }
 
-  public Base() {
-  }
+  public Base() {}
 }

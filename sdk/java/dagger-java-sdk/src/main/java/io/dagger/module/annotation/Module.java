@@ -8,6 +8,7 @@ import java.lang.annotation.Target;
 @Target(ElementType.PACKAGE)
 @Retention(RetentionPolicy.SOURCE)
 public @interface Module {
-    String value();
-    String description() default "";
+  String value();
+
+  String description() default "";
 }
