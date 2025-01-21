@@ -216,3 +216,7 @@ java -cp dagger-java-sdk-[version]-jar-with-dependencies.jar:. GetDaggerWebsite
 ```
 
 5. Enjoy 😁
+
+## Contributing
+
+The Java source code is automatically formatted on each build using [google-java-format](https://github.com/google/google-java-format) through [fmt-maven-plugin](https://github.com/spotify/fmt-maven-plugin).
