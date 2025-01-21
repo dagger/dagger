@@ -928,6 +928,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			Labels:            map[string]string{},
 			SSHAuthSocketPath: execMD.SSHAuthSocketPath,
 			AllowedLLMModules: allowedLLMModules,
+			SourceDateEpoch:   execMD.SourceDateEpoch,
 		},
 		CallID:              execMD.CallID,
 		CallerClientID:      execMD.CallerClientID,

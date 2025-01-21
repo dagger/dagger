@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dagger/dagger/engine"
 	"io/fs"
 	"os"
 	"path"
@@ -1214,6 +1215,7 @@ func (container *Container) Publish(
 	platformVariants []*Container,
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
+	rewriteTimestamp dagql.Boolean,
 ) (string, error) {
 	if mediaTypes == "" {
 		// Modern registry implementations support oci types and docker daemons
@@ -1231,6 +1233,19 @@ func (container *Container) Publish(
 	if forcedCompression != "" {
 		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(forcedCompression))
 		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	if clientMetadata.SourceDateEpoch != nil {
+		opts[string(exptypes.OptKeySourceDateEpoch)] = strconv.FormatInt(clientMetadata.SourceDateEpoch.Unix(), 10)
+	}
+
+	if rewriteTimestamp {
+		opts[string(exptypes.OptKeyRewriteTimestamp)] = strconv.FormatBool(true)
 	}
 
 	inputByPlatform := map[string]buildkit.ContainerExport{}
@@ -1330,6 +1345,7 @@ func (container *Container) Export(
 	platformVariants []*Container,
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
+	rewriteTimestamp bool,
 ) error {
 	svcs, err := container.Query.Services(ctx)
 	if err != nil {
@@ -1352,9 +1368,23 @@ func (container *Container) Export(
 		"tar":                           strconv.FormatBool(true),
 		string(exptypes.OptKeyOCITypes): strconv.FormatBool(mediaTypes == OCIMediaTypes),
 	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	if clientMetadata.SourceDateEpoch != nil {
+		opts[string(exptypes.OptKeySourceDateEpoch)] = strconv.FormatInt(clientMetadata.SourceDateEpoch.Unix(), 10)
+	}
+
 	if forcedCompression != "" {
 		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(forcedCompression))
 		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
+	}
+
+	if rewriteTimestamp {
+		opts[string(exptypes.OptKeyRewriteTimestamp)] = strconv.FormatBool(true)
 	}
 
 	inputByPlatform := map[string]buildkit.ContainerExport{}

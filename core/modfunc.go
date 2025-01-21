@@ -285,6 +285,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		CacheByCall:       !opts.SkipCallDigestCacheKey,
 		ParentIDs:         map[digest.Digest]*resource.ID{},
 		AllowedLLMModules: clientMetadata.AllowedLLMModules,
+		SourceDateEpoch:   clientMetadata.SourceDateEpoch,
 	}
 
 	callInputs, err := fn.setCallInputs(ctx, opts)

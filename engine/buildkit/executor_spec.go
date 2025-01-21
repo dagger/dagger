@@ -929,6 +929,10 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 
 	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+w.execMD.SecretToken)
 
+	if w.execMD.SourceDateEpoch != nil {
+		state.spec.Process.Env = append(state.spec.Process.Env, "SOURCE_DATE_EPOCH="+strconv.FormatInt(w.execMD.SourceDateEpoch.Unix(), 10))
+	}
+
 	w.execMD.ClientStableID = randid.NewID()
 
 	// include SSH_AUTH_SOCK if it's set in the exec's env vars

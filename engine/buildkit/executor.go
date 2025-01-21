@@ -109,6 +109,9 @@ type ExecutionMetadata struct {
 	// If set (typically via "_EXPERIMENTAL_DAGGER_VERSION" env var), this forces the client
 	// to be at the specified version. Currently only used for integ testing.
 	ClientVersionOverride string
+
+	// Rewrite timestamps in layers to match SOURCE_DATE_EPOCH
+	SourceDateEpoch *time.Time
 }
 
 const executionMetadataKey = "dagger.executionMetadata"
