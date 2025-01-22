@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Dagger\ValueObject;
 
 use Dagger\Attribute;
+use Dagger\ValueObject\TypeHint\ListOfType;
+use Dagger\ValueObject\TypeHint\Type;
 use ReflectionMethod;
 use RuntimeException;
 
