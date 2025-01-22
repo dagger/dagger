@@ -402,6 +402,7 @@ Be sure to use "Rebase and Merge" when merging the PR to `main` to preserve the 
 - [ ] Submit PR with the version bump.
 
 ```console
+dagger develop -m dev --compat=$ENGINE_VERSION
 dagger call -m dev bump --version=$ENGINE_VERSION -o .
 git checkout -b bump-dagger-$ENGINE_VERSION
 git add .
