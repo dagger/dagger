@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -42,6 +43,24 @@ func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.Instance[*co
 	var inst dagql.Instance[*core.CacheVolume]
 
 	if args.Namespace != "" {
+		if dagql.CurrentID(ctx).IsTainted() {
+			fmt.Println("is tainted")
+			err := s.srv.Select(ctx, s.srv.Root(), &inst, dagql.Selector{
+				Field: "cacheVolume",
+				Pure:  true,
+				Args: []dagql.NamedInput{
+					{
+						Name:  "namespace",
+						Value: dagql.NewString(args.Namespace),
+					},
+					{
+						Name:  "key",
+						Value: dagql.NewString(args.Key),
+					},
+				},
+			})
+			return inst, err
+		}
 		return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, core.NewCache(args.Namespace+":"+args.Key))
 	}
 
@@ -67,6 +86,20 @@ func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.Instance[*co
 
 	// if no namespace key, just return the NewCache based on key
 	if namespaceKey == "" {
+		if dagql.CurrentID(ctx).IsTainted() {
+			fmt.Println("is tainted oops")
+			err := s.srv.Select(ctx, s.srv.Root(), &inst, dagql.Selector{
+				Field: "cacheVolume",
+				Pure:  true,
+				Args: []dagql.NamedInput{
+					{
+						Name:  "key",
+						Value: dagql.NewString(args.Key),
+					},
+				},
+			})
+			return inst, err
+		}
 		return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, core.NewCache(":"+args.Key))
 	}
 
