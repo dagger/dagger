@@ -1,0 +1,6 @@
+kind: Added
+body: Add float type support
+time: 2025-01-18T00:27:01.978716437+07:00
+custom:
+    Author: wingyplus
+    PR: "9411"
