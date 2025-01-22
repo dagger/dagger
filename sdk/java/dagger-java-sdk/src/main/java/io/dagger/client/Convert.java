@@ -26,7 +26,6 @@ public final class Convert {
       throws ClassNotFoundException,
           InvocationTargetException,
           NoSuchMethodException,
-          InstantiationException,
           IllegalAccessException {
     return fromJSON(dag, json.convert(), clazz);
   }
@@ -34,19 +33,17 @@ public final class Convert {
   public static <T> T fromJSON(Client dag, String json, Class<T> clazz)
       throws NoSuchMethodException,
           InvocationTargetException,
-          InstantiationException,
           IllegalAccessException,
           ClassNotFoundException {
     Gson gson = new Gson();
     if (clazz.isPrimitive()) {
       return gson.fromJson(json, clazz);
     }
-    var o = clazz.getDeclaredConstructor().newInstance();
-    if (o instanceof Scalar<?>) {
+    if (Scalar.class.isAssignableFrom(clazz)) {
       String jsonString = gson.fromJson(json, String.class);
       Object res = clazz.getMethod("from", String.class).invoke(null, jsonString);
       return (T) res;
-    } else if (o instanceof IDAble<?>) {
+    } else if (IDAble.class.isAssignableFrom(clazz)) {
       String jsonString = gson.fromJson(json, String.class);
       Class<?> idType = Class.forName(clazz.getCanonicalName() + "ID");
       Object id = idType.getMethod("from", String.class).invoke(null, jsonString);
