@@ -7,6 +7,7 @@ import io.dagger.client.Convert;
 import io.dagger.client.Dagger;
 import io.dagger.client.DaggerQueryException;
 import io.dagger.client.Directory;
+import io.dagger.client.Function;
 import io.dagger.client.FunctionCall;
 import io.dagger.client.FunctionCallArgValue;
 import io.dagger.client.JSON;
@@ -74,13 +75,13 @@ public class Entrypoint {
                     dag.function("containerEcho",
                         dag.typeDef().withObject("Container"))
                         .withDescription("Returns a container that echoes whatever string argument is provided")
-                        .withArg("stringArg",dag.typeDef().withKind(TypeDefKind.STRING_KIND)))
+                        .withArg("stringArg", dag.typeDef().withKind(TypeDefKind.STRING_KIND), new Function.WithArgArguments().withDescription("string to echo")))
                 .withFunction(
                     dag.function("grepDir",
                         dag.typeDef().withKind(TypeDefKind.STRING_KIND))
                         .withDescription("Returns lines that match a pattern in the files of the provided Directory")
-                        .withArg("directoryArg",dag.typeDef().withObject("Directory"))
-                        .withArg("pattern",dag.typeDef().withKind(TypeDefKind.STRING_KIND))));
+                        .withArg("directoryArg", dag.typeDef().withObject("Directory"), new Function.WithArgArguments().withDescription("Directory to grep"))
+                        .withArg("pattern", dag.typeDef().withKind(TypeDefKind.STRING_KIND), new Function.WithArgArguments().withDescription("Pattern to search for in the directory"))));
     return module.id();
   }
 

@@ -1,5 +1,9 @@
 package io.dagger.annotation.processor;
 
+import com.github.javaparser.StaticJavaParser;
+import com.github.javaparser.javadoc.Javadoc;
+import com.github.javaparser.javadoc.JavadocBlockTag;
+import com.github.javaparser.javadoc.JavadocBlockTag.Type;
 import com.google.auto.service.AutoService;
 import com.palantir.javapoet.*;
 import io.dagger.client.*;
@@ -15,10 +19,25 @@ import jakarta.json.bind.JsonbBuilder;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.*;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import javax.annotation.processing.*;
+import javax.annotation.processing.AbstractProcessor;
+import javax.annotation.processing.ProcessingEnvironment;
+import javax.annotation.processing.Processor;
+import javax.annotation.processing.RoundEnvironment;
+import javax.annotation.processing.SupportedAnnotationTypes;
+import javax.annotation.processing.SupportedSourceVersion;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.*;
+import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.TypeElement;
+import javax.lang.model.util.Elements;
 
 @SupportedAnnotationTypes({
   "io.dagger.module.annotation.Module",
@@ -28,6 +47,14 @@ import javax.lang.model.element.*;
 @SupportedSourceVersion(SourceVersion.RELEASE_17)
 @AutoService(Processor.class)
 public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
+
+  private Elements elementUtils;
+
+  @Override
+  public synchronized void init(ProcessingEnvironment processingEnv) {
+    super.init(processingEnv);
+    this.elementUtils = processingEnv.getElementUtils(); // Récupération d'Elements
+  }
 
   ModuleInfo generateModuleInfo(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
     String moduleName = null, moduleDescription = null;
@@ -50,10 +77,6 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           if (name.isEmpty()) {
             name = typeElement.getSimpleName().toString();
           }
-          String description = typeElement.getAnnotation(Object.class).description();
-          if (description.isEmpty()) {
-            description = trimDoc(processingEnv.getElementUtils().getDocComment(typeElement));
-          }
           List<FunctionInfo> functionInfos =
               typeElement.getEnclosedElements().stream()
                   .filter(elt -> elt.getKind() == ElementKind.METHOD)
@@ -66,11 +89,6 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                         if (fName.isEmpty()) {
                           fName = fqName;
                         }
-                        String fDescription = moduleFunction.description();
-                        if (fDescription.isEmpty()) {
-                          fDescription =
-                              trimDoc(processingEnv.getElementUtils().getDocComment(elt));
-                        }
                         String returnType = ((ExecutableElement) elt).getReturnType().toString();
 
                         List<ParameterInfo> parameterInfos =
@@ -80,7 +98,10 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                         param -> {
                                           String paramName = param.getSimpleName().toString();
                                           String paramType = param.asType().toString();
-                                          return new ParameterInfo(paramName, null, paramType);
+                                          return new ParameterInfo(
+                                              paramName,
+                                              parseParameterDescription(elt, paramName),
+                                              paramType);
                                         })
                                     .toList();
 
@@ -88,7 +109,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                             new FunctionInfo(
                                 fName,
                                 fqName,
-                                fDescription,
+                                parseFunctionDescription(elt),
                                 returnType,
                                 parameterInfos.toArray(new ParameterInfo[parameterInfos.size()]));
                         return functionInfo;
@@ -98,7 +119,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
               new ObjectInfo(
                   name,
                   qName,
-                  description,
+                  parseTypeDescription(typeElement),
                   functionInfos.toArray(new FunctionInfo[functionInfos.size()])));
         }
       }
@@ -143,9 +164,15 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
             rm.addCode("\n                    .withDescription($S)", fnInfo.description());
           }
           for (var parameterInfo : fnInfo.parameters()) {
-            rm.addCode("\n                    .withArg($S,", parameterInfo.name())
-                .addCode(typeDef(parameterInfo.type()))
-                .addCode(")");
+            rm.addCode("\n                    .withArg($S, ", parameterInfo.name())
+                .addCode(typeDef(parameterInfo.type()));
+            if (isNotBlank(parameterInfo.description())) {
+              rm.addCode(
+                  ", new $T.WithArgArguments().withDescription($S)",
+                  io.dagger.client.Function.class,
+                  parameterInfo.description());
+            }
+            rm.addCode(")");
           }
           rm.addCode(")"); // end of .withFunction(
         }
@@ -371,5 +398,36 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
 
   private static Boolean isNotBlank(String str) {
     return str != null && !str.isBlank();
+  }
+
+  private String parseTypeDescription(Element element) {
+    String javadocString = elementUtils.getDocComment(element);
+    if (javadocString == null) {
+      return element.getAnnotation(Module.class).description();
+    }
+    return StaticJavaParser.parseJavadoc(javadocString).getDescription().toText().trim();
+  }
+
+  private String parseFunctionDescription(Element element) {
+    String javadocString = elementUtils.getDocComment(element);
+    if (javadocString == null) {
+      return element.getAnnotation(Function.class).description();
+    }
+    Javadoc javadoc = StaticJavaParser.parseJavadoc(javadocString);
+    return javadoc.getDescription().toText().trim();
+  }
+
+  private String parseParameterDescription(Element element, String paramName) {
+    String javadocString = elementUtils.getDocComment(element);
+    if (javadocString == null) {
+      return "";
+    }
+    Javadoc javadoc = StaticJavaParser.parseJavadoc(javadocString);
+    Optional<JavadocBlockTag> blockTag =
+        javadoc.getBlockTags().stream()
+            .filter(tag -> tag.getType() == Type.PARAM)
+            .filter(tag -> tag.getName().isPresent() && tag.getName().get().equals(paramName))
+            .findFirst();
+    return blockTag.map(tag -> tag.getContent().toText()).orElse("");
   }
 }
