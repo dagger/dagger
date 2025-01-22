@@ -38,6 +38,9 @@ public final class Convert {
           IllegalAccessException,
           ClassNotFoundException {
     Gson gson = new Gson();
+    if (clazz.isPrimitive()) {
+      return gson.fromJson(json, clazz);
+    }
     var o = clazz.getDeclaredConstructor().newInstance();
     if (o instanceof Scalar<?>) {
       String jsonString = gson.fromJson(json, String.class);

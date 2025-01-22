@@ -224,13 +224,13 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
             invokeBlock.add(", $L", parameterInfo.name());
 
             im.addStatement(
-                "$T $L = ($T) $T.fromJSON(dag, inputArgs.get($S), Class.forName($S))",
+                "$T $L = ($T) $T.fromJSON(dag, inputArgs.get($S), $T.class)",
                 paramClazz,
                 parameterInfo.name(),
                 paramClazz,
                 Convert.class,
                 parameterInfo.name(),
-                parameterInfo.type());
+                classForName(parameterInfo.type()));
           }
           fnBlock.add(")");
           invokeBlock.add(")");
