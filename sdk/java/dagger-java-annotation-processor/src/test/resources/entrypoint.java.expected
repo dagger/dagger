@@ -93,13 +93,13 @@ public class Entrypoint {
         var obj = Convert.fromJSON(dag, parentJson, clazz);
         clazz.getMethod("setClient", Client.class).invoke(obj, dag);
         if (fnName.equals("containerEcho")) {
-          String stringArg = (String) Convert.fromJSON(dag, inputArgs.get("stringArg"), Class.forName("java.lang.String"));
+          String stringArg = (String) Convert.fromJSON(dag, inputArgs.get("stringArg"), String.class);
           Method fn = clazz.getMethod("containerEcho", String.class);
           Container res = (Container) fn.invoke(obj, stringArg);
           return Convert.toJSON(res);
         } else if (fnName.equals("grepDir")) {
-          Directory directoryArg = (Directory) Convert.fromJSON(dag, inputArgs.get("directoryArg"), Class.forName("io.dagger.client.Directory"));
-          String pattern = (String) Convert.fromJSON(dag, inputArgs.get("pattern"), Class.forName("java.lang.String"));
+          Directory directoryArg = (Directory) Convert.fromJSON(dag, inputArgs.get("directoryArg"), Directory.class);
+          String pattern = (String) Convert.fromJSON(dag, inputArgs.get("pattern"), String.class);
           Method fn = clazz.getMethod("grepDir", Directory.class, String.class);
           String res = (String) fn.invoke(obj, directoryArg, pattern);
           return Convert.toJSON(res);
