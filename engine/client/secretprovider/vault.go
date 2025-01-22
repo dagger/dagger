@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	vault "github.com/hashicorp/vault/api"
 	auth "github.com/hashicorp/vault/api/auth/approle"
@@ -33,7 +34,10 @@ func vaultProvider(ctx context.Context, key string) ([]byte, error) {
 
 	// check if client is initialized
 	if vaultClient == nil {
-		err := vaultConfigureClient(ctx)
+		clientInitializeSync := sync.OnceValue(func() error {
+			return vaultConfigureClient(ctx)
+		})
+		err := clientInitializeSync()
 		if err != nil {
 			return nil, err
 		}
@@ -42,12 +46,19 @@ func vaultProvider(ctx context.Context, key string) ([]byte, error) {
 	// check if path is in key cache
 	if _, ok := vaultCache[key]; !ok {
 		// read the secret
-		s, err := vaultClient.KVv2(mount).Get(ctx, secretPath)
+		readSecretSync := sync.OnceValue(func() error {
+			s, err := vaultClient.KVv2(mount).Get(ctx, secretPath)
+			if err != nil {
+				return err
+			}
+			// cache response
+			vaultCache[key] = s.Data
+			return nil
+		})
+		err := readSecretSync()
 		if err != nil {
 			return nil, err
 		}
-		// cache response
-		vaultCache[key] = s.Data
 	}
 
 	return []byte(vaultCache[key][secretField].(string)), nil
