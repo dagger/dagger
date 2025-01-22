@@ -5,8 +5,8 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.concurrent.ExecutionException;
 
-public interface Convert {
-  static JSON toJSON(Object object)
+public final class Convert {
+  public static JSON toJSON(Object object)
       throws ExecutionException, DaggerQueryException, InterruptedException {
     Gson gson = new Gson();
     String json;
@@ -22,7 +22,7 @@ public interface Convert {
     return JSON.from(json);
   }
 
-  static <T> T fromJSON(Client dag, JSON json, Class<T> clazz)
+  public static <T> T fromJSON(Client dag, JSON json, Class<T> clazz)
       throws ClassNotFoundException,
           InvocationTargetException,
           NoSuchMethodException,
@@ -31,7 +31,7 @@ public interface Convert {
     return fromJSON(dag, json.convert(), clazz);
   }
 
-  static <T> T fromJSON(Client dag, String json, Class<T> clazz)
+  public static <T> T fromJSON(Client dag, String json, Class<T> clazz)
       throws NoSuchMethodException,
           InvocationTargetException,
           InstantiationException,
