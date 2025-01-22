@@ -474,24 +474,36 @@ Secrets can be passed to Dagger Functions as arguments using the `Secret` core t
 
 The result will be a JSON-formatted list of issues from Dagger's repository.
 
-When invoking the Dagger Function using the Dagger CLI, secrets can be sourced from host environment variables (`env:`), the host filesystem (`file:`) or the result of host command execution (`cmd:`).
+When invoking the Dagger Function using the Dagger CLI, secrets can be sourced from multiple providers. Dagger can read secrets from the host environment, the host filesystem, and the result of host command execution, as well as from external secret managers [1Password](https://1password.com/) and [Vault](https://www.hashicorp.com/products/vault).
 
-Here is an example call for this Dagger Function, with the secret sourced from a host environment variable named `GITHUB_API_TOKEN`:
+Here is an example call for this Dagger Function, with the secret sourced from a host environment variable named `GITHUB_API_TOKEN` via the `env` provider:
 
 ```shell
-dagger call github-api --token=env:GITHUB_API_TOKEN
+dagger call github-api --token=env://GITHUB_API_TOKEN
 ```
 
-Secrets can also be passed from a host file using the `file` source:
+Secrets can also be passed from a host file using the `file` provider:
 
 ```shell
-dagger call github-api --token=file:./github.txt
+dagger call github-api --token=file://./github.txt
 ```
 
-...or as the result of executing a command on the host using the `cmd` source:
+...or as the result of executing a command on the host using the `cmd` provider:
 
 ```shell
-dagger call github-api --token=cmd:"gh auth token"
+dagger call github-api --token=cmd://"gh auth token"
+```
+
+Secrets can also be sourced from external secret managers, such as 1Password:
+
+```shell
+dagger call github-api --token=op://infra/github/credential
+```
+
+...or Vault:
+
+```shell
+dagger call github-api --token=vault://credentials.github
 ```
 
 ## Service arguments
