@@ -1,0 +1,41 @@
+{
+  "description": "Dagger Java Module example",
+  "name": "DaggerJavaModule",
+  "objects": [
+    {
+      "description": "Dagger Java Module main object",
+      "functions": [
+        {
+          "description": "Returns a container that echoes whatever string argument is provided",
+          "name": "containerEcho",
+          "parameters": [
+            {
+              "name": "stringArg",
+              "type": "java.lang.String"
+            }
+          ],
+          "qName": "containerEcho",
+          "returnType": "io.dagger.client.Container"
+        },
+        {
+          "description": "Returns lines that match a pattern in the files of the provided Directory",
+          "name": "grepDir",
+          "parameters": [
+            {
+              "name": "directoryArg",
+              "type": "io.dagger.client.Directory"
+            },
+            {
+              "name": "pattern",
+              "type": "java.lang.String"
+            }
+          ],
+          "qName": "grepDir",
+          "returnType": "java.lang.String"
+        }
+      ],
+      "name": "DaggerJavaModule",
+      "qualifiedName": "io.lgtd.dagger.java.module.DaggerJavaModule"
+    }
+  ]
+}
