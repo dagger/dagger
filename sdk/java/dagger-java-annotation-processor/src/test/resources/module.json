@@ -10,6 +10,7 @@
           "name": "containerEcho",
           "parameters": [
             {
+              "description": "string to echo",
               "name": "stringArg",
               "type": "java.lang.String"
             }
@@ -22,10 +23,12 @@
           "name": "grepDir",
           "parameters": [
             {
+              "description": "Directory to grep",
               "name": "directoryArg",
               "type": "io.dagger.client.Directory"
             },
             {
+              "description": "Pattern to search for in the directory",
               "name": "pattern",
               "type": "java.lang.String"
             }
