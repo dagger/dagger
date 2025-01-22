@@ -103,7 +103,7 @@ jobs:
           function: "test specific --run='TestCLI|TestEngine' --race=true --parallel=16"
           upload-logs: true
 
-  test-provision:
+  test-cgroupsv2:
     # HACK: this is split out, since these tests require cgroupsv2
     # runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-2-16c-st' || 'ubuntu-latest' }}"
     runs-on: "ubuntu-latest"
@@ -113,7 +113,7 @@ jobs:
       - name: "test"
         uses: ./.github/actions/call
         with:
-          function: "test specific --run='TestProvision' --race=true --parallel=1"
+          function: "test specific --run='TestProvision|TestTelemetry' --race=true --parallel=1"
           upload-logs: true
 
   test-everything-else:
@@ -124,7 +124,7 @@ jobs:
       - name: "test"
         uses: ./.github/actions/call
         with:
-          function: "test specific --skip='TestModule|TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestCLI|TestEngine|TestProvision' --race=true --parallel=16"
+          function: "test specific --skip='TestModule|TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestCLI|TestEngine|TestProvision|TestTelemetry' --race=true --parallel=16"
           upload-logs: true
 
   # Run Engine tests in dev Engine so that we can spot integration failures early
