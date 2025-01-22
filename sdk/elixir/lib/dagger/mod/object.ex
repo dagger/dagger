@@ -176,6 +176,7 @@ defmodule Dagger.Mod.Object do
   end
 
   defp compile_typespec!({:integer, _, []}), do: :integer
+  defp compile_typespec!({:float, _, []}), do: :float
   defp compile_typespec!({:boolean, _, []}), do: :boolean
 
   ## String
