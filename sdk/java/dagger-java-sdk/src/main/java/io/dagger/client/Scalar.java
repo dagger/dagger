@@ -20,4 +20,8 @@ public class Scalar<T> {
     String json = gson.toJson(value);
     return JSON.from(json);
   }
+
+  public boolean eq(Scalar<T> other) {
+    return value.equals(other.value);
+  }
 }
