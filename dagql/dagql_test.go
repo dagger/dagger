@@ -1927,7 +1927,7 @@ func TestViews(t *testing.T) {
 
 		reqFail(t, gql, `query {
 			shared
-		}`, "no such field")
+		}`, "Cannot query field")
 	})
 
 	t.Run("in unknown view", func(t *testing.T) {
@@ -1943,7 +1943,7 @@ func TestViews(t *testing.T) {
 
 		reqFail(t, gql, `query {
 			shared
-		}`, "no such field")
+		}`, "Cannot query field")
 	})
 
 	t.Run("in first view", func(t *testing.T) {
@@ -1965,7 +1965,7 @@ func TestViews(t *testing.T) {
 
 		reqFail(t, gql, `query {
 			secondExclusive
-		}`, "no such field")
+		}`, "Cannot query field")
 	})
 
 	t.Run("in second view", func(t *testing.T) {
@@ -1987,7 +1987,7 @@ func TestViews(t *testing.T) {
 
 		reqFail(t, gql, `query {
 			firstExclusive
-		}`, "no such field")
+		}`, "Cannot query field")
 	})
 }
 

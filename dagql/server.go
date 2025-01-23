@@ -10,12 +10,15 @@ import (
 	"sync"
 
 	"github.com/99designs/gqlgen/graphql"
+	"github.com/99designs/gqlgen/graphql/errcode"
 	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"github.com/vektah/gqlparser/v2/parser"
+	"github.com/vektah/gqlparser/v2/validator"
+	_ "github.com/vektah/gqlparser/v2/validator/rules"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql/call"
@@ -317,19 +320,27 @@ func (s *Server) Schema() *ast.Schema { // TODO: change this to be updated whene
 	defer s.installLock.Unlock()
 	// TODO track when the schema changes, cache until it changes again
 	queryType := s.Root().Type().Name()
-	schema := &ast.Schema{}
+	schema := &ast.Schema{
+		Types:         make(map[string]*ast.Definition),
+		PossibleTypes: make(map[string][]*ast.Definition),
+	}
 	for _, t := range s.objects { // TODO stable order
 		def := definition(ast.Object, t, s.View)
 		if def.Name == queryType {
 			schema.Query = def
 		}
 		schema.AddTypes(def)
+		schema.AddPossibleType(def.Name, def)
 	}
 	for _, t := range s.scalars {
-		schema.AddTypes(definition(ast.Scalar, t, s.View))
+		def := definition(ast.Scalar, t, s.View)
+		schema.AddTypes(def)
+		schema.AddPossibleType(def.Name, def)
 	}
 	for _, t := range s.typeDefs {
-		schema.AddTypes(t.TypeDefinition(s.View))
+		def := t.TypeDefinition(s.View)
+		schema.AddTypes(def)
+		schema.AddPossibleType(def.Name, def)
 	}
 	schema.Directives = map[string]*ast.DirectiveDefinition{}
 	for n, d := range s.directives {
@@ -397,6 +408,14 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 		gqlOp.Doc, err = parser.ParseQuery(&ast.Source{Input: gqlOp.RawQuery})
 		if err != nil {
 			return nil, gqlErrs(err)
+		}
+
+		listErr := validator.Validate(s.Schema(), gqlOp.Doc)
+		if len(listErr) != 0 {
+			for _, e := range listErr {
+				errcode.Set(e, errcode.ValidationFailed)
+			}
+			return nil, listErr
 		}
 	}
 	results := make(map[string]any)
