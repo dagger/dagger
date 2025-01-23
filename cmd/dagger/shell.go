@@ -32,6 +32,15 @@ const (
 	// as it suggests the idea of dependencies, intersections, and points where separate paths
 	// or data sets come together.
 	shellPrompt = "⋈"
+
+	// shellInternalCmd is the command that is used internally to avoid conflicts
+	// with interpreter builtins. For example when `echo` is used, the command becomes
+	// `__dag echo`. Otherwise we can't have a function named `echo`.
+	shellInternalCmd = "__dag"
+
+	// shellInterpBuiltinPrefix is the prefix that users should add to an
+	// interpreter builtin command to force running it.
+	shellInterpBuiltinPrefix = "_"
 )
 
 // shellCode is the code to be executed in the shell command
@@ -190,18 +199,21 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 		// slightly in order to resolve naming conflicts. For example, "echo"
 		// is an interpreter builtin but can also be a Dagger function.
 		interp.CallHandler(func(ctx context.Context, args []string) ([]string, error) {
+			if args[0] == shellInternalCmd {
+				return args, fmt.Errorf("command %q is reserved for internal use", shellInternalCmd)
+			}
 			// When there's a Dagger function with a name that conflicts
 			// with an interpreter builtin, the Dagger function is favored.
 			// To force the builtin to execute instead, prefix the command
 			// with "..". For example: "container | from $(..echo alpine)".
-			if strings.HasPrefix(args[0], "..") {
-				args[0] = strings.TrimPrefix(args[0], "..")
+			if strings.HasPrefix(args[0], shellInterpBuiltinPrefix) {
+				args[0] = strings.TrimPrefix(args[0], shellInterpBuiltinPrefix)
 				return args, nil
 			}
 			// If the command is an interpreter builtin, bypass the interpreter
 			// builtins to ensure the exec handler is executed.
 			if isInterpBuiltin(args[0]) {
-				return append([]string{".dag"}, args...), nil
+				return append([]string{shellInternalCmd}, args...), nil
 			}
 			return args, nil
 		}),
@@ -347,7 +359,7 @@ func parseShell(reader io.Reader, name string, opts ...syntax.ParserOption) (*sy
 				// Rewrite command substitutions from $(foo; bar) to $(exec <&-; foo; bar)
 				// so that all the original commands run with a closed (nil) standard input.
 				node.Stmts = append([]*syntax.Stmt{{
-					Cmd: &syntax.CallExpr{Args: []*syntax.Word{litWord("..exec")}},
+					Cmd: &syntax.CallExpr{Args: []*syntax.Word{litWord(shellInterpBuiltinPrefix + "exec")}},
 					Redirs: []*syntax.Redirect{{
 						Op:   syntax.DplIn,
 						Word: litWord("-"),

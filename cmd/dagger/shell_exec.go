@@ -31,7 +31,7 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 		// This avoids interpreter builtins running first, which would make it
 		// impossible to have a function named "echo", for example. We can
 		// remove `.dag` from this point onward.
-		if args[0] == ".dag" {
+		if args[0] == shellInternalCmd {
 			args = args[1:]
 		}
 

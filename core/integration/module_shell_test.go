@@ -703,7 +703,7 @@ directory | with-new-file test bar | file test | contents
 	t.Run("async", func(ctx context.Context, t *testctx.T) {
 		script := `
 directory | with-new-file test foo | file test | contents &
-directory | with-new-file test bar | file test | contents & ..wait
+directory | with-new-file test bar | file test | contents & _wait
 `
 		c := connect(ctx, t)
 		out, err := daggerCliBase(t, c).
@@ -714,5 +714,24 @@ directory | with-new-file test bar | file test | contents & ..wait
 		if out != "foobar" && out != "barfoo" {
 			t.Errorf("unexpected output: %q", out)
 		}
+	})
+}
+
+func (ShellSuite) TestInterpreterBuiltins(ctx context.Context, t *testctx.T) {
+	t.Run("builtin", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`_echo foobar`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foobar\n", out)
+	})
+
+	t.Run("internal", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		_, err := daggerCliBase(t, c).
+			With(daggerShell(`__dag`)).
+			Sync(ctx)
+		requireErrOut(t, err, "reserved for internal use")
 	})
 }
