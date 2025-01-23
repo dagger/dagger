@@ -346,6 +346,13 @@ func (r Instance[T]) Select(ctx context.Context, s *Server, sel Selector) (Typed
 			inputArgs[argSpec.Name] = namedInput.Value
 
 		case argSpec.Default != nil:
+			if isZero, err := isZeroLiteral(argSpec.Default.ToLiteral()); err != nil {
+				return nil, nil, fmt.Errorf("failed to check zero value for %q: %w", argSpec.Name, err)
+			} else if isZero {
+				// skip zero values, they pollute telemetry
+				// (maybe they shouldn't show up as defaults at all?)
+				continue
+			}
 			idArgs = append(idArgs, call.NewArgument(
 				argSpec.Name,
 				argSpec.Default.ToLiteral(),
@@ -392,6 +399,31 @@ func (r Instance[T]) Select(ctx context.Context, s *Server, sel Selector) (Typed
 	return r.call(ctx, s, newID, inputArgs)
 }
 
+func isZeroLiteral(lit call.Literal) (bool, error) {
+	switch lit := lit.(type) {
+	case *call.LiteralID:
+		return lit.Value() == nil, nil
+	case *call.LiteralList:
+		return lit.Len() == 0, nil
+	case *call.LiteralObject:
+		return lit.Len() == 0, nil
+	case *call.LiteralBool:
+		return !lit.Value(), nil
+	case *call.LiteralEnum:
+		return lit.Value() == "", nil
+	case *call.LiteralInt:
+		return lit.Value() == 0, nil
+	case *call.LiteralFloat:
+		return lit.Value() == 0, nil
+	case *call.LiteralString:
+		return lit.Value() == "", nil
+	case *call.LiteralNull:
+		return true, nil
+	default:
+		return false, fmt.Errorf("unhandled literal type for checking zero value: %T", lit)
+	}
+}
+
 // Call calls the field on the instance specified by the ID.
 func (r Instance[T]) Call(ctx context.Context, s *Server, newID *call.ID) (Typed, *call.ID, error) {
 	fieldName := newID.Field()
@@ -424,11 +456,6 @@ func (r Instance[T]) call(
 	newID *call.ID,
 	inputArgs map[string]Input,
 ) (Typed, *call.ID, error) {
-	// sanity check: newID should be a new single selection on top of the instance
-	if r.Constructor.Digest() != newID.Receiver().Digest() {
-		return nil, nil, fmt.Errorf("Call: %s has a different digest: %s", r.Type().Name(), newID.Digest())
-	}
-
 	doCall := func(ctx context.Context) (innerVal Typed, innerErr error) {
 		if s.telemetry != nil {
 			wrappedCtx, done := s.telemetry(ctx, r, newID)
