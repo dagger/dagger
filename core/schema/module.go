@@ -60,7 +60,10 @@ func (s *moduleSchema) Install() {
 		dagql.FuncWithCacheKey("currentModule", s.currentModule, CachePerClient).
 			Doc(`The module currently being served in the session, if any.`),
 
-		dagql.FuncWithCacheKey("currentTypeDefs", s.currentTypeDefs, CachePerClient).
+		dagql.Func("currentTypeDefs", s.currentTypeDefs).
+			// Impure for now, could use a finer grain cache key if we had the ability to mix
+			// a digest of the dagql server schema into the cache key.
+			Impure("Can change when modules are loaded into the schema.").
 			Doc(`The TypeDef representations of the objects currently being served in the session.`),
 
 		dagql.FuncWithCacheKey("currentFunctionCall", s.currentFunctionCall, CachePerClient).
