@@ -273,8 +273,9 @@ func (h *shellCallHandler) functionCall(ctx context.Context, st *ShellState, nam
 //
 // Additionally, if there's only one required argument that is a list of strings,
 // all positional arguments are used as elements of that list.
-func shellPreprocessArgs(fn *modFunction, args []string) ([]string, error) {
+func shellPreprocessArgs(ctx context.Context, fn *modFunction, args []string) ([]string, error) {
 	flags := pflag.NewFlagSet(fn.CmdName(), pflag.ContinueOnError)
+	flags.SetOutput(interp.HandlerCtx(ctx).Stderr)
 
 	opts := fn.OptionalArgs()
 
@@ -300,7 +301,7 @@ func shellPreprocessArgs(fn *modFunction, args []string) ([]string, error) {
 	}
 
 	if err := flags.Parse(args); err != nil {
-		return args, err
+		return args, checkErrHelp(err, args)
 	}
 
 	reqs := fn.RequiredArgs()
@@ -361,9 +362,28 @@ func shellPreprocessArgs(fn *modFunction, args []string) ([]string, error) {
 	return a, nil
 }
 
+// checkErrHelp circumvents pflag's special cases for -h and --help
+//
+// This returns the same error as any other unknown flag.
+func checkErrHelp(err error, args []string) error {
+	if !errors.Is(err, pflag.ErrHelp) {
+		return err
+	}
+	// Avoid considering flags from a with-exec for example, although if this
+	// error is raised it's surely defined before `--`.
+	if i := slices.Index(args, "--"); i > 0 {
+		args = args[:i]
+	}
+	// Shorthand flags are parsed first
+	if slices.Contains(args, "-h") {
+		return errors.New(`unknown shorthand flag: "-h"`)
+	}
+	return errors.New(`unknown flag: "--help"`)
+}
+
 // parseArgumentValues returns a map of argument names and their parsed values
 func (h *shellCallHandler) parseArgumentValues(ctx context.Context, md *moduleDef, fn *modFunction, args []string) (map[string]any, error) {
-	newArgs, err := shellPreprocessArgs(fn, args)
+	newArgs, err := shellPreprocessArgs(ctx, fn, args)
 	if err != nil {
 		return nil, err
 	}
@@ -431,7 +451,7 @@ func (h *shellCallHandler) parseArgumentValues(ctx context.Context, md *moduleDe
 		return nil
 	}
 	if err := flags.ParseAll(newArgs, f); err != nil {
-		return nil, err
+		return nil, checkErrHelp(err, newArgs)
 	}
 
 	// Finally, get the values from the flags that haven't been resolved yet.
