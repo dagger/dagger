@@ -14,6 +14,7 @@ public class Helpers {
   private static final List<String> JAVA_KEYWORDS =
       List.of(
           "abstract",
+          "assert",
           "continue",
           "for",
           "new",
@@ -120,6 +121,8 @@ public class Helpers {
   static String formatName(Field field) {
     if ("Container".equals(field.getParentObject().getName()) && "import".equals(field.getName())) {
       return "importTarball";
+    } else if (JAVA_KEYWORDS.contains(field.getName())) {
+      return field.getName() + "_";
     } else {
       return field.getName();
     }

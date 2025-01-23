@@ -69,7 +69,9 @@ class ObjectVisitor extends AbstractVisitor {
       for (Field scalarField :
           type.getFields().stream().filter(f -> f.getTypeRef().isScalar()).toList()) {
         classBuilder.addField(
-            scalarField.getTypeRef().formatOutput(), scalarField.getName(), Modifier.PRIVATE);
+            scalarField.getTypeRef().formatOutput(),
+            Helpers.formatName(scalarField),
+            Modifier.PRIVATE);
       }
     }
 
