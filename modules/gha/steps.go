@@ -35,7 +35,7 @@ func (j *Job) warmEngineStep() api.JobStep {
 }
 
 func (j *Job) installDaggerSteps() []api.JobStep {
-	if v := j.DaggerVersion; (v == "latest") || (semver.IsValid(v)) {
+	if v := j.DaggerVersion; v == "" || v == "latest" || semver.IsValid(v) {
 		return []api.JobStep{
 			j.bashStep("install-dagger", map[string]string{"DAGGER_VERSION": v}),
 		}
