@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/containerd/containerd/content"
@@ -239,6 +238,9 @@ type ContainerMount struct {
 
 	// Persist changes to the mount under this cache ID.
 	CacheVolumeID string `json:"cache_volume_id,omitempty"`
+
+	// Name of the underlying cache volume for this container mount.
+	CacheVolumeName string `json:"cache_volume_name,omitempty"`
 
 	// How to share the cache across concurrent runs.
 	CacheSharingMode CacheSharingMode `json:"cache_sharing,omitempty"`
@@ -643,8 +645,6 @@ func (container *Container) WithMountedFile(ctx context.Context, target string, 
 	return container.withMounted(ctx, target, file.LLB, file.File, file.Services, owner, readonly)
 }
 
-var SeenCacheKeys = new(sync.Map)
-
 func (container *Container) WithMountedCache(ctx context.Context, target string, cache *CacheVolume, source *Directory, sharingMode CacheSharingMode, owner string) (*Container, error) {
 	container = container.Clone()
 
@@ -657,6 +657,7 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 	mount := ContainerMount{
 		Target:           target,
 		CacheVolumeID:    cache.Sum(),
+		CacheVolumeName:  cache.Key,
 		CacheSharingMode: sharingMode,
 	}
 
@@ -683,8 +684,6 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 
 	// set image ref to empty string
 	container.ImageRef = ""
-
-	SeenCacheKeys.Store(cache.Keys[0], struct{}{})
 
 	return container, nil
 }

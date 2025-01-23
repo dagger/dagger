@@ -405,6 +405,32 @@ func (w *Worker) filterEnvs(_ context.Context, state *execState) error {
 	return nil
 }
 
+// setupCacheVolumes synchronizes the cache volumes that are in use for this
+// execution
+func (w *Worker) setupCacheVolumes(ctx context.Context, state *execState) error {
+	// only sync if there are cache volumes and the `daggerCacheManager` was set
+	if w.execMD == nil || len(w.execMD.CacheVolumes) == 0 || w.daggerCacheManager == nil {
+		return nil
+	}
+
+	for _, m := range state.spec.Mounts {
+		for _, cv := range w.execMD.CacheVolumes {
+			if cv.Target == m.Destination {
+				cv.Mount = &mount.Mount{
+					Type:    m.Type,
+					Source:  m.Source,
+					Options: m.Options,
+				}
+			}
+		}
+	}
+
+	if err := w.daggerCacheManager.DownloadCacheMounts(ctx, w.execMD.CacheVolumes); err != nil {
+		bklog.G(ctx).Warnf("optional cache volume synchronization failed: %v", err)
+	}
+	return nil
+}
+
 func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 	var err error
 	state.rootfsPath, err = os.MkdirTemp("", "rootfs")
