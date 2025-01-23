@@ -5,6 +5,8 @@ import (
 	"sync"
 
 	runc "github.com/containerd/go-runc"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/docker/docker/pkg/idtools"
 	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/executor"
@@ -45,6 +47,7 @@ type sharedWorkerState struct {
 	telemetryPubSub  http.Handler
 	bkSessionManager *bksession.Manager
 	sessionHandler   sessionHandler
+	daggerServer     daggerServer
 
 	runc             *runc.Runc
 	cgroupParent     string
@@ -66,6 +69,11 @@ type sessionHandler interface {
 	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *ExecutionMetadata)
 }
 
+type daggerServer interface {
+	DagqlServer(sessionId, clientId string) (*dagql.Server, bool)
+	ClientMetadata(sessionId, clientId string) (*engine.ClientMetadata, bool)
+}
+
 type NewWorkerOpts struct {
 	WorkerRoot       string
 	ExecutorRoot     string
@@ -73,6 +81,7 @@ type NewWorkerOpts struct {
 	TelemetryPubSub  http.Handler
 	BKSessionManager *bksession.Manager
 	SessionHandler   sessionHandler
+	DaggerServer     daggerServer
 
 	Runc                *runc.Runc
 	DefaultCgroupParent string
@@ -95,6 +104,7 @@ func NewWorker(opts *NewWorkerOpts) *Worker {
 		telemetryPubSub:  opts.TelemetryPubSub,
 		bkSessionManager: opts.BKSessionManager,
 		sessionHandler:   opts.SessionHandler,
+		daggerServer:     opts.DaggerServer,
 
 		runc:             opts.Runc,
 		cgroupParent:     opts.DefaultCgroupParent,
@@ -117,6 +127,14 @@ func (w *Worker) Executor() executor.Executor {
 }
 
 func (w *Worker) ResolveOp(vtx solver.Vertex, s frontend.FrontendLLBBridge, sm *bksession.Manager) (solver.Op, error) {
+	customOp, ok, err := w.customOpFromVtx(vtx, s, sm)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		return customOp, nil
+	}
+
 	// if this is an ExecOp, pass in ourself as executor
 	if baseOp, ok := vtx.Sys().(*pb.Op); ok {
 		if execOp, ok := baseOp.Op.(*pb.Op_Exec); ok {

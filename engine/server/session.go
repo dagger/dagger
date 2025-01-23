@@ -910,6 +910,26 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 
 const InstrumentationLibrary = "dagger.io/engine.server"
 
+func (srv *Server) DagqlServer(sessionID, clientID string) (*dagql.Server, bool) {
+	client, ok := srv.clientFromIDs(sessionID, clientID)
+	if !ok {
+		return nil, false
+	}
+	schema, err := client.deps.Schema(context.TODO())
+	if err != nil {
+		panic(err)
+	}
+	return schema, true
+}
+
+func (srv *Server) ClientMetadata(sessionID, clientID string) (*engine.ClientMetadata, bool) {
+	client, ok := srv.clientFromIDs(sessionID, clientID)
+	if !ok {
+		return nil, false
+	}
+	return client.clientMetadata, true
+}
+
 func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opts *ClientInitOpts) (rerr error) {
 	ctx := r.Context()
 	ctx, cancel := context.WithCancelCause(ctx)
