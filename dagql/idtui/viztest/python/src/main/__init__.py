@@ -1,9 +1,6 @@
-from opentelemetry import trace
 import datetime
 
 from dagger import dag, function, object_type
-
-tracer = trace.get_tracer(__name__)
 
 now = str(datetime.datetime.now())
 
@@ -20,8 +17,28 @@ class Python:
 
     @function
     async def custom_span(self) -> str:
-        with tracer.start_as_current_span("custom span"):
+        async with dag.span("custom span"):
             return await self.echo(f"hello from Python! it is currently {now}")
+
+    @function
+    async def nested_spans(self, fail: bool = False) -> str:
+        async with dag.span("custom span"):
+            await self.echo(f"outer: {now}")
+
+            async with dag.span("sub span"):
+                await self.echo(f"sub 1: {now}")
+
+            async with dag.span("sub span"):
+                await self.echo(f"sub 2: {now}")
+
+            async with dag.span("another sub span"):
+                async with dag.span("sub span"):
+                    if fail:
+                        raise ValueError("oh no")
+                    else:
+                        await self.echo(f"im even deeper: {now}")
+
+        return "done"
 
     @function
     async def pending(self):
