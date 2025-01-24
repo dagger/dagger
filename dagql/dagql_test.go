@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/99designs/gqlgen/client"
-	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/moby/buildkit/identity"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
@@ -67,7 +66,7 @@ func TestBasic(t *testing.T) {
 
 	points.Install[Query](srv)
 
-	gql := client.New(handler.NewDefaultServer(srv))
+	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	var res struct {
 		Point struct {
@@ -190,7 +189,7 @@ func TestNullableResults(t *testing.T) {
 		}),
 	}.Install(srv)
 
-	gql := client.New(handler.NewDefaultServer(srv))
+	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	t.Run("nullable scalars", func(t *testing.T) {
 		var res struct {
@@ -398,7 +397,7 @@ func TestListResults(t *testing.T) {
 		NullableListOfObjects []points.Point
 	}
 
-	gql := client.New(handler.NewDefaultServer(srv))
+	gql := client.New(dagql.NewDefaultHandler(srv))
 	req(t, gql, `query {
 		listOfInts
 		emptyListOfInts
@@ -440,7 +439,7 @@ func TestLoadingFromID(t *testing.T) {
 
 	points.Install[Query](srv)
 
-	gql := client.New(handler.NewDefaultServer(srv))
+	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	var res struct {
 		Point struct {
@@ -546,7 +545,7 @@ func TestIDsReflectQuery(t *testing.T) {
 	srv := dagql.NewServer(Query{})
 	points.Install[Query](srv)
 
-	gql := client.New(handler.NewDefaultServer(srv))
+	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	var res struct {
 		Point struct {
@@ -628,7 +627,7 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 	srv := dagql.NewServer(Query{})
 	points.Install[Query](srv)
 
-	gql := client.New(handler.NewDefaultServer(srv))
+	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	dagql.Fields[*points.Point]{
 		dagql.Func("loginTag", func(ctx context.Context, self *points.Point, _ struct {
@@ -737,7 +736,7 @@ func TestEmptyID(t *testing.T) {
 	srv := dagql.NewServer(Query{})
 	points.Install[Query](srv)
 
-	gql := client.New(handler.NewDefaultServer(srv))
+	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	var res struct {
 		LoadPointFromID struct {
@@ -759,7 +758,7 @@ func TestPureIDsDoNotReEvaluate(t *testing.T) {
 	srv := dagql.NewServer(Query{})
 	points.Install[Query](srv)
 
-	gql := client.New(handler.NewDefaultServer(srv))
+	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	called := 0
 	dagql.Fields[*points.Point]{
@@ -812,7 +811,7 @@ func TestImpureIDsReEvaluate(t *testing.T) {
 	srv := dagql.NewServer(Query{})
 	points.Install[Query](srv)
 
-	gql := client.New(handler.NewDefaultServer(srv))
+	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	called := 0
 	dagql.Fields[*points.Point]{
@@ -963,7 +962,7 @@ func TestPassingObjectsAround(t *testing.T) {
 	srv := dagql.NewServer(Query{})
 	points.Install[Query](srv)
 
-	gql := client.New(handler.NewDefaultServer(srv))
+	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	var res struct {
 		Point struct {
@@ -1000,7 +999,7 @@ func TestEnums(t *testing.T) {
 	srv := dagql.NewServer(Query{})
 	points.Install[Query](srv)
 
-	gql := client.New(handler.NewDefaultServer(srv))
+	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	t.Run("outputs", func(t *testing.T) {
 		var res struct {
@@ -1161,7 +1160,7 @@ func (BuiltinsInput) TypeName() string {
 
 func TestInputObjects(t *testing.T) {
 	srv := dagql.NewServer(Query{})
-	gql := client.New(handler.NewDefaultServer(srv))
+	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	dagql.MustInputSpec(DefaultsInput{}).Install(srv)
 
@@ -1370,7 +1369,7 @@ func InstallDefaults(srv *dagql.Server) {
 
 func TestDefaults(t *testing.T) {
 	srv := dagql.NewServer(Query{})
-	gql := client.New(handler.NewDefaultServer(srv))
+	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	InstallDefaults(srv)
 
@@ -1454,7 +1453,7 @@ func TestDefaults(t *testing.T) {
 
 func TestParallelism(t *testing.T) {
 	srv := dagql.NewServer(Query{})
-	gql := client.New(handler.NewDefaultServer(srv))
+	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	pipes.Install[Query](srv)
 
@@ -1536,7 +1535,7 @@ func InstallBuiltins(srv *dagql.Server) {
 
 func TestBuiltins(t *testing.T) {
 	srv := dagql.NewServer(Query{})
-	gql := client.New(handler.NewDefaultServer(srv))
+	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	InstallBuiltins(srv)
 
@@ -1738,7 +1737,7 @@ func TestIntrospection(t *testing.T) {
 		}).Meta(),
 	}.Install(srv)
 
-	gql := client.New(handler.NewDefaultServer(srv))
+	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	var res introspection.Response
 	req(t, gql, introspection.Query, &res)
@@ -1910,7 +1909,7 @@ func InstallViewer(srv *dagql.Server) {
 
 func TestViews(t *testing.T) {
 	srv := dagql.NewServer(Query{})
-	gql := client.New(handler.NewDefaultServer(srv))
+	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	InstallViewer(srv)
 
@@ -1993,7 +1992,7 @@ func TestViews(t *testing.T) {
 
 func TestViewsCaching(t *testing.T) {
 	srv := dagql.NewServer(Query{})
-	gql := client.New(handler.NewDefaultServer(srv))
+	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	InstallViewer(srv)
 
@@ -2022,7 +2021,7 @@ func TestViewsCaching(t *testing.T) {
 func TestViewsIntrospection(t *testing.T) {
 	srv := dagql.NewServer(Query{})
 	introspection.Install[Query](srv)
-	gql := client.New(handler.NewDefaultServer(srv))
+	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	InstallViewer(srv)
 
@@ -2153,7 +2152,7 @@ func TestCustomDigest(t *testing.T) {
 		}),
 	}.Install(srv)
 
-	gql := client.New(handler.NewDefaultServer(srv))
+	gql := client.New(dagql.NewDefaultHandler(srv))
 
 	// sanity test version without custom digest first
 	{
