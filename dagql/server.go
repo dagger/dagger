@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"reflect"
 	"runtime/debug"
-	"sort"
 	"sync"
 
 	"github.com/99designs/gqlgen/graphql"
@@ -467,26 +466,8 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (Object, error) {
 	} else {
 		base = s.root
 	}
-	astField := &ast.Field{
-		Name: id.Field(),
-	}
-	vars := map[string]any{}
-	for _, arg := range id.Args() {
-		vars[arg.Name()] = arg.Value().ToInput()
-		astField.Arguments = append(astField.Arguments, &ast.Argument{
-			Name: arg.Name(),
-			Value: &ast.Value{
-				Kind: ast.Variable,
-				Raw:  arg.Name(),
-			},
-		})
-	}
-	sel, _, err := base.ObjectType().ParseField(ctx, id.View(), astField, vars)
-	if err != nil {
-		return nil, fmt.Errorf("parse field %q: %w", astField.Name, err)
-	}
-	sel.Nth = int(id.Nth())
-	res, id, err := s.cachedSelect(ctx, base, sel)
+
+	res, id, err := base.Call(ctx, s, id)
 	if err != nil {
 		return nil, fmt.Errorf("load: %w", err)
 	}
@@ -502,9 +483,9 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 
 	var res Typed = self
 	var id *call.ID
-	var err error
 	for i, sel := range sels {
-		res, id, err = s.cachedSelect(ctx, self, sel)
+		var err error
+		res, id, err = self.Select(ctx, s, sel)
 		if err != nil {
 			return fmt.Errorf("select: %w", err)
 		}
@@ -607,6 +588,20 @@ func NewInstanceForCurrentID[P, T Typed](
 	parent Instance[P],
 	self T,
 ) (Instance[T], error) {
+	return NewInstanceForID(srv, parent, self, CurrentID(ctx))
+}
+
+// NewInstanceForID creates a new Instance with the given ID and self value.
+func NewInstanceForID[P, T Typed](
+	srv *Server,
+	parent Instance[P],
+	self T,
+	id *call.ID,
+) (Instance[T], error) {
+	if id == nil {
+		return Instance[T]{}, errors.New("id is nil")
+	}
+
 	objType, ok := srv.ObjectType(self.Type().Name())
 	if !ok {
 		return Instance[T]{}, fmt.Errorf("unknown type %q", self.Type().Name())
@@ -615,41 +610,18 @@ func NewInstanceForCurrentID[P, T Typed](
 	if !ok {
 		return Instance[T]{}, fmt.Errorf("not a Class: %T", objType)
 	}
+
+	// sanity check: verify the ID matches the type of self
+	if id.Type().NamedType() != objType.TypeName() {
+		return Instance[T]{}, fmt.Errorf("expected ID of type %q, got %q", objType.TypeName(), id.Type().NamedType())
+	}
+
 	return Instance[T]{
-		Constructor: CurrentID(ctx),
+		Constructor: id,
 		Self:        self,
 		Class:       class,
 		Module:      parent.Module,
 	}, nil
-}
-
-func NoopDone(res Typed, cached bool, rerr error) {}
-
-func (s *Server) cachedSelect(ctx context.Context, self Object, sel Selector) (res Typed, chained *call.ID, rerr error) {
-	chainedID, err := self.IDFor(ctx, sel)
-	if err != nil {
-		return nil, nil, err
-	}
-	ctx = idToContext(ctx, chainedID)
-	dig := chainedID.Digest()
-	var val Typed
-	doSelect := func(ctx context.Context) (innerVal Typed, innerErr error) {
-		if s.telemetry != nil {
-			wrappedCtx, done := s.telemetry(ctx, self, chainedID)
-			defer func() { done(innerVal, false, innerErr) }()
-			ctx = wrappedCtx
-		}
-		return self.Select(ctx, sel)
-	}
-	if chainedID.IsTainted() {
-		val, err = doSelect(ctx)
-	} else {
-		val, _, err = s.Cache.GetOrInitialize(ctx, dig, doSelect)
-	}
-	if err != nil {
-		return nil, nil, err
-	}
-	return val, chainedID, nil
 }
 
 func idToPath(id *call.ID) ast.Path {
@@ -703,7 +675,7 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 		}
 	}()
 
-	val, chainedID, err := s.cachedSelect(ctx, self, sel.Selector)
+	val, chainedID, err := self.Select(ctx, s, sel.Selector)
 	if err != nil {
 		return nil, err
 	}
@@ -799,6 +771,7 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 					return nil, err
 				}
 			}
+
 			sels = append(sels, Selection{
 				Alias:         x.Alias,
 				Selector:      sel,
@@ -875,44 +848,6 @@ func (sel Selector) String() string {
 		str += fmt.Sprintf("[%d]", sel.Nth)
 	}
 	return str
-}
-
-func (sel Selector) AppendTo(id *call.ID, spec FieldSpec) *call.ID {
-	astType := spec.Type.Type()
-	tainted := !sel.Pure && spec.ImpurityReason != ""
-	idArgs := make([]*call.Argument, 0, len(sel.Args))
-	for _, arg := range sel.Args {
-		if arg.Value == nil {
-			// we don't include null arguments, since they would needlessly bust caches
-			continue
-		}
-		if arg, found := spec.Args.Lookup(arg.Name); found && arg.Sensitive {
-			continue
-		}
-		idArgs = append(idArgs, call.NewArgument(
-			arg.Name,
-			arg.Value.ToLiteral(),
-		))
-	}
-	// TODO: it's better DX if it matches schema order
-	sort.Slice(idArgs, func(i, j int) bool {
-		return idArgs[i].Name() < idArgs[j].Name()
-	})
-	if sel.Nth != 0 {
-		astType = astType.Elem
-	}
-
-	idx := id.Append(
-		astType,
-		sel.Field,
-		sel.View,
-		spec.Module,
-		tainted,
-		sel.Nth,
-		idArgs...,
-	)
-
-	return idx
 }
 
 type Inputs []NamedInput
@@ -1071,6 +1006,7 @@ func collectLiteralArgs(obj any) ([]*call.Argument, error) {
 		args = append(args, call.NewArgument(
 			name,
 			input.ToLiteral(),
+			false,
 		))
 	}
 	return args, nil

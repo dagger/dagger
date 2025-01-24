@@ -10,12 +10,11 @@ Expected stderr:
 │ ✔ finding module configuration X.Xs
 │ ✘ initializing module X.Xs
 │ ! input: module.withSource.initialize failed to initialize module: failed to call module "broken" to get functions: call constructor: process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
-│ │ $ ModuleSource.resolveFromCaller: ModuleSource! X.Xs CACHED
-│ │ │ ✔ upload /XXX/XXX/XXX from XXXXXXXXXXX (client id: XXXXXXXXXXX, session id: XXXXXXXXXXX) (include: XXXXXXXXXXX) (exclude: XXXXXXXXXXX) X.Xs
+│ │ ✔ ModuleSource.resolveFromCaller: ModuleSource! X.Xs
 │ │ ✘ .asModule: Module! X.Xs
 │ │ ! process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
 │ │ │ ✘ Module.withSource(
-│ │ │ │ │ source: $ ModuleSource.resolveFromCaller: ModuleSource! X.Xs CACHED
+│ │ │ │ │ source: ✔ ModuleSource.resolveFromCaller: ModuleSource! X.Xs
 │ │ │ │ ): Module! X.Xs
 │ │ │ ! process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
 │ │ │ │ ✔ initialize dependencies X.Xs

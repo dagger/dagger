@@ -4171,7 +4171,7 @@ EXPOSE 8080
 
 	// random order since ImageConfig.ExposedPorts is a map
 	for _, p := range res.Container.ExposedPorts {
-		require.Equal(t, core.NetworkProtocolTCP, p.Protocol)
+		require.Equalf(t, core.NetworkProtocolTCP, p.Protocol, "unexpected protocol for port %d", p.Port)
 		switch p.Port {
 		case 8080:
 			require.Nil(t, p.Description)

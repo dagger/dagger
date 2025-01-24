@@ -499,7 +499,7 @@ func (sdk *goSDK) Runtime(
 			},
 		},
 	); err != nil {
-		return nil, fmt.Errorf("failed to exec go build in go module sdk container runtime: %w", err)
+		return nil, fmt.Errorf("failed to build go runtime binary: %w", err)
 	}
 	return ctr.Self, nil
 }

@@ -72,15 +72,22 @@ type Object interface {
 	IDable
 	// ObjectType returns the type of the object.
 	ObjectType() ObjectType
-	// IDFor returns the ID representing the return value of the given field.
-	IDFor(context.Context, Selector) (*call.ID, error)
-	// Select evaluates the selected field and returns the result.
+
+	// Call evaluates the field selected by the given ID and returns the result.
 	//
 	// The returned value is the raw Typed value returned from the field; it must
 	// be instantiated with a class for further selection.
 	//
 	// Any Nullable values are automatically unwrapped.
-	Select(context.Context, Selector) (Typed, error)
+	Call(context.Context, *Server, *call.ID) (Typed, *call.ID, error)
+
+	// Select evaluates the field selected by the given selector and returns the result.
+	//
+	// The returned value is the raw Typed value returned from the field; it must
+	// be instantiated with a class for further selection.
+	//
+	// Any Nullable values are automatically unwrapped.
+	Select(context.Context, *Server, Selector) (Typed, *call.ID, error)
 }
 
 // ScalarType represents a GraphQL Scalar type.

@@ -2,11 +2,9 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 
-	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/dagql"
 	dagintro "github.com/dagger/dagger/dagql/introspection"
 )
@@ -18,19 +16,6 @@ const (
 
 	ModuleName = "daggercore"
 )
-
-// We don't expose these types to modules SDK codegen, but
-// we still want their graphql schemas to be available for
-// internal usage. So we use this list to scrub them from
-// the introspection JSON that module SDKs use for codegen.
-var typesHiddenFromModuleSDKs = []dagql.Typed{
-	&Host{},
-
-	&Engine{},
-	&EngineCache{},
-	&EngineCacheEntry{},
-	&EngineCacheEntrySet{},
-}
 
 /*
 ModDeps represents a set of dependencies for a module or for a caller depending on a
@@ -100,18 +85,6 @@ func (d *ModDeps) TypeDefs(ctx context.Context) ([]*TypeDef, error) {
 		typeDefs = append(typeDefs, modTypeDefs...)
 	}
 	return typeDefs, nil
-}
-
-func schemaIntrospectionJSON(ctx context.Context, dag *dagql.Server) (json.RawMessage, error) {
-	data, err := dag.Query(ctx, introspection.Query, nil)
-	if err != nil {
-		return nil, fmt.Errorf("introspection query failed: %w", err)
-	}
-	jsonBytes, err := json.Marshal(data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal introspection result: %w", err)
-	}
-	return json.RawMessage(jsonBytes), nil
 }
 
 func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
@@ -219,49 +192,8 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 		}
 	}
 
-	schemaJSON, err := schemaIntrospectionJSON(ctx, dag)
-	if err != nil {
-		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get schema introspection JSON: %w", err)
-	}
-	var introspection introspection.Response
-	if err := json.Unmarshal([]byte(schemaJSON), &introspection); err != nil {
-		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to unmarshal introspection JSON: %w", err)
-	}
-	for _, typed := range typesHiddenFromModuleSDKs {
-		introspection.Schema.ScrubType(typed.Type().Name())
-		introspection.Schema.ScrubType(dagql.IDTypeNameFor(typed))
-	}
-	moduleSchemaJSON, err := json.Marshal(introspection)
-	if err != nil {
-		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to marshal introspection JSON: %w", err)
-	}
-
-	const schemaJSONFilename = "schema.json"
-
-	bk, err := d.root.Buildkit(ctx)
-	if err != nil {
-		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	schemaJSONDgst, err := bk.BytesToBlob(ctx,
-		schemaJSONFilename,
-		0644,
-		moduleSchemaJSON,
-	)
-	if err != nil {
-		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to create blob for introspection JSON: %w", err)
-	}
-	dirInst, err := LoadBlob(ctx, dag, schemaJSONDgst)
-	if err != nil {
-		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to load introspection JSON blob: %w", err)
-	}
-	if err := dag.Select(ctx, dirInst, &loadedSchemaJSONFile,
-		dagql.Selector{
-			Field: "file",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(schemaJSONFilename)},
-			},
-		},
+	if err := dag.Select(ctx, dag.Root(), &loadedSchemaJSONFile,
+		dagql.Selector{Field: "__schemaJSONFile"},
 	); err != nil {
 		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to select introspection JSON file: %w", err)
 	}
