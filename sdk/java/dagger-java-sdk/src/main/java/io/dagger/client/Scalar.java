@@ -2,7 +2,7 @@ package io.dagger.client;
 
 public class Scalar<T> {
 
-  private final T value;
+  private T value;
 
   protected Scalar(T value) {
     this.value = value;
@@ -10,5 +10,9 @@ public class Scalar<T> {
 
   T convert() {
     return value;
+  }
+
+  public boolean eq(Scalar<T> other) {
+    return value.equals(other.value);
   }
 }

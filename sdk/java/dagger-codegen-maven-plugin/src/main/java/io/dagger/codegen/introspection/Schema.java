@@ -98,6 +98,11 @@ public class Schema {
     filteredTypes.stream().filter(t -> t.getKind() == TypeKind.ENUM).forEach(visitor::visitEnum);
 
     visitor.visitVersion(version);
+
+    visitor.visitIDAbles(
+        filteredTypes.stream()
+            .filter(t -> t.getKind() == TypeKind.OBJECT && t.providesId())
+            .toList());
   }
 
   @Override

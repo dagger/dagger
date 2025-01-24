@@ -19,6 +19,7 @@ const (
 	GoSDKManifestDigestEnvName         = "DAGGER_GO_SDK_MANIFEST_DIGEST"
 	PythonSDKManifestDigestEnvName     = "DAGGER_PYTHON_SDK_MANIFEST_DIGEST"
 	TypescriptSDKManifestDigestEnvName = "DAGGER_TYPESCRIPT_SDK_MANIFEST_DIGEST"
+	JavaSDKManifestDigestEnvName       = "DAGGER_JAVA_SDK_MANIFEST_DIGEST"
 )
 
 const (
