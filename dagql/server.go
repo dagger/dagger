@@ -11,6 +11,7 @@ import (
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/errcode"
+	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
@@ -113,6 +114,11 @@ func NewServer[T Typed](root T) *Server {
 		srv.InstallDirective(directive)
 	}
 	return srv
+}
+
+func NewDefaultHandler(es graphql.ExecutableSchema) *handler.Server {
+	// TODO: avoid this deprecated method, and customize the options
+	return handler.NewDefaultServer(es) //nolint: staticcheck
 }
 
 var coreScalars = []ScalarType{
