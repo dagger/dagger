@@ -211,7 +211,7 @@ git checkout -b prep-$ENGINE_VERSION
 - [ ] Bump internal versions (sdks + docs + helm chart) to the target version
 
 ```console
-dagger call release bump --version="$ENGINE_VERSION" -o ./
+dagger call -m releaser bump --version="$ENGINE_VERSION" -o ./
 git add docs sdk helm
 git commit -s -m "chore: bump dependencies to $ENGINE_VERSION"
 ```

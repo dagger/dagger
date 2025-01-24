@@ -275,6 +275,7 @@ func (e *DaggerEngine) Publish(
 	ctx context.Context,
 
 	// Image target to push to
+	// +default="ghcr.io/dagger/engine"
 	image string,
 	// List of tags to use
 	tag []string,
@@ -282,8 +283,6 @@ func (e *DaggerEngine) Publish(
 	// +optional
 	dryRun bool,
 
-	// +optional
-	registry *string,
 	// +optional
 	registryUsername *string,
 	// +optional
@@ -345,8 +344,9 @@ func (e *DaggerEngine) Publish(
 
 	// push all the targets
 	ctr := dag.Container()
-	if registry != nil && registryUsername != nil && registryPassword != nil {
-		ctr = ctr.WithRegistryAuth(*registry, *registryUsername, registryPassword)
+	if registryUsername != nil && registryPassword != nil {
+		registry, _, _ := strings.Cut(image, "/")
+		ctr = ctr.WithRegistryAuth(registry, *registryUsername, registryPassword)
 	}
 	for i, target := range targets {
 		result := targetResults[i]

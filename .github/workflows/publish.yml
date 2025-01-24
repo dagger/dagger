@@ -22,183 +22,60 @@ jobs:
     runs-on: dagger-g3-v0-15-2-16c
     steps:
       - uses: actions/checkout@v4
-      - name: "Publish Engine"
+      - name: "Publish"
         uses: ./.github/actions/call
         with:
+          module: ./releaser
           function: |-
-            engine \
             publish \
-            --tag="${{ github.ref_name }}" --tag="${{ github.sha }}" \
+            --tag="${{ github.ref_name }}" --commit="${{ github.sha }}" \
             --image="$DAGGER_ENGINE_IMAGE" \
-            --registry="$DAGGER_ENGINE_IMAGE_REGISTRY" \
             --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
-            --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD
+            --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD \
+            --goreleaser-key=env:GORELEASER_KEY \
+            --github-token=env:GITHUB_TOKEN \
+            --github-org-name="$GITHUB_ORG_NAME" \
+            --netlify-token=env:NETLIFY_TOKEN \
+            --pypi-token=env:PYPI_TOKEN \
+            --pypi-repo="$PYPI_REPO" \
+            --npm-token=env:NPM_TOKEN \
+            --hex-apikey=env:HEX_API_KEY \
+            --cargo-registry-token=env:CARGO_REGISTRY_TOKEN \
+            --aws-access-key-id=env:AWS_ACCESS_KEY_ID \
+            --aws-secret-access-key=env:AWS_SECRET_ACCESS_KEY \
+            --aws-region="$AWS_REGION" \
+            --aws-bucket="$AWS_BUCKET" \
+            --aws-cloudfront-distribution="$AWS_CLOUDFRONT_DISTRIBUTION" \
+            --artefacts-fqdn="$ARTEFACTS_FQDN" \
+            --discord-webhook=env:DISCORD_WEBHOOK
+          redirect: $GITHUB_STEP_SUMMARY
         env:
           DAGGER_ENGINE_IMAGE: ${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}
-          DAGGER_ENGINE_IMAGE_REGISTRY: ghcr.io
           DAGGER_ENGINE_IMAGE_USERNAME: ${{ github.actor }}
           DAGGER_ENGINE_IMAGE_PASSWORD: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-      - name: "Publish CLI"
-        uses: ./.github/actions/call
-        with:
-          function: |-
-            cli \
-            publish \
-            --tag="${{ github.ref_name }}" \
-            --github-org-name="$GH_ORG_NAME" \
-            --github-token=env:GITHUB_TOKEN \
-            --goreleaser-key=env:GORELEASER_KEY \
-            --aws-access-key-id=env:AWS_ACCESS_KEY_ID \
-            --aws-secret-access-key=env:AWS_SECRET_ACCESS_KEY \
-            --aws-region="$AWS_REGION" \
-            --aws-bucket="$AWS_BUCKET" \
-            --artefacts-fqdn="$ARTEFACTS_FQDN"
-        env:
-          GH_ORG_NAME: ${{ vars.GH_ORG_NAME }}
-          GITHUB_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ vars.RELEASE_AWS_REGION }}
-          AWS_BUCKET: ${{ vars.RELEASE_AWS_BUCKET }}
-          ARTEFACTS_FQDN: ${{ vars.RELEASE_FQDN }}
+
           GORELEASER_KEY: ${{ secrets.GORELEASER_PRO_LICENSE_KEY }}
-      - name: "Publish Metadata"
-        uses: ./.github/actions/call
-        with:
-          function: |-
-            cli \
-            publish-metadata \
-            --aws-access-key-id=env:AWS_ACCESS_KEY_ID \
-            --aws-secret-access-key=env:AWS_SECRET_ACCESS_KEY \
-            --aws-region="$AWS_REGION" \
-            --aws-bucket="$AWS_BUCKET" \
-            --aws-cloudfront-distribution="$AWS_CLOUDFRONT_DISTRIBUTION"
-        env:
+
+          GITHUB_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
+          GITHUB_ORG_NAME: ${{ vars.GH_ORG_NAME }}
+
+          NETLIFY_TOKEN: ${{ secrets.NETLIFY_TOKEN }}
+          PYPI_TOKEN: ${{ secrets.RELEASE_PYPI_TOKEN }}
+          PYPI_REPO: ${{ secrets.RELEASE_PYPI_REPO }}
+          NPM_TOKEN: ${{ secrets.RELEASE_NPM_TOKEN }}
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
           AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ vars.RELEASE_AWS_REGION }}
           AWS_BUCKET: ${{ vars.RELEASE_AWS_BUCKET }}
           AWS_CLOUDFRONT_DISTRIBUTION: ${{ vars.RELEASE_AWS_CLOUDFRONT_DISTRIBUTION }}
-      - name: "Publish Docs"
-        uses: ./.github/actions/call
-        if: github.ref_name != 'main'
-        with:
-          function: |-
-            docs \
-            publish \
-            --netlify-token=env:NETLIFY_TOKEN
-        env:
-          NETLIFY_TOKEN: ${{ secrets.NETLIFY_TOKEN }}
-      # TODO: move this into dagger function call
-      - name: "Notify"
-        uses: ./.github/actions/notify
-        if: github.ref_name != 'main'
-        with:
-          message: "🚙 Engine + 🚗 CLI: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
-          discord-webhook: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
+          ARTEFACTS_FQDN: ${{ vars.RELEASE_FQDN }}
 
-  publish-sdk-go:
-    needs: publish
-    runs-on: dagger-g3-v0-15-2-4c
-    steps:
-      - uses: actions/checkout@v4
-      - name: "go publish"
-        uses: ./.github/actions/call
-        env:
-          RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-          RELEASE_DISCORD_WEBHOOK: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
-        with:
-          function: sdk go publish --tag="${{ github.ref_name }}" --github-token=env:RELEASE_DAGGER_CI_TOKEN --discord-webhook=env:RELEASE_DISCORD_WEBHOOK
+          DISCORD_WEBHOOK: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
 
-  publish-sdk-php:
-    needs: publish
-    runs-on: dagger-g3-v0-15-2-4c
-    steps:
-      - uses: actions/checkout@v4
-      - name: "php publish"
-        uses: ./.github/actions/call
-        env:
-          RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-          RELEASE_DISCORD_WEBHOOK: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
-        with:
-          function: sdk php publish --tag="${{ github.ref_name }}" --github-token=env:RELEASE_DAGGER_CI_TOKEN --discord-webhook=env:RELEASE_DISCORD_WEBHOOK
-
-  publish-sdk-python:
-    needs: publish
-    if: github.ref_name != 'main'
-    runs-on: dagger-g3-v0-15-2-4c
-    steps:
-      - uses: actions/checkout@v4
-      - name: "python publish"
-        uses: ./.github/actions/call
-        env:
-          RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-          RELEASE_PYPI_TOKEN: ${{ secrets.RELEASE_PYPI_TOKEN }}
-          RELEASE_PYPI_REPO: ${{ secrets.RELEASE_PYPI_REPO }}
-          RELEASE_DISCORD_WEBHOOK: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
-        with:
-          function: sdk python publish --tag="${{ github.ref_name }}" --github-token=env:RELEASE_DAGGER_CI_TOKEN --discord-webhook=env:RELEASE_DISCORD_WEBHOOK --pypi-repo="$RELEASE_PYPI_REPO" --pypi-token=env:RELEASE_PYPI_TOKEN
-
-  publish-sdk-typescript:
-    needs: publish
-    if: github.ref_name != 'main'
-    runs-on: dagger-g3-v0-15-2-4c
-    steps:
-      - uses: actions/checkout@v4
-      - name: "typescript publish"
-        uses: ./.github/actions/call
-        env:
-          RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-          RELEASE_NPM_TOKEN: ${{ secrets.RELEASE_NPM_TOKEN }}
-          RELEASE_DISCORD_WEBHOOK: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
-        with:
-          function: sdk typescript publish --tag="${{ github.ref_name }}" --github-token=env:RELEASE_DAGGER_CI_TOKEN --discord-webhook=env:RELEASE_DISCORD_WEBHOOK --npm-token=env:RELEASE_NPM_TOKEN
-
-  publish-sdk-elixir:
-    needs: publish
-    if: github.ref_name != 'main'
-    runs-on: dagger-g3-v0-15-2-4c
-    steps:
-      - uses: actions/checkout@v4
-      - name: "elixir publish"
-        uses: ./.github/actions/call
-        env:
-          RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
-          RELEASE_DISCORD_WEBHOOK: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
-        with:
-          function: sdk elixir publish --tag="${{ github.ref_name }}" --github-token=env:RELEASE_DAGGER_CI_TOKEN --discord-webhook=env:RELEASE_DISCORD_WEBHOOK --hex-apikey=env:HEX_API_KEY
-
-  publish-sdk-rust:
-    needs: publish
-    if: github.ref_name != 'main'
-    runs-on: dagger-g3-v0-15-2-4c
-    steps:
-      - uses: actions/checkout@v4
-      - name: "elixir publish"
-        uses: ./.github/actions/call
-        env:
-          RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-          RELEASE_DISCORD_WEBHOOK: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        with:
-          function: sdk rust publish --tag="${{ github.ref_name }}" --github-token=env:RELEASE_DAGGER_CI_TOKEN --discord-webhook=env:RELEASE_DISCORD_WEBHOOK --cargo-registry-token=env:CARGO_REGISTRY_TOKEN
-
-  publish-helm:
-    needs: publish
-    if: github.ref_name != 'main'
-    runs-on: dagger-g3-v0-15-2-4c
-    steps:
-      - uses: actions/checkout@v4
-      - name: "helm publish"
-        uses: ./.github/actions/call
-        env:
-          RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-          RELEASE_DISCORD_WEBHOOK: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
-        with:
-          function: publish --target=${{ github.ref_name }} --github-token=env:RELEASE_DAGGER_CI_TOKEN --discord-webhook=env:RELEASE_DISCORD_WEBHOOK
-          module: ./helm
-
+  # TODO: move this into Publish above
   daggerverse-bump-dagger:
     needs: publish
     if: github.ref_name != 'main'

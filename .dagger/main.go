@@ -211,11 +211,6 @@ func (dev *DaggerDev) SDK() *SDK {
 	}
 }
 
-// Run Dagger release-related tasks
-func (dev *DaggerDev) Release() *Release {
-	return &Release{SDK: dev.SDK(), Docs: dev.Docs()}
-}
-
 // Creates a dev container that has a running CLI connected to a dagger engine
 func (dev *DaggerDev) Dev(
 	ctx context.Context,
