@@ -346,18 +346,6 @@ func (r Instance[T]) Select(ctx context.Context, s *Server, sel Selector) (Typed
 			inputArgs[argSpec.Name] = namedInput.Value
 
 		case argSpec.Default != nil:
-			if isZero, err := isZeroLiteral(argSpec.Default.ToLiteral()); err != nil {
-				return nil, nil, fmt.Errorf("failed to check zero value for %q: %w", argSpec.Name, err)
-			} else if isZero {
-				// skip zero values, they pollute telemetry
-				// (maybe they shouldn't show up as defaults at all?)
-				continue
-			}
-			idArgs = append(idArgs, call.NewArgument(
-				argSpec.Name,
-				argSpec.Default.ToLiteral(),
-				argSpec.Sensitive,
-			))
 			inputArgs[argSpec.Name] = argSpec.Default
 
 		case argSpec.Type.Type().NonNull:
@@ -399,31 +387,6 @@ func (r Instance[T]) Select(ctx context.Context, s *Server, sel Selector) (Typed
 	return r.call(ctx, s, newID, inputArgs)
 }
 
-func isZeroLiteral(lit call.Literal) (bool, error) {
-	switch lit := lit.(type) {
-	case *call.LiteralID:
-		return lit.Value() == nil, nil
-	case *call.LiteralList:
-		return lit.Len() == 0, nil
-	case *call.LiteralObject:
-		return lit.Len() == 0, nil
-	case *call.LiteralBool:
-		return !lit.Value(), nil
-	case *call.LiteralEnum:
-		return lit.Value() == "", nil
-	case *call.LiteralInt:
-		return lit.Value() == 0, nil
-	case *call.LiteralFloat:
-		return lit.Value() == 0, nil
-	case *call.LiteralString:
-		return lit.Value() == "", nil
-	case *call.LiteralNull:
-		return true, nil
-	default:
-		return false, fmt.Errorf("unhandled literal type for checking zero value: %T", lit)
-	}
-}
-
 // Call calls the field on the instance specified by the ID.
 func (r Instance[T]) Call(ctx context.Context, s *Server, newID *call.ID) (Typed, *call.ID, error) {
 	fieldName := newID.Field()
@@ -432,19 +395,35 @@ func (r Instance[T]) Call(ctx context.Context, s *Server, newID *call.ID) (Typed
 	if !ok {
 		return nil, nil, fmt.Errorf("Call: %s has no such field: %q", r.Class.TypeName(), fieldName)
 	}
+
 	idArgs := newID.Args()
 	inputArgs := make(map[string]Input, len(idArgs))
-	// defaults and checking for required args is expected to already be done
-	for _, idArg := range idArgs {
-		argSpec, ok := field.Spec.Args.Lookup(idArg.Name())
-		if !ok {
-			return nil, nil, fmt.Errorf("Call: %s.%s has no such argument: %q", r.Class.TypeName(), field.Spec.Name, idArg.Name())
+	for _, argSpec := range field.Spec.Args {
+		// just be n^2 since the overhead of a map is likely more expensive
+		// for the expected low value of n
+		var inputLit call.Literal
+		for _, idArg := range idArgs {
+			if idArg.Name() == argSpec.Name {
+				inputLit = idArg.Value()
+				break
+			}
 		}
-		input, err := argSpec.Type.Decoder().DecodeInput(idArg.Value().ToInput())
-		if err != nil {
-			return nil, nil, fmt.Errorf("Call: init arg %q value as %T (%s) using %T: %w", argSpec.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
+
+		switch {
+		case inputLit != nil:
+			input, err := argSpec.Type.Decoder().DecodeInput(inputLit.ToInput())
+			if err != nil {
+				return nil, nil, fmt.Errorf("Call: init arg %q value as %T (%s) using %T: %w", argSpec.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
+			}
+			inputArgs[argSpec.Name] = input
+
+		case argSpec.Default != nil:
+			inputArgs[argSpec.Name] = argSpec.Default
+
+		case argSpec.Type.Type().NonNull:
+			// error out if the arg is missing but required
+			return nil, nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
 		}
-		inputArgs[argSpec.Name] = input
 	}
 
 	return r.call(ctx, s, newID, inputArgs)
