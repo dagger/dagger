@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"dagger.io/dagger/telemetry"
-	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/containerd/containerd/content"
 	"github.com/koron-go/prefixw"
@@ -1090,7 +1089,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 		return gqlErr(fmt.Errorf("failed to get schema: %w", err), http.StatusBadRequest)
 	}
 
-	gqlSrv := handler.NewDefaultServer(schema)
+	gqlSrv := dagql.NewDefaultHandler(schema)
 	// NB: break glass when needed:
 	// gqlSrv.AroundResponses(func(ctx context.Context, next graphql.ResponseHandler) *graphql.Response {
 	// 	res := next(ctx)
