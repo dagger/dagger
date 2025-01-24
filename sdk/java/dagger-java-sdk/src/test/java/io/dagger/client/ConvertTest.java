@@ -11,9 +11,9 @@ public class ConvertTest {
       Container alpine = client.container().from("alpine:3.16.2").withWorkdir("/my-dir");
       assertThat(alpine.workdir()).isEqualTo("/my-dir");
 
-      JSON json = Convert.toJSON(alpine);
+      JSON json = JsonConverter.toJSON(alpine);
 
-      Container a = Convert.fromJSON(client, json, Container.class);
+      Container a = JsonConverter.fromJSON(client, json, Container.class);
       assertThat(a.workdir()).isEqualTo("/my-dir");
     }
   }

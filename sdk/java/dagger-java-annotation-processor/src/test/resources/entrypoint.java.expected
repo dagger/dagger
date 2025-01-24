@@ -3,7 +3,6 @@ package io.dagger.gen.entrypoint;
 
 import io.dagger.client.Client;
 import io.dagger.client.Container;
-import io.dagger.client.Convert;
 import io.dagger.client.Dagger;
 import io.dagger.client.DaggerQueryException;
 import io.dagger.client.Directory;
@@ -11,6 +10,7 @@ import io.dagger.client.Function;
 import io.dagger.client.FunctionCall;
 import io.dagger.client.FunctionCallArgValue;
 import io.dagger.client.JSON;
+import io.dagger.client.JsonConverter;
 import io.dagger.client.Module;
 import io.dagger.client.ModuleID;
 import io.dagger.client.TypeDef;
@@ -54,7 +54,7 @@ public class Entrypoint {
       JSON result;
       if (parentName.isEmpty()) {
         ModuleID modID = register();
-        result = modID.toJSON();
+        result = JsonConverter.toJSON(modID);
       } else {
         result = invoke(parentJson, parentName, fnName, inputArgs);
       }
@@ -90,19 +90,19 @@ public class Entrypoint {
     try (var jsonb = JsonbBuilder.create()) {
       if (parentName.equals("DaggerJavaModule")) {
         Class clazz = Class.forName("io.lgtd.dagger.java.module.DaggerJavaModule");
-        var obj = Convert.fromJSON(dag, parentJson, clazz);
+        var obj = JsonConverter.fromJSON(dag, parentJson, clazz);
         clazz.getMethod("setClient", Client.class).invoke(obj, dag);
         if (fnName.equals("containerEcho")) {
-          String stringArg = (String) Convert.fromJSON(dag, inputArgs.get("stringArg"), String.class);
+          String stringArg = (String) JsonConverter.fromJSON(dag, inputArgs.get("stringArg"), String.class);
           Method fn = clazz.getMethod("containerEcho", String.class);
           Container res = (Container) fn.invoke(obj, stringArg);
-          return Convert.toJSON(res);
+          return JsonConverter.toJSON(res);
         } else if (fnName.equals("grepDir")) {
-          Directory directoryArg = (Directory) Convert.fromJSON(dag, inputArgs.get("directoryArg"), Directory.class);
-          String pattern = (String) Convert.fromJSON(dag, inputArgs.get("pattern"), String.class);
+          Directory directoryArg = (Directory) JsonConverter.fromJSON(dag, inputArgs.get("directoryArg"), Directory.class);
+          String pattern = (String) JsonConverter.fromJSON(dag, inputArgs.get("pattern"), String.class);
           Method fn = clazz.getMethod("grepDir", Directory.class, String.class);
           String res = (String) fn.invoke(obj, directoryArg, pattern);
-          return Convert.toJSON(res);
+          return JsonConverter.toJSON(res);
         }
       }
     }
