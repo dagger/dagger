@@ -21,6 +21,7 @@ const (
 	// https://hub.docker.com/_/rust
 	rustDockerStable = "rust:1.77-bookworm"
 	cargoChefVersion = "0.1.62"
+	cargoEditVersion = "0.13.0"
 )
 
 type RustSDK struct {
@@ -128,7 +129,7 @@ func (r RustSDK) Publish(
 	base := r.
 		rustBase(rustDockerStable).
 		WithExec([]string{
-			"cargo", "install", "cargo-edit", "--locked",
+			"cargo", "install", "cargo-edit@" + cargoEditVersion, "--locked",
 		}).
 		WithExec([]string{
 			"cargo", "set-version", "-p", crate, versionFlag,
