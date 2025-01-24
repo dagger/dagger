@@ -34,6 +34,7 @@ from dagger.mod import Name as Name
 from dagger.mod import enum_type as enum_type
 from dagger.mod import field as field
 from dagger.mod import function as function
+from dagger.mod import interface as interface
 from dagger.mod import object_type as object_type
 
 # Re-export imports so they look like they live directly in this package.
