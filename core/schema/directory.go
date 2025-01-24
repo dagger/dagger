@@ -107,6 +107,8 @@ func (s *directorySchema) Install() {
 			Doc(`Retrieves this directory with all file/dir timestamps set to the given time.`).
 			ArgDoc("timestamp", `Timestamp to set dir/files in.`,
 				`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
+		dagql.Func("asGit", s.asGit).
+			Doc(`Converts this directory into a git repository`),
 		dagql.NodeFunc("terminal", s.terminal).
 			View(AfterVersion("v0.12.0")).
 			Impure("Nondeterministic.").
@@ -392,4 +394,17 @@ func (s *directorySchema) terminal(
 	}
 
 	return dir, nil
+}
+
+func (s *directorySchema) asGit(
+	ctx context.Context,
+	dir *core.Directory,
+	_ struct{},
+) (*core.GitRepository, error) {
+	return &core.GitRepository{
+		Backend: &core.LocalGitRepository{
+			Query:     dir.Query,
+			Directory: dir,
+		},
+	}, nil
 }
