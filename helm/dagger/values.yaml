@@ -60,6 +60,9 @@ engine:
   ### Set priorityClassName to avoid eviction
   priorityClassName: ""
 
+  ### Set runtimeClassName to use an alternative runtime, e.g. kata, gvisor, etc.
+  runtimeClassName: ""
+
   readinessProbeSettings: 
     initialDelaySeconds: 5
     timeoutSeconds: 14
