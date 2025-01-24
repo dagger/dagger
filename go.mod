@@ -9,7 +9,7 @@ require (
 )
 
 require (
-	github.com/99designs/gqlgen v0.17.57
+	github.com/99designs/gqlgen v0.17.63
 	github.com/Khan/genqlient v0.7.0
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2
@@ -82,7 +82,7 @@ require (
 	github.com/tidwall/gjson v1.18.0
 	github.com/tonistiigi/fsutil v0.0.0-20240424095704-91a3fc46842c
 	github.com/urfave/cli v1.22.16
-	github.com/vektah/gqlparser/v2 v2.5.20
+	github.com/vektah/gqlparser/v2 v2.5.21
 	github.com/vito/go-sse v1.1.2
 	github.com/vito/midterm v0.2.1-0.20241012205340-d5c6540bf1e1
 	github.com/zeebo/xxh3 v1.0.2
@@ -111,7 +111,7 @@ require (
 	golang.org/x/text v0.21.0
 	golang.org/x/tools v0.28.0
 	google.golang.org/grpc v1.68.0
-	google.golang.org/protobuf v1.35.2
+	google.golang.org/protobuf v1.36.1
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools/v3 v3.5.1
 	modernc.org/sqlite v1.34.2
