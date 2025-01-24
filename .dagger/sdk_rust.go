@@ -32,7 +32,7 @@ type RustSDK struct {
 func (r RustSDK) Lint(ctx context.Context) error {
 	base := r.rustBase(rustDockerStable)
 
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 	eg.Go(func() error {
 		_, err := base.
 			WithExec([]string{"cargo", "check", "--all", "--release"}).
