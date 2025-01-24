@@ -683,16 +683,20 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 		ctr := c.Container().
 			From("alpine:latest").
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("init", "--sdk=go", "--name=dep", "--source=.")).
+			WithWorkdir("/work/dep2").
+			With(daggerExec("init", "--sdk=go", "--name=dep2", "--source=.")).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--sdk=go", "--name=foo", "--source=.")).
-			With(daggerExec("install", "github.com/shykes/daggerverse/docker@v0.4.1"))
+			With(daggerExec("install", "./dep"))
 
 		daggerjson, err := ctr.File("dagger.json").Contents(ctx)
 		require.NoError(t, err)
-		require.Contains(t, daggerjson, "github.com/shykes/daggerverse/docker@docker/v0.4.1")
+		require.Contains(t, daggerjson, `"dep"`)
 
 		_, err = ctr.
-			With(daggerExec("install", "github.com/shykes/daggerverse/wolfi@v0.1.4", "--name=docker")).
+			With(daggerExec("install", "./dep2", "--name=dep")).
 			Sync(ctx)
 
 		requireErrOut(t, err, "two or more dependencies are trying to use the same name")
@@ -704,16 +708,20 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 		ctr := c.Container().
 			From("alpine:latest").
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("init", "--sdk=go", "--name=dep", "--source=.")).
+			WithWorkdir("/work/dep2").
+			With(daggerExec("init", "--sdk=go", "--name=dep", "--source=.")).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--sdk=go", "--source=.")).
-			With(daggerExec("install", "github.com/shykes/daggerverse/wolfi@v0.1.4"))
+			With(daggerExec("install", "./dep"))
 
 		daggerjson, err := ctr.File("dagger.json").Contents(ctx)
 		require.NoError(t, err)
-		require.Contains(t, daggerjson, "github.com/shykes/daggerverse/wolfi@wolfi/v0.1.4")
+		require.Contains(t, daggerjson, `"dep"`)
 
 		_, err = ctr.
-			With(daggerExec("install", "github.com/dagger/dagger/modules/wolfi")).
+			With(daggerExec("install", "./dep2")).
 			Sync(ctx)
 
 		requireErrOut(t, err, "two or more dependencies are trying to use the same name")

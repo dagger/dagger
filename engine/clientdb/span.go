@@ -191,7 +191,7 @@ func (ros *readOnlySpan) Resource() *resource.Resource {
 }
 
 // InstrumentationLibrary returns the instrumentation library
-func (ros *readOnlySpan) InstrumentationLibrary() instrumentation.Library {
+func (ros *readOnlySpan) InstrumentationLibrary() instrumentation.Library { //nolint:staticcheck
 	return ros.InstrumentationScope()
 }
 

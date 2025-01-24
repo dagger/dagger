@@ -856,10 +856,15 @@ func (s *moduleSchema) moduleSourceResolveDependency(
 	// depSrc.RootSubpath is ../baz and relative to foo/bar.
 	// depSubpath is the resolved path, i.e. foo/baz.
 	depSubpath := filepath.Join(srcRootSubpath, depRootSubpath)
-
 	if !filepath.IsLocal(depSubpath) {
 		return inst, fmt.Errorf("module dep source root path %q escapes root", depRootSubpath)
 	}
+
+	srcRelHostPath, err := src.SourceRootRelSubPath()
+	if err != nil {
+		return inst, err
+	}
+	depRelHostPath := filepath.Join(srcRelHostPath, depRootSubpath)
 
 	switch src.Kind {
 	case core.ModuleSourceKindGit:
@@ -900,6 +905,7 @@ func (s *moduleSchema) moduleSourceResolveDependency(
 				Field: "moduleSource",
 				Args: []dagql.NamedInput{
 					{Name: "refString", Value: dagql.String(depSubpath)},
+					{Name: "relHostPath", Value: dagql.String(depRelHostPath)},
 				},
 			},
 			dagql.Selector{
