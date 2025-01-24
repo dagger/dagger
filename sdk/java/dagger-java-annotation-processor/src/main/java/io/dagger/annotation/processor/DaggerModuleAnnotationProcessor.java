@@ -201,7 +201,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           im.nextControlFlow("else if (parentName.equals($S))", objectInfo.name());
         }
         im.addStatement("$T clazz = Class.forName($S)", Class.class, objectInfo.qualifiedName())
-            .addStatement("var obj = $T.fromJSON(dag, parentJson, clazz)", Convert.class)
+            .addStatement("var obj = $T.fromJSON(dag, parentJson, clazz)", JsonConverter.class)
             .addStatement(
                 "clazz.getMethod(\"setClient\", $T.class).invoke(obj, dag)", Client.class);
         var firstFn = true;
@@ -228,14 +228,14 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                 paramClazz,
                 parameterInfo.name(),
                 paramClazz,
-                Convert.class,
+                JsonConverter.class,
                 parameterInfo.name(),
                 classForName(parameterInfo.type()));
           }
           fnBlock.add(")");
           invokeBlock.add(")");
           im.addStatement(fnBlock.build()).addStatement(invokeBlock.build());
-          im.addStatement("return $T.toJSON(res)", Convert.class);
+          im.addStatement("return $T.toJSON(res)", JsonConverter.class);
         }
         if (!firstFn) {
           im.endControlFlow(); // functions
@@ -296,7 +296,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                               .addStatement("$T result", JSON.class)
                               .beginControlFlow("if (parentName.isEmpty())")
                               .addStatement("$T modID = register()", ModuleID.class)
-                              .addStatement("result = modID.toJSON()")
+                              .addStatement("result = $T.toJSON(modID)", JsonConverter.class)
                               .nextControlFlow("else")
                               .addStatement(
                                   "result = invoke(parentJson, parentName, fnName, inputArgs)")

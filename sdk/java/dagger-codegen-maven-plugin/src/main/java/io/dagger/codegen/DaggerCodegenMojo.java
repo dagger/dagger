@@ -10,6 +10,7 @@ import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
@@ -94,6 +95,12 @@ public class DaggerCodegenMojo extends AbstractMojo {
             public void visitVersion(String version) {
               getLog().info(String.format("Generating interface Version"));
               codegen.visitVersion(version);
+            }
+
+            @Override
+            public void visitIDAbles(List<Type> types) {
+              getLog().info(String.format("Generate helpers for IDAbles"));
+              codegen.visitIDAbles(types);
             }
           });
     } catch (IOException | InterruptedException e) {
