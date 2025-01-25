@@ -476,6 +476,8 @@ The result will be a JSON-formatted list of issues from Dagger's repository.
 
 When invoking the Dagger Function using the Dagger CLI, secrets can be sourced from multiple providers. Dagger can read secrets from the host environment, the host filesystem, and the result of host command execution, as well as from external secret managers [1Password](https://1password.com/) and [Vault](https://www.hashicorp.com/products/vault).
 
+### Host secret providers
+
 Here is an example call for this Dagger Function, with the secret sourced from a host environment variable named `GITHUB_API_TOKEN` via the `env` provider:
 
 ```shell
@@ -494,13 +496,19 @@ dagger call github-api --token=file://./github.txt
 dagger call github-api --token=cmd://"gh auth token"
 ```
 
-Secrets can also be sourced from external secret managers, such as 1Password:
+### External secret providers
+
+Secrets can also be sourced from external secret managers. Currently, Dagger supports 1Password and Vault.
+
+1Password requires creating a [service account](https://developer.1password.com/docs/service-accounts/get-started) and then setting the `OP_SERVICE_ACCOUNT_TOKEN` environment variable. Alternatively, if no `OP_SERVICE_ACCOUNT_TOKEN` is provided, the integration will attempt to execute the (official) `op` CLI if installed in the system.
+
+1Password secret references, in the format `op://<vault-name>/<item-name>/[section-name/]<field-name>` are supported. Here is an example:
 
 ```shell
-dagger call github-api --token=op://infra/github/credential
+OP_SERVICE_ACCOUNT_TOKEN="mytoken" dagger call github-api --token=op://infra/github/credential
 ```
 
-...or Vault:
+Similarly, here is an example for Vault:
 
 ```shell
 dagger call github-api --token=vault://credentials.github

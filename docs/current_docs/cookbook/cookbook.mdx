@@ -778,7 +778,7 @@ The following Dagger Function accepts a GitHub personal access token as a `Secre
   [1Password service accounts](https://developer.1password.com/docs/service-accounts/) are also supported:
 
     ```shell
-    SERVICE_ACCOUNT=user dagger call github-api --token=op://infra/github/credential
+    OP_SERVICE_ACCOUNT_TOKEN="mytoken" dagger call github-api --token=op://infra/github/credential
     ```
 
 - Use a secret from Vault:
