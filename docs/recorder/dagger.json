@@ -1,6 +1,6 @@
 {
   "name": "recorder",
-  "engineVersion": "v0.15.2-241213122156-63636db470c7",
+  "engineVersion": "v0.15.2",
   "sdk": "go",
   "dependencies": [
     {
