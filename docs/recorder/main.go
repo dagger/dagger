@@ -61,6 +61,14 @@ func (r Recorder) ExecNoCache(ctx context.Context, cmd string) (Recorder, error)
 	return r.ExecWithCacheControl(ctx, cmd, false)
 }
 
+func (r Recorder) ExecInCtr(ctx context.Context, cmd string) (Recorder, error) {
+	_, err := r.R.Container().WithExec([]string{"sh", "-c", cmd}).Sync(ctx)
+	if err != nil {
+		return r, err
+	}
+	return r, nil
+}
+
 func (r Recorder) Debug(ctx context.Context) (Recorder, error) {
 	_, err := r.R.ExecEnv().Terminal(dagger.ContainerTerminalOpts{
 		ExperimentalPrivilegedNesting: true,
