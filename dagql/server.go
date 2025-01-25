@@ -31,6 +31,8 @@ type Server struct {
 	typeDefs    map[string]TypeDef
 	directives  map[string]DirectiveSpec
 	installLock *sync.Mutex
+	// FIXME: implement stacked middleware
+	middleware Middleware
 
 	// View is the view that is applied to all queries on this server
 	View string
@@ -40,6 +42,11 @@ type Server struct {
 	//
 	// TODO: copy-on-write
 	Cache Cache
+}
+
+type Middleware interface {
+	InstallObject(ObjectType, func(ObjectType))
+	// FIXME: add support for other install functions
 }
 
 // AroundFunc is a function that is called around every non-cached selection.
@@ -206,14 +213,20 @@ type Loadable interface {
 
 // InstallObject installs the given Object type into the schema.
 func (s *Server) InstallObject(class ObjectType) {
-	s.installLock.Lock()
-	defer s.installLock.Unlock()
-	s.installObject(class)
+	install := func(o ObjectType) {
+		s.installLock.Lock()
+		s.installObject(class)
+		s.installLock.Unlock()
+	}
+	if middleware := s.middleware; middleware != nil {
+		middleware.InstallObject(class, install)
+	} else {
+		install(class)
+	}
 }
 
 func (s *Server) installObject(class ObjectType) {
 	s.objects[class.TypeName()] = class
-
 	if idType, hasID := class.IDType(); hasID {
 		s.scalars[idType.TypeName()] = idType
 		s.Root().ObjectType().Extend(
@@ -545,6 +558,13 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 		}
 	}
 	return assign(reflect.ValueOf(dest).Elem(), res)
+}
+
+// Attach a middleware to hook into object installation
+func (s *Server) SetMiddleware(middleware Middleware) {
+	s.installLock.Lock()
+	s.middleware = middleware
+	s.installLock.Unlock()
 }
 
 func LoadIDs[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]T, error) {
@@ -956,7 +976,7 @@ func setInputObjectFields(obj any, vals map[string]any) error {
 			return fmt.Errorf("missing required input field %q", name)
 		}
 		if input != nil { // will be nil for optional fields
-			if err := assign(fieldV, input); err != nil {
+			if err := assignInputField(fieldV, input); err != nil {
 				return fmt.Errorf("assign %q: %w", fieldT.Name, err)
 			}
 		}
@@ -1010,4 +1030,86 @@ func collectLiteralArgs(obj any) ([]*call.Argument, error) {
 		))
 	}
 	return args, nil
+}
+
+// assignInputField is like assign but handles Optional type wrapping/unwrapping.
+func assignInputField(fieldV reflect.Value, input Input) error {
+	// If the field isn't settable, just return an error
+	if !fieldV.CanSet() {
+		return fmt.Errorf("field is not settable")
+	}
+
+	// If input is nil, it usually means the user omitted it
+	if input == nil {
+		// Check if the destination is an Optional[…]
+		if isOptionalType(fieldV.Type()) {
+			// Set it to Optional{Valid: false}
+			optVal := reflect.New(fieldV.Type()).Elem()
+			fieldV.Set(optVal)
+		}
+		return nil
+	}
+
+	// Reflect on the field's actual type
+	fieldType := fieldV.Type()
+	inputVal := reflect.ValueOf(input)
+
+	// If the field is an Optional[…], handle that logic:
+	if isOptionalType(fieldType) {
+		// Is input itself already an Optional?
+		if inputVal.Type() == fieldType {
+			// They match: just assign directly
+			fieldV.Set(inputVal)
+			return nil
+		}
+
+		// Otherwise, the user provided a bare T, but field requires Optional[T].
+		// So create an Optional[T] with Valid = true
+		optVal := reflect.New(fieldType).Elem()
+		valueField := optVal.FieldByName("Value")
+		validField := optVal.FieldByName("Valid")
+
+		// Set .Value = input, .Valid = true
+		valueField.Set(inputVal)
+		validField.SetBool(true)
+
+		fieldV.Set(optVal)
+		return nil
+	}
+
+	// If the field is not optional, but the user gave an Optional, unwrap it
+	if isOptionalType(inputVal.Type()) {
+		// Suppose input is Optional[T], but field is T
+		validField := inputVal.FieldByName("Valid").Bool()
+		if !validField {
+			// Optional is not valid => user explicitly gave null => zero value
+			fieldV.Set(reflect.Zero(fieldType))
+			return nil
+		}
+
+		// If valid => unwrap .Value
+		unwrapped := inputVal.FieldByName("Value")
+		if !unwrapped.Type().AssignableTo(fieldType) {
+			return fmt.Errorf("cannot unwrap optional type %s into %s", unwrapped.Type(), fieldType)
+		}
+		fieldV.Set(unwrapped)
+		return nil
+	}
+
+	// If none of the optional logic applies, and the types already match, assign directly
+	if inputVal.Type().AssignableTo(fieldType) {
+		fieldV.Set(inputVal)
+		return nil
+	}
+
+	// Otherwise, we can't assign
+	return fmt.Errorf("cannot assign %T into field of type %s", input, fieldType)
+}
+
+// isOptionalType checks if typ is something like dagql.Optional[…]
+func isOptionalType(typ reflect.Type) bool {
+	if typ.Kind() == reflect.Struct && typ.Name() == "Optional" {
+		return true
+	}
+	return false
 }
