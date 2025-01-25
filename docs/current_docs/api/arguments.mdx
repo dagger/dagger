@@ -502,7 +502,7 @@ Secrets can also be sourced from external secret managers. Currently, Dagger sup
 
 1Password requires creating a [service account](https://developer.1password.com/docs/service-accounts/get-started) and then setting the `OP_SERVICE_ACCOUNT_TOKEN` environment variable. Alternatively, if no `OP_SERVICE_ACCOUNT_TOKEN` is provided, the integration will attempt to execute the (official) `op` CLI if installed in the system.
 
-1Password secret references, in the format `op://<vault-name>/<item-name>/[section-name/]<field-name>` are supported. Here is an example:
+1Password [secret references](https://developer.1password.com/docs/cli/secret-references/), in the format `op://<vault-name>/<item-name>/[section-name/]<field-name>` are supported. Here is an example:
 
 ```shell
 OP_SERVICE_ACCOUNT_TOKEN="mytoken" dagger call github-api --token=op://infra/github/credential
