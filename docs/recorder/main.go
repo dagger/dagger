@@ -23,10 +23,12 @@ func New(
 	return Recorder{
 		R: dag.Termcast(dagger.TermcastOpts{
 			Container: dag.Wolfi().
-				Container().
+				Container(dagger.WolfiContainerOpts{Packages: []string{"docker-cli"}}).
 				WithFile("/bin/dagger", dag.DaggerCli().Binary()).
 				WithWorkdir("/src").
 				WithMountedDirectory(".", werkdir).
+				WithEnvVariable("DOCKER_HOST", "tcp://docker:2375").
+				WithServiceBinding("docker", dag.Docker().Engine(dagger.DockerEngineOpts{Persist: false})),
 		}),
 	}
 }
