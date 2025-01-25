@@ -16,11 +16,7 @@ class MyModule:
     ) -> str:
         """Build and publish image from existing Dockerfile"""
         ref = (
-            dag.container()
-            .with_directory("/src", src)
-            .with_workdir("/src")
-            .directory("/src")
-            .docker_build()  # build from Dockerfile
+            src.docker_build()  # build from Dockerfile
             .publish("ttl.sh/hello-dagger")
         )
         return await ref
