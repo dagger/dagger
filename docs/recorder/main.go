@@ -15,10 +15,10 @@ type Recorder struct {
 func New(
 	// Working directory for the recording container
 	// +optional
-	workdir *dagger.Directory,
+	werkdir *dagger.Directory,
 ) Recorder {
-	if workdir == nil {
-		workdir = dag.Directory()
+	if werkdir == nil {
+		werkdir = dag.Directory()
 	}
 	return Recorder{
 		R: dag.Termcast(dagger.TermcastOpts{
@@ -26,27 +26,37 @@ func New(
 				Container().
 				WithFile("/bin/dagger", dag.DaggerCli().Binary()).
 				WithWorkdir("/src").
-				WithMountedDirectory(".", workdir),
+				WithMountedDirectory(".", werkdir).
 		}),
 	}
 }
 
-func (r Recorder) Exec(ctx context.Context, cmd string) (Recorder, error) {
-	// Dry-run to warm cache
-	_, err := r.R.
-		ExecEnv().
-		WithExec(
-			[]string{"sh", "-c", cmd},
-			dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
-		).
-		Sync(ctx)
-	if err != nil {
-		return r, err
+func (r Recorder) ExecWithCacheControl(ctx context.Context, cmd string, useCache bool) (Recorder, error) {
+	if useCache {
+		// Dry-run to warm cache
+		_, err := r.R.
+			ExecEnv().
+			WithExec(
+				[]string{"sh", "-c", cmd},
+				dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true},
+			).
+			Sync(ctx)
+		if err != nil {
+			return r, err
+		}
 	}
 	r.R = r.R.Exec(cmd, dagger.TermcastExecOpts{
 		Fast: true,
 	}).Wait(1000)
 	return r, nil
+}
+
+func (r Recorder) Exec(ctx context.Context, cmd string) (Recorder, error) {
+	return r.ExecWithCacheControl(ctx, cmd, true)
+}
+
+func (r Recorder) ExecNoCache(ctx context.Context, cmd string) (Recorder, error) {
+	return r.ExecWithCacheControl(ctx, cmd, false)
 }
 
 func (r Recorder) Debug(ctx context.Context) (Recorder, error) {
@@ -56,8 +66,8 @@ func (r Recorder) Debug(ctx context.Context) (Recorder, error) {
 	return r, err
 }
 
-func (r Recorder) Cd(workdir string) Recorder {
-	r.R = r.R.WithContainer(r.R.Container().WithWorkdir(workdir))
+func (r Recorder) Cd(werkdir string) Recorder {
+	r.R = r.R.WithContainer(r.R.Container().WithWorkdir(werkdir))
 	return r
 }
 
