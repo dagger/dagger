@@ -7,10 +7,9 @@ import io.dagger.module.Base;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import io.dagger.module.annotation.Optional;
-import org.apache.commons.lang3.StringUtils;
-
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+import org.apache.commons.lang3.StringUtils;
 
 /** Dagger Java Module main object */
 @Object
@@ -26,7 +25,7 @@ public class DaggerJavaModule extends Base {
    * @return container running echo
    */
   @Function
-  public Container containerEcho(@Optional String stringArg) {
+  public Container containerEcho(@Optional(defaultValue = "\"Hello Dagger\"") String stringArg) {
     if (StringUtils.isEmpty(stringArg)) {
       stringArg = "Hello World!";
     }
@@ -37,7 +36,7 @@ public class DaggerJavaModule extends Base {
    * Returns lines that match a pattern in the files of the provided Directory
    *
    * @param directoryArg Directory to grep
-   * @param pattern      Pattern to search for in the directory
+   * @param pattern Pattern to search for in the directory
    * @return Standard output of the grep command
    */
   @Function
