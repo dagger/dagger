@@ -420,7 +420,7 @@ export class Bin implements EngineConn {
     await new Promise((resolve, reject) => {
       archiveResp.body?.pipe(archiveFile)
       archiveResp.body?.on("error", reject)
-      archiveFile.on("finish", resolve)
+      archiveFile.on("finish", () => resolve(undefined))
     })
 
     const actualChecksum = crypto
