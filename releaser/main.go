@@ -148,7 +148,7 @@ func (r *Releaser) Publish(
 	awsSecretAccessKey *dagger.Secret, // +optional
 	awsRegion string, // +optional
 	awsBucket string, // +optional
-	awsCloudFrontDistribution string, // +optional
+	awsCloudfrontDistribution string, // +optional
 	artefactsFQDN string, // +optional
 
 	discordWebhook *dagger.Secret, // +optional
@@ -189,7 +189,7 @@ func (r *Releaser) Publish(
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
-		err = r.Dagger.Cli().PublishMetadata(ctx, awsAccessKeyID, awsSecretAccessKey, awsRegion, awsBucket, awsCloudFrontDistribution)
+		err = r.Dagger.Cli().PublishMetadata(ctx, awsAccessKeyID, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution)
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
