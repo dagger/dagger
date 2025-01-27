@@ -407,7 +407,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
   private String parseTypeDescription(Element element) {
     String javadocString = elementUtils.getDocComment(element);
     if (javadocString == null) {
-      return element.getAnnotation(Module.class).description();
+      return element.getAnnotation(Object.class).description();
     }
     return StaticJavaParser.parseJavadoc(javadocString).getDescription().toText().trim();
   }

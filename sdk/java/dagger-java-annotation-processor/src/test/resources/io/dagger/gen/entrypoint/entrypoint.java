@@ -89,7 +89,7 @@ public class Entrypoint {
       Map<String, JSON> inputArgs) throws Exception {
     try (var jsonb = JsonbBuilder.create()) {
       if (parentName.equals("DaggerJavaModule")) {
-        Class clazz = Class.forName("io.lgtd.dagger.java.module.DaggerJavaModule");
+        Class clazz = Class.forName("io.dagger.java.module.DaggerJavaModule");
         var obj = JsonConverter.fromJSON(dag, parentJson, clazz);
         clazz.getMethod("setClient", Client.class).invoke(obj, dag);
         if (fnName.equals("containerEcho")) {
