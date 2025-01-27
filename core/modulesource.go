@@ -284,18 +284,18 @@ func (src *ModuleSource) ModuleEngineVersion(ctx context.Context) (string, error
 	return cfg.EngineVersion, nil
 }
 
-func (src *ModuleSource) SDK(ctx context.Context) (string, error) {
+func (src *ModuleSource) SDK(ctx context.Context) (*SDKConfig, error) {
 	if src.WithSDK != "" {
-		return src.WithSDK, nil
+		return &SDKConfig{Source: src.WithSDK}, nil
 	}
 	modCfg, ok, err := src.ModuleConfig(ctx)
 	if err != nil {
-		return "", fmt.Errorf("module config: %w", err)
+		return nil, fmt.Errorf("module config: %w", err)
 	}
 	if !ok {
-		return "", nil
+		return nil, nil
 	}
-	return modCfg.SDK, nil
+	return &SDKConfig{Source: modCfg.SDK.Source}, nil
 }
 
 func (src *ModuleSource) AutomaticGitignore(ctx context.Context) (*bool, error) {

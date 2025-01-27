@@ -217,6 +217,7 @@ func (s *moduleSchema) Install() {
 	}.Install(s.dag)
 
 	dagql.Fields[*core.ModuleDependency]{}.Install(s.dag)
+	dagql.Fields[*core.SDKConfig]{}.Install(s.dag)
 
 	dagql.Fields[*core.Module]{
 		dagql.Func("withSource", s.moduleWithSource).
@@ -835,7 +836,8 @@ func (s *moduleSchema) moduleInitialize(
 	inst dagql.Instance[*core.Module],
 	args struct{},
 ) (*core.Module, error) {
-	if inst.Self.NameField == "" || inst.Self.SDKConfig == "" {
+	// if inst.Self.NameField == "" || inst.Self.SDKConfig == nil || inst.Self.SDKConfig.Source == "" {
+	if inst.Self.NameField == "" || inst.Self.SDKConfig == nil {
 		return nil, fmt.Errorf("module name and SDK must be set")
 	}
 	mod, err := inst.Self.Initialize(ctx, inst.ID(), dagql.CurrentID(ctx), s.dag)
@@ -1046,14 +1048,15 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 	ctx, span := core.Tracer(ctx).Start(ctx, "build module")
 	defer telemetry.End(span, func() error { return rerr })
 
-	if mod.NameField == "" || mod.SDKConfig == "" {
+	if mod.NameField == "" || mod.SDKConfig == nil {
 		// can't codegen yet
 		return nil
 	}
 
 	if src.Self.WithInitConfig != nil &&
 		src.Self.WithInitConfig.Merge &&
-		mod.SDKConfig != string(SDKGo) {
+		// THIS WOULD PROBABLY CHANGE TO comparing struct?
+		mod.SDKConfig != nil && mod.SDKConfig.Source != string(SDKGo) {
 		return fmt.Errorf("merge is only supported for Go SDKs")
 	}
 
@@ -1195,10 +1198,26 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 		}
 	}
 
-	mod.Runtime, err = sdk.Runtime(ctx, mod.Deps, src)
+	runtime, err := sdk.Runtime(ctx, mod.Deps, src)
 	if err != nil {
 		return fmt.Errorf("failed to get module runtime: %w", err)
 	}
+
+	var runtime2 dagql.Instance[*core.Container]
+	err = s.dag.Select(ctx, runtime.Query.NewModule().Source, &runtime2,
+		dagql.Selector{
+			Field: "withEnvVariable",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String("FIRSTTWO")},
+				{Name: "value", Value: dagql.String("VALUETWO")},
+			},
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to add vcs ignore file: %w", err)
+	}
+
+	mod.Runtime = runtime2.Self.Clone()
 
 	return nil
 }
@@ -1232,7 +1251,10 @@ func (s *moduleSchema) updateDaggerConfig(
 	modCfg := &modCfgWithUserFields.ModuleConfig
 
 	modCfg.Name = mod.OriginalName
-	modCfg.SDK = mod.SDKConfig
+	//CHANGE THIS TO STRUCT AS WELL
+	modCfg.SDK = &modules.SDK{
+		Source: mod.SDKConfig.Source,
+	}
 	switch engineVersion {
 	case "":
 		if modCfg.EngineVersion == "" {

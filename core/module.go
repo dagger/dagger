@@ -15,6 +15,29 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
+type SDKConfig struct {
+	Source string            `json:"source"`
+	Pin    string            `json:"pin"`
+	Env    map[string]string `json:"env"`
+}
+
+func (*SDKConfig) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "CoreSDKStruct",
+		NonNull:   false,
+	}
+}
+
+func (*SDKConfig) TypeDescription() string {
+	return "The sdk struct configuration of dependency of a module."
+}
+
+// TODO(rajatjindal): fix clone method. placeholder right now
+func (dep SDKConfig) Clone() *SDKConfig {
+	cp := dep
+	return &cp
+}
+
 type Module struct {
 	Query *Query
 
@@ -35,7 +58,7 @@ type Module struct {
 	Description string `field:"true" doc:"The doc string of the module, if any"`
 
 	// The module's SDKConfig, as set in the module config file
-	SDKConfig string `field:"true" name:"sdk" doc:"The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
+	SDKConfig *SDKConfig `field:"true" name:"sdk" doc:"The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
 
 	GeneratedContextDirectory dagql.Instance[*Directory] `field:"true" name:"generatedContextDirectory" doc:"The module source's context plus any configuration and source files created by codegen."`
 
