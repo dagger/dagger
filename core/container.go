@@ -580,13 +580,14 @@ func (container *Container) WithDirectory(ctx context.Context, subdir string, sr
 func (container *Container) WithFile(ctx context.Context, destPath string, src *File, permissions *int, owner string) (*Container, error) {
 	container = container.Clone()
 
-	return container.writeToPath(ctx, path.Dir(destPath), func(dir *Directory) (*Directory, error) {
+	dir, file := filepath.Split(filepath.Clean(destPath))
+	return container.writeToPath(ctx, dir, func(dir *Directory) (*Directory, error) {
 		ownership, err := container.ownership(ctx, owner)
 		if err != nil {
 			return nil, err
 		}
 
-		return dir.WithFile(ctx, path.Base(destPath), src, permissions, ownership)
+		return dir.WithFile(ctx, file, src, permissions, ownership)
 	})
 }
 
@@ -608,20 +609,21 @@ func (container *Container) WithoutPaths(ctx context.Context, destPaths ...strin
 func (container *Container) WithFiles(ctx context.Context, destDir string, src []*File, permissions *int, owner string) (*Container, error) {
 	container = container.Clone()
 
-	return container.writeToPath(ctx, path.Dir(destDir), func(dir *Directory) (*Directory, error) {
+	dir, file := filepath.Split(filepath.Clean(destDir))
+	return container.writeToPath(ctx, path.Dir(dir), func(dir *Directory) (*Directory, error) {
 		ownership, err := container.ownership(ctx, owner)
 		if err != nil {
 			return nil, err
 		}
 
-		return dir.WithFiles(ctx, path.Base(destDir), src, permissions, ownership)
+		return dir.WithFiles(ctx, file, src, permissions, ownership)
 	})
 }
 
 func (container *Container) WithNewFile(ctx context.Context, dest string, content []byte, permissions fs.FileMode, owner string) (*Container, error) {
 	container = container.Clone()
 
-	dir, file := filepath.Split(dest)
+	dir, file := filepath.Split(filepath.Clean(dest))
 	return container.writeToPath(ctx, dir, func(dir *Directory) (*Directory, error) {
 		ownership, err := container.ownership(ctx, owner)
 		if err != nil {
