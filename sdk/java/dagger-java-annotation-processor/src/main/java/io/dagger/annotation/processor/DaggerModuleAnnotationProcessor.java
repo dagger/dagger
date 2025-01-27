@@ -95,17 +95,20 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                 .getParameters().stream()
                                     .map(
                                         param -> {
-                                          var isOptional =
+                                          var optional =
                                               param.getAnnotation(
-                                                      io.dagger.module.annotation.Optional.class)
-                                                  != null;
+                                                  io.dagger.module.annotation.Optional.class);
+                                          var isOptional = optional != null;
+                                          String defaultValue =
+                                              isOptional ? optional.defaultValue() : "";
                                           String paramName = param.getSimpleName().toString();
                                           String paramType = param.asType().toString();
                                           return new ParameterInfo(
                                               paramName,
                                               parseParameterDescription(elt, paramName),
                                               paramType,
-                                              isOptional);
+                                              isOptional,
+                                              defaultValue);
                                         })
                                     .toList();
 
@@ -171,11 +174,18 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
             rm.addCode("\n                    .withArg($S, ", parameterInfo.name())
                 .addCode(typeDef(parameterInfo.type()))
                 .addCode(".withOptional($L)", parameterInfo.optional());
-            if (isNotBlank(parameterInfo.description())) {
-              rm.addCode(
-                  ", new $T.WithArgArguments().withDescription($S)",
-                  io.dagger.client.Function.class,
-                  parameterInfo.description());
+            boolean hasDescription = isNotBlank(parameterInfo.description());
+            boolean hasDefaultValue =
+                parameterInfo.optional() && isNotBlank(parameterInfo.defaultValue());
+            if (hasDescription || parameterInfo.optional()) {
+              rm.addCode(", new $T.WithArgArguments()", io.dagger.client.Function.class);
+              if (hasDescription) {
+                rm.addCode(".withDescription($S)", parameterInfo.description());
+              }
+              if (hasDefaultValue) {
+                rm.addCode(
+                    ".withDefaultValue($T.from($S))", JSON.class, parameterInfo.defaultValue());
+              }
             }
             rm.addCode(")");
           }

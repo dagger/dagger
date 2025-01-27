@@ -75,7 +75,7 @@ public class Entrypoint {
                     dag.function("containerEcho",
                         dag.typeDef().withObject("Container"))
                         .withDescription("Returns a container that echoes whatever string argument is provided")
-                        .withArg("stringArg", dag.typeDef().withKind(TypeDefKind.STRING_KIND).withOptional(true), new Function.WithArgArguments().withDescription("string to echo")))
+                        .withArg("stringArg", dag.typeDef().withKind(TypeDefKind.STRING_KIND).withOptional(true), new Function.WithArgArguments().withDescription("string to echo").withDefaultValue(JSON.from("\"Hello Dagger\""))))
                 .withFunction(
                     dag.function("grepDir",
                         dag.typeDef().withKind(TypeDefKind.STRING_KIND))
