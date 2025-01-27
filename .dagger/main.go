@@ -172,19 +172,26 @@ func (dev *DaggerDev) Generate(ctx context.Context) (*dagger.Directory, error) {
 
 	eg.Go(func() error {
 		var err error
-		docs, err = dev.Docs().Generate(ctx)
+		docs = dev.Docs().Generate()
+		docs, err = docs.Sync(ctx)
 		return err
 	})
 
 	eg.Go(func() error {
 		var err error
 		sdks, err = dev.SDK().All().Generate(ctx)
+		if err != nil {
+			return err
+		}
+		sdks, err = sdks.Sync(ctx)
 		return err
 	})
 
 	eg.Go(func() error {
+		var err error
 		engine = dev.Engine().Generate()
-		return nil
+		docs, err = engine.Sync(ctx)
+		return err
 	})
 
 	if err := eg.Wait(); err != nil {

@@ -23,7 +23,7 @@ type PythonSDK struct {
 
 // Lint the Python SDK
 func (t PythonSDK) Lint(ctx context.Context) (rerr error) {
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 
 	// TODO: create function in PythonSDKDev to lint any directory as input
 	// but reusing the same linter configuration in the SDK.
@@ -102,7 +102,7 @@ func (t PythonSDK) Test(ctx context.Context) (rerr error) {
 		return err
 	}
 
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 	for _, version := range versions {
 		eg.Go(func() error {
 			_, err := dev.

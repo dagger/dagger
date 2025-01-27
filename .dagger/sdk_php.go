@@ -28,7 +28,7 @@ type PHPSDK struct {
 
 // Lint the PHP SDK
 func (t PHPSDK) Lint(ctx context.Context) error {
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 
 	eg.Go(func() (rerr error) {
 		ctx, span := Tracer().Start(ctx, "lint the php source")
