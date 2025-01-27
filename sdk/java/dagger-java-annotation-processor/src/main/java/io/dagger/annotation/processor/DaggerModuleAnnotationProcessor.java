@@ -14,7 +14,6 @@ import io.dagger.module.info.FunctionInfo;
 import io.dagger.module.info.ModuleInfo;
 import io.dagger.module.info.ObjectInfo;
 import io.dagger.module.info.ParameterInfo;
-import jakarta.json.bind.Jsonb;
 import jakarta.json.bind.JsonbBuilder;
 import java.io.IOException;
 import java.lang.reflect.Method;
@@ -24,7 +23,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
-import javax.annotation.processing.*;
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.Processor;
@@ -42,7 +40,8 @@ import javax.lang.model.util.Elements;
 @SupportedAnnotationTypes({
   "io.dagger.module.annotation.Module",
   "io.dagger.module.annotation.Object",
-  "io.dagger.module.annotation.Function"
+  "io.dagger.module.annotation.Function",
+  "io.dagger.module.annotation.Optional"
 })
 @SupportedSourceVersion(SourceVersion.RELEASE_17)
 @AutoService(Processor.class)
@@ -85,7 +84,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                       elt -> {
                         Function moduleFunction = elt.getAnnotation(Function.class);
                         String fName = moduleFunction.value();
-                        String fqName = ((ExecutableElement) elt).getSimpleName().toString();
+                        String fqName = elt.getSimpleName().toString();
                         if (fName.isEmpty()) {
                           fName = fqName;
                         }
@@ -96,12 +95,17 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                 .getParameters().stream()
                                     .map(
                                         param -> {
+                                          var isOptional =
+                                              param.getAnnotation(
+                                                      io.dagger.module.annotation.Optional.class)
+                                                  != null;
                                           String paramName = param.getSimpleName().toString();
                                           String paramType = param.asType().toString();
                                           return new ParameterInfo(
                                               paramName,
                                               parseParameterDescription(elt, paramName),
-                                              paramType);
+                                              paramType,
+                                              isOptional);
                                         })
                                     .toList();
 
@@ -165,7 +169,8 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           }
           for (var parameterInfo : fnInfo.parameters()) {
             rm.addCode("\n                    .withArg($S, ", parameterInfo.name())
-                .addCode(typeDef(parameterInfo.type()));
+                .addCode(typeDef(parameterInfo.type()))
+                .addCode(".withOptional($L)", parameterInfo.optional());
             if (isNotBlank(parameterInfo.description())) {
               rm.addCode(
                   ", new $T.WithArgArguments().withDescription($S)",
@@ -223,14 +228,16 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
 
             invokeBlock.add(", $L", parameterInfo.name());
 
+            im.addStatement("$T $L = null", paramClazz, parameterInfo.name());
+            im.beginControlFlow("if (inputArgs.get($S) != null)", parameterInfo.name());
             im.addStatement(
-                "$T $L = ($T) $T.fromJSON(dag, inputArgs.get($S), $T.class)",
-                paramClazz,
+                "$L = ($T) $T.fromJSON(dag, inputArgs.get($S), $T.class)",
                 parameterInfo.name(),
                 paramClazz,
                 JsonConverter.class,
                 parameterInfo.name(),
                 classForName(parameterInfo.type()));
+            im.endControlFlow();
           }
           fnBlock.add(")");
           invokeBlock.add(")");
@@ -323,9 +330,6 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
   @Override
   public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
     ModuleInfo moduleInfo = generateModuleInfo(annotations, roundEnv);
-
-    Jsonb jsonb = JsonbBuilder.create();
-    String serialized = jsonb.toJson(moduleInfo);
 
     if (moduleInfo.objects().length == 0) {
       return true;
