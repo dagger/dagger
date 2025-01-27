@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/content"
-	"github.com/containerd/containerd/mount"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/moby/buildkit/cache"
 	cacheconfig "github.com/moby/buildkit/cache/config"
@@ -33,20 +32,11 @@ type manager struct {
 	runtimeConfig Config
 	localCache    solver.CacheManager
 
-	mu           sync.RWMutex
-	inner        solver.CacheManager
-	startCloseCh chan struct{} // closed when shutdown should start
-	doneCh       chan struct{} // closed when shutdown is complete
-
-	cacheMountsInit   sync.Once
-	syncedCacheMounts map[string]*syncedCacheMount
-	seenCacheMounts   *sync.Map
-}
-
-type syncedCacheMount struct {
-	init        sync.Once
-	mountConfig SyncedCacheMountConfig
-	mount       *mount.Mount
+	mu                 sync.RWMutex
+	inner              solver.CacheManager
+	startCloseCh       chan struct{} // closed when shutdown should start
+	doneCh             chan struct{} // closed when shutdown is complete
+	stopCacheMountSync func(context.Context) error
 }
 
 type ManagerConfig struct {
@@ -57,7 +47,6 @@ type ManagerConfig struct {
 	ServiceURL   string
 	Token        string
 	EngineID     string
-	SyncOnBoot   bool
 }
 
 const (
@@ -127,20 +116,6 @@ func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, erro
 		// the first import failed, but we can continue with just the local cache to start and retry
 		// importing in the background in the loop below
 		bklog.G(ctx).WithError(err).Error("failed to import cache at startup")
-	}
-
-	// fetch the tenant's cache mount configuration with the list of cache mounts
-	m.initSyncedCacheMounts(ctx)
-
-	// if SyncOnBoot is enabled then we synchronize all cache mounts on boot
-	if managerConfig.SyncOnBoot {
-		bklog.G(ctx).Debug("synchronizing cache mounts on boot")
-		start := time.Now()
-		if err := m.syncAllCacheMounts(ctx); err != nil {
-			bklog.G(ctx).WithError(err).Warn("(optional) cache mount synchronization on boot failed")
-		} else {
-			bklog.G(ctx).Debugf("finish cache mount synchronization in %s", time.Since(start))
-		}
 	}
 
 	// loop for periodic async imports
@@ -469,7 +444,9 @@ func (m *manager) Import(ctx context.Context) error {
 // Close will block until the final export has finished or ctx is canceled.
 func (m *manager) Close(ctx context.Context) (rerr error) {
 	close(m.startCloseCh)
-	rerr = m.UploadCacheMounts(ctx)
+	if m.stopCacheMountSync != nil {
+		rerr = m.stopCacheMountSync(ctx)
+	}
 	select {
 	case <-m.doneCh:
 	case <-ctx.Done():
@@ -548,9 +525,7 @@ func (m *manager) descriptorProviderPair(layerMetadata remotecache.CacheLayer) (
 
 type Manager interface {
 	solver.CacheManager
-	DownloadCacheMounts(context.Context, []*CacheVolume) error
-	UploadCacheMounts(context.Context) error
-	ReleaseUnreferenced(context.Context) error
+	StartCacheMountSynchronization(context.Context) error
 	Close(context.Context) error
 }
 
@@ -560,11 +535,7 @@ type defaultCacheManager struct {
 
 var _ Manager = defaultCacheManager{}
 
-func (defaultCacheManager) DownloadCacheMounts(ctx context.Context, _ []*CacheVolume) error {
-	return nil
-}
-
-func (defaultCacheManager) UploadCacheMounts(ctx context.Context) error {
+func (defaultCacheManager) StartCacheMountSynchronization(ctx context.Context) error {
 	return nil
 }
 

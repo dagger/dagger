@@ -14,7 +14,7 @@ import (
 
 // CacheVolume is a persistent volume with a globally scoped identifier.
 type CacheVolume struct {
-	Key string `json:"keys"`
+	Keys []string `json:"keys"`
 }
 
 func (*CacheVolume) Type() *ast.Type {
@@ -28,19 +28,23 @@ func (*CacheVolume) TypeDescription() string {
 	return "A directory whose contents persist across runs."
 }
 
-func NewCache(key string) *CacheVolume {
-	return &CacheVolume{Key: key}
+func NewCache(keys ...string) *CacheVolume {
+	return &CacheVolume{Keys: keys}
 }
 
 func (cache *CacheVolume) Clone() *CacheVolume {
 	cp := *cache
+	cp.Keys = cloneSlice(cp.Keys)
 	return &cp
 }
 
 // Sum returns a checksum of the cache tokens suitable for use as a cache key.
 func (cache *CacheVolume) Sum() string {
 	hash := sha256.New()
-	_, _ = hash.Write([]byte(cache.Key + "\x00"))
+	for _, tok := range cache.Keys {
+		_, _ = hash.Write([]byte(tok + "\x00"))
+	}
+
 	return base64.StdEncoding.EncodeToString(hash.Sum(nil))
 }
 

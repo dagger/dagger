@@ -21,7 +21,6 @@ import (
 	"github.com/containerd/console"
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/executor"
@@ -103,8 +102,6 @@ type ExecutionMetadata struct {
 
 	// If true, skip injecting dagger-init into the container.
 	NoInit bool
-
-	CacheVolumes []*cache.CacheVolume
 }
 
 const executionMetadataKey = "dagger.executionMetadata"
@@ -165,7 +162,6 @@ func (w *Worker) Run(
 		w.injectInit,
 		w.generateBaseSpec,
 		w.filterEnvs,
-		w.setupCacheVolumes,
 		w.setupRootfs,
 		w.setUserGroup,
 		w.setExitCodePath,

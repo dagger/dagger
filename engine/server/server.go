@@ -499,7 +499,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	cacheServiceURL := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_URL")
 	cacheServiceToken := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN")
-	cacheServiceSyncOnBoot := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_SYNC_ON_BOOT")
 	// add DAGGER_CLOUD_TOKEN in a backwards compat way.
 	// TODO: deprecate in a future release
 	if v, ok := os.LookupEnv("DAGGER_CLOUD_TOKEN"); ok {
@@ -517,22 +516,10 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		ServiceURL:   cacheServiceURL,
 		Token:        cacheServiceToken,
 		EngineID:     opts.Name,
-		SyncOnBoot:   cacheServiceSyncOnBoot == "true",
 	})
 	if err != nil {
 		return nil, err
 	}
-
-	// The dependencies between components makes us have to set the CacheManager
-	// for the worker after the SolverCache has been created:
-	// - srv.worker
-	//   - SolverCache
-	//     - baseWorkerController
-	//       - srv.worker
-	// The worker needs the SolverCache, which needs baseWorkerController which
-	// needs the parent worker. Because of this we need to initialize all components
-	// first and then set this dependency.
-	srv.worker.SetCacheManager(srv.SolverCache)
 
 	srv.cacheExporters = map[string]remotecache.ResolveCacheExporterFunc{
 		"registry": registryremotecache.ResolveCacheExporterFunc(srv.bkSessionManager, srv.registryHosts),
