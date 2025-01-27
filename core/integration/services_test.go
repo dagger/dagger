@@ -1619,7 +1619,7 @@ func (FileSuite) TestServiceTimestamp(ctx context.Context, t *testctx.T) {
 	require.Contains(t, stdout, "1991-06-03")
 }
 
-// TestServiceStartStop tests that a service can be started and stopped. While
+// TestStartStop tests that a service can be started and stopped. While
 // started it can be reached by containers that do not explicitly bind it.
 //
 // TODO(vito): test that the service stops when the client closes... somehow
@@ -1657,7 +1657,7 @@ func (ServiceSuite) TestStartStop(ctx context.Context, t *testctx.T) {
 	require.Empty(t, out)
 }
 
-// TestServiceStartStopKill tests that we send SIGTERM by default, instead of SIGKILL.
+// TestStartStopKill tests that we send SIGTERM by default, instead of SIGKILL.
 // Additionally, we check that we can attempt to SIGKILL a process that is not
 // responding to SIGTERM.
 func (ServiceSuite) TestStartStopKill(ctx context.Context, t *testctx.T) {

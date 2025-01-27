@@ -2401,7 +2401,7 @@ func (m *Test) Fn() string {
 	})
 }
 
-// TestModuleHostError verifies the host api is not exposed to modules
+// TestHostError verifies the host api is not exposed to modules
 func (ModuleSuite) TestHostError(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -2425,7 +2425,7 @@ func (ModuleSuite) TestHostError(ctx context.Context, t *testctx.T) {
 	requireErrOut(t, err, "dag.Host undefined")
 }
 
-// TestModuleEngineError verifies the engine api is not exposed to modules
+// TestEngineError verifies the engine api is not exposed to modules
 func (ModuleSuite) TestEngineError(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
