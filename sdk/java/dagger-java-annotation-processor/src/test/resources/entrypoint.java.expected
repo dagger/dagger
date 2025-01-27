@@ -75,13 +75,13 @@ public class Entrypoint {
                     dag.function("containerEcho",
                         dag.typeDef().withObject("Container"))
                         .withDescription("Returns a container that echoes whatever string argument is provided")
-                        .withArg("stringArg", dag.typeDef().withKind(TypeDefKind.STRING_KIND), new Function.WithArgArguments().withDescription("string to echo")))
+                        .withArg("stringArg", dag.typeDef().withKind(TypeDefKind.STRING_KIND).withOptional(true), new Function.WithArgArguments().withDescription("string to echo")))
                 .withFunction(
                     dag.function("grepDir",
                         dag.typeDef().withKind(TypeDefKind.STRING_KIND))
                         .withDescription("Returns lines that match a pattern in the files of the provided Directory")
-                        .withArg("directoryArg", dag.typeDef().withObject("Directory"), new Function.WithArgArguments().withDescription("Directory to grep"))
-                        .withArg("pattern", dag.typeDef().withKind(TypeDefKind.STRING_KIND), new Function.WithArgArguments().withDescription("Pattern to search for in the directory"))));
+                        .withArg("directoryArg", dag.typeDef().withObject("Directory").withOptional(false), new Function.WithArgArguments().withDescription("Directory to grep"))
+                        .withArg("pattern", dag.typeDef().withKind(TypeDefKind.STRING_KIND).withOptional(false), new Function.WithArgArguments().withDescription("Pattern to search for in the directory"))));
     return module.id();
   }
 
@@ -93,13 +93,22 @@ public class Entrypoint {
         var obj = JsonConverter.fromJSON(dag, parentJson, clazz);
         clazz.getMethod("setClient", Client.class).invoke(obj, dag);
         if (fnName.equals("containerEcho")) {
-          String stringArg = (String) JsonConverter.fromJSON(dag, inputArgs.get("stringArg"), String.class);
+          String stringArg = null;
+          if (inputArgs.get("stringArg") != null) {
+            stringArg = (String) JsonConverter.fromJSON(dag, inputArgs.get("stringArg"), String.class);
+          }
           Method fn = clazz.getMethod("containerEcho", String.class);
           Container res = (Container) fn.invoke(obj, stringArg);
           return JsonConverter.toJSON(res);
         } else if (fnName.equals("grepDir")) {
-          Directory directoryArg = (Directory) JsonConverter.fromJSON(dag, inputArgs.get("directoryArg"), Directory.class);
-          String pattern = (String) JsonConverter.fromJSON(dag, inputArgs.get("pattern"), String.class);
+          Directory directoryArg = null;
+          if (inputArgs.get("directoryArg") != null) {
+            directoryArg = (Directory) JsonConverter.fromJSON(dag, inputArgs.get("directoryArg"), Directory.class);
+          }
+          String pattern = null;
+          if (inputArgs.get("pattern") != null) {
+            pattern = (String) JsonConverter.fromJSON(dag, inputArgs.get("pattern"), String.class);
+          }
           Method fn = clazz.getMethod("grepDir", Directory.class, String.class);
           String res = (String) fn.invoke(obj, directoryArg, pattern);
           return JsonConverter.toJSON(res);
