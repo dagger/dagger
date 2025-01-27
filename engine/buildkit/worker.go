@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	runc "github.com/containerd/go-runc"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/docker/docker/pkg/idtools"
 	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/executor"
@@ -59,8 +58,6 @@ type sharedWorkerState struct {
 	parallelismSem   *semaphore.Weighted
 	workerCache      bkcache.Manager
 
-	daggerCacheManager cache.Manager
-
 	running map[string]*execState
 	mu      sync.RWMutex
 }
@@ -113,11 +110,6 @@ func NewWorker(opts *NewWorkerOpts) *Worker {
 
 		running: make(map[string]*execState),
 	}}
-}
-
-func (w *Worker) SetCacheManager(manager cache.Manager) *Worker {
-	w.daggerCacheManager = manager
-	return w
 }
 
 func (w *Worker) Executor() executor.Executor {
