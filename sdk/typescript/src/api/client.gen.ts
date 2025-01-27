@@ -1230,6 +1230,11 @@ export enum ReturnType {
   Success = "SUCCESS",
 }
 /**
+ * The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
+ */
+export type SDKConfigID = string & { __SDKConfigID: never }
+
+/**
  * The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
  */
 export type ScalarTypeDefID = string & { __ScalarTypeDefID: never }
@@ -5358,7 +5363,6 @@ export class Module_ extends BaseClient {
   private readonly _id?: ModuleID = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
-  private readonly _sdk?: string = undefined
   private readonly _serve?: Void = undefined
 
   /**
@@ -5369,7 +5373,6 @@ export class Module_ extends BaseClient {
     _id?: ModuleID,
     _description?: string,
     _name?: string,
-    _sdk?: string,
     _serve?: Void,
   ) {
     super(ctx)
@@ -5377,7 +5380,6 @@ export class Module_ extends BaseClient {
     this._id = _id
     this._description = _description
     this._name = _name
-    this._sdk = _sdk
     this._serve = _serve
   }
 
@@ -5536,18 +5538,11 @@ export class Module_ extends BaseClient {
   }
 
   /**
-   * The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
+   * The SDK config used by this module.
    */
-  sdk = async (): Promise<string> => {
-    if (this._sdk) {
-      return this._sdk
-    }
-
+  sdk = (): SDKConfig => {
     const ctx = this._ctx.select("sdk")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
+    return new SDKConfig(ctx)
   }
 
   /**
@@ -6054,10 +6049,10 @@ export class ModuleSource extends BaseClient {
 
   /**
    * Update the module source with a new SDK.
-   * @param sdk The SDK to set.
+   * @param source The SDK source to set.
    */
-  withSDK = (sdk: string): ModuleSource => {
-    const ctx = this._ctx.select("withSDK", { sdk })
+  withSDK = (source: string): ModuleSource => {
+    const ctx = this._ctx.select("withSDK", { source })
     return new ModuleSource(ctx)
   }
 
@@ -6863,6 +6858,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a SDKConfig from its ID.
+   */
+  loadSDKConfigFromID = (id: SDKConfigID): SDKConfig => {
+    const ctx = this._ctx.select("loadSDKConfigFromID", { id })
+    return new SDKConfig(ctx)
+  }
+
+  /**
    * Load a ScalarTypeDef from its ID.
    */
   loadScalarTypeDefFromID = (id: ScalarTypeDefID): ScalarTypeDef => {
@@ -7010,6 +7013,54 @@ export class Client extends BaseClient {
    */
   version = async (): Promise<string> => {
     const ctx = this._ctx.select("version")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * The SDK config of the module.
+ */
+export class SDKConfig extends BaseClient {
+  private readonly _id?: SDKConfigID = undefined
+  private readonly _source?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: SDKConfigID, _source?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._source = _source
+  }
+
+  /**
+   * A unique identifier for this SDKConfig.
+   */
+  id = async (): Promise<SDKConfigID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<SDKConfigID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
+   */
+  source = async (): Promise<string> => {
+    if (this._source) {
+      return this._source
+    }
+
+    const ctx = this._ctx.select("source")
 
     const response: Awaited<string> = await ctx.execute()
 

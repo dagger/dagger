@@ -328,9 +328,9 @@ defmodule Dagger.ModuleSource do
 
   @doc "Update the module source with a new SDK."
   @spec with_sdk(t(), String.t()) :: Dagger.ModuleSource.t()
-  def with_sdk(%__MODULE__{} = module_source, sdk) do
+  def with_sdk(%__MODULE__{} = module_source, source) do
     query_builder =
-      module_source.query_builder |> QB.select("withSDK") |> QB.put_arg("sdk", sdk)
+      module_source.query_builder |> QB.select("withSDK") |> QB.put_arg("source", source)
 
     %Dagger.ModuleSource{
       query_builder: query_builder,

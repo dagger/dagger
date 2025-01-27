@@ -792,11 +792,13 @@ func (s *moduleSchema) moduleSourceWithSDK(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct {
-		SDK string
+		Source string
 	},
 ) (*core.ModuleSource, error) {
 	src = src.Clone()
-	src.WithSDK = args.SDK
+	src.WithSDK = core.SDKConfig{
+		Source: args.Source,
+	}
 	return src, nil
 }
 
@@ -1202,12 +1204,12 @@ func (s *moduleSchema) normalizeCallerLoadedSource(
 			return inst, fmt.Errorf("failed to set name: %w", err)
 		}
 	}
-	if src.WithSDK != "" {
+	if src.WithSDK.Source != "" {
 		err = s.dag.Select(ctx, inst, &inst,
 			dagql.Selector{
 				Field: "withSDK",
 				Args: []dagql.NamedInput{
-					{Name: "sdk", Value: dagql.String(src.WithSDK)},
+					{Name: "source", Value: dagql.String(src.WithSDK.Source)},
 				},
 			},
 		)
@@ -1365,7 +1367,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 			if !topLevel {
 				return nil, fmt.Errorf("missing config file %s", configPath)
 			}
-			if src.WithSDK == "" && len(src.WithDependencies) == 0 {
+			if src.WithSDK.Source == "" && len(src.WithDependencies) == 0 {
 				return &callerLocalDep{sourceRootAbsPath: sourceRootAbsPath}, nil
 			}
 
@@ -1377,8 +1379,10 @@ func (s *moduleSchema) collectCallerLocalDeps(
 			if src.WithName != "" {
 				modCfg.Name = src.WithName
 			}
-			if src.WithSDK != "" {
-				modCfg.SDK = src.WithSDK
+			if src.WithSDK.Source != "" {
+				modCfg.SDK = &modules.SDK{
+					Source: src.WithSDK.Source,
+				}
 			}
 			for _, dep := range src.WithDependencies {
 				refString, err := dep.Self.Source.Self.RefString()
@@ -1434,17 +1438,17 @@ func (s *moduleSchema) collectCallerLocalDeps(
 			}
 		}
 
-		if modCfg.SDK == "" {
+		if modCfg.SDK == nil || modCfg.SDK.Source == "" {
 			return localDep, nil
 		}
 
-		localDep.sdkKey = modCfg.SDK
+		localDep.sdkKey = modCfg.SDK.Source
 
-		localDep.sdk, err = s.builtinSDK(ctx, query, modCfg.SDK)
+		localDep.sdk, err = s.builtinSDK(ctx, query, &core.SDKConfig{Source: modCfg.SDK.Source})
 		switch {
 		case err == nil:
 		case errors.Is(err, errUnknownBuiltinSDK):
-			parsed := parseRefString(ctx, bk, modCfg.SDK)
+			parsed := parseRefString(ctx, bk, modCfg.SDK.Source)
 			switch parsed.kind {
 			case core.ModuleSourceKindLocal:
 				// SDK is a local custom one, it needs to be included
@@ -1455,7 +1459,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 				// nor a valid sdk available on local path.
 				_, err = bk.StatCallerHostPath(ctx, sdkPath, true)
 				if err != nil {
-					return nil, getInvalidBuiltinSDKError(modCfg.SDK)
+					return nil, getInvalidBuiltinSDKError(modCfg.SDK.Source)
 				}
 
 				err = s.collectCallerLocalDeps(ctx, query, contextAbsPath, sdkPath, false, src, collectedDeps)
@@ -1502,7 +1506,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 				localDep.sdkKey = sdkPath
 
 			case core.ModuleSourceKindGit:
-				localDep.sdk, err = s.sdkForModule(ctx, query, modCfg.SDK, dagql.Instance[*core.ModuleSource]{})
+				localDep.sdk, err = s.sdkForModule(ctx, query, &core.SDKConfig{Source: modCfg.SDK.Source}, dagql.Instance[*core.ModuleSource]{})
 				if err != nil {
 					return nil, fmt.Errorf("failed to get git module sdk: %w", err)
 				}

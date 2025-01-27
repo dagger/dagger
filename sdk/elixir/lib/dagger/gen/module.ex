@@ -186,13 +186,16 @@ defmodule Dagger.Module do
     }
   end
 
-  @doc "The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."
-  @spec sdk(t()) :: {:ok, String.t()} | {:error, term()}
+  @doc "The SDK config used by this module."
+  @spec sdk(t()) :: Dagger.SDKConfig.t() | nil
   def sdk(%__MODULE__{} = module) do
     query_builder =
       module.query_builder |> QB.select("sdk")
 
-    Client.execute(module.client, query_builder)
+    %Dagger.SDKConfig{
+      query_builder: query_builder,
+      client: module.client
+    }
   end
 
   @doc """

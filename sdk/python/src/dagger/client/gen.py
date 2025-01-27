@@ -191,6 +191,11 @@ class PortID(Scalar):
     type Port."""
 
 
+class SDKConfigID(Scalar):
+    """The `SDKConfigID` scalar type represents an identifier for an
+    object of type SDKConfig."""
+
+
 class ScalarTypeDefID(Scalar):
     """The `ScalarTypeDefID` scalar type represents an identifier for an
     object of type ScalarTypeDef."""
@@ -5848,27 +5853,11 @@ class Module(Type):
         _ctx = self._select("runtime", _args)
         return Container(_ctx)
 
-    async def sdk(self) -> str:
-        """The SDK used by this module. Either a name of a builtin SDK or a
-        module source ref string pointing to the SDK's implementation.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
+    def sdk(self) -> "SDKConfig":
+        """The SDK config used by this module."""
         _args: list[Arg] = []
         _ctx = self._select("sdk", _args)
-        return await _ctx.execute(str)
+        return SDKConfig(_ctx)
 
     async def serve(self) -> Void | None:
         """Serve a module's API in the current session.
@@ -6489,16 +6478,16 @@ class ModuleSource(Type):
         _ctx = self._select("withName", _args)
         return ModuleSource(_ctx)
 
-    def with_sdk(self, sdk: str) -> Self:
+    def with_sdk(self, source: str) -> Self:
         """Update the module source with a new SDK.
 
         Parameters
         ----------
-        sdk:
-            The SDK to set.
+        source:
+            The SDK source to set.
         """
         _args = [
-            Arg("sdk", sdk),
+            Arg("source", source),
         ]
         _ctx = self._select("withSDK", _args)
         return ModuleSource(_ctx)
@@ -7429,6 +7418,14 @@ class Client(Root):
         _ctx = self._select("loadPortFromID", _args)
         return Port(_ctx)
 
+    def load_sdk_config_from_id(self, id: SDKConfigID) -> "SDKConfig":
+        """Load a SDKConfig from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadSDKConfigFromID", _args)
+        return SDKConfig(_ctx)
+
     def load_scalar_type_def_from_id(self, id: ScalarTypeDefID) -> "ScalarTypeDef":
         """Load a ScalarTypeDef from its ID."""
         _args = [
@@ -7645,6 +7642,57 @@ class Client(Root):
         """
         _args: list[Arg] = []
         _ctx = self._select("version", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class SDKConfig(Type):
+    """The SDK config of the module."""
+
+    async def id(self) -> SDKConfigID:
+        """A unique identifier for this SDKConfig.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        SDKConfigID
+            The `SDKConfigID` scalar type represents an identifier for an
+            object of type SDKConfig.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(SDKConfigID)
+
+    async def source(self) -> str:
+        """Source of the SDK. Either a name of a builtin SDK or a module source
+        ref string pointing to the SDK's implementation.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("source", _args)
         return await _ctx.execute(str)
 
 
@@ -8632,6 +8680,8 @@ __all__ = [
     "PortForward",
     "PortID",
     "ReturnType",
+    "SDKConfig",
+    "SDKConfigID",
     "ScalarTypeDef",
     "ScalarTypeDefID",
     "Secret",
