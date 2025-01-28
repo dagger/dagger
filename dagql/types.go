@@ -88,6 +88,15 @@ type Object interface {
 	//
 	// Any Nullable values are automatically unwrapped.
 	Select(context.Context, *Server, Selector) (Typed, *call.ID, error)
+
+	// ReturnType gets the return type of the field selected by the given
+	// selector.
+	//
+	// The returned value is the raw Typed value returned from the field; it must
+	// be instantiated with a class for further selection.
+	//
+	// Any Nullable values are automatically unwrapped.
+	ReturnType(context.Context, Selector) (Typed, *call.ID, error)
 }
 
 // ScalarType represents a GraphQL Scalar type.
