@@ -45,14 +45,21 @@ func (cfg *LlmConfig) KeyPlaintext(ctx context.Context, srv *dagql.Server) (stri
 }
 
 func NewAgent(srv *dagql.Server, llmConfig LlmConfig, self dagql.Object, selfType dagql.ObjectType) *Agent {
-	a := Agent{
+	a := &Agent{
 		srv:       srv,
 		self:      self,
 		selfType:  selfType,
-		def:       srv.Schema().Types[selfType.TypeName()],
 		llmConfig: llmConfig,
 	}
-	return a.WithSystemPrompt(fmt.Sprintf("You are a %s: %s", a.def.Name, a.def.Description))
+	if self == nil {
+		// Gracefully support being a "zero value" for type introspection purposes
+		// This means we will never actually be used. it is safe to return at this point
+		return a
+	}
+	// Finish initializing if we have an actual instance
+	a.def = srv.Schema().Types[selfType.TypeName()]
+	a = a.WithSystemPrompt(fmt.Sprintf("You are a %s: %s", a.def.Name, a.def.Description))
+	return a
 }
 
 type Agent struct {
