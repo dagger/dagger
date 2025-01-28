@@ -235,7 +235,17 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
 
             invokeBlock.add(", $L", parameterInfo.name());
 
-            im.addStatement("$T $L = null", paramClazz, parameterInfo.name());
+            if (paramClazz.isPrimitive()) {
+              if (paramClazz.isAssignableFrom(boolean.class)) {
+                im.addStatement("$T $L = false", paramClazz, parameterInfo.name());
+              } else if (paramClazz.isAssignableFrom(int.class)) {
+                im.addStatement("$T $L = 0", paramClazz, parameterInfo.name());
+              } else {
+                im.addStatement("$T $L", paramClazz, parameterInfo.name());
+              }
+            } else {
+              im.addStatement("$T $L = null", paramClazz, parameterInfo.name());
+            }
             im.beginControlFlow("if (inputArgs.get($S) != null)", parameterInfo.name());
             im.addStatement(
                 "$L = ($T) $T.fromJSON(dag, inputArgs.get($S), $T.class)",
