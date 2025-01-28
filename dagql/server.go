@@ -537,16 +537,7 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 		}
 
 		if _, ok := s.ObjectType(res.Type().Name()); ok {
-			enum, isEnum := res.(Enumerable)
-			if sel.Nth != 0 {
-				if !isEnum {
-					return fmt.Errorf("nth used on non enumerable %s", res.Type())
-				}
-				res, err = enum.Nth(sel.Nth)
-				if err != nil {
-					return fmt.Errorf("selector nth %d: %w", sel.Nth, err)
-				}
-			} else if isEnum {
+			if enum, isEnum := res.(Enumerable); isEnum {
 				// HACK: list of objects must be the last selection right now unless nth used in Selector.
 				if i+1 < len(sels) {
 					return fmt.Errorf("cannot sub-select enum of %s", res.Type())
@@ -720,6 +711,13 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 			rerr = gqlErr(rerr, append(idToPath(self.ID()), ast.PathName(sel.Name())))
 		}
 	}()
+
+	if sel.Selector.Nth != 0 {
+		// NOTE: this is explicitly not handled - but it's fine because
+		// resolvePath is called from selectors from field parsing, so we
+		// shouldn't hit this in practice
+		return nil, fmt.Errorf("cannot resolve selector path with nth")
+	}
 
 	val, chainedID, err := self.Select(ctx, s, sel.Selector)
 	if err != nil {
