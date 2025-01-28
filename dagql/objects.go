@@ -1267,7 +1267,13 @@ func setInputFields(specs InputSpecs, inputs map[string]Input, dest any) error {
 			return fmt.Errorf("missing required input: %q", spec.Name)
 		}
 		if err := assign(fieldV, val); err != nil {
-			return fmt.Errorf("assign %q: %w", spec.Name, err)
+			return fmt.Errorf("assign input %q (%T) as %+v (%T): %w",
+				spec.Name,
+				fieldV.Interface(),
+				val,
+				val,
+				err,
+			)
 		}
 	}
 	return nil
