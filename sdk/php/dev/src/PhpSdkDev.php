@@ -6,6 +6,7 @@ namespace DaggerModule;
 
 use Dagger\Attribute\DaggerFunction;
 use Dagger\Attribute\DaggerObject;
+use Dagger\Attribute\DefaultPath;
 use Dagger\Attribute\Doc;
 use Dagger\Container;
 use Dagger\Directory;
@@ -84,15 +85,10 @@ final class PhpSdkDev
     #[Doc('Return stdout from formatting source directory')]
     public function formatStdout(Directory $source): string
     {
-        $result = dag()->alwaysExec()->exec($this->base($source), ['phpcbf']);
-
-        if (dag()->alwaysExec()->lastExitCode($result) === '3') {
-            throw new QueryError(['errors' => [[
-                'message' => 'An error occured during execution of PHPCBF',
-            ]]]);
-        }
-
-        return dag()->alwaysExec()->stdout($result);
+        return $this
+            ->base($source)
+            ->withExec(args: ['phpcbf'], expect: ReturnType::ANY)
+            ->stdout();
     }
 
     private function base(Directory $source): Container
