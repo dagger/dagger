@@ -79,6 +79,7 @@ type IDable interface {
 type Object interface {
 	Typed
 	IDable
+
 	// ObjectType returns the type of the object.
 	ObjectType() ObjectType
 
