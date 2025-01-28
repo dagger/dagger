@@ -13,8 +13,8 @@ import org.apache.commons.lang3.StringUtils;
 
 /** Dagger Java Module main object */
 @Object
-public class DaggerJavaModule extends Base {
-  public DaggerJavaModule() {
+public class DaggerJava extends Base {
+  public DaggerJava() {
     super();
   }
 

@@ -1,5 +1,5 @@
 /** Dagger Java Module example */
-@Module(value = "DaggerJavaModule")
+@Module
 package io.dagger.java.module;
 
 import io.dagger.module.annotation.Module;

@@ -70,7 +70,7 @@ public class Entrypoint {
     Module module = dag.module()
         .withDescription("Dagger Java Module example")
         .withObject(
-            dag.typeDef().withObject("DaggerJavaModule", new TypeDef.WithObjectArguments().withDescription("Dagger Java Module main object"))
+            dag.typeDef().withObject("DaggerJava", new TypeDef.WithObjectArguments().withDescription("Dagger Java Module main object"))
                 .withFunction(
                     dag.function("containerEcho",
                         dag.typeDef().withObject("Container"))
@@ -88,8 +88,8 @@ public class Entrypoint {
   private JSON invoke(JSON parentJson, String parentName, String fnName,
       Map<String, JSON> inputArgs) throws Exception {
     try (var jsonb = JsonbBuilder.create()) {
-      if (parentName.equals("DaggerJavaModule")) {
-        Class clazz = Class.forName("io.dagger.java.module.DaggerJavaModule");
+      if (parentName.equals("DaggerJava")) {
+        Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
         var obj = JsonConverter.fromJSON(dag, parentJson, clazz);
         clazz.getMethod("setClient", Client.class).invoke(obj, dag);
         if (fnName.equals("containerEcho")) {

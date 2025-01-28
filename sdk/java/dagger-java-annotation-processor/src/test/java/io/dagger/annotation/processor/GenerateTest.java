@@ -15,7 +15,7 @@ public class GenerateTest {
         javac()
             .withProcessors(new DaggerModuleAnnotationProcessor())
             .compile(
-                JavaFileObjects.forResource("io/dagger/java/module/DaggerJavaModule.java"),
+                JavaFileObjects.forResource("io/dagger/java/module/DaggerJava.java"),
                 JavaFileObjects.forResource("io/dagger/java/module/package-info.java"));
     assertThat(compilation).succeeded();
     assertThat(compilation)

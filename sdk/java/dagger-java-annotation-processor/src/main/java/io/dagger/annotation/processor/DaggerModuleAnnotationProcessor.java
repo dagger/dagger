@@ -56,14 +56,13 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
   }
 
   ModuleInfo generateModuleInfo(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
-    String moduleName = null, moduleDescription = null;
+    String moduleDescription = null;
     Set<ObjectInfo> annotatedObjects = new HashSet<>();
 
     for (TypeElement annotation : annotations) {
       for (Element element : roundEnv.getElementsAnnotatedWith(annotation)) {
         if (element.getKind() == ElementKind.PACKAGE) {
           Module module = element.getAnnotation(Module.class);
-          moduleName = module.value();
           moduleDescription = module.description();
           if (moduleDescription.isEmpty()) {
             moduleDescription = trimDoc(processingEnv.getElementUtils().getDocComment(element));
@@ -133,9 +132,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     }
 
     return new ModuleInfo(
-        moduleName,
-        moduleDescription,
-        annotatedObjects.toArray(new ObjectInfo[annotatedObjects.size()]));
+        moduleDescription, annotatedObjects.toArray(new ObjectInfo[annotatedObjects.size()]));
   }
 
   static JavaFile generate(ModuleInfo moduleInfo) {
