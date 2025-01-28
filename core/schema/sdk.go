@@ -595,8 +595,8 @@ func (sdk *goSDK) baseWithCodegen(
 			dagql.String("--merge="+strconv.FormatBool(src.Self.WithInitConfig.Merge)))
 	}
 
-	if err := sdk.dag.Select(ctx, ctr, &ctr,
-		dagql.Selector{
+	selectors := []dagql.Selector{
+		{
 			Field: "withMountedFile",
 			Args: []dagql.NamedInput{
 				{
@@ -609,7 +609,7 @@ func (sdk *goSDK) baseWithCodegen(
 				},
 			},
 		},
-		dagql.Selector{
+		{
 			Field: "withMountedDirectory",
 			Args: []dagql.NamedInput{
 				{
@@ -622,7 +622,7 @@ func (sdk *goSDK) baseWithCodegen(
 				},
 			},
 		},
-		dagql.Selector{
+		{
 			Field: "withWorkdir",
 			Args: []dagql.NamedInput{
 				{
@@ -631,6 +631,31 @@ func (sdk *goSDK) baseWithCodegen(
 				},
 			},
 		},
+	}
+
+	// inject sdk specific env variables before withExec
+	// TODO(rajatjindal): do we want to have a safelist here?
+	// e.g. disallow system env variables?
+	cfg, ok, _ := src.Self.ModuleConfig(ctx)
+	if ok {
+		for k, v := range cfg.SDK.Env {
+			selectors = append(selectors, dagql.Selector{
+				Field: "withEnvVariable",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "name",
+						Value: dagql.NewString(k),
+					},
+					{
+						Name:  "value",
+						Value: dagql.NewString(v),
+					},
+				},
+			})
+		}
+	}
+
+	selectors = append(selectors,
 		dagql.Selector{
 			Field: "withoutDefaultArgs",
 		},
@@ -645,7 +670,9 @@ func (sdk *goSDK) baseWithCodegen(
 				},
 			},
 		},
-	); err != nil {
+	)
+
+	if err = sdk.dag.Select(ctx, ctr, &ctr, selectors...); err != nil {
 		return ctr, fmt.Errorf("failed to mount introspection json file into go module sdk container codegen: %w", err)
 	}
 

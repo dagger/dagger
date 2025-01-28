@@ -1198,26 +1198,10 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 		}
 	}
 
-	runtime, err := sdk.Runtime(ctx, mod.Deps, src)
+	mod.Runtime, err = sdk.Runtime(ctx, mod.Deps, src)
 	if err != nil {
 		return fmt.Errorf("failed to get module runtime: %w", err)
 	}
-
-	var runtime2 dagql.Instance[*core.Container]
-	err = s.dag.Select(ctx, runtime.Query.NewModule().Source, &runtime2,
-		dagql.Selector{
-			Field: "withEnvVariable",
-			Args: []dagql.NamedInput{
-				{Name: "name", Value: dagql.String("FIRSTTWO")},
-				{Name: "value", Value: dagql.String("VALUETWO")},
-			},
-		},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to add vcs ignore file: %w", err)
-	}
-
-	mod.Runtime = runtime2.Self.Clone()
 
 	return nil
 }
