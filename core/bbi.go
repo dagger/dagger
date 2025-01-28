@@ -68,7 +68,7 @@ func (s *OneOneBBISession) Self() dagql.Object {
 	return s.self
 }
 
-func (s OneOneBBISession) Tools() []Tool {
+func (s *OneOneBBISession) Tools() []Tool {
 	var tools []Tool
 	for _, field := range s.def.Fields {
 		tools = append(tools, Tool{
