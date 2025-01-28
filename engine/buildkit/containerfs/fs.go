@@ -282,11 +282,17 @@ func (ctrFS *ContainerFS) PathExists(path string) (bool, error) {
 
 func (ctrFS *ContainerFS) OSReleaseFileContains(ids [][]byte, idLikes [][]byte) (bool, error) {
 	f, err := ctrFS.Open("/etc/os-release")
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
-		}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return false, err
+	}
+	if f == nil {
+		f, err = ctrFS.Open("/usr/lib/os-release")
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
+	}
+	if f == nil {
+		return false, nil
 	}
 	defer f.Close()
 	scanner := bufio.NewScanner(f)

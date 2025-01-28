@@ -67,6 +67,7 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"GetEnumValues":             funcs.getEnumValues,
 		"CheckVersionCompatibility": commonFunc.CheckVersionCompatibility,
 		"ModuleRelPath":             funcs.moduleRelPath,
+		"FormatProtected":           funcs.formatProtected,
 	}
 }
 
@@ -316,4 +317,8 @@ func (funcs typescriptTemplateFuncs) moduleRelPath(path string) string {
 		// Path from the context directory to the target path.
 		path,
 	)
+}
+
+func (funcs typescriptTemplateFuncs) formatProtected(s string) string {
+	return strings.TrimSuffix(s, "_")
 }

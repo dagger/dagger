@@ -23,7 +23,6 @@ import (
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	"github.com/moby/buildkit/frontend/dockerui"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/opencontainers/go-digest"
@@ -100,6 +99,9 @@ type Container struct {
 	// (Internal-only for now) Environment variables from the engine container, prefixed
 	// with a special value, that will be inherited by this container if set.
 	SystemEnvNames []string `json:"system_envs,omitempty"`
+
+	// DefaultArgs have been explicitly set by the user
+	DefaultArgs bool `json:"defaultArgs,omitempty"`
 }
 
 func (*Container) Type() *ast.Type {
@@ -1380,116 +1382,6 @@ func (container *Container) Export(
 	return err
 }
 
-func (container *Container) AsTarball(
-	ctx context.Context,
-	srv *dagql.Server,
-	platformVariants []*Container,
-	forcedCompression ImageLayerCompression,
-	mediaTypes ImageMediaTypes,
-) (*File, error) {
-	bk, err := container.Query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	svcs, err := container.Query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
-	engineHostPlatform := container.Query.Platform()
-
-	if mediaTypes == "" {
-		mediaTypes = OCIMediaTypes
-	}
-
-	opts := map[string]string{
-		"tar":                           strconv.FormatBool(true),
-		string(exptypes.OptKeyOCITypes): strconv.FormatBool(mediaTypes == OCIMediaTypes),
-	}
-	if forcedCompression != "" {
-		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(forcedCompression))
-		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
-	}
-
-	inputByPlatform := map[string]buildkit.ContainerExport{}
-	services := ServiceBindings{}
-
-	variants := append([]*Container{container}, platformVariants...)
-	for _, variant := range variants {
-		if variant.FS == nil {
-			continue
-		}
-		st, err := variant.FSState()
-		if err != nil {
-			return nil, err
-		}
-
-		platformSpec := variant.Platform.Spec()
-		def, err := st.Marshal(ctx, llb.Platform(platformSpec))
-		if err != nil {
-			return nil, err
-		}
-
-		platformString := platforms.Format(variant.Platform.Spec())
-		if _, ok := inputByPlatform[platformString]; ok {
-			return nil, fmt.Errorf("duplicate platform %q", platformString)
-		}
-		inputByPlatform[platformString] = buildkit.ContainerExport{
-			Definition: def.ToPB(),
-			Config:     variant.Config,
-		}
-
-		if len(variants) == 1 {
-			// single platform case
-			for _, annotation := range variant.Annotations {
-				opts[exptypes.AnnotationManifestKey(nil, annotation.Key)] = annotation.Value
-				opts[exptypes.AnnotationManifestDescriptorKey(nil, annotation.Key)] = annotation.Value
-			}
-		} else {
-			// multi platform case
-			for _, annotation := range variant.Annotations {
-				opts[exptypes.AnnotationManifestKey(&platformSpec, annotation.Key)] = annotation.Value
-				opts[exptypes.AnnotationManifestDescriptorKey(&platformSpec, annotation.Key)] = annotation.Value
-			}
-		}
-
-		services.Merge(variant.Services)
-	}
-	if len(inputByPlatform) == 0 {
-		return nil, errors.New("no containers to export")
-	}
-
-	detach, _, err := svcs.StartBindings(ctx, services)
-	if err != nil {
-		return nil, err
-	}
-	defer detach()
-
-	fileName := identity.NewID() + ".tar"
-
-	dgst, err := bk.ContainerImageToTarball(ctx, engineHostPlatform.Spec(), fileName, inputByPlatform, opts)
-	if err != nil {
-		return nil, fmt.Errorf("container image to tarball file conversion failed: %w", err)
-	}
-	dirInst, err := LoadBlob(ctx, srv, dgst)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load tarball file blob: %w", err)
-	}
-
-	var fileInst dagql.Instance[*File]
-	if err := srv.Select(ctx, dirInst, &fileInst,
-		dagql.Selector{
-			Field: "file",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(fileName)},
-			},
-		},
-	); err != nil {
-		return nil, fmt.Errorf("failed to select tarball file: %w", err)
-	}
-
-	return fileInst.Self, nil
-}
-
 func (container *Container) Import(
 	ctx context.Context,
 	source *File,
@@ -1710,14 +1602,28 @@ func (container *Container) AsServiceLegacy(ctx context.Context) (*Service, erro
 }
 
 func (container *Container) AsService(ctx context.Context, args ContainerAsServiceArgs) (*Service, error) {
+	if len(args.Args) == 0 &&
+		len(container.Config.Cmd) == 0 &&
+		len(container.Config.Entrypoint) == 0 {
+		return nil, ErrNoSvcCommand
+	}
+
+	useEntrypoint := args.UseEntrypoint
+	if len(container.Config.Entrypoint) > 0 && !container.DefaultArgs {
+		useEntrypoint = true
+	}
+
 	var cmdargs = container.Config.Cmd
 	if len(args.Args) > 0 {
 		cmdargs = args.Args
+		if !args.UseEntrypoint {
+			useEntrypoint = false
+		}
 	}
 
 	container, err := container.WithExec(ctx, ContainerExecOpts{
 		Args:                          cmdargs,
-		UseEntrypoint:                 args.UseEntrypoint,
+		UseEntrypoint:                 useEntrypoint,
 		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
 		InsecureRootCapabilities:      args.InsecureRootCapabilities,
 		Expand:                        args.Expand,

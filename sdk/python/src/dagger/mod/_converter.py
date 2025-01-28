@@ -97,6 +97,7 @@ def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901, PLR0911
     builtins = {
         str: dagger.TypeDefKind.STRING_KIND,
         int: dagger.TypeDefKind.INTEGER_KIND,
+        float: dagger.TypeDefKind.FLOAT_KIND,
         bool: dagger.TypeDefKind.BOOLEAN_KIND,
         type(None): dagger.TypeDefKind.VOID_KIND,
     }

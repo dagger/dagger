@@ -100,7 +100,7 @@ type ExecutionMetadata struct {
 	// Path to the SSH auth socket. Used for Dagger-in-Dagger support.
 	SSHAuthSocketPath string
 
-	// If true, skip injecting dumb-init into the container.
+	// If true, skip injecting dagger-init into the container.
 	NoInit bool
 }
 
@@ -159,7 +159,7 @@ func (w *Worker) Run(
 	state := newExecState(id, &procInfo, rootMount, mounts, started)
 	return nil, w.run(ctx, state,
 		w.setupNetwork,
-		w.injectDumbInit,
+		w.injectInit,
 		w.generateBaseSpec,
 		w.filterEnvs,
 		w.setupRootfs,

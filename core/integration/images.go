@@ -4,6 +4,7 @@ import "github.com/dagger/dagger/engine/distconsts"
 
 const (
 	alpineImage  = distconsts.AlpineImage
+	wolfiImage   = "cgr.dev/chainguard/wolfi-base"
 	busyboxImage = distconsts.BusyboxImage
 	golangImage  = distconsts.GolangImage
 	debianImage  = "debian:bookworm"

@@ -1,0 +1,40 @@
+name: Dagger with Magicache
+
+on:
+  workflow_call:
+    inputs:
+      function:
+        description: "Dagger function"
+        type: string
+        required: true
+      timeout:
+        description: "Timeout if not finished after this many minutes"
+        type: number
+        default: 10
+        required: false
+      dev:
+        description: "Use a development version of Dagger"
+        type: string
+        default: "false"
+        required: false
+jobs:
+  remote-dagger-engine:
+    if: ${{ github.repository == 'dagger/dagger' }}
+    runs-on:
+        - 'dagger-g3-v0-15-2-16c-st-magic'
+    timeout-minutes: ${{ inputs.timeout }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      - name: Warm up Engine
+        run: dagger core version
+      - name: ${{ inputs.function }}
+        uses: ./.github/actions/call
+        with:
+          function: ${{ inputs.function }}
+          dev-engine: "false"
+      - name: ${{ inputs.function }} (CACHE TEST)
+        uses: ./.github/actions/call
+        with:
+          function: ${{ inputs.function }}
+          dev-engine: "false"

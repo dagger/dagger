@@ -6,7 +6,9 @@ export type References = { [name: string]: TypeDef<TypeDefKind> }
 export type ReferencableType =
   | TypeDef<TypeDefKind.ObjectKind>
   | TypeDef<TypeDefKind.EnumKind>
+  | TypeDef<TypeDefKind.FloatKind>
   | TypeDef<TypeDefKind.ScalarKind>
+  | TypeDef<TypeDefKind.InterfaceKind>
 
 export function isKindArray(
   type: TypeDef<TypeDefKind>,

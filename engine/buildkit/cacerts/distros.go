@@ -30,7 +30,7 @@ More distros to handle:
 /*
 debianLike includes:
 * Debian/Ubuntu/other derivatives
-* Alpine
+* Alpine/Wolfi
 * Gentoo
 
 Which are obviously not all Debian derivatives... They all use
@@ -81,12 +81,14 @@ func (d *debianLike) detect() (bool, error) {
 			[]byte("debian"),
 			[]byte("ubuntu"),
 			[]byte("alpine"),
+			[]byte("wolfi"),
 			[]byte("gentoo"),
 		},
 		[][]byte{
 			[]byte("debian"),
 			[]byte("ubuntu"),
 			[]byte("alpine"),
+			[]byte("wolfi"),
 			[]byte("gentoo"),
 		},
 	)

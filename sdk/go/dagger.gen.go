@@ -1040,6 +1040,24 @@ type ContainerUpOpts struct {
 	Ports []PortForward
 	// Bind each tunnel port to a random port on the host.
 	Random bool
+	// Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
+	//
+	// If empty, the container's default command is used.
+	Args []string
+	// If the container has an entrypoint, prepend it to the args.
+	UseEntrypoint bool
+	// Provides Dagger access to the executed command.
+	//
+	// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+	ExperimentalPrivilegedNesting bool
+	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+	InsecureRootCapabilities bool
+	// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+	Expand bool
+	// If set, skip the automatic init process injected into containers by default.
+	//
+	// This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+	NoInit bool
 }
 
 // Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
@@ -1058,6 +1076,30 @@ func (r *Container) Up(ctx context.Context, opts ...ContainerUpOpts) error {
 		// `random` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Random) {
 			q = q.Arg("random", opts[i].Random)
+		}
+		// `args` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Args) {
+			q = q.Arg("args", opts[i].Args)
+		}
+		// `useEntrypoint` optional argument
+		if !querybuilder.IsZeroValue(opts[i].UseEntrypoint) {
+			q = q.Arg("useEntrypoint", opts[i].UseEntrypoint)
+		}
+		// `experimentalPrivilegedNesting` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
+			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `insecureRootCapabilities` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
+			q = q.Arg("insecureRootCapabilities", opts[i].InsecureRootCapabilities)
+		}
+		// `expand` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Expand) {
+			q = q.Arg("expand", opts[i].Expand)
+		}
+		// `noInit` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoInit) {
+			q = q.Arg("noInit", opts[i].NoInit)
 		}
 	}
 
@@ -6360,6 +6402,16 @@ func (r *ModuleSource) WithSourceSubpath(path string) *ModuleSource {
 	}
 }
 
+// Update one or more module dependencies.
+func (r *ModuleSource) WithUpdateDependencies(dependencies []string) *ModuleSource {
+	q := r.query.Select("withUpdateDependencies")
+	q = q.Arg("dependencies", dependencies)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 // Update the module source with a new named view.
 func (r *ModuleSource) WithView(name string, patterns []string) *ModuleSource {
 	q := r.query.Select("withView")
@@ -6753,16 +6805,6 @@ func (r *Client) WithGraphQLQuery(q *querybuilder.Selection) *Client {
 	}
 }
 
-// Retrieves a content-addressed blob.
-func (r *Client) Blob(digest string) *Directory {
-	q := r.query.Select("blob")
-	q = q.Arg("digest", digest)
-
-	return &Directory{
-		query: q,
-	}
-}
-
 // Retrieves a container builtin to the engine.
 func (r *Client) BuiltinContainer(digest string) *Container {
 	q := r.query.Select("builtinContainer")
@@ -6773,9 +6815,20 @@ func (r *Client) BuiltinContainer(digest string) *Container {
 	}
 }
 
+// CacheVolumeOpts contains options for Client.CacheVolume
+type CacheVolumeOpts struct {
+	Namespace string
+}
+
 // Constructs a cache volume for a given cache key.
-func (r *Client) CacheVolume(key string) *CacheVolume {
+func (r *Client) CacheVolume(key string, opts ...CacheVolumeOpts) *CacheVolume {
 	q := r.query.Select("cacheVolume")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `namespace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Namespace) {
+			q = q.Arg("namespace", opts[i].Namespace)
+		}
+	}
 	q = q.Arg("key", key)
 
 	return &CacheVolume{
@@ -8620,6 +8673,9 @@ const (
 	//
 	// Always paired with an EnumTypeDef.
 	TypeDefKindEnumKind TypeDefKind = "ENUM_KIND"
+
+	// A float value.
+	TypeDefKindFloatKind TypeDefKind = "FLOAT_KIND"
 
 	// A graphql input type, used only when representing the core API via TypeDefs.
 	TypeDefKindInputKind TypeDefKind = "INPUT_KIND"

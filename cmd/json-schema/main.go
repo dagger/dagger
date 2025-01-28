@@ -55,7 +55,7 @@ var targets = []target{
 	{
 		id:    "dagger.json",
 		path:  "./core/modules",
-		value: &modules.ModuleConfig{},
+		value: &modules.ModuleConfigWithUserFields{},
 	},
 	{
 		id:    "engine.json",

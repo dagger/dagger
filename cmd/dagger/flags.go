@@ -845,6 +845,11 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 		flags.Int(name, val, usage)
 		return nil
 
+	case dagger.TypeDefKindFloatKind:
+		val, _ := getDefaultValue[float64](r)
+		flags.Float64(name, val, usage)
+		return nil
+
 	case dagger.TypeDefKindBooleanKind:
 		val, _ := getDefaultValue[bool](r)
 		flags.Bool(name, val, usage)
@@ -932,6 +937,11 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 		case dagger.TypeDefKindIntegerKind:
 			val, _ := getDefaultValue[[]int](r)
 			flags.IntSlice(name, val, usage)
+			return nil
+
+		case dagger.TypeDefKindFloatKind:
+			val, _ := getDefaultValue[[]float64](r)
+			flags.Float64Slice(name, val, usage)
 			return nil
 
 		case dagger.TypeDefKindBooleanKind:

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"go.opentelemetry.io/otel/codes"
-	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
@@ -18,7 +17,7 @@ type GoSDK struct {
 
 // Lint the Go SDK
 func (t GoSDK) Lint(ctx context.Context) (rerr error) {
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 	eg.Go(func() (rerr error) {
 		ctx, span := Tracer().Start(ctx, "lint the go source")
 		defer func() {
@@ -94,7 +93,6 @@ func (t GoSDK) TestPublish(ctx context.Context, tag string) error {
 		"dagger-ci",
 		"hello@dagger.io",
 		nil,
-		nil,
 	)
 }
 
@@ -121,8 +119,6 @@ func (t GoSDK) Publish(
 
 	// +optional
 	githubToken *dagger.Secret,
-	// +optional
-	discordWebhook *dagger.Secret,
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/go/")
 
@@ -141,23 +137,6 @@ func (t GoSDK) Publish(
 		dryRun:       dryRun,
 	}); err != nil {
 		return err
-	}
-
-	if semver.IsValid(version) {
-		if err := dag.Releaser().GithubRelease(ctx, gitRepoSource, "sdk/go/"+version, tag, dagger.ReleaserGithubReleaseOpts{
-			Notes:  dag.Releaser().ChangeNotes("sdk/go", version),
-			Token:  githubToken,
-			DryRun: dryRun,
-		}); err != nil {
-			return err
-		}
-
-		if err := dag.Releaser().Notify(ctx, gitRepoSource, "sdk/go/"+version, "🐹 Go SDK", dagger.ReleaserNotifyOpts{
-			DiscordWebhook: discordWebhook,
-			DryRun:         dryRun,
-		}); err != nil {
-			return err
-		}
 	}
 
 	return nil

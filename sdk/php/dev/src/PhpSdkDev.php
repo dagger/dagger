@@ -9,6 +9,7 @@ use Dagger\Attribute\DaggerObject;
 use Dagger\Attribute\Doc;
 use Dagger\Container;
 use Dagger\Directory;
+use Dagger\ReturnType;
 use GraphQL\Exception\QueryError;
 
 use function Dagger\dag;
@@ -63,15 +64,19 @@ final class PhpSdkDev
     #[Doc('Return diff from formatting source directory')]
     public function format(Directory $source): Directory
     {
-        $result = dag()->alwaysExec()->exec($this->base($source), ['phpcbf']);
+        $result = $this->base($source)->withExec(
+            args: ['phpcbf'],
+            expect: ReturnType::ANY,
+        );
 
-        if (dag()->alwaysExec()->lastExitCode($result) === '3') {
+        if (!in_array($result->exitCode(), [0, 1, 2], true)) {
             throw new QueryError(['errors' => [[
                 'message' => 'An error occured during execution of PHPCBF',
             ]]]);
         }
 
         $original = $this->base($source)->directory(self::SDK_ROOT);
+
         return $original->diff($result->directory(self::SDK_ROOT));
     }
 

@@ -847,7 +847,7 @@ class Test:
 			// newer feature.
 			With(pyprojectExtra(nil, `
                 [tool.dagger]
-                uv-version = "0.4.5"
+                uv-version = "0.5.20"
             `)).
 			With(source).
 			With(daggerInitPython()).
@@ -855,7 +855,7 @@ class Test:
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "0.4.5", out)
+		require.Equal(t, "0.5.20", out)
 	})
 
 	t.Run("index-url", func(ctx context.Context, t *testctx.T) {

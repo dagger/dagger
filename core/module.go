@@ -286,7 +286,7 @@ func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirect
 	var err error
 
 	switch typeDef.Kind {
-	case TypeDefKindString, TypeDefKindInteger, TypeDefKindBoolean, TypeDefKindVoid:
+	case TypeDefKindString, TypeDefKindInteger, TypeDefKindFloat, TypeDefKindBoolean, TypeDefKindVoid:
 		modType, ok = mod.modTypeForPrimitive(typeDef)
 	case TypeDefKindList:
 		modType, ok, err = mod.modTypeForList(ctx, typeDef, checkDirectDeps)

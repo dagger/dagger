@@ -11,8 +11,12 @@ defmodule ObjectMod do
     "Hello, #{name}"
   end
 
-  defn accept_integer(name: integer()) :: integer() do
-    "Hello, #{name}"
+  defn accept_integer(value: integer()) :: integer() do
+    value
+  end
+
+  defn accept_float(value: float()) :: float() do
+    value
   end
 
   defn accept_boolean(name: boolean()) :: String.t() do
@@ -47,5 +51,9 @@ defmodule ObjectMod do
             ignore: ["deps", "_build"]}
        ) :: String.t() do
     Dagger.Directory.id(dir)
+  end
+
+  defn return_void() :: Dagger.Void.t() do
+    :ok
   end
 end

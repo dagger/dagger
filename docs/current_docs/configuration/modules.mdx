@@ -11,6 +11,20 @@ Modules can be configured by editing their `dagger.json` file. The configuration
 
 For more information, refer to the [JSON schema for the Dagger module configuration file](https://docs.dagger.io/reference/dagger.schema.json).
 
+## File and directory filters
+
+The JSON schema for the Dagger module configuration file `dagger.json` supports `exclude` and `include` fields. These tell the Dagger Engine which files to exclude or include when loading the module itself.
+
+:::important
+Include filters are applied before excludes.
+:::
+
+Notably, these filters only apply to loading the Dagger module. They do not apply to any directories passed as arguments to the Dagger module's functions ([pre- and post-call filtering](../api/fs-filters.mdx) is separately available for directory arguments).
+
+:::tip
+The `exclude` field is particularly useful during local module development, to avoid uploading large cache or generated files that the Dagger Engine doesn't need.
+:::
+
 ## TypeScript
 
 TypeScript-specific SDK settings can be configured using the standard

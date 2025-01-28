@@ -26,9 +26,7 @@ import (
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/moby/buildkit/util/grpcerrors"
-	"github.com/moby/buildkit/util/tracing"
 	"github.com/vito/go-sse/sse"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -343,7 +341,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		// registry auth
 		authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr), nil),
 		// host=>container networking
-		session.NewTunnelListenerAttachable(ctx, nil),
+		session.NewTunnelListenerAttachable(ctx),
 		// terminal
 		session.NewTerminalAttachable(ctx, c.Params.WithTerminal),
 		// Git credentials
@@ -351,7 +349,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	}
 	// filesync
 	if !c.DisableHostRW {
-		filesyncer, err := NewFilesyncer("", "", nil, nil)
+		filesyncer, err := NewFilesyncer()
 		if err != nil {
 			return fmt.Errorf("new filesyncer: %w", err)
 		}
@@ -449,13 +447,6 @@ func NewBuildkitSessionServer(ctx context.Context, conn net.Conn, attachables ..
 	sessionSrvOpts := []grpc.ServerOption{
 		grpc.UnaryInterceptor(grpcerrors.UnaryServerInterceptor),
 		grpc.StreamInterceptor(grpcerrors.StreamServerInterceptor),
-	}
-	if span := trace.SpanFromContext(ctx); span.SpanContext().IsValid() {
-		statsHandler := tracing.ServerStatsHandler(
-			otelgrpc.WithTracerProvider(span.TracerProvider()),
-			otelgrpc.WithPropagators(telemetry.Propagator),
-		)
-		sessionSrvOpts = append(sessionSrvOpts, grpc.StatsHandler(statsHandler))
 	}
 
 	srv := grpc.NewServer(sessionSrvOpts...)

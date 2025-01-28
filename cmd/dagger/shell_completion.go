@@ -18,7 +18,9 @@ type shellAutoComplete struct {
 var _ readline.AutoCompleter = (*shellAutoComplete)(nil)
 
 func (h *shellAutoComplete) Do(line []rune, pos int) (newLine [][]rune, length int) {
-	file, err := parseShell(strings.NewReader(string(line)), "")
+	line = line[:pos]
+
+	file, err := parseShell(strings.NewReader(string(line)), "", syntax.RecoverErrors(5))
 	if err != nil {
 		return nil, 0
 	}
@@ -26,8 +28,26 @@ func (h *shellAutoComplete) Do(line []rune, pos int) (newLine [][]rune, length i
 	// find the smallest stmt next to the cursor - this allows accurate
 	// completion inside subshells, for example
 	var stmt *syntax.Stmt
+	stmtSize := len(line) + 1
 	excluded := map[*syntax.Stmt]struct{}{}
 	syntax.Walk(file, func(node syntax.Node) bool {
+		if node == nil {
+			return false
+		}
+
+		start := int(node.Pos().Offset())
+		end := int(node.End().Offset())
+		if node.End().IsRecovered() {
+			end = pos
+		}
+		if pos < start || pos > end {
+			return true
+		}
+		size := end - start
+		if size > stmtSize {
+			return true
+		}
+
 		switch node := node.(type) {
 		case *syntax.BinaryCmd:
 			if node.Op == syntax.Pipe {
@@ -37,17 +57,22 @@ func (h *shellAutoComplete) Do(line []rune, pos int) (newLine [][]rune, length i
 				excluded[node.X] = struct{}{}
 				excluded[node.Y] = struct{}{}
 			}
+		case *syntax.CmdSubst:
+			if len(node.Stmts) > 0 {
+				break
+			}
+			stmt = nil
+			stmtSize = size
 		case *syntax.Stmt:
 			if stmt == nil {
 				stmt = node
 				break
 			}
-			if pos < int(node.Pos().Offset()) || pos > int(node.End().Offset()) {
-				return false
+			if _, ok := excluded[node]; ok {
+				break
 			}
-			if _, ok := excluded[node]; !ok {
-				stmt = node
-			}
+			stmt = node
+			stmtSize = size
 		}
 		return true
 	})
@@ -55,7 +80,7 @@ func (h *shellAutoComplete) Do(line []rune, pos int) (newLine [][]rune, length i
 	var inprogressWord *syntax.Word
 	syntax.Walk(file, func(node syntax.Node) bool {
 		if node, ok := node.(*syntax.Word); ok {
-			if node.End().Offset() == uint(pos) {
+			if node.End().IsValid() && node.End().Offset() == uint(pos) {
 				inprogressWord = node
 				return false
 			}
@@ -98,6 +123,8 @@ func (h *shellAutoComplete) dispatch(previous *CompletionContext, stmt *syntax.S
 		return previous
 	}
 	switch cmd := stmt.Cmd.(type) {
+	case nil:
+		return previous
 	case *syntax.CallExpr:
 		return h.dispatchCall(previous, cmd, cursor)
 	case *syntax.BinaryCmd:
@@ -154,13 +181,16 @@ func (h *shellAutoComplete) root() *CompletionContext {
 type CompletionContext struct {
 	Completer *shellAutoComplete
 
-	// CmdRoot is the name of a namespace-setting command.
-	CmdRoot string
+	// CmdType indicates the completions should be performed in the new
+	// namespace set by a namespace-setting command.
+	CmdType string
+	// CmdFunction indicates the completions should be performed on the
+	// arguments of the namespace-setting command.
+	CmdFunction string
 
 	// ModType indicates the completions should be performed on an
 	// object/interface/etc.
 	ModType functionProvider
-
 	// ModFunc indicates the completions should be performed on the arguments
 	// for a function call.
 	ModFunction *modFunction
@@ -192,6 +222,23 @@ func (ctx *CompletionContext) completions(prefix string) []string {
 			results = append(results, builtin.Name())
 		}
 
+	case ctx.CmdType == shellStdlibCmdName:
+		for _, cmd := range ctx.Completer.Stdlib() {
+			results = append(results, cmd.Name())
+		}
+
+	case ctx.CmdType == shellDepsCmdName:
+		if md, _ := ctx.Completer.GetModuleDef(nil); md != nil {
+			for _, dep := range md.Dependencies {
+				results = append(results, dep.Name)
+			}
+		}
+
+	case ctx.CmdType == shellCoreCmdName:
+		for _, fn := range ctx.Completer.modDef(nil).GetCoreFunctions() {
+			results = append(results, fn.CmdName())
+		}
+
 	case ctx.root:
 		for _, cmd := range slices.Concat(ctx.builtins(), ctx.stdlib()) {
 			results = append(results, cmd.Name())
@@ -204,28 +251,7 @@ func (ctx *CompletionContext) completions(prefix string) []string {
 				results = append(results, dep.Name)
 			}
 		}
-		for modRef := range ctx.Completer.modDefs {
-			if modRef != "" {
-				results = append(results, modRef)
-			}
-		}
-
-	case ctx.CmdRoot == shellStdlibCmdName:
-		for _, cmd := range ctx.Completer.Stdlib() {
-			results = append(results, cmd.Name())
-		}
-
-	case ctx.CmdRoot == shellDepsCmdName:
-		if md, _ := ctx.Completer.GetModuleDef(nil); md != nil {
-			for _, dep := range md.Dependencies {
-				results = append(results, dep.Name)
-			}
-		}
-
-	case ctx.CmdRoot == shellCoreCmdName:
-		for _, fn := range ctx.Completer.modDef(nil).GetCoreFunctions() {
-			results = append(results, fn.CmdName())
-		}
+		results = append(results, ctx.Completer.LoadedModulesList()...)
 	}
 
 	return results
@@ -250,7 +276,7 @@ func (ctx *CompletionContext) lookupField(field string, args []string) *Completi
 	}
 
 	// Limit options for these namespace-setting commands
-	switch ctx.CmdRoot {
+	switch ctx.CmdType {
 	case shellStdlibCmdName:
 		if cmd := ctx.stdlibCmd(field); cmd != nil {
 			return cmd.Complete(ctx, args)
@@ -299,7 +325,7 @@ func (ctx *CompletionContext) lookupField(field string, args []string) *Completi
 
 	// 4. Module reference
 	// TODO: loading other modules isn't supported yet
-	if field == ctx.Completer.modRef {
+	if ctx.Completer.IsDefaultModule(field) {
 		return &CompletionContext{
 			Completer:   ctx.Completer,
 			ModFunction: def.MainObject.AsObject.Constructor,
@@ -310,15 +336,18 @@ func (ctx *CompletionContext) lookupField(field string, args []string) *Completi
 }
 
 func (ctx *CompletionContext) lookupType() *CompletionContext {
-	if ctx.ModType != nil || ctx.CmdRoot != "" {
-		return ctx
-	}
 	if ctx.ModFunction != nil {
 		def := ctx.Completer.modDef(nil)
 		next := def.GetFunctionProvider(ctx.ModFunction.ReturnType.Name())
 		return &CompletionContext{
 			Completer: ctx.Completer,
 			ModType:   next,
+		}
+	}
+	if ctx.CmdFunction != "" {
+		return &CompletionContext{
+			Completer: ctx.Completer,
+			CmdType:   ctx.CmdFunction,
 		}
 	}
 	return nil
@@ -335,13 +364,7 @@ func (ctx *CompletionContext) builtins() []*ShellCommand {
 }
 
 func (ctx *CompletionContext) stdlib() []*ShellCommand {
-	var cmds []*ShellCommand
-	for _, cmd := range ctx.Completer.Stdlib() {
-		if ctx.root && cmd.State != RequiredState || !ctx.root && cmd.State != NoState {
-			cmds = append(cmds, cmd)
-		}
-	}
-	return cmds
+	return ctx.Completer.Stdlib()
 }
 
 func (ctx *CompletionContext) builtinCmd(name string) *ShellCommand {

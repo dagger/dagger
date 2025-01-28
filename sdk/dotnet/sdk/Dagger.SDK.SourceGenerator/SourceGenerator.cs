@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Immutable;
-using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -93,7 +92,6 @@ public class SourceGenerator(CodeGenerator codeGenerator) : IIncrementalGenerato
                         sources[0]!.ToString()
                     )!;
                     string code = codeGenerator.Generate(introspection);
-                    Console.WriteLine(code);
                     spc.AddSource("Dagger.SDK.g.cs", SourceText.From(code, Encoding.UTF8));
                 }
                 catch (JsonException)

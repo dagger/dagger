@@ -12,6 +12,7 @@ const Filename = "dagger.json"
 const EngineVersionLatest string = "latest"
 
 // ModuleConfig is the config for a single module as loaded from a dagger.json file.
+// Only contains fields that are set/edited by dagger utilities.
 type ModuleConfig struct {
 	// The name of the module.
 	Name string `json:"name"`
@@ -42,9 +43,21 @@ type ModuleConfig struct {
 	Codegen *ModuleCodegenConfig `json:"codegen,omitempty"`
 }
 
+type ModuleConfigUserFields struct {
+	// The self-describing json $schema
+	Schema string `json:"$schema,omitempty"`
+}
+
+// ModuleConfigWithUserFields is the config for a single module as loaded from a dagger.json file.
+// Includes additional fields that should only be set by the user.
+type ModuleConfigWithUserFields struct {
+	ModuleConfigUserFields
+	ModuleConfig
+}
+
 func (modCfg *ModuleConfig) UnmarshalJSON(data []byte) error {
 	if modCfg == nil {
-		return fmt.Errorf("cannot unmarshal into nil ModuleConfig")
+		return fmt.Errorf("cannot unmarshal into nil %T", modCfg)
 	}
 	if len(data) == 0 {
 		return nil
@@ -63,6 +76,23 @@ func (modCfg *ModuleConfig) UnmarshalJSON(data []byte) error {
 	}
 
 	*modCfg = ModuleConfig(tmp)
+	return nil
+}
+
+func (modCfg *ModuleConfigWithUserFields) UnmarshalJSON(data []byte) error {
+	if modCfg == nil {
+		return fmt.Errorf("cannot unmarshal into nil %T", modCfg)
+	}
+	if len(data) == 0 {
+		return nil
+	}
+
+	if err := json.Unmarshal(data, &modCfg.ModuleConfigUserFields); err != nil {
+		return fmt.Errorf("unmarshal module config: %w", err)
+	}
+	if err := json.Unmarshal(data, &modCfg.ModuleConfig); err != nil {
+		return fmt.Errorf("unmarshal module config: %w", err)
+	}
 	return nil
 }
 

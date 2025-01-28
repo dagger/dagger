@@ -1842,8 +1842,6 @@ func (ModuleSuite) TestLotsOfDeps(ctx context.Context, t *testctx.T) {
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work")
 
-	modCount := 0
-
 	getModMainSrc := func(name string, depNames []string) string {
 		t.Helper()
 		mainSrc := fmt.Sprintf(`package main
@@ -1873,15 +1871,13 @@ func (ModuleSuite) TestLotsOfDeps(ctx context.Context, t *testctx.T) {
 		return string(fmted)
 	}
 
-	// need to construct dagger.json directly in order to avoid excessive
-	// `dagger mod use` calls while constructing the huge DAG of deps
-	var rootCfg modules.ModuleConfig
+	modCount := 0
 
 	addModulesWithDeps := func(newMods int, depNames []string) []string {
 		t.Helper()
 
 		var newModNames []string
-		for i := 0; i < newMods; i++ {
+		for range newMods {
 			name := fmt.Sprintf("mod%d", modCount)
 			modCount++
 			newModNames = append(newModNames, name)
@@ -1916,8 +1912,6 @@ func (ModuleSuite) TestLotsOfDeps(ctx context.Context, t *testctx.T) {
 		curDeps = addModulesWithDeps(len(curDeps)+1, curDeps)
 	}
 	addModulesWithDeps(1, curDeps)
-
-	modGen = modGen.With(configFile("..", &rootCfg))
 
 	_, err := modGen.With(daggerCall("fn")).Sync(ctx)
 	require.NoError(t, err)
@@ -2332,11 +2326,11 @@ import (
 
 type CoolSdk struct {}
 
-func (m *CoolSdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJson string) *dagger.Container {
+func (m *CoolSdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.Container {
 	return modSource.WithSDK("go").AsModule().Runtime().WithEnvVariable("COOL", "true")
 }
 
-func (m *CoolSdk) Codegen(modSource *dagger.ModuleSource, introspectionJson string) *dagger.GeneratedCode {
+func (m *CoolSdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.GeneratedCode {
 	return dag.GeneratedCode(modSource.WithSDK("go").AsModule().GeneratedContextDirectory())
 }
 
@@ -2407,7 +2401,7 @@ func (m *Test) Fn() string {
 	})
 }
 
-// TestModuleHostError verifies the host api is not exposed to modules
+// TestHostError verifies the host api is not exposed to modules
 func (ModuleSuite) TestHostError(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -2431,7 +2425,7 @@ func (ModuleSuite) TestHostError(ctx context.Context, t *testctx.T) {
 	requireErrOut(t, err, "dag.Host undefined")
 }
 
-// TestModuleEngineError verifies the engine api is not exposed to modules
+// TestEngineError verifies the engine api is not exposed to modules
 func (ModuleSuite) TestEngineError(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -3677,7 +3671,8 @@ func (m *Test) Fn(ctx context.Context) *dagger.Container {
 	redis := dag.Container().
 		From("redis").
 		WithExposedPort(6379).
-		AsService()
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+
 	cli := dag.Container().
 		From("redis").
 		WithoutEntrypoint().
@@ -4889,6 +4884,18 @@ func (m *Test) GetRelDepSource() *dagger.Directory {
 		out, err = ctr.With(daggerCall("get-rel-dep-source", "entries")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "yo\n", out)
+
+		// now try calling from outside
+
+		ctr = ctr.WithWorkdir("/")
+
+		out, err = ctr.With(daggerCallAt("work", "get-dep-source", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo\n", out)
+
+		out, err = ctr.With(daggerCallAt("work", "get-rel-dep-source", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo\n", out)
 	})
 
 	t.Run("as module", func(ctx context.Context, t *testctx.T) {
@@ -5180,6 +5187,123 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 			require.Equal(t, ".git\nLICENSE\nbackend\ndagger\ndagger.json\nfrontend\n", out)
 		})
 	})
+}
+
+func (ModuleSuite) TestFloat(ctx context.Context, t *testctx.T) {
+	depSrc := `package main
+
+type Dep struct{}
+
+func (m *Dep) Dep(n float64) float32 {
+	return float32(n)
+}
+`
+
+	type testCase struct {
+		sdk    string
+		source string
+	}
+
+	testCases := []testCase{
+		{
+			sdk: "go",
+			source: `package main
+
+import "context"
+
+type Test struct{}
+
+func (m *Test) Test(n float64) float64 {
+	return n
+}
+
+func (m *Test) TestFloat32(n float32) float32 {
+	return n
+}
+
+func (m *Test) Dep(ctx context.Context, n float64) (float64, error) {
+	return dag.Dep().Dep(ctx, n)
+}`,
+		},
+		{
+			sdk: "typescript",
+			source: `import { dag, float, object, func } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+  @func()
+  test(n: float): float {
+    return n
+  }
+
+  @func()
+  testFloat32(n: float): float {
+    return n
+  }
+
+  @func()
+  async dep(n: float): Promise<float> {
+    return dag.dep().dep(n)
+  }
+}`,
+		},
+		{
+			sdk: "python",
+			source: `import dagger
+from dagger import dag
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    def test(self, n: float) -> float:
+        return n
+
+    @dagger.function
+    def testFloat32(self, n: float) -> float:
+        return n
+
+    @dagger.function
+    async def dep(self, n: float) -> float:
+        return await dag.dep().dep(n)
+`,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			modGen := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work/dep").
+				With(daggerExec("init", "--name=dep", "--sdk=go", "--source=.")).
+				WithNewFile("/work/dep/main.go", depSrc).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--name=test", "--sdk="+tc.sdk, "--source=.")).
+				With(sdkSource(tc.sdk, tc.source)).
+				With(daggerExec("install", "./dep"))
+
+			t.Run("float64", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test", "--n=3.14")).Stdout(ctx)
+				require.NoError(t, err)
+				require.JSONEq(t, `3.14`, out)
+			})
+
+			t.Run("float32", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("test-float-32", "--n=1.73424")).Stdout(ctx)
+				require.NoError(t, err)
+				require.JSONEq(t, `1.73424`, out)
+			})
+
+			t.Run("call dep with float64 to float32 conversion", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("dep", "--n=232.3454")).Stdout(ctx)
+				require.NoError(t, err)
+				require.JSONEq(t, `232.3454`, out)
+			})
+		})
+	}
 }
 
 func (ModuleSuite) TestModuleDevelopVersion(ctx context.Context, t *testctx.T) {
@@ -5729,6 +5853,20 @@ query { host { directory(path: ".") { asModule { initialize {
             }
         }
     }
+		interfaces {
+		  asInterface {
+			  name
+				description
+				functions {
+				  name
+					description
+					args {
+					  name
+						description
+					}
+				}
+			}
+		}
     enums {
         asEnum {
             name

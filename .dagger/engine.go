@@ -111,10 +111,9 @@ func (e *DaggerEngine) Container(
 		WithFile(engineEntrypointPath, entrypoint).
 		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
 
-	cli, err := builder.CLI(ctx)
-	if err != nil {
-		return nil, err
-	}
+	cli := dag.DaggerCli().Binary(dagger.DaggerCliBinaryOpts{
+		Platform: platform,
+	})
 	ctr = ctr.
 		WithFile(cliPath, cli).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "unix://"+engineUnixSocketPath)
@@ -177,7 +176,7 @@ func (e *DaggerEngine) Lint(
 	ctx context.Context,
 	pkgs []string, // +optional
 ) error {
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 	eg.Go(func() error {
 		if len(pkgs) == 0 {
 			allPkgs, err := e.Dagger.containing(ctx, "go.mod")
@@ -276,6 +275,7 @@ func (e *DaggerEngine) Publish(
 	ctx context.Context,
 
 	// Image target to push to
+	// +default="ghcr.io/dagger/engine"
 	image string,
 	// List of tags to use
 	tag []string,
@@ -283,8 +283,6 @@ func (e *DaggerEngine) Publish(
 	// +optional
 	dryRun bool,
 
-	// +optional
-	registry *string,
 	// +optional
 	registryUsername *string,
 	// +optional
@@ -303,7 +301,7 @@ func (e *DaggerEngine) Publish(
 		Platforms []*dagger.Container
 		Tags      []string
 	}, len(targets))
-	eg, egCtx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 	for i, target := range targets {
 		// determine the target tags
 		for _, tag := range tag {
@@ -313,7 +311,7 @@ func (e *DaggerEngine) Publish(
 		// build all the target platforms
 		targetResults[i].Platforms = make([]*dagger.Container, len(target.Platforms))
 		for j, platform := range target.Platforms {
-			egCtx, span := Tracer().Start(egCtx, fmt.Sprintf("building %s [%s]", target.Name, platform))
+			egCtx, span := Tracer().Start(ctx, fmt.Sprintf("building %s [%s]", target.Name, platform))
 			eg.Go(func() (rerr error) {
 				defer func() {
 					if rerr != nil {
@@ -346,8 +344,9 @@ func (e *DaggerEngine) Publish(
 
 	// push all the targets
 	ctr := dag.Container()
-	if registry != nil && registryUsername != nil && registryPassword != nil {
-		ctr = ctr.WithRegistryAuth(*registry, *registryUsername, registryPassword)
+	if registryUsername != nil && registryPassword != nil {
+		registry, _, _ := strings.Cut(image, "/")
+		ctr = ctr.WithRegistryAuth(registry, *registryUsername, registryPassword)
 	}
 	for i, target := range targets {
 		result := targetResults[i]
@@ -410,7 +409,7 @@ func (e *DaggerEngine) Scan(ctx context.Context) error {
 		commonArgs = append(commonArgs, "--ignorefile=/mnt/ignores/"+ignoreFileNames[0])
 	}
 
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 
 	eg.Go(func() error {
 		// scan the source code

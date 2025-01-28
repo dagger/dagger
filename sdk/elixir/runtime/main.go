@@ -183,10 +183,8 @@ func (m *ElixirSdk) GenerateCode(introspectionJSON *dagger.File) *dagger.Directo
 }
 
 func (m *ElixirSdk) baseContainer(ctr *dagger.Container) *dagger.Container {
-	mixCache := dag.CacheVolume(".mix")
 	return ctr.
 		From(elixirImage).
-		WithMountedCache("/root/.mix", mixCache).
 		WithExec([]string{"apk", "add", "--no-cache", "git"}).
 		WithExec([]string{"mix", "local.hex", "--force"}).
 		WithExec([]string{"mix", "local.rebar", "--force"})

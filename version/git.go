@@ -95,7 +95,7 @@ type VersionTag struct {
 	Date string
 }
 
-// VersionTagLatests gets the latest version tag for a given component
+// VersionTagLatest gets the latest version tag for a given component
 func (git *Git) VersionTagLatest(
 	ctx context.Context,
 

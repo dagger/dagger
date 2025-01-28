@@ -499,7 +499,7 @@ func (sdk *goSDK) Runtime(
 			},
 		},
 	); err != nil {
-		return nil, fmt.Errorf("failed to exec go build in go module sdk container runtime: %w", err)
+		return nil, fmt.Errorf("failed to build go runtime binary: %w", err)
 	}
 	return ctr.Self, nil
 }
@@ -687,7 +687,11 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], er
 		Args: []dagql.NamedInput{
 			{
 				Name:  "key",
-				Value: dagql.String("modgomodcache"),
+				Value: dagql.String("gomod"),
+			},
+			{
+				Name:  "namespace",
+				Value: dagql.String("internal"),
 			},
 		},
 	}); err != nil {
@@ -713,7 +717,11 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], er
 		Args: []dagql.NamedInput{
 			{
 				Name:  "key",
-				Value: dagql.String("modgobuildcache"),
+				Value: dagql.String("gobuild"),
+			},
+			{
+				Name:  "namespace",
+				Value: dagql.String("internal"),
 			},
 		},
 	}); err != nil {

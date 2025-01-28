@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	daggerVersion      = "v0.15.1"
+	daggerVersion      = "v0.15.2"
 	upstreamRepository = "dagger/dagger"
 	defaultRunner      = "ubuntu-latest"
 	publicToken        = "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
@@ -71,7 +71,7 @@ func New() *CI {
 		withWorkflow(
 			ci.DaggerRunner,
 			false,
-			"Docs",
+			"docs",
 			"docs lint",
 		).
 		withWorkflow(
@@ -90,6 +90,7 @@ func New() *CI {
 			"elixir",
 			"rust",
 			"php",
+			"dotnet",
 		).
 		withPrepareReleaseWorkflow()
 }

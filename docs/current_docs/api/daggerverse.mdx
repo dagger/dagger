@@ -1,0 +1,126 @@
+---
+slug: /api/daggerverse
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# The Daggerverse
+
+Dagger Functions are packaged and shared using Dagger [modules](../features/modules.mdx).
+
+## Ranking
+
+The Daggerverse is a free service run by Dagger, which indexes all publicly available Dagger Functions, and lets you easily search and consume them. To help users find the best quality modules, a basic rank is applied to modules for sorting the module index.
+
+To make sure your module gets the best possible rank, consider the following for your module:
+
+1. A module should have a [description](./documentation.mdx#inline-documentation)
+
+1. Module functions should have [descriptions](./documentation.mdx#inline-documentation)
+
+1. Modules versions should be tagged with [semver](./daggerverse.mdx#semantic-versioning)
+
+1. Modules should have hand-crafted [examples](./daggerverse.mdx#examples)
+
+## Examples
+
+Daggerverse will automatically show basic examples for each function in a module. If you would like to provide hand-crafted examples, the following section will describe how to set these up.
+
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+A Go example must be a Dagger module located at `/examples/go` within the module you're creating examples for.
+
+If you have a module called `Foo` and a function called `Bar`, you can create the following functions in your example module:
+
+1. A function `Foo_Baz` will create a top level example for the `Foo` module called Baz.
+
+1. A function `FooBar` will create an example for function `Bar`.
+
+1. Functions `FooBar_Baz` will create a Baz example for the function `Bar`.
+
+</TabItem>
+<TabItem value="Python">
+
+A Python example must be a Dagger module located at `/examples/python` within the module you're creating examples for.
+
+If you have a module called `foo` and a function called `bar`, you can create the following functions in your example module:
+
+1. A function `foo__baz` will create a top level example for the `foo` module called baz.
+
+1. A function `foo_bar` will create an example for function `bar`.
+
+1. Functions `foo_bar__baz` will create a baz example for the function `bar`.
+
+:::note
+Python function names in example modules use double underscores (`__`) as separators since by convention, Python uses single underscores to represent spaces in function names (snake case).
+:::
+
+</TabItem>
+<TabItem value="Typescript">
+
+A Typescript example must be a Dagger module located at `/examples/typescript` within the module you're creating examples for.
+
+If you have a module called `foo` and a function called `bar`, you can create the following functions in your example module:
+
+1. A function `foo_baz` will create a top level example for the `foo` module called baz.
+
+1. A function `fooBar` will create an example for function `bar`.
+
+1. Functions `fooBar_baz` and will create a baz example for the function `bar`.
+
+</TabItem>
+<TabItem value="Shell">
+
+A Shell example must be a shell script located at `/examples/shell` within the module you're creating examples for.
+
+If you have a module called `foo` and a function called `bar`, you can create the following script in your example directory:
+
+1. A file `foo_baz.sh` will create a top level example for the `foo` module called baz.
+
+1. A file `foo_bar.sh` will create an example for function `bar`.
+
+1. Files `foo_bar_baz.sh` and will create a baz example for the function `bar`.
+
+</TabItem>
+</Tabs>
+
+For an example of a module with hand-crafted function examples, see the [proxy module](https://daggerverse.dev/mod/github.com/kpenfound/dagger-modules/proxy)
+
+## Publishing
+
+Two processes are available to publish your Dagger module to the Daggerverse, manual and automatic on use.
+
+### Manual publishing
+
+To manually publish a module to the Daggerverse, follow the steps below:
+
+1. To publish a Dagger module to the Daggerverse, the module must be pushed to a public git repository. Dagger is agnostic to repository layout, and any number of Dagger modules can peacefully coexist in a repository. It's up to you how to organize your module's source code in Git. Some like to publish each module as a dedicated repository; others like to organize all their modules together, with the git repository acting as a "catalog". These repositories are often named "daggerverse" by convention.
+
+1. Navigate to the [Daggerverse](https://daggerverse.dev) and click the `Publish` button. On the resulting page, paste the URL to the Git repository containing your module in the format `GITSERVER/USERNAME/REPOSITORY[/SUBPATH][@VERSION]`. For example, `github.com/shykes/hello@v0.3.0` or `github.com/shykes/daggerverse/termcast@main`
+
+1. Click "Publish" to have your Dagger module published to the Daggerverse. This process may take a few minutes. Once complete, your Dagger module will appear in the Daggerverse module listing.
+
+:::important
+- Most Git servers should "just work", but please let us know if you encounter any issues.
+- The Daggerverse only fetches publicly available information from Git servers. Modules are not hosted on the Daggerverse. If you need a module removed from the Daggerverse for some reason, let the Dagger team know in [Discord](https://discord.gg/dagger-io).
+:::
+
+### Publishing on use
+
+Every time that a user executes `dagger call`, if any of the Dagger Functions which are invoked in the execution come from a remote Dagger module (here, a remote module is defined as a module whose location is specified by a URL like `GITSERVER/USERNAME/daggerverse/...`), that Dagger module will automatically be published to the Daggerverse.
+
+:::note
+Under this process, it is possible for some Dagger modules to appear in the Daggerverse even when they're not fully ready. An example of this is when the module developer is developing the module in a local development environment and pushing work-in-progress to the Git repository. In this case, as soon as the module developer tags the module with a [valid semantic version number](#semantic-versioning), the module will be considered released and the latest version will be published to the Daggerverse.
+:::
+
+### Semantic versioning
+
+Dagger modules should be versioned according to [semantic versioning principles](https://semver.org/). This means that the published module reference should be tagged with a pattern matching `vMAJOR.MINOR.PATCH`, such as `v1.2.3`.
+
+:::important
+At this time, only version numbers matching the `vMAJOR.MINOR.PATCH` versioning pattern are considered valid.
+:::
+
+In monorepos of modules, modules can be independently versioned by prefixing the tag with the subpath. For example a module named `foo` can be tagged with `foo/v1.2.3` and referenced as `GITSERVER/USERNAME/REPOSITORY/foo@v1.2.3`.

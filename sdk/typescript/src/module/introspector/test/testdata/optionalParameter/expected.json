@@ -224,5 +224,6 @@
       "properties": {}
     }
   },
-  "enums": {}
+  "enums": {},
+  "interfaces": {}
 }

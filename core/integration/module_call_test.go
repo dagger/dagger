@@ -2527,3 +2527,37 @@ func (CallSuite) TestCore(ctx context.Context, t *testctx.T) {
 		require.Contains(t, out, "Alpine Linux")
 	})
 }
+
+func (CallSuite) TestExecStderr(ctx context.Context, t *testctx.T) {
+	t.Run("no TUI", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := daggerCliBase(t, c).
+			With(daggerExec(
+				"core", "--silent",
+				"container",
+				"from", "--address", alpineImage,
+				"with-exec", "--args", "ls,wat",
+				"stdout",
+			)).
+			Sync(ctx)
+
+		requireErrOut(t, err, "ls: wat: No such file or directory")
+	})
+
+	t.Run("plain", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := daggerCliBase(t, c).
+			With(daggerExec(
+				"core", "--progress", "plain",
+				"container",
+				"from", "--address", alpineImage,
+				"with-exec", "--args", "ls,wat",
+				"stdout",
+			)).
+			Sync(ctx)
+
+		requireErrOut(t, err, "ls: wat: No such file or directory")
+	})
+}

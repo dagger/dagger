@@ -171,6 +171,6 @@ public class Helpers {
 
   /** Fix using '$' char in javadoc */
   static String escapeJavadoc(String str) {
-    return str.replace("$", "$$");
+    return str.replace("$", "$$").replace("&", "&amp;");
   }
 }

@@ -14,16 +14,6 @@ namespace Dagger;
 class Client extends Client\AbstractClient
 {
     /**
-     * Retrieves a content-addressed blob.
-     */
-    public function blob(string $digest): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('blob');
-        $innerQueryBuilder->setArgument('digest', $digest);
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Retrieves a container builtin to the engine.
      */
     public function builtinContainer(string $digest): Container
@@ -36,10 +26,13 @@ class Client extends Client\AbstractClient
     /**
      * Constructs a cache volume for a given cache key.
      */
-    public function cacheVolume(string $key): CacheVolume
+    public function cacheVolume(string $key, ?string $namespace = ''): CacheVolume
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('cacheVolume');
         $innerQueryBuilder->setArgument('key', $key);
+        if (null !== $namespace) {
+        $innerQueryBuilder->setArgument('namespace', $namespace);
+        }
         return new \Dagger\CacheVolume($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

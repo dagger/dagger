@@ -91,32 +91,10 @@
     {{ if not .TypeRef.IsVoid }}const response: Awaited<{{ if $convertID }}{{ .TypeRef | FormatOutputType }}{{ else }}{{ $promiseRetType }}{{ end }}> = {{ end }}await ctx.execute()
 
     {{ if $convertID -}}
-    return new {{ $promiseRetType }}(new Context(
-      [
-        {
-          operation: "load{{ $promiseRetType }}FromID",
-          args: { id: response },
-        },
-      ],
-      this._ctx.getConnection(),
-    ))
+    return new Client(ctx.copy()).load{{ $promiseRetType | FormatProtected }}FromID(response)
     {{- else if not .TypeRef.IsVoid -}}
         {{- if and .TypeRef.IsList (IsListOfObject .TypeRef) }}
-    return response.map(
-      (r) => new {{ . | FormatReturnType | ToSingleType }}(new Context(
-        [
-          {
-            operation: "load{{. | FormatReturnType | ToSingleType}}FromID",
-            args: { id: r.id }
-          }
-        ],
-        this._ctx.getConnection()
-      ),
-        {{- range $v := . | GetArrayField }}
-        r.{{ $v.Name | ToLowerCase }},
-        {{- end }}
-      )
-    )
+    return response.map((r) => new Client(ctx.copy()).load{{ . | FormatReturnType | ToSingleType | FormatProtected }}FromID(r.id))
         {{- else }}
     return response
         {{- end }}

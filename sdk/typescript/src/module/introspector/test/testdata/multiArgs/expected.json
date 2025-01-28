@@ -33,7 +33,7 @@
               "name": "c",
               "description": "",
               "type": {
-                "kind": "INTEGER_KIND"
+                "kind": "FLOAT_KIND"
               },
               "isVariadic": false,
               "isNullable": false,
@@ -41,12 +41,13 @@
             }
           },
           "returnType": {
-            "kind": "INTEGER_KIND"
+            "kind": "FLOAT_KIND"
           }
         }
       },
       "properties": {}
     }
   },
-  "enums": {}
+  "enums": {},
+  "interfaces": {}
 }

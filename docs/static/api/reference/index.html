@@ -28,7 +28,6 @@
           <div class="nav-group">
             <h4 class="nav-group-title">Queries</h4>
             <ul class="nav-group-items">
-              <li><a href="#query-blob">blob</a></li>
               <li><a href="#query-builtinContainer">builtinContainer</a></li>
               <li><a href="#query-cacheVolume">cacheVolume</a></li>
               <li><a href="#query-container">container</a></li>
@@ -212,59 +211,7 @@
           <div id="introduction" data-traverse-target="introduction">
           </div>
           <h1 id="group-Queries" class="group-heading" data-traverse-target="group-Queries">Queries</h1>
-          <section id="query-blob" class="operation operation-query" data-traverse-target="query-blob">
-            <h2 class="operation-heading ">
-              <code>blob</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Retrieves a content-addressed blob.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-Directory"><code>Directory!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>digest</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
-                        </td>
-                        <td> Digest of the blob </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
           <section id="query-builtinContainer" class="operation operation-query" data-traverse-target="query-builtinContainer">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
             <h2 class="operation-heading ">
               <code>builtinContainer</code>
             </h2>
@@ -351,6 +298,12 @@
                           <span class="property-name"><code>key</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
                         </td>
                         <td> A string identifier to target this cache volume (e.g., "modules-cache"). </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>namespace</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
+                        </td>
+                        <td> Default = <code>""</code> </td>
                       </tr>
                     </tbody>
                   </table>
@@ -4249,6 +4202,29 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>args</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>Command to run instead of the container&#39;s default command (e.g., [&quot;go&quot;, &quot;run&quot;, &quot;main.go&quot;]).</p>
+                                <p>If empty, the container&#39;s default command is used.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace &quot;${VAR}&quot; or &quot;$VAR&quot; in the args according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>experimentalPrivilegedNesting</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Provides Dagger access to the executed command.</p>
+                                <p>Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>insecureRootCapabilities</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Execute the command with all root capabilities. This is similar to running a command with &quot;sudo&quot; or executing &quot;docker run&quot; with the &quot;--privileged&quot; flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>noInit</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>If set, skip the automatic init process injected into containers by default.</p>
+                                <p>This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>ports</code></span> - <span class="property-type"><a href="#definition-PortForward"><code>[PortForward!]</code></a></span></h6>
                                 <p>List of frontend/backend port mappings to forward.</p>
                                 <p>Frontend is the port accepting traffic on the host, backend is the service port.</p>
@@ -4256,6 +4232,10 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>random</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>Bind each tunnel port to a random port on the host.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>useEntrypoint</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>If the container has an entrypoint, prepend it to the args.</p>
                               </div>
                             </div>
                           </div>
@@ -8344,6 +8324,23 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-withUpdateDependencies" href="#ModuleSource-withUpdateDependencies"><code>withUpdateDependencies</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Update one or more module dependencies. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>dependencies</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span></h6>
+                                <p>The dependencies to update.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="ModuleSource-withView" href="#ModuleSource-withView"><code>withView</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
                         <td> Update the module source with a new named view. </td>
                       </tr>
@@ -9609,6 +9606,12 @@
                           <p><code>STRING_KIND</code></p>
                         </td>
                         <td> A string value. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>FLOAT_KIND</code></p>
+                        </td>
+                        <td> A float value. </td>
                       </tr>
                       <tr>
                         <td>

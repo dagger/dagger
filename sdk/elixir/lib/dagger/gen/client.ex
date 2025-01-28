@@ -9,18 +9,6 @@ defmodule Dagger.Client do
 
   @type t() :: %__MODULE__{}
 
-  @doc "Retrieves a content-addressed blob."
-  @spec blob(t(), String.t()) :: Dagger.Directory.t()
-  def blob(%__MODULE__{} = client, digest) do
-    query_builder =
-      client.query_builder |> QB.select("blob") |> QB.put_arg("digest", digest)
-
-    %Dagger.Directory{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
   @doc "Retrieves a container builtin to the engine."
   @spec builtin_container(t(), String.t()) :: Dagger.Container.t()
   def builtin_container(%__MODULE__{} = client, digest) do
@@ -34,10 +22,13 @@ defmodule Dagger.Client do
   end
 
   @doc "Constructs a cache volume for a given cache key."
-  @spec cache_volume(t(), String.t()) :: Dagger.CacheVolume.t()
-  def cache_volume(%__MODULE__{} = client, key) do
+  @spec cache_volume(t(), String.t(), [{:namespace, String.t() | nil}]) :: Dagger.CacheVolume.t()
+  def cache_volume(%__MODULE__{} = client, key, optional_args \\ []) do
     query_builder =
-      client.query_builder |> QB.select("cacheVolume") |> QB.put_arg("key", key)
+      client.query_builder
+      |> QB.select("cacheVolume")
+      |> QB.put_arg("key", key)
+      |> QB.maybe_put_arg("namespace", optional_args[:namespace])
 
     %Dagger.CacheVolume{
       query_builder: query_builder,

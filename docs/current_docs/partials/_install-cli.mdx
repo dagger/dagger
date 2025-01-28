@@ -7,9 +7,11 @@ import { daggerVersion } from './version';
 The Dagger CLI is available for installation on macOS, Linux, and Windows to run locally or in a CI environment.
 :::
 
-Install the Dagger CLI following the steps below.
+### Stable release
 
-<Tabs>
+Install the latest stable release of the Dagger CLI following the steps below.
+
+<Tabs groupId="platform">
 <TabItem value="macOS">
 
 We assume that you have [Homebrew](https://brew.sh/) installed. If you do, you can install `dagger` with a single command:
@@ -58,7 +60,7 @@ To see the installed version of dagger:
 
 </TabItem>
 <TabItem value="Linux">
-The quickest way of installing `dagger` on Linux is to use [install.sh](https://github.com/dagger/dagger/blob/main/install.sh):
+The quickest way of installing the latest stable release of `dagger` on Linux is to use [install.sh](https://github.com/dagger/dagger/blob/main/install.sh):
 
 ```shell
 curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
@@ -101,7 +103,7 @@ To see the installed version of dagger:
 
 The Dagger CLI can be installed on Windows via a PowerShell 7.0 script.
 
-The quickest way of installing `dagger` on Windows is to use [install.ps1](https://github.com/dagger/dagger/blob/main/install.ps1):
+The quickest way of installing the latest stable release of `dagger` on Windows is to use [install.ps1](https://github.com/dagger/dagger/blob/main/install.ps1):
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression; Install-Dagger
@@ -146,3 +148,46 @@ where.exe dagger
 
 </TabItem>
 </Tabs>
+
+### Development release
+
+:::warning
+Development releases should be considered unfinished.
+:::
+
+<Tabs groupId="platform">
+<TabItem value="macOS">
+To install the latest development release, use the following command:
+
+```shell
+curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_COMMIT=head sh
+```
+
+This will install the development release of the Dagger CLI in `./bin/dagger`.
+</TabItem>
+<TabItem value="Linux">
+To install the latest development release, use the following command:
+
+```shell
+curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_COMMIT=head sh
+```
+
+This will install the development release of the Dagger CLI in `./bin/dagger`.
+</TabItem>
+<TabItem value="Windows">
+To install the latest development release, use the following command:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 -DaggerCommit head
+```
+
+This will install the development release of the Dagger CLI in the `<your home folder>\dagger` directory.
+</TabItem>
+</Tabs>
+
+:::warning
+Running this CLI against the stable Dagger Engine will, by default, stop and remove the stable version and install a development version of the Dagger Engine instead. You may prefer to install it in an isolated environment so as to avoid conflicts.
+:::
+
+
+CLI version, so you may prefer to install it in an isolated environment so as to avoid conflicts.

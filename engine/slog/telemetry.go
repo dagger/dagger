@@ -24,7 +24,7 @@ func ContextWithDebugMode(ctx context.Context, debug bool) context.Context {
 	return toggleBaggage(ctx, debugBaggageKey, debug)
 }
 
-// ContextWithDebugMode enables or disables color mode in the given context's
+// ContextWithColorMode enables or disables color mode in the given context's
 // OpenTelemetry baggage.
 func ContextWithColorMode(ctx context.Context, noColor bool) context.Context {
 	return toggleBaggage(ctx, noColorBaggageKey, noColor)

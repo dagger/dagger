@@ -8,11 +8,7 @@ class MyModule {
    */
   @func()
   async build(src: Directory): Promise<string> {
-    const ref = await dag
-      .container()
-      .withDirectory("/src", src)
-      .withWorkdir("/src")
-      .directory("/src")
+    const ref = await src
       .dockerBuild() // build from Dockerfile
       .publish("ttl.sh/hello-dagger")
 

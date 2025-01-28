@@ -35,16 +35,19 @@ func TestShellAutocomplete(t *testing.T) {
 		`directory | <with$-new-file >`,
 
 		// chaining
+		`container | <$directory >`,
+		`container | <$with-directory >`,
 		`container | <dir$ectory >`,
+		`container | <with-$directory >`,
 		`container | directory "./path" | <f$ile >`,
-		// NOTE: this requires parsing partial parse trees
-		// "container | <$directory >",
 
 		// subshells
-		// FIXME: this edge case should probably still work
-		// `container | with-directory $(<$container >)`,
+		`container | with-directory $(<$container >)`,
 		`container | with-directory $(<con$tainer >)`,
+		`container | with-directory $(container | <$directory >)`,
 		`container | with-directory $(container | <dir$ectory >)`,
+		`container | with-directory $(container | <$directory >`,
+		`container | with-directory $(container | <dir$ectory >`,
 
 		// args
 		`container <--$packages >`,
@@ -54,11 +57,13 @@ func TestShellAutocomplete(t *testing.T) {
 		// .deps builtin
 		`<.dep$s >`,
 		`<$.deps >`,
+		`.deps | <$alpine >`,
 		`.deps | <a$lpine >`,
 
 		// .stdlib builtin
 		`<.std$lib >`,
 		`<$.stdlib >`,
+		`.stdlib | <$container >`,
 		`.stdlib | <con$tainer >`,
 		`.stdlib | container <--$platform >`,
 		`.stdlib | container | <dir$ectory >`,

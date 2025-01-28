@@ -14,23 +14,14 @@ import (
 )
 
 type TunnelListenerAttachable struct {
-	rootCtx     context.Context
-	getListener func(network, addr string) (net.Listener, error)
+	rootCtx context.Context
 
 	UnimplementedTunnelListenerServer
 }
 
-func NewTunnelListenerAttachable(
-	rootCtx context.Context,
-	// getListener is optional, if nil then net.Listen will be used
-	getListener func(network, addr string) (net.Listener, error),
-) TunnelListenerAttachable {
-	if getListener == nil {
-		getListener = net.Listen
-	}
+func NewTunnelListenerAttachable(rootCtx context.Context) TunnelListenerAttachable {
 	return TunnelListenerAttachable{
-		rootCtx:     rootCtx,
-		getListener: getListener,
+		rootCtx: rootCtx,
 	}
 }
 
@@ -48,7 +39,7 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 		return err
 	}
 
-	l, err := s.getListener(req.GetProtocol(), req.GetAddr())
+	l, err := net.Listen(req.GetProtocol(), req.GetAddr())
 	if err != nil {
 		return err
 	}

@@ -1,6 +1,6 @@
 {
   "name": "dagger-dev",
-  "engineVersion": "v0.15.1",
+  "engineVersion": "v0.15.2",
   "sdk": "go",
   "dependencies": [
     {
@@ -19,6 +19,10 @@
       "name": "docusaurus",
       "source": "github.com/levlaz/daggerverse/docusaurus@main",
       "pin": "47f5206067011dad0f581d4e7db7afddda32acd0"
+    },
+    {
+      "name": "dotnet-sdk-dev",
+      "source": "sdk/dotnet/dev"
     },
     {
       "name": "elixir-sdk-dev",
@@ -47,10 +51,6 @@
     {
       "name": "python-sdk-dev",
       "source": "sdk/python/dev"
-    },
-    {
-      "name": "releaser",
-      "source": "releaser"
     },
     {
       "name": "shellcheck",

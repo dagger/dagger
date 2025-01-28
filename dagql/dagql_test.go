@@ -7,11 +7,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/99designs/gqlgen/client"
 	"github.com/99designs/gqlgen/graphql/handler"
+	"github.com/moby/buildkit/identity"
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
 	"gotest.tools/v3/assert"
@@ -101,17 +104,19 @@ func TestBasic(t *testing.T) {
 
 	pointT := (&points.Point{}).Type()
 	expectedID := call.New().
-		Append(pointT, "point", "", nil, false, 0,
+		Append(pointT, "point", "", nil, false, 0, "",
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
+				false,
 			),
 			call.NewArgument(
 				"y",
 				call.NewLiteralInt(7),
+				false,
 			),
 		).
-		Append(pointT, "shiftLeft", "", nil, false, 0)
+		Append(pointT, "shiftLeft", "", nil, false, 0, "")
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	assert.Equal(t, 6, res.Point.X)
@@ -566,17 +571,19 @@ func TestIDsReflectQuery(t *testing.T) {
 
 	pointT := (&points.Point{}).Type()
 	expectedID := call.New().
-		Append(pointT, "point", "", nil, false, 0,
+		Append(pointT, "point", "", nil, false, 0, "",
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
+				false,
 			),
 			call.NewArgument(
 				"y",
 				call.NewLiteralInt(7),
+				false,
 			),
 		).
-		Append(pointT, "shiftLeft", "", nil, false, 0)
+		Append(pointT, "shiftLeft", "", nil, false, 0, "")
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.ShiftLeft.ID, expectedEnc)
@@ -664,54 +671,61 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 
 	pointT := (&points.Point{}).Type()
 	expectedID := call.New().
-		Append(pointT, "point", "", nil, false, 0,
+		Append(pointT, "point", "", nil, false, 0, "",
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
+				false,
 			),
 			call.NewArgument(
 				"y",
 				call.NewLiteralInt(7),
+				false,
 			),
 		).
-		Append(pointT, "loginTag", "", nil, false, 0)
+		Append(pointT, "loginTag", "", nil, false, 0, "")
 
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.LoginTag.ID, expectedEnc)
 
 	expectedID = call.New().
-		Append(pointT, "point", "", nil, false, 0,
+		Append(pointT, "point", "", nil, false, 0, "",
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
+				false,
 			),
 			call.NewArgument(
 				"y",
 				call.NewLiteralInt(7),
+				false,
 			),
 		).
-		Append(pointT, "loginChain", "", nil, false, 0)
+		Append(pointT, "loginChain", "", nil, false, 0, "")
 
 	expectedEnc, err = dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.LoginChain.ID, expectedEnc)
 
 	expectedID = call.New().
-		Append(pointT, "point", "", nil, false, 0,
+		Append(pointT, "point", "", nil, false, 0, "",
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
+				false,
 			),
 			call.NewArgument(
 				"y",
 				call.NewLiteralInt(7),
+				false,
 			),
 		).
-		Append(pointT, "loginTagFalse", "", nil, false, 0,
+		Append(pointT, "loginTagFalse", "", nil, false, 0, "",
 			call.NewArgument(
 				"password",
 				call.NewLiteralString("hunter2"),
+				false,
 			),
 		)
 	expectedEnc, err = dagql.NewID[*points.Point](expectedID).Encode()
@@ -2087,4 +2101,160 @@ func TestViewsIntrospection(t *testing.T) {
 		require.Contains(t, fields, "secondExclusive")
 		require.Equal(t, "available on second view", fields["secondExclusive"])
 	})
+}
+
+type CoolInt struct {
+	Val int `field:"true"`
+}
+
+func (*CoolInt) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "CoolInt",
+		NonNull:   true,
+	}
+}
+
+func (*CoolInt) TypeDescription() string {
+	return "idk"
+}
+
+func TestCustomDigest(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+
+	dagql.Fields[*CoolInt]{}.Install(srv)
+	dagql.Fields[Query]{
+		dagql.NodeFunc("coolInt", func(ctx context.Context, self dagql.Instance[Query], args struct {
+			Val      int
+			OtherArg string // used in test to force different IDs
+		}) (inst dagql.Instance[*CoolInt], err error) {
+			inst, err = dagql.NewInstanceForCurrentID(ctx, srv, self, &CoolInt{Val: args.Val})
+			if err != nil {
+				return inst, err
+			}
+			return inst, nil
+		}).Impure("caching is too hard"),
+
+		// like coolInt but set custom digest to the arg % 2 so we cache by whether it's even or odd
+		dagql.NodeFunc("modInt", func(ctx context.Context, self dagql.Instance[Query], args struct {
+			Val      int
+			OtherArg string // used in test to *try* to force different IDs
+		}) (inst dagql.Instance[*CoolInt], err error) {
+			inst, err = dagql.NewInstanceForCurrentID(ctx, srv, self, &CoolInt{Val: args.Val})
+			if err != nil {
+				return inst, err
+			}
+			return inst.WithMetadata(digest.Digest(strconv.Itoa(args.Val%2)), true), nil
+		}).Impure("caching is too hard"),
+
+		dagql.NodeFunc("returnTheArg", func(ctx context.Context, self dagql.Instance[Query], args struct {
+			CoolInt dagql.ID[*CoolInt]
+		}) (dagql.Instance[*CoolInt], error) {
+			return args.CoolInt.Load(ctx, srv)
+		}),
+	}.Install(srv)
+
+	gql := client.New(handler.NewDefaultServer(srv))
+
+	// sanity test version without custom digest first
+	{
+		makeReq := func(t *testing.T, i int) (int, string) {
+			t.Helper()
+			var res struct {
+				CoolInt struct {
+					Val int
+					ID  string
+				}
+			}
+			req(t, gql, `query {
+			coolInt(val: `+strconv.Itoa(i)+`, otherArg: "`+identity.NewID()+`") {
+				val
+				id
+			}
+		}`, &res)
+			return res.CoolInt.Val, res.CoolInt.ID
+		}
+
+		s1a, s1aID := makeReq(t, 1)
+		assert.Assert(t, s1a == 1)
+		s1b, s1bID := makeReq(t, 1)
+		assert.Assert(t, s1b == 1)
+		s2, s2ID := makeReq(t, 2)
+		assert.Assert(t, s2 == 2)
+
+		assert.Assert(t, s1aID != s1bID)
+		assert.Assert(t, s1bID != s2ID)
+	}
+
+	// now test the custom digest version
+	{
+		makeReq := func(t *testing.T, i int) (int, string) {
+			t.Helper()
+			var res struct {
+				ModInt struct {
+					Val int
+					ID  string
+				}
+			}
+			req(t, gql, `query {
+			modInt(val: `+strconv.Itoa(i)+`, otherArg: "`+identity.NewID()+`") {
+				val
+				id
+			}
+		}`, &res)
+			return res.ModInt.Val, res.ModInt.ID
+		}
+
+		s1, s1ID := makeReq(t, 1)
+		assert.Assert(t, s1 == 1)
+		s3, s3ID := makeReq(t, 3)
+		assert.Assert(t, s3 == 1)   // all odd numbers are cached the same
+		assert.Equal(t, s1ID, s3ID) // odd IDs are the same now too
+
+		s2, s2ID := makeReq(t, 2)
+		assert.Assert(t, s2 == 2)
+		s4, s4ID := makeReq(t, 4)
+		assert.Assert(t, s4 == 2)   // all even numbers are cached the same
+		assert.Equal(t, s2ID, s4ID) // even IDs are the same now too
+
+		// make sure that the caching by custom digest works when IDs are passed as args
+		type returnTheArgRes struct {
+			ReturnTheArg struct {
+				Val int
+				ID  string
+			}
+		}
+		res := returnTheArgRes{}
+		req(t, gql, `query {
+			returnTheArg(coolInt: "`+s4ID+`") {
+				val
+				id
+			}
+		}`, &res)
+		assert.Equal(t, s2, res.ReturnTheArg.Val)
+		assert.Equal(t, s2ID, res.ReturnTheArg.ID)
+
+		// also cover the case when just an ID is selected, no other fields
+		type idOnlyRes struct {
+			ModInt struct {
+				ID string
+			}
+		}
+		idOnly := idOnlyRes{}
+		req(t, gql, `query {
+			modInt(val: 5, otherArg: "`+identity.NewID()+`") {
+				id
+			}
+		}`, &idOnly)
+		s5ID := idOnly.ModInt.ID
+
+		res = returnTheArgRes{}
+		req(t, gql, `query {
+			returnTheArg(coolInt: "`+s5ID+`") {
+				val
+				id
+			}
+		}`, &res)
+		assert.Equal(t, s1, res.ReturnTheArg.Val)
+		assert.Equal(t, s1ID, res.ReturnTheArg.ID)
+	}
 }

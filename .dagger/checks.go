@@ -29,8 +29,9 @@ func (dev *DaggerDev) Check(ctx context.Context,
 	routes.Add(dev.checksForSDK("sdk/java", dev.SDK().Java)...)
 	routes.Add(dev.checksForSDK("sdk/rust", dev.SDK().Rust)...)
 	routes.Add(dev.checksForSDK("sdk/elixir", dev.SDK().Elixir)...)
+	routes.Add(dev.checksForSDK("sdk/dotnet", dev.SDK().Dotnet)...)
 
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 	for _, check := range routes.Get(targets...) {
 		ctx, span := Tracer().Start(ctx, check.Name)
 		eg.Go(func() (rerr error) {

@@ -153,6 +153,7 @@ class EntrypointCommand extends Command
         $typeDef = dag()->typeDef();
 
         switch ($type->typeDefKind) {
+            case TypeDefKind::FLOAT_KIND:
             case TypeDefKind::BOOLEAN_KIND:
             case TypeDefKind::INTEGER_KIND:
             case TypeDefKind::STRING_KIND:

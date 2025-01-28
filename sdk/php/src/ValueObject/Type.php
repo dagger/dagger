@@ -53,6 +53,8 @@ final readonly class Type
         switch ($nameOfType) {
             case 'bool':
                 return TypeDefKind::BOOLEAN_KIND;
+            case 'float':
+                return TypeDefKind::FLOAT_KIND;
             case 'int':
                 return TypeDefKind::INTEGER_KIND;
             case 'string':

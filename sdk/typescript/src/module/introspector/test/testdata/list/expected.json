@@ -68,10 +68,36 @@
               "name": "Integer"
             }
           }
+        },
+        "floats": {
+          "name": "floats",
+          "description": "",
+          "arguments": {
+            "n": {
+              "name": "n",
+              "description": "",
+              "type": {
+                "kind": "LIST_KIND",
+                "typeDef": {
+                  "kind": "FLOAT_KIND"
+                }
+              },
+              "isVariadic": true,
+              "isNullable": false,
+              "isOptional": true
+            }
+          },
+          "returnType": {
+            "kind": "LIST_KIND",
+            "typeDef": {
+              "kind": "FLOAT_KIND"
+            }
+          }
         }
       },
       "properties": {}
     }
   },
-  "enums": {}
+  "enums": {},
+  "interfaces": {}
 }

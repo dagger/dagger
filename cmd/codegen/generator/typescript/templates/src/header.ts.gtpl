@@ -9,6 +9,11 @@ inherited by futures objects and common types.
  */
 import { Context } from "../common/context.js"
 
+/**
+ * Declare a number as float in the Dagger API.
+ */
+export type float = number
+
 class BaseClient {
   /**
    * @hidden

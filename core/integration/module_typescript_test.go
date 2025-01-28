@@ -1724,6 +1724,61 @@ export class Test {
 		require.NoError(t, err)
 		require.JSONEq(t, `[{"_type": "TestPerson", "age": 42, "name": "John"}, {"_type": "TestPerson", "age": 24, "name": "Jane"}]`, out)
 	})
+
+	t.Run("nested IDable object type definition", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+import { dag, Directory, func, object } from "@dagger.io/dagger";
+
+export type FileSystem = {
+  name: string;
+  Dirs: Folder[];
+};
+
+export type Folder = {
+  name: string
+  content: Directory
+}
+
+@object()
+export class Test {
+  _fs: FileSystem;
+
+  constructor() {
+    this._fs = 
+      {
+        name: "school",
+        Dirs: [
+          { name: "math", content: dag.directory().withNewFile("math.txt", "hello world") },
+          { name: "english", content: dag.directory().withNewFile("english.txt", "hello world") },
+        ],
+      }
+  }
+
+  @func()
+  getDirs(): Folder[] {
+    return this._fs.Dirs;
+  }
+
+  @func()
+  getDirByName(name: string): Directory {
+    return this._fs.Dirs.find(dir => dir.name === name).content;
+  }
+}`))
+
+		out, err := modGen.With(daggerCall("get-dirs")).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `[{"_type": "TestFolder", "name": "math"}, {"_type": "TestFolder", "name": "english"}]`, out)
+
+		out, err = modGen.With(daggerCall("get-dir-by-name", "--name", "math", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "math.txt\n", out)
+	})
 }
 
 func (TypescriptSuite) TestDeprecatedFieldDecorator(ctx context.Context, t *testctx.T) {
@@ -1777,5 +1832,77 @@ class Test {
 		out, err := modGen.With(daggerQuery(`{test{foo}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"test": {"foo": "bar"}}`, out)
+	})
+}
+
+func (TypescriptSuite) TestInterface(ctx context.Context, t *testctx.T) {
+	t.Run("doc", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+import { func, object } from "@dagger.io/dagger"
+
+/**
+ * A simple Duck interface
+ */
+export interface Duck {
+  /**
+   * A small quack sound
+    */
+  quack: () => string
+
+  /**
+   * A super quack sound
+   */
+  superQuack(): Promise<string>
+}
+
+@object()
+export class Test {
+  @func()
+  duckQuack(duck: Duck): string {
+    return duck.quack()
+  }
+
+  @func()
+  async duckSuperQuack(duck: Duck): Promise<string> {
+    return await duck.superQuack()
+  }
+}`))
+
+		schema := inspectModule(ctx, t, modGen)
+
+		require.Equal(t, "A simple Duck interface", schema.Get("interfaces.#.asInterface|#(name=TestDuck).description").String())
+		require.Equal(t, "A small quack sound", schema.Get("interfaces.#.asInterface|#(name=TestDuck).functions.#(name=quack).description").String())
+		require.Equal(t, "A super quack sound", schema.Get("interfaces.#.asInterface|#(name=TestDuck).functions.#(name=superQuack).description").String())
+	})
+}
+
+func (TypescriptSuite) TestFloatReturnTypeSuggestion(ctx context.Context, t *testctx.T) {
+	t.Run("suggest to use float instead of number if function returns a float", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=typescript", "--source=.")).
+			With(sdkSource("typescript", `import { dag, object, func } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+  @func()
+  test(): number {
+    return 4.4
+  }
+}
+		
+		`))
+
+		_, err := modGen.With(daggerCall("test")).Stdout(ctx)
+		requireErrOut(t, err, "Error: cannot return float '4.4' if return type is 'number' (integer), please use 'float' as return type instead")
 	})
 }

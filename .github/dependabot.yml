@@ -1,7 +1,9 @@
 version: 2
 updates:
   - package-ecosystem: "gomod"
-    directory: "/"
+    directories:
+      - "/"
+      - "/sdk/go"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -11,17 +13,18 @@ updates:
       - "kind/dependencies"
       - "area/engine"
       - "area/cli"
+      - "area/sdk/go"
+    ignore:
+        # these are fiddly, we want to do them manually
+      - dependency-name: "go.opentelemetry.io/*"
+      - dependency-name: "github.com/moby/buildkit"
+      - dependency-name: "github.com/tonistiigi/fsutil"
+      - dependency-name: "github.com/vito/midterm"
     groups:
       engine:
         applies-to: version-updates
         patterns:
           - "*"
-        exclude-patterns:
-          # these are fiddly, we want to do them manually
-          - "go.opentelemetry.io/*"
-          - "github.com/moby/buildkit"
-          - "github.com/tonistiigi/fsutil"
-          - "github.com/vito/midterm"
 
   - package-ecosystem: "npm"
     directory: "/sdk/typescript"
@@ -55,25 +58,6 @@ updates:
         patterns:
           - "*"
 
-  - package-ecosystem: "gomod"
-    directory: "/sdk/go"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "07:00"
-      timezone: "UTC"
-    labels:
-      - "kind/dependencies"
-      - "area/sdk/go"
-    groups:
-      sdk-go:
-        applies-to: version-updates
-        patterns:
-          - "*"
-        exclude-patterns:
-          # these are fiddly, we want to do them manually
-          - "go.opentelemetry.io/*"
-
   - package-ecosystem: "pip"
     directory: "/sdk/python"
     schedule:
@@ -91,7 +75,9 @@ updates:
           - "*"
 
   - package-ecosystem: "docker"
-    directory: "/sdk/python/runtime"
+    directories:
+      - "/sdk/python/runtime"
+      - "/modules/ruff/build"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -100,24 +86,12 @@ updates:
     labels:
       - "kind/dependencies"
       - "area/sdk/python"
+    ignore:
+      # python needs to be manually bumped
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     groups:
-      sdk-python:
-        applies-to: version-updates
-        patterns:
-          - "*"
-
-  - package-ecosystem: "docker"
-    directory: "/modules/ruff/build"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "07:00"
-      timezone: "UTC"
-    labels:
-      - "kind/dependencies"
-      - "area/sdk/python"
-    groups:
-      sdk-python:
+      sdk-python-docker:
         applies-to: version-updates
         patterns:
           - "*"

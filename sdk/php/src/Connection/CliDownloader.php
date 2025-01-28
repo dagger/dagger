@@ -16,7 +16,7 @@ class CliDownloader implements LoggerAwareInterface
 {
     public const DAGGER_CLI_BIN_PREFIX = 'dagger-';
 
-    private NullLogger $logger;
+    private LoggerInterface $logger;
 
     public function __construct()
     {
@@ -25,6 +25,7 @@ class CliDownloader implements LoggerAwareInterface
 
     public function setLogger(LoggerInterface $logger): void
     {
+        $this->logger = $logger;
     }
 
     public function download(string $version = null): string

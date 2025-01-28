@@ -10,7 +10,7 @@ import TabItem from '@theme/TabItem';
 
 You can call Dagger Functions from any other Dagger module in your own Dagger module simply by adding it as a module dependency with `dagger install`, as in the following example:
 
-```sh
+```shell
 dagger install github.com/shykes/daggerverse/hello@v0.3.0
 ```
 
@@ -102,7 +102,7 @@ dagger call example --build-src=https://github.com/golang/example#master:/hello 
 
 You can also use local modules as dependencies. However, they must be stored in a sub-directory of your module. For example:
 
-```sh
+```shell
 dagger install ./path/to/module
 ```
 
@@ -116,7 +116,24 @@ To remove a dependency from your Dagger module, use the `dagger uninstall` comma
 
 The commands below are equivalent:
 
-```sh
+```shell
 dagger uninstall hello
 dagger uninstall github.com/shykes/daggerverse/hello
 ```
+
+## Update
+
+To update a dependency in your Dagger module to the latest version (or the version specified), use the `dagger update` command. The target module must be local.
+
+The commands below are equivalent:
+
+```shell
+dagger update hello
+dagger update github.com/shykes/daggerverse/hello
+```
+
+:::note
+Given a dependency like `github.com/path/name@branch/tag`:
+- `dagger update github.com/path/name` updates the dependency to the latest commit of the branch/tag.
+- `dagger update github.com/path/name@version` updates the dependency to the latest commit for the `version` branch/tag.
+:::

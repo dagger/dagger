@@ -4,6 +4,9 @@
 
 version: 2
 
+sphinx:
+  configuration: sdk/python/docs/conf.py
+
 build:
   os: ubuntu-22.04
   commands:

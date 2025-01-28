@@ -4,6 +4,11 @@
  */
 import { Context } from "../common/context.js"
 
+/**
+ * Declare a number as float in the Dagger API.
+ */
+export type float = number
+
 class BaseClient {
   /**
    * @hidden
@@ -238,6 +243,42 @@ export type ContainerUpOpts = {
    * Bind each tunnel port to a random port on the host.
    */
   random?: boolean
+
+  /**
+   * Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
+   *
+   * If empty, the container's default command is used.
+   */
+  args?: string[]
+
+  /**
+   * If the container has an entrypoint, prepend it to the args.
+   */
+  useEntrypoint?: boolean
+
+  /**
+   * Provides Dagger access to the executed command.
+   *
+   * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+   */
+  experimentalPrivilegedNesting?: boolean
+
+  /**
+   * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+   */
+  insecureRootCapabilities?: boolean
+
+  /**
+   * Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   */
+  expand?: boolean
+
+  /**
+   * If set, skip the automatic init process injected into containers by default.
+   *
+   * This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+   */
+  noInit?: boolean
 }
 
 export type ContainerWithDefaultTerminalCmdOpts = {
@@ -1101,6 +1142,10 @@ export type PortForward = {
  */
 export type PortID = string & { __PortID: never }
 
+export type ClientCacheVolumeOpts = {
+  namespace?: string
+}
+
 export type ClientContainerOpts = {
   /**
    * Platform to initialize the container with.
@@ -1317,6 +1362,11 @@ export enum TypeDefKind {
    * Always paired with an EnumTypeDef.
    */
   EnumKind = "ENUM_KIND",
+
+  /**
+   * A float value.
+   */
+  FloatKind = "FLOAT_KIND",
 
   /**
    * A graphql input type, used only when representing the core API via TypeDefs.
@@ -1607,20 +1657,8 @@ export class Container extends BaseClient {
 
     const response: Awaited<envVariables[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new EnvVariable(
-          new Context(
-            [
-              {
-                operation: "loadEnvVariableFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
+    return response.map((r) =>
+      new Client(ctx.copy()).loadEnvVariableFromID(r.id),
     )
   }
 
@@ -1722,21 +1760,7 @@ export class Container extends BaseClient {
 
     const response: Awaited<exposedPorts[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new Port(
-          new Context(
-            [
-              {
-                operation: "loadPortFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
-    )
+    return response.map((r) => new Client(ctx.copy()).loadPortFromID(r.id))
   }
 
   /**
@@ -1815,21 +1839,7 @@ export class Container extends BaseClient {
 
     const response: Awaited<labels[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new Label(
-          new Context(
-            [
-              {
-                operation: "loadLabelFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
-    )
+    return response.map((r) => new Client(ctx.copy()).loadLabelFromID(r.id))
   }
 
   /**
@@ -1953,17 +1963,7 @@ export class Container extends BaseClient {
 
     const response: Awaited<ContainerID> = await ctx.execute()
 
-    return new Container(
-      new Context(
-        [
-          {
-            operation: "loadContainerFromID",
-            args: { id: response },
-          },
-        ],
-        this._ctx.getConnection(),
-      ),
-    )
+    return new Client(ctx.copy()).loadContainerFromID(response)
   }
 
   /**
@@ -1987,6 +1987,18 @@ export class Container extends BaseClient {
    *
    * Frontend is the port accepting traffic on the host, backend is the service port.
    * @param opts.random Bind each tunnel port to a random port on the host.
+   * @param opts.args Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
+   *
+   * If empty, the container's default command is used.
+   * @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
+   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   *
+   * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+   * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.noInit If set, skip the automatic init process injected into containers by default.
+   *
+   * This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
    */
   up = async (opts?: ContainerUpOpts): Promise<void> => {
     if (this._up) {
@@ -2874,17 +2886,7 @@ export class Directory extends BaseClient {
 
     const response: Awaited<DirectoryID> = await ctx.execute()
 
-    return new Directory(
-      new Context(
-        [
-          {
-            operation: "loadDirectoryFromID",
-            args: { id: response },
-          },
-        ],
-        this._ctx.getConnection(),
-      ),
-    )
+    return new Client(ctx.copy()).loadDirectoryFromID(response)
   }
 
   /**
@@ -3379,20 +3381,8 @@ export class EngineCacheEntrySet extends BaseClient {
 
     const response: Awaited<entries[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new EngineCacheEntry(
-          new Context(
-            [
-              {
-                operation: "loadEngineCacheEntryFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
+    return response.map((r) =>
+      new Client(ctx.copy()).loadEngineCacheEntryFromID(r.id),
     )
   }
 
@@ -3519,20 +3509,8 @@ export class EnumTypeDef extends BaseClient {
 
     const response: Awaited<values[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new EnumValueTypeDef(
-          new Context(
-            [
-              {
-                operation: "loadEnumValueTypeDefFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
+    return response.map((r) =>
+      new Client(ctx.copy()).loadEnumValueTypeDefFromID(r.id),
     )
   }
 }
@@ -3955,17 +3933,7 @@ export class File extends BaseClient {
 
     const response: Awaited<FileID> = await ctx.execute()
 
-    return new File(
-      new Context(
-        [
-          {
-            operation: "loadFileFromID",
-            args: { id: response },
-          },
-        ],
-        this._ctx.getConnection(),
-      ),
-    )
+    return new Client(ctx.copy()).loadFileFromID(response)
   }
 
   /**
@@ -4051,20 +4019,8 @@ export class Function_ extends BaseClient {
 
     const response: Awaited<args[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new FunctionArg(
-          new Context(
-            [
-              {
-                operation: "loadFunctionArgFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
+    return response.map((r) =>
+      new Client(ctx.copy()).loadFunctionArgFromID(r.id),
     )
   }
 
@@ -4355,20 +4311,8 @@ export class FunctionCall extends BaseClient {
 
     const response: Awaited<inputArgs[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new FunctionCallArgValue(
-          new Context(
-            [
-              {
-                operation: "loadFunctionCallArgValueFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
+    return response.map((r) =>
+      new Client(ctx.copy()).loadFunctionCallArgValueFromID(r.id),
     )
   }
 
@@ -5093,20 +5037,8 @@ export class InputTypeDef extends BaseClient {
 
     const response: Awaited<fields[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new FieldTypeDef(
-          new Context(
-            [
-              {
-                operation: "loadFieldTypeDefFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
+    return response.map((r) =>
+      new Client(ctx.copy()).loadFieldTypeDefFromID(r.id),
     )
   }
 
@@ -5195,21 +5127,7 @@ export class InterfaceTypeDef extends BaseClient {
 
     const response: Awaited<functions[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new Function_(
-          new Context(
-            [
-              {
-                operation: "loadFunction_FromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
-    )
+    return response.map((r) => new Client(ctx.copy()).loadFunctionFromID(r.id))
   }
 
   /**
@@ -5490,21 +5408,7 @@ export class Module_ extends BaseClient {
 
     const response: Awaited<dependencies[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new Module_(
-          new Context(
-            [
-              {
-                operation: "loadModule_FromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
-    )
+    return response.map((r) => new Client(ctx.copy()).loadModuleFromID(r.id))
   }
 
   /**
@@ -5519,20 +5423,8 @@ export class Module_ extends BaseClient {
 
     const response: Awaited<dependencyConfig[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new ModuleDependency(
-          new Context(
-            [
-              {
-                operation: "loadModuleDependencyFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
+    return response.map((r) =>
+      new Client(ctx.copy()).loadModuleDependencyFromID(r.id),
     )
   }
 
@@ -5563,21 +5455,7 @@ export class Module_ extends BaseClient {
 
     const response: Awaited<enums[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new TypeDef(
-          new Context(
-            [
-              {
-                operation: "loadTypeDefFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
-    )
+    return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
   }
 
   /**
@@ -5616,21 +5494,7 @@ export class Module_ extends BaseClient {
 
     const response: Awaited<interfaces[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new TypeDef(
-          new Context(
-            [
-              {
-                operation: "loadTypeDefFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
-    )
+    return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
   }
 
   /**
@@ -5660,21 +5524,7 @@ export class Module_ extends BaseClient {
 
     const response: Awaited<objects[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new TypeDef(
-          new Context(
-            [
-              {
-                operation: "loadTypeDefFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
-    )
+    return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
   }
 
   /**
@@ -5972,20 +5822,8 @@ export class ModuleSource extends BaseClient {
 
     const response: Awaited<dependencies[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new ModuleDependency(
-          new Context(
-            [
-              {
-                operation: "loadModuleDependencyFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
+    return response.map((r) =>
+      new Client(ctx.copy()).loadModuleDependencyFromID(r.id),
     )
   }
 
@@ -6173,20 +6011,8 @@ export class ModuleSource extends BaseClient {
 
     const response: Awaited<views[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new ModuleSourceView(
-          new Context(
-            [
-              {
-                operation: "loadModuleSourceViewFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
+    return response.map((r) =>
+      new Client(ctx.copy()).loadModuleSourceViewFromID(r.id),
     )
   }
 
@@ -6241,6 +6067,15 @@ export class ModuleSource extends BaseClient {
    */
   withSourceSubpath = (path: string): ModuleSource => {
     const ctx = this._ctx.select("withSourceSubpath", { path })
+    return new ModuleSource(ctx)
+  }
+
+  /**
+   * Update one or more module dependencies.
+   * @param dependencies The dependencies to update.
+   */
+  withUpdateDependencies = (dependencies: string[]): ModuleSource => {
+    const ctx = this._ctx.select("withUpdateDependencies", { dependencies })
     return new ModuleSource(ctx)
   }
 
@@ -6409,20 +6244,8 @@ export class ObjectTypeDef extends BaseClient {
 
     const response: Awaited<fields[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new FieldTypeDef(
-          new Context(
-            [
-              {
-                operation: "loadFieldTypeDefFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
+    return response.map((r) =>
+      new Client(ctx.copy()).loadFieldTypeDefFromID(r.id),
     )
   }
 
@@ -6438,21 +6261,7 @@ export class ObjectTypeDef extends BaseClient {
 
     const response: Awaited<functions[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new Function_(
-          new Context(
-            [
-              {
-                operation: "loadFunction_FromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
-    )
+    return response.map((r) => new Client(ctx.copy()).loadFunctionFromID(r.id))
   }
 
   /**
@@ -6625,15 +6434,6 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Retrieves a content-addressed blob.
-   * @param digest Digest of the blob
-   */
-  blob = (digest: string): Directory => {
-    const ctx = this._ctx.select("blob", { digest })
-    return new Directory(ctx)
-  }
-
-  /**
    * Retrieves a container builtin to the engine.
    * @param digest Digest of the image manifest
    */
@@ -6646,8 +6446,8 @@ export class Client extends BaseClient {
    * Constructs a cache volume for a given cache key.
    * @param key A string identifier to target this cache volume (e.g., "modules-cache").
    */
-  cacheVolume = (key: string): CacheVolume => {
-    const ctx = this._ctx.select("cacheVolume", { key })
+  cacheVolume = (key: string, opts?: ClientCacheVolumeOpts): CacheVolume => {
+    const ctx = this._ctx.select("cacheVolume", { key, ...opts })
     return new CacheVolume(ctx)
   }
 
@@ -6692,21 +6492,7 @@ export class Client extends BaseClient {
 
     const response: Awaited<currentTypeDefs[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new TypeDef(
-          new Context(
-            [
-              {
-                operation: "loadTypeDefFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
-    )
+    return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
   }
 
   /**
@@ -7473,21 +7259,7 @@ export class Service extends BaseClient {
 
     const response: Awaited<ports[]> = await ctx.execute()
 
-    return response.map(
-      (r) =>
-        new Port(
-          new Context(
-            [
-              {
-                operation: "loadPortFromID",
-                args: { id: r.id },
-              },
-            ],
-            this._ctx.getConnection(),
-          ),
-          r.id,
-        ),
-    )
+    return response.map((r) => new Client(ctx.copy()).loadPortFromID(r.id))
   }
 
   /**
@@ -7500,17 +7272,7 @@ export class Service extends BaseClient {
 
     const response: Awaited<ServiceID> = await ctx.execute()
 
-    return new Service(
-      new Context(
-        [
-          {
-            operation: "loadServiceFromID",
-            args: { id: response },
-          },
-        ],
-        this._ctx.getConnection(),
-      ),
-    )
+    return new Client(ctx.copy()).loadServiceFromID(response)
   }
 
   /**
@@ -7522,17 +7284,7 @@ export class Service extends BaseClient {
 
     const response: Awaited<ServiceID> = await ctx.execute()
 
-    return new Service(
-      new Context(
-        [
-          {
-            operation: "loadServiceFromID",
-            args: { id: response },
-          },
-        ],
-        this._ctx.getConnection(),
-      ),
-    )
+    return new Client(ctx.copy()).loadServiceFromID(response)
   }
 
   /**
@@ -7750,17 +7502,7 @@ export class Terminal extends BaseClient {
 
     const response: Awaited<TerminalID> = await ctx.execute()
 
-    return new Terminal(
-      new Context(
-        [
-          {
-            operation: "loadTerminalFromID",
-            args: { id: response },
-          },
-        ],
-        this._ctx.getConnection(),
-      ),
-    )
+    return new Client(ctx.copy()).loadTerminalFromID(response)
   }
 }
 

@@ -29,6 +29,10 @@ func (ProvisionSuite) TestDockerDriver(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		dockerc := dockerSetup(ctx, t, "provisioner", c, "", nil)
 		dockerc = dockerc.WithMountedFile("/bin/dagger", daggerCliFile(t, c))
+		// HACK: pre-download builtin image tag (since the original might not
+		// actually have been pushed to the registry)
+		dockerc, err := dockerLoadEngine(ctx, c, dockerc, "registry.dagger.io/engine:"+engine.Tag)
+		require.NoError(t, err)
 
 		out, err := dockerc.
 			WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{Stdin: "{version}"}).Stdout(ctx)
@@ -212,7 +216,7 @@ func dockerSetup(ctx context.Context, t *testctx.T, name string, dag *dagger.Cli
 		WithEnvVariable("CACHEBUSTER", identity.NewID())
 
 	t.Cleanup(func() {
-		_, err := dockerc.WithExec([]string{"sh", "-c", "docker rm -f $(docker ps -aq); docker system prune --all --volumes; true"}).Sync(ctx)
+		_, err := dockerc.WithExec([]string{"sh", "-c", "docker rm -f $(docker ps -aq); docker system prune --force --all --volumes; true"}).Sync(ctx)
 		require.NoError(t, err)
 
 		_, err = dockerd.Stop(ctx)

@@ -992,8 +992,8 @@ type collectLogProcessor struct {
 
 var _ sdklog.Processor = (*collectLogProcessor)(nil)
 
-func (p *collectLogProcessor) OnEmit(ctx context.Context, record sdklog.Record) error {
-	p.logs = append(p.logs, record)
+func (p *collectLogProcessor) OnEmit(ctx context.Context, record *sdklog.Record) error {
+	p.logs = append(p.logs, *record)
 	return nil
 }
 

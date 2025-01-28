@@ -34,6 +34,12 @@ const config: Config = {
   markdown: {
     mermaid: true,
   },
+  scripts: [
+    {
+      src: '/js/commonroom.js',
+      async: true,
+    },
+  ],
   presets: [
     [
       "classic",

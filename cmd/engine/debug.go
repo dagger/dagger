@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"time"
 
@@ -41,6 +42,7 @@ func setupDebugHandlers(addr string) error {
 
 	m.Handle("/debug/gc", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		runtime.GC()
+		debug.FreeOSMemory()
 		logrus.Debugf("triggered GC from debug endpoint")
 	}))
 

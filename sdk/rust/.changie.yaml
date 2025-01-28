@@ -22,17 +22,23 @@ custom:
     label: GitHub Author
     type: string
 kinds:
+  - label: Breaking
+    format: '### 🔥 Breaking Changes'
   - label: Added
   - label: Changed
   - label: Deprecated
+  - label: Removed
   - label: Fixed
+  - label: Security
   - label: Dependencies
 headerFormat: |-
   This SDK uses 🚙 Engine + 🚗 CLI version `{{.Env.ENGINE_VERSION}}`. [See what changed in that release](https://github.com/dagger/dagger/releases/tag/{{.Env.ENGINE_VERSION}}).
-  ⬢ https://crates.io/crates/dagger-sdk/{{ trimPrefix "v" .Version }}
+
+  ⚙️  https://crates.io/crates/dagger-sdk/{{ trimPrefix "v" .Version }}
   📒 https://docs.rs/dagger-sdk/{{ trimPrefix "v" .Version }}/dagger-sdk
 footerFormat: |-
   ### What to do next
+  - Read the [documentation](https://docs.dagger.io/sdk/nodejs)
   - Join our [Discord server](https://discord.gg/dagger-io)
   - Follow us on [Twitter](https://twitter.com/dagger_io)
 newlines:

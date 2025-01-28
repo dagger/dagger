@@ -216,5 +216,6 @@
       }
     }
   },
-  "enums": {}
+  "enums": {},
+  "interfaces": {}
 }

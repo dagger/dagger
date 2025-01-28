@@ -74,6 +74,10 @@ defmodule Dagger.Mod do
     {:ok, value}
   end
 
+  defp cast(value, :float, _) when is_float(value) do
+    {:ok, value}
+  end
+
   defp cast(value, :boolean, _) when is_boolean(value) do
     {:ok, value}
   end
@@ -118,6 +122,10 @@ defmodule Dagger.Mod do
     {:ok, value}
   end
 
+  defp dump(value, :float) when is_float(value) do
+    {:ok, value}
+  end
+
   defp dump(value, :boolean) when is_boolean(value) do
     {:ok, value}
   end
@@ -134,6 +142,10 @@ defmodule Dagger.Mod do
       end
 
     {:ok, values}
+  end
+
+  defp dump(_, Dagger.Void) do
+    {:ok, nil}
   end
 
   defp dump(%module{} = struct, module) do

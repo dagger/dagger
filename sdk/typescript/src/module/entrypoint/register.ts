@@ -14,8 +14,10 @@ import {
   DaggerModule,
   Locatable,
 } from "../introspector/dagger_module/index.js"
+import { DaggerInterfaceFunction } from "../introspector/dagger_module/interfaceFunction.js"
 import {
   EnumTypeDef,
+  InterfaceTypeDef,
   ListTypeDef,
   ObjectTypeDef,
   ScalarTypeDef,
@@ -91,6 +93,19 @@ export async function register(
     mod = mod.withEnum(typeDef)
   })
 
+  // Register all interfaces defined by this module
+  Object.values(module.interfaces).forEach((interface_) => {
+    let typeDef = dag.typeDef().withInterface(interface_.name, {
+      description: interface_.description,
+    })
+
+    Object.values(interface_.functions).forEach((function_) => {
+      typeDef = typeDef.withFunction(addFunction(function_))
+    })
+
+    mod = mod.withInterface(typeDef)
+  })
+
   // Call ID to actually execute the registration
   return await mod.id()
 }
@@ -105,7 +120,7 @@ function addConstructor(constructor: Constructor, owner: TypeDef): Function_ {
 /**
  * Create a function in the Dagger API.
  */
-function addFunction(fct: Method): Function_ {
+function addFunction(fct: Method | DaggerInterfaceFunction): Function_ {
   return dag
     .function_(fct.alias ?? fct.name, addTypeDef(fct.returnType!))
     .withDescription(fct.description)
@@ -189,6 +204,8 @@ function addTypeDef(type: ScannerTypeDef<TypeDefKind>): TypeDef {
       return dag.typeDef().withKind(type.kind).withOptional(true)
     case TypeDefKind.EnumKind:
       return dag.typeDef().withEnum((type as EnumTypeDef).name)
+    case TypeDefKind.InterfaceKind:
+      return dag.typeDef().withInterface((type as InterfaceTypeDef).name)
     default:
       return dag.typeDef().withKind(type.kind)
   }
@@ -205,6 +222,7 @@ function isPrimitiveType(type: ScannerTypeDef<TypeDefKind>): boolean {
     type.kind === TypeDefKind.BooleanKind ||
     type.kind === TypeDefKind.IntegerKind ||
     type.kind === TypeDefKind.StringKind ||
+    type.kind === TypeDefKind.FloatKind ||
     type.kind === TypeDefKind.EnumKind
   )
 }

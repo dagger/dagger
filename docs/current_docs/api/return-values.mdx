@@ -47,6 +47,81 @@ The result will look like this:
 Linux buildkitsandbox 6.1.0-22-cloud-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.1.94-1 (2024-06-21) x86_64 x86_64 x86_64 GNU/Linux
 ```
 
+## Integer return values
+
+Here is an example of a Dagger Function that returns the sum of two integers:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-return-values-integer/go/main.go
+```
+</TabItem>
+
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-return-values-integer/python/main.py
+```
+</TabItem>
+
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/arguments-return-values-integer/typescript/index.ts
+```
+</TabItem>
+
+</Tabs>
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call add-integer --a 1 --b 2
+```
+
+The result will look like this:
+
+```shell
+3
+```
+
+## Floating-point number return values
+
+Here is an example of a Dagger Function that returns the sum of two floating-point numbers:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-return-values-float/go/main.go
+```
+</TabItem>
+
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-return-values-float/python/main.py
+```
+</TabItem>
+
+<TabItem value="TypeScript">
+
+:::note
+There's no `float` type keyword in TypeScript because the type keyword `number` already supports floating point numbers.
+
+To declare a `float` return type on the function signature, import `float` from `@dagger.io/dagger` and use it as return type.
+The imported `float` type is a `number` underneath, so you can return it as you would return a regular type `number`.
+:::
+
+```typescript file=./snippets/functions/arguments-return-values-float/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call add-float --a 1.4 --b 2.7
+```
+
+The result will look like this:
+
+```shell
+4.1
+```
+
 ## Directory return values
 
 Directory return values might be produced by a Dagger Function that:

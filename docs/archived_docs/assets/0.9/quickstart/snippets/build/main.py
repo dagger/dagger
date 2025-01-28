@@ -18,7 +18,8 @@ async def main():
             .with_directory(
                 "/src",
                 client.host().directory(
-                    ".", exclude=["node_modules/", "ci/", "build/"]),
+                    ".", exclude=["node_modules/", "ci/", "build/"]
+                ),
             )
         )
 
@@ -31,15 +32,13 @@ async def main():
 
         # build application
         # write the build output to the host
-        build_dir = (
-            test.with_exec(["npm", "run", "build"])
-            .directory("./build")
-        )
+        build_dir = test.with_exec(["npm", "run", "build"]).directory("./build")
 
         await build_dir.export("./build")
 
         e = await build_dir.entries()
 
         print(f"build dir contents:\n{e}")
+
 
 anyio.run(main)

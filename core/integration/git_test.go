@@ -438,6 +438,7 @@ func (GitSuite) TestServiceStableDigest(ctx context.Context, t *testctx.T) {
 			WithMountedDirectory("/repo", c.Git(url, dagger.GitOpts{
 				ExperimentalServiceHost: svc,
 			}).Branch("main").Tree()).
+			WithDefaultArgs([]string{"sleep"}).
 			AsService().
 			Hostname(ctx)
 		require.NoError(t, err)

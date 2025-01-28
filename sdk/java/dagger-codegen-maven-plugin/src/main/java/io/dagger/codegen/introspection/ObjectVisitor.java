@@ -19,7 +19,7 @@ class ObjectVisitor extends AbstractVisitor {
   TypeSpec generateType(Type type) {
     TypeSpec.Builder classBuilder =
         TypeSpec.classBuilder(Helpers.formatName(type))
-            .addJavadoc(type.getDescription())
+            .addJavadoc(Helpers.escapeJavadoc(type.getDescription()))
             .addModifiers(Modifier.PUBLIC)
             .addField(
                 FieldSpec.builder(
@@ -124,7 +124,7 @@ class ObjectVisitor extends AbstractVisitor {
                                 ? arg.getType().formatOutput()
                                 : arg.getType().formatInput(),
                             Helpers.formatName(arg))
-                        .addJavadoc(arg.getDescription() + "\n")
+                        .addJavadoc(Helpers.escapeJavadoc(arg.getDescription()) + "\n")
                         .build())
             .toList();
     fieldMethodBuilder.addParameters(mandatoryParams);

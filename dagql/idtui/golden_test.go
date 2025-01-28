@@ -22,7 +22,7 @@ import (
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.25.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -30,6 +30,7 @@ import (
 	"gotest.tools/v3/golden"
 
 	"dagger.io/dagger/telemetry"
+
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
@@ -262,7 +263,7 @@ var scrubs = []scrubber{
 	},
 	// Durations
 	{
-		regexp.MustCompile(`\b(\d+m)?\d+\.\d+s\b`),
+		regexp.MustCompile(`\b(\d+m)?\d+(\.\d+)?s\b`),
 		"1m2.345s",
 		"X.Xs",
 	},

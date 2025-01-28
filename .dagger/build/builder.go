@@ -128,10 +128,6 @@ func (build *Builder) WithGPUSupport() *Builder {
 	return &b
 }
 
-func (build *Builder) CLI(ctx context.Context) (*dagger.File, error) {
-	return build.binary("./cmd/dagger", true, build.race), nil
-}
-
 func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 
@@ -246,7 +242,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		{path: "/usr/bin/dial-stdio", file: build.dialstdioBinary()},
 		{path: "/opt/cni/bin/dnsname", file: build.dnsnameBinary()},
 		{path: consts.RuncPath, file: build.runcBin()},
-		{path: consts.DumbInitPath, file: build.dumbInit()},
+		{path: consts.DaggerInitPath, file: build.daggerInit()},
 	}
 	for _, bin := range build.qemuBins(ctx) {
 		name, err := bin.Name(ctx)
@@ -433,22 +429,8 @@ func (build *Builder) cniPlugins() []*dagger.File {
 	return bins
 }
 
-func (build *Builder) dumbInit() *dagger.File {
-	// dumb init is static, so we can use it on any base image
-	return dag.
-		Alpine(dagger.AlpineOpts{
-			Branch: consts.AlpineVersion,
-			Packages: []string{
-				"bash",
-				"build-base",
-			},
-			Arch: build.platformSpec.Architecture,
-		}).
-		Container().
-		WithMountedDirectory("/src", dag.Git("github.com/yelp/dumb-init").Ref(consts.DumbInitVersion).Tree()).
-		WithWorkdir("/src").
-		WithExec([]string{"make"}).
-		File("dumb-init")
+func (build *Builder) daggerInit() *dagger.File {
+	return build.binary("./cmd/init", false, false)
 }
 
 func (build *Builder) goPlatformEnv(ctr *dagger.Container) *dagger.Container {

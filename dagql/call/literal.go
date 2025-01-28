@@ -100,6 +100,10 @@ func (lit *LiteralList) Range(fn func(int, Literal) error) error {
 	return nil
 }
 
+func (lit *LiteralList) Len() int {
+	return len(lit.values)
+}
+
 func (lit *LiteralList) Inputs() ([]digest.Digest, error) {
 	var inputs []digest.Digest
 	for _, v := range lit.values {
@@ -202,6 +206,10 @@ func (lit *LiteralObject) Range(fn func(int, string, Literal) error) error {
 		}
 	}
 	return nil
+}
+
+func (lit *LiteralObject) Len() int {
+	return len(lit.values)
 }
 
 func (lit *LiteralObject) Inputs() ([]digest.Digest, error) {

@@ -13,6 +13,7 @@ import { ENUM_DECORATOR, OBJECT_DECORATOR } from "./decorator.js"
 import { DaggerEnum } from "./enum.js"
 import { DaggerEnumsBase } from "./enumBase.js"
 import { DaggerEnumClass } from "./enumClass.js"
+import { DaggerInterface, DaggerInterfaces } from "./interface.js"
 import { DaggerObject } from "./object.js"
 import { DaggerObjectsBase } from "./objectBase.js"
 import { References } from "./reference.js"
@@ -74,9 +75,28 @@ export class DaggerModule {
    * ```
    */
   public enums: DaggerEnumsBase = {}
+
+  /**
+   * An interface is declared using the `interface` keyword.
+   *
+   * @example
+   * ```ts
+   * export interface Example {
+   *   foo: (): string
+   *   asyncFoo: (): Promise<string>
+   * }
+   * ```
+   */
+  public interfaces: DaggerInterfaces = {}
+
   public description: string | undefined
 
-  private references: References = {}
+  private references: References = {
+    // Float is a special case, it's an alias of number but it serves to declare a float type
+    // in the Dagger API.
+    // So we auto register it because it will be detected as a referenced type by the introspector.
+    float: { kind: TypeDefKind.FloatKind },
+  }
 
   constructor(
     public name: string,
@@ -124,8 +144,9 @@ export class DaggerModule {
    * - classes
    * - enums
    * - scalars
+   * - interfaces
    *
-   * If the reference is an object or a class, recursively find the references of the object.
+   * If the reference is an object, a class or an interface, recursively find the references of the object.
    *
    * *Note*: If a class is referenced but not exported and not decorated with `@object()`, we throw an error
    * because we aim to be explicit. (TomChv: Should we change this behaviour?)
@@ -206,6 +227,21 @@ export class DaggerModule {
         }
 
         // There should be no reference in enums.
+        continue
+      }
+
+      const interfaceRef = this.ast.findResolvedNodeByName(
+        reference,
+        ts.SyntaxKind.InterfaceDeclaration,
+      )
+      if (interfaceRef) {
+        const daggerInterface = new DaggerInterface(interfaceRef.node, this.ast)
+        this.interfaces[daggerInterface.name] = daggerInterface
+        this.references[daggerInterface.name] = {
+          kind: TypeDefKind.InterfaceKind,
+          name: daggerInterface.name,
+        }
+        this.resolveReferences(daggerInterface.getReferences())
         continue
       }
 
@@ -334,6 +370,10 @@ export class DaggerModule {
     for (const object of Object.values(this.objects)) {
       object.propagateReferences(this.references)
     }
+
+    for (const interface_ of Object.values(this.interfaces)) {
+      interface_.propagateReferences(this.references)
+    }
   }
 
   /**
@@ -361,6 +401,7 @@ export class DaggerModule {
       description: this.description,
       objects: this.objects,
       enums: this.enums,
+      interfaces: this.interfaces,
     }
   }
 }

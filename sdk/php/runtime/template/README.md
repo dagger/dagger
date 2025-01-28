@@ -61,7 +61,8 @@ use function Dagger\dag;
 #[DaggerObject]
 class Example
 {
-     #[DaggerFunction('Echo the value to standard output')]
+     #[DaggerFunction]
+     #[Doc('Echo the value to standard output')]
      public function containerEcho(string $stringArg): Container
      {
          return dag()

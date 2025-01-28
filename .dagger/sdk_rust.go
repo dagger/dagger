@@ -9,6 +9,7 @@ import (
 	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/BurntSushi/toml"
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 	"github.com/dagger/dagger/.dagger/util"
 )
@@ -20,6 +21,7 @@ const (
 	// https://hub.docker.com/_/rust
 	rustDockerStable = "rust:1.77-bookworm"
 	cargoChefVersion = "0.1.62"
+	cargoEditVersion = "0.13.0"
 )
 
 type RustSDK struct {
@@ -30,7 +32,7 @@ type RustSDK struct {
 func (r RustSDK) Lint(ctx context.Context) error {
 	base := r.rustBase(rustDockerStable)
 
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 	eg.Go(func() error {
 		_, err := base.
 			WithExec([]string{"cargo", "check", "--all", "--release"}).
@@ -92,7 +94,7 @@ func (r RustSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 
 // Test the publishing process
 func (r RustSDK) TestPublish(ctx context.Context, tag string) error {
-	return r.Publish(ctx, tag, true, nil, "https://github.com/dagger/dagger.git", nil, nil)
+	return r.Publish(ctx, tag, true, nil)
 }
 
 // Publish the Rust SDK
@@ -105,30 +107,20 @@ func (r RustSDK) Publish(
 
 	// +optional
 	cargoRegistryToken *dagger.Secret,
-
-	// +optional
-	// +default="https://github.com/dagger/dagger.git"
-	gitRepoSource string,
-
-	// +optional
-	githubToken *dagger.Secret,
-	// +optional
-	discordWebhook *dagger.Secret,
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/rust/")
 
 	versionFlag := strings.TrimPrefix(version, "v")
-	if dryRun {
+	if !semver.IsValid(version) {
 		// just pick any version, it's a dry-run
 		versionFlag = "--bump=rc"
 	}
 
 	crate := "dagger-sdk"
-
 	base := r.
 		rustBase(rustDockerStable).
 		WithExec([]string{
-			"cargo", "install", "cargo-edit", "--locked",
+			"cargo", "install", "cargo-edit@" + cargoEditVersion, "--locked",
 		}).
 		WithExec([]string{
 			"cargo", "set-version", "-p", crate, versionFlag,
@@ -140,6 +132,46 @@ func (r RustSDK) Publish(
 	if dryRun {
 		args = append(args, "--dry-run")
 		base = base.WithExec(args)
+
+		targetVersion := strings.TrimPrefix(version, "v")
+		if !semver.IsValid(version) {
+			cargoToml, err := base.File("Cargo.toml").Contents(ctx)
+			if err != nil {
+				return err
+			}
+			var config struct {
+				Workspace struct {
+					Package struct {
+						Version string
+					}
+				}
+			}
+			_, err = toml.Decode(cargoToml, &config)
+			if err != nil {
+				return err
+			}
+			targetVersion = config.Workspace.Package.Version
+		}
+
+		// check we created the right files
+		_, err := base.Directory(fmt.Sprintf("./target/package/dagger-sdk-%s", targetVersion)).Sync(ctx)
+		if err != nil {
+			return err
+		}
+		_, err = base.File(fmt.Sprintf("./target/package/dagger-sdk-%s.crate", targetVersion)).Sync(ctx)
+		if err != nil {
+			return err
+		}
+
+		// check that Cargo.toml got the version
+		dt, err := base.File(fmt.Sprintf("./target/package/dagger-sdk-%s/Cargo.toml", targetVersion)).Contents(ctx)
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(dt, "\nversion = \""+targetVersion+"\"\n") {
+			//nolint:stylecheck
+			return fmt.Errorf("Cargo.toml did not contain %q", targetVersion)
+		}
 	} else {
 		base = base.
 			WithSecretVariable("CARGO_REGISTRY_TOKEN", cargoRegistryToken).
@@ -148,23 +180,6 @@ func (r RustSDK) Publish(
 	_, err := base.Sync(ctx)
 	if err != nil {
 		return err
-	}
-
-	if semver.IsValid(version) {
-		if err := dag.Releaser().GithubRelease(ctx, gitRepoSource, "sdk/rust/"+version, tag, dagger.ReleaserGithubReleaseOpts{
-			Notes:  dag.Releaser().ChangeNotes("sdk/rust", version),
-			Token:  githubToken,
-			DryRun: dryRun,
-		}); err != nil {
-			return err
-		}
-
-		if err := dag.Releaser().Notify(ctx, gitRepoSource, "sdk/rust/"+version, "⚙️ Rust SDK", dagger.ReleaserNotifyOpts{
-			DiscordWebhook: discordWebhook,
-			DryRun:         dryRun,
-		}); err != nil {
-			return err
-		}
 	}
 
 	return nil

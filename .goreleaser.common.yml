@@ -7,14 +7,8 @@ before:
     - go mod download
 
 builds:
-  - env:
-      - CGO_ENABLED=0
-    main: ./cmd/dagger
-    binary: dagger
-    ldflags:
-      - -s -w
-      - -X github.com/dagger/dagger/engine.Version={{.Env.ENGINE_VERSION}}
-      - -X github.com/dagger/dagger/engine.Tag={{.Env.ENGINE_TAG}}
+  - builder: prebuilt
+    binary: ./dagger
     goos:
       - linux
       - windows
@@ -25,6 +19,9 @@ builds:
       - arm
     goarm:
       - "7"
+
+    prebuilt:
+      path: build/dagger_{{ .Env.ENGINE_VERSION }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}_v{{ . }}{{ end }}/dagger
 
 checksum:
   name_template: "checksums.txt"

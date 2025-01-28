@@ -14,10 +14,7 @@ func (m *MyModule) Build(
 	// location of directory containing Dockerfile
 	src *dagger.Directory,
 ) (string, error) {
-	ref, err := dag.Container().
-		WithDirectory("/src", src).
-		WithWorkdir("/src").
-		Directory("/src").
+	ref, err := src.
 		DockerBuild(). // build from Dockerfile
 		Publish(ctx, "ttl.sh/hello-dagger")
 

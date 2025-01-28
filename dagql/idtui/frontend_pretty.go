@@ -65,6 +65,7 @@ type frontendPretty struct {
 	view       *strings.Builder  // rendered async
 	viewOut    *termenv.Output
 	browserBuf *strings.Builder // logs if browser fails
+	stdin      io.Reader        // used by backgroundMsg for running terminal
 
 	// held to synchronize tea.Model with updates
 	mu sync.Mutex
@@ -178,6 +179,18 @@ func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
 	return &fe.FrontendOpts
 }
 
+func (fe *frontendPretty) SetCustomExit(fn func()) {
+	fe.mu.Lock()
+	fe.Opts().CustomExit = fn
+	fe.mu.Unlock()
+}
+
+func (fe *frontendPretty) SetVerbosity(n int) {
+	fe.mu.Lock()
+	fe.Opts().Verbosity = n
+	fe.mu.Unlock()
+}
+
 func (fe *frontendPretty) SetPrimary(spanID dagui.SpanID) {
 	fe.mu.Lock()
 	fe.db.SetPrimarySpan(spanID)
@@ -215,6 +228,9 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Conte
 		}
 	}
 	opts = append(opts, tea.WithInput(in))
+	// store in fe to use in backgroundMsg processing
+	// which is used for terminal command
+	fe.stdin = in
 
 	if out != nil {
 		opts = append(opts, tea.WithOutput(out))
@@ -738,16 +754,18 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		cmd := msg.cmd
 
 		if msg.raw {
-			var restore func() error
+			var restore = func() error { return nil }
 			cmd = &wrapCommand{
 				ExecCommand: cmd,
 				before: func() error {
-					ttyFd := int(os.Stdout.Fd())
-					oldState, err := term.MakeRaw(ttyFd)
-					if err != nil {
-						return err
+					if stdin, ok := fe.stdin.(*os.File); ok {
+						oldState, err := term.MakeRaw(int(stdin.Fd()))
+						if err != nil {
+							return err
+						}
+						restore = func() error { return term.Restore(int(stdin.Fd()), oldState) }
 					}
-					restore = func() error { return term.Restore(ttyFd, oldState) }
+
 					return nil
 				},
 				after: func() error {

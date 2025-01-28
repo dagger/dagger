@@ -45,7 +45,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 		baseWithNewConfig := baseWithOldConfig.With(daggerExec("develop"))
 		confContents, err := baseWithNewConfig.File("dagger.json").Contents(ctx)
 		require.NoError(t, err)
-		var modCfg modules.ModuleConfig
+		var modCfg modules.ModuleConfigWithUserFields
 		require.NoError(t, json.Unmarshal([]byte(confContents), &modCfg))
 		require.Equal(t, "test", modCfg.Name)
 		require.Equal(t, "go", modCfg.SDK)
@@ -56,6 +56,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "dep", modCfg.Dependencies[0].Name)
 		require.Equal(t, ".", modCfg.Source)
 		require.NotEmpty(t, modCfg.EngineVersion) // version changes with any engine change
+		require.Empty(t, modCfg.Schema)
 
 		// verify develop didn't overwrite main.go
 		out, err := baseWithNewConfig.With(daggerCall("fn")).Stdout(ctx)
@@ -241,6 +242,36 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				})
 			})
 		})
+	})
+
+	t.Run("Allows $schema keyword", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		baseWithOldConfig := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithNewFile("/work/main.go", `package main
+			type Test struct {}
+
+			func (m *Test) Fn() string { return "wowzas" }
+			`,
+			).
+			WithNewFile("/work/dagger.json", `{
+				"$schema": "https://docs.dagger.io/reference/dagger.schema.json",
+				"name": "test",
+				"sdk": "go"
+			}`,
+			)
+
+		// verify develop didn't remove $schema field
+		baseWithNewConfig := baseWithOldConfig.With(daggerExec("develop"))
+		confContents, err := baseWithNewConfig.File("dagger.json").Contents(ctx)
+		require.NoError(t, err)
+		var modCfg modules.ModuleConfigWithUserFields
+		require.NoError(t, json.Unmarshal([]byte(confContents), &modCfg))
+		require.Equal(t, "test", modCfg.Name)
+		require.Equal(t, "https://docs.dagger.io/reference/dagger.schema.json", modCfg.Schema)
 	})
 }
 
@@ -812,7 +843,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "GitHub public",
 		gitTestRepoRef:           "github.com/dagger/dagger-test-modules",
-		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
+		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
 		expectedHost:             "github.com",
 		expectedBaseHTMLURL:      "github.com/dagger/dagger-test-modules",
 		expectedURLPathComponent: "tree",
@@ -821,7 +852,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "GitLab public",
 		gitTestRepoRef:           "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
-		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
+		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
 		expectedHost:             "gitlab.com",
 		expectedBaseHTMLURL:      "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
 		expectedURLPathComponent: "tree",
@@ -830,7 +861,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "BitBucket public",
 		gitTestRepoRef:           "bitbucket.org/dagger-modules/dagger-test-modules-public",
-		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
+		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
 		expectedHost:             "bitbucket.org",
 		expectedBaseHTMLURL:      "bitbucket.org/dagger-modules/dagger-test-modules-public",
 		expectedURLPathComponent: "src",
@@ -839,7 +870,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "Azure DevOps public",
 		gitTestRepoRef:           "dev.azure.com/daggere2e/public/_git/dagger-test-modules",
-		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
+		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
 		expectedHost:             "dev.azure.com",
 		expectedBaseHTMLURL:      "dev.azure.com/daggere2e/public/_git/dagger-test-modules",
 		expectedURLPathComponent: "commit",
@@ -853,7 +884,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "SSH Private GitLab",
 		gitTestRepoRef:           "ssh://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git",
-		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
+		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
 		expectedHost:             "gitlab.com",
 		expectedBaseHTMLURL:      "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private",
 		expectedURLPathComponent: "tree",
@@ -865,7 +896,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "SSH Private BitBucket",
 		gitTestRepoRef:           "git@bitbucket.org:dagger-modules/private-modules-test.git",
-		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
+		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
 		expectedHost:             "bitbucket.org",
 		expectedBaseHTMLURL:      "bitbucket.org/dagger-modules/private-modules-test",
 		expectedURLPathComponent: "src",
@@ -878,7 +909,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "SSH Public GitHub",
 		gitTestRepoRef:           "git@github.com:dagger/dagger-test-modules.git",
-		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
+		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
 		expectedHost:             "github.com",
 		expectedBaseHTMLURL:      "github.com/dagger/dagger-test-modules",
 		expectedURLPathComponent: "tree",

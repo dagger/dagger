@@ -440,14 +440,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 	srv.workerSourceManager.Register(gs)
 
-	bs, err := blob.NewSource(blob.Opt{
-		CacheAccessor: srv.workerCache,
-	})
-	if err != nil {
-		return nil, err
-	}
-	srv.workerSourceManager.Register(bs)
-
 	ls, err := local.NewSource(local.Opt{
 		CacheAccessor: srv.workerCache,
 	})
@@ -455,6 +447,14 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, err
 	}
 	srv.workerSourceManager.Register(ls)
+
+	bs, err := blob.NewSource(blob.Opt{
+		CacheAccessor: srv.workerCache,
+	})
+	if err != nil {
+		return nil, err
+	}
+	srv.workerSourceManager.Register(bs)
 
 	srv.worker = buildkit.NewWorker(&buildkit.NewWorkerOpts{
 		WorkerRoot:       srv.workerRootDir,
