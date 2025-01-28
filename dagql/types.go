@@ -99,6 +99,15 @@ type Object interface {
 	//
 	// Any Nullable values are automatically unwrapped.
 	Select(context.Context, *Server, Selector) (Typed, *call.ID, error)
+
+	// ReturnType gets the return type of the field selected by the given
+	// selector.
+	//
+	// The returned value is the raw Typed value returned from the field; it must
+	// be instantiated with a class for further selection.
+	//
+	// Any Nullable values are automatically unwrapped.
+	ReturnType(context.Context, Selector) (Typed, *call.ID, error)
 }
 
 // A type that has a callback attached that needs to always run before returned to a caller

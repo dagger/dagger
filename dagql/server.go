@@ -584,6 +584,33 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 	return assign(reflect.ValueOf(dest).Elem(), res)
 }
 
+func (s *Server) SelectID(ctx context.Context, self Object, sels ...Selector) (*call.ID, error) {
+	var res Typed = self
+	var id *call.ID
+	for i, sel := range sels {
+		var err error
+		res, id, err = self.ReturnType(ctx, sel)
+		if err != nil {
+			return nil, fmt.Errorf("select: %w", err)
+		}
+
+		if _, ok := s.ObjectType(res.Type().Name()); ok {
+			// if the result is an Object, set it as the next selection target, and
+			// assign res to the "hydrated" Object
+			self, err = s.toSelectable(id, res)
+			if err != nil {
+				return nil, err
+			}
+			res = self
+		} else if i+1 < len(sels) {
+			// if the result is not an object and there are further selections,
+			// that's a logic error.
+			return nil, fmt.Errorf("cannot sub-select %s", res.Type())
+		}
+	}
+	return id, nil
+}
+
 func LoadIDs[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]T, error) {
 	out := make([]T, len(ids))
 	eg := new(errgroup.Group)

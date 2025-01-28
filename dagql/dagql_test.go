@@ -136,6 +136,38 @@ func TestBasic(t *testing.T) {
 	assert.Equal(t, 8, res.Point.ShiftLeft.Neighbors[3].Y)
 }
 
+func TestSelectID(t *testing.T) {
+	ctx := context.Background()
+	srv := dagql.NewServer(Query{})
+	points.Install[Query](srv)
+
+	id, err := srv.SelectID(ctx, srv.Root(),
+		dagql.Selector{
+			Field: "point",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "x",
+					Value: dagql.NewInt(6),
+				},
+				{
+					Name:  "y",
+					Value: dagql.NewInt(7),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "shiftLeft",
+		},
+	)
+	require.NoError(t, err)
+
+	loaded, err := srv.Load(ctx, id)
+	require.NoError(t, err)
+	point := loaded.(dagql.Instance[*points.Point])
+	assert.Equal(t, point.Self.X, 5)
+	assert.Equal(t, point.Self.Y, 7)
+}
+
 func TestSelectArray(t *testing.T) {
 	ctx := context.Background()
 	srv := dagql.NewServer(Query{})
