@@ -1807,6 +1807,44 @@ func (s *containerSchema) asTarball(
 	parent dagql.Instance[*core.Container],
 	args containerAsTarballArgs,
 ) (inst dagql.Instance[*core.File], err error) {
+	if op := core.DagOpFromContext(ctx); op == nil {
+		fs, err := parent.Self.FSState()
+		if err != nil {
+			return inst, err
+		}
+
+		filename := "/container.tar"
+		st, err := core.DagLLB(ctx, s.srv,
+			[]dagql.Selector{
+				{
+					Field: "directory",
+				},
+				{
+					Field: "withFile",
+					Args: []dagql.NamedInput{
+						{
+							Name:  "path",
+							Value: dagql.String(filename),
+						},
+						{
+							Name:  "source",
+							Value: dagql.NewID[*core.File](dagql.CurrentID(ctx).WithMetadata("", true)),
+						},
+					},
+				},
+			}, []llb.State{fs},
+		)
+		if err != nil {
+			return inst, err
+		}
+
+		f, err := core.NewFileSt(ctx, parent.Self.Query, st, filename, parent.Self.Platform, parent.Self.Services)
+		if err != nil {
+			return inst, err
+		}
+		return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, f)
+	}
+
 	platformVariants, err := dagql.LoadIDs(ctx, s.srv, args.PlatformVariants)
 	if err != nil {
 		return inst, err
