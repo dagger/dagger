@@ -2,6 +2,8 @@ package schema
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -32,15 +34,20 @@ func (s agentSchema) Install() {
 // For each object type <Foo>, we inject <Foo>Agent, a wrapper type that adds agent-like methods
 // Essentially transforming every Dagger object into a LLM-powered robot
 func (s agentSchema) InstallObject(selfType dagql.ObjectType, install func(dagql.ObjectType)) {
-	slog.Info("[AGENT] middleware installObject(%s)", selfType.Typed().Type().Name())
+	selfTypeName := selfType.TypeName()
+	slog.Info("[agent middleware] installing original type: " + selfTypeName)
 	// Install the target type first, so we can reference it in our wrapper type
-	install(selfType)
-	// Create the wrapper type
-	class := dagql.NewClass[*core.Agent](dagql.ClassOpts[*core.Agent]{
+	if !s.isAgentMaterial(selfType) {
+		slog.Info("[agent middleware] not installing agent wrapper on special type " + selfTypeName)
+		return
+	}
+	slog.Info("[agent middleware] installing wrapper type: " + selfTypeName + "Agent")
+	defer slog.Info("[agent middleware] installed: " + selfTypeName + "Agent")
+	agentType := dagql.NewClass[*core.Agent](dagql.ClassOpts[*core.Agent]{
 		// Instantiate a throwaway agent instance from the type
 		Typed: core.NewAgent(s.srv, core.LlmConfig{}, nil, selfType),
 	})
-	class.Install(
+	agentType.Install(
 		dagql.Func("withPrompt", s.withPrompt).
 			Doc("add a prompt to the agent context").
 			ArgDoc("prompt", "The prompt. Example: \"make me a sandwich\""),
@@ -48,11 +55,31 @@ func (s agentSchema) InstallObject(selfType dagql.ObjectType, install func(dagql
 			Doc("run the agent"),
 		dagql.Func("history", s.history).
 			Doc("return the agent history: user prompts, agent replies, and tool calls"),
-		dagql.Func("as"+selfType.TypeName(), s.asObject).
-			Doc("convert the agent back to a "+selfType.TypeName()),
+		// FIXME
+		//		dagql.Func("as"+selfTypeName, s.asObject).
+		//			Doc("convert the agent back to a "+selfType.TypeName()),
+	)
+	selfType.Extend(
+		dagql.FieldSpec{
+			Name:        "asAgent",
+			Description: fmt.Sprintf("convert the agent back to a %s", selfTypeName),
+			Type:        agentType.Typed(),
+		},
+		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
+			return core.NewAgent(s.srv, s.llmConfig(), self, self.ObjectType()), nil
+		},
 	)
 	// Install the wrapper type
-	install(class)
+	install(selfType)
+	install(agentType)
+}
+
+// return true if a given object type should be upgraded with agent capabilities
+func (s agentSchema) isAgentMaterial(selfType dagql.ObjectType) bool {
+	if strings.HasPrefix(selfType.TypeName(), "_") {
+		return false
+	}
+	return true
 }
 
 func (s agentSchema) llmConfig() core.LlmConfig {
@@ -68,12 +95,6 @@ func (s agentSchema) llmConfig() core.LlmConfig {
 
 func (s *agentSchema) withLlm(ctx context.Context, parent *core.Query, args core.LlmConfig) (*core.Query, error) {
 	return parent.WithLlmConfig(args), nil
-}
-
-type asAgentArgs struct{}
-
-func (s *agentSchema) asAgent(ctx context.Context, parent dagql.Object, args asAgentArgs) (*core.Agent, error) {
-	return core.NewAgent(s.srv, s.llmConfig(), parent, parent.ObjectType()), nil
 }
 
 type agentWithPromptArgs struct {
