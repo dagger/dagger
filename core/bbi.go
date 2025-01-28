@@ -105,7 +105,8 @@ func (s *OneOneBBISession) Tools() []Tool {
 				// 2. MAKE THE CALL
 				val, id, err := s.self.Select(ctx, s.srv, sel)
 				if err != nil {
-					return nil, fmt.Errorf("select: %w", err)
+					// We always send the error back to the model
+					return fmt.Sprintf("error: %s", err), nil
 				}
 				// 3. CONVERT CALL OUTPUT (BODY -> BRAIN)
 				if field.Type.IsCompatible(s.self.Type()) {
