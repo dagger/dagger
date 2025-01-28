@@ -73,10 +73,9 @@ func (m *JavaSdk) Codegen(
 	return dag.
 		GeneratedCode(dag.Directory().WithDirectory("/", m.generateCode(ctx, mvnCtr, introspectionJSON))).
 		WithVCSGeneratedPaths([]string{
-			GenPath + "/**",
+			"target/generated-sources/**",
 		}).
 		WithVCSIgnoredPaths([]string{
-			GenPath,
 			"target",
 		}), nil
 }
