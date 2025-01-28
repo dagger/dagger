@@ -136,6 +136,64 @@ func TestBasic(t *testing.T) {
 	assert.Equal(t, 8, res.Point.ShiftLeft.Neighbors[3].Y)
 }
 
+func TestSelectArray(t *testing.T) {
+	ctx := context.Background()
+	srv := dagql.NewServer(Query{})
+	points.Install[Query](srv)
+
+	pointSel := dagql.Selector{
+		Field: "point",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "x",
+				Value: dagql.NewInt(6),
+			},
+			{
+				Name:  "y",
+				Value: dagql.NewInt(7),
+			},
+		},
+	}
+
+	t.Run("select all", func(t *testing.T) {
+		var points dagql.Array[dagql.Instance[*points.Point]]
+		assert.NilError(t, srv.Select(ctx, srv.Root(), &points,
+			pointSel,
+			dagql.Selector{
+				Field: "neighbors",
+			},
+		))
+		assert.Equal(t, points[0].Self.X, 5)
+		assert.Equal(t, points[0].Self.Y, 7)
+	})
+
+	t.Run("select all children", func(t *testing.T) {
+		var points dagql.Array[dagql.Instance[*points.Point]]
+		assert.ErrorContains(t, srv.Select(ctx, srv.Root(), &points,
+			pointSel,
+			dagql.Selector{
+				Field: "neighbors",
+			},
+			dagql.Selector{
+				Field: "x",
+			},
+		), "cannot sub-select enum")
+	})
+
+	t.Run("select nth", func(t *testing.T) {
+		var point dagql.Instance[*points.Point]
+		assert.NilError(t, srv.Select(ctx, srv.Root(), &point,
+			pointSel,
+			dagql.Selector{
+				Field: "neighbors",
+				Nth:   1,
+			},
+		))
+		assert.Equal(t, point.Self.X, 5)
+		assert.Equal(t, point.Self.Y, 7)
+	})
+}
+
 func TestNullableResults(t *testing.T) {
 	srv := dagql.NewServer(Query{})
 
