@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 
 	gqlgen "github.com/99designs/gqlgen/graphql"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 )
 
