@@ -797,8 +797,9 @@ type Fields[T Typed] []Field[T]
 // Install installs the field's Object type if needed, and installs all fields
 // into the type.
 func (fields Fields[T]) Install(server *Server) {
-	server.installLock.Lock()
-	defer server.installLock.Unlock()
+	// FIXME: shortcut to get our "agent" middleware to work
+	// server.installLock.Lock()
+	// defer server.installLock.Unlock()
 	var t T
 	typeName := t.Type().Name()
 	class := fields.findOrInitializeType(server, typeName)
