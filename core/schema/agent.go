@@ -66,26 +66,53 @@ func (s agentSchema) InstallObject(selfType dagql.ObjectType, install func(dagql
 			return a.WithPrompt(args["prompt"].(dagql.String).String()), nil
 		},
 	)
-	//	chainable := func(field dagql.Field) dagql.Field {
-	//		field.Spec.Type = agentType
-	//		return field
-	//	}
-	//	agentType.Install(
-	//		chainable(
-	//			dagql.Func("withPrompt", s.withPrompt).
-	//				Doc("add a prompt to the agent context").
-	//				ArgDoc("prompt", "The prompt. Example: \"make me a sandwich\""),
-	//		),
-	//		chainable(
-	//			dagql.Func("run", s.run).
-	//				Doc("run the agent"),
-	//		),
-	//		dagql.Func("history", s.history).
-	//			Doc("return the agent history: user prompts, agent replies, and tool calls"),
-	// FIXME
-	//		dagql.Func("as"+selfTypeName, s.asObject).
-	//			Doc("convert the agent back to a "+selfType.TypeName()),
-	//)
+	agentType.Extend(
+		dagql.FieldSpec{
+			Name:        "model",
+			Description: "return the model used by the agent",
+			Type:        dagql.String(""),
+		},
+		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
+			return dagql.NewString(s.llmConfig().Model), nil
+		},
+	)
+	agentType.Extend(
+		dagql.FieldSpec{
+			Name:        "run",
+			Description: "run the agent",
+			Type:        agentType.Typed(),
+		},
+		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
+			a := self.(dagql.Instance[*core.Agent]).Self
+			return a.Run(ctx, 0)
+		},
+	)
+	agentType.Extend(
+		dagql.FieldSpec{
+			Name:        "history",
+			Description: "return the agent history: user prompts, agent replies, and tool calls",
+			Type:        dagql.ArrayInput[dagql.String]{},
+		},
+		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
+			a := self.(dagql.Instance[*core.Agent]).Self
+			history, err := a.History()
+			if err != nil {
+				return nil, err
+			}
+			return dagql.NewStringArray(history...), nil
+		},
+	)
+	agentType.Extend(
+		dagql.FieldSpec{
+			Name:        "asObject",
+			Description: fmt.Sprintf("convert the agent back to a %s", selfTypeName),
+			Type:        selfType.Typed(),
+		},
+		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
+			a := self.(dagql.Instance[*core.Agent]).Self
+			return a.Self(), nil
+		},
+	)
 	selfType.Extend(
 		dagql.FieldSpec{
 			Name:        "asAgent",
