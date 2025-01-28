@@ -443,6 +443,8 @@ func (labels Labels) WithCILabels() Labels {
 		vendor = "Buildkite"
 	case os.Getenv("TEAMCITY_VERSION") != "":
 		vendor = "TeamCity"
+	case os.Getenv("TF_BUILD") != "":
+		vendor = "Azure"
 	}
 	if vendor != "" {
 		labels["dagger.io/ci.vendor"] = vendor
@@ -465,7 +467,8 @@ func (labels Labels) WithCILabels() Labels {
 func isCI() bool {
 	return os.Getenv("CI") != "" || // GitHub Actions, Travis CI, CircleCI, Cirrus CI, GitLab CI, AppVeyor, CodeShip, dsari
 		os.Getenv("BUILD_NUMBER") != "" || // Jenkins, TeamCity
-		os.Getenv("RUN_ID") != "" // TaskCluster, dsari
+		os.Getenv("RUN_ID") != "" || // TaskCluster, dsari
+		os.Getenv("TF_BUILD") != "" // Azure Pipelines
 }
 
 func (labels Labels) WithAnonymousGitLabels(workdir string) Labels {
