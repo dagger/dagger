@@ -48,6 +48,8 @@ type ObjectType interface {
 	// Unlike natively added fields, the extended func is limited to the external
 	// Object interface.
 	Extend(spec FieldSpec, fun FieldFunc)
+	// FieldSpec looks up a field spec by name.
+	FieldSpec(name string, views ...string) (FieldSpec, bool)
 }
 
 type IDType interface {
@@ -70,6 +72,7 @@ type IDable interface {
 type Object interface {
 	Typed
 	IDable
+
 	// ObjectType returns the type of the object.
 	ObjectType() ObjectType
 
