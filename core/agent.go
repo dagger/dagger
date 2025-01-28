@@ -91,6 +91,23 @@ func (a *Agent) Self(ctx context.Context) dagql.Object {
 	return a.self
 }
 
+// Generate a human-readable documentation of tools available to the model via the current BBI
+func (a *Agent) ToolsDoc(ctx context.Context) (string, error) {
+	bbi, err := OneOneBBI{}.NewSession(a.self, a.srv)
+	if err != nil {
+		return "", err
+	}
+	var result string
+	for _, tool := range bbi.Tools() {
+		schema, err := json.MarshalIndent(tool.Schema, "", "  ")
+		if err != nil {
+			return "", err
+		}
+		result = fmt.Sprintf("%s## %s\n\n%s\n\n%s\n\n", result, tool.Name, tool.Description, string(schema))
+	}
+	return result, nil
+}
+
 func (a *Agent) Run(
 	ctx context.Context,
 	maxLoops int,
