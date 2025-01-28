@@ -30,6 +30,7 @@ import (
 	"gotest.tools/v3/golden"
 
 	"dagger.io/dagger/telemetry"
+
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
@@ -262,7 +263,7 @@ var scrubs = []scrubber{
 	},
 	// Durations
 	{
-		regexp.MustCompile(`\b(\d+m)?\d+\.\d+s\b`),
+		regexp.MustCompile(`\b(\d+m)?\d+(\.\d+)?s\b`),
 		"1m2.345s",
 		"X.Xs",
 	},
