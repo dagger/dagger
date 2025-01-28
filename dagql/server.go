@@ -236,52 +236,53 @@ type Loadable interface {
 
 // InstallObject installs the given Object type into the schema.
 func (s *Server) InstallObject(class ObjectType) {
-	install := func(o ObjectType) {
-		s.installLock.Lock()
-		s.installObject(o)
-		s.installLock.Unlock()
-	}
-	if middleware := s.middleware; middleware != nil {
-		middleware.InstallObject(class, install)
-	} else {
-		install(class)
-	}
+	// FIXME: shortcut to get our "agent" middleware to work
+	// s.installLock.Lock()
+	// defer s.installLock.Unlock()
+	s.installObject(class)
 }
 
-func (s *Server) installObject(class ObjectType) {
-	s.objects[class.TypeName()] = class
-	if idType, hasID := class.IDType(); hasID {
-		s.scalars[idType.TypeName()] = idType
-		s.Root().ObjectType().Extend(
-			FieldSpec{
-				Name:           fmt.Sprintf("load%sFromID", class.TypeName()),
-				Description:    fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
-				Type:           class.Typed(),
-				ImpurityReason: "The given ID ultimately determines the purity of its result.",
-				Args: []InputSpec{
-					{
-						Name: "id",
-						Type: idType,
+func (s *Server) installObject(o ObjectType) {
+	install := func(class ObjectType) {
+		s.objects[class.TypeName()] = class
+		if idType, hasID := class.IDType(); hasID {
+			s.scalars[idType.TypeName()] = idType
+			s.Root().ObjectType().Extend(
+				FieldSpec{
+					Name:           fmt.Sprintf("load%sFromID", class.TypeName()),
+					Description:    fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
+					Type:           class.Typed(),
+					ImpurityReason: "The given ID ultimately determines the purity of its result.",
+					Args: []InputSpec{
+						{
+							Name: "id",
+							Type: idType,
+						},
 					},
 				},
-			},
-			func(ctx context.Context, self Object, args map[string]Input) (Typed, error) {
-				idable, ok := args["id"].(IDable)
-				if !ok {
-					return nil, fmt.Errorf("expected IDable, got %T", args["id"])
-				}
-				id := idable.ID()
-				if id.Type().ToAST().NamedType != class.TypeName() {
-					return nil, fmt.Errorf("expected ID of type %q, got %q", class.TypeName(), id.Type().ToAST().NamedType)
-				}
-				res, err := s.Load(ctx, idable.ID())
-				if err != nil {
-					return nil, fmt.Errorf("load: %w", err)
-				}
-				return res, nil
-			},
-			nil,
-		)
+				func(ctx context.Context, self Object, args map[string]Input) (Typed, error) {
+					idable, ok := args["id"].(IDable)
+					if !ok {
+						return nil, fmt.Errorf("expected IDable, got %T", args["id"])
+					}
+					id := idable.ID()
+					if id.Type().ToAST().NamedType != class.TypeName() {
+						return nil, fmt.Errorf("expected ID of type %q, got %q", class.TypeName(), id.Type().ToAST().NamedType)
+					}
+					res, err := s.Load(ctx, idable.ID())
+					if err != nil {
+						return nil, fmt.Errorf("load: %w", err)
+					}
+					return res, nil
+				},
+				nil,
+			)
+		}
+	}
+	if middleware := s.middleware; middleware != nil {
+		middleware.InstallObject(o, install)
+	} else {
+		install(o)
 	}
 }
 
