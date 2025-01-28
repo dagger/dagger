@@ -15,6 +15,7 @@ type agentSchema struct {
 var _ SchemaResolvers = &agentSchema{}
 
 func (s agentSchema) Install() {
+	slog := slog.With("schema", "agent")
 	// extend type Query { withLlm(): Query! }
 	dagql.Fields[*core.Query]{
 		dagql.Func("withLlm", s.withLlm).
@@ -23,6 +24,7 @@ func (s agentSchema) Install() {
 			ArgDoc("key", "The API key for the LLM endpoint"),
 	}.Install(s.srv)
 	// Install ourselves as middleware
+	slog.Info("[AGENT] installing middleware")
 	s.srv.SetMiddleware(s)
 }
 

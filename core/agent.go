@@ -16,8 +16,8 @@ import (
 // FIXME: move this to a client-side config instead, using session attachables
 type LlmConfig struct {
 	Model    string
-	Key      dagql.Optional[SecretID]
-	Endpoint string
+	Key      SecretID
+	Endpoint dagql.Optional[dagql.String]
 }
 
 func (*LlmConfig) Type() *ast.Type {
@@ -33,14 +33,11 @@ func (*LlmConfig) TypeDescription() string {
 
 // Retrieve the key plaintext
 func (cfg *LlmConfig) KeyPlaintext(ctx context.Context, srv *dagql.Server) (string, error) {
-	if !cfg.Key.Valid {
-		return "", nil
-	}
 	secrets, err := srv.Root().(dagql.Instance[*Query]).Self.Secrets(ctx)
 	if err != nil {
 		return "", err
 	}
-	b, ok := secrets.GetSecretPlaintext(cfg.Key.Value.ID().Digest())
+	b, ok := secrets.GetSecretPlaintext(cfg.Key.ID().Digest())
 	if !ok {
 		return "", fmt.Errorf("llm config: get key: secret look up failed")
 	}
@@ -215,8 +212,8 @@ func (a *Agent) sendQuery(ctx context.Context, tools []Tool) (res *openai.ChatCo
 	if key != "" {
 		opts = append(opts, option.WithAPIKey(key))
 	}
-	if a.llmConfig.Endpoint != "" {
-		opts = append(opts, option.WithBaseURL(a.llmConfig.Endpoint))
+	if a.llmConfig.Endpoint.Valid {
+		opts = append(opts, option.WithBaseURL(a.llmConfig.Endpoint.Value.String()))
 	}
 	return openai.NewClient(opts...).Chat.Completions.New(ctx, params)
 }
