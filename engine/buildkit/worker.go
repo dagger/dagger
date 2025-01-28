@@ -1,10 +1,12 @@
 package buildkit
 
 import (
+	"context"
 	"net/http"
 	"sync"
 
 	runc "github.com/containerd/go-runc"
+	"github.com/dagger/dagger/dagql"
 	"github.com/docker/docker/pkg/idtools"
 	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/executor"
@@ -45,6 +47,7 @@ type sharedWorkerState struct {
 	telemetryPubSub  http.Handler
 	bkSessionManager *bksession.Manager
 	sessionHandler   sessionHandler
+	dagqlServer      dagqlServer
 
 	runc             *runc.Runc
 	cgroupParent     string
@@ -66,6 +69,10 @@ type sessionHandler interface {
 	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *ExecutionMetadata)
 }
 
+type dagqlServer interface {
+	DagqlServer(ctx context.Context) (*dagql.Server, error)
+}
+
 type NewWorkerOpts struct {
 	WorkerRoot       string
 	ExecutorRoot     string
@@ -73,6 +80,7 @@ type NewWorkerOpts struct {
 	TelemetryPubSub  http.Handler
 	BKSessionManager *bksession.Manager
 	SessionHandler   sessionHandler
+	DagqlServer      dagqlServer
 
 	Runc                *runc.Runc
 	DefaultCgroupParent string
@@ -95,6 +103,7 @@ func NewWorker(opts *NewWorkerOpts) *Worker {
 		telemetryPubSub:  opts.TelemetryPubSub,
 		bkSessionManager: opts.BKSessionManager,
 		sessionHandler:   opts.SessionHandler,
+		dagqlServer:      opts.DagqlServer,
 
 		runc:             opts.Runc,
 		cgroupParent:     opts.DefaultCgroupParent,
@@ -117,6 +126,14 @@ func (w *Worker) Executor() executor.Executor {
 }
 
 func (w *Worker) ResolveOp(vtx solver.Vertex, s frontend.FrontendLLBBridge, sm *bksession.Manager) (solver.Op, error) {
+	customOp, ok, err := w.customOpFromVtx(vtx, s, sm)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		return customOp, nil
+	}
+
 	// if this is an ExecOp, pass in ourself as executor
 	if baseOp, ok := vtx.Sys().(*pb.Op); ok {
 		if execOp, ok := baseOp.Op.(*pb.Op_Exec); ok {
