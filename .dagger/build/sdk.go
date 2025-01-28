@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"runtime"
 
-	"github.com/dagger/dagger/engine/distconsts"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+
+	"github.com/dagger/dagger/engine/distconsts"
 
 	"github.com/dagger/dagger/.dagger/consts"
 	"github.com/dagger/dagger/.dagger/internal/dagger"
@@ -159,6 +160,53 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 		index:   index,
 		sdkDir:  sdkDir,
 		envName: distconsts.GoSDKManifestDigestEnvName,
+	}, nil
+}
+
+func (build *Builder) javaSDKContent(ctx context.Context) (*sdkContent, error) {
+	rootfs := dag.Directory().WithDirectory("/", build.source.Directory("sdk/java"), dagger.DirectoryWithDirectoryOpts{
+		Include: []string{
+			"dagger-codegen-maven-plugin",
+			"dagger-java-annotation-processor",
+			"dagger-java-sdk",
+			"dagger-java-samples",
+			"module.jar",
+			"LICENSE",
+			"README.md",
+			"runtime",
+			"pom.xml",
+			"dagger.json",
+		},
+		Exclude: []string{
+			"**/src/test/*",
+			".mvn",
+			"mvnw",
+			"mvnw.cmd",
+			"**/target/*",
+		},
+	})
+
+	sdkCtrTarball := dag.Container().
+		WithRootfs(rootfs).
+		WithFile("/codegen", build.CodegenBinary()).
+		AsTarball(dagger.ContainerAsTarballOpts{
+			ForcedCompression: dagger.ImageLayerCompressionZstd,
+		})
+	sdkDir := unpackTar(sdkCtrTarball)
+
+	var index ocispecs.Index
+	indexContents, err := sdkDir.File("index.json").Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err = json.Unmarshal([]byte(indexContents), &index); err != nil {
+		return nil, err
+	}
+
+	return &sdkContent{
+		index:   index,
+		sdkDir:  sdkDir,
+		envName: distconsts.JavaSDKManifestDigestEnvName,
 	}, nil
 }
 

@@ -30,6 +30,7 @@ const (
 	SDKTypescript SDK = "typescript"
 	SDKPHP        SDK = "php"
 	SDKElixir     SDK = "elixir"
+	SDKJava       SDK = "java"
 )
 
 // this list is to format the invalid sdk msg
@@ -40,6 +41,7 @@ var validInbuiltSDKs = []SDK{
 	SDKTypescript,
 	SDKPHP,
 	SDKElixir,
+	SDKJava,
 }
 
 // load the SDK implementation with the given name for the module at the given source dir + subpath.
@@ -125,7 +127,7 @@ func parseSDKName(sdkName string) (SDK, string, error) {
 	}
 
 	// inbuilt sdk go/python/typescript currently does not support selecting a specific version
-	if slices.Contains([]SDK{SDKGo, SDKPython, SDKTypescript}, SDK(sdkNameParsed)) && hasVersion {
+	if slices.Contains([]SDK{SDKGo, SDKPython, SDKTypescript, SDKJava}, SDK(sdkNameParsed)) && hasVersion {
 		return "", "", fmt.Errorf("the %s sdk does not currently support selecting a specific version", sdkNameParsed)
 	}
 
@@ -172,6 +174,8 @@ func (s *moduleSchema) builtinSDK(ctx context.Context, root *core.Query, sdkName
 		return s.loadBuiltinSDK(ctx, root, sdkName, digest.Digest(os.Getenv(distconsts.PythonSDKManifestDigestEnvName)))
 	case SDKTypescript:
 		return s.loadBuiltinSDK(ctx, root, sdkName, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
+	case SDKJava:
+		return s.loadBuiltinSDK(ctx, root, sdkName, digest.Digest(os.Getenv(distconsts.JavaSDKManifestDigestEnvName)))
 	case SDKPHP:
 		return s.sdkForModule(ctx, root, "github.com/dagger/dagger/sdk/php"+sdkSuffix, dagql.Instance[*core.ModuleSource]{})
 	case SDKElixir:

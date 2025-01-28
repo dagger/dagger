@@ -2,10 +2,10 @@ package io.dagger.codegen.introspection;
 
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
-import com.squareup.javapoet.ClassName;
-import com.squareup.javapoet.MethodSpec;
-import com.squareup.javapoet.ParameterSpec;
-import com.squareup.javapoet.TypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.ParameterSpec;
+import com.palantir.javapoet.TypeName;
 import java.util.List;
 import javax.lang.model.element.Modifier;
 
@@ -14,6 +14,7 @@ public class Helpers {
   private static final List<String> JAVA_KEYWORDS =
       List.of(
           "abstract",
+          "assert",
           "continue",
           "for",
           "new",
@@ -120,6 +121,8 @@ public class Helpers {
   static String formatName(Field field) {
     if ("Container".equals(field.getParentObject().getName()) && "import".equals(field.getName())) {
       return "importTarball";
+    } else if (JAVA_KEYWORDS.contains(field.getName())) {
+      return field.getName() + "_";
     } else {
       return field.getName();
     }
@@ -171,6 +174,9 @@ public class Helpers {
 
   /** Fix using '$' char in javadoc */
   static String escapeJavadoc(String str) {
+    if (str == null) {
+      return "";
+    }
     return str.replace("$", "$$").replace("&", "&amp;");
   }
 }

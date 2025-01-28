@@ -1,10 +1,6 @@
 package io.dagger.codegen.introspection;
 
-import com.squareup.javapoet.ClassName;
-import com.squareup.javapoet.FieldSpec;
-import com.squareup.javapoet.MethodSpec;
-import com.squareup.javapoet.ParameterizedTypeName;
-import com.squareup.javapoet.TypeSpec;
+import com.palantir.javapoet.*;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.util.HashMap;
