@@ -131,7 +131,7 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 		return nil, err
 	}
 	defer cancel(errors.New("solve done"))
-	ctx = withOutgoingContext(c, ctx)
+	ctx = withOutgoingContext(ctx)
 
 	recordOp := func(def *bksolverpb.Definition) error {
 		dag, err := DefToDAG(def)
@@ -208,7 +208,7 @@ func (c *Client) ResolveImageConfig(ctx context.Context, ref string, opt sourcer
 		return "", "", nil, err
 	}
 	defer cancel(errors.New("resolve image config done"))
-	ctx = withOutgoingContext(c, ctx)
+	ctx = withOutgoingContext(ctx)
 
 	imr := sourceresolver.NewImageMetaResolver(c.LLBBridge)
 	return imr.ResolveImageConfig(ctx, ref, opt)
@@ -220,7 +220,7 @@ func (c *Client) ResolveSourceMetadata(ctx context.Context, op *bksolverpb.Sourc
 		return nil, err
 	}
 	defer cancel(errors.New("resolve source metadata done"))
-	ctx = withOutgoingContext(c, ctx)
+	ctx = withOutgoingContext(ctx)
 
 	return c.LLBBridge.ResolveSourceMetadata(ctx, op, opt)
 }
@@ -255,7 +255,7 @@ func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (*Co
 		return nil, err
 	}
 	defer cancel(errors.New("new container done"))
-	ctx = withOutgoingContext(c, ctx)
+	ctx = withOutgoingContext(ctx)
 	ctrReq := bkcontainer.NewContainerRequest{
 		ContainerID: containerID,
 		Hostname:    req.Hostname,
@@ -794,12 +794,12 @@ func onceValueWithArg[A any, R any](f func(A) R) func(A) R {
 	}
 }
 
-func withOutgoingContext(c *Client, ctx context.Context) context.Context {
+func withOutgoingContext(ctx context.Context) context.Context {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if ok {
 		ctx = metadata.NewOutgoingContext(ctx, md)
 	}
-	ctx = buildkitTelemetryProvider(c, ctx)
+	ctx = buildkitTelemetryProvider(ctx)
 	return ctx
 }
 

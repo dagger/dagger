@@ -42,7 +42,7 @@ func SpanContextFromDescription(desc map[string]string) trace.SpanContext {
 // buildkitTelemetryContext returns a context with a wrapped span that has a
 // TracerProvider that can process spans produced by buildkit. This works,
 // because of how buildkit heavily relies on trace.SpanFromContext.
-func buildkitTelemetryProvider(client *Client, ctx context.Context) context.Context {
+func buildkitTelemetryProvider(ctx context.Context) context.Context {
 	if ctx == nil {
 		return nil
 	}
@@ -50,20 +50,18 @@ func buildkitTelemetryProvider(client *Client, ctx context.Context) context.Cont
 	return trace.ContextWithSpan(ctx, buildkitSpan{
 		Span: sp,
 		tp: &buildkitTraceProvider{
-			tp:     sp.TracerProvider(),
-			lp:     telemetry.LoggerProvider(ctx),
-			mp:     telemetry.MeterProvider(ctx),
-			client: client,
+			tp: sp.TracerProvider(),
+			lp: telemetry.LoggerProvider(ctx),
+			mp: telemetry.MeterProvider(ctx),
 		},
 	})
 }
 
 type buildkitTraceProvider struct {
 	embedded.TracerProvider
-	tp     trace.TracerProvider
-	lp     *sdklog.LoggerProvider
-	mp     *sdkmetric.MeterProvider
-	client *Client
+	tp trace.TracerProvider
+	lp *sdklog.LoggerProvider
+	mp *sdkmetric.MeterProvider
 }
 
 func (tp *buildkitTraceProvider) Tracer(name string, options ...trace.TracerOption) trace.Tracer {
