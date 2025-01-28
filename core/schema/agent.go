@@ -112,7 +112,7 @@ func (s agentSchema) InstallObject(selfType dagql.ObjectType, install func(dagql
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			a := self.(dagql.Instance[*core.Agent]).Self
-			return a.Self(), nil
+			return a.Self(ctx), nil
 		},
 	)
 	selfType.Extend(
@@ -186,5 +186,5 @@ func (s *agentSchema) history(ctx context.Context, parent *core.Agent, args agen
 type agentAsObjectArgs struct{}
 
 func (s *agentSchema) asObject(ctx context.Context, parent *core.Agent, args agentHistoryArgs) (dagql.Object, error) {
-	return parent.Self(), nil
+	return parent.Self(ctx), nil
 }

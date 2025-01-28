@@ -115,7 +115,9 @@ func (s OneOneBBISession) Tools() []Tool {
 					if err != nil {
 						return nil, fmt.Errorf("new object: %w", err)
 					}
+					_, span := Tracer(ctx).Start(ctx, fmt.Sprintf("[🤖] 📦 new state: %s", self.ID().Digest()))
 					s.self = self
+					span.End()
 					return "ok", nil
 				}
 				// Check if return type is an object by looking it up in the schema
