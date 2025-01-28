@@ -87,6 +87,14 @@ func (class Class[T]) Field(name string, views ...string) (Field[T], bool) {
 	return class.fieldLocked(name, views...)
 }
 
+func (class Class[T]) FieldSpec(name string, views ...string) (FieldSpec, bool) {
+	field, ok := class.Field(name, views...)
+	if !ok {
+		return FieldSpec{}, false
+	}
+	return field.Spec, true
+}
+
 func (class Class[T]) fieldLocked(name string, views ...string) (Field[T], bool) {
 	fields, ok := class.fields[name]
 	if !ok {
@@ -1199,7 +1207,13 @@ func setInputFields(specs InputSpecs, inputs map[string]Input, dest any) error {
 			return fmt.Errorf("missing required input: %q", spec.Name)
 		}
 		if err := assign(fieldV, val); err != nil {
-			return fmt.Errorf("assign %q: %w", spec.Name, err)
+			return fmt.Errorf("assign input %q (%T) as %+v (%T): %w",
+				spec.Name,
+				fieldV.Interface(),
+				val,
+				val,
+				err,
+			)
 		}
 	}
 	return nil
