@@ -39,7 +39,7 @@ func (cfg *LlmConfig) KeyPlaintext(ctx context.Context, srv *dagql.Server) (stri
 	}
 	b, ok := secrets.GetSecretPlaintext(cfg.Key.ID().Digest())
 	if !ok {
-		return "", fmt.Errorf("llm config: get key: secret look up failed")
+		return "", fmt.Errorf("llm config: get key: secret look up failed: %s", cfg.Key.Display())
 	}
 	return string(b), nil
 }
