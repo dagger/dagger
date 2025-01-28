@@ -10,8 +10,8 @@ import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
-/** Dagger Java Module main object */
-@Object
+/** DaggerModule main object */
+@Object(value = "dagger-module-name")
 public class DaggerModule extends Base {
   public DaggerModule() {
     super();
