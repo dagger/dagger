@@ -15,29 +15,6 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-type SDKConfig struct {
-	Source string            `json:"source"`
-	Pin    string            `json:"pin"`
-	Env    map[string]string `json:"env"`
-}
-
-func (*SDKConfig) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "CoreSDKStruct",
-		NonNull:   false,
-	}
-}
-
-func (*SDKConfig) TypeDescription() string {
-	return "The sdk struct configuration of dependency of a module."
-}
-
-// TODO(rajatjindal): fix clone method. placeholder right now
-func (dep SDKConfig) Clone() *SDKConfig {
-	cp := dep
-	return &cp
-}
-
 type Module struct {
 	Query *Query
 
@@ -87,6 +64,29 @@ type Module struct {
 
 	// InstanceID is the ID of the initialized module.
 	InstanceID *call.ID
+}
+
+type SDKConfig struct {
+	Source string            `field:"true" name:"source" doc:"Source of the sdk"`
+	Pin    string            `field:"true" name:"pin" doc:"Commit sha pinned for the SDK"`
+	Env    map[string]string `field:"true" name:"env" doc:"Environment variables used in codegen and runtime. e.g. GOPRIVATE"`
+}
+
+func (*SDKConfig) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "SDKConfig",
+		NonNull:   false,
+	}
+}
+
+func (*SDKConfig) TypeDescription() string {
+	return "The sdk struct configuration of dependency of a module."
+}
+
+// TODO(rajatjindal): fix clone method. placeholder right now
+func (dep SDKConfig) Clone() *SDKConfig {
+	cp := dep
+	return &cp
 }
 
 func (*Module) Type() *ast.Type {

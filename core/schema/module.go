@@ -1055,8 +1055,7 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 
 	if src.Self.WithInitConfig != nil &&
 		src.Self.WithInitConfig.Merge &&
-		// THIS WOULD PROBABLY CHANGE TO comparing struct?
-		mod.SDKConfig != nil && mod.SDKConfig.Source != string(SDKGo) {
+		mod.SDKConfig != nil || mod.SDKConfig.Source != string(SDKGo) {
 		return fmt.Errorf("merge is only supported for Go SDKs")
 	}
 
@@ -1235,7 +1234,6 @@ func (s *moduleSchema) updateDaggerConfig(
 	modCfg := &modCfgWithUserFields.ModuleConfig
 
 	modCfg.Name = mod.OriginalName
-	//CHANGE THIS TO STRUCT AS WELL
 	modCfg.SDK = &modules.SDK{
 		Source: mod.SDKConfig.Source,
 	}
