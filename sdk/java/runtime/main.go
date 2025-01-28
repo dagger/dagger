@@ -68,7 +68,10 @@ func (m *JavaSdk) Codegen(
 	if err := m.setModuleConfig(ctx, modSource); err != nil {
 		return nil, err
 	}
-	mvnCtr := m.codegenBase(ctx, modSource, introspectionJSON)
+	mvnCtr, err := m.codegenBase(ctx, modSource, introspectionJSON)
+	if err != nil {
+		return nil, err
+	}
 
 	return dag.
 		GeneratedCode(dag.Directory().WithDirectory("/", m.generateCode(ctx, mvnCtr, introspectionJSON))).
@@ -87,8 +90,8 @@ func (m *JavaSdk) codegenBase(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
-) *dagger.Container {
-	return m.
+) (*dagger.Container, error) {
+	ctr := m.
 		// We need maven to build the user module
 		mvnContainer(ctx).
 		// Mount the maven folder where we installed all the generated dependencies
@@ -96,9 +99,9 @@ func (m *JavaSdk) codegenBase(
 		// Copy the user module directory under /src
 		WithDirectory(ModSourceDirPath, modSource.ContextDirectory()).
 		// Set the working directory to the one containing the sources to build, not just the module root
-		WithWorkdir(m.moduleConfig.modulePath()).
-		// Add a default template if there's no existing user code
-		With(m.addTemplate(ctx))
+		WithWorkdir(m.moduleConfig.modulePath())
+	// Add a default template if there's no existing user code
+	return m.addTemplate(ctx, ctr)
 }
 
 // buildJavaDependencies builds and install the needed dependencies
@@ -140,40 +143,49 @@ func (m *JavaSdk) buildJavaDependencies(
 // addTemplate creates all the necessary files to start a new Java module
 func (m *JavaSdk) addTemplate(
 	ctx context.Context,
-) dagger.WithContainerFunc {
-	return func(ctr *dagger.Container) *dagger.Container {
-		name := m.moduleConfig.name
-		snakeName := strcase.ToSnake(name)
-		camelName := strcase.ToCamel(name)
+	ctr *dagger.Container,
+) (*dagger.Container, error) {
+	name := m.moduleConfig.name
+	snakeName := strcase.ToSnake(name)
+	camelName := strcase.ToCamel(name)
 
-		// Check if there's a pom.xml inside the module path. If a file exist, no need to add the templates
-		if _, err := ctr.File(filepath.Join(m.moduleConfig.modulePath(), "pom.xml")).Name(ctx); err == nil {
-			return ctr
-		}
-
-		absPath := func(rel ...string) string {
-			return filepath.Join(append([]string{m.moduleConfig.modulePath()}, rel...)...)
-		}
-
-		ctr = ctr.
-			// Get the files from the template
-			WithDirectory(
-				m.moduleConfig.modulePath(),
-				dag.CurrentModule().Source().Directory("template"),
-				dagger.ContainerWithDirectoryOpts{Include: []string{
-					"pom.xml",
-					"**/*.java",
-				}}).
-			// And rename everything so that they match the dagger module name
-			WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/dagger-module/%s/g", snakeName), absPath("pom.xml")}).
-			WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/DaggerModule/%s/g", camelName), absPath("src", "main", "java", "io", "dagger", "sample", "module", "DaggerModule.java")}).
-			WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/dagger-module-name/%s/g", name), absPath("src", "main", "java", "io", "dagger", "sample", "module", "DaggerModule.java")}).
-			WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/DaggerModule/%s/g", camelName), absPath("src", "main", "java", "io", "dagger", "sample", "module", "package-info.java")}).
-			WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/dagger-module-name/%s/g", name), absPath("src", "main", "java", "io", "dagger", "sample", "module", "package-info.java")}).
-			WithExec([]string{"mv", absPath("src", "main", "java", "io", "dagger", "sample", "module", "DaggerModule.java"), absPath("src", "main", "java", "io", "dagger", "sample", "module", fmt.Sprintf("%s.java", camelName))})
-
-		return ctr
+	// Check if there's a pom.xml inside the module path. If a file exist, no need to add the templates
+	if _, err := ctr.File(filepath.Join(m.moduleConfig.modulePath(), "pom.xml")).Name(ctx); err == nil {
+		return ctr, nil
 	}
+
+	absPath := func(rel ...string) string {
+		return filepath.Join(append([]string{m.moduleConfig.modulePath()}, rel...)...)
+	}
+
+	// Edit template content so that they match the dagger module name
+	templateDir := dag.CurrentModule().Source().Directory("template")
+	pomXML, err := m.replace(ctx, templateDir,
+		"pom.xml",
+		repl{"dagger-module", snakeName})
+	if err != nil {
+		return ctr, fmt.Errorf("could not add template: %w", err)
+	}
+	daggerModuleJava, err := m.replace(ctx, templateDir,
+		filepath.Join("src", "main", "java", "io", "dagger", "sample", "module", "DaggerModule.java"),
+		repl{"DaggerModule", camelName}, repl{"dagger-module-name", name})
+	if err != nil {
+		return ctr, fmt.Errorf("could not add template: %w", err)
+	}
+	packageInfoJava, err := m.replace(ctx, templateDir,
+		filepath.Join("src", "main", "java", "io", "dagger", "sample", "module", "package-info.java"),
+		repl{"DaggerModule", camelName}, repl{"dagger-module-name", name})
+	if err != nil {
+		return ctr, fmt.Errorf("could not add template: %w", err)
+	}
+
+	// And copy them to the container, renamed to match the dagger module name
+	ctr = ctr.
+		WithNewFile(absPath("pom.xml"), pomXML).
+		WithNewFile(absPath("src", "main", "java", "io", "dagger", "sample", "module", fmt.Sprintf("%s.java", camelName)), daggerModuleJava).
+		WithNewFile(absPath("src", "main", "java", "io", "dagger", "sample", "module", "package-info.java"), packageInfoJava)
+
+	return ctr, nil
 }
 
 // generateCode builds and returns the generated source code and java classes
@@ -221,7 +233,10 @@ func (m *JavaSdk) ModuleRuntime(
 	}
 
 	// Get a container with the user module sources and the SDK packages built and installed
-	mvnCtr := m.codegenBase(ctx, modSource, introspectionJSON)
+	mvnCtr, err := m.codegenBase(ctx, modSource, introspectionJSON)
+	if err != nil {
+		return nil, err
+	}
 	// Build the executable jar
 	jar, err := m.buildJar(ctx, mvnCtr)
 	if err != nil {
@@ -306,4 +321,25 @@ func (m *JavaSdk) setModuleConfig(ctx context.Context, modSource *dagger.ModuleS
 	}
 
 	return nil
+}
+
+type repl struct {
+	oldString string
+	newString string
+}
+
+func (m *JavaSdk) replace(
+	ctx context.Context,
+	dir *dagger.Directory,
+	path string,
+	changes ...repl,
+) (string, error) {
+	content, err := dir.File(path).Contents(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, change := range changes {
+		content = strings.ReplaceAll(content, change.oldString, change.newString)
+	}
+	return content, nil
 }
