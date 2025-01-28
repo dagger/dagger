@@ -1,0 +1,85 @@
+---
+slug: /api/dagger-schema-reference
+---
+
+# dagger.json Schema Reference
+
+The `dagger.json` file defines the configuration for a Dagger module. Below is a detailed description of each field, including its type, description, and whether it is required.
+
+**Note**: The JSON schema file for configuring your IDE is available at [this URL](https://docs.dagger.io/reference/dagger.schema.json).
+
+## Main Configuration
+
+- **`name`** (Required) — The name of the module.
+
+  **Type:** string
+
+- **`engineVersion`** (Required) — The version of the engine this module was last updated with.
+
+  **Type:** string
+
+- **`sdk`** (Optional) — The SDK this module uses.
+
+  **Type:** string
+
+- **`include`** (Optional) — Paths to explicitly include from the module, relative to the configuration file.
+
+  **Type:** list(string)
+
+- **`exclude`** (Optional) — Paths to explicitly exclude from the module, relative to the configuration file.
+
+  **Type:** list(string)
+
+- **`dependencies`** (Optional) — The modules this module depends on.
+
+  **Type:** list([dependency](#dependency))
+
+- **`source`** (Optional) — The path, relative to this config file, to the subdirectory containing the module's implementation source code.
+
+  **Type:** string
+
+- **`views`** (Optional) — Named views defined for this module, which are sets of directory filters that can be applied to directory arguments provided to functions.
+
+  **Type:** list([view](#view))
+
+- **`codegen`** (Optional) — Code generation configuration for this module.
+
+  **Type:** [codegen](#codegen)
+
+## Nested Blocks
+
+### `dependency`
+
+A `dependency` block supports the following:
+
+- **`name`** (Required) — The name to use for this dependency. Defaults to the dependency module's name but can be overridden.
+
+  **Type:** string
+
+- **`source`** (Required) — The source reference of the module dependency.
+
+  **Type:** string
+
+- **`pin`** (Optional) — The pinned version of the module dependency.
+
+  **Type:** string
+
+### `view`
+
+A `view` block supports the following:
+
+- **`name`** (Required) — The name of the view.
+
+  **Type:** string
+
+- **`patterns`** (Optional) — A list of patterns for directory filters.
+
+  **Type:** list(string)
+
+### `codegen`
+
+A `codegen` block supports the following:
+
+- **`automaticGitignore`** (Optional) — Whether to automatically generate a `.gitignore` file for this module.
+
+  **Type:** boolean
