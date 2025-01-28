@@ -74,10 +74,11 @@ func (m *JavaSdk) Codegen(
 	return dag.
 		GeneratedCode(dag.Directory().WithDirectory("/", m.generateCode(ctx, mvnCtr, introspectionJSON))).
 		WithVCSGeneratedPaths([]string{
-			GenPath + "/**",
+			"target/generated-sources/dagger/**",
+			"target/generated-sources/entrypoint/**",
+			"target/generated-sources/sdk/**",
 		}).
 		WithVCSIgnoredPaths([]string{
-			GenPath,
 			"target",
 		}), nil
 }
