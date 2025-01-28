@@ -187,6 +187,9 @@ def generate(schema: GraphQLSchema) -> Iterator[str]:
         import warnings  # noqa: F401
         from collections.abc import Callable
         from dataclasses import dataclass
+        import opentelemetry.trace
+        import opentelemetry.context
+        from opentelemetry.trace.span import TraceState
 
         from typing_extensions import Self
 
@@ -792,8 +795,62 @@ class Object(ObjectHandler[GraphQLObjectType]):
     def render_body(self, t: GraphQLObjectType) -> Iterator[str]:
         yield super().render_body(t)
 
+        self_name = self.type_name(t)
+
+        if self_name == "Span":
+            yield textwrap.dedent(
+                f'''
+                def __init__(self, *args, **kwargs):
+                    super().__init__(*args, **kwargs)
+                    self.token = None
+
+                async def __aenter__(self) -> "{self_name}":
+                    # Fetch the actual span ID created by the engine
+                    span_id_hex = (
+                        await self._select("query", [])
+                        .select("Query", "spanContext", [])
+                        .select("SpanContext", "spanId", [])
+                        .execute(str)
+                    )
+                    span_id = int(span_id_hex, 16)
+
+                    # Get the current span context
+                    current_span = opentelemetry.trace.get_current_span()
+                    current_span_context = current_span.get_span_context()
+
+                    # Extract trace ID and other fields from the current span context
+                    trace_id = current_span_context.trace_id
+                    trace_flags = current_span_context.trace_flags
+                    trace_state = current_span_context.trace_state
+
+                    # Construct the new SpanContext
+                    new_span_context = opentelemetry.trace.SpanContext(
+                        trace_id=trace_id,
+                        span_id=span_id,
+                        is_remote=True,
+                        trace_flags=trace_flags,
+                        trace_state=trace_state or TraceState(),
+                    )
+
+                    # Create a new context with the new SpanContext
+                    new_context = opentelemetry.trace.set_span_in_context(opentelemetry.trace.NonRecordingSpan(new_span_context))
+
+                    # Attach the new context and save the token for detachment
+                    self.token = opentelemetry.context.attach(new_context)
+                    return self
+
+                async def __aexit__(self, exception_type, exception_value, exception_traceback) -> Void | None:
+                    error: Error | None = None
+                    if exception_type:
+                        error = dag.error(f"{{exception_type.__name__}}: {{exception_value}}")
+                    void = await self.end(error=error)
+                    if self.token:
+                        opentelemetry.context.detach(self.token)
+                    return void
+                '''  # noqa: E501
+            )
+
         if is_self_chainable(t):
-            self_name = self.type_name(t)
             yield textwrap.dedent(
                 f'''
                 def with_(self, cb: Callable[["{self_name}"], "{self_name}"]) -> "{self_name}":

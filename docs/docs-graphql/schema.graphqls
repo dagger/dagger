@@ -2873,6 +2873,12 @@ type Query {
   """Load a SourceMap from its ID."""
   loadSourceMapFromID(id: SourceMapID!): SourceMap!
 
+  """Load a SpanContext from its ID."""
+  loadSpanContextFromID(id: SpanContextID!): SpanContext!
+
+  """Load a Span from its ID."""
+  loadSpanFromID(id: SpanID!): Span!
+
   """Load a Terminal from its ID."""
   loadTerminalFromID(id: TerminalID!): Terminal!
 
@@ -2943,6 +2949,10 @@ type Query {
     """The line number within the filename."""
     line: Int!
   ): SourceMap!
+
+  """Create a new OpenTelemetry span."""
+  span(name: String!): Span!
+  spanContext: SpanContext!
 
   """Create a new TypeDef."""
   typeDef: TypeDef!
@@ -3126,6 +3136,34 @@ type SourceMap {
 The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
 """
 scalar SourceMapID
+
+"""An OpenTelemetry span."""
+type Span {
+  """End the OpenTelemetry span, with an optional error."""
+  end(error: ErrorID): Void
+
+  """A unique identifier for this Span."""
+  id: SpanID!
+  query: Query!
+}
+
+type SpanContext {
+  """A unique identifier for this SpanContext."""
+  id: SpanContextID!
+  remote: Boolean!
+  spanId: String!
+  traceId: String!
+}
+
+"""
+The `SpanContextID` scalar type represents an identifier for an object of type SpanContext.
+"""
+scalar SpanContextID
+
+"""
+The `SpanID` scalar type represents an identifier for an object of type Span.
+"""
+scalar SpanID
 
 """An interactive terminal that clients can connect to."""
 type Terminal {

@@ -732,6 +732,30 @@ defmodule Dagger.Client do
     }
   end
 
+  @doc "Load a SpanContext from its ID."
+  @spec load_span_context_from_id(t(), Dagger.SpanContextID.t()) :: Dagger.SpanContext.t()
+  def load_span_context_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadSpanContextFromID") |> QB.put_arg("id", id)
+
+    %Dagger.SpanContext{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc "Load a Span from its ID."
+  @spec load_span_from_id(t(), Dagger.SpanID.t()) :: Dagger.Span.t()
+  def load_span_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadSpanFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Span{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
   @doc "Load a Terminal from its ID."
   @spec load_terminal_from_id(t(), Dagger.TerminalID.t()) :: Dagger.Terminal.t()
   def load_terminal_from_id(%__MODULE__{} = client, id) do
@@ -847,6 +871,29 @@ defmodule Dagger.Client do
       |> QB.put_arg("column", column)
 
     %Dagger.SourceMap{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc "Create a new OpenTelemetry span."
+  @spec span(t(), String.t()) :: Dagger.Span.t()
+  def span(%__MODULE__{} = client, name) do
+    query_builder =
+      client.query_builder |> QB.select("span") |> QB.put_arg("name", name)
+
+    %Dagger.Span{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @spec span_context(t()) :: Dagger.SpanContext.t()
+  def span_context(%__MODULE__{} = client) do
+    query_builder =
+      client.query_builder |> QB.select("spanContext")
+
+    %Dagger.SpanContext{
       query_builder: query_builder,
       client: client.client
     }

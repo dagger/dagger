@@ -601,6 +601,26 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a SpanContext from its ID.
+     */
+    public function loadSpanContextFromID(SpanContextId|SpanContext $id): SpanContext
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSpanContextFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\SpanContext($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Span from its ID.
+     */
+    public function loadSpanFromID(SpanId|Span $id): Span
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSpanFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Span($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Terminal from its ID.
      */
     public function loadTerminalFromID(TerminalId|Terminal $id): Terminal
@@ -698,6 +718,22 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder->setArgument('line', $line);
         $innerQueryBuilder->setArgument('column', $column);
         return new \Dagger\SourceMap($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Create a new OpenTelemetry span.
+     */
+    public function span(string $name): Span
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('span');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Span($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    public function spanContext(): SpanContext
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('spanContext');
+        return new \Dagger\SpanContext($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
