@@ -1378,7 +1378,9 @@ func (s *moduleSchema) collectCallerLocalDeps(
 				modCfg.Name = src.WithName
 			}
 			if src.WithSDK != "" {
-				modCfg.SDK = src.WithSDK
+				modCfg.SDK = &modules.SDK{
+					Source: src.WithSDK,
+				}
 			}
 			for _, dep := range src.WithDependencies {
 				refString, err := dep.Self.Source.Self.RefString()
@@ -1434,17 +1436,18 @@ func (s *moduleSchema) collectCallerLocalDeps(
 			}
 		}
 
-		if modCfg.SDK == "" {
+		if modCfg.SDK == nil || modCfg.SDK.Source == "" {
 			return localDep, nil
 		}
 
-		localDep.sdkKey = modCfg.SDK
+		localDep.sdkKey = modCfg.SDK.Source
 
-		localDep.sdk, err = s.builtinSDK(ctx, query, modCfg.SDK)
+		// should change this to accept sdk struct
+		localDep.sdk, err = s.builtinSDK(ctx, query, &core.SDKConfig{Source: modCfg.SDK.Source})
 		switch {
 		case err == nil:
 		case errors.Is(err, errUnknownBuiltinSDK):
-			parsed := parseRefString(ctx, bk, modCfg.SDK)
+			parsed := parseRefString(ctx, bk, modCfg.SDK.Source)
 			switch parsed.kind {
 			case core.ModuleSourceKindLocal:
 				// SDK is a local custom one, it needs to be included
@@ -1455,7 +1458,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 				// nor a valid sdk available on local path.
 				_, err = bk.StatCallerHostPath(ctx, sdkPath, true)
 				if err != nil {
-					return nil, getInvalidBuiltinSDKError(modCfg.SDK)
+					return nil, getInvalidBuiltinSDKError(modCfg.SDK.Source)
 				}
 
 				err = s.collectCallerLocalDeps(ctx, query, contextAbsPath, sdkPath, false, src, collectedDeps)
@@ -1502,7 +1505,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 				localDep.sdkKey = sdkPath
 
 			case core.ModuleSourceKindGit:
-				localDep.sdk, err = s.sdkForModule(ctx, query, modCfg.SDK, dagql.Instance[*core.ModuleSource]{})
+				localDep.sdk, err = s.sdkForModule(ctx, query, &core.SDKConfig{Source: modCfg.SDK.Source}, dagql.Instance[*core.ModuleSource]{})
 				if err != nil {
 					return nil, fmt.Errorf("failed to get git module sdk: %w", err)
 				}

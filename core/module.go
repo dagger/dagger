@@ -35,7 +35,7 @@ type Module struct {
 	Description string `field:"true" doc:"The doc string of the module, if any"`
 
 	// The module's SDKConfig, as set in the module config file
-	SDKConfig string `field:"true" name:"sdk" doc:"The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
+	SDKConfig *SDKConfig `field:"true" name:"sdk" doc:"The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
 
 	GeneratedContextDirectory dagql.Instance[*Directory] `field:"true" name:"generatedContextDirectory" doc:"The module source's context plus any configuration and source files created by codegen."`
 
@@ -64,6 +64,29 @@ type Module struct {
 
 	// InstanceID is the ID of the initialized module.
 	InstanceID *call.ID
+}
+
+type SDKConfig struct {
+	Source string            `field:"true" name:"source" doc:"Source of the sdk"`
+	Pin    string            `field:"true" name:"pin" doc:"Commit sha pinned for the SDK"`
+	Env    map[string]string `field:"true" name:"env" doc:"Environment variables used in codegen and runtime. e.g. GOPRIVATE"`
+}
+
+func (*SDKConfig) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "SDKConfig",
+		NonNull:   false,
+	}
+}
+
+func (*SDKConfig) TypeDescription() string {
+	return "The sdk struct configuration of dependency of a module."
+}
+
+// TODO(rajatjindal): fix clone method. placeholder right now
+func (dep SDKConfig) Clone() *SDKConfig {
+	cp := dep
+	return &cp
 }
 
 func (*Module) Type() *ast.Type {
