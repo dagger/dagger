@@ -70,6 +70,21 @@ func (s agentSchema) InstallObject(selfType dagql.ObjectType, install func(dagql
 	)
 	agentType.Extend(
 		dagql.FieldSpec{
+			Name:        "tools",
+			Description: "dump the tools available to the model",
+			Type:        dagql.String(""),
+		},
+		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
+			a := self.(dagql.Instance[*core.Agent]).Self
+			tools, err := a.ToolsDoc(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return dagql.NewString(tools), nil
+		},
+	)
+	agentType.Extend(
+		dagql.FieldSpec{
 			Name:        "model",
 			Description: "return the model used by the agent",
 			Type:        dagql.String(""),
