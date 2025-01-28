@@ -58,5 +58,12 @@ describe("case convertor", function () {
       const result = convertToPascalCase("123hello-world_here")
       assert.equal(result, "123HelloWorldHere")
     })
+
+    it("should correctly handle multiple uppercase words", function () {
+      // This will still not work in module because the generated class name would be `IntrospectionJson`
+      // See https://github.com/dagger/dagger/issues/7941
+      const result = convertToPascalCase("introspectionJSON")
+      assert.equal(result, "IntrospectionJSON")
+    })
   })
 })
