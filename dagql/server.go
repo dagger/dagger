@@ -1018,7 +1018,7 @@ func setInputObjectFields(obj any, vals map[string]any) error {
 		}
 		if input != nil { // will be nil for optional fields
 			if err := assignInputField(fieldV, input); err != nil {
-				return fmt.Errorf("assign %q: %w", fieldT.Name, err)
+				return fmt.Errorf("assign input object %q as %+v (%T): %w", fieldT.Name, input, input, err)
 			}
 		}
 	}
