@@ -15,15 +15,16 @@ type BKNetworkSampler interface {
 }
 
 type netNSSampler struct {
-	netNS       BKNetworkSampler
-	meter       metric.Meter
-	commonAttrs attribute.Set
-	rxBytes     metric.Int64Gauge
-	rxPackets   metric.Int64Gauge
-	rxDropped   metric.Int64Gauge
-	txBytes     metric.Int64Gauge
-	txPackets   metric.Int64Gauge
-	txDropped   metric.Int64Gauge
+	netNS          BKNetworkSampler
+	meter          metric.Meter
+	commonAttrs    attribute.Set
+	baselineSample *resourcestypes.NetworkSample
+	rxBytes        metric.Int64Gauge
+	rxPackets      metric.Int64Gauge
+	rxDropped      metric.Int64Gauge
+	txBytes        metric.Int64Gauge
+	txPackets      metric.Int64Gauge
+	txDropped      metric.Int64Gauge
 }
 
 type netNSSample struct {
@@ -86,6 +87,11 @@ func newNetNSSampler(netNS BKNetworkSampler, meter metric.Meter, commonAttrs att
 		return nil, fmt.Errorf("failed to create tx packets gauge: %w", err)
 	}
 
+	s.baselineSample, err = s.netNS.Sample()
+	if err != nil {
+		return nil, fmt.Errorf("failed to baseline sample bk netNS: %w", err)
+	}
+
 	return s, nil
 }
 
@@ -104,12 +110,12 @@ func (s *netNSSampler) sample(ctx context.Context) error {
 		return fmt.Errorf("failed to sample bk netNS: %w", err)
 	}
 
-	sample.rxBytes.add(bkSample.RxBytes)
-	sample.rxPackets.add(bkSample.RxPackets)
-	sample.rxDropped.add(bkSample.RxDropped)
-	sample.txBytes.add(bkSample.TxBytes)
-	sample.txPackets.add(bkSample.TxPackets)
-	sample.txDropped.add(bkSample.TxDropped)
+	sample.rxBytes.add(bkSample.RxBytes - s.baselineSample.RxBytes)
+	sample.rxPackets.add(bkSample.RxPackets - s.baselineSample.RxPackets)
+	sample.rxDropped.add(bkSample.RxDropped - s.baselineSample.RxDropped)
+	sample.txBytes.add(bkSample.TxBytes - s.baselineSample.TxBytes)
+	sample.txPackets.add(bkSample.TxPackets - s.baselineSample.TxPackets)
+	sample.txDropped.add(bkSample.TxDropped - s.baselineSample.TxDropped)
 
 	sample.rxBytes.record(ctx)
 	sample.rxDropped.record(ctx)
