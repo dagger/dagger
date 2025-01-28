@@ -238,7 +238,7 @@ type Loadable interface {
 func (s *Server) InstallObject(class ObjectType) {
 	install := func(o ObjectType) {
 		s.installLock.Lock()
-		s.installObject(class)
+		s.installObject(o)
 		s.installLock.Unlock()
 	}
 	if middleware := s.middleware; middleware != nil {
