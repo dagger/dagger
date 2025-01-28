@@ -52,6 +52,65 @@ func (s agentSchema) InstallObject(selfType dagql.ObjectType, install func(dagql
 	})
 	agentType.Extend(
 		dagql.FieldSpec{
+			Name:        "lastReply",
+			Description: "return the agent's last reply, or an empty string",
+			Type:        dagql.String(""),
+		},
+		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
+			a := self.(dagql.Instance[*core.Agent]).Self
+			reply, err := a.LastReply()
+			if err != nil {
+				return nil, err
+			}
+			return dagql.NewString(reply), nil
+		},
+	)
+	agentType.Extend(
+		dagql.FieldSpec{
+			Name:        "ask",
+			Description: "ask the agent a question, without changing its state",
+			Type:        dagql.String(""),
+			Args: dagql.InputSpecs{
+				{
+					Name:        "question",
+					Description: "the question to ask",
+					Type:        dagql.String(""),
+				},
+			},
+		},
+		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
+			a := self.(dagql.Instance[*core.Agent]).Self
+			reply, err := a.Ask(ctx, args["question"].(dagql.String).String())
+			if err != nil {
+				return nil, err
+			}
+			return dagql.NewString(reply), nil
+		},
+	)
+	agentType.Extend(
+		dagql.FieldSpec{
+			Name:        "do",
+			Description: "tell the agent to accomplish a task, and return its new state",
+			Type:        agentType.Typed(),
+			Args: dagql.InputSpecs{
+				{
+					Name:        "task",
+					Description: "a description of the task to perform",
+					Type:        dagql.String(""),
+				},
+			},
+		},
+		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
+			before := self.(dagql.Instance[*core.Agent]).Self
+			after, err := before.Do(ctx, args["task"].(dagql.String).String())
+			if err != nil {
+				return nil, err
+			}
+			return after, nil
+		},
+	)
+	agentType.Extend(
+		dagql.FieldSpec{
 			Name:        "withPrompt",
 			Description: "add a prompt to the agent context",
 			Type:        agentType.Typed(),
