@@ -81,9 +81,26 @@ func (s OneOneBBISession) Tools() []Tool {
 				if !ok {
 					return nil, fmt.Errorf("tool call: %s: expected arguments to be a map - got %#v", field.Name, args)
 				}
-				sel, err := argsToSelector(s.def, field.Name, argsMap, s.srv.Schema())
-				if err != nil {
-					return nil, fmt.Errorf("argsToSelector: %w", err)
+				classField, ok := s.self.ObjectType().FieldSpec(field.Name)
+				if !ok {
+					return nil, fmt.Errorf("field %q not found in object type %q", field.Name, s.self.ObjectType().TypeName())
+				}
+				sel := dagql.Selector{
+					Field: field.Name,
+				}
+				for _, arg := range classField.Args {
+					val, ok := argsMap[arg.Name]
+					if !ok {
+						continue
+					}
+					input, err := arg.Type.Decoder().DecodeInput(val)
+					if err != nil {
+						return nil, fmt.Errorf("decode arg %q: %w", arg.Name, err)
+					}
+					sel.Args = append(sel.Args, dagql.NamedInput{
+						Name:  arg.Name,
+						Value: input,
+					})
 				}
 				// 2. MAKE THE CALL
 				val, id, err := s.self.Select(ctx, s.srv, sel)
