@@ -54,8 +54,8 @@ defmodule Dagger.Core.QueryBuilder do
     [~c"(", Enum.map(args, fun) |> Enum.intersperse(","), ~c")"]
   end
 
-  defp encode_value(value) when is_atom(value) and not is_boolean(value),
-    do: encode_value(to_string(value))
+  defp encode_value(value) when is_atom(value),
+    do: to_string(value)
 
   defp encode_value(value) when is_binary(value) do
     string =
