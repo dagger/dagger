@@ -108,6 +108,43 @@ func (a *Agent) ToolsDoc(ctx context.Context) (string, error) {
 	return result, nil
 }
 
+// A convenience function to ask the model a question directly, and get an answer
+// The state of the agent is not changed.
+func (a *Agent) Ask(ctx context.Context, question string) (string, error) {
+	a, err := a.WithPrompt(question).Run(ctx, 0)
+	if err != nil {
+		return "", err
+	}
+	return a.LastReply()
+}
+
+func (a *Agent) Do(ctx context.Context, task string) (*Agent, error) {
+	return a.WithPrompt(task).Run(ctx, 0)
+}
+
+// Return the last message sent by the agent
+func (a *Agent) LastReply() (string, error) {
+	messages, err := a.messages()
+	if err != nil {
+		return "", err
+	}
+	var reply string = "(no reply)"
+	for _, msg := range messages {
+		if msg.Role != "assistant" {
+			continue
+		}
+		txt, err := msg.Text()
+		if err != nil {
+			return "", err
+		}
+		if len(txt) == 0 {
+			continue
+		}
+		reply = txt
+	}
+	return reply, nil
+}
+
 func (a *Agent) Run(
 	ctx context.Context,
 	maxLoops int,
