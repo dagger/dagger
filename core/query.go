@@ -127,6 +127,8 @@ func (q *Query) WithPipeline(name, desc string) *Query {
 
 func (q *Query) WithLlmConfig(config LlmConfig) *Query {
 	q = q.Clone()
+	// FIXME: hardcoded for now
+	config.Model = "gpt-4o"
 	q.LlmConfig = config
 	return q
 }

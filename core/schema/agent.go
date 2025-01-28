@@ -10,6 +10,8 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
+var llmConfig core.LlmConfig
+
 type agentSchema struct {
 	srv *dagql.Server
 }
@@ -144,10 +146,15 @@ func (s agentSchema) llmConfig() core.LlmConfig {
 	// that doesn't require access to the parent's concrete type
 	//
 	// Note: only call this after the `core.Query` has been installed on the server
-	return s.srv.Root().(dagql.Instance[*core.Query]).Self.LlmConfig
+
+	// FIXME
+	// return s.srv.Root().(dagql.Instance[*core.Query]).Self.LlmConfig
+	return llmConfig
 }
 
 func (s *agentSchema) withLlm(ctx context.Context, parent *core.Query, args core.LlmConfig) (*core.Query, error) {
+	// FIXME: hack
+	llmConfig = args
 	return parent.WithLlmConfig(args), nil
 }
 
