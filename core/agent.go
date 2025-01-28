@@ -85,7 +85,9 @@ func (a *Agent) Clone() *Agent {
 	return &cp
 }
 
-func (a *Agent) Self() dagql.Object {
+func (a *Agent) Self(ctx context.Context) dagql.Object {
+	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("[🤖->📦] returning state %s", a.self.ID().Digest()))
+	span.End()
 	return a.self
 }
 
