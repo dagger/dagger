@@ -38,6 +38,7 @@ func (s agentSchema) InstallObject(selfType dagql.ObjectType, install func(dagql
 	slog.Info("[agent middleware] installing original type: " + selfTypeName)
 	// Install the target type first, so we can reference it in our wrapper type
 	if !s.isAgentMaterial(selfType) {
+		install(selfType)
 		slog.Info("[agent middleware] not installing agent wrapper on special type " + selfTypeName)
 		return
 	}
@@ -47,18 +48,44 @@ func (s agentSchema) InstallObject(selfType dagql.ObjectType, install func(dagql
 		// Instantiate a throwaway agent instance from the type
 		Typed: core.NewAgent(s.srv, core.LlmConfig{}, nil, selfType),
 	})
-	agentType.Install(
-		dagql.Func("withPrompt", s.withPrompt).
-			Doc("add a prompt to the agent context").
-			ArgDoc("prompt", "The prompt. Example: \"make me a sandwich\""),
-		dagql.Func("run", s.run).
-			Doc("run the agent"),
-		dagql.Func("history", s.history).
-			Doc("return the agent history: user prompts, agent replies, and tool calls"),
-		// FIXME
-		//		dagql.Func("as"+selfTypeName, s.asObject).
-		//			Doc("convert the agent back to a "+selfType.TypeName()),
+	agentType.Extend(
+		dagql.FieldSpec{
+			Name:        "withPrompt",
+			Description: "add a prompt to the agent context",
+			Type:        agentType.Typed(),
+			Args: dagql.InputSpecs{
+				{
+					Name:        "prompt",
+					Description: "the prompt",
+					Type:        dagql.String(""),
+				},
+			},
+		},
+		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
+			a := self.(dagql.Instance[*core.Agent]).Self
+			return a.WithPrompt(args["prompt"].(dagql.String).String()), nil
+		},
 	)
+	//	chainable := func(field dagql.Field) dagql.Field {
+	//		field.Spec.Type = agentType
+	//		return field
+	//	}
+	//	agentType.Install(
+	//		chainable(
+	//			dagql.Func("withPrompt", s.withPrompt).
+	//				Doc("add a prompt to the agent context").
+	//				ArgDoc("prompt", "The prompt. Example: \"make me a sandwich\""),
+	//		),
+	//		chainable(
+	//			dagql.Func("run", s.run).
+	//				Doc("run the agent"),
+	//		),
+	//		dagql.Func("history", s.history).
+	//			Doc("return the agent history: user prompts, agent replies, and tool calls"),
+	// FIXME
+	//		dagql.Func("as"+selfTypeName, s.asObject).
+	//			Doc("convert the agent back to a "+selfType.TypeName()),
+	//)
 	selfType.Extend(
 		dagql.FieldSpec{
 			Name:        "asAgent",
