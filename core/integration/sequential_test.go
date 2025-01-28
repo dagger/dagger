@@ -20,8 +20,8 @@ func TestSequential(t *testing.T) {
 		t,
 		SequentialSuite{},
 		// omitting testctx.WithParallel middleware to get the desired sequential behavior
-		testctx.WithOTelLogging(Logger()),
-		testctx.WithOTelTracing(Tracer()),
+		testctx.WithOTelLogging[*testing.T](Logger()),
+		testctx.WithOTelTracing[*testing.T](Tracer()),
 	)
 }
 
