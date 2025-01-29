@@ -10,6 +10,7 @@ import io.dagger.client.*;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Module;
 import io.dagger.module.annotation.Object;
+import io.dagger.module.info.*;
 import io.dagger.module.info.FunctionInfo;
 import io.dagger.module.info.ModuleInfo;
 import io.dagger.module.info.ObjectInfo;
@@ -36,6 +37,8 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.TypeKind;
+import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
 
 @SupportedAnnotationTypes({
@@ -88,7 +91,6 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                         if (fName.isEmpty()) {
                           fName = fqName;
                         }
-                        String returnType = ((ExecutableElement) elt).getReturnType().toString();
 
                         List<ParameterInfo> parameterInfos =
                             ((ExecutableElement) elt)
@@ -99,28 +101,32 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                               param.getAnnotation(
                                                   io.dagger.module.annotation.Optional.class);
                                           var isOptional = optional != null;
-                                          String paramType = param.asType().toString();
+                                          TypeMirror tm = param.asType();
+                                          TypeKind tk = tm.getKind();
+
                                           String defaultValue =
                                               isOptional
                                                   ? quoteIfString(
-                                                      optional.defaultValue(), paramType)
+                                                      optional.defaultValue(), tm.toString())
                                                   : "";
                                           String paramName = param.getSimpleName().toString();
                                           return new ParameterInfo(
                                               paramName,
                                               parseParameterDescription(elt, paramName),
-                                              paramType,
+                                              new TypeInfo(tm.toString(), tk.name()),
                                               isOptional,
                                               defaultValue);
                                         })
                                     .toList();
 
+                        TypeMirror tm = ((ExecutableElement) elt).getReturnType();
+                        TypeKind tk = tm.getKind();
                         FunctionInfo functionInfo =
                             new FunctionInfo(
                                 fName,
                                 fqName,
                                 parseFunctionDescription(elt),
-                                returnType,
+                                new TypeInfo(tm.toString(), tk.name()),
                                 parameterInfos.toArray(new ParameterInfo[parameterInfos.size()]));
                         return functionInfo;
                       })
@@ -380,7 +386,8 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     return true;
   }
 
-  static CodeBlock typeDef(String name) throws ClassNotFoundException {
+  static CodeBlock typeDef(TypeInfo ti) throws ClassNotFoundException {
+    String name = ti.typeName();
     if (name.equals("int")) {
       return CodeBlock.of(
           "dag.typeDef().withKind($T.$L)", TypeDefKind.class, TypeDefKind.INTEGER_KIND.name());
@@ -389,16 +396,25 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           "dag.typeDef().withKind($T.$L)", TypeDefKind.class, TypeDefKind.BOOLEAN_KIND.name());
     } else if (name.startsWith("java.util.List<")) {
       name = name.substring("java.util.List<".length(), name.length() - 1);
-      return CodeBlock.of("dag.typeDef().withListOf($L)", typeDef(name).toString());
-    } else if (name.endsWith("[]")) {
+      return CodeBlock.of(
+          "dag.typeDef().withListOf($L)", typeDef(new TypeInfo(name, "")).toString());
+    } else if (!ti.kindName().isEmpty() && TypeKind.valueOf(ti.kindName()) == TypeKind.ARRAY) {
+      // in that case the type name is com.example.Type[]
+      // so we remove the [] to get the underlying type
       name = name.substring(0, name.length() - 2);
-      return CodeBlock.of("dag.typeDef().withListOf($L)", typeDef(name).toString());
+      return CodeBlock.of(
+          "dag.typeDef().withListOf($L)", typeDef(new TypeInfo(name, "")).toString());
     }
 
-    var clazz = Class.forName(name);
-    if (clazz.isEnum()) {
-      String typeName = name.substring(name.lastIndexOf('.') + 1);
-      return CodeBlock.of("dag.typeDef().withEnum($S)", typeName);
+    try {
+      var clazz = Class.forName(name);
+      if (clazz.isEnum()) {
+        String typeName = name.substring(name.lastIndexOf('.') + 1);
+        return CodeBlock.of("dag.typeDef().withEnum($S)", typeName);
+      }
+    } catch (ClassNotFoundException e) {
+      // we are ignoring here any ClassNotFoundException
+      // not ideal but as we only use the clazz to check if it's an enum that should be good
     }
 
     try {
@@ -414,14 +430,15 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     }
   }
 
-  static Class<?> classForName(String name) throws ClassNotFoundException {
+  static Class<?> classForName(TypeInfo ti) throws ClassNotFoundException {
+    String name = ti.typeName();
     if (name.equals("int")) {
       return int.class;
     } else if (name.equals("boolean")) {
       return boolean.class;
     } else if (name.startsWith("java.util.List<")) {
       return List.class;
-    } else if (name.endsWith("[]")) {
+    } else if (TypeKind.valueOf(ti.kindName()) == TypeKind.ARRAY) {
       return Class.forName("[L" + name.substring(0, name.length() - 2) + ";");
     }
     return Class.forName(name);
