@@ -25,7 +25,7 @@ public class DaggerJava extends Base {
    * @return container running echo
    */
   @Function
-  public Container containerEcho(@Optional(defaultValue = "\"Hello Dagger\"") String stringArg) {
+  public Container containerEcho(@Optional(defaultValue = "Hello Dagger") String stringArg) {
     if (StringUtils.isEmpty(stringArg)) {
       stringArg = "Hello World!";
     }

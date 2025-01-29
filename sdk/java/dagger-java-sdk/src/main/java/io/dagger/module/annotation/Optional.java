@@ -9,13 +9,21 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.SOURCE)
 public @interface Optional {
   /**
-   * Default value of the parameter. This must be a <b>valid JSON string</b>.
+   * Default value of the parameter. This should be a <b>valid JSON string</b>.
    *
-   * <p>Be careful with string values. For instance <code>defaultValue="true"</code> is a boolean,
-   * while <code>defaultValue="\"true\""</code> is a string.
+   * <p>This means, be default, a string should be between quotes like <code>
+   * defaultValue="\"string value\""</code>.
    *
-   * <p>You <b>must</b> put string values under escaped quotes in order to make it a valid json
-   * string.
+   * <p>This helps to distinguish it from other types like boolean or integer, for instance between
+   * <code>defaultValue="true"</code> a boolean value and <code>defaultValue="\"true\""</code> a
+   * string value.
+   *
+   * <p>That said to make it easier to work with, if the type of the argument is a java.lang.String,
+   * and the default value is not between quotes, quotes will be added and all double quotes inside
+   * the value will be escaped
+   *
+   * <p>For instance <code>defaultValue="this \" is a quote"</code> will be automatically converted
+   * to <code>defaultValue="\"this is \\\" a quote \""</code>
    */
   String defaultValue() default "";
 }

@@ -99,10 +99,13 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                               param.getAnnotation(
                                                   io.dagger.module.annotation.Optional.class);
                                           var isOptional = optional != null;
-                                          String defaultValue =
-                                              isOptional ? optional.defaultValue() : "";
-                                          String paramName = param.getSimpleName().toString();
                                           String paramType = param.asType().toString();
+                                          String defaultValue =
+                                              isOptional
+                                                  ? quoteIfString(
+                                                      optional.defaultValue(), paramType)
+                                                  : "";
+                                          String paramName = param.getSimpleName().toString();
                                           return new ParameterInfo(
                                               paramName,
                                               parseParameterDescription(elt, paramName),
@@ -134,6 +137,15 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
 
     return new ModuleInfo(
         moduleDescription, annotatedObjects.toArray(new ObjectInfo[annotatedObjects.size()]));
+  }
+
+  static String quoteIfString(String value, String type) {
+    if (type.equals(String.class.getName())
+        && (!value.startsWith("\"") && !value.endsWith("\"")
+            || !value.startsWith("'") && !value.endsWith("'"))) {
+      return "\"" + value.replaceAll("\"", "\\\\\"") + "\"";
+    }
+    return value;
   }
 
   static JavaFile generate(ModuleInfo moduleInfo) {
