@@ -28,10 +28,10 @@ func (r Releaser) githubRelease(
 	ctx context.Context,
 	// GitHub repository URL
 	repository string,
-	// Tag for the GitHub release
+	// Source tag for the GitHub release
 	// eg. v0.14.0
-	tag string,
-	// The target tag for the release
+	src string,
+	// The target tag for the component release
 	// e.g. sdk/typescript/v0.14.0
 	target string,
 	// File containing release notes
@@ -49,7 +49,7 @@ func (r Releaser) githubRelease(
 		return err
 	}
 
-	commit, err := dag.Version().Git().Commit(target).Commit(ctx)
+	commit, err := dag.Version().Git().Commit(src).Commit(ctx)
 	if err != nil {
 		return err
 	}
@@ -81,8 +81,8 @@ func (r Releaser) githubRelease(
 	})
 	return gh.Release().Create(
 		ctx,
-		tag,
-		tag,
+		src,
+		src,
 		dagger.GhReleaseCreateOpts{
 			Target:    commit,
 			NotesFile: notes,
