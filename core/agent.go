@@ -238,8 +238,16 @@ func (a *Agent) History() ([]string, error) {
 	return history, nil
 }
 
+// FIXME: engine-wide global config
+// this is a workaround to enable modules to "just work" without bringing their own config
+var globalLlmConfig *LlmConfig
+
 func (a *Agent) llmConfig(ctx context.Context) (*LlmConfig, error) {
+	if globalLlmConfig != nil {
+		return globalLlmConfig, nil
+	}
 	// Load .env on client
+	// Hack: share LLM config engine-wide
 	var envFile dagql.Instance[*File]
 	if err := a.srv.Select(ctx, a.srv.Root(), &envFile, dagql.Selector{
 		Field: "host",
@@ -279,6 +287,7 @@ func (a *Agent) llmConfig(ctx context.Context) (*LlmConfig, error) {
 	if cfg.Key == "" && cfg.Host == "" {
 		return nil, fmt.Errorf("error loading llm configuration: .env must set LLM_KEY or LLM_HOST")
 	}
+	globalLlmConfig = cfg
 	return cfg, nil
 }
 
