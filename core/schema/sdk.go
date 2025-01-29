@@ -127,12 +127,12 @@ func parseSDKName(sdkName string) (SDK, string, error) {
 	}
 
 	// inbuilt sdk go/python/typescript currently does not support selecting a specific version
-	if slices.Contains([]SDK{SDKGo, SDKPython, SDKTypescript, SDKJava}, SDK(sdkNameParsed)) && hasVersion {
+	if slices.Contains([]SDK{SDKGo, SDKPython, SDKTypescript}, SDK(sdkNameParsed)) && hasVersion {
 		return "", "", fmt.Errorf("the %s sdk does not currently support selecting a specific version", sdkNameParsed)
 	}
 
 	// for php, elixir we point them to github ref, so default the version to engine's tag
-	if slices.Contains([]SDK{SDKPHP, SDKElixir}, SDK(sdkNameParsed)) && sdkVersion == "" {
+	if slices.Contains([]SDK{SDKPHP, SDKElixir, SDKJava}, SDK(sdkNameParsed)) && sdkVersion == "" {
 		sdkVersion = engine.Tag
 	}
 
@@ -175,7 +175,7 @@ func (s *moduleSchema) builtinSDK(ctx context.Context, root *core.Query, sdkName
 	case SDKTypescript:
 		return s.loadBuiltinSDK(ctx, root, sdkName, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
 	case SDKJava:
-		return s.loadBuiltinSDK(ctx, root, sdkName, digest.Digest(os.Getenv(distconsts.JavaSDKManifestDigestEnvName)))
+		return s.sdkForModule(ctx, root, "github.com/dagger/dagger/sdk/java"+sdkSuffix, dagql.Instance[*core.ModuleSource]{})
 	case SDKPHP:
 		return s.sdkForModule(ctx, root, "github.com/dagger/dagger/sdk/php"+sdkSuffix, dagql.Instance[*core.ModuleSource]{})
 	case SDKElixir:

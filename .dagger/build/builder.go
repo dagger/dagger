@@ -132,7 +132,7 @@ func (build *Builder) WithGPUSupport() *Builder {
 func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 
-	sdks := []sdkContentF{build.goSDKContent, build.pythonSDKContent, build.typescriptSDKContent, build.javaSDKContent}
+	sdks := []sdkContentF{build.goSDKContent, build.pythonSDKContent, build.typescriptSDKContent}
 	sdkContents := make([]*sdkContent, len(sdks))
 	for i, sdk := range sdks {
 		eg.Go(func() error {
