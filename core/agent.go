@@ -567,7 +567,7 @@ func (s AgentMiddleware) InstallObject(selfType dagql.ObjectType, install func(d
 	selfType.Extend(
 		dagql.FieldSpec{
 			Name:        "asAgent",
-			Description: fmt.Sprintf("convert the agent back to a %s", selfTypeName),
+			Description: fmt.Sprintf("convert %s to an agent", selfTypeName),
 			Type:        agentType.Typed(),
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
@@ -579,7 +579,11 @@ func (s AgentMiddleware) InstallObject(selfType dagql.ObjectType, install func(d
 	install(agentType)
 }
 
-func (s AgentMiddleware) InstallModuleObject(selfType *TypeDef, install func(*TypeDef) error) error {
+func (s AgentMiddleware) ModuleWithObject(ctx context.Context, mod *Module, selfType *TypeDef) (*Module, error) {
+	if !selfType.AsObject.Valid {
+		return nil, fmt.Errorf("expected object type, got %s", selfType.Kind)
+	}
+
 	selfType = selfType.Clone()
 	selfTypeName := selfType.AsObject.Value.Name
 
@@ -587,11 +591,26 @@ func (s AgentMiddleware) InstallModuleObject(selfType *TypeDef, install func(*Ty
 		selfTypeName+"Agent",
 		"An agent for interacting with an "+selfTypeName,
 	)
-	selfTypeRef := &ObjectTypeDef{
-		Name: selfTypeName,
+
+	selfTypeRef := &TypeDef{
+		Kind: TypeDefKindObject,
+		AsObject: dagql.Nullable[*ObjectTypeDef]{
+			Value: &ObjectTypeDef{
+				Name:         selfTypeName,
+				OriginalName: selfTypeName,
+			},
+		},
 	}
-	agentTypeRef := &ObjectTypeDef{
-		Name: agentType.Name,
+
+	agentTypeRef := &TypeDef{
+		Kind: TypeDefKindObject,
+		AsObject: dagql.Nullable[*ObjectTypeDef]{
+			Value: &ObjectTypeDef{
+				Name:         agentType.Name,
+				OriginalName: agentType.Name,
+			},
+			Valid: true,
+		},
 	}
 
 	agentType.Fields = append(agentType.Fields, &FieldTypeDef{
@@ -622,13 +641,7 @@ func (s AgentMiddleware) InstallModuleObject(selfType *TypeDef, install func(*Ty
 	agentType.Functions = append(agentType.Functions, &Function{
 		Name:        "do",
 		Description: "tell the agent to accomplish a task, and return its new state",
-		ReturnType: &TypeDef{
-			Kind: TypeDefKindObject,
-			AsObject: dagql.Nullable[*ObjectTypeDef]{
-				Value: agentTypeRef,
-				Valid: true,
-			},
-		},
+		ReturnType:  agentTypeRef,
 		Args: []*FunctionArg{
 			{
 				Name:        "task",
@@ -643,13 +656,7 @@ func (s AgentMiddleware) InstallModuleObject(selfType *TypeDef, install func(*Ty
 	agentType.Functions = append(agentType.Functions, &Function{
 		Name:        "withPrompt",
 		Description: "add a prompt to the agent context",
-		ReturnType: &TypeDef{
-			Kind: TypeDefKindObject,
-			AsObject: dagql.Nullable[*ObjectTypeDef]{
-				Value: agentTypeRef,
-				Valid: true,
-			},
-		},
+		ReturnType:  agentTypeRef,
 		Args: []*FunctionArg{
 			{
 				Name:        "prompt",
@@ -680,13 +687,7 @@ func (s AgentMiddleware) InstallModuleObject(selfType *TypeDef, install func(*Ty
 	agentType.Fields = append(agentType.Fields, &FieldTypeDef{
 		Name:        "run",
 		Description: "run the agent",
-		TypeDef: &TypeDef{
-			Kind: TypeDefKindObject,
-			AsObject: dagql.Nullable[*ObjectTypeDef]{
-				Value: agentTypeRef,
-				Valid: true,
-			},
-		},
+		TypeDef:     agentTypeRef,
 	})
 
 	agentType.Fields = append(agentType.Fields, &FieldTypeDef{
@@ -700,43 +701,28 @@ func (s AgentMiddleware) InstallModuleObject(selfType *TypeDef, install func(*Ty
 	agentType.Fields = append(agentType.Fields, &FieldTypeDef{
 		Name:        "asObject",
 		Description: fmt.Sprintf("convert the agent back to a %s", selfTypeName),
-		TypeDef: &TypeDef{
-			Kind: TypeDefKindObject,
-			AsObject: dagql.Nullable[*ObjectTypeDef]{
-				Value: selfTypeRef,
-				Valid: true,
-			},
-		},
+		TypeDef:     selfTypeRef,
 	})
 
 	// Add asAgent field to original type
 	selfType.AsObject.Value.Fields = append(selfType.AsObject.Value.Fields, &FieldTypeDef{
 		Name:        "asAgent",
 		Description: fmt.Sprintf("convert the %s to an agent", selfTypeName),
-		TypeDef: &TypeDef{
-			Kind: TypeDefKindObject,
-			AsObject: dagql.Nullable[*ObjectTypeDef]{
-				Value: agentTypeRef,
-				Valid: true,
-			},
-		},
+		TypeDef:     agentTypeRef,
 	})
 
-	if err := install(selfType); err != nil {
-		return err
+	mod, err := mod.WithObject(ctx, selfType)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := install(&TypeDef{
+	return mod.WithObject(ctx, &TypeDef{
 		Kind: TypeDefKindObject,
 		AsObject: dagql.Nullable[*ObjectTypeDef]{
 			Value: agentType,
 			Valid: true,
 		},
-	}); err != nil {
-		return err
-	}
-
-	return nil
+	})
 }
 
 // return true if a given object type should be upgraded with agent capabilities
