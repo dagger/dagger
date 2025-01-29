@@ -52,9 +52,15 @@ func NewCustomLLB(ctx context.Context, op CustomOp, inputs []llb.State, opts ...
 		ClientMetadata: *clientMetadata,
 	}
 
+	// generate a uniqued digest of the op to use in the buildkit id (this
+	// prevents all our ops merging together in the solver)
+	id, err := opWrapped.Digest()
+	if err != nil {
+		return llb.State{}, err
+	}
+
 	// pre-populate a reasonable underlying representation that has some inputs
-	var a *llb.FileAction
-	a = llb.Rm("/")
+	var a *llb.FileAction = llb.Rm("/" + id.Encoded())
 	for _, input := range inputs {
 		if a == nil {
 			a = llb.Copy(input, "/", "/")
@@ -62,10 +68,7 @@ func NewCustomLLB(ctx context.Context, op CustomOp, inputs []llb.State, opts ...
 			a = a.Copy(input, "/", "/")
 		}
 	}
-	st := llb.Scratch()
-	if a != nil {
-		st = st.File(a)
-	}
+	st := llb.Scratch().File(a)
 	customOpOpt, err := opWrapped.AsConstraintsOpt()
 	if err != nil {
 		return llb.State{}, fmt.Errorf("constraints opt: %w", err)
@@ -172,4 +175,15 @@ func (op CustomOpWrapper) AsConstraintsOpt() (llb.ConstraintsOpt, error) {
 	return llb.WithDescription(map[string]string{
 		customOpKey: string(bs),
 	}), nil
+}
+
+func (op CustomOpWrapper) Digest() (digest.Digest, error) {
+	// ignore the client metadata, that shouldn't be part of the buildkit id
+	op.ClientMetadata = engine.ClientMetadata{}
+
+	bs, err := json.Marshal(op)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal custom op: %w", err)
+	}
+	return digest.FromBytes(bs), nil
 }
