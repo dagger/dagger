@@ -579,6 +579,166 @@ func (s AgentMiddleware) InstallObject(selfType dagql.ObjectType, install func(d
 	install(agentType)
 }
 
+func (s AgentMiddleware) InstallModuleObject(selfType *TypeDef, install func(*TypeDef) error) error {
+	selfType = selfType.Clone()
+	selfTypeName := selfType.AsObject.Value.Name
+
+	agentType := NewObjectTypeDef(
+		selfTypeName+"Agent",
+		"An agent for interacting with an "+selfTypeName,
+	)
+	selfTypeRef := &ObjectTypeDef{
+		Name: selfTypeName,
+	}
+	agentTypeRef := &ObjectTypeDef{
+		Name: agentType.Name,
+	}
+
+	agentType.Fields = append(agentType.Fields, &FieldTypeDef{
+		Name:        "lastReply",
+		Description: "return the agent's last reply, or an empty string",
+		TypeDef: &TypeDef{
+			Kind: TypeDefKindString,
+		},
+	})
+
+	agentType.Functions = append(agentType.Functions, &Function{
+		Name:        "ask",
+		Description: "ask the agent a question, without changing its state",
+		ReturnType: &TypeDef{
+			Kind: TypeDefKindString,
+		},
+		Args: []*FunctionArg{
+			{
+				Name:        "question",
+				Description: "the question to ask",
+				TypeDef: &TypeDef{
+					Kind: TypeDefKindString,
+				},
+			},
+		},
+	})
+
+	agentType.Functions = append(agentType.Functions, &Function{
+		Name:        "do",
+		Description: "tell the agent to accomplish a task, and return its new state",
+		ReturnType: &TypeDef{
+			Kind: TypeDefKindObject,
+			AsObject: dagql.Nullable[*ObjectTypeDef]{
+				Value: agentTypeRef,
+				Valid: true,
+			},
+		},
+		Args: []*FunctionArg{
+			{
+				Name:        "task",
+				Description: "a description of the task to perform",
+				TypeDef: &TypeDef{
+					Kind: TypeDefKindString,
+				},
+			},
+		},
+	})
+
+	agentType.Functions = append(agentType.Functions, &Function{
+		Name:        "withPrompt",
+		Description: "add a prompt to the agent context",
+		ReturnType: &TypeDef{
+			Kind: TypeDefKindObject,
+			AsObject: dagql.Nullable[*ObjectTypeDef]{
+				Value: agentTypeRef,
+				Valid: true,
+			},
+		},
+		Args: []*FunctionArg{
+			{
+				Name:        "prompt",
+				Description: "the prompt",
+				TypeDef: &TypeDef{
+					Kind: TypeDefKindString,
+				},
+			},
+		},
+	})
+
+	agentType.Fields = append(agentType.Fields, &FieldTypeDef{
+		Name:        "tools",
+		Description: "dump the tools available to the model",
+		TypeDef: &TypeDef{
+			Kind: TypeDefKindString,
+		},
+	})
+
+	agentType.Fields = append(agentType.Fields, &FieldTypeDef{
+		Name:        "model",
+		Description: "return the model used by the agent",
+		TypeDef: &TypeDef{
+			Kind: TypeDefKindString,
+		},
+	})
+
+	agentType.Fields = append(agentType.Fields, &FieldTypeDef{
+		Name:        "run",
+		Description: "run the agent",
+		TypeDef: &TypeDef{
+			Kind: TypeDefKindObject,
+			AsObject: dagql.Nullable[*ObjectTypeDef]{
+				Value: agentTypeRef,
+				Valid: true,
+			},
+		},
+	})
+
+	agentType.Fields = append(agentType.Fields, &FieldTypeDef{
+		Name:        "history",
+		Description: "return the agent history: user prompts, agent replies, and tool calls",
+		TypeDef: (&TypeDef{}).WithListOf(&TypeDef{
+			Kind: TypeDefKindString,
+		}),
+	})
+
+	agentType.Fields = append(agentType.Fields, &FieldTypeDef{
+		Name:        "asObject",
+		Description: fmt.Sprintf("convert the agent back to a %s", selfTypeName),
+		TypeDef: &TypeDef{
+			Kind: TypeDefKindObject,
+			AsObject: dagql.Nullable[*ObjectTypeDef]{
+				Value: selfTypeRef,
+				Valid: true,
+			},
+		},
+	})
+
+	// Add asAgent field to original type
+	selfType.AsObject.Value.Fields = append(selfType.AsObject.Value.Fields, &FieldTypeDef{
+		Name:        "asAgent",
+		Description: fmt.Sprintf("convert the %s to an agent", selfTypeName),
+		TypeDef: &TypeDef{
+			Kind: TypeDefKindObject,
+			AsObject: dagql.Nullable[*ObjectTypeDef]{
+				Value: agentTypeRef,
+				Valid: true,
+			},
+		},
+	})
+
+	if err := install(selfType); err != nil {
+		return err
+	}
+
+	if err := install(&TypeDef{
+		Kind: TypeDefKindObject,
+		AsObject: dagql.Nullable[*ObjectTypeDef]{
+			Value: agentType,
+			Valid: true,
+		},
+	}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // return true if a given object type should be upgraded with agent capabilities
 func (s AgentMiddleware) isAgentMaterial(selfType dagql.ObjectType) bool {
 	if strings.HasPrefix(selfType.TypeName(), "_") {
