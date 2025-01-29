@@ -72,6 +72,28 @@ If they are missing or to refresh them, run:
 dagger develop
 ```
 
+- `target/generated-sources/dagger-io` contains the generic Java SDK for dagger
+- `target/generated-sources/dagger-module` contains the code generated for this specific module
+- `target/generated-sources/entrypoint` contains the entrypoint used to run the module
+
+### How it's done
+
+The Java SDK is composed of three main parts:
+
+- `dagger-codegen-maven-plugin`
+
+    This plugin will be used to generate the SDK code, from the introspection file.
+    This means including the ability to call other modules (not part of the main dagger SDK)
+
+- `dagger-java-annotation-processor`
+
+    This will read dagger specific annotations (`@Module`, `@Object`, `@Function`, `@Optional`)
+    and generate the entrypoint to register the module and invoke the functions
+
+- `dagger-java-sdk`
+
+    The actual SDK code, where the generated code will be written. It will include all the required types to discuss with the dagger engine.
+
 ## Build
 
 ### Requirements
