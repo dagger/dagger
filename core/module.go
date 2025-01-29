@@ -818,30 +818,37 @@ func (mod *Module) WithDescription(desc string) *Module {
 
 func (mod *Module) WithObject(ctx context.Context, def *TypeDef) (*Module, error) {
 	mod = mod.Clone()
-	if !def.AsObject.Valid {
-		return nil, fmt.Errorf("expected object type def, got %s: %+v", def.Kind, def)
+
+	install := func(def *TypeDef) error {
+		if !def.AsObject.Valid {
+			return fmt.Errorf("expected object type def, got %s: %+v", def.Kind, def)
+		}
+
+		// skip validation+namespacing for module objects being constructed by SDK with* calls
+		// they will be validated when merged into the real final module
+
+		if mod.Deps != nil {
+			if err := mod.validateTypeDef(ctx, def); err != nil {
+				return fmt.Errorf("failed to validate type def: %w", err)
+			}
+		}
+		if mod.NameField != "" {
+			def = def.Clone()
+			modPath, err := mod.modulePath(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get module path: %w", err)
+			}
+			if err := mod.namespaceTypeDef(ctx, modPath, def); err != nil {
+				return fmt.Errorf("failed to namespace type def: %w", err)
+			}
+		}
+
+		mod.ObjectDefs = append(mod.ObjectDefs, def)
+		return nil
 	}
 
-	// skip validation+namespacing for module objects being constructed by SDK with* calls
-	// they will be validated when merged into the real final module
+	AgentMiddleware{}.InstallModuleObject(def, install)
 
-	if mod.Deps != nil {
-		if err := mod.validateTypeDef(ctx, def); err != nil {
-			return nil, fmt.Errorf("failed to validate type def: %w", err)
-		}
-	}
-	if mod.NameField != "" {
-		def = def.Clone()
-		modPath, err := mod.modulePath(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get module path: %w", err)
-		}
-		if err := mod.namespaceTypeDef(ctx, modPath, def); err != nil {
-			return nil, fmt.Errorf("failed to namespace type def: %w", err)
-		}
-	}
-
-	mod.ObjectDefs = append(mod.ObjectDefs, def)
 	return mod, nil
 }
 
