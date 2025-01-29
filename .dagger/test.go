@@ -38,7 +38,20 @@ func (t *Test) All(
 	// +optional
 	testVerbose bool,
 ) error {
-	return t.test(ctx, "", "", "./...", failfast, parallel, timeout, race, 1, testVerbose)
+	return t.test(
+		ctx,
+		&testOpts{
+			runTestRegex:  "",
+			skipTestRegex: "",
+			pkg:           "./...",
+			failfast:      failfast,
+			parallel:      parallel,
+			timeout:       timeout,
+			race:          race,
+			count:         1,
+			testVerbose:   testVerbose,
+		},
+	)
 }
 
 // Run telemetry tests
@@ -118,7 +131,22 @@ func (t *Test) Telemetry(
 		tests = tests.WithMountedSecret("/root/.docker/config.json", t.Dagger.DockerCfg)
 	}
 
-	ran := t.goTest(tests, run, skip, "./dagql/idtui/", failfast, parallel, timeout, race, count, update, verbose)
+	ran := t.goTest(
+		tests,
+		&goTestOpts{
+			runTestRegex:  run,
+			skipTestRegex: skip,
+			pkg:           "./dagql/idtui/",
+			failfast:      failfast,
+			parallel:      parallel,
+			timeout:       timeout,
+			race:          race,
+			count:         count,
+			update:        update,
+			testVerbose:   verbose,
+			bench:         false,
+		},
+	)
 	ran, err = ran.Sync(ctx)
 	if err != nil {
 		return nil, err
@@ -171,20 +199,37 @@ func (t *Test) Specific(
 	// +optional
 	testVerbose bool,
 ) error {
-	return t.test(ctx, run, skip, pkg, failfast, parallel, timeout, race, count, testVerbose)
+	return t.test(
+		ctx,
+		&testOpts{
+			runTestRegex:  run,
+			skipTestRegex: skip,
+			pkg:           pkg,
+			failfast:      failfast,
+			parallel:      parallel,
+			timeout:       timeout,
+			race:          race,
+			count:         count,
+			testVerbose:   testVerbose,
+		},
+	)
+}
+
+type testOpts struct {
+	runTestRegex  string
+	skipTestRegex string
+	pkg           string
+	failfast      bool
+	parallel      int
+	timeout       string
+	race          bool
+	count         int
+	testVerbose   bool
 }
 
 func (t *Test) test(
 	ctx context.Context,
-	runTestRegex string,
-	skipTestRegex string,
-	pkg string,
-	failfast bool,
-	parallel int,
-	timeout string,
-	race bool,
-	count int,
-	testVerbose bool,
+	opts *testOpts,
 ) error {
 	cmd, err := t.testCmd(ctx)
 	if err != nil {
@@ -192,32 +237,40 @@ func (t *Test) test(
 	}
 	_, err = t.goTest(
 		cmd,
-		runTestRegex,
-		skipTestRegex,
-		pkg,
-		failfast,
-		parallel,
-		timeout,
-		race,
-		count,
-		false, // -update
-		testVerbose,
+		&goTestOpts{
+			runTestRegex:  opts.runTestRegex,
+			skipTestRegex: opts.skipTestRegex,
+			pkg:           opts.pkg,
+			failfast:      opts.failfast,
+			parallel:      opts.parallel,
+			timeout:       opts.timeout,
+			race:          opts.race,
+			count:         opts.count,
+			update:        false,
+			testVerbose:   opts.testVerbose,
+			bench:         false,
+		},
 	).Sync(ctx)
 	return err
 }
 
+type goTestOpts struct {
+	runTestRegex  string
+	skipTestRegex string
+	pkg           string
+	failfast      bool
+	parallel      int
+	timeout       string
+	race          bool
+	count         int
+	update        bool
+	testVerbose   bool
+	bench         bool
+}
+
 func (t *Test) goTest(
 	cmd *dagger.Container,
-	runTestRegex string,
-	skipTestRegex string,
-	pkg string,
-	failfast bool,
-	parallel int,
-	timeout string,
-	race bool,
-	count int,
-	update bool,
-	testVerbose bool,
+	opts *goTestOpts,
 ) *dagger.Container {
 	cgoEnabledEnv := "0"
 	args := []string{
@@ -226,7 +279,7 @@ func (t *Test) goTest(
 	}
 
 	// allow verbose
-	if testVerbose {
+	if opts.testVerbose {
 		args = append(args, "-v")
 	}
 
@@ -238,41 +291,49 @@ func (t *Test) goTest(
 	args = append(args, "-ldflags", strings.Join(ldflags, " "))
 
 	// All following are go test flags
-	if failfast {
+	if opts.failfast {
 		args = append(args, "-failfast")
 	}
 
 	// Go will default parallel to number of CPUs, so only pass if set
-	if parallel != 0 {
-		args = append(args, fmt.Sprintf("-parallel=%d", parallel))
+	if opts.parallel != 0 {
+		args = append(args, fmt.Sprintf("-parallel=%d", opts.parallel))
 	}
 
 	// Default timeout to 30m
 	// No test suite should take more than 30 minutes to run
-	if timeout == "" {
-		timeout = "30m"
+	if opts.timeout == "" {
+		opts.timeout = "30m"
 	}
-	args = append(args, fmt.Sprintf("-timeout=%s", timeout))
+	args = append(args, fmt.Sprintf("-timeout=%s", opts.timeout))
 
-	if race {
+	if opts.race {
 		args = append(args, "-race")
 		cgoEnabledEnv = "1"
 	}
 
-	// Disable test caching, since these are integration tests
-	args = append(args, fmt.Sprintf("-count=%d", count))
-
-	if runTestRegex != "" {
-		args = append(args, "-run", runTestRegex)
+	// when bench is true, disable normal tests and select benchmarks based on runTestRegex instead
+	if opts.bench {
+		if opts.runTestRegex == "" {
+			opts.runTestRegex = "."
+		}
+		args = append(args, "-bench", opts.runTestRegex, "-run", "^$")
+		args = append(args, fmt.Sprintf("-benchtime=%dx", opts.count))
+	} else {
+		// Disable test caching, since these are integration tests
+		args = append(args, fmt.Sprintf("-count=%d", opts.count))
+		if opts.runTestRegex != "" {
+			args = append(args, "-run", opts.runTestRegex)
+		}
 	}
 
-	if skipTestRegex != "" {
-		args = append(args, "-skip", skipTestRegex)
+	if opts.skipTestRegex != "" {
+		args = append(args, "-skip", opts.skipTestRegex)
 	}
 
-	args = append(args, pkg)
+	args = append(args, opts.pkg)
 
-	if update {
+	if opts.update {
 		args = append(args, "-update")
 	}
 
@@ -324,6 +385,12 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 			UseEntrypoint:            true,
 			InsecureRootCapabilities: true,
 		})
+
+	// manually starting service to ensure it's not reaped between benchmark prewarm & run
+	devEngineSvc, err = devEngineSvc.Start(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	endpoint, err := devEngineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
 	if err != nil {

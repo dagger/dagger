@@ -57,17 +57,24 @@ func Logger() log.Logger {
 	return telemetry.Logger(testCtx, InstrumentationLibrary)
 }
 
-func Middleware() []testctx.Middleware {
-	return []testctx.Middleware{
+func Middleware() []testctx.MiddlewareT {
+	return []testctx.MiddlewareT{
 		testctx.WithParallel,
-		testctx.WithOTelLogging(Logger()),
-		testctx.WithOTelTracing(Tracer()),
+		testctx.WithOTelLogging[*testing.T](Logger()),
+		testctx.WithOTelTracing[*testing.T](Tracer()),
 	}
 }
 
-func connect(ctx context.Context, t *testctx.T, opts ...dagger.ClientOpt) *dagger.Client {
+func BenchMiddleware() []testctx.MiddlewareB {
+	return []testctx.MiddlewareB{
+		testctx.WithOTelLogging[*testing.B](Logger()),
+		testctx.WithOTelTracing[*testing.B](Tracer()),
+	}
+}
+
+func connect(ctx context.Context, t testing.TB, opts ...dagger.ClientOpt) *dagger.Client {
 	opts = append([]dagger.ClientOpt{
-		dagger.WithLogOutput(testutil.NewTWriter(t.T)),
+		dagger.WithLogOutput(testutil.NewTWriter(t)),
 	}, opts...)
 	client, err := dagger.Connect(ctx, opts...)
 	require.NoError(t, err)
