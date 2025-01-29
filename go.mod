@@ -59,6 +59,7 @@ require (
 	github.com/iancoleman/strcase v0.3.0
 	github.com/invopop/jsonschema v0.13.0
 	github.com/jackpal/gateway v1.0.16
+	github.com/joho/godotenv v1.5.1
 	github.com/juju/ansiterm v1.0.0
 	github.com/klauspost/compress v1.18.0
 	github.com/koron-go/prefixw v1.0.0
