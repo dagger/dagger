@@ -588,7 +588,7 @@ func (s AgentMiddleware) ModuleWithObject(ctx context.Context, mod *Module, self
 	selfTypeName := selfType.AsObject.Value.Name
 
 	agentType := NewObjectTypeDef(
-		selfTypeName+"Agent",
+		"Agent"+selfTypeName,
 		"An agent for interacting with an "+selfTypeName,
 	)
 
