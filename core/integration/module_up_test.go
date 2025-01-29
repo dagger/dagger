@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"testing"
 	"time"
 
 	"github.com/creack/pty"
@@ -16,6 +17,10 @@ import (
 
 // Note: ensure each testcase use unique port, otherwise you might see flakes.
 func (ModuleSuite) TestDaggerUp(ctx context.Context, t *testctx.T) {
+	// these tests are slow if you're running locally, skip if -short is specified
+	if testing.Short() {
+		t.SkipNow()
+	}
 	// set timeout to 3m for each test
 	t = t.WithTimeout(3 * time.Minute)
 
@@ -99,8 +104,6 @@ func (ModuleSuite) TestDaggerUp(ctx context.Context, t *testctx.T) {
 		},
 	}
 
-	t = t.WithTimeout(3 * time.Minute)
-
 	for _, tc := range testcases {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			endpoint := tc.endpointFn(ctx, t, tc.cachedModDir, tc.daggerArgs, tc.trafficPort)
@@ -183,7 +186,7 @@ func daggerUpInitModFn(ctx context.Context, t *testctx.T, defaultPort string) st
 		"strconv"
 		"dagger/test/internal/dagger"
 	)
-	
+
 	func New(
 		// +optional
 		// +default=%s
@@ -201,7 +204,7 @@ func daggerUpInitModFn(ctx context.Context, t *testctx.T, defaultPort string) st
 				WithDefaultArgs([]string{"python", "-m", "http.server", strconv.Itoa(port)}),
 		}
 	}
-	
+
 	type Test struct {
 		Ctr *dagger.Container
 	}
