@@ -19,16 +19,6 @@ type agentSchema struct {
 var _ SchemaResolvers = &agentSchema{}
 
 func (s agentSchema) Install() {
-	slog := slog.With("schema", "agent")
-	// extend type Query { withLlm(): Query! }
-	dagql.Fields[*core.Query]{
-		dagql.Func("withLlm", s.withLlm).
-			Doc(`Enable LLM integration`).
-			ArgDoc("model", "The model to use").
-			ArgDoc("key", "The API key for the LLM endpoint"),
-	}.Install(s.srv)
-	// Install ourselves as middleware
-	slog.Info("[AGENT] installing middleware")
 	s.srv.SetMiddleware(s)
 }
 
@@ -37,18 +27,18 @@ func (s agentSchema) Install() {
 // Essentially transforming every Dagger object into a LLM-powered robot
 func (s agentSchema) InstallObject(selfType dagql.ObjectType, install func(dagql.ObjectType)) {
 	selfTypeName := selfType.TypeName()
-	slog.Info("[agent middleware] installing original type: " + selfTypeName)
+	slog.Debug("[agent middleware] installing original type: " + selfTypeName)
 	// Install the target type first, so we can reference it in our wrapper type
 	if !s.isAgentMaterial(selfType) {
 		install(selfType)
-		slog.Info("[agent middleware] not installing agent wrapper on special type " + selfTypeName)
+		slog.Debug("[agent middleware] not installing agent wrapper on special type " + selfTypeName)
 		return
 	}
-	slog.Info("[agent middleware] installing wrapper type: " + selfTypeName + "Agent")
-	defer slog.Info("[agent middleware] installed: " + selfTypeName + "Agent")
+	slog.Debug("[agent middleware] installing wrapper type: " + selfTypeName + "Agent")
+	defer slog.Debug("[agent middleware] installed: " + selfTypeName + "Agent")
 	agentType := dagql.NewClass[*core.Agent](dagql.ClassOpts[*core.Agent]{
 		// Instantiate a throwaway agent instance from the type
-		Typed: core.NewAgent(s.srv, core.LlmConfig{}, nil, selfType),
+		Typed: core.NewAgent(s.srv, nil, selfType),
 	})
 	agentType.Extend(
 		dagql.FieldSpec{
@@ -196,7 +186,7 @@ func (s agentSchema) InstallObject(selfType dagql.ObjectType, install func(dagql
 			Type:        agentType.Typed(),
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-			return core.NewAgent(s.srv, s.llmConfig(), self, self.ObjectType()), nil
+			return core.NewAgent(s.srv, self, self.ObjectType()), nil
 		},
 	)
 	// Install the wrapper type

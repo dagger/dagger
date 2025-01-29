@@ -4,52 +4,50 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/joho/godotenv"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/codes"
 )
 
+func NewLlmConfig() *LlmConfig {
+	return &LlmConfig{
+		Model: "gpt-4o", // default
+	}
+}
+
 // Session-wide configuration for connecting to a LLM
 // FIXME: move this to a client-side config instead, using session attachables
 type LlmConfig struct {
-	Model    string
-	Key      SecretID
-	Endpoint dagql.Optional[dagql.String]
+	Model string
+	Key   string
+	Host  string
+	Path  string
 }
 
-func (*LlmConfig) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "LlmConfig",
-		NonNull:   true,
+func (cfg LlmConfig) RequestOpts() (opts []option.RequestOption) {
+	if cfg.Key != "" {
+		opts = append(opts, option.WithAPIKey(cfg.Key))
 	}
-}
-
-func (*LlmConfig) TypeDescription() string {
-	return "Configuration for integrating a LLM with the Dagger Engine"
-}
-
-// Retrieve the key plaintext
-func (cfg *LlmConfig) KeyPlaintext(ctx context.Context, srv *dagql.Server) (string, error) {
-	secrets, err := srv.Root().(dagql.Instance[*Query]).Self.Secrets(ctx)
-	if err != nil {
-		return "", err
+	if cfg.Host != "" || cfg.Path != "" {
+		var base url.URL
+		base.Scheme = "https"
+		base.Host = cfg.Host
+		base.Path = cfg.Path
+		opts = append(opts, option.WithBaseURL(base.String()))
 	}
-	b, ok := secrets.GetSecretPlaintext(cfg.Key.ID().Digest())
-	if !ok {
-		return "", fmt.Errorf("llm config: get key: secret look up failed: %s", cfg.Key.Display())
-	}
-	return string(b), nil
+	return opts
 }
 
-func NewAgent(srv *dagql.Server, llmConfig LlmConfig, self dagql.Object, selfType dagql.ObjectType) *Agent {
+func NewAgent(srv *dagql.Server, self dagql.Object, selfType dagql.ObjectType) *Agent {
 	a := &Agent{
-		srv:       srv,
-		self:      self,
-		selfType:  selfType,
-		llmConfig: llmConfig,
+		srv:      srv,
+		self:     self,
+		selfType: selfType,
 	}
 	if self == nil {
 		// Gracefully support being a "zero value" for type introspection purposes
@@ -63,13 +61,12 @@ func NewAgent(srv *dagql.Server, llmConfig LlmConfig, self dagql.Object, selfTyp
 }
 
 type Agent struct {
-	history   []openai.ChatCompletionMessageParamUnion
-	def       *ast.Definition
-	srv       *dagql.Server
-	self      dagql.Object
-	selfType  dagql.ObjectType
-	count     int
-	llmConfig LlmConfig
+	history  []openai.ChatCompletionMessageParamUnion
+	def      *ast.Definition
+	srv      *dagql.Server
+	self     dagql.Object
+	selfType dagql.ObjectType
+	count    int
 }
 
 func (a *Agent) Type() *ast.Type {
@@ -196,6 +193,7 @@ func (a *Agent) Run(
 			}
 		}
 	}
+	a.self = bbi.Self()
 	return a, nil
 }
 
@@ -240,6 +238,50 @@ func (a *Agent) History() ([]string, error) {
 	return history, nil
 }
 
+func (a *Agent) llmConfig(ctx context.Context) (*LlmConfig, error) {
+	// Load .env on client
+	var envFile dagql.Instance[*File]
+	if err := a.srv.Select(ctx, a.srv.Root(), &envFile, dagql.Selector{
+		Field: "host",
+	}, dagql.Selector{
+		Field: "file",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "path",
+				Value: dagql.NewString(".env"),
+			},
+		},
+	}); err != nil {
+		return nil, err
+	}
+	contents, err := envFile.Self.Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	env, err := godotenv.Unmarshal(string(contents))
+	if err != nil {
+		return nil, err
+	}
+	cfg := NewLlmConfig()
+	// Configure API key
+	if key, ok := env["LLM_KEY"]; ok {
+		cfg.Key = key
+	}
+	if host, ok := env["LLM_HOST"]; ok {
+		cfg.Host = host
+	}
+	if path, ok := env["LLM_PATH"]; ok {
+		cfg.Path = path
+	}
+	if model, ok := env["LLM_MODEL"]; ok {
+		cfg.Model = model
+	}
+	if cfg.Key == "" && cfg.Host == "" {
+		return nil, fmt.Errorf("error loading llm configuration: .env must set LLM_KEY or LLM_HOST")
+	}
+	return cfg, nil
+}
+
 func (a *Agent) sendQuery(ctx context.Context, tools []Tool) (res *openai.ChatCompletion, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "[🤖] 💭")
 	defer func() {
@@ -248,9 +290,13 @@ func (a *Agent) sendQuery(ctx context.Context, tools []Tool) (res *openai.ChatCo
 		}
 		span.End()
 	}()
+	llmConfig, err := a.llmConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
 	params := openai.ChatCompletionNewParams{
 		Seed:     openai.Int(0),
-		Model:    openai.F(openai.ChatModel(a.llmConfig.Model)),
+		Model:    openai.F(openai.ChatModel(llmConfig.Model)),
 		Messages: openai.F(a.history),
 	}
 	if len(tools) > 0 {
@@ -267,17 +313,10 @@ func (a *Agent) sendQuery(ctx context.Context, tools []Tool) (res *openai.ChatCo
 		}
 		params.Tools = openai.F(toolParams)
 	}
-	opts := []option.RequestOption{option.WithHeader("Content-Type", "application/json")}
-	key, err := a.llmConfig.KeyPlaintext(ctx, a.srv)
-	if err != nil {
-		return nil, err
-	}
-	if key != "" {
-		opts = append(opts, option.WithAPIKey(key))
-	}
-	if a.llmConfig.Endpoint.Valid {
-		opts = append(opts, option.WithBaseURL(a.llmConfig.Endpoint.Value.String()))
-	}
+	opts := append(
+		llmConfig.RequestOpts(),
+		option.WithHeader("Content-Type", "application/json"),
+	)
 	return openai.NewClient(opts...).Chat.Completions.New(ctx, params)
 }
 
