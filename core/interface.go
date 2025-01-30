@@ -340,6 +340,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			return iface.ConvertFromSDKResult(ctx, args["id"])
 		},
+		nil,
 	)
 
 	return nil

@@ -311,6 +311,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 					Fields:  map[string]any{},
 				}, nil
 			},
+			nil, // no cache key, empty constructor calls will thus be cached across dagql sessions
 		)
 		return nil
 	}
@@ -365,6 +366,8 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 				Server:       dag,
 			})
 		},
+		// cache constructor calls per client; a given client will hit cache when making the same call repeatedly
+		CachePerClientObject,
 	)
 
 	return nil
@@ -473,6 +476,11 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 			})
 			return modFun.Call(ctx, opts)
 		},
+		// Cache calls per client; a given client will hit cache when making the same call repeatedly.
+		// We can't *quite* mark them as fully cached across clients in a session, since Call has special
+		// logic for transferring secrets between cached calls (covered by TestModule/TestSecretNested
+		// integ tests).
+		CacheKeyFunc: CachePerClient[*ModuleObject, map[string]dagql.Input],
 	}, nil
 }
 

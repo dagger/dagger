@@ -142,15 +142,21 @@ func (cls Class[T]) TypeName() string {
 	return cls.inner.Type().Name()
 }
 
-func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
+func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheKeyFun FieldCacheKeyFunc) {
 	cls.fieldsL.Lock()
 	defer cls.fieldsL.Unlock()
-	cls.fields[spec.Name] = append(cls.fields[spec.Name], &Field[T]{
+	f := &Field[T]{
 		Spec: spec,
 		Func: func(ctx context.Context, self Instance[T], args map[string]Input) (Typed, error) {
 			return fun(ctx, self, args)
 		},
-	})
+	}
+	if cacheKeyFun != nil {
+		f.CacheKeyFunc = func(ctx context.Context, self Instance[T], args map[string]Input, origDgst digest.Digest) (digest.Digest, error) {
+			return cacheKeyFun(ctx, self, args, origDgst)
+		}
+	}
+	cls.fields[spec.Name] = append(cls.fields[spec.Name], f)
 }
 
 // TypeDefinition returns the schema definition of the class.
