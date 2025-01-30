@@ -175,6 +175,7 @@ func isIntrospection(id *call.ID) bool {
 	if id.Receiver() == nil {
 		switch id.Field() {
 		case "__schema",
+			"__schemaJSONFile",
 			"__schemaVersion",
 			"currentTypeDefs",
 			"currentFunctionCall",
