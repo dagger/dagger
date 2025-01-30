@@ -2861,6 +2861,9 @@ type Query {
   """Load a Secret from its ID."""
   loadSecretFromID(id: SecretID!): Secret!
 
+  """Load a Secret from its Name."""
+  loadSecretFromName(accessor: String, name: String!): Secret!
+
   """Load a Service from its ID."""
   loadServiceFromID(id: ServiceID!): Service!
 
@@ -2910,8 +2913,11 @@ type Query {
     stable: Boolean = false
   ): ModuleSource!
 
-  """Reference a secret by name."""
-  secret(accessor: String, name: String!): Secret!
+  """Creates a new secret."""
+  secret(
+    """The URI of the secret store"""
+    uri: String!
+  ): Secret!
 
   """
   Sets a secret given a user defined name to its plaintext and returns the secret.
@@ -2991,6 +2997,9 @@ type Secret {
 
   """The value of this secret."""
   plaintext: String!
+
+  """The URI of this secret."""
+  uri: String!
 }
 
 """

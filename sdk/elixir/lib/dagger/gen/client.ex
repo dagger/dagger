@@ -668,6 +668,22 @@ defmodule Dagger.Client do
     }
   end
 
+  @doc "Load a Secret from its Name."
+  @spec load_secret_from_name(t(), String.t(), [{:accessor, String.t() | nil}]) ::
+          Dagger.Secret.t()
+  def load_secret_from_name(%__MODULE__{} = client, name, optional_args \\ []) do
+    query_builder =
+      client.query_builder
+      |> QB.select("loadSecretFromName")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("accessor", optional_args[:accessor])
+
+    %Dagger.Secret{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
   @doc "Load a Service from its ID."
   @spec load_service_from_id(t(), Dagger.ServiceID.t()) :: Dagger.Service.t()
   def load_service_from_id(%__MODULE__{} = client, id) do
@@ -777,14 +793,11 @@ defmodule Dagger.Client do
     }
   end
 
-  @doc "Reference a secret by name."
-  @spec secret(t(), String.t(), [{:accessor, String.t() | nil}]) :: Dagger.Secret.t()
-  def secret(%__MODULE__{} = client, name, optional_args \\ []) do
+  @doc "Creates a new secret."
+  @spec secret(t(), String.t()) :: Dagger.Secret.t()
+  def secret(%__MODULE__{} = client, uri) do
     query_builder =
-      client.query_builder
-      |> QB.select("secret")
-      |> QB.put_arg("name", name)
-      |> QB.maybe_put_arg("accessor", optional_args[:accessor])
+      client.query_builder |> QB.select("secret") |> QB.put_arg("uri", uri)
 
     %Dagger.Secret{
       query_builder: query_builder,

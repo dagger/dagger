@@ -7445,6 +7445,20 @@ class Client(Root):
         _ctx = self._select("loadSecretFromID", _args)
         return Secret(_ctx)
 
+    def load_secret_from_name(
+        self,
+        name: str,
+        *,
+        accessor: str | None = None,
+    ) -> "Secret":
+        """Load a Secret from its Name."""
+        _args = [
+            Arg("name", name),
+            Arg("accessor", accessor, None),
+        ]
+        _ctx = self._select("loadSecretFromName", _args)
+        return Secret(_ctx)
+
     def load_service_from_id(self, id: ServiceID) -> "Service":
         """Load a Service from its ID."""
         _args = [
@@ -7547,16 +7561,16 @@ class Client(Root):
         _ctx = self._select("moduleSource", _args)
         return ModuleSource(_ctx)
 
-    def secret(
-        self,
-        name: str,
-        *,
-        accessor: str | None = None,
-    ) -> "Secret":
-        """Reference a secret by name."""
+    def secret(self, uri: str) -> "Secret":
+        """Creates a new secret.
+
+        Parameters
+        ----------
+        uri:
+            The URI of the secret store
+        """
         _args = [
-            Arg("name", name),
-            Arg("accessor", accessor, None),
+            Arg("uri", uri),
         ]
         _ctx = self._select("secret", _args)
         return Secret(_ctx)
@@ -7796,6 +7810,27 @@ class Secret(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("plaintext", _args)
+        return await _ctx.execute(str)
+
+    async def uri(self) -> str:
+        """The URI of this secret.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("uri", _args)
         return await _ctx.execute(str)
 
 

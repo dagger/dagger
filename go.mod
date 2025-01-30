@@ -9,6 +9,7 @@ require (
 )
 
 require (
+	github.com/1password/onepassword-sdk-go v0.1.3
 	github.com/99designs/gqlgen v0.17.57
 	github.com/Khan/genqlient v0.7.0
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
@@ -45,6 +46,8 @@ require (
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/google/uuid v1.6.0
 	github.com/goproxy/goproxy v0.18.2
+	github.com/hashicorp/vault/api v1.15.0
+	github.com/hashicorp/vault/api/auth/approle v0.8.0
 	github.com/iancoleman/strcase v0.3.0
 	github.com/invopop/jsonschema v0.12.0
 	github.com/jackpal/gateway v1.0.15
@@ -117,6 +120,20 @@ require (
 	modernc.org/sqlite v1.34.2
 	mvdan.cc/sh/v3 v3.10.1-0.20250103084315-5e4be7920b8b
 	resenje.org/singleflight v0.4.3
+)
+
+require (
+	github.com/extism/go-sdk v1.3.1 // indirect
+	github.com/go-jose/go-jose/v4 v4.0.1 // indirect
+	github.com/gobwas/glob v0.2.3 // indirect
+	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
+	github.com/hashicorp/go-secure-stdlib/parseutil v0.1.6 // indirect
+	github.com/hashicorp/go-secure-stdlib/strutil v0.1.2 // indirect
+	github.com/hashicorp/go-sockaddr v1.0.2 // indirect
+	github.com/hashicorp/hcl v1.0.0 // indirect
+	github.com/mitchellh/mapstructure v1.5.0 // indirect
+	github.com/ryanuber/go-glob v1.0.0 // indirect
+	github.com/tetratelabs/wazero v1.8.1 // indirect
 )
 
 require (

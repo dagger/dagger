@@ -24,6 +24,7 @@ import (
 	"github.com/containerd/continuity/fs"
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/engine/buildkit/resources"
+	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/google/uuid"
@@ -44,7 +45,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit/cacerts"
 	"github.com/dagger/dagger/engine/buildkit/containerfs"
-	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/network"
 )
@@ -943,7 +943,7 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	if sockPath, ok := state.origEnvMap["SSH_AUTH_SOCK"]; ok {
 		if strings.HasPrefix(sockPath, "~") {
 			if homeDir, ok := state.origEnvMap["HOME"]; ok {
-				expandedPath, err := client.ExpandHomeDir(homeDir, sockPath)
+				expandedPath, err := pathutil.ExpandHomeDir(homeDir, sockPath)
 				if err != nil {
 					return fmt.Errorf("failed to expand homedir: %w", err)
 				}
