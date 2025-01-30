@@ -46,9 +46,9 @@ func (c *moduleConfig) genPath() string {
 func New(
 	// Directory with the Java SDK source code.
 	// dagger-java-samples is not necessary to build, but as it's referenced in the root pom.xml maven
-	// will check if it's there. So we keep it, until a better solution (like to extract the samples somewhere else)
+	// will check if it's there. So we keep the pom.xml to fake it.
 	// +defaultPath="/sdk/java"
-	// +ignore=["**", "!dagger-codegen-maven-plugin/", "!dagger-java-annotation-processor/", "!dagger-java-sdk/", "!dagger-java-samples", "!LICENSE", "!README.md", "!pom.xml"]
+	// +ignore=["**", "!dagger-codegen-maven-plugin/", "!dagger-java-annotation-processor/", "!dagger-java-sdk/", "!dagger-java-samples/pom.xml", "!LICENSE", "!README.md", "!pom.xml", "**/src/test", "**/target"]
 	sdkSourceDir *dagger.Directory,
 ) (*JavaSdk, error) {
 	if sdkSourceDir == nil {
