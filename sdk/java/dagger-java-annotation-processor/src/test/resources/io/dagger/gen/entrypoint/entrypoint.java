@@ -15,6 +15,7 @@ import io.dagger.client.Module;
 import io.dagger.client.ModuleID;
 import io.dagger.client.TypeDef;
 import io.dagger.client.TypeDefKind;
+import io.dagger.java.module.DaggerJava;
 import jakarta.json.bind.JsonbBuilder;
 import java.lang.Class;
 import java.lang.Exception;
@@ -81,7 +82,20 @@ public class Entrypoint {
                         dag.typeDef().withKind(TypeDefKind.STRING_KIND))
                         .withDescription("Returns lines that match a pattern in the files of the provided Directory")
                         .withArg("directoryArg", dag.typeDef().withObject("Directory").withOptional(false), new Function.WithArgArguments().withDescription("Directory to grep"))
-                        .withArg("pattern", dag.typeDef().withKind(TypeDefKind.STRING_KIND).withOptional(false), new Function.WithArgArguments().withDescription("Pattern to search for in the directory"))));
+                        .withArg("pattern", dag.typeDef().withKind(TypeDefKind.STRING_KIND).withOptional(false), new Function.WithArgArguments().withDescription("Pattern to search for in the directory")))
+                .withFunction(
+                    dag.function("itself",
+                        dag.typeDef().withObject("DaggerJava")))
+                .withFunction(
+                    dag.function("isZero",
+                        dag.typeDef().withKind(TypeDefKind.BOOLEAN_KIND))
+                        .withArg("value", dag.typeDef().withKind(TypeDefKind.INTEGER_KIND).withOptional(false)))
+                .withFunction(
+                    dag.function("doThings",
+                        dag.typeDef().withListOf(dag.typeDef().withKind(io.dagger.client.TypeDefKind.INTEGER_KIND)))
+                        .withArg("stringArray", dag.typeDef().withListOf(dag.typeDef().withKind(io.dagger.client.TypeDefKind.STRING_KIND)).withOptional(false))
+                        .withArg("ints", dag.typeDef().withListOf(dag.typeDef().withKind(io.dagger.client.TypeDefKind.INTEGER_KIND)).withOptional(false))
+                        .withArg("containers", dag.typeDef().withListOf(dag.typeDef().withObject("Container")).withOptional(false))));
     return module.id();
   }
 
@@ -111,6 +125,34 @@ public class Entrypoint {
           }
           Method fn = clazz.getMethod("grepDir", Directory.class, String.class);
           String res = (String) fn.invoke(obj, directoryArg, pattern);
+          return JsonConverter.toJSON(res);
+        } else if (fnName.equals("itself")) {
+          Method fn = clazz.getMethod("itself");
+          DaggerJava res = (DaggerJava) fn.invoke(obj);
+          return JsonConverter.toJSON(res);
+        } else if (fnName.equals("isZero")) {
+          int value = 0;
+          if (inputArgs.get("value") != null) {
+            value = (int) JsonConverter.fromJSON(dag, inputArgs.get("value"), int.class);
+          }
+          Method fn = clazz.getMethod("isZero", int.class);
+          boolean res = (boolean) fn.invoke(obj, value);
+          return JsonConverter.toJSON(res);
+        } else if (fnName.equals("doThings")) {
+          String[] stringArray = null;
+          if (inputArgs.get("stringArray") != null) {
+            stringArray = (String[]) JsonConverter.fromJSON(dag, inputArgs.get("stringArray"), String[].class);
+          }
+          List ints = null;
+          if (inputArgs.get("ints") != null) {
+            ints = (List) JsonConverter.fromJSON(dag, inputArgs.get("ints"), List.class);
+          }
+          List containers = null;
+          if (inputArgs.get("containers") != null) {
+            containers = (List) JsonConverter.fromJSON(dag, inputArgs.get("containers"), List.class);
+          }
+          Method fn = clazz.getMethod("doThings", String[].class, List.class, List.class);
+          int[] res = (int[]) fn.invoke(obj, stringArray, ints, containers);
           return JsonConverter.toJSON(res);
         }
       }

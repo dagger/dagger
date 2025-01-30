@@ -49,4 +49,20 @@ public class DaggerJava extends Base {
         .withExec(List.of("grep", "-R", pattern, "."))
         .stdout();
   }
+
+  @Function
+  public DaggerJava itself() {
+    return this;
+  }
+
+  @Function
+  public boolean isZero(int value) {
+    return value == 0;
+  }
+
+  @Function
+  public int[] doThings(String[] stringArray, List<Integer> ints, List<Container> containers) {
+    int[] intsArray = {stringArray.length, ints.size()};
+    return intsArray;
+  }
 }

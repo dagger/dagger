@@ -237,7 +237,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                 "clazz.getMethod(\"setClient\", $T.class).invoke(obj, dag)", Client.class);
         var firstFn = true;
         for (var fnInfo : objectInfo.functions()) {
-          var fnReturnClass = classForName(fnInfo.returnType());
+          CodeBlock fnReturnType = typeName(fnInfo.returnType());
           if (firstFn) {
             firstFn = false;
             im.beginControlFlow("if (fnName.equals($S))", fnInfo.name());
@@ -247,32 +247,40 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           var fnBlock =
               CodeBlock.builder().add("$T fn = clazz.getMethod($S", Method.class, fnInfo.qName());
           var invokeBlock =
-              CodeBlock.builder().add("$T res = ($T) fn.invoke(obj", fnReturnClass, fnReturnClass);
+              CodeBlock.builder()
+                  .add(fnReturnType)
+                  .add(" res = (")
+                  .add(fnReturnType)
+                  .add(") fn.invoke(obj");
           for (var parameterInfo : fnInfo.parameters()) {
-            Class<?> paramClazz = classForName(parameterInfo.type());
-            fnBlock.add(", $T.class", paramClazz);
+            CodeBlock paramType = typeName(parameterInfo.type());
+            fnBlock.add(", ").add(paramType).add(".class");
 
             invokeBlock.add(", $L", parameterInfo.name());
 
-            if (paramClazz.isPrimitive()) {
-              if (paramClazz.isAssignableFrom(boolean.class)) {
-                im.addStatement("$T $L = false", paramClazz, parameterInfo.name());
-              } else if (paramClazz.isAssignableFrom(int.class)) {
-                im.addStatement("$T $L = 0", paramClazz, parameterInfo.name());
-              } else {
-                im.addStatement("$T $L", paramClazz, parameterInfo.name());
-              }
-            } else {
-              im.addStatement("$T $L = null", paramClazz, parameterInfo.name());
+            String defaultValue = "null";
+            if (parameterInfo.type().kindName().equals(TypeKind.INT.name())) {
+              defaultValue = "0";
+            } else if (parameterInfo.type().kindName().equals(TypeKind.BOOLEAN.name())) {
+              defaultValue = "false";
             }
+            im.addStatement(
+                CodeBlock.builder()
+                    .add(paramType)
+                    .add(" $L = $L", parameterInfo.name(), defaultValue)
+                    .build());
             im.beginControlFlow("if (inputArgs.get($S) != null)", parameterInfo.name());
             im.addStatement(
-                "$L = ($T) $T.fromJSON(dag, inputArgs.get($S), $T.class)",
-                parameterInfo.name(),
-                paramClazz,
-                JsonConverter.class,
-                parameterInfo.name(),
-                classForName(parameterInfo.type()));
+                CodeBlock.builder()
+                    .add("$L = (", parameterInfo.name())
+                    .add(paramType)
+                    .add(
+                        ") $T.fromJSON(dag, inputArgs.get($S), ",
+                        JsonConverter.class,
+                        parameterInfo.name())
+                    .add(paramType)
+                    .add(".class)")
+                    .build());
             im.endControlFlow();
           }
           fnBlock.add(")");
@@ -396,14 +404,12 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           "dag.typeDef().withKind($T.$L)", TypeDefKind.class, TypeDefKind.BOOLEAN_KIND.name());
     } else if (name.startsWith("java.util.List<")) {
       name = name.substring("java.util.List<".length(), name.length() - 1);
-      return CodeBlock.of(
-          "dag.typeDef().withListOf($L)", typeDef(new TypeInfo(name, "")).toString());
+      return CodeBlock.of("dag.typeDef().withListOf($L)", typeDef(tiFromName(name)).toString());
     } else if (!ti.kindName().isEmpty() && TypeKind.valueOf(ti.kindName()) == TypeKind.ARRAY) {
       // in that case the type name is com.example.Type[]
       // so we remove the [] to get the underlying type
       name = name.substring(0, name.length() - 2);
-      return CodeBlock.of(
-          "dag.typeDef().withListOf($L)", typeDef(new TypeInfo(name, "")).toString());
+      return CodeBlock.of("dag.typeDef().withListOf($L)", typeDef(tiFromName(name)).toString());
     }
 
     try {
@@ -430,18 +436,48 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     }
   }
 
-  static Class<?> classForName(TypeInfo ti) throws ClassNotFoundException {
-    String name = ti.typeName();
+  static TypeInfo tiFromName(String name) {
     if (name.equals("int")) {
-      return int.class;
+      return new TypeInfo(name, TypeKind.INT.name());
     } else if (name.equals("boolean")) {
-      return boolean.class;
-    } else if (name.startsWith("java.util.List<")) {
-      return List.class;
-    } else if (TypeKind.valueOf(ti.kindName()) == TypeKind.ARRAY) {
-      return Class.forName("[L" + name.substring(0, name.length() - 2) + ";");
+      return new TypeInfo(name, TypeKind.BOOLEAN.name());
+    } else if (name.equals("void")) {
+      return new TypeInfo(name, TypeKind.VOID.name());
+    } else {
+      return new TypeInfo(name, "");
     }
-    return Class.forName(name);
+  }
+
+  static CodeBlock typeName(TypeInfo ti) {
+    try {
+      TypeKind tk = TypeKind.valueOf(ti.kindName());
+      if (tk == TypeKind.INT) {
+        return CodeBlock.of("$T", int.class);
+      } else if (tk == TypeKind.BOOLEAN) {
+        return CodeBlock.of("$T", boolean.class);
+      } else if (tk == TypeKind.VOID) {
+        return CodeBlock.of("$T", void.class);
+      } else if (tk == TypeKind.ARRAY) {
+        return CodeBlock.builder()
+            .add(typeName(tiFromName(ti.typeName().substring(0, ti.typeName().length() - 2))))
+            .add("[]")
+            .build();
+      }
+    } catch (IllegalArgumentException ignored) {
+    }
+    String name = ti.typeName();
+    if (name.startsWith("java.util.List<")) {
+      return CodeBlock.of("$T", List.class);
+    }
+    try {
+      Class<?> clazz = Class.forName(name);
+      return CodeBlock.of("$T", clazz);
+    } catch (ClassNotFoundException e) {
+      return CodeBlock.of(
+          "$T",
+          ClassName.get(
+              name.substring(0, name.lastIndexOf(".")), name.substring(name.lastIndexOf(".") + 1)));
+    }
   }
 
   private String trimDoc(String doc) {
