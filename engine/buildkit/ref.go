@@ -119,7 +119,7 @@ func (r *ref) Evaluate(ctx context.Context) error {
 }
 
 func (r *ref) ReadFile(ctx context.Context, req bkgw.ReadRequest) ([]byte, error) {
-	ctx = withOutgoingContext(r.c, ctx)
+	ctx = withOutgoingContext(ctx)
 	mnt, err := r.getMountable(ctx)
 	if err != nil {
 		return nil, err
@@ -137,7 +137,7 @@ func (r *ref) ReadFile(ctx context.Context, req bkgw.ReadRequest) ([]byte, error
 }
 
 func (r *ref) ReadDir(ctx context.Context, req bkgw.ReadDirRequest) ([]*fstypes.Stat, error) {
-	ctx = withOutgoingContext(r.c, ctx)
+	ctx = withOutgoingContext(ctx)
 	mnt, err := r.getMountable(ctx)
 	if err != nil {
 		return nil, err
@@ -150,7 +150,7 @@ func (r *ref) ReadDir(ctx context.Context, req bkgw.ReadDirRequest) ([]*fstypes.
 }
 
 func (r *ref) WalkDir(ctx context.Context, req WalkDirRequest) error {
-	ctx = withOutgoingContext(r.c, ctx)
+	ctx = withOutgoingContext(ctx)
 	mnt, err := r.getMountable(ctx)
 	if err != nil {
 		return err
@@ -160,7 +160,7 @@ func (r *ref) WalkDir(ctx context.Context, req WalkDirRequest) error {
 }
 
 func (r *ref) StatFile(ctx context.Context, req bkgw.StatRequest) (*fstypes.Stat, error) {
-	ctx = withOutgoingContext(r.c, ctx)
+	ctx = withOutgoingContext(ctx)
 	mnt, err := r.getMountable(ctx)
 	if err != nil {
 		return nil, err
@@ -169,7 +169,7 @@ func (r *ref) StatFile(ctx context.Context, req bkgw.StatRequest) (*fstypes.Stat
 }
 
 func (r *ref) AddDependencyBlobs(ctx context.Context, blobs map[digest.Digest]*ocispecs.Descriptor) error {
-	ctx = withOutgoingContext(r.c, ctx)
+	ctx = withOutgoingContext(ctx)
 
 	cacheRef, err := r.CacheRef(ctx)
 	if err != nil {
@@ -227,7 +227,7 @@ func (r *ref) Result(ctx context.Context) (bksolver.CachedResult, error) {
 	if r == nil {
 		return nil, nil
 	}
-	ctx = withOutgoingContext(r.c, ctx)
+	ctx = withOutgoingContext(ctx)
 	res, err := r.resultProxy.Result(ctx)
 	if err != nil {
 		// writing log w/ %+v so that we can see stack traces embedded in err by buildkit's usage of pkg/errors
@@ -548,7 +548,7 @@ func getExecMetaFile(ctx context.Context, c *Client, mntable snapshot.Mountable,
 }
 
 func ReadSnapshotPath(ctx context.Context, c *Client, mntable snapshot.Mountable, filePath string) ([]byte, error) {
-	ctx = withOutgoingContext(c, ctx)
+	ctx = withOutgoingContext(ctx)
 	stat, err := cacheutil.StatFile(ctx, mntable, filePath)
 	if err != nil {
 		// TODO: would be better to verify this is a "not exists" error, return err if not
