@@ -58,6 +58,7 @@ func (bbi OneOneBBI) NewSession(self dagql.Object, srv *dagql.Server) (BBISessio
 	typename := self.Type().Name()
 	def, ok := srv.Schema().Types[typename]
 	if !ok {
+		// FIXME: in a controlled environment we don't need to error check this
 		return nil, fmt.Errorf("can't introspect type: %s", typename)
 	}
 	return &OneOneBBISession{
@@ -147,7 +148,7 @@ func (s *OneOneBBISession) tools(typedef *ast.Definition, toplevel bool, objectT
 		slog.Debug("Loading tool from field", "type", typedef.Name, "field", field.Name)
 		var name = field.Name
 		// Hide some special fields to avoid tool explosion
-		if name == "asAgent" && name == "asModule" {
+		if (name == "asAgent") || (name == "asModule") {
 			slog.Debug("Hiding special field", "type", typedef.Name, "field", field.Name)
 			continue
 		}

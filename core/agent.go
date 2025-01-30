@@ -144,13 +144,19 @@ func (a *Agent) LastReply() (string, error) {
 	return reply, nil
 }
 
+// Start a new BBI (Brain-Body Interface) session.
+// BBI allows a LLM to consume the Dagger API via tool calls
+func (a *Agent) BBISession() (BBISession, error) {
+	// Hardcode the "one-one" BBI strategy
+	return OneOneBBI{}.NewSession(a.self, a.srv)
+}
+
 func (a *Agent) Run(
 	ctx context.Context,
 	maxLoops int,
 ) (*Agent, error) {
 	a = a.Clone()
-	// Hardcode the "one-one" BBI strategy
-	bbi, err := OneOneBBI{}.NewSession(a.self, a.srv)
+	bbi, err := a.BBISession()
 	if err != nil {
 		return nil, err
 	}
@@ -555,8 +561,8 @@ func (s AgentMiddleware) InstallObject(selfType dagql.ObjectType, install func(d
 	)
 	agentType.Extend(
 		dagql.FieldSpec{
-			Name:        "asObject",
-			Description: fmt.Sprintf("convert the agent back to a %s", selfTypeName),
+			Name:        "state",
+			Description: fmt.Sprintf("retrieve the agent's state"),
 			Type:        selfType.Typed(),
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
@@ -566,7 +572,7 @@ func (s AgentMiddleware) InstallObject(selfType dagql.ObjectType, install func(d
 	)
 	selfType.Extend(
 		dagql.FieldSpec{
-			Name:        "asAgent",
+			Name:        "agent",
 			Description: fmt.Sprintf("convert %s to an agent", selfTypeName),
 			Type:        agentType.Typed(),
 		},
@@ -699,14 +705,14 @@ func (s AgentMiddleware) ModuleWithObject(ctx context.Context, mod *Module, self
 	})
 
 	agentType.Fields = append(agentType.Fields, &FieldTypeDef{
-		Name:        "asObject",
-		Description: fmt.Sprintf("convert the agent back to a %s", selfTypeName),
+		Name:        "state",
+		Description: fmt.Sprintf("retrieve the agent's state"),
 		TypeDef:     selfTypeRef,
 	})
 
 	// Add asAgent field to original type
 	selfType.AsObject.Value.Fields = append(selfType.AsObject.Value.Fields, &FieldTypeDef{
-		Name:        "asAgent",
+		Name:        "agent",
 		Description: fmt.Sprintf("convert the %s to an agent", selfTypeName),
 		TypeDef:     agentTypeRef,
 	})
