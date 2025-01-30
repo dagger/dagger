@@ -9,7 +9,7 @@ import (
 )
 
 func TestSecretStore(t *testing.T) {
-	store := NewSecretStore()
+	store := NewSecretStore(nil)
 	require.NoError(t, store.AddSecret(&Secret{
 		Query:    &Query{},
 		IDDigest: "dgst",
@@ -18,13 +18,13 @@ func TestSecretStore(t *testing.T) {
 	name, ok := store.GetSecretName("dgst")
 	require.True(t, ok)
 	require.Equal(t, "foo", name)
-	plaintext, ok := store.GetSecretPlaintext("dgst")
-	require.True(t, ok)
+	plaintext, err := store.GetSecretPlaintext(context.Background(), "dgst")
+	require.NoError(t, err)
 	require.Equal(t, []byte("bar"), plaintext)
 }
 
 func TestSecretStoreNotFound(t *testing.T) {
-	store := NewSecretStore()
+	store := NewSecretStore(nil)
 	_, err := store.AsBuildkitSecretStore().GetSecret(context.Background(), "foo")
 	require.ErrorIs(t, err, secrets.ErrNotFound)
 }

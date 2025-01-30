@@ -551,7 +551,7 @@ func (m *Test) Insecure(ctx context.Context, token *dagger.Secret) (string, erro
 
 		t.Run("invalid source", func(ctx context.Context, t *testctx.T) {
 			_, err := modGen.With(daggerCall("insecure", "--token", "wtf:HUH")).Stdout(ctx)
-			requireErrOut(t, err, `unsupported secret arg source: "wtf"`)
+			requireErrOut(t, err, `unsupported secret provider: "wtf"`)
 		})
 	})
 

@@ -6929,6 +6929,11 @@ pub struct QueryHttpOpts {
     pub experimental_service_host: Option<ServiceId>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct QueryLoadSecretFromNameOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub accessor: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct QueryModuleDependencyOpts<'a> {
     /// If set, the name to use for the dependency. Otherwise, once installed to a parent module, the name of the dependency module will be used by default.
     #[builder(setter(into, strip_option), default)]
@@ -6945,11 +6950,6 @@ pub struct QueryModuleSourceOpts<'a> {
     /// If true, enforce that the source is a stable version for source kinds that support versioning.
     #[builder(setter(into, strip_option), default)]
     pub stable: Option<bool>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct QuerySecretOpts<'a> {
-    #[builder(setter(into, strip_option), default)]
-    pub accessor: Option<&'a str>,
 }
 impl Query {
     /// Retrieves a container builtin to the engine.
@@ -7836,6 +7836,41 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Load a Secret from its Name.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn load_secret_from_name(&self, name: impl Into<String>) -> Secret {
+        let mut query = self.selection.select("loadSecretFromName");
+        query = query.arg("name", name.into());
+        Secret {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a Secret from its Name.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn load_secret_from_name_opts<'a>(
+        &self,
+        name: impl Into<String>,
+        opts: QueryLoadSecretFromNameOpts<'a>,
+    ) -> Secret {
+        let mut query = self.selection.select("loadSecretFromName");
+        query = query.arg("name", name.into());
+        if let Some(accessor) = opts.accessor {
+            query = query.arg("accessor", accessor);
+        }
+        Secret {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Load a Service from its ID.
     pub fn load_service_from_id(&self, id: impl IntoID<ServiceId>) -> Service {
         let mut query = self.selection.select("loadServiceFromID");
@@ -8017,31 +8052,14 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Reference a secret by name.
+    /// Creates a new secret.
     ///
     /// # Arguments
     ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn secret(&self, name: impl Into<String>) -> Secret {
+    /// * `uri` - The URI of the secret store
+    pub fn secret(&self, uri: impl Into<String>) -> Secret {
         let mut query = self.selection.select("secret");
-        query = query.arg("name", name.into());
-        Secret {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Reference a secret by name.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn secret_opts<'a>(&self, name: impl Into<String>, opts: QuerySecretOpts<'a>) -> Secret {
-        let mut query = self.selection.select("secret");
-        query = query.arg("name", name.into());
-        if let Some(accessor) = opts.accessor {
-            query = query.arg("accessor", accessor);
-        }
+        query = query.arg("uri", uri.into());
         Secret {
             proc: self.proc.clone(),
             selection: query,
@@ -8146,6 +8164,11 @@ impl Secret {
     /// The value of this secret.
     pub async fn plaintext(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("plaintext");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The URI of this secret.
+    pub async fn uri(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("uri");
         query.execute(self.graphql_client.clone()).await
     }
 }

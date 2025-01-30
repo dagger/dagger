@@ -20,6 +20,7 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -139,7 +140,7 @@ If --sdk is specified, the given SDK is installed in the module. You can do this
 			dag := engineClient.Dagger()
 
 			// default the module source root to the current working directory if it doesn't exist yet
-			cwd, err := client.Getwd()
+			cwd, err := pathutil.Getwd()
 			if err != nil {
 				return fmt.Errorf("failed to get current working directory: %w", err)
 			}
@@ -187,7 +188,7 @@ If --sdk is specified, the given SDK is installed in the module. You can do this
 
 				if moduleSourcePath != "" {
 					// ensure source path is relative to the source root
-					sourceAbsPath, err := client.Abs(moduleSourcePath)
+					sourceAbsPath, err := pathutil.Abs(moduleSourcePath)
 					if err != nil {
 						return fmt.Errorf("failed to get absolute source path for %s: %w", moduleSourcePath, err)
 					}
@@ -259,7 +260,7 @@ var moduleInstallCmd = &cobra.Command{
 			}
 			if depSrcKind == dagger.ModuleSourceKindLocalSource {
 				// need to ensure that local dep paths are relative to the parent root source
-				depAbsPath, err := client.Abs(depRefStr)
+				depAbsPath, err := pathutil.Abs(depRefStr)
 				if err != nil {
 					return fmt.Errorf("failed to get dep absolute path for %s: %w", depRefStr, err)
 				}
@@ -492,7 +493,7 @@ This command is idempotent: you can run it at any time, any number of times. It 
 			}
 			if developSourcePath != "" {
 				// ensure source path is relative to the source root
-				sourceAbsPath, err := client.Abs(developSourcePath)
+				sourceAbsPath, err := pathutil.Abs(developSourcePath)
 				if err != nil {
 					return fmt.Errorf("failed to get absolute source path for %s: %w", developSourcePath, err)
 				}
@@ -782,12 +783,12 @@ func getModuleConfigurationForSourceRef(
 		srcRefStr = findupConfigDir
 	}
 
-	conf.LocalRootSourcePath, err = client.Abs(srcRefStr)
+	conf.LocalRootSourcePath, err = pathutil.Abs(srcRefStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get absolute path for %s: %w", srcRefStr, err)
 	}
 	if filepath.IsAbs(srcRefStr) {
-		cwd, err := client.Getwd()
+		cwd, err := pathutil.Getwd()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get current working directory: %w", err)
 		}
@@ -842,7 +843,7 @@ func findUp(curDirPath string) (string, bool, error) {
 	}
 
 	// didn't exist, try parent unless we've hit the root or a git repo checkout root
-	curDirAbsPath, err := client.Abs(curDirPath)
+	curDirAbsPath, err := pathutil.Abs(curDirPath)
 	if err != nil {
 		return "", false, fmt.Errorf("failed to get absolute path for %s: %w", curDirPath, err)
 	}

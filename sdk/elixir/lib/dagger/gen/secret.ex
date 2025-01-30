@@ -37,4 +37,13 @@ defmodule Dagger.Secret do
 
     Client.execute(secret.client, query_builder)
   end
+
+  @doc "The URI of this secret."
+  @spec uri(t()) :: {:ok, String.t()} | {:error, term()}
+  def uri(%__MODULE__{} = secret) do
+    query_builder =
+      secret.query_builder |> QB.select("uri")
+
+    Client.execute(secret.client, query_builder)
+  end
 end

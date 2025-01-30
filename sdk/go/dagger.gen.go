@@ -7404,6 +7404,27 @@ func (r *Client) LoadSecretFromID(id SecretID) *Secret {
 	}
 }
 
+// LoadSecretFromNameOpts contains options for Client.LoadSecretFromName
+type LoadSecretFromNameOpts struct {
+	Accessor string
+}
+
+// Load a Secret from its Name.
+func (r *Client) LoadSecretFromName(name string, opts ...LoadSecretFromNameOpts) *Secret {
+	q := r.query.Select("loadSecretFromName")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `accessor` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Accessor) {
+			q = q.Arg("accessor", opts[i].Accessor)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return &Secret{
+		query: q,
+	}
+}
+
 // Load a Service from its ID.
 func (r *Client) LoadServiceFromID(id ServiceID) *Service {
 	q := r.query.Select("loadServiceFromID")
@@ -7520,21 +7541,10 @@ func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *Modul
 	}
 }
 
-// SecretOpts contains options for Client.Secret
-type SecretOpts struct {
-	Accessor string
-}
-
-// Reference a secret by name.
-func (r *Client) Secret(name string, opts ...SecretOpts) *Secret {
+// Creates a new secret.
+func (r *Client) Secret(uri string) *Secret {
 	q := r.query.Select("secret")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `accessor` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Accessor) {
-			q = q.Arg("accessor", opts[i].Accessor)
-		}
-	}
-	q = q.Arg("name", name)
+	q = q.Arg("uri", uri)
 
 	return &Secret{
 		query: q,
@@ -7687,6 +7697,7 @@ type Secret struct {
 	id        *SecretID
 	name      *string
 	plaintext *string
+	uri       *string
 }
 
 func (r *Secret) WithGraphQLQuery(q *querybuilder.Selection) *Secret {
@@ -7754,6 +7765,19 @@ func (r *Secret) Plaintext(ctx context.Context) (string, error) {
 		return *r.plaintext, nil
 	}
 	q := r.query.Select("plaintext")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The URI of this secret.
+func (r *Secret) URI(ctx context.Context) (string, error) {
+	if r.uri != nil {
+		return *r.uri, nil
+	}
+	q := r.query.Select("uri")
 
 	var response string
 

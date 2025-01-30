@@ -46,7 +46,7 @@ func (host *Host) SetSecretFile(ctx context.Context, srv *dagql.Server, secretNa
 	}
 
 	err = srv.Select(ctx, srv.Root(), &i, dagql.Selector{
-		Field: "secret",
+		Field: "loadSecretFromName",
 		Args: []dagql.NamedInput{
 			{
 				Name:  "name",

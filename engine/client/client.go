@@ -47,6 +47,8 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/drivers"
+	"github.com/dagger/dagger/engine/client/pathutil"
+	"github.com/dagger/dagger/engine/client/secretprovider"
 	"github.com/dagger/dagger/engine/session"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -338,6 +340,8 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	attachables := []bksession.Attachable{
 		// sockets
 		SocketProvider{EnableHostNetworkAccess: !c.DisableHostRW},
+		// secrets
+		secretprovider.NewSecretProvider(),
 		// registry auth
 		authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr), nil),
 		// host=>container networking
@@ -1087,7 +1091,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	// for consistent behavior of CLI inside nested execution
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
-		expandedPath, err := ExpandHomeDir(homeDir, sshAuthSock)
+		expandedPath, err := pathutil.ExpandHomeDir(homeDir, sshAuthSock)
 		if err == nil {
 			sshAuthSock = expandedPath
 		}
