@@ -520,6 +520,22 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (Object, error) {
 	return s.toSelectable(id, res)
 }
 
+func (s *Server) LoadType(ctx context.Context, id *call.ID) (Typed, error) {
+	var base Object
+	var err error
+	if id.Receiver() != nil {
+		base, err = s.Load(ctx, id.Receiver())
+		if err != nil {
+			return nil, fmt.Errorf("load base: %w", err)
+		}
+	} else {
+		base = s.root
+	}
+
+	res, _, err := base.Call(ctx, s, id)
+	return res, err
+}
+
 // Select evaluates a series of chained field selections starting from the
 // given object and assigns the final result value into dest.
 func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Selector) error {
