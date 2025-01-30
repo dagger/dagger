@@ -1,4 +1,4 @@
-package io.dagger.sample.module;
+package io.dagger.modules.daggermodule;
 
 import io.dagger.client.Container;
 import io.dagger.client.DaggerQueryException;
@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 /** DaggerModule main object */
-@Object(value = "dagger-module-name")
+@Object
 public class DaggerModule extends Base {
   public DaggerModule() {
     super();

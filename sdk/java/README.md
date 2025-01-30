@@ -37,8 +37,8 @@ my-java-module
         └── java
             └── io
                 └── dagger
-                    └── sample
-                        └── module
+                    └── modules
+                        └── myjavamodule
                             ├── MyJavaModule.java
                             └── package-info.java
 
@@ -56,7 +56,7 @@ grep-dir         Returns lines that match a pattern in the files of the provided
 ```
 
 ```console
-$ dagger call -q -m my-java-module container-echo "hello dagger" stdout
+$ dagger call -q -m my-java-module container-echo --string-arg "hello dagger" stdout
 
 hello dagger
 

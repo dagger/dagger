@@ -146,7 +146,8 @@ func (m *JavaSdk) addTemplate(
 	ctr *dagger.Container,
 ) (*dagger.Container, error) {
 	name := m.moduleConfig.name
-	snakeName := strcase.ToSnake(name)
+	pkgName := strings.ReplaceAll(strings.ReplaceAll(strings.ToLower(name), "-", ""), "_", "")
+	kebabName := strcase.ToKebab(name)
 	camelName := strcase.ToCamel(name)
 
 	// Check if there's a pom.xml inside the module path. If a file exist, no need to add the templates
@@ -158,23 +159,29 @@ func (m *JavaSdk) addTemplate(
 		return filepath.Join(append([]string{m.moduleConfig.modulePath()}, rel...)...)
 	}
 
+	changes := []repl{
+		{"dagger-module", kebabName},
+		{"daggermodule", pkgName},
+	}
+
 	// Edit template content so that they match the dagger module name
 	templateDir := dag.CurrentModule().Source().Directory("template")
 	pomXML, err := m.replace(ctx, templateDir,
-		"pom.xml",
-		repl{"dagger-module", snakeName})
+		"pom.xml", changes...)
 	if err != nil {
 		return ctr, fmt.Errorf("could not add template: %w", err)
 	}
+
+	changes = append(changes, repl{"DaggerModule", camelName})
 	daggerModuleJava, err := m.replace(ctx, templateDir,
-		filepath.Join("src", "main", "java", "io", "dagger", "sample", "module", "DaggerModule.java"),
-		repl{"DaggerModule", camelName}, repl{"dagger-module-name", name})
+		filepath.Join("src", "main", "java", "io", "dagger", "modules", "daggermodule", "DaggerModule.java"),
+		changes...)
 	if err != nil {
 		return ctr, fmt.Errorf("could not add template: %w", err)
 	}
 	packageInfoJava, err := m.replace(ctx, templateDir,
-		filepath.Join("src", "main", "java", "io", "dagger", "sample", "module", "package-info.java"),
-		repl{"DaggerModule", camelName}, repl{"dagger-module-name", name})
+		filepath.Join("src", "main", "java", "io", "dagger", "modules", "daggermodule", "package-info.java"),
+		changes...)
 	if err != nil {
 		return ctr, fmt.Errorf("could not add template: %w", err)
 	}
@@ -182,8 +189,8 @@ func (m *JavaSdk) addTemplate(
 	// And copy them to the container, renamed to match the dagger module name
 	ctr = ctr.
 		WithNewFile(absPath("pom.xml"), pomXML).
-		WithNewFile(absPath("src", "main", "java", "io", "dagger", "sample", "module", fmt.Sprintf("%s.java", camelName)), daggerModuleJava).
-		WithNewFile(absPath("src", "main", "java", "io", "dagger", "sample", "module", "package-info.java"), packageInfoJava)
+		WithNewFile(absPath("src", "main", "java", "io", "dagger", "modules", pkgName, fmt.Sprintf("%s.java", camelName)), daggerModuleJava).
+		WithNewFile(absPath("src", "main", "java", "io", "dagger", "modules", pkgName, "package-info.java"), packageInfoJava)
 
 	return ctr, nil
 }
