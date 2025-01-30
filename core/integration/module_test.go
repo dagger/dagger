@@ -389,7 +389,7 @@ export class Test {
 			require.JSONEq(t, `{"test":{"set":{"foo": "abc"}}}`, out)
 
 			_, err = modGen.With(daggerQuery(`{test{set(foo: "abc", bar: "xyz"){bar}}}`)).Stdout(ctx)
-			requireErrOut(t, err, `Test has no such field: "bar"`)
+			requireErrOut(t, err, `Cannot query field \"bar\" on type \"Test\"`)
 		})
 	}
 }
@@ -951,7 +951,7 @@ func (ModuleSuite) TestUseLocal(ctx context.Context, t *testctx.T) {
 			// cannot use transitive dependency directly
 			_, err = modGen.With(daggerQuery(`{dep{hello}}`)).Stdout(ctx)
 			require.Error(t, err)
-			requireErrOut(t, err, `Query has no such field: "dep"`)
+			requireErrOut(t, err, `Cannot query field \"dep\" on type \"Query\"`)
 		})
 	}
 }
