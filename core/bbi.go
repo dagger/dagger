@@ -205,14 +205,14 @@ func (s *OneOneBBISession) tools(typedef *ast.Definition, toplevel bool, objectT
 			tool.Call = func(ctx context.Context, args any) (any, error) {
 				val, id, err := s.call(ctx, field, args, toplevel)
 				if err != nil {
-					return nil, err
+					return fmt.Sprintf("ERROR: %s", err.Error()), nil
 				}
 				// We always mutate the agent's self state (auto-chaining)
 				// FIXME: no way to create ephemeral copies of yourself.
 				// 	maybe make chaining opt-in, with a special "return" tool?
 				self, err := s.self.ObjectType().New(id, val)
 				if err != nil {
-					return nil, fmt.Errorf("new object: %w", err)
+					return fmt.Sprintf("ERROR: new object: %w", err), nil
 				}
 				_, span := Tracer(ctx).Start(ctx, fmt.Sprintf("[🤖] 📦 new state: %s", self.ID().Digest()))
 				s.self = self
@@ -226,7 +226,7 @@ func (s *OneOneBBISession) tools(typedef *ast.Definition, toplevel bool, objectT
 			tool.Call = func(ctx context.Context, args any) (any, error) {
 				_, id, err := s.call(ctx, field, args, toplevel)
 				if err != nil {
-					return nil, err
+					return fmt.Sprintf("error: %s", err.Error()), nil
 				}
 				// We send the return object's ID (in digest form to save tokens) + the ID type (to facilitate chaining)
 				// FIXME: gotta lookup the IDs from digests when receiving them..
@@ -258,8 +258,11 @@ func (s *OneOneBBISession) tools(typedef *ast.Definition, toplevel bool, objectT
 			// CASE 3: the function a non-object type
 			tool.Call = func(ctx context.Context, args any) (any, error) {
 				val, _, err := s.call(ctx, field, args, toplevel)
+				if err != nil {
+					return fmt.Sprintf("error: %s", err.Error()), nil
+				}
 				// We just return the value, and delegate marshalling it to the core implementation
-				return val, err
+				return val, nil
 			}
 		}
 		tools = append(tools, tool)
