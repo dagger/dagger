@@ -58,7 +58,7 @@ func NewAgent(srv *dagql.Server, self dagql.Object, selfType dagql.ObjectType) *
 	}
 	// Finish initializing if we have an actual instance
 	a.def = srv.Schema().Types[selfType.TypeName()]
-	a = a.WithSystemPrompt(fmt.Sprintf("You are a %s: %s", a.def.Name, a.def.Description))
+	a = a.WithSystemPrompt(fmt.Sprintf("You are a %s: %s\n\nWhen receiving and sending IDs, DO NOT change them. They are opaque identifiers.", a.def.Name, a.def.Description))
 	return a
 }
 
