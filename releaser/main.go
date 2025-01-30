@@ -309,7 +309,7 @@ func (r *Releaser) Publish(
 			tag:  "helm/chart/",
 			link: "https://github.com/dagger/dagger/pkgs/container/dagger-helm",
 			publish: func() error {
-				return r.Dagger.SDK().Php().Publish(ctx, tag, dagger.DaggerDevPhpsdkPublishOpts{
+				return dag.Helm().Publish(ctx, tag, dagger.HelmPublishOpts{
 					GithubToken: githubToken,
 					DryRun:      dryRun,
 				})
