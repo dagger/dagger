@@ -168,6 +168,10 @@ func (a *Agent) Run(
 		}
 		reply := res.Choices[0].Message
 		// Add the model reply to the history
+		if reply.Content != "" {
+			_, span := Tracer(ctx).Start(ctx, "🤖💬 "+reply.Content)
+			span.End()
+		}
 		a.history = append(a.history, reply)
 		// Handle tool calls
 		calls := res.Choices[0].Message.ToolCalls
