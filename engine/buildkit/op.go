@@ -7,10 +7,12 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/frontend"
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/solver"
+	"github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -20,8 +22,10 @@ type CustomOpWrapper struct {
 
 	ClientMetadata engine.ClientMetadata
 
-	server   dagqlServer
-	original solver.Op
+	server        dagqlServer
+	original      solver.Op
+	cacheAccessor bkcache.Accessor
+	worker        worker.Worker
 }
 
 type CustomOp interface {
@@ -31,7 +35,14 @@ type CustomOp interface {
 
 type CustomOpBackend interface {
 	CacheKey(ctx context.Context) (digest.Digest, error)
-	Exec(ctx context.Context, inputs []solver.Result, server *dagql.Server) (outputs []solver.Result, err error)
+	Exec(ctx context.Context, g bksession.Group, inputs []solver.Result, opts OpOpts) (outputs []solver.Result, err error)
+}
+
+type OpOpts struct {
+	Server *dagql.Server
+
+	Cache  bkcache.Accessor
+	Worker worker.Worker
 }
 
 var customOps = map[string]CustomOp{}
@@ -110,7 +121,11 @@ func (op *CustomOpWrapper) Exec(ctx context.Context, g bksession.Group, inputs [
 		return nil, fmt.Errorf("could not find dagql server: %w", err)
 	}
 
-	return op.Backend.Exec(ctx, inputs, server)
+	return op.Backend.Exec(ctx, g, inputs, OpOpts{
+		Server: server,
+		Cache:  op.cacheAccessor,
+		Worker: op.worker,
+	})
 }
 
 func (op *CustomOpWrapper) Acquire(ctx context.Context) (release solver.ReleaseFunc, err error) {
@@ -134,6 +149,8 @@ func (w *Worker) customOpFromVtx(vtx solver.Vertex, s frontend.FrontendLLBBridge
 		}
 		customOp.original = op
 		customOp.server = w.dagqlServer
+		customOp.cacheAccessor = w.workerCache
+		customOp.worker = w
 	}
 	return customOp, ok, nil
 }
