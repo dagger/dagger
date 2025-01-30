@@ -21,7 +21,7 @@ const (
 
 	ModSourceDirPath = "/src"
 	ModDirPath       = "/opt/module"
-	GenPath          = "sdk"
+	GenPath          = "dagger-io"
 )
 
 type JavaSdk struct {
@@ -39,8 +39,8 @@ func (c *moduleConfig) modulePath() string {
 	return filepath.Join(ModSourceDirPath, c.subPath)
 }
 
-func (c *moduleConfig) sdkPath() string {
-	return filepath.Join(c.modulePath(), GenPath)
+func (c *moduleConfig) genPath() string {
+	return filepath.Join(ModSourceDirPath, GenPath)
 }
 
 func New(
@@ -106,7 +106,7 @@ func (m *JavaSdk) codegenBase(
 
 // buildJavaDependencies builds and install the needed dependencies
 // used to build, package and run the user module.
-// Everything will be done under ModSourceDirPath/<subPath>/sdk (m.moduleConfig.sdkPath()).
+// Everything will be done under ModSourceDirPath/dagger-io (m.moduleConfig.genPath()).
 func (m *JavaSdk) buildJavaDependencies(
 	ctx context.Context,
 	introspectionJSON *dagger.File,
@@ -117,8 +117,8 @@ func (m *JavaSdk) buildJavaDependencies(
 		// Mount the introspection JSON file used to generate the SDK
 		WithMountedFile("/schema.json", introspectionJSON).
 		// Copy the SDK source directory, so all the files needed to build the dependencies
-		WithDirectory(m.moduleConfig.sdkPath(), m.SDKSourceDir).
-		WithWorkdir(m.moduleConfig.sdkPath()).
+		WithDirectory(m.moduleConfig.genPath(), m.SDKSourceDir).
+		WithWorkdir(m.moduleConfig.genPath()).
 		// Build and install the java modules one by one
 		// - dagger-codegen-maven-plugin: this plugin will be used to generate the SDK code, from the introspection file,
 		//   this means including the ability to call other projects (not part of the main dagger SDK)
@@ -208,18 +208,18 @@ func (m *JavaSdk) generateCode(
 		WithDirectory(
 			filepath.Join(m.moduleConfig.modulePath(), "target", "generated-sources", "entrypoint"),
 			entrypoint.Directory(filepath.Join(m.moduleConfig.modulePath(), "target", "generated-sources", "annotations"))).
-		// copy the sdk source code under target/generated-sources/sdk
+		// copy the sdk source code under target/generated-sources/dagger-io
 		// this is not really generated-sources, this is the sdk. But we don't want it as the user source code
 		// and we don't want to install it on the user machine. That way the java classes are made available
 		// to a build system or an IDE without to interfere with the user source code
 		WithDirectory(
-			filepath.Join(m.moduleConfig.modulePath(), "target", "generated-sources", "sdk"),
-			javaDeps.Directory(filepath.Join(m.moduleConfig.sdkPath(), "dagger-java-sdk", "src", "main", "java"))).
-		// copy the generated SDK files to target/generated-sources/dagger
+			filepath.Join(m.moduleConfig.modulePath(), "target", "generated-sources", "dagger-io"),
+			javaDeps.Directory(filepath.Join(m.moduleConfig.genPath(), "dagger-java-sdk", "src", "main", "java"))).
+		// copy the generated SDK files to target/generated-sources/dagger-module
 		// those are all the types generated from the introspection
 		WithDirectory(
-			filepath.Join(m.moduleConfig.modulePath(), "target", "generated-sources", "dagger"),
-			javaDeps.Directory(filepath.Join(m.moduleConfig.sdkPath(), "dagger-java-sdk", "target", "generated-sources", "dagger"))).
+			filepath.Join(m.moduleConfig.modulePath(), "target", "generated-sources", "dagger-module"),
+			javaDeps.Directory(filepath.Join(m.moduleConfig.genPath(), "dagger-java-sdk", "target", "generated-sources", "dagger"))).
 		Directory(ModSourceDirPath)
 }
 
