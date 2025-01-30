@@ -79,20 +79,54 @@ func (s *OneOneBBISession) Tools() []Tool {
 	return s.tools(s.def, true, objectTypes)
 }
 
-func (s *OneOneBBISession) call(ctx context.Context, field *ast.FieldDefinition, args interface{}) (dagql.Typed, *call.ID, error) {
+func (s *OneOneBBISession) LookupObject(ctx context.Context, idDigest string) (dagql.Object, error) {
+	id, err := s.LookupObjectID(ctx, idDigest)
+	if err != nil {
+		return nil, err
+	}
+	return s.srv.Load(ctx, id)
+}
+
+func (s *OneOneBBISession) LookupObjectID(ctx context.Context, idDigest string) (*call.ID, error) {
+	slog.Debug("looking up ID from digest", "digest", idDigest)
+	id, ok := s.IDs[idDigest]
+	if !ok {
+		return nil, fmt.Errorf("ID lookup failed: %s", idDigest)
+	}
+	return id, nil
+}
+
+func (s *OneOneBBISession) TypeWasReturned(typename string) bool {
+	for _, id := range s.IDs {
+		if id.Type().NamedType() == typename {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *OneOneBBISession) call(ctx context.Context, field *ast.FieldDefinition, args interface{}, toplevel bool) (dagql.Typed, *call.ID, error) {
 	// 1. CONVERT CALL INPUTS (BRAIN -> BODY)
 	argsMap, ok := args.(map[string]any)
 	if !ok {
 		return nil, nil, fmt.Errorf("tool call: %s: expected arguments to be a map - got %#v", field.Name, args)
 	}
-	classField, ok := s.self.ObjectType().FieldSpec(field.Name)
+	target := s.self
+	if !toplevel {
+		slog.Debug("processing special argument 'id'", "field", field.Name)
+		obj, err := s.LookupObject(ctx, argsMap["id"].(string))
+		if err != nil {
+			return nil, nil, err
+		}
+		target = obj
+	}
+	classField, ok := target.ObjectType().FieldSpec(field.Name)
 	if !ok {
 		return nil, nil, fmt.Errorf("field %q not found in object type %q", field.Name, s.self.ObjectType().TypeName())
 	}
 	sel := dagql.Selector{
 		Field: field.Name,
 	}
-	target := s.self
 	for _, arg := range classField.Args {
 		val, ok := argsMap[arg.Name]
 		if !ok {
@@ -101,17 +135,9 @@ func (s *OneOneBBISession) call(ctx context.Context, field *ast.FieldDefinition,
 		// Is this argument of ID type?
 		if strings.HasSuffix(arg.Type.Type().Name(), "ID") {
 			// Translate ID digest back to the full-size ID
-			id, ok := s.IDs[val.(string)]
-			if !ok {
-				return nil, nil, fmt.Errorf("ID lookup failed: %s", val.(string))
-			}
-			if arg.Name == "id" {
-				obj, err := s.srv.Load(ctx, id)
-				if err != nil {
-					return nil, nil, fmt.Errorf("failed to load %s %s: %s", arg.Type.Type().Name(), id.Display(), err.Error())
-				}
-				target = obj
-				continue
+			id, err := s.LookupObjectID(ctx, val.(string))
+			if err != nil {
+				return nil, nil, err
 			}
 			idVal, err := id.Encode()
 			if err != nil {
@@ -148,7 +174,7 @@ func (s *OneOneBBISession) tools(typedef *ast.Definition, toplevel bool, objectT
 		slog.Debug("Loading tool from field", "type", typedef.Name, "field", field.Name)
 		var name = field.Name
 		// Hide some special fields to avoid tool explosion
-		if (name == "asAgent") || (name == "asModule") {
+		if (name == "agent") || (name == "asModule") {
 			slog.Debug("Hiding special field", "type", typedef.Name, "field", field.Name)
 			continue
 		}
@@ -177,7 +203,7 @@ func (s *OneOneBBISession) tools(typedef *ast.Definition, toplevel bool, objectT
 			slog.Debug("Field returns self-type. Tool will auto-chain", "type", typedef.Name, "field", field.Name)
 			// CASE 1: the function returns the self type (chainable)
 			tool.Call = func(ctx context.Context, args any) (any, error) {
-				val, id, err := s.call(ctx, field, args)
+				val, id, err := s.call(ctx, field, args, toplevel)
 				if err != nil {
 					return nil, err
 				}
@@ -198,7 +224,7 @@ func (s *OneOneBBISession) tools(typedef *ast.Definition, toplevel bool, objectT
 			slog.Debug("Field returns non-self object type. Tool will return ID digest", "type", typedef.Name, "field", field.Name)
 			// CASE 2: the function returns an object type other than the self type
 			tool.Call = func(ctx context.Context, args any) (any, error) {
-				_, id, err := s.call(ctx, field, args)
+				_, id, err := s.call(ctx, field, args, toplevel)
 				if err != nil {
 					return nil, err
 				}
@@ -214,10 +240,14 @@ func (s *OneOneBBISession) tools(typedef *ast.Definition, toplevel bool, objectT
 			if _, alreadyFound := objectTypes[objTypeName]; !alreadyFound {
 				slog.Debug("Field returns object type we haven't seen before", "type", typedef.Name, "field", field.Name, "fieldType", objTypeName)
 				if objTypeName != "Module" && (!strings.HasSuffix(objTypeName, "Agent")) {
-					slog.Debug("Recursively loading tools from newly found return type", "type", typedef.Name, "field", field.Name, "fieldType", objTypeName)
 					// First time we see this type. Let's recursively scan it for tools
-					objectTypes[objTypeName] = objType
-					tools = append(tools, s.tools(objType, false, objectTypes)...)
+					if s.TypeWasReturned(objTypeName) {
+						slog.Debug("Recursively loading tools from newly found return type", "type", typedef.Name, "field", field.Name, "fieldType", objTypeName)
+						objectTypes[objTypeName] = objType
+						tools = append(tools, s.tools(objType, false, objectTypes)...)
+					} else {
+						slog.Debug("Skipping newly found return type: we haven't returned it yet", "type", typedef.Name, "field", field.Name, "fieldType", objTypeName)
+					}
 				} else {
 					slog.Debug("Skipping newly found return type: it's on the 'do not scan' list", "type", typedef.Name, "field", field.Name, "fieldType", objTypeName)
 				}
@@ -226,7 +256,7 @@ func (s *OneOneBBISession) tools(typedef *ast.Definition, toplevel bool, objectT
 			slog.Debug("Field returns non-object type. Tool will return its value", "type", typedef.Name, "field", field.Name)
 			// CASE 3: the function a non-object type
 			tool.Call = func(ctx context.Context, args any) (any, error) {
-				val, _, err := s.call(ctx, field, args)
+				val, _, err := s.call(ctx, field, args, toplevel)
 				// We just return the value, and delegate marshalling it to the core implementation
 				return val, err
 			}
