@@ -818,6 +818,7 @@ func (mod *Module) WithDescription(desc string) *Module {
 
 func (mod *Module) WithObject(ctx context.Context, def *TypeDef) (*Module, error) {
 	mod = mod.Clone()
+
 	if !def.AsObject.Valid {
 		return nil, fmt.Errorf("expected object type def, got %s: %+v", def.Kind, def)
 	}

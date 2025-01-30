@@ -111,3 +111,9 @@ func (s *engineSchema) cachePrune(ctx context.Context, parent *core.EngineCache,
 func (s *engineSchema) cacheEntrySetEntries(ctx context.Context, parent *core.EngineCacheEntrySet, args struct{}) ([]*core.EngineCacheEntry, error) {
 	return parent.EntriesList, nil
 }
+
+// A utility to retrieve the root query object from the underlyign dagql server
+// Note: this only works after the root query object has been installed!
+func (s *engineSchema) rootQuery() *core.Query {
+	return s.srv.Root().(dagql.Instance[*core.Query]).Self
+}

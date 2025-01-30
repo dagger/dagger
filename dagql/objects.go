@@ -87,6 +87,14 @@ func (class Class[T]) Field(name string, views ...string) (Field[T], bool) {
 	return class.fieldLocked(name, views...)
 }
 
+func (class Class[T]) FieldSpec(name string, views ...string) (FieldSpec, bool) {
+	field, ok := class.Field(name, views...)
+	if !ok {
+		return FieldSpec{}, false
+	}
+	return field.Spec, true
+}
+
 func (class Class[T]) fieldLocked(name string, views ...string) (Field[T], bool) {
 	fields, ok := class.fields[name]
 	if !ok {
@@ -791,8 +799,9 @@ type Fields[T Typed] []Field[T]
 // Install installs the field's Object type if needed, and installs all fields
 // into the type.
 func (fields Fields[T]) Install(server *Server) {
-	server.installLock.Lock()
-	defer server.installLock.Unlock()
+	// FIXME: shortcut to get our "agent" middleware to work
+	// server.installLock.Lock()
+	// defer server.installLock.Unlock()
 	var t T
 	typeName := t.Type().Name()
 	class := fields.findOrInitializeType(server, typeName)
@@ -1192,7 +1201,13 @@ func setInputFields(specs InputSpecs, inputs map[string]Input, dest any) error {
 			return fmt.Errorf("missing required input: %q", spec.Name)
 		}
 		if err := assign(fieldV, val); err != nil {
-			return fmt.Errorf("assign %q: %w", spec.Name, err)
+			return fmt.Errorf("assign input %q (%T) as %+v (%T): %w",
+				spec.Name,
+				fieldV.Interface(),
+				val,
+				val,
+				err,
+			)
 		}
 	}
 	return nil
