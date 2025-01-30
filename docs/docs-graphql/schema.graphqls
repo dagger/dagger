@@ -2870,6 +2870,9 @@ type Query {
   """Load a SourceMap from its ID."""
   loadSourceMapFromID(id: SourceMapID!): SourceMap!
 
+  """Load a Span from its ID."""
+  loadSpanFromID(id: SpanID!): Span!
+
   """Load a Terminal from its ID."""
   loadTerminalFromID(id: TerminalID!): Terminal!
 
@@ -2937,6 +2940,14 @@ type Query {
     """The line number within the filename."""
     line: Int!
   ): SourceMap!
+
+  """Create a new OpenTelemetry span."""
+  span(
+    key: String = ""
+
+    """Name of the span."""
+    name: String!
+  ): Span!
 
   """Create a new TypeDef."""
   typeDef: TypeDef!
@@ -3101,6 +3112,27 @@ type SourceMap {
 The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
 """
 scalar SourceMapID
+
+"""An OpenTelemetry span."""
+type Span {
+  """End the OpenTelemetry span, with an optional error."""
+  end(error: ErrorID): Void
+
+  """A unique identifier for this Span."""
+  id: SpanID!
+
+  """Returns the internal ID of the span."""
+  internalId: String!
+  name: String!
+
+  """Start a new instance of the span."""
+  start: SpanID!
+}
+
+"""
+The `SpanID` scalar type represents an identifier for an object of type Span.
+"""
+scalar SpanID
 
 """An interactive terminal that clients can connect to."""
 type Terminal {
