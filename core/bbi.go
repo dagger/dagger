@@ -232,7 +232,8 @@ func (s *OneOneBBISession) tools(typedef *ast.Definition, toplevel bool, objectT
 				// FIXME: gotta lookup the IDs from digests when receiving them..
 				idDigest := id.Digest().String()
 				s.IDs[idDigest] = id
-				return fmt.Sprintf("<%[1]s>%s</%[1]s>", field.Type.Name(), idDigest), nil
+				//return fmt.Sprintf("<%[1]sID>%s</%[1]sID>", field.Type.Name(), idDigest), nil
+				return idDigest, nil
 			}
 			// Track the return type so that we can extract that type's tools later
 			objTypeName := field.Type.Name()

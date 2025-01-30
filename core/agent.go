@@ -470,8 +470,8 @@ func (s AgentMiddleware) InstallObject(selfType dagql.ObjectType, install func(d
 	)
 	agentType.Extend(
 		dagql.FieldSpec{
-			Name:        "do",
-			Description: "tell the agent to accomplish a task, and return its new state",
+			Name:        "please",
+			Description: "ask nicely the agent to accomplish a task, and return its new state",
 			Type:        agentType.Typed(),
 			Args: dagql.InputSpecs{
 				{
@@ -645,8 +645,8 @@ func (s AgentMiddleware) ModuleWithObject(ctx context.Context, mod *Module, self
 	})
 
 	agentType.Functions = append(agentType.Functions, &Function{
-		Name:        "do",
-		Description: "tell the agent to accomplish a task, and return its new state",
+		Name:        "please",
+		Description: "ask nicely the agent to accomplish a task, and return its new state",
 		ReturnType:  agentTypeRef,
 		Args: []*FunctionArg{
 			{
