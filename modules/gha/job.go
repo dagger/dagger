@@ -12,6 +12,11 @@ type Job struct {
 	Name    string
 	Command string
 
+	// Additional commands to run before the main one
+	SetupCommands []string
+	// Additional commands to run after the main one
+	TeardownCommands []string
+
 	// The maximum number of minutes to run the workflow before killing the process
 	TimeoutMinutes int
 	// Run the workflow in debug mode
@@ -45,6 +50,13 @@ type Job struct {
 func (gha *Gha) Job(
 	name string,
 	command string,
+
+	// Additional commands to run before the main one.
+	// +optional
+	setupCommands []string,
+	// Additional commands to run after the main one.
+	// +optional
+	teardownCommands []string,
 
 	// Public Dagger Cloud token, for open-source projects. DO NOT PASS YOUR PRIVATE DAGGER CLOUD TOKEN!
 	// This is for a special "public" token which can safely be shared publicly.
@@ -87,19 +99,21 @@ func (gha *Gha) Job(
 	uploadLogs bool,
 ) *Job {
 	j := &Job{
-		Name:           name,
-		PublicToken:    publicToken,
-		StopEngine:     stopEngine,
-		Command:        command,
-		TimeoutMinutes: timeoutMinutes,
-		Debug:          debug,
-		SparseCheckout: sparseCheckout,
-		LFS:            lfs,
-		Secrets:        secrets,
-		Runner:         runner,
-		Module:         module,
-		DaggerVersion:  daggerVersion,
-		UploadLogs:     uploadLogs,
+		Name:             name,
+		PublicToken:      publicToken,
+		StopEngine:       stopEngine,
+		Command:          command,
+		SetupCommands:    setupCommands,
+		TeardownCommands: teardownCommands,
+		TimeoutMinutes:   timeoutMinutes,
+		Debug:            debug,
+		SparseCheckout:   sparseCheckout,
+		LFS:              lfs,
+		Secrets:          secrets,
+		Runner:           runner,
+		Module:           module,
+		UploadLogs:       uploadLogs,
+		DaggerVersion:    daggerVersion,
 	}
 	j.applyDefaults(gha.JobDefaults)
 	return j
@@ -149,5 +163,7 @@ func (j *Job) applyDefaults(other *Job) *Job {
 	setDefault(&j.Module, other.Module)
 	setDefault(&j.DaggerVersion, other.DaggerVersion)
 	setDefault(&j.UploadLogs, other.UploadLogs)
+	mergeDefault(&j.SetupCommands, other.SetupCommands)
+	mergeDefault(&j.TeardownCommands, other.TeardownCommands)
 	return j
 }

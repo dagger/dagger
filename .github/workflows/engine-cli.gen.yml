@@ -956,6 +956,9 @@ jobs:
                 # Run a simple query to "warm up" the engine
                 echo '{directory{id}}' | dagger query
               shell: bash
+            - name: sudo sysctl -w vm.overcommit_memory=1
+              run: sudo sysctl -w vm.overcommit_memory=1
+              shell: bash
             - name: scripts/exec.sh
               id: exec
               run: |

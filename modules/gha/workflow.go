@@ -387,7 +387,13 @@ func (w *Workflow) asWorkflow() api.Workflow {
 		steps = append(steps, job.checkoutStep()) // TODO: make checkout configurable
 		steps = append(steps, job.installDaggerSteps()...)
 		steps = append(steps, job.warmEngineStep())
-
+		for _, cmd := range job.SetupCommands {
+			steps = append(steps, api.JobStep{
+				Name:  cmd,
+				Shell: "bash",
+				Run:   cmd,
+			})
+		}
 		callStep := job.callDaggerStep()
 		steps = append(steps, callStep)
 		if job.UploadLogs {
@@ -396,6 +402,13 @@ func (w *Workflow) asWorkflow() api.Workflow {
 		}
 		if job.StopEngine {
 			steps = append(steps, job.stopEngineStep())
+		}
+		for _, cmd := range job.TeardownCommands {
+			steps = append(steps, api.JobStep{
+				Name:  cmd,
+				Shell: "bash",
+				Run:   cmd,
+			})
 		}
 
 		jobs[idify(job.Name)] = api.Job{

@@ -171,17 +171,35 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 		WithJob(runner.Job("engine-test-publish", "engine publish --image=dagger-engine.dev --tag=main --dry-run")).
 		WithJob(runner.Job("scan-engine", "engine scan")).
 		With(splitTests(runner, "test-", false, []testSplit{
-			{"modules", []string{"TestModule"}, GoldRunner(false)},
-			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP"}, GoldRunner(false)},
-			{"cli-engine", []string{"TestCLI", "TestEngine"}, GoldRunner(false)},
-			// HACK: our main runners don't support cgroupsv2
-			{"cgroupsv2", []string{"TestProvision", "TestTelemetry"}, "ubuntu-latest"},
-			{"everything-else", nil, GoldRunner(false)},
+			{"modules", []string{"TestModule"}, &dagger.GhaJobOpts{
+				Runner: []string{GoldRunner(false)},
+			}},
+			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP"}, &dagger.GhaJobOpts{
+				Runner: []string{GoldRunner(false)},
+			}},
+			{"cli-engine", []string{"TestCLI", "TestEngine"}, &dagger.GhaJobOpts{
+				Runner: []string{GoldRunner(false)},
+			}},
+			{"cgroupsv2", []string{"TestProvision", "TestTelemetry"}, &dagger.GhaJobOpts{
+				// HACK: our main runners don't support cgroupsv2
+				Runner: []string{"ubuntu-latest"},
+				// NOTE: needed to silence redis warning logs in tests
+				SetupCommands: []string{"sudo sysctl -w vm.overcommit_memory=1"},
+			}},
+			{"everything-else", nil, &dagger.GhaJobOpts{
+				Runner: []string{GoldRunner(false)},
+			}},
 		})).
 		With(splitTests(runner, "testdev-", true, []testSplit{
-			{"modules", []string{"TestModule"}, PlatinumRunner(true)},
-			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP"}, PlatinumRunner(true)},
-			{"container", []string{"TestContainer"}, PlatinumRunner(true)},
+			{"modules", []string{"TestModule"}, &dagger.GhaJobOpts{
+				Runner: []string{PlatinumRunner(true)},
+			}},
+			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP"}, &dagger.GhaJobOpts{
+				Runner: []string{PlatinumRunner(true)},
+			}},
+			{"container", []string{"TestContainer"}, &dagger.GhaJobOpts{
+				Runner: []string{PlatinumRunner(true)},
+			}},
 		}))
 
 	ci.Workflows = ci.Workflows.WithWorkflow(w)
@@ -189,9 +207,10 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 }
 
 type testSplit struct {
-	name   string
-	tests  []string
-	runner string
+	name  string
+	tests []string
+	// runner string
+	opts *dagger.GhaJobOpts
 }
 
 // tests are temporarily split out - for context: https://github.com/dagger/dagger/pull/8998#issuecomment-2491426455
@@ -207,11 +226,9 @@ func splitTests(runner *dagger.Gha, name string, dev bool, splits []testSplit) d
 			}
 			doneTests = append(doneTests, split.tests...)
 
-			opts := dagger.GhaJobOpts{
-				Runner:         []string{split.runner},
-				TimeoutMinutes: 30,
-				UploadLogs:     true,
-			}
+			opts := *split.opts
+			opts.TimeoutMinutes = 30
+			opts.UploadLogs = true
 			if dev {
 				opts.DaggerVersion = "."
 			}
