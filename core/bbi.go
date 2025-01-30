@@ -164,6 +164,7 @@ func (s *OneOneBBISession) isObjectType(t *ast.Type) bool {
 	if !ok {
 		return false
 	}
+	slog.Debug("Checking if type is an object", "typeName", t.NamedType, "kind", objType.Kind)
 	return objType.Kind == ast.Object
 }
 
