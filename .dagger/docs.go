@@ -20,11 +20,12 @@ type Docs struct {
 }
 
 const (
-	generatedSchemaPath           = "docs/docs-graphql/schema.graphqls"
-	generatedCliZenPath           = "docs/current_docs/reference/cli.mdx"
-	generatedAPIReferencePath     = "docs/static/api/reference/index.html"
-	generatedDaggerJSONSchemaPath = "docs/static/reference/dagger.schema.json"
-	generatedEngineJSONSchemaPath = "docs/static/reference/engine.schema.json"
+	generatedSchemaPath              = "docs/docs-graphql/schema.graphqls"
+	generatedCliZenPath              = "docs/current_docs/reference/cli.mdx"
+	generatedAPIReferencePath        = "docs/static/api/reference/index.html"
+	generatedDaggerJSONSchemaPath    = "docs/static/reference/dagger.schema.json"
+	generatedDaggerReferencePagePath = "docs/current_docs/api/dagger-schema-ref.mdx"
+	generatedEngineJSONSchemaPath    = "docs/static/reference/engine.schema.json"
 )
 
 const cliZenFrontmatter = `---
@@ -196,6 +197,89 @@ func (d Docs) GenerateSchemaReference() *dagger.Directory {
 		WithExec([]string{"yarn", "run", "spectaql", "./docs-graphql/config.yml", "-t", "."}).
 		File("index.html")
 	return dag.Directory().WithFile(generatedAPIReferencePath, generatedHTML)
+}
+
+func (d Docs) GenerateReferencePages(ctx context.Context) (*dagger.File, error) {
+	dir := d.GenerateConfigSchemas()
+
+	contents, err := dir.File(generatedDaggerJSONSchemaPath).Contents(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error reading contents: %v", err)
+	}
+
+	var schema struct {
+		Definitions map[string]struct {
+			Properties map[string]struct {
+				Type        string `json:"type"`
+				Description string `json:"description"`
+				Items       *struct {
+					Type string `json:"type"`
+					Ref  string `json:"$ref"`
+				} `json:"items"`
+				Ref string `json:"$ref"`
+			} `json:"properties"`
+			Required []string `json:"required"`
+		} `json:"$defs"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(contents)), &schema); err != nil {
+		return nil, fmt.Errorf("error marshalling: %v", err)
+	}
+
+	if len(schema.Definitions) == 0 {
+		return nil, fmt.Errorf("no properties: %v", schema)
+	}
+
+	var s strings.Builder
+
+	s.WriteString("---\n")
+	s.WriteString("slug: /api/dagger-schema-reference\n")
+	s.WriteString("---\n\n")
+	s.WriteString("# dagger.json Schema Reference\n\n")
+	s.WriteString("The `dagger.json` file defines the configuration for a Dagger module. Below is a detailed description of each field, including its type, description, and whether it is required.\n\n")
+	s.WriteString("**Note**: The JSON schema file for configuring your IDE is available at [this URL](https://docs.dagger.io/reference/dagger.schema.json).\n\n")
+
+	mainConfig, exists := schema.Definitions["ModuleConfigWithUserFields"]
+	if !exists {
+		return nil, fmt.Errorf("missing ModuleConfigWithUserFields: %v", schema)
+	}
+
+	s.WriteString("## Main Configuration\n\n")
+	for name, prop := range mainConfig.Properties {
+		required := "Optional"
+		for _, req := range mainConfig.Required {
+			if req == name {
+				required = "Required"
+			}
+		}
+
+		s.WriteString(fmt.Sprintf("- **`%s`** (%s) — %s\n\n", name, required, prop.Description))
+		s.WriteString(fmt.Sprintf("  **Type:** %s\n\n", prop.Type))
+	}
+
+	s.WriteString("## Nested Blocks\n\n")
+	for name, def := range schema.Definitions {
+		if name == "ModuleConfigWithUserFields" {
+			continue
+		}
+
+		s.WriteString(fmt.Sprintf("### `%s`\n\n", name))
+		for name, prop := range def.Properties {
+			required := "Optional"
+			for _, req := range mainConfig.Required {
+				if req == name {
+					required = "Required"
+				}
+			}
+
+			s.WriteString(fmt.Sprintf("- **`%s`** (%s) — %s\n\n", name, required, prop.Description))
+			s.WriteString(fmt.Sprintf("  **Type:** %s\n\n", prop.Type))
+		}
+	}
+
+	return dag.
+		Directory().
+		WithNewFile(generatedDaggerReferencePagePath, s.String()).
+		File(generatedDaggerReferencePagePath), nil
 }
 
 // Regenerate the config schemas
