@@ -244,6 +244,7 @@ func (s *Server) installObject(class ObjectType) {
 				}
 				return res, nil
 			},
+			nil,
 		)
 	}
 }

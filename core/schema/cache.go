@@ -52,7 +52,7 @@ func (s *cacheSchema) cacheVolumeCacheKey(ctx context.Context, parent dagql.Inst
 		return "", err
 	}
 
-	return hashFrom(origDgst.String(), namespaceKey), nil
+	return core.HashFrom(origDgst.String(), namespaceKey), nil
 }
 
 func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.Instance[*core.Query], args cacheArgs) (dagql.Instance[*core.CacheVolume], error) {

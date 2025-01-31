@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/exp/constraints"
 
@@ -47,7 +48,8 @@ type ObjectType interface {
 	//
 	// Unlike natively added fields, the extended func is limited to the external
 	// Object interface.
-	Extend(spec FieldSpec, fun FieldFunc)
+	// cacheKeyFun is optional, if not set the default dagql ID cache key will be used.
+	Extend(spec FieldSpec, fun FieldFunc, cacheKeyFun FieldCacheKeyFunc)
 }
 
 type IDType interface {
@@ -59,6 +61,11 @@ type IDType interface {
 // FieldFunc is a function that implements a field on an object while limited
 // to the object's external interface.
 type FieldFunc func(context.Context, Object, map[string]Input) (Typed, error)
+
+// FieldCacheKeyFunc is a function that computes a cache key for a field on an object. The cache key
+// will be used to cache the result of the field call in dagql's cache and serve as the digest of the
+// call's ID.
+type FieldCacheKeyFunc func(context.Context, Object, map[string]Input, digest.Digest) (digest.Digest, error)
 
 type IDable interface {
 	// ID returns the ID of the value.
