@@ -87,6 +87,7 @@ require (
 	github.com/tidwall/gjson v1.18.0
 	github.com/tonistiigi/fsutil v0.0.0-20240424095704-91a3fc46842c
 	github.com/urfave/cli v1.22.16
+	github.com/vektah/gqlparser v1.3.1
 	github.com/vektah/gqlparser/v2 v2.5.20
 	github.com/vito/go-sse v1.1.2
 	github.com/vito/midterm v0.2.1-0.20241012205340-d5c6540bf1e1
