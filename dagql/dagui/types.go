@@ -85,7 +85,7 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans []*Span, f func(*TraceTree)) {
 		// If the span should be hidden, don't even collect it into the tree so we
 		// can track relationships between rows accurately (e.g. chaining pipeline
 		// calls).
-		if !opts.ShouldShow(span) {
+		if !opts.ShouldShow(db, span) {
 			return
 		}
 
