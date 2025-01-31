@@ -7,8 +7,9 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/dagger/dagger/core/bbi"
+	_ "github.com/dagger/dagger/core/bbi/flat"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/slog"
 	"github.com/joho/godotenv"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
@@ -90,14 +91,10 @@ func (a *Agent) Self(ctx context.Context) dagql.Object {
 	return a.self
 }
 
-// Generate a human-readable documentation of tools available to the model via the current BBI
+// Generate a human-readable documentation of tools available to the model via BBI
 func (a *Agent) ToolsDoc(ctx context.Context) (string, error) {
-	bbi, err := OneOneBBI{}.NewSession(a.self, a.srv)
-	if err != nil {
-		return "", err
-	}
 	var result string
-	for _, tool := range bbi.Tools() {
+	for _, tool := range a.BBI().Tools() {
 		schema, err := json.MarshalIndent(tool.Schema, "", "  ")
 		if err != nil {
 			return "", err
@@ -146,9 +143,9 @@ func (a *Agent) LastReply() (string, error) {
 
 // Start a new BBI (Brain-Body Interface) session.
 // BBI allows a LLM to consume the Dagger API via tool calls
-func (a *Agent) BBISession() (BBISession, error) {
+func (a *Agent) BBI() bbi.Session {
 	// Hardcode the "one-one" BBI strategy
-	return OneOneBBI{}.NewSession(a.self, a.srv)
+	return bbi.NewSession(a.self, a.srv)
 }
 
 func (a *Agent) Run(
@@ -156,12 +153,10 @@ func (a *Agent) Run(
 	maxLoops int,
 ) (*Agent, error) {
 	a = a.Clone()
-	bbi, err := a.BBISession()
-	if err != nil {
-		return nil, err
-	}
+	// Start a new BBI session
+	session := a.BBI()
 	for i := 0; maxLoops == 0 || i < maxLoops; i++ {
-		tools := bbi.Tools()
+		tools := session.Tools()
 		res, err := a.sendQuery(ctx, tools)
 		if err != nil {
 			return nil, err
@@ -205,7 +200,7 @@ func (a *Agent) Run(
 			}
 		}
 	}
-	a.self = bbi.Self()
+	a.self = session.Self()
 	return a, nil
 }
 
@@ -303,7 +298,7 @@ func (a *Agent) llmConfig(ctx context.Context) (*LlmConfig, error) {
 	return cfg, nil
 }
 
-func (a *Agent) sendQuery(ctx context.Context, tools []Tool) (res *openai.ChatCompletion, rerr error) {
+func (a *Agent) sendQuery(ctx context.Context, tools []bbi.Tool) (res *openai.ChatCompletion, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "[🤖] 💭")
 	defer func() {
 		if rerr != nil {
@@ -422,15 +417,11 @@ type AgentMiddleware struct {
 
 func (s AgentMiddleware) InstallObject(selfType dagql.ObjectType, install func(dagql.ObjectType)) {
 	selfTypeName := selfType.TypeName()
-	slog.Debug("[agent middleware] installing original type: " + selfTypeName)
 	// Install the target type first, so we can reference it in our wrapper type
 	if !s.isAgentMaterial(selfType) {
 		install(selfType)
-		slog.Debug("[agent middleware] not installing agent wrapper on special type " + selfTypeName)
 		return
 	}
-	slog.Debug("[agent middleware] installing wrapper type: " + selfTypeName + "Agent")
-	defer slog.Debug("[agent middleware] installed: " + selfTypeName + "Agent")
 	agentType := dagql.NewClass[*Agent](dagql.ClassOpts[*Agent]{
 		// Instantiate a throwaway agent instance from the type
 		Typed: NewAgent(s.Server, nil, selfType),
@@ -593,10 +584,8 @@ func (s AgentMiddleware) ModuleWithObject(ctx context.Context, mod *Module, self
 	if !selfType.AsObject.Valid {
 		return nil, fmt.Errorf("expected object type, got %s", selfType.Kind)
 	}
-
 	selfType = selfType.Clone()
 	selfTypeName := selfType.AsObject.Value.Name
-
 	agentType := NewObjectTypeDef(
 		"Agent"+selfTypeName,
 		"An agent for interacting with an "+selfTypeName,
