@@ -1,4 +1,11 @@
-package core
+// A BBI driver implementing the "flat" strategy
+//
+// The core idea, derived from aluzzardi's "langdag" Hack Day demo on Jan 23 2025,
+// is this: each Dagger function in the host object is mapped one-to-one to a tool
+// - Each Dagger function is mapped "one to one" to a tool.
+// - Chaining is handled by flattening multiple type's functions in a single namespace
+
+package flat
 
 import (
 	"context"
@@ -9,77 +16,43 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/vektah/gqlparser/v2/ast"
+
+	"github.com/dagger/dagger/core/bbi"
 )
 
-// BBI stands for "Body-Brain Interface".
-// A BBI implements a strategy for mapping a Dagger object's API to LLM function calls
-// The perfect BBI has not yet been designed, so there are multiple BBI implementations,
-// and an interface for easily swapping them out.
-// Hopefully in the future the perfect BBI design will emerge, and we can retire
-// the pluggable interface.
-
-type BBI[T dagql.Object] interface {
-	NewSession(self T, def ast.Definition) BBISession
+func init() {
+	bbi.Register("flat", new(Driver))
 }
 
-type BBISession interface {
-	// Return a set of tools for the next llm loop
-	// The tools may modify the state without worrying about synchronization:
-	// it's the agent's responsibility to not call tools concurrently.
-	Tools() []Tool
-	Self() dagql.Object
-}
+type Driver struct{}
 
-// A frontend for LLM tool calling
-type Tool struct {
-	Name        string
-	Description string
-	Schema      map[string]interface{}
-	Call        func(context.Context, interface{}) (interface{}, error)
-}
-
-//
-// BBI IMPLEMENTATIONS:
-//
-
-// The "one-one" BBI strategy
-// Each Dagger function is mapped "one to one" to a tool.
-// This is derived from aluzzardi's "langdag" Hack Day demo on Jan 23 2025
-type OneOneBBI struct{}
-
-type OneOneBBISession struct {
+type Session struct {
 	self dagql.Object
 	srv  *dagql.Server
 	def  *ast.Definition
 	IDs  map[string]*call.ID
 }
 
-func (bbi OneOneBBI) NewSession(self dagql.Object, srv *dagql.Server) (BBISession, error) {
-	typename := self.Type().Name()
-	def, ok := srv.Schema().Types[typename]
-	if !ok {
-		// FIXME: in a controlled environment we don't need to error check this
-		return nil, fmt.Errorf("can't introspect type: %s", typename)
-	}
-	return &OneOneBBISession{
+func (d Driver) NewSession(self dagql.Object, srv *dagql.Server) bbi.Session {
+	return &Session{
 		self: self,
 		srv:  srv,
-		def:  def,
+		def:  srv.Schema().Types[self.Type().Name()],
 		IDs:  make(map[string]*call.ID),
-	}, nil
+	}
 }
 
-func (s *OneOneBBISession) Self() dagql.Object {
+func (s *Session) Self() dagql.Object {
 	return s.self
 }
 
-func (s *OneOneBBISession) Tools() []Tool {
+func (s *Session) Tools() []bbi.Tool {
 	objectTypes := make(map[string]*ast.Definition)
 	// Load top-level tools from the self type
 	return s.tools(s.def, true, objectTypes)
 }
 
-func (s *OneOneBBISession) LookupObject(ctx context.Context, idDigest string) (dagql.Object, error) {
+func (s *Session) LookupObject(ctx context.Context, idDigest string) (dagql.Object, error) {
 	id, err := s.LookupObjectID(ctx, idDigest)
 	if err != nil {
 		return nil, err
@@ -87,7 +60,7 @@ func (s *OneOneBBISession) LookupObject(ctx context.Context, idDigest string) (d
 	return s.srv.Load(ctx, id)
 }
 
-func (s *OneOneBBISession) LookupObjectID(ctx context.Context, idDigest string) (*call.ID, error) {
+func (s *Session) LookupObjectID(ctx context.Context, idDigest string) (*call.ID, error) {
 	slog.Debug("looking up ID from digest", "digest", idDigest)
 	id, ok := s.IDs[idDigest]
 	if !ok {
@@ -96,7 +69,9 @@ func (s *OneOneBBISession) LookupObjectID(ctx context.Context, idDigest string) 
 	return id, nil
 }
 
-func (s *OneOneBBISession) TypeWasReturned(typename string) bool {
+// Return true if the given dagql type has been returned to the model at least once
+// We use this for tool optimization
+func (s *Session) TypeWasReturned(typename string) bool {
 	for _, id := range s.IDs {
 		if id.Type().NamedType() == typename {
 			return true
@@ -105,7 +80,7 @@ func (s *OneOneBBISession) TypeWasReturned(typename string) bool {
 	return false
 }
 
-func (s *OneOneBBISession) call(ctx context.Context, field *ast.FieldDefinition, args interface{}, toplevel bool) (dagql.Typed, *call.ID, error) {
+func (s *Session) call(ctx context.Context, field *ast.FieldDefinition, args interface{}, toplevel bool) (dagql.Typed, *call.ID, error) {
 	// 1. CONVERT CALL INPUTS (BRAIN -> BODY)
 	argsMap, ok := args.(map[string]any)
 	if !ok {
@@ -159,7 +134,7 @@ func (s *OneOneBBISession) call(ctx context.Context, field *ast.FieldDefinition,
 }
 
 // Return true if the given type is an object
-func (s *OneOneBBISession) isObjectType(t *ast.Type) bool {
+func (s *Session) isObjectType(t *ast.Type) bool {
 	objType, ok := s.srv.Schema().Types[t.Name()]
 	if !ok {
 		return false
@@ -168,9 +143,9 @@ func (s *OneOneBBISession) isObjectType(t *ast.Type) bool {
 	return objType.Kind == ast.Object
 }
 
-func (s *OneOneBBISession) tools(typedef *ast.Definition, toplevel bool, objectTypes map[string]*ast.Definition) []Tool {
+func (s *Session) tools(typedef *ast.Definition, toplevel bool, objectTypes map[string]*ast.Definition) []bbi.Tool {
 	slog.Debug("Loading tools from type", "type", typedef.Name)
-	var tools []Tool
+	var tools []bbi.Tool
 	for _, field := range typedef.Fields {
 		slog.Debug("Loading tool from field", "type", typedef.Name, "field", field.Name)
 		var name = field.Name
@@ -194,7 +169,7 @@ func (s *OneOneBBISession) tools(typedef *ast.Definition, toplevel bool, objectT
 				},
 			})
 		}
-		tool := Tool{
+		tool := bbi.Tool{
 			Name:        name,
 			Description: field.Description,
 			Schema:      fieldArgsToJSONSchema(field),
@@ -215,9 +190,7 @@ func (s *OneOneBBISession) tools(typedef *ast.Definition, toplevel bool, objectT
 				if err != nil {
 					return fmt.Sprintf("ERROR: new object: %w", err), nil
 				}
-				_, span := Tracer(ctx).Start(ctx, fmt.Sprintf("[🤖] 📦 new state: %s", self.ID().Digest()))
 				s.self = self
-				span.End()
 				// FIXME: send the state digest for extra awareness of state changes?
 				return "ok", nil
 			}
