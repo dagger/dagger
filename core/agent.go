@@ -598,6 +598,7 @@ func (s AgentMiddleware) ModuleWithObject(ctx context.Context, mod *Module, self
 				Name:         selfTypeName,
 				OriginalName: selfTypeName,
 			},
+			Valid: true,
 		},
 	}
 
