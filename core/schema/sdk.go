@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/opencontainers/go-digest"
 
 	"github.com/dagger/dagger/core"
@@ -239,7 +240,9 @@ func (s *moduleSchema) newModuleSDK(
 }
 
 // Codegen calls the Codegen function on the SDK Module
-func (sdk *moduleSDK) Codegen(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (*core.GeneratedCode, error) {
+func (sdk *moduleSDK) Codegen(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (_ *core.GeneratedCode, rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: run codegen")
+	defer telemetry.End(span, func() error { return rerr })
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.Self.Name(), err)
@@ -266,7 +269,9 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, deps *core.ModDeps, source da
 }
 
 // Runtime calls the Runtime function on the SDK Module
-func (sdk *moduleSDK) Runtime(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (*core.Container, error) {
+func (sdk *moduleSDK) Runtime(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (_ *core.Container, rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load runtime")
+	defer telemetry.End(span, func() error { return rerr })
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.Self.Name(), err)
@@ -398,7 +403,9 @@ func (sdk *goSDK) Codegen(
 	ctx context.Context,
 	deps *core.ModDeps,
 	source dagql.Instance[*core.ModuleSource],
-) (*core.GeneratedCode, error) {
+) (_ *core.GeneratedCode, rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: run codegen")
+	defer telemetry.End(span, func() error { return rerr })
 	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
 	if err != nil {
 		return nil, err
@@ -438,7 +445,9 @@ func (sdk *goSDK) Runtime(
 	ctx context.Context,
 	deps *core.ModDeps,
 	source dagql.Instance[*core.ModuleSource],
-) (*core.Container, error) {
+) (_ *core.Container, rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load runtime")
+	defer telemetry.End(span, func() error { return rerr })
 	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
 	if err != nil {
 		return nil, err
