@@ -188,6 +188,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 						IfaceType:      ifaceType,
 					}, nil
 				},
+				CachePerClientObject,
 			)
 		}
 	}
