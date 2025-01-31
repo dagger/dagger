@@ -165,6 +165,22 @@ func (dev *DaggerDev) Test() *Test {
 	return &Test{Dagger: dev}
 }
 
+// Access client binding for the given module
+func (dev *DaggerDev) Codegen(
+	ctx context.Context,
+
+	// Module to codegen
+	module *dagger.Directory,
+
+	// Introspection JSON of this module
+	introspectionJSON *dagger.File,
+
+	// Name of the module to codegen for
+	moduleName string,
+) (*Codegen, error) {
+	return NewCodegen(ctx, dev.Source(), module, introspectionJSON, moduleName)
+}
+
 // Run all code generation - SDKs, docs, etc
 func (dev *DaggerDev) Generate(ctx context.Context) (*dagger.Directory, error) {
 	var docs, sdks, engine *dagger.Directory

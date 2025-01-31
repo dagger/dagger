@@ -239,7 +239,6 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	}
 	bins := []binAndPath{
 		{path: consts.EngineServerPath, file: build.engineBinary(build.race)},
-		{path: consts.CodegenBinaryPath, file: build.CodegenBinary()},
 		{path: "/usr/bin/dial-stdio", file: build.dialstdioBinary()},
 		{path: "/opt/cni/bin/dnsname", file: build.dnsnameBinary()},
 		{path: consts.RuncPath, file: build.runcBin()},
