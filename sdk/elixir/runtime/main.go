@@ -68,6 +68,8 @@ func (m *ElixirSdk) ModuleRuntime(
 	return ctr.
 		WithWorkdir(elixirApplication).
 		WithExec([]string{"mix", "deps.get", "--only", "dev"}).
+		WithExec([]string{"mix", "deps.compile"}).
+		WithExec([]string{"mix", "compile"}).
 		WithEntrypoint([]string{
 			"mix", "cmd",
 			"--cd", path.Join(ModSourceDirPath, subPath, elixirApplication),
