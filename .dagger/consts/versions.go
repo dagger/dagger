@@ -4,6 +4,7 @@ import "github.com/dagger/dagger/engine/distconsts"
 
 const (
 	EngineServerPath = "/usr/local/bin/dagger-engine"
+	CodegenBinaryPath = "/usr/local/bin/dagger-codegen"
 	RuncPath         = distconsts.RuncPath
 	DaggerInitPath   = distconsts.DaggerInitPath
 )
