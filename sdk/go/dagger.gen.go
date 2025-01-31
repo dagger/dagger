@@ -209,6 +209,9 @@ type Platform string
 // The `PortID` scalar type represents an identifier for an object of type Port.
 type PortID string
 
+// The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
+type SDKConfigID string
+
 // The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
 type ScalarTypeDefID string
 
@@ -5486,7 +5489,6 @@ type Module struct {
 	description *string
 	id          *ModuleID
 	name        *string
-	sdk         *string
 	serve       *Void
 }
 type WithModuleFunc func(r *Module) *Module
@@ -5772,16 +5774,12 @@ func (r *Module) Runtime() *Container {
 }
 
 // The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
-func (r *Module) SDK(ctx context.Context) (string, error) {
-	if r.sdk != nil {
-		return *r.sdk, nil
-	}
+func (r *Module) SDK() *SDKConfig {
 	q := r.query.Select("sdk")
 
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return &SDKConfig{
+		query: q,
+	}
 }
 
 // Serve a module's API in the current session.
@@ -7384,6 +7382,16 @@ func (r *Client) LoadPortFromID(id PortID) *Port {
 	}
 }
 
+// Load a SDKConfig from its ID.
+func (r *Client) LoadSDKConfigFromID(id SDKConfigID) *SDKConfig {
+	q := r.query.Select("loadSDKConfigFromID")
+	q = q.Arg("id", id)
+
+	return &SDKConfig{
+		query: q,
+	}
+}
+
 // Load a ScalarTypeDef from its ID.
 func (r *Client) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
 	q := r.query.Select("loadScalarTypeDefFromID")
@@ -7588,6 +7596,87 @@ func (r *Client) TypeDef() *TypeDef {
 // Get the current Dagger Engine version.
 func (r *Client) Version(ctx context.Context) (string, error) {
 	q := r.query.Select("version")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The sdk struct configuration of dependency of a module.
+type SDKConfig struct {
+	query *querybuilder.Selection
+
+	id     *SDKConfigID
+	pin    *string
+	source *string
+}
+
+func (r *SDKConfig) WithGraphQLQuery(q *querybuilder.Selection) *SDKConfig {
+	return &SDKConfig{
+		query: q,
+	}
+}
+
+// A unique identifier for this SDKConfig.
+func (r *SDKConfig) ID(ctx context.Context) (SDKConfigID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response SDKConfigID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *SDKConfig) XXX_GraphQLType() string {
+	return "SDKConfig"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *SDKConfig) XXX_GraphQLIDType() string {
+	return "SDKConfigID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *SDKConfig) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *SDKConfig) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Commit sha pinned for the SDK
+func (r *SDKConfig) Pin(ctx context.Context) (string, error) {
+	if r.pin != nil {
+		return *r.pin, nil
+	}
+	q := r.query.Select("pin")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Source of the sdk
+func (r *SDKConfig) Source(ctx context.Context) (string, error) {
+	if r.source != nil {
+		return *r.source, nil
+	}
+	q := r.query.Select("source")
 
 	var response string
 

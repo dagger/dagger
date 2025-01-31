@@ -338,6 +338,12 @@ func LoadPortFromID(id dagger.PortID) *dagger.Port {
 	return client.LoadPortFromID(id)
 }
 
+// Load a SDKConfig from its ID.
+func LoadSDKConfigFromID(id dagger.SDKConfigID) *dagger.SDKConfig {
+	client := initClient()
+	return client.LoadSDKConfigFromID(id)
+}
+
 // Load a ScalarTypeDef from its ID.
 func LoadScalarTypeDefFromID(id dagger.ScalarTypeDefID) *dagger.ScalarTypeDef {
 	client := initClient()

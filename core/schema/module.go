@@ -217,6 +217,7 @@ func (s *moduleSchema) Install() {
 	}.Install(s.dag)
 
 	dagql.Fields[*core.ModuleDependency]{}.Install(s.dag)
+	dagql.Fields[*core.SDKConfig]{}.Install(s.dag)
 
 	dagql.Fields[*core.Module]{
 		dagql.Func("withSource", s.moduleWithSource).
@@ -835,7 +836,8 @@ func (s *moduleSchema) moduleInitialize(
 	inst dagql.Instance[*core.Module],
 	args struct{},
 ) (*core.Module, error) {
-	if inst.Self.NameField == "" || inst.Self.SDKConfig == "" {
+	// if inst.Self.NameField == "" || inst.Self.SDKConfig == nil || inst.Self.SDKConfig.Source == "" {
+	if inst.Self.NameField == "" || inst.Self.SDKConfig == nil {
 		return nil, fmt.Errorf("module name and SDK must be set")
 	}
 	mod, err := inst.Self.Initialize(ctx, inst.ID(), dagql.CurrentID(ctx), s.dag)
@@ -867,8 +869,13 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 
 	mod.SDKConfig, err = src.Self.SDK(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get module SDK: %w", err)
+		return nil, fmt.Errorf("failed to get module SDK 3: %w", err)
 	}
+
+	//I DONT THINK THIS IS RIGHT
+	// if mod.SDKConfig != nil {
+	// 	mod.SDKConfigField = dagql.NewInstanceForCurrentID()
+	// }
 
 	modCfg, modCfgPath, err := s.updateDaggerConfig(ctx, string(args.EngineVersion.Value), mod, src)
 	if err != nil {
@@ -880,6 +887,10 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 	if !engine.CheckMaxVersionCompatibility(modCfg.EngineVersion, engine.BaseVersion(engine.Version)) {
 		return nil, fmt.Errorf("module requires dagger %s, but you have %s", modCfg.EngineVersion, engine.Version)
 	}
+
+	// if err := s.updateSDK(ctx, mod, modCfg, src); err != nil {
+	// 	return nil, fmt.Errorf("failed to update module sdk: %w", err)
+	// }
 
 	if err := s.updateDeps(ctx, mod, modCfg, src); err != nil {
 		return nil, fmt.Errorf("failed to update module dependencies: %w", err)
@@ -920,6 +931,21 @@ func (s *moduleSchema) moduleGeneratedContextDiff(
 	}
 	return diff, nil
 }
+
+// func (s *moduleSchema) updateSDK(
+// 	ctx context.Context,
+// 	mod *core.Module,
+// 	modCfg *modules.ModuleConfig,
+// 	src dagql.Instance[*core.ModuleSource],
+// ) (rerr error) {
+// 	inst, err := dagql.NewInstanceForCurrentID(ctx, s.dag, src, mod.SDKConfig)
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	mod.SDKConfigField = inst
+// 	return
+// }
 
 func (s *moduleSchema) updateDeps(
 	ctx context.Context,
@@ -1046,14 +1072,14 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 	ctx, span := core.Tracer(ctx).Start(ctx, "build module")
 	defer telemetry.End(span, func() error { return rerr })
 
-	if mod.NameField == "" || mod.SDKConfig == "" {
+	if mod.NameField == "" || mod.SDKConfig == nil {
 		// can't codegen yet
 		return nil
 	}
 
 	if src.Self.WithInitConfig != nil &&
 		src.Self.WithInitConfig.Merge &&
-		mod.SDKConfig != string(SDKGo) {
+		mod.SDKConfig != nil && mod.SDKConfig.Source != string(SDKGo) {
 		return fmt.Errorf("merge is only supported for Go SDKs")
 	}
 
@@ -1232,7 +1258,12 @@ func (s *moduleSchema) updateDaggerConfig(
 	modCfg := &modCfgWithUserFields.ModuleConfig
 
 	modCfg.Name = mod.OriginalName
-	modCfg.SDK = mod.SDKConfig
+	if mod.SDKConfig != nil {
+		modCfg.SDK = &modules.SDK{
+			Source: mod.SDKConfig.Source,
+		}
+	}
+
 	switch engineVersion {
 	case "":
 		if modCfg.EngineVersion == "" {

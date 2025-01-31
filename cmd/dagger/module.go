@@ -293,7 +293,7 @@ var moduleInstallCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			sdk, err := depSrc.AsModule().SDK(ctx)
+			sdk, err := depSrc.AsModule().SDK().Source(ctx)
 			if err != nil {
 				return err
 			}
@@ -460,9 +460,9 @@ This command is idempotent: you can run it at any time, any number of times. It 
 				engineVersion = ""
 			}
 
-			modSDK, err := modConf.Source.AsModule(dagger.ModuleSourceAsModuleOpts{EngineVersion: engineVersion}).SDK(ctx)
+			modSDK, err := modConf.Source.AsModule(dagger.ModuleSourceAsModuleOpts{EngineVersion: engineVersion}).SDK().Source(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to get module SDK: %w", err)
+				return fmt.Errorf("failed to get module SDK 2: %w", err)
 			}
 			if developSDK != "" {
 				if modSDK != "" && modSDK != developSDK {

@@ -216,8 +216,10 @@ func (ModuleSuite) BenchmarkLotsOfDeps(ctx context.Context, b *testctx.B) {
 					})
 				}
 				modGen = modGen.With(configFile(".", &modules.ModuleConfig{
-					Name:         name,
-					SDK:          "go",
+					Name: name,
+					SDK: &modules.SDK{
+						Source: "go",
+					},
 					Dependencies: depCfgs,
 				}))
 			}

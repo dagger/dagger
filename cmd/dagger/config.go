@@ -54,9 +54,9 @@ dagger config -m github.com/dagger/hello-dagger
 		if err != nil {
 			return fmt.Errorf("failed to get module name: %w", err)
 		}
-		sdk, err := mod.SDK(ctx)
+		sdk, err := mod.SDK().Source(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to get module SDK: %w", err)
+			return fmt.Errorf("failed to get module SDK 1: %w", err)
 		}
 
 		tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)

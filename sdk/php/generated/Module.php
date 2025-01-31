@@ -124,10 +124,10 @@ class Module extends Client\AbstractObject implements Client\IdAble
     /**
      * The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
      */
-    public function sdk(): string
+    public function sdk(): SDKConfig
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sdk');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'sdk');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sdk');
+        return new \Dagger\SDKConfig($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
