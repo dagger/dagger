@@ -279,8 +279,29 @@ func (a *Agent) llmConfig(ctx context.Context) (*LlmConfig, error) {
 	}
 	cfg := NewLlmConfig()
 	// Configure API key
-	if key, ok := env["LLM_KEY"]; ok {
-		cfg.Key = key
+	if keyConfig, ok := env["LLM_KEY"]; ok {
+		var key string
+		if u, err := url.Parse(keyConfig); err != nil || u.Scheme == "" {
+			key = keyConfig
+		} else {
+			if err := a.srv.Select(ctx, a.srv.Root(), &key,
+				dagql.Selector{
+					Field: "secret",
+					Args: []dagql.NamedInput{
+						{
+							Name:  "uri",
+							Value: dagql.NewString(keyConfig),
+						},
+					},
+				},
+				dagql.Selector{
+					Field: "plaintext",
+				},
+			); err != nil {
+				return nil, err
+			}
+			cfg.Key = key
+		}
 	}
 	if host, ok := env["LLM_HOST"]; ok {
 		cfg.Host = host
@@ -440,6 +461,7 @@ func (s AgentMiddleware) InstallObject(selfType dagql.ObjectType, install func(d
 			}
 			return dagql.NewString(reply), nil
 		},
+		nil,
 	)
 	agentType.Extend(
 		dagql.FieldSpec{
@@ -462,6 +484,7 @@ func (s AgentMiddleware) InstallObject(selfType dagql.ObjectType, install func(d
 			}
 			return dagql.NewString(reply), nil
 		},
+		nil,
 	)
 	agentType.Extend(
 		dagql.FieldSpec{
@@ -484,6 +507,7 @@ func (s AgentMiddleware) InstallObject(selfType dagql.ObjectType, install func(d
 			}
 			return after, nil
 		},
+		nil,
 	)
 	agentType.Extend(
 		dagql.FieldSpec{
@@ -502,6 +526,7 @@ func (s AgentMiddleware) InstallObject(selfType dagql.ObjectType, install func(d
 			a := self.(dagql.Instance[*Agent]).Self
 			return a.WithPrompt(args["prompt"].(dagql.String).String()), nil
 		},
+		nil,
 	)
 	agentType.Extend(
 		dagql.FieldSpec{
@@ -517,6 +542,7 @@ func (s AgentMiddleware) InstallObject(selfType dagql.ObjectType, install func(d
 			}
 			return dagql.NewString(tools), nil
 		},
+		nil,
 	)
 	agentType.Extend(
 		dagql.FieldSpec{
@@ -527,6 +553,7 @@ func (s AgentMiddleware) InstallObject(selfType dagql.ObjectType, install func(d
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			return dagql.NewString(s.llmConfig().Model), nil
 		},
+		nil,
 	)
 	agentType.Extend(
 		dagql.FieldSpec{
@@ -538,6 +565,7 @@ func (s AgentMiddleware) InstallObject(selfType dagql.ObjectType, install func(d
 			a := self.(dagql.Instance[*Agent]).Self
 			return a.Run(ctx, 0)
 		},
+		nil,
 	)
 	agentType.Extend(
 		dagql.FieldSpec{
@@ -553,6 +581,7 @@ func (s AgentMiddleware) InstallObject(selfType dagql.ObjectType, install func(d
 			}
 			return dagql.NewStringArray(history...), nil
 		},
+		nil,
 	)
 	agentType.Extend(
 		dagql.FieldSpec{
@@ -564,6 +593,7 @@ func (s AgentMiddleware) InstallObject(selfType dagql.ObjectType, install func(d
 			a := self.(dagql.Instance[*Agent]).Self
 			return a.Self(ctx), nil
 		},
+		nil,
 	)
 	selfType.Extend(
 		dagql.FieldSpec{
@@ -574,6 +604,7 @@ func (s AgentMiddleware) InstallObject(selfType dagql.ObjectType, install func(d
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			return NewAgent(s.Server, self, self.ObjectType()), nil
 		},
+		nil,
 	)
 	// Install the wrapper type
 	install(selfType)
