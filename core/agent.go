@@ -253,55 +253,22 @@ func (a *Agent) llmConfig(ctx context.Context) (*LlmConfig, error) {
 	if globalLlmConfig != nil {
 		return globalLlmConfig, nil
 	}
-	// Load .env on client
-	// Hack: share LLM config engine-wide
-	var envFile dagql.Instance[*File]
-	if err := a.srv.Select(ctx, a.srv.Root(), &envFile, dagql.Selector{
-		Field: "host",
-	}, dagql.Selector{
-		Field: "file",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "path",
-				Value: dagql.NewString(".env"),
-			},
-		},
-	}); err != nil {
-		return nil, err
-	}
-	contents, err := envFile.Self.Contents(ctx)
+	envFile, err := a.loadSecret(ctx, "file://.env")
 	if err != nil {
 		return nil, err
 	}
-	env, err := godotenv.Unmarshal(string(contents))
+	env, err := godotenv.Unmarshal(string(envFile))
 	if err != nil {
 		return nil, err
 	}
 	cfg := NewLlmConfig()
 	// Configure API key
 	if keyConfig, ok := env["LLM_KEY"]; ok {
-		var key string
-		if u, err := url.Parse(keyConfig); err != nil || u.Scheme == "" {
-			key = keyConfig
-		} else {
-			if err := a.srv.Select(ctx, a.srv.Root(), &key,
-				dagql.Selector{
-					Field: "secret",
-					Args: []dagql.NamedInput{
-						{
-							Name:  "uri",
-							Value: dagql.NewString(keyConfig),
-						},
-					},
-				},
-				dagql.Selector{
-					Field: "plaintext",
-				},
-			); err != nil {
-				return nil, err
-			}
-			cfg.Key = key
+		key, err := a.loadSecret(ctx, keyConfig)
+		if err != nil {
+			return nil, err
 		}
+		cfg.Key = key
 	}
 	if host, ok := env["LLM_HOST"]; ok {
 		cfg.Host = host
@@ -317,6 +284,29 @@ func (a *Agent) llmConfig(ctx context.Context) (*LlmConfig, error) {
 	}
 	globalLlmConfig = cfg
 	return cfg, nil
+}
+
+func (a *Agent) loadSecret(ctx context.Context, uri string) (string, error) {
+	var result string
+	if u, err := url.Parse(uri); err != nil || u.Scheme == "" {
+		result = uri
+	} else if err := a.srv.Select(ctx, a.srv.Root(), &result,
+		dagql.Selector{
+			Field: "secret",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "uri",
+					Value: dagql.NewString(uri),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "plaintext",
+		},
+	); err != nil {
+		return "", err
+	}
+	return result, nil
 }
 
 func (a *Agent) sendQuery(ctx context.Context, tools []bbi.Tool) (res *openai.ChatCompletion, rerr error) {
