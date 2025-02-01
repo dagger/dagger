@@ -51,6 +51,7 @@ func NewAgent(srv *dagql.Server, self dagql.Object, selfType dagql.ObjectType) *
 		srv:      srv,
 		self:     self,
 		selfType: selfType,
+		calls:    make(map[string]string),
 	}
 	if self == nil {
 		// Gracefully support being a "zero value" for type introspection purposes
@@ -70,6 +71,8 @@ type Agent struct {
 	self     dagql.Object
 	selfType dagql.ObjectType
 	count    int
+	// History of tool calls and their result
+	calls map[string]string
 }
 
 func (a *Agent) Type() *ast.Type {
@@ -86,8 +89,6 @@ func (a *Agent) Clone() *Agent {
 }
 
 func (a *Agent) Self(ctx context.Context) dagql.Object {
-	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("[🤖->📦] returning state %s", a.self.ID().Digest()))
-	span.End()
 	return a.self
 }
 
@@ -180,22 +181,34 @@ func (a *Agent) Run(
 					if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
 						return a, fmt.Errorf("failed to unmarshal arguments: %w", err)
 					}
-					result, err := tool.Call(ctx, args)
-					if err != nil {
-						return nil, err
-					}
-					var resultStr string
-					switch v := result.(type) {
-					case string:
-						resultStr = v
-					default:
-						jsonBytes, err := json.Marshal(v)
+					result := func() string {
+						ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("🤖 💻 %s(%s)", call.Function.Name, call.Function.Arguments))
+						defer span.End()
+						result, err := tool.Call(ctx, args)
 						if err != nil {
-							return nil, err
+							// If the BBI driver itself returned an error,
+							// send that error to the model
+							span.SetStatus(codes.Error, err.Error())
+							return fmt.Sprintf("error calling tool: %s", err.Error())
 						}
-						resultStr = string(jsonBytes)
-					}
-					a.history = append(a.history, openai.ToolMessage(call.ID, resultStr))
+						switch v := result.(type) {
+						case string:
+							return v
+						default:
+							jsonBytes, err := json.Marshal(v)
+							if err != nil {
+								span.SetStatus(codes.Error, err.Error())
+								return fmt.Sprintf("error processing tool result: %s", err.Error())
+							}
+							return string(jsonBytes)
+						}
+					}()
+					func() {
+						_, span := Tracer(ctx).Start(ctx, fmt.Sprintf("💻 %s", result))
+						span.End()
+						a.calls[call.ID] = result
+						a.history = append(a.history, openai.ToolMessage(call.ID, result))
+					}()
 				}
 			}
 		}
@@ -236,9 +249,14 @@ func (a *Agent) History() ([]string, error) {
 			if err != nil {
 				return nil, err
 			}
-			history = append(history, "🤖 💬"+txt)
+			if len(txt) > 0 {
+				history = append(history, "🤖 💬"+txt)
+			}
 			for _, call := range msg.ToolCalls {
 				history = append(history, fmt.Sprintf("🤖 💻 %s(%s)", call.Function.Name, call.Function.Arguments))
+				if result, ok := a.calls[call.ID]; ok {
+					history = append(history, fmt.Sprintf("💻 %s", result))
+				}
 			}
 		}
 	}
