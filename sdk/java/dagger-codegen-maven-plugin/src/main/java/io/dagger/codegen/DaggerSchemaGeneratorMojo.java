@@ -23,6 +23,9 @@ public class DaggerSchemaGeneratorMojo extends AbstractMojo {
   @Parameter(property = "dagger.bin")
   protected String bin;
 
+  @Parameter(property = "dagger.introspectionJson")
+  protected String introspectionJson;
+
   /** Specify output directory where the Java files are generated. */
   @Parameter(defaultValue = "${project.build.directory}/generated-schema")
   private File outputDirectory;
@@ -33,6 +36,15 @@ public class DaggerSchemaGeneratorMojo extends AbstractMojo {
 
     if (!outputDir.exists()) {
       outputDir.mkdirs();
+    }
+
+    if (this.introspectionJson != null && !this.introspectionJson.isEmpty()) {
+      try (InputStream inputFile = new FileInputStream(new File(this.introspectionJson));
+          OutputStream outputFile = new FileOutputStream(new File(outputDir, "schema.json"))) {
+        outputFile.write(inputFile.readAllBytes());
+      } catch (IOException e) {
+        throw new RuntimeException(e);
+      }
     }
 
     this.bin = DaggerCLIUtils.getBinary(this.bin);

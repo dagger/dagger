@@ -7,10 +7,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/moby/buildkit/identity"
+
 	"github.com/dagger/dagger/.dagger/build"
 	"github.com/dagger/dagger/.dagger/consts"
 	"github.com/dagger/dagger/.dagger/internal/dagger"
-	"github.com/moby/buildkit/identity"
 )
 
 // A dev environment for the official Dagger SDKs
@@ -56,8 +57,7 @@ func (sdk *SDK) allSDKs() []sdkBase {
 		sdk.Elixir,
 		sdk.Rust,
 		sdk.PHP,
-		// java isn't properly integrated to our release process yet
-		// sdk.Java,
+		sdk.Java,
 		sdk.Dotnet,
 	}
 }

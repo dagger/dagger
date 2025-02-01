@@ -9,9 +9,10 @@ import (
 	"time"
 
 	"github.com/containerd/platforms"
-	"github.com/dagger/dagger/engine/distconsts"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/dagger/dagger/engine/distconsts"
 
 	"github.com/dagger/dagger/.dagger/consts"
 	"github.com/dagger/dagger/.dagger/internal/dagger"
