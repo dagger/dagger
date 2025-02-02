@@ -471,6 +471,7 @@ to the currently loaded module.
 	for _, fn := range def.GetCoreFunctions() {
 		// TODO: Don't hardcode this list.
 		promoted := []string{
+			"llm",
 			"cache-volume",
 			"container",
 			"directory",
