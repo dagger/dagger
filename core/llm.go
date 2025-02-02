@@ -7,6 +7,7 @@ import (
 	"net/url"
 
 	"github.com/dagger/dagger/core/bbi"
+	_ "github.com/dagger/dagger/core/bbi/empty"
 	_ "github.com/dagger/dagger/core/bbi/flat"
 	"github.com/dagger/dagger/dagql"
 	"github.com/joho/godotenv"
@@ -122,6 +123,7 @@ func NewLlm(ctx context.Context, query *Query, srv *dagql.Server) (*Llm, error) 
 		Query:  query,
 		srv:    srv,
 		Config: config,
+		calls:  make(map[string]string),
 		// FIXME: support multiple variables in state
 		//state:  make(map[string]dagql.Typed),
 	}, nil
@@ -163,7 +165,7 @@ func (llm *Llm) ToolsDoc(ctx context.Context) (string, error) {
 // A convenience function to ask the model a question directly, and get an answer
 // The state of the agent is not changed.
 func (llm *Llm) Ask(ctx context.Context, question string) (string, error) {
-	llm, err := llm.WithPrompt(question).Run(ctx, 0)
+	llm, err := llm.WithPrompt(ctx, question, false)
 	if err != nil {
 		return "", err
 	}
@@ -171,14 +173,17 @@ func (llm *Llm) Ask(ctx context.Context, question string) (string, error) {
 }
 
 func (llm *Llm) Please(ctx context.Context, task string) (*Llm, error) {
-	return llm.WithPrompt(task).Run(ctx, 0)
+	return llm.WithPrompt(ctx, task, false)
 }
 
 // Append a user message (prompt) to the message history
-func (llm *Llm) WithPrompt(prompt string) *Llm {
+func (llm *Llm) WithPrompt(ctx context.Context, prompt string, lazy bool) (*Llm, error) {
 	llm = llm.Clone()
 	llm.history = append(llm.history, openai.UserMessage(prompt))
-	return llm
+	if lazy {
+		return llm, nil
+	}
+	return llm.Run(ctx, 0)
 }
 
 // Append a system prompt message to the history
@@ -226,7 +231,7 @@ func (llm *Llm) BBI() (bbi.Session, error) {
 	if llm.state != nil {
 		target = llm.state.(dagql.Object)
 	}
-	return bbi.NewSession("empty", target, llm.srv)
+	return bbi.NewSession("flat", target, llm.srv)
 }
 
 func (llm *Llm) Run(
@@ -346,18 +351,24 @@ func (llm *Llm) messages() ([]openAIMessage, error) {
 	return messages, nil
 }
 
-func (llm *Llm) Set(ctx context.Context, key string, value dagql.Typed) (*Llm, error) {
-	if id, isID := value.(dagql.ID[dagql.Typed]); isID {
-		obj, err := llm.srv.Load(ctx, id.ID())
-		if err != nil {
-			return nil, err
-		}
-		value = obj
+func (llm *Llm) Set(ctx context.Context, key string, objId dagql.IDType) (*Llm, error) {
+	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("SET %s=%#v", key, objId))
+	defer span.End()
+	//typedef := llm.srv.Schema().Types[value.Type().Name()]
+	//isID := value.Type().IsCompatible(new(dagql.ID[dagql.Typed]).Type())
+	//if !isID {
+	//	return nil, fmt.Errorf("type %s (%T) is not ID", value.Type().Name(), value)
+	//}
+	//if isID {
+	obj, err := llm.srv.Load(ctx, objId.ID())
+	if err != nil {
+		return nil, err
 	}
+	//}
 	llm = llm.Clone()
 	// FIXME: support multiple variables
 	// llm.state[key] = value
-	llm.state = value
+	llm.state = obj
 	return llm, nil
 }
 
