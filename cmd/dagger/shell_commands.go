@@ -489,6 +489,7 @@ Without arguments, the current working directory is replaced by the initial cont
 	for _, fn := range def.GetCoreFunctions() {
 		// TODO: Don't hardcode this list.
 		promoted := []string{
+			"llm",
 			"cache-volume",
 			"container",
 			"directory",
