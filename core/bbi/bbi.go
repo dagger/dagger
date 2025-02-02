@@ -2,18 +2,18 @@ package bbi
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/dagger/dagger/dagql"
 )
 
 // Start a new BBI session
-func NewSession(self dagql.Object, srv *dagql.Server) Session {
-	// FIXME: for now we always use the "flat" BBI driver
-	flat, ok := drivers["flat"]
+func NewSession(driver string, self dagql.Object, srv *dagql.Server) (Session, error) {
+	drv, ok := drivers[driver]
 	if !ok {
-		panic("BBI driver 'flat' not registered")
+		return nil, fmt.Errorf("no such driver: %s", driver)
 	}
-	return flat.NewSession(self, srv)
+	return drv.NewSession(self, srv), nil
 }
 
 // BBI stands for "Body-Brain Interface".
