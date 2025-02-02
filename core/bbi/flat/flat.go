@@ -97,6 +97,7 @@ func (s *Session) call(ctx context.Context, field *ast.FieldDefinition, args int
 	}
 	classField, ok := target.ObjectType().FieldSpec(field.Name)
 	if !ok {
+		// FIXME: Container.withExec is not found here, why??
 		return nil, nil, fmt.Errorf("field %q not found in object type %q", field.Name, s.self.ObjectType().TypeName())
 	}
 	sel := dagql.Selector{
