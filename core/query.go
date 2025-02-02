@@ -23,10 +23,6 @@ import (
 // dependencies for evaluating queries.
 type Query struct {
 	Server
-	// LLM configuration for agent feature.
-	// We carry this here to simulate engine-wide configuration (in fact it is session-wide)
-	// TODO: move to client-side configuration via sessions attachable
-	LlmConfig LlmConfig
 }
 
 var ErrNoCurrentModule = fmt.Errorf("no current module")
@@ -123,14 +119,6 @@ func (q Query) Clone() *Query {
 
 func (q *Query) WithPipeline(name, desc string) *Query {
 	return q.Clone()
-}
-
-func (q *Query) WithLlmConfig(config LlmConfig) *Query {
-	q = q.Clone()
-	// FIXME: hardcoded for now
-	config.Model = "gpt-4o"
-	q.LlmConfig = config
-	return q
 }
 
 func (q *Query) NewContainer(platform Platform) *Container {
