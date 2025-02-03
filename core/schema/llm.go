@@ -48,15 +48,10 @@ func (s llmSchema) Install() {
 		llmType = append(llmType,
 			dagql.Field[*core.Llm]{
 				Spec: dagql.FieldSpec{
-					Name:        "set" + typename,
-					Description: fmt.Sprintf("Save a %s to the given key in the llm state", typename),
+					Name:        "with" + typename,
+					Description: fmt.Sprintf("Set the llm state to a %s", typename),
 					Type:        new(core.Llm),
 					Args: dagql.InputSpecs{
-						{
-							Name:        "key",
-							Description: fmt.Sprintf("The key to save the %s at", typename),
-							Type:        dagql.String(""),
-						},
 						{
 							Name:        "value",
 							Description: fmt.Sprintf("The value of the %s to save", typename),
@@ -65,28 +60,19 @@ func (s llmSchema) Install() {
 					},
 				},
 				Func: func(ctx context.Context, llm dagql.Instance[*core.Llm], args map[string]dagql.Input) (dagql.Typed, error) {
-					key := args["key"].(dagql.String).String()
 					id := args["value"].(dagql.IDType)
-					return llm.Self.Set(ctx, key, id)
+					return llm.Self.WithState(ctx, id)
 				},
 				CacheKeyFunc: nil,
 			},
 			dagql.Field[*core.Llm]{
 				Spec: dagql.FieldSpec{
-					Name:        "get" + typename,
-					Description: fmt.Sprintf("Retrieve a %s from the llm state", typename),
+					Name:        typename,
+					Description: fmt.Sprintf("Retrieve the llm state as a %s", typename),
 					Type:        objType.Typed(),
-					Args: dagql.InputSpecs{
-						{
-							Name:        "key",
-							Description: fmt.Sprintf("The key to retrieve the %s from", typename),
-							Type:        dagql.String(""),
-						},
-					},
 				},
 				Func: func(ctx context.Context, llm dagql.Instance[*core.Llm], args map[string]dagql.Input) (dagql.Typed, error) {
-					key := args["key"].(dagql.String).String()
-					return llm.Self.Get(ctx, key)
+					return llm.Self.State(ctx)
 				},
 				CacheKeyFunc: nil,
 			},
