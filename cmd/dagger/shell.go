@@ -99,6 +99,9 @@ type terminalWriter struct {
 }
 
 func (o *terminalWriter) Write(p []byte) (n int, err error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
 	if o.processFn != nil {
 		r, err := o.processFn(p)
 		if err != nil {
@@ -169,6 +172,12 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 	h.stdoutWriter = newTerminalWriter(func(b []byte) (int, error) {
 		var written int
 		err := h.withTerminal(func(_ io.Reader, stdout, _ io.Writer) error {
+			// FIXME: in the REPL, the output can be "swallowed" if we don't add a newline.
+			// However, this may lead to extra newlines than intended so we need a
+			// better solution.
+			if h.repl && h.tty && !bytes.HasSuffix(b, []byte("\n")) {
+				b = append(b, '\n')
+			}
 			n, err := stdout.Write(b)
 			written = n
 			return err
@@ -179,6 +188,9 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 	h.stderrWriter = newTerminalWriter(func(b []byte) (int, error) {
 		var written int
 		err := h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
+			if h.repl && h.tty && !bytes.HasSuffix(b, []byte("\n")) {
+				b = append(b, '\n')
+			}
 			n, err := stderr.Write(b)
 			written = n
 			return err
