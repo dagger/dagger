@@ -526,8 +526,6 @@ func (s LlmMiddleware) ModuleWithObject(ctx context.Context, mod *Module, target
 	if err != nil {
 		return nil, err
 	}
-	// FIXME
-	return mod, nil
 	typename := targetTypedef.Type().Name()
 	targetType, ok := s.Server.ObjectType(typename)
 	if !ok {
