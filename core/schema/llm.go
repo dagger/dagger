@@ -2,11 +2,9 @@ package schema
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/slog"
 )
 
 type llmSchema struct {
@@ -34,51 +32,8 @@ func (s llmSchema) Install() {
 		dagql.Func("sync", s.sync).
 			Doc("synchronize the llm state: send outstanding prompts, process replies and tool calls"),
 	}
-	slog.Debug("introspecting types for llm type extension", "nTypes", len(s.srv.Schema().Types))
-	for typename, _ := range s.srv.Schema().Types {
-		slog.Debug("introspecting type for llm type extension", "typename", typename)
-		objType, isObject := s.srv.ObjectType(typename)
-		if !isObject {
-			continue
-		}
-		idType, ok := objType.IDType()
-		if !ok {
-			continue
-		}
-		llmType = append(llmType,
-			dagql.Field[*core.Llm]{
-				Spec: dagql.FieldSpec{
-					Name:        "with" + typename,
-					Description: fmt.Sprintf("Set the llm state to a %s", typename),
-					Type:        new(core.Llm),
-					Args: dagql.InputSpecs{
-						{
-							Name:        "value",
-							Description: fmt.Sprintf("The value of the %s to save", typename),
-							Type:        idType,
-						},
-					},
-				},
-				Func: func(ctx context.Context, llm dagql.Instance[*core.Llm], args map[string]dagql.Input) (dagql.Typed, error) {
-					id := args["value"].(dagql.IDType)
-					return llm.Self.WithState(ctx, id)
-				},
-				CacheKeyFunc: nil,
-			},
-			dagql.Field[*core.Llm]{
-				Spec: dagql.FieldSpec{
-					Name:        typename,
-					Description: fmt.Sprintf("Retrieve the llm state as a %s", typename),
-					Type:        objType.Typed(),
-				},
-				Func: func(ctx context.Context, llm dagql.Instance[*core.Llm], args map[string]dagql.Input) (dagql.Typed, error) {
-					return llm.Self.State(ctx)
-				},
-				CacheKeyFunc: nil,
-			},
-		)
-	}
 	llmType.Install(s.srv)
+	// s.srv.SetMiddleware(core.LlmMiddleware{Server: s.srv})
 }
 
 func (s *llmSchema) model(ctx context.Context, llm *core.Llm, args struct{}) (dagql.String, error) {
