@@ -191,7 +191,7 @@ func (s *Session) tools(typedef *ast.Definition, toplevel bool, objectTypes map[
 				if err != nil {
 					return nil, fmt.Errorf("new object: %s", err.Error())
 				}
-				s.self = self
+				s.self = self.(dagql.Instance[dagql.Object]).Self
 				// FIXME: send the state digest for extra awareness of state changes?
 				return "ok", nil
 			}
