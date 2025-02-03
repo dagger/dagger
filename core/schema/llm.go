@@ -33,7 +33,7 @@ func (s llmSchema) Install() {
 			Doc("synchronize the llm state: send outstanding prompts, process replies and tool calls"),
 	}
 	llmType.Install(s.srv)
-	// s.srv.SetMiddleware(core.LlmMiddleware{Server: s.srv})
+	s.srv.SetMiddleware(core.LlmMiddleware{Server: s.srv})
 }
 
 func (s *llmSchema) model(ctx context.Context, llm *core.Llm, args struct{}) (dagql.String, error) {
