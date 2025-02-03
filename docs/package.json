@@ -23,7 +23,7 @@
     "clsx": "^2.1.1",
     "docusaurus-plugin-image-zoom": "^2.0.0",
     "docusaurus-plugin-sass": "^0.2.6",
-    "docusaurus-plugin-typedoc": "^1.2.2",
+    "docusaurus-plugin-typedoc": "^1.2.3",
     "posthog-docusaurus": "^2.0.2",
     "prism-react-renderer": "^2.4.1",
     "react": "^19.0.0",

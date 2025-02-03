@@ -4737,10 +4737,10 @@ docusaurus-plugin-sass@^0.2.6:
   dependencies:
     sass-loader "^16.0.2"
 
-docusaurus-plugin-typedoc@^1.2.2:
-  version "1.2.2"
-  resolved "https://registry.yarnpkg.com/docusaurus-plugin-typedoc/-/docusaurus-plugin-typedoc-1.2.2.tgz#8dbda25f89466e8886025b70eda1c6bf10e25e51"
-  integrity sha512-sXVDWzLLTCX8nO/nSbNrtMNoWGNbPgiqGVnSjRogCdcynIk/6JEC4timnU/J0ORFx66FeLsC4ILWMkLoj/P8TA==
+docusaurus-plugin-typedoc@^1.2.3:
+  version "1.2.3"
+  resolved "https://registry.yarnpkg.com/docusaurus-plugin-typedoc/-/docusaurus-plugin-typedoc-1.2.3.tgz#bb52ce2ac18d9fb91345ffbab0cc977cf03c0d93"
+  integrity sha512-u1l2VlNRDK49A8G3iZW8iRt3LCmE6aeYnkG+nNqQBMVMqiv8Ifwe7gjsoQXTJXDxbMqUiTWWhqOLElP8B9s3fg==
 
 dom-converter@^0.2.0:
   version "0.2.0"
