@@ -351,34 +351,18 @@ func (llm *Llm) messages() ([]openAIMessage, error) {
 	return messages, nil
 }
 
-func (llm *Llm) Set(ctx context.Context, key string, objId dagql.IDType) (*Llm, error) {
-	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("SET %s=%#v", key, objId))
-	defer span.End()
-	//typedef := llm.srv.Schema().Types[value.Type().Name()]
-	//isID := value.Type().IsCompatible(new(dagql.ID[dagql.Typed]).Type())
-	//if !isID {
-	//	return nil, fmt.Errorf("type %s (%T) is not ID", value.Type().Name(), value)
-	//}
-	//if isID {
+func (llm *Llm) WithState(ctx context.Context, objId dagql.IDType) (*Llm, error) {
 	obj, err := llm.srv.Load(ctx, objId.ID())
 	if err != nil {
 		return nil, err
 	}
-	//}
 	llm = llm.Clone()
-	// FIXME: support multiple variables
-	// llm.state[key] = value
 	llm.state = obj
 	return llm, nil
 }
 
-func (llm *Llm) Get(ctx context.Context, key string) (dagql.Typed, error) {
+func (llm *Llm) State(ctx context.Context) (dagql.Typed, error) {
 	return llm.state, nil
-	// FIXME: support multiple variables in state
-	//if val, ok := llm.state[key]; ok {
-	//	return val, nil
-	//}
-	//return nil, fmt.Errorf("no value at key %s", key)
 }
 
 func (llm *Llm) sendQuery(ctx context.Context, tools []bbi.Tool) (res *openai.ChatCompletion, rerr error) {
