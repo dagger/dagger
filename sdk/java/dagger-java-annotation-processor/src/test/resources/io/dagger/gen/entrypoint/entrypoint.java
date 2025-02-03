@@ -21,10 +21,12 @@ import java.lang.Class;
 import java.lang.Exception;
 import java.lang.InterruptedException;
 import java.lang.String;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 
 public class Entrypoint {
@@ -60,6 +62,9 @@ public class Entrypoint {
         result = invoke(parentJson, parentName, fnName, inputArgs);
       }
       fnCall.returnValue(result);
+    } catch (InvocationTargetException e) {
+      fnCall.returnError(dag.error(e.getTargetException().getMessage()));
+      throw e;
     } catch (Exception e) {
       fnCall.returnError(dag.error(e.getMessage()));
       throw e;
@@ -76,26 +81,47 @@ public class Entrypoint {
                     dag.function("containerEcho",
                         dag.typeDef().withObject("Container"))
                         .withDescription("Returns a container that echoes whatever string argument is provided")
-                        .withArg("stringArg", dag.typeDef().withKind(TypeDefKind.STRING_KIND).withOptional(true), new Function.WithArgArguments().withDescription("string to echo").withDefaultValue(JSON.from("\"Hello Dagger\""))))
+                        .withArg("stringArg", dag.typeDef().withKind(TypeDefKind.STRING_KIND), new Function.WithArgArguments().withDescription("string to echo").withDefaultValue(JSON.from("\"Hello Dagger\""))))
                 .withFunction(
                     dag.function("grepDir",
                         dag.typeDef().withKind(TypeDefKind.STRING_KIND))
                         .withDescription("Returns lines that match a pattern in the files of the provided Directory")
-                        .withArg("directoryArg", dag.typeDef().withObject("Directory").withOptional(false), new Function.WithArgArguments().withDescription("Directory to grep"))
-                        .withArg("pattern", dag.typeDef().withKind(TypeDefKind.STRING_KIND).withOptional(false), new Function.WithArgArguments().withDescription("Pattern to search for in the directory")))
+                        .withArg("directoryArg", dag.typeDef().withObject("Directory"), new Function.WithArgArguments().withDescription("Directory to grep"))
+                        .withArg("pattern", dag.typeDef().withKind(TypeDefKind.STRING_KIND).withOptional(true), new Function.WithArgArguments().withDescription("Pattern to search for in the directory")))
                 .withFunction(
                     dag.function("itself",
                         dag.typeDef().withObject("DaggerJava")))
                 .withFunction(
                     dag.function("isZero",
                         dag.typeDef().withKind(TypeDefKind.BOOLEAN_KIND))
-                        .withArg("value", dag.typeDef().withKind(TypeDefKind.INTEGER_KIND).withOptional(false)))
+                        .withArg("value", dag.typeDef().withKind(TypeDefKind.INTEGER_KIND)))
                 .withFunction(
                     dag.function("doThings",
                         dag.typeDef().withListOf(dag.typeDef().withKind(io.dagger.client.TypeDefKind.INTEGER_KIND)))
-                        .withArg("stringArray", dag.typeDef().withListOf(dag.typeDef().withKind(io.dagger.client.TypeDefKind.STRING_KIND)).withOptional(false))
-                        .withArg("ints", dag.typeDef().withListOf(dag.typeDef().withKind(io.dagger.client.TypeDefKind.INTEGER_KIND)).withOptional(false))
-                        .withArg("containers", dag.typeDef().withListOf(dag.typeDef().withObject("Container")).withOptional(false))));
+                        .withArg("stringArray", dag.typeDef().withListOf(dag.typeDef().withKind(io.dagger.client.TypeDefKind.STRING_KIND)))
+                        .withArg("ints", dag.typeDef().withListOf(dag.typeDef().withKind(io.dagger.client.TypeDefKind.INTEGER_KIND)))
+                        .withArg("containers", dag.typeDef().withListOf(dag.typeDef().withObject("Container"))))
+                .withFunction(
+                    dag.function("nonNullableNoDefault",
+                        dag.typeDef().withKind(TypeDefKind.STRING_KIND))
+                        .withDescription("User must provide the argument")
+                        .withArg("stringArg", dag.typeDef().withKind(TypeDefKind.STRING_KIND)))
+                .withFunction(
+                    dag.function("nonNullableDefault",
+                        dag.typeDef().withKind(TypeDefKind.STRING_KIND))
+                        .withDescription("If the user doesn't provide an argument, a default value is used. The argument can't be null.")
+                        .withArg("stringArg", dag.typeDef().withKind(TypeDefKind.STRING_KIND), new Function.WithArgArguments().withDefaultValue(JSON.from("\"default value\""))))
+                .withFunction(
+                    dag.function("nullable",
+                        dag.typeDef().withKind(TypeDefKind.STRING_KIND))
+                        .withDescription("Make it optional but do not define a value. If the user doesn't provide an argument, it will be\n"
+        + " set to null.")
+                        .withArg("stringArg", dag.typeDef().withKind(TypeDefKind.STRING_KIND).withOptional(true)))
+                .withFunction(
+                    dag.function("nullableDefault",
+                        dag.typeDef().withKind(TypeDefKind.STRING_KIND))
+                        .withDescription("Set a default value in case the user doesn't provide a value and allow for null value.")
+                        .withArg("stringArg", dag.typeDef().withKind(TypeDefKind.STRING_KIND).withOptional(true), new Function.WithArgArguments().withDefaultValue(JSON.from("\"Foo\"")))));
     return module.id();
   }
 
@@ -111,6 +137,7 @@ public class Entrypoint {
           if (inputArgs.get("stringArg") != null) {
             stringArg = (String) JsonConverter.fromJSON(dag, inputArgs.get("stringArg"), String.class);
           }
+          Objects.requireNonNull(stringArg, "stringArg must not be null");
           Method fn = clazz.getMethod("containerEcho", String.class);
           Container res = (Container) fn.invoke(obj, stringArg);
           return JsonConverter.toJSON(res);
@@ -119,6 +146,7 @@ public class Entrypoint {
           if (inputArgs.get("directoryArg") != null) {
             directoryArg = (Directory) JsonConverter.fromJSON(dag, inputArgs.get("directoryArg"), Directory.class);
           }
+          Objects.requireNonNull(directoryArg, "directoryArg must not be null");
           String pattern = null;
           if (inputArgs.get("pattern") != null) {
             pattern = (String) JsonConverter.fromJSON(dag, inputArgs.get("pattern"), String.class);
@@ -143,16 +171,53 @@ public class Entrypoint {
           if (inputArgs.get("stringArray") != null) {
             stringArray = (String[]) JsonConverter.fromJSON(dag, inputArgs.get("stringArray"), String[].class);
           }
+          Objects.requireNonNull(stringArray, "stringArray must not be null");
           List ints = null;
           if (inputArgs.get("ints") != null) {
             ints = (List) JsonConverter.fromJSON(dag, inputArgs.get("ints"), List.class);
           }
+          Objects.requireNonNull(ints, "ints must not be null");
           List containers = null;
           if (inputArgs.get("containers") != null) {
             containers = (List) JsonConverter.fromJSON(dag, inputArgs.get("containers"), List.class);
           }
+          Objects.requireNonNull(containers, "containers must not be null");
           Method fn = clazz.getMethod("doThings", String[].class, List.class, List.class);
           int[] res = (int[]) fn.invoke(obj, stringArray, ints, containers);
+          return JsonConverter.toJSON(res);
+        } else if (fnName.equals("nonNullableNoDefault")) {
+          String stringArg = null;
+          if (inputArgs.get("stringArg") != null) {
+            stringArg = (String) JsonConverter.fromJSON(dag, inputArgs.get("stringArg"), String.class);
+          }
+          Objects.requireNonNull(stringArg, "stringArg must not be null");
+          Method fn = clazz.getMethod("nonNullableNoDefault", String.class);
+          String res = (String) fn.invoke(obj, stringArg);
+          return JsonConverter.toJSON(res);
+        } else if (fnName.equals("nonNullableDefault")) {
+          String stringArg = null;
+          if (inputArgs.get("stringArg") != null) {
+            stringArg = (String) JsonConverter.fromJSON(dag, inputArgs.get("stringArg"), String.class);
+          }
+          Objects.requireNonNull(stringArg, "stringArg must not be null");
+          Method fn = clazz.getMethod("nonNullableDefault", String.class);
+          String res = (String) fn.invoke(obj, stringArg);
+          return JsonConverter.toJSON(res);
+        } else if (fnName.equals("nullable")) {
+          String stringArg = null;
+          if (inputArgs.get("stringArg") != null) {
+            stringArg = (String) JsonConverter.fromJSON(dag, inputArgs.get("stringArg"), String.class);
+          }
+          Method fn = clazz.getMethod("nullable", String.class);
+          String res = (String) fn.invoke(obj, stringArg);
+          return JsonConverter.toJSON(res);
+        } else if (fnName.equals("nullableDefault")) {
+          String stringArg = null;
+          if (inputArgs.get("stringArg") != null) {
+            stringArg = (String) JsonConverter.fromJSON(dag, inputArgs.get("stringArg"), String.class);
+          }
+          Method fn = clazz.getMethod("nullableDefault", String.class);
+          String res = (String) fn.invoke(obj, stringArg);
           return JsonConverter.toJSON(res);
         }
       }

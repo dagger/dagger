@@ -7,6 +7,7 @@ import com.github.javaparser.javadoc.JavadocBlockTag.Type;
 import com.google.auto.service.AutoService;
 import com.palantir.javapoet.*;
 import io.dagger.client.*;
+import io.dagger.module.annotation.*;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Module;
 import io.dagger.module.annotation.Object;
@@ -45,7 +46,9 @@ import javax.lang.model.util.Elements;
   "io.dagger.module.annotation.Module",
   "io.dagger.module.annotation.Object",
   "io.dagger.module.annotation.Function",
-  "io.dagger.module.annotation.Optional"
+  "io.dagger.module.annotation.Optional",
+  "io.dagger.module.annotation.Default",
+  "io.dagger.module.annotation.Nullable"
 })
 @SupportedSourceVersion(SourceVersion.RELEASE_17)
 @AutoService(Processor.class)
@@ -97,24 +100,39 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                 .getParameters().stream()
                                     .map(
                                         param -> {
-                                          var optional =
-                                              param.getAnnotation(
-                                                  io.dagger.module.annotation.Optional.class);
-                                          var isOptional = optional != null;
                                           TypeMirror tm = param.asType();
                                           TypeKind tk = tm.getKind();
 
+                                          Default defaultAnnotation =
+                                              param.getAnnotation(
+                                                  io.dagger.module.annotation.Default.class);
+                                          Nullable nullableAnnotation =
+                                              param.getAnnotation(
+                                                  io.dagger.module.annotation.Nullable.class);
+
+                                          boolean isOptional = nullableAnnotation != null;
+
+                                          var hasDefaultAnnotation = defaultAnnotation != null;
                                           String defaultValue =
-                                              isOptional
+                                              hasDefaultAnnotation
                                                   ? quoteIfString(
-                                                      optional.defaultValue(), tm.toString())
-                                                  : "";
+                                                      defaultAnnotation.value(), tm.toString())
+                                                  : null;
+
+                                          // if @Default("null") we handle that as @Nullable only
+                                          if (defaultValue != null && defaultValue.equals("null")) {
+                                            isOptional = true;
+                                            defaultValue = null;
+                                            hasDefaultAnnotation = false;
+                                          }
+
                                           String paramName = param.getSimpleName().toString();
                                           return new ParameterInfo(
                                               paramName,
                                               parseParameterDescription(elt, paramName),
                                               new TypeInfo(tm.toString(), tk.name()),
                                               isOptional,
+                                              hasDefaultAnnotation,
                                               defaultValue);
                                         })
                                     .toList();
@@ -146,7 +164,11 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
   }
 
   static String quoteIfString(String value, String type) {
+    if (value == null) {
+      return null;
+    }
     if (type.equals(String.class.getName())
+        && !value.equals("null")
         && (!value.startsWith("\"") && !value.endsWith("\"")
             || !value.startsWith("'") && !value.endsWith("'"))) {
       return "\"" + value.replaceAll("\"", "\\\\\"") + "\"";
@@ -188,12 +210,13 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           }
           for (var parameterInfo : fnInfo.parameters()) {
             rm.addCode("\n                    .withArg($S, ", parameterInfo.name())
-                .addCode(typeDef(parameterInfo.type()))
-                .addCode(".withOptional($L)", parameterInfo.optional());
+                .addCode(typeDef(parameterInfo.type()));
+            if (parameterInfo.optional()) {
+              rm.addCode(".withOptional(true)");
+            }
             boolean hasDescription = isNotBlank(parameterInfo.description());
-            boolean hasDefaultValue =
-                parameterInfo.optional() && isNotBlank(parameterInfo.defaultValue());
-            if (hasDescription || parameterInfo.optional()) {
+            boolean hasDefaultValue = parameterInfo.hasDefaultValue();
+            if (hasDescription || hasDefaultValue) {
               rm.addCode(", new $T.WithArgArguments()", io.dagger.client.Function.class);
               if (hasDescription) {
                 rm.addCode(".withDescription($S)", parameterInfo.description());
@@ -259,9 +282,13 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
             invokeBlock.add(", $L", parameterInfo.name());
 
             String defaultValue = "null";
-            if (parameterInfo.type().kindName().equals(TypeKind.INT.name())) {
+            TypeKind tk = getTypeKind(parameterInfo.type().kindName());
+            if (tk == TypeKind.INT
+                || tk == TypeKind.LONG
+                || tk == TypeKind.DOUBLE
+                || tk == TypeKind.FLOAT) {
               defaultValue = "0";
-            } else if (parameterInfo.type().kindName().equals(TypeKind.BOOLEAN.name())) {
+            } else if (tk == TypeKind.BOOLEAN) {
               defaultValue = "false";
             }
             im.addStatement(
@@ -282,6 +309,13 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                     .add(".class)")
                     .build());
             im.endControlFlow();
+            if (!parameterInfo.optional() && !tk.isPrimitive()) {
+              im.addStatement(
+                  "$T.requireNonNull($L, \"$L must not be null\")",
+                  Objects.class,
+                  parameterInfo.name(),
+                  parameterInfo.name());
+            }
           }
           fnBlock.add(")");
           invokeBlock.add(")");
@@ -372,6 +406,15 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
       return f;
     } catch (ClassNotFoundException e) {
       throw new RuntimeException(e);
+    }
+  }
+
+  public static TypeKind getTypeKind(String name) {
+    try {
+      TypeKind kind = TypeKind.valueOf(name);
+      return kind;
+    } catch (IllegalArgumentException e) {
+      return TypeKind.DECLARED;
     }
   }
 
