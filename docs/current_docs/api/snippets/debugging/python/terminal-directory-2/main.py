@@ -10,8 +10,9 @@ class MyModule:
             .head()
             .tree()
             .terminal(
-                container=dag.container().from_("ubuntu"),
                 cmd=["/bin/bash"],
+                experimentalprivilegednesting=false,
+                insecurerootcapabilities=false,
             )
             .file("README.md")
             .contents()

@@ -12,9 +12,10 @@ func (m *MyModule) AdvancedDirectory(ctx context.Context) (string, error) {
 		Git("https://github.com/dagger/dagger.git").
 		Head().
 		Tree().
-		Terminal(dagger.DirectoryTerminalOpts{
-			Container: dag.Container().From("ubuntu"),
-			Cmd:       []string{"/bin/bash"},
+		Terminal(dagger.ContainerTerminalOpts{
+			Cmd:                           []string{"/bin/bash"},
+			ExperimentalPrivilegedNesting: false,
+			InsecureRootCapabilities:      false,
 		}).
 		File("README.md").
 		Contents(ctx)
