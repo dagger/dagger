@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/dagger/dagger/core/bbi"
 	_ "github.com/dagger/dagger/core/bbi/empty"
@@ -455,4 +456,85 @@ func (msg openAIMessage) Text() (string, error) {
 		return content, nil
 	}
 	return "", fmt.Errorf("unsupported message role: %s", msg.Role)
+}
+
+type LlmMiddleware struct {
+	Server *dagql.Server
+}
+
+func (s LlmMiddleware) extendLlmType(targetType dagql.ObjectType) error {
+	llmType, ok := s.Server.ObjectType(new(Llm).Type().Name())
+	if !ok {
+		return fmt.Errorf("failed to lookup llm type")
+	}
+	idType, ok := targetType.IDType()
+	if !ok {
+		return fmt.Errorf("failed to lookup ID type for %T", targetType)
+	}
+	typename := targetType.TypeName()
+	// Install with<targetType>()
+	llmType.Extend(
+		dagql.FieldSpec{
+			Name:        "with" + typename,
+			Description: fmt.Sprintf("Set the llm state to a %s", typename),
+			Type:        llmType.Typed(),
+			Args: dagql.InputSpecs{
+				{
+					Name:        "value",
+					Description: fmt.Sprintf("The value of the %s to save", typename),
+					Type:        idType,
+				},
+			},
+		},
+		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
+			llm := self.(dagql.Instance[*Llm]).Self
+			id := args["value"].(dagql.IDType)
+			return llm.WithState(ctx, id)
+		},
+		nil,
+	)
+	// Install <targetType>()
+	llmType.Extend(
+		dagql.FieldSpec{
+			Name:        typename,
+			Description: fmt.Sprintf("Retrieve the llm state as a %s", typename),
+			Type:        targetType.Typed(),
+		},
+		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
+			llm := self.(dagql.Instance[*Llm]).Self
+			return llm.State(ctx)
+		},
+		nil,
+	)
+	return nil
+}
+
+func (s LlmMiddleware) InstallObject(targetType dagql.ObjectType, install func(dagql.ObjectType)) {
+	install(targetType)
+	typename := targetType.TypeName()
+	if strings.HasPrefix(typename, "_") {
+		return
+	}
+	if err := s.extendLlmType(targetType); err != nil {
+		panic(err)
+	}
+}
+
+func (s LlmMiddleware) ModuleWithObject(ctx context.Context, mod *Module, targetTypedef *TypeDef) (*Module, error) {
+	// Install the target type
+	mod, err := mod.WithObject(ctx, targetTypedef)
+	if err != nil {
+		return nil, err
+	}
+	// FIXME
+	return mod, nil
+	typename := targetTypedef.Type().Name()
+	targetType, ok := s.Server.ObjectType(typename)
+	if !ok {
+		return nil, fmt.Errorf("can't retrieve object type %s", typename)
+	}
+	if err := s.extendLlmType(targetType); err != nil {
+		return nil, err
+	}
+	return mod, nil
 }
