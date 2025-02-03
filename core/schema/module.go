@@ -685,7 +685,8 @@ func (s *moduleSchema) moduleWithObject(ctx context.Context, mod *core.Module, a
 	if err != nil {
 		return nil, err
 	}
-	return mod.WithObject(ctx, def.Self)
+	return core.LlmMiddleware{Server: s.dag}.ModuleWithObject(ctx, mod, def.Self)
+	//return mod.WithObject(ctx, def.Self)
 }
 
 func (s *moduleSchema) moduleWithInterface(ctx context.Context, mod *core.Module, args struct {

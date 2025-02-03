@@ -608,6 +608,11 @@ func (s *Server) SetMiddleware(middleware Middleware) {
 	s.installLock.Unlock()
 }
 
+// Return the currently attached middleware (may be nil)
+func (s *Server) Middleware() Middleware {
+	return s.middleware
+}
+
 func LoadIDs[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]T, error) {
 	out := make([]T, len(ids))
 	eg := new(errgroup.Group)
