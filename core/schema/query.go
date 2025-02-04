@@ -14,19 +14,6 @@ import (
 	"github.com/dagger/dagger/engine/sources/blob"
 )
 
-// We don't expose these types to modules SDK codegen, but
-// we still want their graphql schemas to be available for
-// internal usage. So we use this list to scrub them from
-// the introspection JSON that module SDKs use for codegen.
-var typesHiddenFromModuleSDKs = []dagql.Typed{
-	&core.Host{},
-
-	&core.Engine{},
-	&core.EngineCache{},
-	&core.EngineCacheEntry{},
-	&core.EngineCacheEntrySet{},
-}
-
 type querySchema struct {
 	srv *dagql.Server
 }
@@ -108,7 +95,7 @@ func (s *querySchema) schemaJSONFile(ctx context.Context, parent dagql.Instance[
 		return inst, fmt.Errorf("failed to unmarshal introspection JSON: %w", err)
 	}
 
-	for _, typed := range typesHiddenFromModuleSDKs {
+	for _, typed := range core.TypesHiddenFromModuleSDKs {
 		introspection.Schema.ScrubType(typed.Type().Name())
 		introspection.Schema.ScrubType(dagql.IDTypeNameFor(typed))
 	}
