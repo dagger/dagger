@@ -1,14 +1,14 @@
 {
   "name": "python-sdk-dev",
   "engineVersion": "v0.15.3",
-  "sdk": {
-    "source": "python"
-  },
   "exclude": [
     "**/.venv",
     "**/__pycache__",
     "**/.*cache"
   ],
+  "sdk": {
+    "source": "python"
+  },
   "dependencies": [
     {
       "name": "dockerd",

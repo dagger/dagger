@@ -2445,6 +2445,31 @@ class CurrentModule(Type):
 class Directory(Type):
     """A directory."""
 
+    def as_module(
+        self,
+        *,
+        source_root_path: str | None = ".",
+    ) -> "Module":
+        """Load the directory as a Dagger module source
+
+        Parameters
+        ----------
+        source_root_path:
+            An optional subpath of the directory which contains the module's
+            configuration file.
+            This is needed when the module code is in a subdirectory but
+            requires parent directories to be loaded in order to execute. For
+            example, the module source code may need a go.mod, project.toml,
+            package.json, etc. file from a parent directory.
+            If not set, the module source code is loaded from the root of the
+            directory.
+        """
+        _args = [
+            Arg("sourceRootPath", source_root_path, "."),
+        ]
+        _ctx = self._select("asModule", _args)
+        return Module(_ctx)
+
     def as_module_source(
         self,
         *,
@@ -5424,6 +5449,14 @@ class Module(Type):
             for v in _ids
         ]
 
+    def generated_context_directory(self) -> Directory:
+        """The generated files and directories made on top of the module source's
+        context directory.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("generatedContextDirectory", _args)
+        return Directory(_ctx)
+
     async def id(self) -> ModuleID:
         """A unique identifier for this Module.
 
@@ -5741,12 +5774,12 @@ class ModuleSource(Type):
         _ctx = self._select("engineVersion", _args)
         return await _ctx.execute(str)
 
-    def generated_context_diff(self) -> Directory:
+    def generated_context_directory(self) -> Directory:
         """The generated files and directories made on top of the module source's
         context directory.
         """
         _args: list[Arg] = []
-        _ctx = self._select("generatedContextDiff", _args)
+        _ctx = self._select("generatedContextDirectory", _args)
         return Directory(_ctx)
 
     async def id(self) -> ModuleSourceID:
