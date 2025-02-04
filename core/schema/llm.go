@@ -31,6 +31,8 @@ func (s llmSchema) Install() {
 			Doc("append a prompt to the llm context"),
 		dagql.Func("sync", s.sync).
 			Doc("synchronize the llm state: send outstanding prompts, process replies and tool calls"),
+		dagql.Func("tools", s.tools).
+			Doc("print documentation for available tools"),
 	}
 	llmType.Install(s.srv)
 	s.srv.SetMiddleware(core.LlmMiddleware{Server: s.srv})
@@ -79,4 +81,9 @@ func (s *llmSchema) history(ctx context.Context, llm *core.Llm, _ struct{}) (dag
 		return nil, err
 	}
 	return dagql.NewStringArray(history...), nil
+}
+
+func (s *llmSchema) tools(ctx context.Context, llm *core.Llm, _ struct{}) (dagql.String, error) {
+	doc, err := llm.ToolsDoc(ctx)
+	return dagql.NewString(doc), err
 }
