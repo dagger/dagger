@@ -10,6 +10,18 @@ The `dagger.json` file defines the configuration for a Dagger module. Below is a
 
 ## Main Configuration
 
+- **`views`** (Optional) — Named views defined for this module, which are sets of directory filters that can be applied to directory arguments provided to functions.
+
+  **Type:** array
+
+- **`codegen`** (Optional) — Codegen configuration for this module.
+
+  **Type:** 
+
+- **`$schema`** (Optional) — The self-describing json $schema
+
+  **Type:** string
+
 - **`name`** (Required) — The name of the module.
 
   **Type:** string
@@ -18,68 +30,55 @@ The `dagger.json` file defines the configuration for a Dagger module. Below is a
 
   **Type:** string
 
-- **`sdk`** (Optional) — The SDK this module uses.
+- **`sdk`** (Optional) — The SDK this module uses
+
+  **Type:** string
+
+- **`source`** (Optional) — The path, relative to this config file, to the subdir containing the module's implementation source code.
 
   **Type:** string
 
 - **`include`** (Optional) — Paths to explicitly include from the module, relative to the configuration file.
 
-  **Type:** list(string)
+  **Type:** array
 
 - **`exclude`** (Optional) — Paths to explicitly exclude from the module, relative to the configuration file.
 
-  **Type:** list(string)
+  **Type:** array
 
 - **`dependencies`** (Optional) — The modules this module depends on.
 
-  **Type:** list([dependency](#dependency))
-
-- **`source`** (Optional) — The path, relative to this config file, to the subdirectory containing the module's implementation source code.
-
-  **Type:** string
-
-- **`views`** (Optional) — Named views defined for this module, which are sets of directory filters that can be applied to directory arguments provided to functions.
-
-  **Type:** list([view](#view))
-
-- **`codegen`** (Optional) — Code generation configuration for this module.
-
-  **Type:** [codegen](#codegen)
+  **Type:** array
 
 ## Nested Blocks
 
-### `dependency`
+### `ModuleCodegenConfig`
 
-A `dependency` block supports the following:
+- **`automaticGitignore`** (Optional) — Whether to automatically generate a .gitignore file for this module.
 
-- **`name`** (Required) — The name to use for this dependency. Defaults to the dependency module's name but can be overridden.
+  **Type:** boolean
 
-  **Type:** string
-
-- **`source`** (Required) — The source reference of the module dependency.
-
-  **Type:** string
+### `ModuleConfigDependency`
 
 - **`pin`** (Optional) — The pinned version of the module dependency.
 
   **Type:** string
 
-### `view`
-
-A `view` block supports the following:
-
-- **`name`** (Required) — The name of the view.
+- **`name`** (Required) — The name to use for this dependency. By default, the same as the dependency module's name, but can also be overridden to use a different name.
 
   **Type:** string
 
-- **`patterns`** (Optional) — A list of patterns for directory filters.
+- **`source`** (Optional) — The source ref of the module dependency.
 
-  **Type:** list(string)
+  **Type:** string
 
-### `codegen`
+### `ModuleConfigView`
 
-A `codegen` block supports the following:
+- **`name`** (Required) — 
 
-- **`automaticGitignore`** (Optional) — Whether to automatically generate a `.gitignore` file for this module.
+  **Type:** string
 
-  **Type:** boolean
+- **`patterns`** (Optional) — 
+
+  **Type:** array
+

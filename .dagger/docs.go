@@ -160,7 +160,8 @@ func (d Docs) Generate() *dagger.Directory {
 		WithDirectory("", d.GenerateSchema()).
 		WithDirectory("", d.GenerateCli()).
 		WithDirectory("", d.GenerateSchemaReference()).
-		WithDirectory("", d.GenerateConfigSchemas())
+		WithDirectory("", d.GenerateConfigSchemas()).
+		WithDirectory("", d.GenerateSchemaReference())
 }
 
 // Regenerate the CLI reference docs
@@ -199,6 +200,7 @@ func (d Docs) GenerateSchemaReference() *dagger.Directory {
 	return dag.Directory().WithFile(generatedAPIReferencePath, generatedHTML)
 }
 
+// Generate the dagger.json reference page in markdown
 func (d Docs) GenerateReferencePage(ctx context.Context) (*dagger.Directory, error) {
 	dir := d.GenerateConfigSchemas()
 
@@ -221,7 +223,7 @@ func (d Docs) GenerateReferencePage(ctx context.Context) (*dagger.Directory, err
 			Required []string `json:"required"`
 		} `json:"$defs"`
 	}
-	if err := json.Unmarshal([]byte(strings.TrimSpace(contents)), &schema); err != nil {
+	if err := json.Unmarshal([]byte(contents), &schema); err != nil {
 		return nil, fmt.Errorf("error marshalling: %v", err)
 	}
 
