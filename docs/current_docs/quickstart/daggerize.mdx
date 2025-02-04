@@ -55,7 +55,7 @@ can be inspected in Dagger Cloud.
 
 ### Initialize a Dagger module
 
-Bootstrap a new Dagger module in Go, Python or TypeScript by running `dagger init` in the application's root directory, using the `--source` flag to specify a directory for the module's source code.
+Bootstrap a new Dagger module in Go, Python, TypeScript or PHP by running `dagger init` in the application's root directory, using the `--source` flag to specify a directory for the module's source code.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -81,6 +81,14 @@ dagger init --sdk=typescript --source=./dagger
 ```
 
 This will generate a `dagger.json` module metadata file, initial `dagger/src/index.ts` source code template, `dagger/package.json` and `dagger/tsconfig.json` files, as well as a generated `dagger/sdk` folder for local development.
+</TabItem>
+<TabItem value="PHP">
+
+```shell
+dagger init --sdk=php --source=./dagger
+```
+
+This will generate a `dagger.json` module metadata file, initial `dagger/src/HelloDagger.php` source code template, `dagger/composer.json`, `dagger/composer.lock` and `dagger/entrypoint.php` files, as well as a generated `dagger/sdk` folder for local development.
 </TabItem>
 </Tabs>
 
@@ -132,6 +140,21 @@ In this Dagger module, each Dagger Function performs a different operation:
 Replace the generated `dagger/src/index.ts` file with the following code, which adds four Dagger Functions to your Dagger module:
 
 ```typescript file=./snippets/daggerize/typescript/index.ts
+```
+
+In this Dagger module, each Dagger Function performs a different operation:
+
+- The `publish()` Dagger Function tests, builds and publishes a container image of the application to a registry.
+- The `test()` Dagger Function runs the application's unit tests and returns the results.
+- The `build()` Dagger Function performs a multi-stage build and returns a final container image with the production-ready application and an NGINX Web server to host and serve it.
+- The `buildEnv()` Dagger Function creates a container with the build environment for the application.
+
+</TabItem>
+<TabItem value="PHP">
+
+Replace the generated `dagger/src/HelloDagger.php` file with the following code, which adds four Dagger Functions to your Dagger module:
+
+```php file=./snippets/daggerize/php/HelloDagger.php
 ```
 
 In this Dagger module, each Dagger Function performs a different operation:
