@@ -199,7 +199,7 @@ func (d Docs) GenerateSchemaReference() *dagger.Directory {
 	return dag.Directory().WithFile(generatedAPIReferencePath, generatedHTML)
 }
 
-func (d Docs) GenerateReferencePages(ctx context.Context) (*dagger.File, error) {
+func (d Docs) GenerateReferencePage(ctx context.Context) (*dagger.Directory, error) {
 	dir := d.GenerateConfigSchemas()
 
 	contents, err := dir.File(generatedDaggerJSONSchemaPath).Contents(ctx)
@@ -231,12 +231,17 @@ func (d Docs) GenerateReferencePages(ctx context.Context) (*dagger.File, error) 
 
 	var s strings.Builder
 
-	s.WriteString("---\n")
-	s.WriteString("slug: /api/dagger-schema-reference\n")
-	s.WriteString("---\n\n")
-	s.WriteString("# dagger.json Schema Reference\n\n")
-	s.WriteString("The `dagger.json` file defines the configuration for a Dagger module. Below is a detailed description of each field, including its type, description, and whether it is required.\n\n")
-	s.WriteString("**Note**: The JSON schema file for configuring your IDE is available at [this URL](https://docs.dagger.io/reference/dagger.schema.json).\n\n")
+	s.WriteString(`---
+slug: /api/dagger-schema-reference
+---
+
+# dagger.json Schema Reference
+
+The ` + "`dagger.json`" + ` file defines the configuration for a Dagger module. Below is a detailed description of each field, including its type, description, and whether it is required.
+
+**Note**: The JSON schema file for configuring your IDE is available at [this URL](https://docs.dagger.io/reference/dagger.schema.json).
+
+`)
 
 	mainConfig, exists := schema.Definitions["ModuleConfigWithUserFields"]
 	if !exists {
@@ -278,8 +283,7 @@ func (d Docs) GenerateReferencePages(ctx context.Context) (*dagger.File, error) 
 
 	return dag.
 		Directory().
-		WithNewFile(generatedDaggerReferencePagePath, s.String()).
-		File(generatedDaggerReferencePagePath), nil
+		WithNewFile(generatedDaggerReferencePagePath, s.String()), nil
 }
 
 // Regenerate the config schemas
