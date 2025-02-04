@@ -4,5 +4,6 @@ public record ObjectInfo(
     String name,
     String qualifiedName,
     String description,
-    FieldInfo[] fields,
-    FunctionInfo[] functions) {}
+    FieldInfo[] fieldInfos,
+    FunctionInfo[] functions,
+    ConstructorInfo constructorInfo) {}
