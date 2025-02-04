@@ -12,6 +12,7 @@ import (
 
 	"github.com/iancoleman/strcase"
 	"golang.org/x/mod/semver"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -178,52 +179,77 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.Modul
 		return nil, fmt.Errorf("failed to create codegen base: %w", err)
 	}
 
+	// we're going to parallelize typescript codegen (generateClient) and dependency installation (generateLockFile, installDependencies)
+	g, ctx := errgroup.WithContext(ctx)
+
+	var codegennedSdk *dagger.Directory
 	// Get a directory with the SDK sources installed and the generated client.
-	sdk := t.
-		addSDK().
-		WithDirectory(".", t.generateClient(base, introspectionJSON))
-
-	base = base.
-		// Add template directory
-		WithMountedDirectory("/opt/module", dag.CurrentModule().Source().Directory(".")).
-		// Mount user's module configuration (without sources) and the generated client in it.
-		WithDirectory(ModSourceDirPath,
-			dag.Directory().WithDirectory("/", modSource.ContextDirectory(), dagger.DirectoryWithDirectoryOpts{
-				Include: t.moduleConfigFiles(t.moduleConfig.subPath),
-			})).
-		WithDirectory(filepath.Join(t.moduleConfig.modulePath(), GenDir), sdk).
-		WithWorkdir(t.moduleConfig.modulePath())
-
-	base = t.configureModule(base)
-
-	// Generate the appropriate lock file
-	base, err = t.generateLockFile(base)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate lock file: %w", err)
-	}
-
-	// Install dependencies if needed.
-	if installDep {
-		base, err = t.installDependencies(base)
+	g.Go(func() error {
+		var err error
+		codegennedSdk, err = t.addSDK().
+			WithDirectory(".", t.generateClient(base, introspectionJSON)).Sync(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to install dependencies: %w", err)
+			return fmt.Errorf("failed syncing client codegen: %w", err)
 		}
+		return nil
+	})
+
+	var depInstall *dagger.Container
+	g.Go(func() error {
+		depInstall = base.
+			// Add template directory
+			WithMountedDirectory("/opt/module", dag.CurrentModule().Source().Directory(".")).
+			// Mount user's module configuration (without sources) and the generated client in it.
+			WithDirectory(ModSourceDirPath,
+				dag.Directory().WithDirectory("/", modSource.ContextDirectory(), dagger.DirectoryWithDirectoryOpts{
+					Include: t.moduleConfigFiles(t.moduleConfig.subPath),
+				})).
+			WithDirectory(filepath.Join(t.moduleConfig.modulePath(), GenDir), t.addSDK()).
+			WithWorkdir(t.moduleConfig.modulePath())
+
+		depInstall = t.configureModule(depInstall)
+
+		var err error
+		// Generate the appropriate lock file
+		depInstall, err = t.generateLockFile(depInstall)
+		if err != nil {
+			return fmt.Errorf("failed to generate lock file: %w", err)
+		}
+
+		// Install dependencies if needed.
+		if installDep {
+			depInstall, err = t.installDependencies(depInstall)
+			if err != nil {
+				return fmt.Errorf("failed to install dependencies: %w", err)
+			}
+		}
+
+		// Add user's source files
+		depInstall = depInstall.WithDirectory(ModSourceDirPath,
+			dag.Directory().WithDirectory("/", modSource.ContextDirectory(), dagger.DirectoryWithDirectoryOpts{
+				// Include the rest of the user's module except config files to not override previous steps & SDKs.
+				Exclude: append(t.moduleConfigFiles(t.moduleConfig.subPath), filepath.Join(t.moduleConfig.subPath, "sdk")),
+			}),
+		)
+
+		depInstall, err = t.addTemplate(ctx, depInstall)
+		if err != nil {
+			return fmt.Errorf("failed to add template: %w", err)
+		}
+
+		depInstall, err = depInstall.Sync(ctx)
+		if err != nil {
+			return fmt.Errorf("failed syncing dependency installation: %w", err)
+		}
+
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 
-	// Add user's source files
-	base = base.WithDirectory(ModSourceDirPath,
-		dag.Directory().WithDirectory("/", modSource.ContextDirectory(), dagger.DirectoryWithDirectoryOpts{
-			// Include the rest of the user's module except config files to not override previous steps & SDKs.
-			Exclude: append(t.moduleConfigFiles(t.moduleConfig.subPath), filepath.Join(t.moduleConfig.subPath, "sdk")),
-		}),
-	)
-
-	base, err = t.addTemplate(ctx, base)
-	if err != nil {
-		return nil, fmt.Errorf("failed to add template: %w", err)
-	}
-
-	return base, nil
+	return depInstall.WithDirectory(filepath.Join(t.moduleConfig.modulePath(), GenDir), codegennedSdk), nil
 }
 
 // Returns a list of files to include for module configs.
