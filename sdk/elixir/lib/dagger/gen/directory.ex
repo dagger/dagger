@@ -12,6 +12,20 @@ defmodule Dagger.Directory do
   @type t() :: %__MODULE__{}
 
   @doc "Load the directory as a Dagger module source"
+  @spec as_module(t(), [{:source_root_path, String.t() | nil}]) :: Dagger.Module.t()
+  def as_module(%__MODULE__{} = directory, optional_args \\ []) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("asModule")
+      |> QB.maybe_put_arg("sourceRootPath", optional_args[:source_root_path])
+
+    %Dagger.Module{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc "Load the directory as a Dagger module source"
   @spec as_module_source(t(), [{:source_root_path, String.t() | nil}]) :: Dagger.ModuleSource.t()
   def as_module_source(%__MODULE__{} = directory, optional_args \\ []) do
     query_builder =

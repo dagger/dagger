@@ -219,7 +219,7 @@ If --sdk is specified, the given SDK is installed in the module. You can do this
 				WithInit(mergeDeps).
 				WithSourceSubpath(moduleSourcePath).
 				WithEngineVersion(modules.EngineVersionLatest).
-				GeneratedContextDiff().
+				GeneratedContextDirectory().
 				Export(ctx, contextDirPath)
 			if err != nil {
 				return fmt.Errorf("failed to generate code: %w", err)
@@ -290,7 +290,7 @@ var moduleInstallCmd = &cobra.Command{
 
 			_, err = modSrc.
 				WithDependencies([]*dagger.ModuleSource{depSrc}).
-				GeneratedContextDiff().
+				GeneratedContextDirectory().
 				Export(ctx, contextDirPath)
 			if err != nil {
 				return fmt.Errorf("failed to update dependencies: %w", err)
@@ -390,7 +390,7 @@ var moduleUpdateCmd = &cobra.Command{
 
 			_, err = modSrc.
 				WithUpdateDependencies(extraArgs).
-				GeneratedContextDiff().
+				GeneratedContextDirectory().
 				Export(ctx, contextDirPath)
 			if err != nil {
 				return fmt.Errorf("failed to update dependencies: %w", err)
@@ -437,7 +437,7 @@ var moduleUnInstallCmd = &cobra.Command{
 
 			_, err = modSrc.
 				WithoutDependencies(extraArgs).
-				GeneratedContextDiff().
+				GeneratedContextDirectory().
 				Export(ctx, contextDirPath)
 			if err != nil {
 				return fmt.Errorf("failed to update dependencies: %w", err)
@@ -550,7 +550,7 @@ This command is idempotent: you can run it at any time, any number of times. It 
 			}
 
 			_, err = modSrc.
-				GeneratedContextDiff().
+				GeneratedContextDirectory().
 				Export(ctx, contextDirPath)
 			if err != nil {
 				return fmt.Errorf("failed to generate code: %w", err)
