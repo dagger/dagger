@@ -104,7 +104,7 @@ func (s *Session) call(ctx context.Context, fieldDef *ast.FieldDefinition, args 
 	if !ok {
 		return nil, nil, fmt.Errorf("dagql object type not found: %s", targetType)
 	}
-	field, ok := targetType.FieldSpec(fieldDef.Name)
+	field, ok := targetType.FieldSpec(fieldDef.Name, "v0.13.2")
 	if !ok {
 		// FIXME: Container.withExec is not found here, why??
 		return nil, nil, fmt.Errorf("field %q not found in object type %q (toplevel=%v)", fieldDef.Name, target.ObjectType().TypeName(), toplevel)
