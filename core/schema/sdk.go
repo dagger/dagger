@@ -64,7 +64,11 @@ func (s *moduleSchema) sdkForModule(
 	}
 
 	sdkRefStr := sdk
-	sdkRef, err := parseRefString(ctx, query, moduleSourceArgs{RefString: sdk})
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit for sdk %s: %w", sdk, err)
+	}
+	sdkRef, err := parseRefString(ctx, bk, moduleSourceArgs{RefString: sdk})
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse sdk ref %s: %w", sdk, err)
 	}

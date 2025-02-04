@@ -3,6 +3,7 @@ package modules
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // Filename is the name of the module config file.
@@ -26,11 +27,6 @@ type ModuleConfig struct {
 	// Paths to explicitly include from the module, relative to the configuration file.
 	Include []string `json:"include,omitempty"`
 
-	/* TODO: rm exclude, autoupdate existing configs
-	// Paths to explicitly exclude from the module, relative to the configuration file.
-	Exclude []string `json:"exclude,omitempty"`
-	*/
-
 	// The modules this module depends on.
 	Dependencies []*ModuleConfigDependency `json:"dependencies,omitempty"`
 
@@ -39,6 +35,10 @@ type ModuleConfig struct {
 
 	// Codegen configuration for this module.
 	Codegen *ModuleCodegenConfig `json:"codegen,omitempty"`
+
+	// Paths to explicitly exclude from the module, relative to the configuration file.
+	// Deprecated: Use !<pattern> in the include list instead.
+	Exclude []string `json:"exclude,omitempty"`
 }
 
 // SDK represents the sdk field in dagger.json
@@ -107,6 +107,19 @@ func (modCfg *ModuleConfig) UnmarshalJSON(data []byte) error {
 	if tmp.SDK != nil && tmp.SDK.Source != "" && tmp.Source == "" {
 		tmp.Source = "."
 	}
+
+	// adapt exclude to include
+	for _, exclude := range tmp.Exclude {
+		if len(exclude) == 0 {
+			continue
+		}
+		if strings.HasPrefix(exclude, "!") {
+			tmp.Include = append(tmp.Include, exclude[1:])
+		} else {
+			tmp.Include = append(tmp.Include, "!"+exclude)
+		}
+	}
+	tmp.Exclude = nil
 
 	*modCfg = ModuleConfig(tmp)
 	return nil

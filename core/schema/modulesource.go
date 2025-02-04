@@ -24,6 +24,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
+	fsutiltypes "github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -49,24 +50,27 @@ func (s *moduleSchema) moduleSource(
 	query dagql.Instance[*core.Query],
 	args moduleSourceArgs,
 ) (inst dagql.Instance[*core.ModuleSource], err error) {
-	parsedRef, err := parseRefString(ctx, query.Self, args)
+	bk, err := query.Self.Buildkit(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	parsedRef, err := parseRefString(ctx, bk, args)
 	if err != nil {
 		return inst, fmt.Errorf("failed to parse ref string: %w", err)
 	}
 	switch parsedRef.kind {
 	case core.ModuleSourceKindLocal:
-		bk, err := query.Self.Buildkit(ctx)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get buildkit client: %w", err)
-		}
 		inst, err = s.localModuleSource(ctx, query, bk, parsedRef.local.modPath, true)
+		if err != nil {
+			return inst, err
+		}
 	case core.ModuleSourceKindGit:
 		inst, err = s.gitModuleSource(ctx, query, parsedRef.git, args.RefPin, args.Stable)
+		if err != nil {
+			return inst, err
+		}
 	default:
 		return inst, fmt.Errorf("unknown module source kind: %s", parsedRef.kind)
-	}
-	if err != nil {
-		return inst, fmt.Errorf("failed to load module source: %w", err)
 	}
 
 	return inst.WithMetadata(digest.Digest(inst.Self.Digest), true), nil
@@ -625,7 +629,12 @@ type parsedRefString struct {
 	git   *parsedGitRefString
 }
 
-func parseRefString(ctx context.Context, query *core.Query, args moduleSourceArgs) (*parsedRefString, error) {
+// used to support mocks in test
+type buildkitClient interface {
+	StatCallerHostPath(context.Context, string, bool) (*fsutiltypes.Stat, error)
+}
+
+func parseRefString(ctx context.Context, bk buildkitClient, args moduleSourceArgs) (*parsedRefString, error) {
 	kind := fastModuleSourceKindCheck(args)
 	switch kind {
 	case core.ModuleSourceKindLocal:
@@ -644,12 +653,6 @@ func parseRefString(ctx context.Context, query *core.Query, args moduleSourceArg
 			kind: kind,
 			git:  &parsedGitRef,
 		}, nil
-	}
-
-	// couldn't determine quickly, fall back to slower method
-	bk, err := query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
 	// First, we stat ref in case the mod path github.com/username is a local directory
@@ -780,15 +783,17 @@ func parseGitRefString(ctx context.Context, refString string) (parsedGitRefStrin
 	if gitParsed.cloneUser == "" && gitParsed.scheme.IsSSH() {
 		gitParsed.cloneUser = "git"
 	}
-	if gitParsed.sourceUser != "" {
-		gitParsed.sourceUser += "@"
+	sourceUser := gitParsed.sourceUser
+	if sourceUser != "" {
+		sourceUser += "@"
 	}
-	if gitParsed.cloneUser != "" {
-		gitParsed.cloneUser += "@"
+	cloneUser := gitParsed.cloneUser
+	if cloneUser != "" {
+		cloneUser += "@"
 	}
 
-	gitParsed.sourceCloneRef = gitParsed.scheme.Prefix() + gitParsed.sourceUser + gitParsed.repoRoot.Root
-	gitParsed.cloneRef = gitParsed.scheme.Prefix() + gitParsed.cloneUser + gitParsed.repoRoot.Root
+	gitParsed.sourceCloneRef = gitParsed.scheme.Prefix() + sourceUser + gitParsed.repoRoot.Root
+	gitParsed.cloneRef = gitParsed.scheme.Prefix() + cloneUser + gitParsed.repoRoot.Root
 
 	return gitParsed, nil
 }
