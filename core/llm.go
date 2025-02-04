@@ -462,6 +462,19 @@ type LlmMiddleware struct {
 	Server *dagql.Server
 }
 
+// We don't expose these types to modules SDK codegen, but
+// we still want their graphql schemas to be available for
+// internal usage. So we use this list to scrub them from
+// the introspection JSON that module SDKs use for codegen.
+var TypesHiddenFromModuleSDKs = []dagql.Typed{
+	&Host{},
+
+	&Engine{},
+	&EngineCache{},
+	&EngineCacheEntry{},
+	&EngineCacheEntrySet{},
+}
+
 func (s LlmMiddleware) extendLlmType(targetType dagql.ObjectType) error {
 	llmType, ok := s.Server.ObjectType(new(Llm).Type().Name())
 	if !ok {
@@ -515,6 +528,19 @@ func (s LlmMiddleware) InstallObject(targetType dagql.ObjectType, install func(d
 	if strings.HasPrefix(typename, "_") {
 		return
 	}
+
+	// don't extend LLM for types that we hide from modules, lest the codegen yield a
+	// WithEngine(*Engine) that refers to an unknown *Engine type.
+	//
+	// FIXME: in principle LLM should be able to refer to these types, so this should
+	// probably be moved to codegen somehow, i.e. if a field refers to a type that is
+	// hidden, don't codegen the field.
+	for _, hiddenType := range TypesHiddenFromModuleSDKs {
+		if hiddenType.Type().Name() == typename {
+			return
+		}
+	}
+
 	if err := s.extendLlmType(targetType); err != nil {
 		panic(err)
 	}
