@@ -32,6 +32,12 @@ The `test` stage of the pipeline runs the application's unit tests and depends o
 ```
 
 </TabItem>
+<TabItem value="PHP">
+
+```php file=./snippets/test/php/HelloDagger.php
+```
+
+</TabItem>
 </Tabs>
 
 This Dagger Function works merely as a CLI wrapper. It starts with the `Container` result of the previous Dagger Function, executes the `npm run test:unit run` command in the container, and captures and returns the output as a string (refer to the code comments for details).
