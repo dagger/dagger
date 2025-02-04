@@ -187,18 +187,14 @@ func (s *Session) tools(typedef *ast.Definition, toplevel bool, objectTypes map[
 			slog.Debug("Field returns self-type. Tool will auto-chain", "type", typedef.Name, "field", field.Name)
 			// CASE 1: the function returns the self type (chainable)
 			tool.Call = func(ctx context.Context, args any) (any, error) {
-				val, id, err := s.call(ctx, field, args, toplevel)
+				val, _, err := s.call(ctx, field, args, toplevel)
 				if err != nil {
 					return nil, err
 				}
 				// We always mutate the agent's self state (auto-chaining)
 				// FIXME: no way to create ephemeral copies of yourself.
 				// 	maybe make chaining opt-in, with a special "return" tool?
-				self, err := s.self.ObjectType().New(id, val)
-				if err != nil {
-					return nil, fmt.Errorf("new object: %s", err.Error())
-				}
-				s.self = self.(dagql.Instance[dagql.Object]).Self
+				s.self = val.(dagql.Object) // It's safe to cast, because we already checked for type compatibility
 				// FIXME: send the state digest for extra awareness of state changes?
 				return "ok", nil
 			}
