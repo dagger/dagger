@@ -203,6 +203,17 @@ func (s *Session) tools(typedef *ast.Definition, toplevel bool, objectTypes map[
 				if err != nil {
 					return nil, err
 				}
+				// If target object has a sync() function, call it
+				if _, syncID, err := obj.Select(ctx, s.srv, dagql.Selector{
+					Field: "sync",
+					View:  "v0.13.2",
+				}); err == nil {
+					syncObj, err := s.srv.Load(ctx, syncID)
+					if err != nil {
+						return nil, err
+					}
+					obj = syncObj
+				}
 				s.self = obj
 				// FIXME: send the state digest for extra awareness of state changes?
 				return "ok", nil
