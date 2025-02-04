@@ -14,6 +14,13 @@ import java.util.concurrent.ExecutionException;
 /** Dagger Java Module main object */
 @Object
 public class DaggerJava extends AbstractModule {
+  private String notExportedField;
+
+  /** Project source directory */
+  public Directory source;
+
+  public String version;
+
   public DaggerJava() {
     super();
   }
