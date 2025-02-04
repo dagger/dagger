@@ -84,30 +84,35 @@ func (s *Session) TypeWasReturned(typename string) bool {
 	return false
 }
 
-func (s *Session) call(ctx context.Context, field *ast.FieldDefinition, args interface{}, toplevel bool) (dagql.Typed, *call.ID, error) {
+func (s *Session) call(ctx context.Context, fieldDef *ast.FieldDefinition, args interface{}, toplevel bool) (dagql.Typed, *call.ID, error) {
 	// 1. CONVERT CALL INPUTS (BRAIN -> BODY)
 	argsMap, ok := args.(map[string]any)
 	if !ok {
-		return nil, nil, fmt.Errorf("tool call: %s: expected arguments to be a map - got %#v", field.Name, args)
+		return nil, nil, fmt.Errorf("tool call: %s: expected arguments to be a map - got %#v", fieldDef.Name, args)
 	}
+	// Target may be the state object, or another object we lookup by ID
 	target := s.self
 	if !toplevel {
-		slog.Debug("processing special argument 'id'", "field", field.Name)
+		slog.Debug("processing special argument 'id'", "field", fieldDef.Name)
 		obj, err := s.LookupObject(ctx, argsMap["id"].(string))
 		if err != nil {
 			return nil, nil, err
 		}
 		target = obj
 	}
-	classField, ok := target.ObjectType().FieldSpec(field.Name)
+	targetType, ok := s.srv.ObjectType(target.Type().Name())
+	if !ok {
+		return nil, nil, fmt.Errorf("dagql object type not found: %s", targetType)
+	}
+	field, ok := targetType.FieldSpec(fieldDef.Name)
 	if !ok {
 		// FIXME: Container.withExec is not found here, why??
-		return nil, nil, fmt.Errorf("field %q not found in object type %q", field.Name, s.self.ObjectType().TypeName())
+		return nil, nil, fmt.Errorf("field %q not found in object type %q (toplevel=%v)", fieldDef.Name, target.ObjectType().TypeName(), toplevel)
 	}
 	sel := dagql.Selector{
-		Field: field.Name,
+		Field: fieldDef.Name,
 	}
-	for _, arg := range classField.Args {
+	for _, arg := range field.Args {
 		val, ok := argsMap[arg.Name]
 		if !ok {
 			continue
@@ -187,14 +192,18 @@ func (s *Session) tools(typedef *ast.Definition, toplevel bool, objectTypes map[
 			slog.Debug("Field returns self-type. Tool will auto-chain", "type", typedef.Name, "field", field.Name)
 			// CASE 1: the function returns the self type (chainable)
 			tool.Call = func(ctx context.Context, args any) (any, error) {
-				val, _, err := s.call(ctx, field, args, toplevel)
+				_, id, err := s.call(ctx, field, args, toplevel)
 				if err != nil {
 					return nil, err
 				}
 				// We always mutate the agent's self state (auto-chaining)
 				// FIXME: no way to create ephemeral copies of yourself.
 				// 	maybe make chaining opt-in, with a special "return" tool?
-				s.self = val.(dagql.Object) // It's safe to cast, because we already checked for type compatibility
+				obj, err := s.srv.Load(ctx, id)
+				if err != nil {
+					return nil, err
+				}
+				s.self = obj
 				// FIXME: send the state digest for extra awareness of state changes?
 				return "ok", nil
 			}
