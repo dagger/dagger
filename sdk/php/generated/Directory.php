@@ -16,6 +16,18 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * Load the directory as a Dagger module source
      */
+    public function asModule(?string $sourceRootPath = '.'): Module
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asModule');
+        if (null !== $sourceRootPath) {
+        $innerQueryBuilder->setArgument('sourceRootPath', $sourceRootPath);
+        }
+        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load the directory as a Dagger module source
+     */
     public function asModuleSource(?string $sourceRootPath = '.'): ModuleSource
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asModuleSource');

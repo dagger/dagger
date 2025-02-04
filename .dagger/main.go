@@ -95,10 +95,10 @@ func (dev *DaggerDev) Source() *dagger.Directory {
 	src := dev.Src
 	for _, module := range dev.ModCodegenTargets {
 		layer := dev.Src.
-			AsModuleSource(dagger.DirectoryAsModuleSourceOpts{
+			AsModule(dagger.DirectoryAsModuleOpts{
 				SourceRootPath: module,
 			}).
-			GeneratedContextDiff().
+			GeneratedContextDirectory().
 			Directory(module)
 		src = src.WithDirectory(module, layer)
 	}

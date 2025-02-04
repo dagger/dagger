@@ -893,6 +893,25 @@ type directoryAsModuleArgs struct {
 	SourceRootPath string `default:"."`
 }
 
+func (s *moduleSchema) directoryAsModule(
+	ctx context.Context,
+	contextDir dagql.Instance[*core.Directory],
+	args directoryAsModuleArgs,
+) (inst dagql.Instance[*core.Module], err error) {
+	err = s.dag.Select(ctx, contextDir, &inst,
+		dagql.Selector{
+			Field: "asModuleSource",
+			Args: []dagql.NamedInput{
+				{Name: "sourceRootPath", Value: dagql.String(args.SourceRootPath)},
+			},
+		},
+		dagql.Selector{
+			Field: "asModule",
+		},
+	)
+	return inst, err
+}
+
 func (s *moduleSchema) directoryAsModuleSource(
 	ctx context.Context,
 	contextDir dagql.Instance[*core.Directory],
@@ -1851,7 +1870,7 @@ func (s *moduleSchema) moduleSourceWithoutDependencies(
 	return parentSrc, nil
 }
 
-func (s *moduleSchema) moduleSourceGeneratedContextDiff(
+func (s *moduleSchema) moduleSourceGeneratedContextDirectory(
 	ctx context.Context,
 	srcInst dagql.Instance[*core.ModuleSource],
 	args struct{},
