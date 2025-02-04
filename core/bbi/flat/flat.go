@@ -34,10 +34,14 @@ type Session struct {
 }
 
 func (d Driver) NewSession(self dagql.Object, srv *dagql.Server) bbi.Session {
+	var def *ast.Definition
+	if self != nil {
+		def = srv.Schema().Types[self.Type().Name()]
+	}
 	return &Session{
 		self: self,
 		srv:  srv,
-		def:  srv.Schema().Types[self.Type().Name()],
+		def:  def,
 		IDs:  make(map[string]*call.ID),
 	}
 }
@@ -145,6 +149,9 @@ func (s *Session) isObjectType(t *ast.Type) bool {
 }
 
 func (s *Session) tools(typedef *ast.Definition, toplevel bool, objectTypes map[string]*ast.Definition) []bbi.Tool {
+	if typedef == nil {
+		return nil
+	}
 	slog.Debug("Loading tools from type", "type", typedef.Name)
 	var tools []bbi.Tool
 	for _, field := range typedef.Fields {
