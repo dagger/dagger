@@ -174,7 +174,7 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 			{"modules", []string{"TestModule"}, &dagger.GhaJobOpts{
 				Runner: []string{GoldRunner(false)},
 			}},
-			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP"}, &dagger.GhaJobOpts{
+			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"}, &dagger.GhaJobOpts{
 				Runner: []string{GoldRunner(false)},
 			}},
 			{"cli-engine", []string{"TestCLI", "TestEngine"}, &dagger.GhaJobOpts{
@@ -194,7 +194,7 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 			{"modules", []string{"TestModule"}, &dagger.GhaJobOpts{
 				Runner: []string{PlatinumRunner(true)},
 			}},
-			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP"}, &dagger.GhaJobOpts{
+			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"}, &dagger.GhaJobOpts{
 				Runner: []string{PlatinumRunner(true)},
 			}},
 			{"container", []string{"TestContainer"}, &dagger.GhaJobOpts{
