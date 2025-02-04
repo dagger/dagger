@@ -3,7 +3,7 @@ package io.dagger.java.module;
 import io.dagger.client.Container;
 import io.dagger.client.DaggerQueryException;
 import io.dagger.client.Directory;
-import io.dagger.module.Base;
+import io.dagger.module.AbstractModule;
 import io.dagger.module.annotation.Default;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Nullable;
@@ -13,7 +13,7 @@ import java.util.concurrent.ExecutionException;
 
 /** Dagger Java Module main object */
 @Object
-public class DaggerJava extends Base {
+public class DaggerJava extends AbstractModule {
   public DaggerJava() {
     super();
   }

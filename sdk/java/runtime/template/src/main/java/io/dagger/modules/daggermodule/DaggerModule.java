@@ -3,16 +3,15 @@ package io.dagger.modules.daggermodule;
 import io.dagger.client.Container;
 import io.dagger.client.DaggerQueryException;
 import io.dagger.client.Directory;
-import io.dagger.module.Base;
+import io.dagger.module.AbstractModule;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
-
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 /** DaggerModule main object */
 @Object
-public class DaggerModule extends Base {
+public class DaggerModule extends AbstractModule {
   public DaggerModule() {
     super();
   }
