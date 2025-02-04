@@ -267,7 +267,9 @@ func (llm *Llm) Run(
 			for _, tool := range tools {
 				if tool.Name == call.Function.Name {
 					var args interface{}
-					if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+					decoder := json.NewDecoder(strings.NewReader(call.Function.Arguments))
+					decoder.UseNumber()
+					if err := decoder.Decode(&args); err != nil {
 						return llm, fmt.Errorf("failed to unmarshal arguments: %w", err)
 					}
 					result := func() string {
