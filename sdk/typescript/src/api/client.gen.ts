@@ -655,6 +655,17 @@ export type CurrentModuleWorkdirOpts = {
  */
 export type CurrentModuleID = string & { __CurrentModuleID: never }
 
+export type DirectoryAsModuleOpts = {
+  /**
+   * An optional subpath of the directory which contains the module's configuration file.
+   *
+   * This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
+   *
+   * If not set, the module source code is loaded from the root of the directory.
+   */
+  sourceRootPath?: string
+}
+
 export type DirectoryAsModuleSourceOpts = {
   /**
    * An optional subpath of the directory which contains the module's configuration file.
@@ -2697,6 +2708,19 @@ export class Directory extends BaseClient {
     const response: Awaited<DirectoryID> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Load the directory as a Dagger module source
+   * @param opts.sourceRootPath An optional subpath of the directory which contains the module's configuration file.
+   *
+   * This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
+   *
+   * If not set, the module source code is loaded from the root of the directory.
+   */
+  asModule = (opts?: DirectoryAsModuleOpts): Module_ => {
+    const ctx = this._ctx.select("asModule", { ...opts })
+    return new Module_(ctx)
   }
 
   /**
@@ -5131,6 +5155,14 @@ export class Module_ extends BaseClient {
   }
 
   /**
+   * The generated files and directories made on top of the module source's context directory.
+   */
+  generatedContextDirectory = (): Directory => {
+    const ctx = this._ctx.select("generatedContextDirectory")
+    return new Directory(ctx)
+  }
+
+  /**
    * Interfaces served by this module.
    */
   interfaces = async (): Promise<TypeDef[]> => {
@@ -5438,8 +5470,8 @@ export class ModuleSource extends BaseClient {
   /**
    * The generated files and directories made on top of the module source's context directory.
    */
-  generatedContextDiff = (): Directory => {
-    const ctx = this._ctx.select("generatedContextDiff")
+  generatedContextDirectory = (): Directory => {
+    const ctx = this._ctx.select("generatedContextDirectory")
     return new Directory(ctx)
   }
 

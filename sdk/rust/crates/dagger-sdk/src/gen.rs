@@ -3904,6 +3904,14 @@ pub struct Directory {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryAsModuleOpts<'a> {
+    /// An optional subpath of the directory which contains the module's configuration file.
+    /// This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
+    /// If not set, the module source code is loaded from the root of the directory.
+    #[builder(setter(into, strip_option), default)]
+    pub source_root_path: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryAsModuleSourceOpts<'a> {
     /// An optional subpath of the directory which contains the module's configuration file.
     /// This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
@@ -3992,6 +4000,35 @@ pub struct DirectoryWithNewFileOpts {
     pub permissions: Option<isize>,
 }
 impl Directory {
+    /// Load the directory as a Dagger module source
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn as_module(&self) -> Module {
+        let query = self.selection.select("asModule");
+        Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load the directory as a Dagger module source
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn as_module_opts<'a>(&self, opts: DirectoryAsModuleOpts<'a>) -> Module {
+        let mut query = self.selection.select("asModule");
+        if let Some(source_root_path) = opts.source_root_path {
+            query = query.arg("sourceRootPath", source_root_path);
+        }
+        Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Load the directory as a Dagger module source
     ///
     /// # Arguments
@@ -5906,6 +5943,15 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         }]
     }
+    /// The generated files and directories made on top of the module source's context directory.
+    pub fn generated_context_directory(&self) -> Directory {
+        let query = self.selection.select("generatedContextDirectory");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// A unique identifier for this Module.
     pub async fn id(&self) -> Result<ModuleId, DaggerError> {
         let query = self.selection.select("id");
@@ -6090,8 +6136,8 @@ impl ModuleSource {
         query.execute(self.graphql_client.clone()).await
     }
     /// The generated files and directories made on top of the module source's context directory.
-    pub fn generated_context_diff(&self) -> Directory {
-        let query = self.selection.select("generatedContextDiff");
+    pub fn generated_context_directory(&self) -> Directory {
+        let query = self.selection.select("generatedContextDirectory");
         Directory {
             proc: self.proc.clone(),
             selection: query,

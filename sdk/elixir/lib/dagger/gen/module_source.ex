@@ -92,10 +92,10 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc "The generated files and directories made on top of the module source's context directory."
-  @spec generated_context_diff(t()) :: Dagger.Directory.t()
-  def generated_context_diff(%__MODULE__{} = module_source) do
+  @spec generated_context_directory(t()) :: Dagger.Directory.t()
+  def generated_context_directory(%__MODULE__{} = module_source) do
     query_builder =
-      module_source.query_builder |> QB.select("generatedContextDiff")
+      module_source.query_builder |> QB.select("generatedContextDirectory")
 
     %Dagger.Directory{
       query_builder: query_builder,

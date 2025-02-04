@@ -59,6 +59,18 @@ func (s *moduleSchema) Install() {
 	}.Install(s.dag)
 
 	dagql.Fields[*core.Directory]{
+		// TODO: update docs
+		// TODO: update docs
+		// TODO: update docs
+		dagql.NodeFunc("asModule", s.directoryAsModule).
+			Doc(`Load the directory as a Dagger module source`).
+			ArgDoc("sourceRootPath",
+				`An optional subpath of the directory which contains the module's configuration file.`,
+				`This is needed when the module code is in a subdirectory but requires
+				parent directories to be loaded in order to execute. For example, the
+				module source code may need a go.mod, project.toml, package.json, etc.
+				file from a parent directory.`,
+				`If not set, the module source code is loaded from the root of the directory.`),
 		dagql.NodeFunc("asModuleSource", s.directoryAsModuleSource).
 			Doc(`Load the directory as a Dagger module source`).
 			ArgDoc("sourceRootPath",
@@ -116,7 +128,7 @@ func (s *moduleSchema) Install() {
 			Doc(`Remove the provided dependencies from the module source's dependency list.`).
 			ArgDoc("dependencies", `The dependencies to remove.`),
 
-		dagql.NodeFunc("generatedContextDiff", s.moduleSourceGeneratedContextDiff).
+		dagql.NodeFunc("generatedContextDirectory", s.moduleSourceGeneratedContextDirectory).
 			Doc(`The generated files and directories made on top of the module source's context directory.`),
 
 		dagql.Func("asString", s.moduleSourceAsString).
@@ -155,6 +167,9 @@ func (s *moduleSchema) Install() {
 
 		dagql.Func("dependencies", s.moduleDependencies).
 			Doc(`TODO`),
+
+		dagql.NodeFunc("generatedContextDirectory", s.moduleGeneratedContextDirectory).
+			Doc(`The generated files and directories made on top of the module source's context directory.`),
 
 		dagql.Func("withDescription", s.moduleWithDescription).
 			Doc(`Retrieves the module with the given description`).
@@ -576,6 +591,19 @@ func (s *moduleSchema) functionCallReturnError(ctx context.Context, fnCall *core
 ) (dagql.Nullable[core.Void], error) {
 	// TODO: error out if caller is not coming from a module
 	return dagql.Null[core.Void](), fnCall.ReturnError(ctx, args.Error)
+}
+
+func (s *moduleSchema) moduleGeneratedContextDirectory(
+	ctx context.Context,
+	mod dagql.Instance[*core.Module],
+	args struct{},
+) (inst dagql.Instance[*core.Directory], err error) {
+	err = s.dag.Select(ctx, mod.Self.Source, &inst,
+		dagql.Selector{
+			Field: "generatedContextDirectory",
+		},
+	)
+	return inst, err
 }
 
 func (s *moduleSchema) moduleDependencies(

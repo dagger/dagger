@@ -2186,6 +2186,31 @@ func (r *Directory) WithGraphQLQuery(q *querybuilder.Selection) *Directory {
 	}
 }
 
+// DirectoryAsModuleOpts contains options for Directory.AsModule
+type DirectoryAsModuleOpts struct {
+	// An optional subpath of the directory which contains the module's configuration file.
+	//
+	// This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
+	//
+	// If not set, the module source code is loaded from the root of the directory.
+	SourceRootPath string
+}
+
+// Load the directory as a Dagger module source
+func (r *Directory) AsModule(opts ...DirectoryAsModuleOpts) *Module {
+	q := r.query.Select("asModule")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `sourceRootPath` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SourceRootPath) {
+			q = q.Arg("sourceRootPath", opts[i].SourceRootPath)
+		}
+	}
+
+	return &Module{
+		query: q,
+	}
+}
+
 // DirectoryAsModuleSourceOpts contains options for Directory.AsModuleSource
 type DirectoryAsModuleSourceOpts struct {
 	// An optional subpath of the directory which contains the module's configuration file.
@@ -5318,6 +5343,15 @@ func (r *Module) Enums(ctx context.Context) ([]TypeDef, error) {
 	return convert(response), nil
 }
 
+// The generated files and directories made on top of the module source's context directory.
+func (r *Module) GeneratedContextDirectory() *Directory {
+	q := r.query.Select("generatedContextDirectory")
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // A unique identifier for this Module.
 func (r *Module) ID(ctx context.Context) (ModuleID, error) {
 	if r.id != nil {
@@ -5670,8 +5704,8 @@ func (r *ModuleSource) EngineVersion(ctx context.Context) (string, error) {
 }
 
 // The generated files and directories made on top of the module source's context directory.
-func (r *ModuleSource) GeneratedContextDiff() *Directory {
-	q := r.query.Select("generatedContextDiff")
+func (r *ModuleSource) GeneratedContextDirectory() *Directory {
+	q := r.query.Select("generatedContextDirectory")
 
 	return &Directory{
 		query: q,

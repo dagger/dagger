@@ -79,9 +79,9 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     /**
      * The generated files and directories made on top of the module source's context directory.
      */
-    public function generatedContextDiff(): Directory
+    public function generatedContextDirectory(): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedContextDiff');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedContextDirectory');
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

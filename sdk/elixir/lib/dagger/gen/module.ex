@@ -60,6 +60,18 @@ defmodule Dagger.Module do
     end
   end
 
+  @doc "The generated files and directories made on top of the module source's context directory."
+  @spec generated_context_directory(t()) :: Dagger.Directory.t()
+  def generated_context_directory(%__MODULE__{} = module) do
+    query_builder =
+      module.query_builder |> QB.select("generatedContextDirectory")
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: module.client
+    }
+  end
+
   @doc "A unique identifier for this Module."
   @spec id(t()) :: {:ok, Dagger.ModuleID.t()} | {:error, term()}
   def id(%__MODULE__{} = module) do
