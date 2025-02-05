@@ -341,30 +341,95 @@ func (h *shellCallHandler) registerCommands() {
 			},
 		},
 		&ShellCommand{
-			Use: ".use <module>",
-			Description: `Set a module as the default for the session
+			Use: ".cd [path | url]",
+			Description: `Change the current working directory 
 
-Local module paths are resolved relative to the workdir on the host, not relative
-to the currently loaded module.
+Absolute and relative paths are resolved in relation to the same context directory.
+Using a git URL changes the context. Only the initial context can target local 
+modules in different contexts.
+
+If the target path is in a different module within the same context, it will be
+loaded as the default automatically, making its functions available at the top level.
+
+If the target path is NOT inside a module, the current module is unloaded as the
+default but navigation is still possible within the context directory for inspection.
+
+Without arguments, the current working directory is replaced by the initial context.
 `,
 			GroupID: moduleGroup.ID,
-			Args:    ExactArgs(1),
+			Args:    MaximumArgs(1),
 			State:   NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-				st, err := h.getOrInitDefState(args[0], func() (*moduleDef, error) {
-					return initializeModule(ctx, h.dag, args[0])
-				})
+				if len(args) == 0 {
+					h.mu.Lock()
+					h.workdir = h.initContext
+					h.mu.Unlock()
+					return nil
+				}
+				return h.ChangeWorkdir(ctx, args[0])
+			},
+		},
+		&ShellCommand{
+			Use:         ".pwd",
+			Description: "Print the current working directory's absolute path",
+			GroupID:     moduleGroup.ID,
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
+				if h.debug {
+					shellDebug(ctx, "Workdir", h.Workdir())
+				}
+				return h.Print(ctx, h.Pwd())
+			},
+		},
+		&ShellCommand{
+			Use:         ".ls [path]",
+			Description: "List files in the current working directory",
+			GroupID:     moduleGroup.ID,
+			Args:        MaximumArgs(1),
+			State:       NoState,
+			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
+				var path string
+				if len(args) > 0 {
+					path = args[0]
+				}
+				dir, err := h.CurrentDirectory(path)
 				if err != nil {
 					return err
 				}
-
-				h.mu.Lock()
-				if st.ModRef != h.modRef {
-					h.modRef = st.ModRef
+				contents, err := dir.Entries(ctx)
+				if err != nil {
+					return err
 				}
-				h.mu.Unlock()
+				return h.Print(ctx, strings.Join(contents, "\n"))
+			},
+		},
+		&ShellCommand{
+			Use:         ".find [path] [pattern]",
+			Description: "List files in the current working directory",
+			GroupID:     moduleGroup.ID,
+			Args:        MaximumArgs(2),
+			State:       NoState,
+			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
+				path := "."
+				pattern := "**"
 
-				return nil
+				if len(args) > 0 {
+					path = args[0]
+				}
+				if len(args) > 1 {
+					pattern = args[1]
+				}
+
+				dir, err := h.CurrentDirectory(path)
+				if err != nil {
+					return err
+				}
+				contents, err := dir.Glob(ctx, pattern)
+				if err != nil {
+					return err
+				}
+				return h.Print(ctx, strings.Join(contents, "\n"))
 			},
 		},
 		&ShellCommand{

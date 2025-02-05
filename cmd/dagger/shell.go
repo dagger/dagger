@@ -27,7 +27,7 @@ const (
 	// where it denotes a join operation. This makes it especially fitting for a DAG environment,
 	// as it suggests the idea of dependencies, intersections, and points where separate paths
 	// or data sets come together.
-	shellPrompt = "⋈"
+	shellPromptSymbol = "⋈"
 
 	// shellInternalCmd is the command that is used internally to avoid conflicts
 	// with interpreter builtins. For example when `echo` is used, the command becomes
@@ -149,13 +149,17 @@ type shellCallHandler struct {
 	// stdlib is the list of standard library commands
 	stdlib []*ShellCommand
 
-	// modRef is a key from modDefs, to set the corresponding module as the default
-	// when no state is present, or when the state's ModRef is empty
-	modRef string
-
 	// modDefs has the cached module definitions, after loading, and keyed by
 	// module reference as inputed by the user
 	modDefs sync.Map
+
+	// workdir is the current working directory
+	workdir shellWorkdir
+
+	// initContext is used to return to the initial context
+	//
+	// Can be nil if no module was loaded initially
+	initContext shellWorkdir
 
 	// mu is used to synchronize access to the default module's definitions via modRef
 	mu sync.RWMutex
@@ -222,7 +226,15 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	h.modRef = ref
+
+	if def.Conf != nil {
+		if err := h.setContext(ctx, def.Conf); err != nil {
+			return err
+		}
+		h.initContext = h.workdir
+		ref = h.workdir.ModuleRoot
+	}
+
 	h.modDefs.Store(ref, def)
 	h.registerCommands()
 
@@ -398,11 +410,19 @@ func (h *shellCallHandler) Prompt(out idtui.TermOutput, fg termenv.Color) string
 	sb := new(strings.Builder)
 
 	if def, _ := h.GetModuleDef(nil); def != nil {
-		sb.WriteString(out.String(def.ModRef).Bold().Foreground(termenv.ANSICyan).String())
+		sb.WriteString(out.String(def.Name).Bold().Foreground(termenv.ANSICyan).String())
 		sb.WriteString(out.String(" ").String())
 	}
 
-	sb.WriteString(out.String(shellPrompt).Bold().Foreground(fg).String())
+	if path := h.WorkdirPath(); path != "" {
+		if sb.Len() > 0 {
+			sb.WriteString("in ")
+		}
+		sb.WriteString(out.String(path).Bold().Foreground(termenv.ANSIMagenta).String())
+		sb.WriteString(" ")
+	}
+
+	sb.WriteString(out.String(shellPromptSymbol).Bold().Foreground(fg).String())
 	sb.WriteString(out.String(" ").String())
 
 	return sb.String()
