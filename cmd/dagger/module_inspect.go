@@ -118,12 +118,16 @@ func initializeModuleConfig(ctx context.Context, dag *dagger.Client, conf *confi
 		return nil, fmt.Errorf("failed to serve module: %w", err)
 	}
 
-	def, err := inspectModule(ctx, dag, conf.Source)
+	def, err := inspectModule(ctx, dag, conf)
 	if err != nil {
 		return nil, err
 	}
 
-	return def, def.loadTypeDefs(ctx, dag)
+	if err := def.loadTypeDefs(ctx, dag); err != nil {
+		return nil, err
+	}
+
+	return def, nil
 }
 
 // moduleDef is a representation of a dagger module.
@@ -139,6 +143,7 @@ type moduleDef struct {
 	// the ModuleSource definition for the module, needed by some arg types
 	// applying module-specific configs to the arg value.
 	Source *dagger.ModuleSource
+	Conf   *configuredModule
 
 	// ModRef is the human readable module source reference as returned by the API
 	ModRef string
@@ -172,7 +177,7 @@ var loadModConfQuery string
 //go:embed typedefs.graphql
 var loadTypeDefsQuery string
 
-func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.ModuleSource) (rdef *moduleDef, rerr error) {
+func inspectModule(ctx context.Context, dag *dagger.Client, conf *configuredModule) (rdef *moduleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "inspecting module metadata", telemetry.Encapsulate())
 	defer telemetry.End(span, func() error { return rerr })
 
@@ -202,7 +207,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 		}
 	}
 
-	id, err := source.ID(ctx)
+	id, err := conf.Source.ID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +235,8 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 	}
 
 	def := &moduleDef{
-		Source:       source,
+		Source:       conf.Source,
+		Conf:         conf,
 		ModRef:       res.Source.AsString,
 		Name:         res.Source.Module.Name,
 		Description:  res.Source.Module.Initialize.Description,

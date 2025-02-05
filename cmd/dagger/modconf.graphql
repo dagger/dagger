@@ -1,6 +1,16 @@
 query ModuleConfig($source: ModuleSourceID!) {
   source: loadModuleSourceFromID(id: $source) {
     asString
+    sourceRootSubpath
+    asLocalSource {
+      rootSubpath
+    }
+    asGitSource {
+      root
+      version
+      commit
+      rootSubpath
+    }
     module: asModule {
       name
       initialize {
