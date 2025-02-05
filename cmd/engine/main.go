@@ -381,21 +381,6 @@ func main() { //nolint:gocyclo
 			os.RemoveAll(lockPath)
 		}()
 
-		ents := c.GlobalStringSlice("allow-insecure-entitlement")
-		if len(ents) > 0 {
-			bkcfg.Entitlements = []string{}
-			for _, e := range ents {
-				switch e {
-				case "security.insecure":
-					bkcfg.Entitlements = append(bkcfg.Entitlements, e)
-				case "network.host":
-					bkcfg.Entitlements = append(bkcfg.Entitlements, e)
-				default:
-					return fmt.Errorf("invalid entitlement : %s", e)
-				}
-			}
-		}
-
 		bklog.G(ctx).Debug("creating engine server")
 		srv, err := server.NewServer(ctx, &server.NewServerOpts{
 			Name:           engineName,

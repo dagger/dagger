@@ -7,6 +7,6 @@ const (
 	CacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
 	GPUSupportEnvName  = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
 
-	TraceEnvName = "TRACE"
-	RaceEnvName  = "RACE"
+	RaceEnvName     = "RACE"
+	LogLevelEnvName = "LOG_LEVEL"
 )
