@@ -549,7 +549,7 @@ func (sdk *goSDK) baseWithCodegen(
 		return ctr, fmt.Errorf("failed to get subpath for go module sdk codegen: %w", err)
 	}
 	*/
-	modName := src.Self.ModuleName
+	modName := src.Self.ModuleOriginalName
 	contextDir := src.Self.ContextDirectory
 	srcSubpath := src.Self.SourceSubpath
 
@@ -558,24 +558,11 @@ func (sdk *goSDK) baseWithCodegen(
 		return ctr, err
 	}
 
-	// Make the source subpath if it doesn't exist already.
-	// Also rm dagger.gen.go if it exists, which is going to be overwritten
+	// rm dagger.gen.go if it exists, which is going to be overwritten
 	// anyways. If it doesn't exist, we ignore not found in the implementation of
 	// `withoutFile` so it will be a no-op.
-	var emptyDir dagql.Instance[*core.Directory]
-	if err := sdk.dag.Select(ctx, sdk.dag.Root(), &emptyDir, dagql.Selector{Field: "directory"}); err != nil {
-		return ctr, fmt.Errorf("failed to create empty directory for go module sdk codegen: %w", err)
-	}
-
 	var updatedContextDir dagql.Instance[*core.Directory]
 	if err := sdk.dag.Select(ctx, contextDir, &updatedContextDir,
-		dagql.Selector{
-			Field: "withDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(srcSubpath)},
-				{Name: "directory", Value: dagql.NewID[*core.Directory](emptyDir.ID())},
-			},
-		},
 		dagql.Selector{
 			Field: "withoutFile",
 			Args: []dagql.NamedInput{
