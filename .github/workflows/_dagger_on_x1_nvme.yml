@@ -1,4 +1,4 @@
-name: Dagger with Magicache
+name: Dagger on Experimental NVMe
 
 on:
   workflow_call:
@@ -12,11 +12,14 @@ on:
         type: number
         default: 10
         required: false
+      nvme:
+        description: "NVMe instance"
+        type: number
+        default: 1
 jobs:
-  remote-dagger-engine:
+  remote-dagger-engine-nvme:
     if: ${{ github.repository == 'dagger/dagger' }}
-    runs-on:
-        - 'dagger-g3-v0-15-3-16c-st-magic'
+    runs-on: dagger-x1-v0-15-3-16c-nvme-${{ inputs.nvme }}
     timeout-minutes: ${{ inputs.timeout }}
     steps:
       - name: Checkout repo
