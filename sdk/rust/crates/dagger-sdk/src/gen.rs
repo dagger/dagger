@@ -6461,6 +6461,9 @@ pub struct QueryLoadSecretFromNameOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryModuleSourceOpts<'a> {
+    /// TODO
+    #[builder(setter(into, strip_option), default)]
+    pub disable_find_up: Option<bool>,
     /// The pinned version of the module source
     #[builder(setter(into, strip_option), default)]
     pub ref_pin: Option<&'a str>,
@@ -7447,6 +7450,9 @@ impl Query {
         query = query.arg("refString", ref_string.into());
         if let Some(ref_pin) = opts.ref_pin {
             query = query.arg("refPin", ref_pin);
+        }
+        if let Some(disable_find_up) = opts.disable_find_up {
+            query = query.arg("disableFindUp", disable_find_up);
         }
         if let Some(stable) = opts.stable {
             query = query.arg("stable", stable);
