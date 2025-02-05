@@ -1147,6 +1147,11 @@ export type ClientModuleSourceOpts = {
   refPin?: string
 
   /**
+   * TODO
+   */
+  disableFindUp?: boolean
+
+  /**
    * If true, enforce that the source is a stable version for source kinds that support versioning.
    */
   stable?: boolean
@@ -6436,6 +6441,7 @@ export class Client extends BaseClient {
    * TODO
    * @param refString The string ref representation of the module source
    * @param opts.refPin The pinned version of the module source
+   * @param opts.disableFindUp TODO
    * @param opts.stable If true, enforce that the source is a stable version for source kinds that support versioning.
    */
   moduleSource = (

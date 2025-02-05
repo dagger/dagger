@@ -717,14 +717,18 @@ defmodule Dagger.Client do
   end
 
   @doc "TODO"
-  @spec module_source(t(), String.t(), [{:ref_pin, String.t() | nil}, {:stable, boolean() | nil}]) ::
-          Dagger.ModuleSource.t()
+  @spec module_source(t(), String.t(), [
+          {:ref_pin, String.t() | nil},
+          {:disable_find_up, boolean() | nil},
+          {:stable, boolean() | nil}
+        ]) :: Dagger.ModuleSource.t()
   def module_source(%__MODULE__{} = client, ref_string, optional_args \\ []) do
     query_builder =
       client.query_builder
       |> QB.select("moduleSource")
       |> QB.put_arg("refString", ref_string)
       |> QB.maybe_put_arg("refPin", optional_args[:ref_pin])
+      |> QB.maybe_put_arg("disableFindUp", optional_args[:disable_find_up])
       |> QB.maybe_put_arg("stable", optional_args[:stable])
 
     %Dagger.ModuleSource{

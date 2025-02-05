@@ -592,12 +592,19 @@ class Client extends Client\AbstractClient
     /**
      * TODO
      */
-    public function moduleSource(string $refString, ?string $refPin = '', ?bool $stable = false): ModuleSource
-    {
+    public function moduleSource(
+        string $refString,
+        ?string $refPin = '',
+        ?bool $disableFindUp = false,
+        ?bool $stable = false,
+    ): ModuleSource {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleSource');
         $innerQueryBuilder->setArgument('refString', $refString);
         if (null !== $refPin) {
         $innerQueryBuilder->setArgument('refPin', $refPin);
+        }
+        if (null !== $disableFindUp) {
+        $innerQueryBuilder->setArgument('disableFindUp', $disableFindUp);
         }
         if (null !== $stable) {
         $innerQueryBuilder->setArgument('stable', $stable);
