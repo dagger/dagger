@@ -280,7 +280,7 @@ func (llm *Llm) Run(
 							// If the BBI driver itself returned an error,
 							// send that error to the model
 							span.SetStatus(codes.Error, err.Error())
-							return fmt.Sprintf("error calling tool: %s", err.Error())
+							return fmt.Sprintf("error calling tool %q: %s", tool.Name, err.Error())
 						}
 						switch v := result.(type) {
 						case string:
