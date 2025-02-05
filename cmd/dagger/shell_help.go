@@ -53,9 +53,9 @@ func (h *shellCallHandler) FunctionsList(name string, fns []*modFunction) string
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf(`Use "%s | .doc" for more details.`, name))
+	fmt.Fprintf(sb, `Use "%s | .doc" for more details.`, name)
 	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf(`Use "%s | .doc <function>" for more information on a function.`, name))
+	fmt.Fprintf(sb, `Use "%s | .doc <function>" for more information on a function.`, name)
 	sb.WriteString("\n")
 
 	return sb.String()
@@ -76,9 +76,9 @@ func (h *shellCallHandler) CommandsList(name string, cmds []*ShellCommand) strin
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf(`Use "%s | .doc" for more details.`, name))
+	fmt.Fprintf(sb, `Use "%s | .doc" for more details.`, name)
 	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf(`Use "%s | .doc <command>" for more information on a command.`, name))
+	fmt.Fprintf(sb, `Use "%s | .doc <command>" for more information on a command.`, name)
 	sb.WriteString("\n")
 
 	return sb.String()
@@ -101,9 +101,9 @@ func (h *shellCallHandler) DependenciesList() string {
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf(`Use "%s | .doc" for more details.`, shellDepsCmdName))
+	fmt.Fprintf(sb, `Use "%s | .doc" for more details.`, shellDepsCmdName)
 	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf(`Use "%s | .doc <dependency>" for more information on a dependency.`, shellDepsCmdName))
+	fmt.Fprintf(sb, `Use "%s | .doc <dependency>" for more information on a dependency.`, shellDepsCmdName)
 	sb.WriteString("\n")
 
 	return sb.String()
