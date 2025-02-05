@@ -6897,6 +6897,8 @@ func (r *Client) Module() *Module {
 type ModuleSourceOpts struct {
 	// The pinned version of the module source
 	RefPin string
+	// TODO
+	DisableFindUp bool
 	// If true, enforce that the source is a stable version for source kinds that support versioning.
 	Stable bool
 }
@@ -6908,6 +6910,10 @@ func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *Modul
 		// `refPin` optional argument
 		if !querybuilder.IsZeroValue(opts[i].RefPin) {
 			q = q.Arg("refPin", opts[i].RefPin)
+		}
+		// `disableFindUp` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DisableFindUp) {
+			q = q.Arg("disableFindUp", opts[i].DisableFindUp)
 		}
 		// `stable` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Stable) {

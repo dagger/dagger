@@ -30,6 +30,7 @@ func (s *moduleSchema) Install() {
 			ArgDoc("refString", `The string ref representation of the module source`).
 			ArgDoc("refPin", `The pinned version of the module source`).
 			ArgDoc("stable", `If true, enforce that the source is a stable version for source kinds that support versioning.`).
+			ArgDoc("disableFindUp", `TODO`).
 			Doc(`TODO`),
 
 		dagql.Func("function", s.function).
@@ -94,6 +95,9 @@ func (s *moduleSchema) Install() {
 	dagql.Fields[*core.ModuleSource]{
 		Syncer[*core.ModuleSource]().
 			Doc(`TODO`),
+
+		dagql.Func("sourceSubpath", s.moduleSourceSubpath).
+			Doc(`A human readable ref string representation of this module source.`),
 
 		dagql.Func("withSourceSubpath", s.moduleSourceWithSourceSubpath).
 			Doc(`Update the module source with a new source subpath.`).

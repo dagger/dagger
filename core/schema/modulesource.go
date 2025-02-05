@@ -33,9 +33,14 @@ import (
 
 type moduleSourceArgs struct {
 	// avoiding name "ref" due to that being a reserved word in some SDKs (e.g. Rust)
-	RefString string
-	RefPin    string `default:""`
-	Stable    bool   `default:"false"`
+	RefString     string
+	RefPin        string `default:""`
+	DisableFindUp bool   `default:"false"`
+
+	// TODO: rm
+	// TODO: rm
+	// TODO: rm
+	Stable bool `default:"false"`
 }
 
 func (s *moduleSchema) moduleSourceCacheKey(ctx context.Context, query dagql.Instance[*core.Query], args moduleSourceArgs, origDgst digest.Digest) (digest.Digest, error) {
@@ -61,7 +66,7 @@ func (s *moduleSchema) moduleSource(
 	}
 	switch parsedRef.kind {
 	case core.ModuleSourceKindLocal:
-		inst, err = s.localModuleSource(ctx, query, bk, parsedRef.local.modPath, true)
+		inst, err = s.localModuleSource(ctx, query, bk, parsedRef.local.modPath, !args.DisableFindUp)
 		if err != nil {
 			return inst, err
 		}
@@ -87,10 +92,10 @@ func (s *moduleSchema) localModuleSource(
 	// filetree under the directory containing dagger.json
 	localPath string,
 
-	// whether to run findUp logic that checks if the localPath is a named module in the *default* dagger.json
-	doNamedDepFindUp bool,
+	// TODO: doc
+	doFindUp bool,
 ) (inst dagql.Instance[*core.ModuleSource], err error) {
-	if doNamedDepFindUp {
+	if doFindUp {
 		// need to check if localPath is a named module from the *default* dagger.json found-up from the cwd
 		cwd, err := bk.AbsPath(ctx, ".")
 		if err != nil {
@@ -148,22 +153,31 @@ func (s *moduleSchema) localModuleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to find up source root and context: %w", err)
 	}
-
 	contextDirPath, dotGitFound := foundPaths[dotGit]
 	sourceRootPath, daggerCfgFound := foundPaths[modules.Filename]
-	if !daggerCfgFound {
+
+	switch {
+	case doFindUp && daggerCfgFound:
+		// we found-up the dagger config, nothing to do
+	case doFindUp && !daggerCfgFound:
+		// default the local path as the source root if not found-up
+		sourceRootPath = localPath
+	case !doFindUp:
+		// we weren't trying to find-up the source root, so we always set the source root to the local path
+		daggerCfgFound = sourceRootPath == localPath // config was found if-and-only-if it was in the localPath
 		sourceRootPath = localPath
 	}
 	if !dotGitFound {
+		// in all cases, if there's no .git found, default the context dir to the source root
 		// TODO:
 		// TODO:
 		// TODO:
 		// TODO:
 		bklog.G(ctx).Debugf("no .git found, defaulting context dir to source root %q", sourceRootPath)
 
-		// if there's no .git found, default the context dir to the source root
 		contextDirPath = sourceRootPath
 	}
+
 	sourceRootRelPath, err := pathutil.LexicalRelativePath(contextDirPath, sourceRootPath)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get relative path from context to source root: %w", err)
@@ -1104,6 +1118,18 @@ func (s *moduleSchema) directoryAsModuleSource(
 	return inst, nil
 }
 
+func (s *moduleSchema) moduleSourceSubpath(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct{},
+) (string, error) {
+	srcSubpath := src.SourceSubpath
+	if srcSubpath == "." {
+		srcSubpath = ""
+	}
+	return srcSubpath, nil
+}
+
 // TODO: DOC THAT THIS ARG IS RELATIVE TO THE SOURCE ROOT
 func (s *moduleSchema) moduleSourceWithSourceSubpath(
 	ctx context.Context,
@@ -1633,8 +1659,11 @@ func (s *moduleSchema) normalizeCallerLoadedSource(
 		}
 
 		existingName := existingDep.Self.ModuleName
-		existingSymbolic := existingDep.Self.Git.CloneRef
 		existingVersion := existingDep.Self.Git.Version
+		existingSymbolic := existingDep.Self.Git.CloneRef
+		if depSrcRoot := existingDep.Self.SourceRootSubpath; depSrcRoot != "" {
+			existingSymbolic += "/" + strings.TrimPrefix(depSrcRoot, "/")
+		}
 		for updateReq := range updateReqs {
 			// check whether this updateReq matches the existing dep
 			if updateReq.symbolic != existingName && updateReq.symbolic != existingSymbolic {
@@ -2271,12 +2300,28 @@ func (s *moduleSchema) moduleSourceAsModule(
 			// this is needed so that a module's dependency on the core
 			// uses the correct schema version
 			dag := *coreMod.Dag
-			// TODO: USE CORRECT ENGINE VERSION!!!!!
-			// TODO: USE CORRECT ENGINE VERSION!!!!!
-			// TODO: USE CORRECT ENGINE VERSION!!!!!
-			// TODO: USE CORRECT ENGINE VERSION!!!!!
-			// TODO: USE CORRECT ENGINE VERSION!!!!!
-			dag.View = engine.BaseVersion(engine.NormalizeVersion(src.Self.EngineVersion))
+
+			// TODO: dedupe, cleanup
+			// TODO: dedupe, cleanup
+			// TODO: dedupe, cleanup
+			engineVersion := src.Self.EngineVersion
+			switch engineVersion {
+			case "":
+				// older versions of dagger might not produce an engine version -
+				// so return the version that engineVersion was introduced in
+				engineVersion = engine.MinimumModuleVersion
+			case modules.EngineVersionLatest:
+				engineVersion = engine.Version
+			}
+			engineVersion = engine.NormalizeVersion(engineVersion)
+			if !engine.CheckVersionCompatibility(engineVersion, engine.MinimumModuleVersion) {
+				return inst, fmt.Errorf("module requires dagger %s, but support for that version has been removed", engineVersion)
+			}
+			if !engine.CheckMaxVersionCompatibility(engineVersion, engine.BaseVersion(engine.Version)) {
+				return inst, fmt.Errorf("module requires dagger %s, but you have %s", engineVersion, engine.Version)
+			}
+
+			dag.View = engine.BaseVersion(engine.NormalizeVersion(engineVersion))
 			deps.Mods[i] = &CoreMod{Dag: &dag}
 		}
 	}

@@ -76,7 +76,7 @@ type ModuleSource struct {
 	// SourceRootSubpath is the relative path from the context dir to the dir containing the module's dagger.json
 	SourceRootSubpath string `field:"true" name:"sourceRootSubpath" doc:"TODO"`
 	// SourceSubpath is the relative path from the context dir to the dir containing the module's source code
-	SourceSubpath string `field:"true" name:"sourceSubpath" doc:"TODO"`
+	SourceSubpath string
 
 	ContextDirectory dagql.Instance[*Directory] `field:"true" name:"contextDirectory" doc:"TODO"`
 
