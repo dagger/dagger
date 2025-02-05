@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	daggerVersion      = "v0.15.2"
+	daggerVersion      = "v0.15.3"
 	upstreamRepository = "dagger/dagger"
 	defaultRunner      = "ubuntu-latest"
 	publicToken        = "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
@@ -187,7 +187,7 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 				SetupCommands: []string{"sudo sysctl -w vm.overcommit_memory=1"},
 			}},
 			{"everything-else", nil, &dagger.GhaJobOpts{
-				Runner: []string{GoldRunner(false)},
+				Runner: []string{PlatinumRunner(false)},
 			}},
 		})).
 		With(splitTests(runner, "testdev-", true, []testSplit{
