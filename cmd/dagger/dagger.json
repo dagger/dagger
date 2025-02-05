@@ -1,6 +1,6 @@
 {
   "name": "dagger-cli",
-  "engineVersion": "v0.13.7",
+  "engineVersion": "v0.15.3",
   "sdk": "go",
   "dependencies": [
     {
