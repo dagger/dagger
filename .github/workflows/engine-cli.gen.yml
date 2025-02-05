@@ -1291,7 +1291,7 @@ jobs:
         timeout-minutes: 30
     test-everything-else:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-3-16c-st' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-3-32c-st' || 'ubuntu-latest' }}
         name: test-everything-else
         steps:
             - name: Checkout
