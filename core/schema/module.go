@@ -653,7 +653,11 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current module: %w", err)
 	}
-	return deps.TypeDefs(ctx)
+	dag, err := deps.Schema(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current schema: %w", err)
+	}
+	return deps.TypeDefs(ctx, dag)
 }
 
 func (s *moduleSchema) functionCallReturnValue(ctx context.Context, fnCall *core.FunctionCall, args struct {
