@@ -156,7 +156,14 @@ If --sdk is specified, the given SDK is installed in the module. You can do this
 				}
 			}
 
-			modSrc := dag.ModuleSource(srcRootArg)
+			modSrc := dag.ModuleSource(srcRootArg, dagger.ModuleSourceOpts{
+				// Tell the engine to use the provided arg as the source root, don't
+				// try to find-up a dagger.json in a parent directory and use that as
+				// the source root.
+				// This enables cases like initializing a new module in a subdirectory of
+				// another existing module.
+				DisableFindUp: true,
+			})
 
 			kind, err := modSrc.Kind(ctx)
 			if err != nil {
