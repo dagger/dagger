@@ -416,7 +416,7 @@ func (ShellSuite) TestNoLoadModule(ctx context.Context, t *testctx.T) {
 	t.Run("dynamically loaded", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := modInit(t, c, "go", "").
-			With(daggerShellNoMod(".use .; .help .")).
+			With(daggerShellNoMod(".cd .; .help .")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "container-echo")
@@ -480,7 +480,7 @@ type Foo struct{
 		out, err := modInit(t, c, "go", test).
 			With(daggerExec("init", "--sdk=go", "--source=foo", "foo")).
 			With(sdkSourceAt("foo", "go", foo)).
-			With(daggerShell(".use foo; bar")).
+			With(daggerShell(".cd foo; bar")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "foobar")
