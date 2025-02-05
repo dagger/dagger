@@ -249,11 +249,11 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 
 					// Use the same function lookup as when executing
 					// so that `> .help wolfi` documents `> wolfi`.
-					st, err = h.stateLookup(ctx, args[0])
+					st, err = h.StateLookup(ctx, args[0])
 					if err != nil {
 						return err
 					}
-					if st.ModRef != "" {
+					if st.ModDigest != "" {
 						// First argument to `.help` is a module reference, so
 						// remove it from list of arguments now that it's loaded.
 						// The rest of the arguments should be passed on to
@@ -262,7 +262,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 					}
 				}
 
-				def := h.modDef(st)
+				def := h.GetDef(st)
 
 				if st.IsEmpty() {
 					switch {
@@ -290,7 +290,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 						if err != nil {
 							return err
 						}
-						return h.Print(ctx, shellModuleDoc(depSt, depDef))
+						return h.Print(ctx, h.ModuleDoc(depSt, depDef))
 
 					case st.IsCore():
 						// Document core
@@ -303,7 +303,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 						if fn == nil {
 							return fmt.Errorf("core function %q not found", args[0])
 						}
-						return h.Print(ctx, shellFunctionDoc(def, fn))
+						return h.Print(ctx, h.FunctionDoc(def, fn))
 
 					case len(args) == 0:
 						if !def.HasModule() {
@@ -311,7 +311,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 						}
 						// Document module
 						// Example: `.help [module]`
-						return h.Print(ctx, shellModuleDoc(st, def))
+						return h.Print(ctx, h.ModuleDoc(st, def))
 					}
 				}
 
@@ -337,34 +337,66 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 				if err != nil {
 					return err
 				}
-				return h.Print(ctx, shellFunctionDoc(def, fn))
+				return h.Print(ctx, h.FunctionDoc(def, fn))
 			},
 		},
 		&ShellCommand{
-			Use: ".use <module>",
-			Description: `Set a module as the default for the session
+			Use: ".cd [path | url]",
+			Description: `Change the current working directory 
 
-Local module paths are resolved relative to the workdir on the host, not relative
-to the currently loaded module.
+Absolute and relative paths are resolved in relation to the same context directory.
+Using a git URL changes the context. Only the initial context can target local 
+modules in different contexts.
+
+If the target path is in a different module within the same context, it will be
+loaded as the default automatically, making its functions available at the top level.
+
+Without arguments, the current working directory is replaced by the initial context.
 `,
 			GroupID: moduleGroup.ID,
-			Args:    ExactArgs(1),
+			Args:    MaximumArgs(1),
 			State:   NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-				st, err := h.getOrInitDefState(args[0], func() (*moduleDef, error) {
-					return initializeModule(ctx, h.dag, args[0])
-				})
+				var path string
+				if len(args) > 0 {
+					path = args[0]
+				}
+				return h.ChangeDir(ctx, path)
+			},
+		},
+		&ShellCommand{
+			Use:         ".pwd",
+			Description: "Print the current working directory's absolute path",
+			GroupID:     moduleGroup.ID,
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
+				if h.debug {
+					shellDebug(ctx, "Workdir", h.Workdir())
+				}
+				return h.Print(ctx, h.Pwd())
+			},
+		},
+		&ShellCommand{
+			Use:         ".ls [path]",
+			Description: "List files in the current working directory",
+			GroupID:     moduleGroup.ID,
+			Args:        MaximumArgs(1),
+			State:       NoState,
+			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
+				var path string
+				if len(args) > 0 {
+					path = args[0]
+				}
+				dir, err := h.Directory(path)
 				if err != nil {
 					return err
 				}
-
-				h.mu.Lock()
-				if st.ModRef != h.modRef {
-					h.modRef = st.ModRef
+				contents, err := dir.Entries(ctx)
+				if err != nil {
+					return err
 				}
-				h.mu.Unlock()
-
-				return nil
+				return h.Print(ctx, strings.Join(contents, "\n"))
 			},
 		},
 		&ShellCommand{
@@ -413,7 +445,7 @@ to the currently loaded module.
 				if err != nil {
 					return err
 				}
-				return h.newDepsState().Write(ctx)
+				return h.NewDepsState().Write(ctx)
 			},
 			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
 				return &CompletionContext{
@@ -428,7 +460,7 @@ to the currently loaded module.
 			Args:        NoArgs,
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
-				return h.newStdlibState().Write(ctx)
+				return h.NewStdlibState().Write(ctx)
 			},
 			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
 				return &CompletionContext{
@@ -442,7 +474,7 @@ to the currently loaded module.
 			Description: "Load any core Dagger type",
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-				return h.newCoreState().Write(ctx)
+				return h.NewCoreState().Write(ctx)
 			},
 			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
 				return &CompletionContext{
@@ -458,7 +490,7 @@ to the currently loaded module.
 		cobraToShellCommand(moduleUpdateCmd),
 	)
 
-	def := h.modDef(nil)
+	def := h.GetDef(nil)
 
 	for _, fn := range def.GetCoreFunctions() {
 		// TODO: Don't hardcode this list.
@@ -481,14 +513,14 @@ to the currently loaded module.
 
 		stdlib = append(stdlib,
 			&ShellCommand{
-				Use:         shellFunctionUseLine(def, fn),
+				Use:         h.FunctionUseLine(def, fn),
 				Description: fn.Description,
 				State:       NoState,
 				HelpFunc: func(cmd *ShellCommand) string {
-					return shellFunctionDoc(def, fn)
+					return h.FunctionDoc(def, fn)
 				},
 				Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-					st := h.newState()
+					st := h.NewState()
 					st, err := h.functionCall(ctx, st, fn.CmdName(), args)
 					if err != nil {
 						return err
