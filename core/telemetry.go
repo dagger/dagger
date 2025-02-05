@@ -115,6 +115,11 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 			slog.Warn("error resolving "+id.Display(), "error", err)
 		}
 
+		// Take care not to print any sensitive values.
+		sensitive := true
+		if spec, ok := self.ObjectType().FieldSpec(id.Field()); ok {
+			sensitive = spec.Sensitive
+		}
 		switch x := res.(type) {
 		// Record an object result as an output of this call.
 		//
@@ -134,6 +139,9 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 				span.SetAttributes(attribute.String(telemetry.DagOutputAttr, objDigest.String()))
 			}
 		case dagql.Enumerable:
+			if sensitive {
+				break
+			}
 			items := x.Len()
 			for n := 1; n <= items; n++ {
 				item, err := x.Nth(n)
@@ -150,9 +158,13 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 				break
 			}
 		case dagql.String:
-			fmt.Fprint(stdio.Stdout, x)
+			if !sensitive {
+				fmt.Fprint(stdio.Stdout, x)
+			}
 		case call.Literate:
-			fmt.Fprint(stdio.Stdout, x.ToLiteral().Display())
+			if !sensitive {
+				fmt.Fprint(stdio.Stdout, x.ToLiteral().Display())
+			}
 		}
 
 		// Record LLB op digests installed by this call so that we can know that it
