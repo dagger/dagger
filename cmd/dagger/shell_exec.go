@@ -652,18 +652,17 @@ func (h *shellCallHandler) loadModDef(ref string) *moduleDef {
 //
 // This is the main getter function for a module definition.
 func (h *shellCallHandler) modDef(st *ShellState) *moduleDef {
-	h.mu.RLock()
-	ref := h.modRef
-	h.mu.RUnlock()
+	ref := h.DefaultModRef()
 
 	if st != nil && st.ModRef != "" && st.ModRef != ref {
 		ref = st.ModRef
 	}
+
 	if def := h.loadModDef(ref); def != nil {
 		return def
 	}
 
-	// Every time h.modRef is set, there should be a corresponding value in
+	// Every time h.workdir.modRef is set, there should be a corresponding value in
 	// h.modDefs. Otherwise there's a bug in the CLI.
 	panic(fmt.Sprintf("module %q not loaded", ref))
 }
@@ -713,11 +712,4 @@ func (h *shellCallHandler) LoadedModulesList() []string {
 	})
 	slices.Sort(mods)
 	return mods
-}
-
-// IsDefaultModule returns true if the given module reference is the default loaded module
-func (h *shellCallHandler) IsDefaultModule(ref string) bool {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return ref == "" || ref == h.modRef
 }
