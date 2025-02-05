@@ -28,7 +28,7 @@ type Config struct {
 	GC GCConfig `json:"gc,omitempty"`
 
 	// Security allows configuring various security settings for the engine.
-	Security Security `json:"security,omitempty"`
+	Security *Security `json:"security,omitempty"`
 }
 
 type LogLevel string
