@@ -666,6 +666,9 @@ type FieldSpec struct {
 	Type Typed
 	// Meta indicates that the field has no impact on the field's result.
 	Meta bool
+	// Sensitive indicates that the value returned by this field is sensitive and
+	// should not be displayed in telemetry.
+	Sensitive bool
 	// ImpurityReason indicates that the field's result may change over time.
 	ImpurityReason string
 	// DeprecatedReason deprecates the field and provides a reason.
@@ -853,6 +856,11 @@ type Field[T Typed] struct {
 
 func (field Field[T]) Extend() Field[T] {
 	field.Spec.extend = true
+	return field
+}
+
+func (field Field[T]) Sensitive() Field[T] {
+	field.Spec.Sensitive = true
 	return field
 }
 
