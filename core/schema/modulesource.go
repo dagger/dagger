@@ -1901,6 +1901,13 @@ func (s *moduleSchema) moduleSourceWithoutDependencies(
 		keep := true
 		for _, depArg := range args.Dependencies {
 			depSymbolic, depVersion, _ := strings.Cut(depArg, "@")
+
+			// dagger.json doesn't prefix relative paths with ./, so strip that here
+			// TODO: is this robust enough?
+			// TODO: is this robust enough?
+			// TODO: is this robust enough?
+			depSymbolic = strings.TrimPrefix(depSymbolic, "./")
+
 			if depSymbolic != existingName && depSymbolic != existingSymbolic {
 				// not a match
 				continue
@@ -1914,7 +1921,7 @@ func (s *moduleSchema) moduleSourceWithoutDependencies(
 				if existingVersion == "" {
 					return nil, fmt.Errorf(
 						"version %q was requested to be uninstalled but the dependency %q was originally installed without a specific version. Try re-running the uninstall command without specifying the version number",
-						depArg,
+						depVersion,
 						existingSymbolic,
 					)
 				}
@@ -1932,11 +1939,12 @@ func (s *moduleSchema) moduleSourceWithoutDependencies(
 				if err != nil {
 					// if the requested version has prefix of repoRootSubDir, then send the error as it is
 					// but if it does not, remove the repoRootSubDir from depVersion to avoid confusion.
-					currentModVersion := parsedDepGitRef.modVersion
-					if !strings.HasPrefix(parsedDepGitRef.modVersion, parsedDepGitRef.repoRootSubdir) {
-						currentModVersion, _ = strings.CutPrefix(currentModVersion, parsedDepGitRef.repoRootSubdir+"/")
+					depReqModVersion := parsedDepGitRef.modVersion
+					if !strings.HasPrefix(depReqModVersion, parsedDepGitRef.repoRootSubdir) {
+						depReqModVersion, _ = strings.CutPrefix(depReqModVersion, parsedDepGitRef.repoRootSubdir+"/")
+						existingVersion, _ = strings.CutPrefix(existingVersion, existingDep.Self.SourceRootSubpath+"/")
 					}
-					return nil, fmt.Errorf("version %q was requested to be uninstalled but the installed version is %q", parsedDepGitRef.modVersion, currentModVersion)
+					return nil, fmt.Errorf("version %q was requested to be uninstalled but the installed version is %q", depReqModVersion, existingVersion)
 				}
 			}
 			break
