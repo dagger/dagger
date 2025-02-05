@@ -1031,7 +1031,7 @@ func (r *modFunctionArg) Long() string {
 		} else if sb.Len() > 0 {
 			sb.WriteString(" ")
 		}
-		sb.WriteString(fmt.Sprintf("(default: %s)", defVal))
+		fmt.Fprintf(sb, "(default: %s)", defVal)
 	}
 
 	if r.TypeDef.Kind == dagger.TypeDefKindEnumKind {
@@ -1041,7 +1041,7 @@ func (r *modFunctionArg) Long() string {
 		} else if sb.Len() > 0 {
 			sb.WriteString(" ")
 		}
-		sb.WriteString(fmt.Sprintf("(possible values: %s)", names))
+		fmt.Fprintf(sb, "(possible values: %s)", names)
 	}
 
 	return sb.String()
