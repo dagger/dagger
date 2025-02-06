@@ -45,7 +45,7 @@ func (s *llmSchema) model(ctx context.Context, llm *core.Llm, args struct{}) (da
 func (s *llmSchema) ask(ctx context.Context, llm *core.Llm, args struct {
 	Prompt string
 }) (dagql.String, error) {
-	reply, err := llm.Ask(ctx, args.Prompt)
+	reply, err := llm.Ask(ctx, args.Prompt, s.srv)
 	if err != nil {
 		return "", err
 	}
@@ -64,11 +64,11 @@ func (s *llmSchema) withPrompt(ctx context.Context, llm *core.Llm, args struct {
 	Prompt string
 	Lazy   dagql.Optional[dagql.Boolean]
 }) (*core.Llm, error) {
-	return llm.WithPrompt(ctx, args.Prompt, args.Lazy.GetOr(dagql.NewBoolean(false)).Bool())
+	return llm.WithPrompt(ctx, args.Prompt, args.Lazy.GetOr(dagql.NewBoolean(false)).Bool(), s.srv)
 }
 
 func (s *llmSchema) sync(ctx context.Context, llm *core.Llm, args struct{}) (*core.Llm, error) {
-	return llm.Run(ctx, 0)
+	return llm.Run(ctx, 0, s.srv)
 }
 
 func (s *llmSchema) llm(ctx context.Context, parent *core.Query, _ struct{}) (*core.Llm, error) {
@@ -84,6 +84,6 @@ func (s *llmSchema) history(ctx context.Context, llm *core.Llm, _ struct{}) (dag
 }
 
 func (s *llmSchema) tools(ctx context.Context, llm *core.Llm, _ struct{}) (dagql.String, error) {
-	doc, err := llm.ToolsDoc(ctx)
+	doc, err := llm.ToolsDoc(ctx, s.srv)
 	return dagql.NewString(doc), err
 }
