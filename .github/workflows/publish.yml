@@ -80,7 +80,7 @@ jobs:
         run: |
           REPORT="/tmp/release-report"
           cat $REPORT | tee $GITHUB_STEP_SUMMARY
-          if grep -q "[!CAUTION]" "$REPORT"; then
+          if grep -q '\[!CAUTION\]' "$REPORT"; then
             # workaround for https://github.com/dagger/dagger/issues/8421
             exit 1
           fi
