@@ -77,10 +77,9 @@ jobs:
           DISCORD_WEBHOOK: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
       - name: "Report"
         if: always()
-        redirect: $GITHUB_STEP_SUMMARY
         run: |
           REPORT="/tmp/release-report"
-          cat $REPORT
+          cat $REPORT | tee $GITHUB_STEP_SUMMARY
           if grep -q "[!CAUTION]" "$REPORT"; then
             # workaround for https://github.com/dagger/dagger/issues/8421
             exit 1
@@ -144,7 +143,7 @@ jobs:
         shell: bash
 
       - name: "Install Docker"
-        uses: douglascamata/setup-docker-macos-action@v1-alpha.14
+        uses: douglascamata/setup-docker-macos-action@v1-alpha.16
         env:
           HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
       - uses: docker/setup-qemu-action@v3
