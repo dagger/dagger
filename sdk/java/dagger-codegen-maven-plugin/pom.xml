@@ -38,11 +38,15 @@
             <scope>runtime</scope>
         </dependency>
         <dependency>
+            <groupId>jakarta.json</groupId>
+            <artifactId>jakarta.json-api</artifactId>
+        </dependency>
+        <dependency>
             <groupId>jakarta.json.bind</groupId>
             <artifactId>jakarta.json.bind-api</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.squareup</groupId>
+            <groupId>com.palantir.javapoet</groupId>
             <artifactId>javapoet</artifactId>
         </dependency>
         <dependency>
