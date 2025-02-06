@@ -2,24 +2,16 @@ package schema
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine/vcs"
 	"github.com/stretchr/testify/require"
-	"github.com/tonistiigi/fsutil/types"
 )
 
 // Test ParseRefString using an interface to control Host side effect
 func TestParseRefString(t *testing.T) {
 	ctx := context.Background()
-
-	bkClientDirFalse := &MockBuildkitClient{
-		StatFunc: func(ctx context.Context, path string, followLinks bool) (*types.Stat, error) {
-			return &types.Stat{Mode: uint32(os.ModeDevice)}, nil // stat.Dir() returns false
-		},
-	}
 
 	for _, tc := range []struct {
 		urlStr          string
@@ -348,7 +340,13 @@ func TestParseRefString(t *testing.T) {
 		tc := tc
 		t.Run(tc.urlStr, func(t *testing.T) {
 			t.Parallel()
-			parsed, err := parseRefString(ctx, bkClientDirFalse, moduleSourceArgs{RefString: tc.urlStr})
+			parsed, err := parseRefString(
+				ctx,
+				dirNeverExistsFS{},
+				tc.urlStr,
+				"",
+				false,
+			)
 			if tc.wantErrContains != "" {
 				require.ErrorContains(t, err, tc.wantErrContains)
 				return
@@ -370,11 +368,9 @@ func TestParseRefString(t *testing.T) {
 	}
 }
 
-// Mock BuildKit StatCallerHostPath call
-type MockBuildkitClient struct {
-	StatFunc func(ctx context.Context, path string, followLinks bool) (*types.Stat, error)
+type dirNeverExistsFS struct {
 }
 
-func (m *MockBuildkitClient) StatCallerHostPath(ctx context.Context, path string, followLinks bool) (*types.Stat, error) {
-	return m.StatFunc(ctx, path, followLinks)
+func (fs dirNeverExistsFS) dirExists(ctx context.Context, path string) (bool, error) {
+	return false, nil
 }

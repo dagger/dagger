@@ -25,7 +25,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
-	fsutiltypes "github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -44,7 +43,7 @@ type moduleSourceArgs struct {
 }
 
 func (s *moduleSchema) moduleSourceCacheKey(ctx context.Context, query dagql.Instance[*core.Query], args moduleSourceArgs, origDgst digest.Digest) (digest.Digest, error) {
-	if fastModuleSourceKindCheck(args) == core.ModuleSourceKindGit {
+	if fastModuleSourceKindCheck(args.RefString, args.RefPin, args.Stable) == core.ModuleSourceKindGit {
 		return origDgst, nil
 	}
 
@@ -60,7 +59,7 @@ func (s *moduleSchema) moduleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	parsedRef, err := parseRefString(ctx, bk, args)
+	parsedRef, err := parseRefString(ctx, callerDirExistsFS{bk}, args.RefString, args.RefPin, args.Stable)
 	if err != nil {
 		return inst, err
 	}
@@ -305,29 +304,18 @@ func (s *moduleSchema) localModuleSource(
 		localSrc.Dependencies = make([]dagql.Instance[*core.ModuleSource], len(modCfg.Dependencies))
 		for i, depCfg := range modCfg.Dependencies {
 			eg.Go(func() error {
-				if depCfg.Pin != "" {
-					// git dep
-					err := s.dag.Select(ctx, s.dag.Root(), &localSrc.Dependencies[i],
-						dagql.Selector{
-							Field: "moduleSource",
-							Args: []dagql.NamedInput{
-								{Name: "refString", Value: dagql.String(depCfg.Source)},
-								{Name: "refPin", Value: dagql.String(depCfg.Pin)},
-							},
-						},
-						dagql.Selector{
-							Field: "withName",
-							Args: []dagql.NamedInput{
-								{Name: "name", Value: dagql.String(depCfg.Name)},
-							},
-						},
-					)
-					if err != nil {
-						return fmt.Errorf("failed to load git dep: %w", err)
-					}
-					return nil
-				} else {
-					// local dep
+				parsedDepRef, err := parseRefString(
+					ctx,
+					moduleSourceDirExistsFS{bk, localSrc},
+					depCfg.Source,
+					depCfg.Pin,
+					false,
+				)
+				if err != nil {
+					return fmt.Errorf("failed to parse dep ref string: %w", err)
+				}
+				switch parsedDepRef.kind {
+				case core.ModuleSourceKindLocal:
 					depPath := filepath.Join(contextDirPath, sourceRootRelPath, depCfg.Source)
 					err := s.dag.Select(ctx, s.dag.Root(), &localSrc.Dependencies[i],
 						dagql.Selector{
@@ -347,6 +335,30 @@ func (s *moduleSchema) localModuleSource(
 						return fmt.Errorf("failed to load local dep: %w", err)
 					}
 					return nil
+
+				case core.ModuleSourceKindGit:
+					err := s.dag.Select(ctx, s.dag.Root(), &localSrc.Dependencies[i],
+						dagql.Selector{
+							Field: "moduleSource",
+							Args: []dagql.NamedInput{
+								{Name: "refString", Value: dagql.String(depCfg.Source)},
+								{Name: "refPin", Value: dagql.String(depCfg.Pin)},
+							},
+						},
+						dagql.Selector{
+							Field: "withName",
+							Args: []dagql.NamedInput{
+								{Name: "name", Value: dagql.String(depCfg.Name)},
+							},
+						},
+					)
+					if err != nil {
+						return fmt.Errorf("failed to load git dep: %w", err)
+					}
+					return nil
+
+				default:
+					return fmt.Errorf("unsupported module source kind: %s", parsedDepRef.kind)
 				}
 			})
 		}
@@ -576,36 +588,30 @@ func (s *moduleSchema) gitModuleSource(
 		}
 		return nil
 	})
+
+	bk, err := query.Self.Buildkit(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 	gitSrc.Dependencies = make([]dagql.Instance[*core.ModuleSource], len(modCfg.Dependencies))
 	for i, depCfg := range modCfg.Dependencies {
 		eg.Go(func() error {
-			if depCfg.Pin != "" {
-				// git dep
-				err := s.dag.Select(ctx, s.dag.Root(), &gitSrc.Dependencies[i],
-					dagql.Selector{
-						Field: "moduleSource",
-						Args: []dagql.NamedInput{
-							{Name: "refString", Value: dagql.String(depCfg.Source)},
-							{Name: "refPin", Value: dagql.String(depCfg.Pin)},
-						},
-					},
-					dagql.Selector{
-						Field: "withName",
-						Args: []dagql.NamedInput{
-							{Name: "name", Value: dagql.String(depCfg.Name)},
-						},
-					},
-				)
-				if err != nil {
-					return fmt.Errorf("failed to load git dep: %w", err)
-				}
-				return nil
-			} else {
-				// local dep
+			parsedDepRef, err := parseRefString(
+				ctx,
+				moduleSourceDirExistsFS{bk, gitSrc},
+				depCfg.Source,
+				depCfg.Pin,
+				false,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to parse dep ref string: %w", err)
+			}
+			switch parsedDepRef.kind {
+			case core.ModuleSourceKindLocal:
 				refString := gitSrc.Git.CloneRef
 				subPath := filepath.Join("/", gitSrc.SourceRootSubpath, depCfg.Source)
 				if subPath != "/" {
-					refString += subPath
+					refString += "/" + strings.TrimPrefix(subPath, "/")
 				}
 				if gitSrc.Git.Version != "" {
 					refString += "@" + gitSrc.Git.Version
@@ -629,6 +635,30 @@ func (s *moduleSchema) gitModuleSource(
 					return fmt.Errorf("failed to load local dep: %w", err)
 				}
 				return nil
+
+			case core.ModuleSourceKindGit:
+				err := s.dag.Select(ctx, s.dag.Root(), &gitSrc.Dependencies[i],
+					dagql.Selector{
+						Field: "moduleSource",
+						Args: []dagql.NamedInput{
+							{Name: "refString", Value: dagql.String(depCfg.Source)},
+							{Name: "refPin", Value: dagql.String(depCfg.Pin)},
+						},
+					},
+					dagql.Selector{
+						Field: "withName",
+						Args: []dagql.NamedInput{
+							{Name: "name", Value: dagql.String(depCfg.Name)},
+						},
+					},
+				)
+				if err != nil {
+					return fmt.Errorf("failed to load git dep: %w", err)
+				}
+				return nil
+
+			default:
+				return fmt.Errorf("unsupported module source kind: %s", parsedDepRef.kind)
 			}
 		})
 	}
@@ -637,7 +667,6 @@ func (s *moduleSchema) gitModuleSource(
 	}
 
 	// the directory is not necessarily content-hashed, make it so and use that as our digest
-	bk, err := query.Self.Buildkit(ctx)
 	gitSrc.ContextDirectory, err = core.MakeDirectoryContentHashed(ctx, bk, gitSrc.ContextDirectory)
 	if err != nil {
 		return inst, fmt.Errorf("failed to hash git context directory: %w", err)
@@ -655,21 +684,27 @@ func (s *moduleSchema) gitModuleSource(
 	return dagql.NewInstanceForCurrentID(ctx, s.dag, query, gitSrc)
 }
 
-func fastModuleSourceKindCheck(args moduleSourceArgs) core.ModuleSourceKind {
+func fastModuleSourceKindCheck(
+	refString string,
+	refPin string,
+	stable bool,
+) core.ModuleSourceKind {
 	switch {
-	case args.RefPin != "":
+	case refPin != "":
 		return core.ModuleSourceKindGit
-	case args.Stable:
+	case stable:
 		return core.ModuleSourceKindGit
-	case len(args.RefString) > 0 && (args.RefString[0] == '/' || args.RefString[0] == '.'):
+	case len(refString) > 0 && (refString[0] == '/' || refString[0] == '.'):
 		return core.ModuleSourceKindLocal
-	case strings.HasPrefix(args.RefString, core.SchemeHTTP.Prefix()):
+	case len(refString) > 1 && refString[0:2] == "..":
+		return core.ModuleSourceKindLocal
+	case strings.HasPrefix(refString, core.SchemeHTTP.Prefix()):
 		return core.ModuleSourceKindGit
-	case strings.HasPrefix(args.RefString, core.SchemeHTTPS.Prefix()):
+	case strings.HasPrefix(refString, core.SchemeHTTPS.Prefix()):
 		return core.ModuleSourceKindGit
-	case strings.HasPrefix(args.RefString, core.SchemeSSH.Prefix()):
+	case strings.HasPrefix(refString, core.SchemeSSH.Prefix()):
 		return core.ModuleSourceKindGit
-	case !strings.Contains(args.RefString, "."):
+	case !strings.Contains(refString, "."):
 		// technically host names can not have any dot, but we can save a lot of work
 		// by assuming a dot-free ref string is a local path. Users can prefix
 		// args with a scheme:// to disambiguate these obscure corner cases.
@@ -679,29 +714,97 @@ func fastModuleSourceKindCheck(args moduleSourceArgs) core.ModuleSourceKind {
 	}
 }
 
+type dirExistsFS interface {
+	dirExists(ctx context.Context, path string) (bool, error)
+}
+
+type callerDirExistsFS struct {
+	bk *buildkit.Client
+}
+
+func (fs callerDirExistsFS) dirExists(ctx context.Context, path string) (bool, error) {
+	stat, err := fs.bk.StatCallerHostPath(ctx, path, false)
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return false, nil
+		}
+		return false, err
+	}
+	return stat.IsDir(), nil
+}
+
+type coreDirExistsFS struct {
+	dir *core.Directory
+	bk  *buildkit.Client
+}
+
+func (fs coreDirExistsFS) dirExists(ctx context.Context, path string) (bool, error) {
+	stat, err := fs.dir.Stat(ctx, fs.bk, nil, path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	return stat.IsDir(), nil
+}
+
+type moduleSourceDirExistsFS struct {
+	bk  *buildkit.Client
+	src *core.ModuleSource
+}
+
+// path is assumed to be relative to source root
+func (fs moduleSourceDirExistsFS) dirExists(ctx context.Context, path string) (bool, error) {
+	if fs.src == nil {
+		return false, nil
+	}
+
+	switch fs.src.Kind {
+	case core.ModuleSourceKindLocal:
+		path = filepath.Join(fs.src.Local.ContextDirectoryPath, fs.src.SourceRootSubpath, path)
+		return callerDirExistsFS{fs.bk}.dirExists(ctx, path)
+	case core.ModuleSourceKindGit:
+		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
+		return coreDirExistsFS{
+			dir: fs.src.Git.UnfilteredContextDir.Self,
+			bk:  fs.bk,
+		}.dirExists(ctx, path)
+	case core.ModuleSourceKindDir:
+		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
+		return coreDirExistsFS{
+			dir: fs.src.ContextDirectory.Self,
+			bk:  fs.bk,
+		}.dirExists(ctx, path)
+	default:
+		return false, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
+	}
+}
+
 type parsedRefString struct {
 	kind  core.ModuleSourceKind
 	local *parsedLocalRefString
 	git   *parsedGitRefString
 }
 
-// used to support mocks in test
-type buildkitClient interface {
-	StatCallerHostPath(context.Context, string, bool) (*fsutiltypes.Stat, error)
-}
-
-func parseRefString(ctx context.Context, bk buildkitClient, args moduleSourceArgs) (*parsedRefString, error) {
-	kind := fastModuleSourceKindCheck(args)
+func parseRefString(
+	ctx context.Context,
+	checkDir dirExistsFS,
+	refString string,
+	refPin string,
+	stable bool,
+) (*parsedRefString, error) {
+	kind := fastModuleSourceKindCheck(refString, refPin, stable)
 	switch kind {
 	case core.ModuleSourceKindLocal:
 		return &parsedRefString{
 			kind: kind,
 			local: &parsedLocalRefString{
-				modPath: args.RefString,
+				modPath: refString,
 			},
 		}, nil
 	case core.ModuleSourceKindGit:
-		parsedGitRef, err := parseGitRefString(ctx, args.RefString)
+		parsedGitRef, err := parseGitRefString(ctx, refString)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse git ref string: %w", err)
 		}
@@ -712,20 +815,22 @@ func parseRefString(ctx context.Context, bk buildkitClient, args moduleSourceArg
 	}
 
 	// First, we stat ref in case the mod path github.com/username is a local directory
-	stat, err := bk.StatCallerHostPath(ctx, args.RefString, false)
-	if err == nil && stat.IsDir() {
+	if isDir, err := checkDir.dirExists(ctx, refString); err != nil {
+		slog.Debug("parseRefString stat error", "error", err)
+	} else if isDir {
 		return &parsedRefString{
 			kind: core.ModuleSourceKindLocal,
 			local: &parsedLocalRefString{
-				modPath: args.RefString,
+				modPath: refString,
 			},
 		}, nil
-	} else if err != nil {
-		slog.Debug("parseRefString stat error", "error", err)
 	}
+	/*
+		stat, err := bk.StatCallerHostPath(ctx, refString, false)
+	*/
 
 	// Parse scheme and attempt to parse as git endpoint
-	parsedGitRef, err := parseGitRefString(ctx, args.RefString)
+	parsedGitRef, err := parseGitRefString(ctx, refString)
 	switch {
 	case err == nil:
 		return &parsedRefString{
@@ -737,7 +842,7 @@ func parseRefString(ctx context.Context, bk buildkitClient, args moduleSourceArg
 		return &parsedRefString{
 			kind: core.ModuleSourceKindLocal,
 			local: &parsedLocalRefString{
-				modPath: args.RefString,
+				modPath: refString,
 			},
 		}, nil
 	default:
@@ -1047,33 +1152,27 @@ func (s *moduleSchema) directoryAsModuleSource(
 	}
 
 	// load this module source's deps in parallel
+	bk, err := contextDir.Self.Query.Buildkit(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
 	var eg errgroup.Group
 	dirSrc.Dependencies = make([]dagql.Instance[*core.ModuleSource], len(modCfg.Dependencies))
 	for i, depCfg := range modCfg.Dependencies {
 		eg.Go(func() error {
-			if depCfg.Pin != "" {
-				// git dep
-				err := s.dag.Select(ctx, s.dag.Root(), &dirSrc.Dependencies[i],
-					dagql.Selector{
-						Field: "moduleSource",
-						Args: []dagql.NamedInput{
-							{Name: "refString", Value: dagql.String(depCfg.Source)},
-							{Name: "refPin", Value: dagql.String(depCfg.Pin)},
-						},
-					},
-					dagql.Selector{
-						Field: "withName",
-						Args: []dagql.NamedInput{
-							{Name: "name", Value: dagql.String(depCfg.Name)},
-						},
-					},
-				)
-				if err != nil {
-					return fmt.Errorf("failed to load git dep: %w", err)
-				}
-				return nil
-			} else {
-				// local dep
+			parsedDepRef, err := parseRefString(
+				ctx,
+				moduleSourceDirExistsFS{bk, dirSrc},
+				depCfg.Source,
+				depCfg.Pin,
+				false,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to parse dep ref string: %w", err)
+			}
+			switch parsedDepRef.kind {
+			case core.ModuleSourceKindLocal:
 				depPath := filepath.Join(sourceRootSubpath, depCfg.Source)
 				err := s.dag.Select(ctx, contextDir, &dirSrc.Dependencies[i],
 					dagql.Selector{
@@ -1093,6 +1192,30 @@ func (s *moduleSchema) directoryAsModuleSource(
 					return fmt.Errorf("failed to load local dep: %w", err)
 				}
 				return nil
+
+			case core.ModuleSourceKindGit:
+				err := s.dag.Select(ctx, s.dag.Root(), &dirSrc.Dependencies[i],
+					dagql.Selector{
+						Field: "moduleSource",
+						Args: []dagql.NamedInput{
+							{Name: "refString", Value: dagql.String(depCfg.Source)},
+							{Name: "refPin", Value: dagql.String(depCfg.Pin)},
+						},
+					},
+					dagql.Selector{
+						Field: "withName",
+						Args: []dagql.NamedInput{
+							{Name: "name", Value: dagql.String(depCfg.Name)},
+						},
+					},
+				)
+				if err != nil {
+					return fmt.Errorf("failed to load git dep: %w", err)
+				}
+				return nil
+
+			default:
+				return fmt.Errorf("unsupported module source kind: %s", parsedDepRef.kind)
 			}
 		})
 	}
