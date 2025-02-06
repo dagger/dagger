@@ -52,6 +52,9 @@ func (s *moduleSchema) sdkForModule(
 	sdk *core.SDKConfig,
 	parentSrc dagql.Instance[*core.ModuleSource],
 ) (core.SDK, error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("sdkForModule: %s", sdk), telemetry.Internal())
+	defer span.End()
+
 	if sdk == nil {
 		return nil, errors.New("sdk ref is required")
 	}
@@ -114,7 +117,7 @@ func (s *moduleSchema) sdkForModule(
 				dagql.Selector{
 					Field: "moduleSource",
 					Args: []dagql.NamedInput{
-						{Name: "refString", Value: dagql.String(path)},
+						{Name: "refString", Value: dagql.String(sdkGitRef)},
 					},
 				},
 				dagql.Selector{Field: "asModule"},
