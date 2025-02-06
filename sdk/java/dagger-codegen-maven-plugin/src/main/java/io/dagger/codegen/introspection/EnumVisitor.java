@@ -1,6 +1,6 @@
 package io.dagger.codegen.introspection;
 
-import com.squareup.javapoet.*;
+import com.palantir.javapoet.*;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
 import javax.lang.model.element.Modifier;
