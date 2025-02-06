@@ -145,7 +145,7 @@ func (Int) TypeName() string {
 	return "Int"
 }
 
-func (i Int) TypeDefinition(views ...string) *ast.Definition {
+func (i Int) TypeDefinition(view string) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        i.TypeName(),
@@ -242,7 +242,7 @@ func (Float) TypeName() string {
 	return "Float"
 }
 
-func (f Float) TypeDefinition(views ...string) *ast.Definition {
+func (f Float) TypeDefinition(view string) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        f.TypeName(),
@@ -343,7 +343,7 @@ func (Boolean) TypeName() string {
 	return "Boolean"
 }
 
-func (b Boolean) TypeDefinition(views ...string) *ast.Definition {
+func (b Boolean) TypeDefinition(view string) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        b.TypeName(),
@@ -428,7 +428,7 @@ func (String) TypeName() string {
 	return "String"
 }
 
-func (s String) TypeDefinition(views ...string) *ast.Definition {
+func (s String) TypeDefinition(view string) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        s.TypeName(),
@@ -515,7 +515,7 @@ func (s Scalar[T]) TypeName() string {
 	return s.Name
 }
 
-func (s Scalar[T]) TypeDefinition(views ...string) *ast.Definition {
+func (s Scalar[T]) TypeDefinition(view string) *ast.Definition {
 	def := &ast.Definition{
 		Kind: ast.Scalar,
 		Name: s.TypeName(),
@@ -602,7 +602,7 @@ func (i ID[T]) ID() *call.ID {
 var _ ScalarType = ID[Typed]{}
 
 // TypeDefinition returns the GraphQL definition of the type.
-func (i ID[T]) TypeDefinition(views ...string) *ast.Definition {
+func (i ID[T]) TypeDefinition(view string) *ast.Definition {
 	return &ast.Definition{
 		Kind: ast.Scalar,
 		Name: i.TypeName(),
@@ -883,7 +883,10 @@ type EnumValue interface {
 type EnumValues[T EnumValue] struct {
 	values       []T
 	descriptions []string
-	aliases      map[string]string
+	aliases      map[T]struct {
+		Target T
+		View   View
+	}
 }
 
 // NewEnum creates a new EnumType with the given possible values.
@@ -891,7 +894,10 @@ func NewEnum[T EnumValue](vals ...T) *EnumValues[T] {
 	return &EnumValues[T]{
 		values:       vals,
 		descriptions: make([]string, len(vals)),
-		aliases:      make(map[string]string),
+		aliases: make(map[T]struct {
+			Target T
+			View   View
+		}),
 	}
 }
 
@@ -904,11 +910,11 @@ func (e *EnumValues[T]) TypeName() string {
 	return e.Type().Name()
 }
 
-func (e *EnumValues[T]) TypeDefinition(views ...string) *ast.Definition {
+func (e *EnumValues[T]) TypeDefinition(view string) *ast.Definition {
 	def := &ast.Definition{
 		Kind:       ast.Enum,
 		Name:       e.TypeName(),
-		EnumValues: e.PossibleValues(),
+		EnumValues: e.PossibleValues(view),
 	}
 	var val T
 	if isType, ok := any(val).(Descriptive); ok {
@@ -925,30 +931,43 @@ func (e *EnumValues[T]) DecodeInput(val any) (Input, error) {
 	return e.Lookup(v.(*EnumValueName).Value)
 }
 
-func (e *EnumValues[T]) PossibleValues() ast.EnumValueList {
+func (e *EnumValues[T]) PossibleValues(view string) ast.EnumValueList {
+	original := map[T]int{}
+
 	var values ast.EnumValueList
 	for i, val := range e.values {
 		values = append(values, &ast.EnumValueDefinition{
 			Name:        string(val),
 			Description: e.descriptions[i],
-			Directives: []*ast.Directive{
-				{
-					Name: "enumValue",
-					Arguments: ast.ArgumentList{
-						{
-							Name: "value",
-							Value: &ast.Value{
-								Kind: ast.StringValue,
-								Raw:  string(val),
-							},
-						},
-					},
-				},
-			},
+			Directives:  []*ast.Directive{enumValueDirective(val)},
 		})
+		original[val] = i
+	}
+	for val, alias := range e.aliases {
+		if !alias.View.Contains(view) {
+			continue
+		}
+		def := *values[original[alias.Target]]
+		def.Name = string(val)
+		values = append(values, &def)
 	}
 
 	return values
+}
+
+func enumValueDirective[T EnumValue](val T) *ast.Directive {
+	return &ast.Directive{
+		Name: "enumValue",
+		Arguments: ast.ArgumentList{
+			{
+				Name: "value",
+				Value: &ast.Value{
+					Kind: ast.StringValue,
+					Raw:  string(val),
+				},
+			},
+		},
+	}
 }
 
 func (e *EnumValues[T]) Literal(val T) call.Literal {
@@ -962,12 +981,28 @@ func (e *EnumValues[T]) Lookup(val string) (T, error) {
 			return possible, nil
 		}
 	}
+	for name, alias := range e.aliases {
+		if val == string(name) {
+			return alias.Target, nil
+		}
+	}
 	return enum, fmt.Errorf("invalid enum value %q", val)
 }
 
 func (e *EnumValues[T]) Register(val T, desc ...string) T {
 	e.values = append(e.values, val)
 	e.descriptions = append(e.descriptions, FormatDescription(desc...))
+	return val
+}
+
+func (e *EnumValues[T]) Alias(val T, target T, view View) T {
+	e.aliases[val] = struct {
+		Target T
+		View   View
+	}{
+		Target: target,
+		View:   view,
+	}
 	return val
 }
 
@@ -994,7 +1029,7 @@ func (e *EnumValueName) Type() *ast.Type {
 	}
 }
 
-func (e *EnumValueName) TypeDefinition(views ...string) *ast.Definition {
+func (e *EnumValueName) TypeDefinition(view string) *ast.Definition {
 	return &ast.Definition{
 		Kind: ast.Enum,
 		Name: e.TypeName(),
@@ -1064,7 +1099,7 @@ func (spec InputObjectSpec) TypeName() string {
 	return spec.Name
 }
 
-func (spec InputObjectSpec) TypeDefinition(views ...string) *ast.Definition {
+func (spec InputObjectSpec) TypeDefinition(view string) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.InputObject,
 		Name:        spec.Name,

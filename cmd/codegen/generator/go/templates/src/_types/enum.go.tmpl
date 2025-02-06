@@ -16,7 +16,7 @@ const (
 		{{- $fieldValue = $field.Name }}
 	{{- end }}
 	{{ $field.Description | Comment }}
-	{{ $fullFieldName }} {{ $enumName }} = "{{ $fieldValue }}"
+	{{ $fullFieldName }} {{ $enumName }} = "{{ $field.Name }}" // {{ $fieldValue }}
 	{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 	{{- if $needsUnscopedEnums }}
 	{{ $field.Description | Comment }}

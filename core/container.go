@@ -1787,6 +1787,7 @@ var (
 
 func (proto ImageMediaTypes) Type() *ast.Type {
 	return &ast.Type{
+		// XXX: renaming types is hard
 		NamedType: "ImageMediaType",
 		NonNull:   true,
 	}

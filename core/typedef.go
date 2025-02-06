@@ -11,6 +11,7 @@ import (
 
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
+	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -1046,38 +1047,61 @@ var TypeDefKinds = dagql.NewEnum[TypeDefKind]()
 var (
 	TypeDefKindString = TypeDefKinds.Register("STRING",
 		"A string value.")
+	_                  = TypeDefKinds.Alias("STRING_KIND", "STRING", BeforeVersion("v0.16.0"))
 	TypeDefKindInteger = TypeDefKinds.Register("INTEGER",
 		"An integer value.")
+	_                = TypeDefKinds.Alias("INTEGER_KIND", "INTEGER", BeforeVersion("v0.16.0"))
 	TypeDefKindFloat = TypeDefKinds.Register("FLOAT",
 		"A float value.")
+	_                  = TypeDefKinds.Alias("FLOAT_KIND", "FLOAT", BeforeVersion("v0.16.0"))
 	TypeDefKindBoolean = TypeDefKinds.Register("BOOLEAN",
 		"A boolean value.")
+	_                 = TypeDefKinds.Alias("BOOLEAN_KIND", "BOOLEAN", BeforeVersion("v0.16.0"))
 	TypeDefKindScalar = TypeDefKinds.Register("SCALAR",
 		"A scalar value of any basic kind.")
+	_               = TypeDefKinds.Alias("SCALAR_KIND", "SCALAR", BeforeVersion("v0.16.0"))
 	TypeDefKindList = TypeDefKinds.Register("LIST",
 		"A list of values all having the same type.",
 		"Always paired with a ListTypeDef.")
+	_                 = TypeDefKinds.Alias("LIST_KIND", "LIST", BeforeVersion("v0.16.0"))
 	TypeDefKindObject = TypeDefKinds.Register("OBJECT",
 		"A named type defined in the GraphQL schema, with fields and functions.",
 		"Always paired with an ObjectTypeDef.")
+	_                    = TypeDefKinds.Alias("OBJECT_KIND", "OBJECT", BeforeVersion("v0.16.0"))
 	TypeDefKindInterface = TypeDefKinds.Register("INTERFACE",
 		`A named type of functions that can be matched+implemented by other
 		objects+interfaces.`,
 		"Always paired with an InterfaceTypeDef.")
+	_                = TypeDefKinds.Alias("INTERFACE_KIND", "INTERFACE", BeforeVersion("v0.16.0"))
 	TypeDefKindInput = TypeDefKinds.Register("INPUT",
 		`A graphql input type, used only when representing the core API via TypeDefs.`,
 	)
+	_               = TypeDefKinds.Alias("INPUT_KIND", "INPUT", BeforeVersion("v0.16.0"))
 	TypeDefKindVoid = TypeDefKinds.Register("VOID",
 		"A special kind used to signify that no value is returned.",
 		`This is used for functions that have no return value. The outer TypeDef
 		specifying this Kind is always Optional, as the Void is never actually
 		represented.`,
 	)
+	_               = TypeDefKinds.Alias("VOID_KIND", "VOID", BeforeVersion("v0.16.0"))
 	TypeDefKindEnum = TypeDefKinds.Register("ENUM",
 		"A GraphQL enum type and its values",
 		"Always paired with an EnumTypeDef.",
 	)
+	_ = TypeDefKinds.Alias("ENUM_KIND", "ENUM", BeforeVersion("v0.16.0"))
 )
+
+// BeforeVersion is a view that checks if a target version is less than the
+// filtered version.
+// XXX: dedupe with schema pkg
+type BeforeVersion string
+
+func (maxVersion BeforeVersion) Contains(version string) bool {
+	if version == "" {
+		return false
+	}
+	return semver.Compare(version, string(maxVersion)) < 0
+}
 
 func (k TypeDefKind) Type() *ast.Type {
 	return &ast.Type{

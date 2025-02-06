@@ -850,18 +850,18 @@ type modScalar struct {
 type modEnum struct {
 	Name        string
 	Description string
-	Values      []*modEnumValue
+	Members     []*modEnumMember
 }
 
 func (e *modEnum) ValueNames() []string {
-	values := make([]string, 0, len(e.Values))
-	for _, v := range e.Values {
+	values := make([]string, 0, len(e.Members))
+	for _, v := range e.Members {
 		values = append(values, v.Name)
 	}
 	return values
 }
 
-type modEnumValue struct {
+type modEnumMember struct {
 	Name        string
 	Description string
 }
