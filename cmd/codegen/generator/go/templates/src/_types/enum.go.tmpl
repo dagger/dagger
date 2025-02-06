@@ -6,6 +6,23 @@ type {{ $enumName }} string
 
 func ({{ $enumName }}) IsEnum() {}
 
+func (v {{ $enumName }}) Name() string {
+	switch v {
+	{{- range $index, $field := .EnumValues | SortEnumFields }}
+	{{- $fieldName := ($field.Name | FormatEnum "") }}
+	{{- $fullFieldName := print ($field.Name | FormatEnum $enumName) }}
+	case {{ $fullFieldName }}:
+		return "{{ $field.Name }}"
+	{{- end }}
+	default:
+		return ""
+	}
+}
+
+func (v {{ $enumName }}) Value() string {
+	return string(v)
+}
+
 {{- $needsUnscopedEnums := CheckVersionCompatibility "v0.15.0" | not }}
 const (
 	{{- range $index, $field := .EnumValues | SortEnumFields }}
@@ -16,7 +33,7 @@ const (
 		{{- $fieldValue = $field.Name }}
 	{{- end }}
 	{{ $field.Description | Comment }}
-	{{ $fullFieldName }} {{ $enumName }} = "{{ $field.Name }}" // {{ $fieldValue }}
+	{{ $fullFieldName }} {{ $enumName }} = "{{ $fieldValue }}"
 	{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 	{{- if $needsUnscopedEnums }}
 	{{ $field.Description | Comment }}

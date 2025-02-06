@@ -3316,39 +3316,6 @@ func (r *EnumTypeDef) SourceModuleName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Deprecated: use members instead
-func (r *EnumTypeDef) Values(ctx context.Context) ([]EnumMemberTypeDef, error) {
-	q := r.query.Select("values")
-
-	q = q.Select("id")
-
-	type values struct {
-		Id EnumMemberTypeDefID
-	}
-
-	convert := func(fields []values) []EnumMemberTypeDef {
-		out := []EnumMemberTypeDef{}
-
-		for i := range fields {
-			val := EnumMemberTypeDef{id: &fields[i].Id}
-			val.query = q.Root().Select("loadEnumMemberTypeDefFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []values
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
 // An environment variable name and value.
 type EnvVariable struct {
 	query *querybuilder.Selection
@@ -8760,16 +8727,32 @@ type CacheSharingMode string
 
 func (CacheSharingMode) IsEnum() {}
 
+func (v CacheSharingMode) Name() string {
+	switch v {
+	case CacheSharingModeLocked:
+		return "LOCKED"
+	case CacheSharingModePrivate:
+		return "PRIVATE"
+	case CacheSharingModeShared:
+		return "SHARED"
+	default:
+		return ""
+	}
+}
+
+func (v CacheSharingMode) Value() string {
+	return string(v)
+}
+
 const (
 	// Shares the cache volume amongst many build pipelines, but will serialize the writes
-	CacheSharingModeLocked CacheSharingMode = "LOCKED" // LOCKED
+	CacheSharingModeLocked CacheSharingMode = "LOCKED"
 
 	// Keeps a cache volume for a single build pipeline
-	CacheSharingModePrivate CacheSharingMode = "PRIVATE" // PRIVATE
+	CacheSharingModePrivate CacheSharingMode = "PRIVATE"
 
 	// Shares the cache volume amongst many build pipelines
-	CacheSharingModeShared CacheSharingMode = "SHARED" // SHARED
-
+	CacheSharingModeShared CacheSharingMode = "SHARED"
 )
 
 // Compression algorithm to use for image layers.
@@ -8777,15 +8760,33 @@ type ImageLayerCompression string
 
 func (ImageLayerCompression) IsEnum() {}
 
+func (v ImageLayerCompression) Name() string {
+	switch v {
+	case ImageLayerCompressionEstargz:
+		return "ESTARGZ"
+	case ImageLayerCompressionGzip:
+		return "GZIP"
+	case ImageLayerCompressionUncompressed:
+		return "UNCOMPRESSED"
+	case ImageLayerCompressionZstd:
+		return "ZSTD"
+	default:
+		return ""
+	}
+}
+
+func (v ImageLayerCompression) Value() string {
+	return string(v)
+}
+
 const (
-	ImageLayerCompressionEstargz ImageLayerCompression = "ESTARGZ" // ESTARGZ
+	ImageLayerCompressionEstargz ImageLayerCompression = "ESTARGZ"
 
-	ImageLayerCompressionGzip ImageLayerCompression = "GZIP" // GZIP
+	ImageLayerCompressionGzip ImageLayerCompression = "GZIP"
 
-	ImageLayerCompressionUncompressed ImageLayerCompression = "UNCOMPRESSED" // UNCOMPRESSED
+	ImageLayerCompressionUncompressed ImageLayerCompression = "UNCOMPRESSED"
 
-	ImageLayerCompressionZstd ImageLayerCompression = "ZSTD" // ZSTD
-
+	ImageLayerCompressionZstd ImageLayerCompression = "ZSTD"
 )
 
 // Mediatypes to use in published or exported image metadata.
@@ -8793,11 +8794,25 @@ type ImageMediaType string
 
 func (ImageMediaType) IsEnum() {}
 
+func (v ImageMediaType) Name() string {
+	switch v {
+	case ImageMediaTypeDocker:
+		return "DOCKER"
+	case ImageMediaTypeOci:
+		return "OCI"
+	default:
+		return ""
+	}
+}
+
+func (v ImageMediaType) Value() string {
+	return string(v)
+}
+
 const (
-	ImageMediaTypeDocker ImageMediaType = "DOCKER" // DOCKER
+	ImageMediaTypeDocker ImageMediaType = "DOCKER"
 
-	ImageMediaTypeOci ImageMediaType = "OCI" // OCI
-
+	ImageMediaTypeOci ImageMediaType = "OCI"
 )
 
 // The kind of module source.
@@ -8805,11 +8820,25 @@ type ModuleSourceKind string
 
 func (ModuleSourceKind) IsEnum() {}
 
+func (v ModuleSourceKind) Name() string {
+	switch v {
+	case ModuleSourceKindGit:
+		return "GIT"
+	case ModuleSourceKindLocal:
+		return "LOCAL"
+	default:
+		return ""
+	}
+}
+
+func (v ModuleSourceKind) Value() string {
+	return string(v)
+}
+
 const (
-	ModuleSourceKindGit ModuleSourceKind = "GIT" // GIT
+	ModuleSourceKindGit ModuleSourceKind = "GIT"
 
-	ModuleSourceKindLocal ModuleSourceKind = "LOCAL" // LOCAL
-
+	ModuleSourceKindLocal ModuleSourceKind = "LOCAL"
 )
 
 // Transport layer network protocol associated to a port.
@@ -8817,11 +8846,25 @@ type NetworkProtocol string
 
 func (NetworkProtocol) IsEnum() {}
 
+func (v NetworkProtocol) Name() string {
+	switch v {
+	case NetworkProtocolTcp:
+		return "TCP"
+	case NetworkProtocolUdp:
+		return "UDP"
+	default:
+		return ""
+	}
+}
+
+func (v NetworkProtocol) Value() string {
+	return string(v)
+}
+
 const (
-	NetworkProtocolTcp NetworkProtocol = "TCP" // TCP
+	NetworkProtocolTcp NetworkProtocol = "TCP"
 
-	NetworkProtocolUdp NetworkProtocol = "UDP" // UDP
-
+	NetworkProtocolUdp NetworkProtocol = "UDP"
 )
 
 // Expected return type of an execution
@@ -8829,16 +8872,32 @@ type ReturnType string
 
 func (ReturnType) IsEnum() {}
 
+func (v ReturnType) Name() string {
+	switch v {
+	case ReturnTypeAny:
+		return "ANY"
+	case ReturnTypeFailure:
+		return "FAILURE"
+	case ReturnTypeSuccess:
+		return "SUCCESS"
+	default:
+		return ""
+	}
+}
+
+func (v ReturnType) Value() string {
+	return string(v)
+}
+
 const (
 	// Any execution (exit codes 0-127)
-	ReturnTypeAny ReturnType = "ANY" // ANY
+	ReturnTypeAny ReturnType = "ANY"
 
 	// A failed execution (exit codes 1-127)
-	ReturnTypeFailure ReturnType = "FAILURE" // FAILURE
+	ReturnTypeFailure ReturnType = "FAILURE"
 
 	// A successful execution (exit code 0)
-	ReturnTypeSuccess ReturnType = "SUCCESS" // SUCCESS
-
+	ReturnTypeSuccess ReturnType = "SUCCESS"
 )
 
 // Distinguishes the different kinds of TypeDefs.
@@ -8846,48 +8905,80 @@ type TypeDefKind string
 
 func (TypeDefKind) IsEnum() {}
 
+func (v TypeDefKind) Name() string {
+	switch v {
+	case TypeDefKindBoolean:
+		return "BOOLEAN"
+	case TypeDefKindEnum:
+		return "ENUM"
+	case TypeDefKindFloat:
+		return "FLOAT"
+	case TypeDefKindInput:
+		return "INPUT"
+	case TypeDefKindInteger:
+		return "INTEGER"
+	case TypeDefKindInterface:
+		return "INTERFACE"
+	case TypeDefKindList:
+		return "LIST"
+	case TypeDefKindObject:
+		return "OBJECT"
+	case TypeDefKindScalar:
+		return "SCALAR"
+	case TypeDefKindString:
+		return "STRING"
+	case TypeDefKindVoid:
+		return "VOID"
+	default:
+		return ""
+	}
+}
+
+func (v TypeDefKind) Value() string {
+	return string(v)
+}
+
 const (
 	// A boolean value.
-	TypeDefKindBoolean TypeDefKind = "BOOLEAN" // BOOLEAN
+	TypeDefKindBoolean TypeDefKind = "BOOLEAN"
 
 	// A GraphQL enum type and its values
 	//
 	// Always paired with an EnumTypeDef.
-	TypeDefKindEnum TypeDefKind = "ENUM" // ENUM
+	TypeDefKindEnum TypeDefKind = "ENUM"
 
 	// A float value.
-	TypeDefKindFloat TypeDefKind = "FLOAT" // FLOAT
+	TypeDefKindFloat TypeDefKind = "FLOAT"
 
 	// A graphql input type, used only when representing the core API via TypeDefs.
-	TypeDefKindInput TypeDefKind = "INPUT" // INPUT
+	TypeDefKindInput TypeDefKind = "INPUT"
 
 	// An integer value.
-	TypeDefKindInteger TypeDefKind = "INTEGER" // INTEGER
+	TypeDefKindInteger TypeDefKind = "INTEGER"
 
 	// A named type of functions that can be matched+implemented by other objects+interfaces.
 	//
 	// Always paired with an InterfaceTypeDef.
-	TypeDefKindInterface TypeDefKind = "INTERFACE" // INTERFACE
+	TypeDefKindInterface TypeDefKind = "INTERFACE"
 
 	// A list of values all having the same type.
 	//
 	// Always paired with a ListTypeDef.
-	TypeDefKindList TypeDefKind = "LIST" // LIST
+	TypeDefKindList TypeDefKind = "LIST"
 
 	// A named type defined in the GraphQL schema, with fields and functions.
 	//
 	// Always paired with an ObjectTypeDef.
-	TypeDefKindObject TypeDefKind = "OBJECT" // OBJECT
+	TypeDefKindObject TypeDefKind = "OBJECT"
 
 	// A scalar value of any basic kind.
-	TypeDefKindScalar TypeDefKind = "SCALAR" // SCALAR
+	TypeDefKindScalar TypeDefKind = "SCALAR"
 
 	// A string value.
-	TypeDefKindString TypeDefKind = "STRING" // STRING
+	TypeDefKindString TypeDefKind = "STRING"
 
 	// A special kind used to signify that no value is returned.
 	//
 	// This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
-	TypeDefKindVoid TypeDefKind = "VOID" // VOID
-
+	TypeDefKindVoid TypeDefKind = "VOID"
 )

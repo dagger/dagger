@@ -32,6 +32,8 @@ const (
 
 type enum interface {
 	IsEnum()
+	Name()
+	Value()
 }
 
 var (
@@ -60,6 +62,7 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 	case reflect.String:
 		if t.Implements(enumT) {
 			// enums render as their literal value
+			// XXX: no they don't
 			return v.String(), nil
 		}
 
