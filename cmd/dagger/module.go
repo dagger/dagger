@@ -160,7 +160,7 @@ If --sdk is specified, the given SDK is installed in the module. You can do this
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}
 
-			if modConf.SourceKind != dagger.ModuleSourceKindLocalSource {
+			if modConf.SourceKind != dagger.ModuleSourceKindLocal {
 				return fmt.Errorf("module must be local")
 			}
 			if modConf.ModuleSourceConfigExists {
@@ -245,7 +245,7 @@ var moduleInstallCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}
-			if modConf.SourceKind != dagger.ModuleSourceKindLocalSource {
+			if modConf.SourceKind != dagger.ModuleSourceKindLocal {
 				return fmt.Errorf("module must be local")
 			}
 			if !modConf.FullyInitialized() {
@@ -258,7 +258,7 @@ var moduleInstallCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to get module ref kind: %w", err)
 			}
-			if depSrcKind == dagger.ModuleSourceKindLocalSource {
+			if depSrcKind == dagger.ModuleSourceKindLocal {
 				// need to ensure that local dep paths are relative to the parent root source
 				depAbsPath, err := pathutil.Abs(depRefStr)
 				if err != nil {
@@ -302,7 +302,7 @@ var moduleInstallCmd = &cobra.Command{
 				return err
 			}
 
-			if depSrcKind == dagger.ModuleSourceKindGitSource {
+			if depSrcKind == dagger.ModuleSourceKindGit {
 				git := depSrc.AsGitSource()
 				gitURL, err := git.CloneRef(ctx)
 				if err != nil {
@@ -328,7 +328,7 @@ var moduleInstallCmd = &cobra.Command{
 					"git_version":   gitVersion,
 					"git_commit":    gitCommit,
 				})
-			} else if depSrcKind == dagger.ModuleSourceKindLocalSource {
+			} else if depSrcKind == dagger.ModuleSourceKindLocal {
 				analytics.Ctx(ctx).Capture(ctx, "module_install", map[string]string{
 					"module_name":   name,
 					"install_name":  installName,
@@ -358,7 +358,7 @@ var moduleUpdateCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}
-			if modConf.SourceKind != dagger.ModuleSourceKindLocalSource {
+			if modConf.SourceKind != dagger.ModuleSourceKindLocal {
 				return fmt.Errorf("module must be local")
 			}
 			if !modConf.FullyInitialized() {
@@ -395,7 +395,7 @@ var moduleUnInstallCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}
-			if modConf.SourceKind != dagger.ModuleSourceKindLocalSource {
+			if modConf.SourceKind != dagger.ModuleSourceKindLocal {
 				return fmt.Errorf("module must be local")
 			}
 
@@ -445,7 +445,7 @@ This command is idempotent: you can run it at any time, any number of times. It 
 			if err != nil {
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}
-			if modConf.SourceKind != dagger.ModuleSourceKindLocalSource {
+			if modConf.SourceKind != dagger.ModuleSourceKindLocal {
 				return fmt.Errorf("module must be local")
 			}
 
@@ -556,7 +556,7 @@ forced), to avoid mistakenly depending on uncommitted files.
 			if err != nil {
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}
-			if modConf.SourceKind != dagger.ModuleSourceKindLocalSource {
+			if modConf.SourceKind != dagger.ModuleSourceKindLocal {
 				return fmt.Errorf("module must be local")
 			}
 			if !modConf.FullyInitialized() {
@@ -732,7 +732,7 @@ func getModuleConfigurationForSourceRef(
 		return nil, fmt.Errorf("failed to get module ref kind: %w", err)
 	}
 
-	if conf.SourceKind == dagger.ModuleSourceKindGitSource {
+	if conf.SourceKind == dagger.ModuleSourceKindGit {
 		conf.ModuleSourceConfigExists, err = conf.Source.ConfigExists(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to check if module config exists: %w", err)
@@ -766,7 +766,7 @@ func getModuleConfigurationForSourceRef(
 					return nil, err
 				}
 				depSrcRef := namedDep.Source
-				if depKind == dagger.ModuleSourceKindLocalSource {
+				if depKind == dagger.ModuleSourceKindLocal {
 					depSrcRef = filepath.Join(defaultFindupConfigDir, namedDep.Source)
 				}
 				return getModuleConfigurationForSourceRef(ctx, dag, depSrcRef, false, resolveFromCaller, opts)

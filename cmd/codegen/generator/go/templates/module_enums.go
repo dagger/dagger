@@ -36,6 +36,7 @@ func (ps *parseState) parseGoEnum(t *types.Basic, named *types.Named) (*parsedEn
 			continue
 		}
 
+		name := obj.Name()
 		value := ""
 		if objConst.Val().Kind() == constant.String {
 			value = constant.StringVal(objConst.Val())
@@ -49,6 +50,7 @@ func (ps *parseState) parseGoEnum(t *types.Basic, named *types.Named) (*parsedEn
 		}
 
 		valueSpec := &parsedEnumValue{
+			name:  name,
 			value: value,
 		}
 		if doc := docForAstSpec(astSpec); doc != nil {
@@ -60,6 +62,20 @@ func (ps *parseState) parseGoEnum(t *types.Basic, named *types.Named) (*parsedEn
 	if len(spec.values) == 0 {
 		// no values, this isn't an enum, it's a scalar alias
 		return nil, nil
+	}
+
+	// trim prefixes for all names (if we can)
+	trim := true
+	for _, v := range spec.values {
+		if !strings.HasPrefix(v.name, spec.name) {
+			trim = false
+			break
+		}
+	}
+	if trim {
+		for _, v := range spec.values {
+			v.name = v.name[len(spec.name):]
+		}
 	}
 
 	// get the comment above the struct (if any)
@@ -88,6 +104,7 @@ type parsedEnumType struct {
 }
 
 type parsedEnumValue struct {
+	name      string
 	value     string
 	doc       string
 	sourceMap *sourceMap
@@ -113,22 +130,24 @@ func (spec *parsedEnumType) TypeDefCode() (*Statement, error) {
 	typeDefCode := Qual("dag", "TypeDef").Call().Dot("WithEnum").Call(withEnumArgsCode...)
 
 	for _, val := range spec.values {
+		// XXX: fallback to ye-olde behavior where name = value on ye-olde dagger versions
 		valueTypeDefCode := []Code{
+			Lit(val.name),
 			Lit(val.value),
 		}
-		var withEnumValueOpts []Code
+		var withEnumMemberOpts []Code
 		if val.doc != "" {
-			withEnumValueOpts = append(withEnumValueOpts, Id("Description").Op(":").Lit(strings.TrimSpace(val.doc)))
+			withEnumMemberOpts = append(withEnumMemberOpts, Id("Description").Op(":").Lit(strings.TrimSpace(val.doc)))
 		}
 		if val.sourceMap != nil {
-			withEnumValueOpts = append(withEnumValueOpts, Id("SourceMap").Op(":").Add(val.sourceMap.TypeDefCode()))
+			withEnumMemberOpts = append(withEnumMemberOpts, Id("SourceMap").Op(":").Add(val.sourceMap.TypeDefCode()))
 		}
-		if len(withEnumValueOpts) > 0 {
+		if len(withEnumMemberOpts) > 0 {
 			valueTypeDefCode = append(valueTypeDefCode,
-				Id("dagger").Dot("TypeDefWithEnumValueOpts").Values(withEnumValueOpts...),
+				Id("dagger").Dot("TypeDefWithEnumMemberOpts").Values(withEnumMemberOpts...),
 			)
 		}
-		typeDefCode = dotLine(typeDefCode, "WithEnumValue").Call(valueTypeDefCode...)
+		typeDefCode = dotLine(typeDefCode, "WithEnumMember").Call(valueTypeDefCode...)
 	}
 
 	return typeDefCode, nil

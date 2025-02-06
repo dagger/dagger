@@ -883,6 +883,7 @@ type EnumValue interface {
 type EnumValues[T EnumValue] struct {
 	values       []T
 	descriptions []string
+	aliases      map[string]string
 }
 
 // NewEnum creates a new EnumType with the given possible values.
@@ -890,6 +891,7 @@ func NewEnum[T EnumValue](vals ...T) *EnumValues[T] {
 	return &EnumValues[T]{
 		values:       vals,
 		descriptions: make([]string, len(vals)),
+		aliases:      make(map[string]string),
 	}
 }
 
@@ -929,6 +931,20 @@ func (e *EnumValues[T]) PossibleValues() ast.EnumValueList {
 		values = append(values, &ast.EnumValueDefinition{
 			Name:        string(val),
 			Description: e.descriptions[i],
+			Directives: []*ast.Directive{
+				{
+					Name: "enumValue",
+					Arguments: ast.ArgumentList{
+						{
+							Name: "value",
+							Value: &ast.Value{
+								Kind: ast.StringValue,
+								Raw:  string(val),
+							},
+						},
+					},
+				},
+			},
 		})
 	}
 

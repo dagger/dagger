@@ -95,6 +95,7 @@ func (m *ModuleEnumType) getDecoder(ctx context.Context) (dagql.InputDecoder, er
 
 type ModuleEnum struct {
 	TypeDef *EnumTypeDef
+	Name    string
 	Value   string
 }
 
@@ -128,10 +129,11 @@ func (e *ModuleEnum) TypeDefinition(views ...string) *ast.Definition {
 
 func (e *ModuleEnum) PossibleValues() ast.EnumValueList {
 	var values ast.EnumValueList
-	for _, val := range e.TypeDef.Values {
+	for _, val := range e.TypeDef.Members {
 		def := &ast.EnumValueDefinition{
 			Name:        val.Name,
 			Description: val.Description,
+			Directives:  []*ast.Directive{val.EnumValueDirective()},
 		}
 		if val.SourceMap != nil {
 			def.Directives = append(def.Directives, val.SourceMap.TypeDirective())
@@ -148,7 +150,7 @@ func (e *ModuleEnum) Install(dag *dagql.Server) error {
 }
 
 func (e *ModuleEnum) ToLiteral() call.Literal {
-	return call.NewLiteralEnum(e.Value)
+	return call.NewLiteralEnum(e.Name)
 }
 
 func (e *ModuleEnum) Decoder() dagql.InputDecoder {
@@ -164,11 +166,12 @@ func (e *ModuleEnum) DecodeInput(val any) (dagql.Input, error) {
 }
 
 func (e *ModuleEnum) Lookup(val string) (dagql.Input, error) {
-	for _, possible := range e.TypeDef.Values {
+	for _, possible := range e.TypeDef.Members {
 		if val == possible.Name {
 			return &ModuleEnum{
 				TypeDef: e.TypeDef,
-				Value:   possible.Name,
+				Name:    possible.Name,
+				Value:   possible.Value,
 			}, nil
 		}
 	}

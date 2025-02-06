@@ -335,9 +335,17 @@ func (s *moduleSchema) Install() {
 			ArgDoc("description", `A doc string for the enum, if any`).
 			ArgDoc("sourceMap", `The source map for the enum definition.`),
 
+		// Deprecated, but kept around for old SDKs
 		dagql.Func("withEnumValue", s.typeDefWithEnumValue).
 			Doc(`Adds a static value for an Enum TypeDef, failing if the type is not an enum.`).
 			ArgDoc("value", `The name of the value in the enum`).
+			ArgDoc("description", `A doc string for the value, if any`).
+			ArgDoc("sourceMap", `The source map for the enum value definition.`),
+
+		dagql.Func("withEnumMember", s.typeDefWithEnumMember).
+			Doc(`Adds a static value for an Enum TypeDef, failing if the type is not an enum.`).
+			ArgDoc("name", `The name of the member in the enum`).
+			ArgDoc("value", `The value of the member in the enum`).
 			ArgDoc("description", `A doc string for the value, if any`).
 			ArgDoc("sourceMap", `The source map for the enum value definition.`),
 	}.Install(s.dag)
@@ -349,7 +357,7 @@ func (s *moduleSchema) Install() {
 	dagql.Fields[*core.ListTypeDef]{}.Install(s.dag)
 	dagql.Fields[*core.ScalarTypeDef]{}.Install(s.dag)
 	dagql.Fields[*core.EnumTypeDef]{}.Install(s.dag)
-	dagql.Fields[*core.EnumValueTypeDef]{}.Install(s.dag)
+	dagql.Fields[*core.EnumMemberTypeDef]{}.Install(s.dag)
 
 	dagql.Fields[*core.GeneratedCode]{
 		dagql.Func("withVCSGeneratedPaths", s.generatedCodeWithVCSGeneratedPaths).
@@ -494,7 +502,23 @@ func (s *moduleSchema) typeDefWithEnumValue(ctx context.Context, def *core.TypeD
 	if err != nil {
 		return nil, err
 	}
-	return def.WithEnumValue(args.Value, args.Description, sourceMap)
+	return def.WithEnumMember(args.Value, args.Value, args.Description, sourceMap)
+}
+
+func (s *moduleSchema) typeDefWithEnumMember(ctx context.Context, def *core.TypeDef, args struct {
+	Name        string
+	Value       string
+	Description string `default:""`
+	SourceMap   dagql.Optional[core.SourceMapID]
+}) (*core.TypeDef, error) {
+	if args.Value == "" {
+		return nil, fmt.Errorf("enum value must not be empty")
+	}
+	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+	return def.WithEnumMember(args.Name, args.Value, args.Description, sourceMap)
 }
 
 func (s *moduleSchema) generatedCode(ctx context.Context, _ *core.Query, args struct {
