@@ -12,6 +12,7 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/iancoleman/strcase"
 	"github.com/spf13/pflag"
 )
@@ -675,7 +676,7 @@ func GetSupportedFunctions(fp functionProvider) ([]*modFunction, []string) {
 	fns := make([]*modFunction, 0, len(allFns))
 	skipped := make([]string, 0, len(allFns))
 	for _, fn := range allFns {
-		if skipFunction(fp.ProviderName(), fn.Name) || fn.HasUnsupportedFlags() {
+		if dagui.ShouldSkipFunction(fp.ProviderName(), fn.Name) || fn.HasUnsupportedFlags() {
 			skipped = append(skipped, fn.CmdName())
 		} else {
 			fns = append(fns, fn)
@@ -694,33 +695,6 @@ func GetSupportedFunction(md *moduleDef, fp functionProvider, name string) (*mod
 		return nil, fmt.Errorf("function %q in type %q is not supported", name, fp.ProviderName())
 	}
 	return fn, nil
-}
-
-func skipFunction(obj, field string) bool {
-	// TODO: make this configurable in the API but may not be easy to
-	// generalize because an "internal" field may still need to exist in
-	// codegen, for example. Could expose if internal via the TypeDefs though.
-	skip := map[string][]string{
-		"Query": {
-			// for SDKs only
-			"builtinContainer",
-			"generatedCode",
-			"currentFunctionCall",
-			"currentModule",
-			"typeDef",
-			// not useful until the CLI accepts ID inputs
-			"cacheVolume",
-			"setSecret",
-			// for tests only
-			"secret",
-			// deprecated
-			"pipeline",
-		},
-	}
-	if fields, ok := skip[obj]; ok {
-		return slices.Contains(fields, field)
-	}
-	return false
 }
 
 // skipLeaves is a map of provider names to function names that should be skipped
