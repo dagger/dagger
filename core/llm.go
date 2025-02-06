@@ -21,7 +21,6 @@ import (
 // An instance of a LLM (large language model), with its state and tool calling environment
 type Llm struct {
 	Query *Query
-	srv   *dagql.Server
 
 	Config *LlmConfig
 
@@ -122,7 +121,6 @@ func NewLlm(ctx context.Context, query *Query, srv *dagql.Server) (*Llm, error) 
 	}
 	return &Llm{
 		Query:  query,
-		srv:    srv,
 		Config: config,
 		calls:  make(map[string]string),
 		// FIXME: support multiple variables in state
@@ -147,8 +145,8 @@ func (llm *Llm) Clone() *Llm {
 }
 
 // Generate a human-readable documentation of tools available to the model via BBI
-func (llm *Llm) ToolsDoc(ctx context.Context) (string, error) {
-	session, err := llm.BBI()
+func (llm *Llm) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error) {
+	session, err := llm.BBI(srv)
 	if err != nil {
 		return "", err
 	}
@@ -165,26 +163,26 @@ func (llm *Llm) ToolsDoc(ctx context.Context) (string, error) {
 
 // A convenience function to ask the model a question directly, and get an answer
 // The state of the agent is not changed.
-func (llm *Llm) Ask(ctx context.Context, question string) (string, error) {
-	llm, err := llm.WithPrompt(ctx, question, false)
+func (llm *Llm) Ask(ctx context.Context, question string, srv *dagql.Server) (string, error) {
+	llm, err := llm.WithPrompt(ctx, question, false, srv)
 	if err != nil {
 		return "", err
 	}
 	return llm.LastReply()
 }
 
-func (llm *Llm) Please(ctx context.Context, task string) (*Llm, error) {
-	return llm.WithPrompt(ctx, task, false)
+func (llm *Llm) Please(ctx context.Context, task string, srv *dagql.Server) (*Llm, error) {
+	return llm.WithPrompt(ctx, task, false, srv)
 }
 
 // Append a user message (prompt) to the message history
-func (llm *Llm) WithPrompt(ctx context.Context, prompt string, lazy bool) (*Llm, error) {
+func (llm *Llm) WithPrompt(ctx context.Context, prompt string, lazy bool, srv *dagql.Server) (*Llm, error) {
 	llm = llm.Clone()
 	llm.history = append(llm.history, openai.UserMessage(prompt))
 	if lazy {
 		return llm, nil
 	}
-	return llm.Run(ctx, 0)
+	return llm.Run(ctx, 0, srv)
 }
 
 // Append a system prompt message to the history
@@ -219,7 +217,7 @@ func (llm *Llm) LastReply() (string, error) {
 
 // Start a new BBI (Brain-Body Interface) session.
 // BBI allows a LLM to consume the Dagger API via tool calls
-func (llm *Llm) BBI() (bbi.Session, error) {
+func (llm *Llm) BBI(srv *dagql.Server) (bbi.Session, error) {
 	var target dagql.Object
 	// FIX<E: support multiple variables in state
 	//	for _, val := range llm.state {
@@ -232,16 +230,17 @@ func (llm *Llm) BBI() (bbi.Session, error) {
 	if llm.state != nil {
 		target = llm.state.(dagql.Object)
 	}
-	return bbi.NewSession("flat", target, llm.srv)
+	return bbi.NewSession("flat", target, srv)
 }
 
 func (llm *Llm) Run(
 	ctx context.Context,
 	maxLoops int,
+	srv *dagql.Server,
 ) (*Llm, error) {
 	llm = llm.Clone()
 	// Start a new BBI session
-	session, err := llm.BBI()
+	session, err := llm.BBI(srv)
 	if err != nil {
 		return nil, err
 	}
@@ -354,8 +353,8 @@ func (llm *Llm) messages() ([]openAIMessage, error) {
 	return messages, nil
 }
 
-func (llm *Llm) WithState(ctx context.Context, objId dagql.IDType) (*Llm, error) {
-	obj, err := llm.srv.Load(ctx, objId.ID())
+func (llm *Llm) WithState(ctx context.Context, objId dagql.IDType, srv *dagql.Server) (*Llm, error) {
+	obj, err := srv.Load(ctx, objId.ID())
 	if err != nil {
 		return nil, err
 	}
@@ -504,7 +503,7 @@ func (s LlmMiddleware) extendLlmType(targetType dagql.ObjectType) error {
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			llm := self.(dagql.Instance[*Llm]).Self
 			id := args["value"].(dagql.IDType)
-			return llm.WithState(ctx, id)
+			return llm.WithState(ctx, id, s.Server)
 		},
 		nil,
 	)
