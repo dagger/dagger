@@ -1,7 +1,7 @@
 # Dagger {{ with .Version -}}
     [{{ . }}](https://github.com/dagger/dagger/releases/tag/{{ . }})
 {{- else -}}
-    [`{{ .Ref }}` (`{{ .Commit }}`])(https://github.com/dagger/dagger/commit/{{ .Commit }})
+    [`{{ .Ref }}` (`{{ .Commit }}`)](https://github.com/dagger/dagger/commit/{{ .Commit }})
 {{- end }}
 
 *Ran at {{ .Date }}*
