@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/opencontainers/go-digest"
 
 	"github.com/dagger/dagger/core"
@@ -51,6 +52,9 @@ func (s *moduleSchema) sdkForModule(
 	sdk string,
 	parentSrc dagql.Instance[*core.ModuleSource],
 ) (core.SDK, error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("sdkForModule: %s", sdk), telemetry.Internal())
+	defer span.End()
+
 	if sdk == "" {
 		return nil, errors.New("sdk ref is required")
 	}
@@ -113,7 +117,7 @@ func (s *moduleSchema) sdkForModule(
 				dagql.Selector{
 					Field: "moduleSource",
 					Args: []dagql.NamedInput{
-						{Name: "refString", Value: dagql.String(path)},
+						{Name: "refString", Value: dagql.String(sdkGitRef)},
 					},
 				},
 				dagql.Selector{Field: "asModule"},
