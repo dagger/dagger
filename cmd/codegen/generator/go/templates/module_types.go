@@ -168,6 +168,8 @@ type parsedPrimitiveType struct {
 var _ ParsedType = &parsedPrimitiveType{}
 
 func (spec *parsedPrimitiveType) TypeDefCode() (*Statement, error) {
+	// FIXME: update to use new TypeDefKind values
+	// this is tricky though because the new values are present on <0.15
 	var kind Code
 	if spec.goType.Kind() == types.Invalid {
 		// NOTE: this is odd, but it doesn't matter, because the module won't

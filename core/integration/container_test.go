@@ -3192,7 +3192,7 @@ func (ContainerSuite) TestImport(ctx context.Context, t *testctx.T) {
 	t.Run("Docker", func(ctx context.Context, t *testctx.T) {
 		out, err := c.Container().
 			Import(c.Container().From(alpineImage).WithEnvVariable("FOO", "bar").AsTarball(dagger.ContainerAsTarballOpts{
-				MediaTypes: dagger.ImageMediaTypesDockerMediaTypes,
+				MediaTypes: dagger.ImageMediaTypeDocker,
 			})).
 			WithExec([]string{"sh", "-c", "echo $FOO"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -3966,7 +3966,7 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 			"application/vnd.oci.image.layer.v1.tar",
 		},
 		{
-			dagger.ImageLayerCompressionEstarGz,
+			dagger.ImageLayerCompressionEstargz,
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 	} {
@@ -4026,7 +4026,7 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 
 func (ContainerSuite) TestMediaTypes(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct {
-		mediaTypes           dagger.ImageMediaTypes
+		mediaTypes           dagger.ImageMediaType
 		expectedOCIMediaType string
 	}{
 		{
@@ -4034,11 +4034,11 @@ func (ContainerSuite) TestMediaTypes(ctx context.Context, t *testctx.T) {
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 		{
-			dagger.ImageMediaTypesOcimediaTypes,
+			dagger.ImageMediaTypeOci,
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 		{
-			dagger.ImageMediaTypesDockerMediaTypes,
+			dagger.ImageMediaTypeDocker,
 			"application/vnd.docker.image.rootfs.diff.tar.gzip",
 		},
 	} {
@@ -4242,7 +4242,7 @@ func (ContainerSuite) TestImageLoadCompatibility(ctx context.Context, t *testctx
 	for _, dockerVersion := range []string{"20.10", "23.0", "24.0"} {
 		dockerc := dockerSetup(ctx, t, t.Name(), c, dockerVersion, nil)
 
-		for _, mediaType := range []dagger.ImageMediaTypes{dagger.ImageMediaTypesOcimediaTypes, dagger.ImageMediaTypesDockerMediaTypes} {
+		for _, mediaType := range []dagger.ImageMediaType{dagger.ImageMediaTypeOci, dagger.ImageMediaTypeDocker} {
 			mediaType := mediaType
 			for _, compression := range []dagger.ImageLayerCompression{dagger.ImageLayerCompressionGzip, dagger.ImageLayerCompressionZstd, dagger.ImageLayerCompressionUncompressed} {
 				compression := compression

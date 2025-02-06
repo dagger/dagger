@@ -245,7 +245,7 @@ func (obj *ModuleObject) TypeDescription() string {
 	return formatGqlDescription(obj.TypeDef.Description)
 }
 
-func (obj *ModuleObject) TypeDefinition(views ...string) *ast.Definition {
+func (obj *ModuleObject) TypeDefinition(view string) *ast.Definition {
 	def := &ast.Definition{
 		Kind: ast.Object,
 		Name: obj.Type().Name(),
@@ -330,7 +330,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		return fmt.Errorf("failed to create function: %w", err)
 	}
 
-	spec, err := fn.metadata.FieldSpec()
+	spec, err := fn.metadata.FieldSpec(ctx, fn)
 	if err != nil {
 		return fmt.Errorf("failed to get field spec: %w", err)
 	}
@@ -436,7 +436,7 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 	if err != nil {
 		return f, fmt.Errorf("failed to create function %q: %w", fun.Name, err)
 	}
-	spec, err := fun.FieldSpec()
+	spec, err := fun.FieldSpec(ctx, modFun)
 	if err != nil {
 		return f, fmt.Errorf("failed to get field spec: %w", err)
 	}

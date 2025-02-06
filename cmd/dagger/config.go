@@ -76,7 +76,7 @@ dagger config -m github.com/dagger/hello-dagger
 			if err != nil {
 				return fmt.Errorf("failed to get module kind: %w", err)
 			}
-			if kind == dagger.ModuleSourceKindLocalSource {
+			if kind == dagger.ModuleSourceKindLocal {
 				contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to get local context directory path: %w", err)

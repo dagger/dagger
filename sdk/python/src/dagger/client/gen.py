@@ -51,14 +51,14 @@ class EngineID(Scalar):
     of type Engine."""
 
 
+class EnumMemberTypeDefID(Scalar):
+    """The `EnumMemberTypeDefID` scalar type represents an identifier for
+    an object of type EnumMemberTypeDef."""
+
+
 class EnumTypeDefID(Scalar):
     """The `EnumTypeDefID` scalar type represents an identifier for an
     object of type EnumTypeDef."""
-
-
-class EnumValueTypeDefID(Scalar):
-    """The `EnumValueTypeDefID` scalar type represents an identifier for
-    an object of type EnumValueTypeDef."""
 
 
 class EnvVariableID(Scalar):
@@ -232,31 +232,31 @@ class CacheSharingMode(Enum):
 class ImageLayerCompression(Enum):
     """Compression algorithm to use for image layers."""
 
-    EStarGZ = "EStarGZ"
+    ESTARGZ = "ESTARGZ"
 
-    Gzip = "Gzip"
+    GZIP = "GZIP"
 
-    Uncompressed = "Uncompressed"
+    UNCOMPRESSED = "UNCOMPRESSED"
 
-    Zstd = "Zstd"
+    ZSTD = "ZSTD"
 
 
-class ImageMediaTypes(Enum):
+class ImageMediaType(Enum):
     """Mediatypes to use in published or exported image metadata."""
 
-    DockerMediaTypes = "DockerMediaTypes"
+    DOCKER = "DOCKER"
 
-    OCIMediaTypes = "OCIMediaTypes"
+    OCI = "OCI"
 
 
 class ModuleSourceKind(Enum):
     """The kind of module source."""
 
-    DIR_SOURCE = "DIR_SOURCE"
+    DIR = "DIR"
 
-    GIT_SOURCE = "GIT_SOURCE"
+    GIT = "GIT"
 
-    LOCAL_SOURCE = "LOCAL_SOURCE"
+    LOCAL = "LOCAL"
 
 
 class NetworkProtocol(Enum):
@@ -283,49 +283,97 @@ class ReturnType(Enum):
 class TypeDefKind(Enum):
     """Distinguishes the different kinds of TypeDefs."""
 
-    BOOLEAN_KIND = "BOOLEAN_KIND"
+    BOOLEAN = "BOOLEAN"
     """A boolean value."""
 
-    ENUM_KIND = "ENUM_KIND"
+    BOOLEAN_KIND = "BOOLEAN"
+    """A boolean value."""
+
+    ENUM = "ENUM"
     """A GraphQL enum type and its values
 
     Always paired with an EnumTypeDef.
     """
 
-    FLOAT_KIND = "FLOAT_KIND"
+    ENUM_KIND = "ENUM"
+    """A GraphQL enum type and its values
+
+    Always paired with an EnumTypeDef.
+    """
+
+    FLOAT = "FLOAT"
     """A float value."""
 
-    INPUT_KIND = "INPUT_KIND"
+    FLOAT_KIND = "FLOAT"
+    """A float value."""
+
+    INPUT = "INPUT"
     """A graphql input type, used only when representing the core API via TypeDefs."""
 
-    INTEGER_KIND = "INTEGER_KIND"
+    INPUT_KIND = "INPUT"
+    """A graphql input type, used only when representing the core API via TypeDefs."""
+
+    INTEGER = "INTEGER"
     """An integer value."""
 
-    INTERFACE_KIND = "INTERFACE_KIND"
+    INTEGER_KIND = "INTEGER"
+    """An integer value."""
+
+    INTERFACE = "INTERFACE"
     """A named type of functions that can be matched+implemented by other objects+interfaces.
 
     Always paired with an InterfaceTypeDef.
     """
 
-    LIST_KIND = "LIST_KIND"
+    INTERFACE_KIND = "INTERFACE"
+    """A named type of functions that can be matched+implemented by other objects+interfaces.
+
+    Always paired with an InterfaceTypeDef.
+    """
+
+    LIST = "LIST"
     """A list of values all having the same type.
 
     Always paired with a ListTypeDef.
     """
 
-    OBJECT_KIND = "OBJECT_KIND"
+    LIST_KIND = "LIST"
+    """A list of values all having the same type.
+
+    Always paired with a ListTypeDef.
+    """
+
+    OBJECT = "OBJECT"
     """A named type defined in the GraphQL schema, with fields and functions.
 
     Always paired with an ObjectTypeDef.
     """
 
-    SCALAR_KIND = "SCALAR_KIND"
+    OBJECT_KIND = "OBJECT"
+    """A named type defined in the GraphQL schema, with fields and functions.
+
+    Always paired with an ObjectTypeDef.
+    """
+
+    SCALAR = "SCALAR"
     """A scalar value of any basic kind."""
 
-    STRING_KIND = "STRING_KIND"
+    SCALAR_KIND = "SCALAR"
+    """A scalar value of any basic kind."""
+
+    STRING = "STRING"
     """A string value."""
 
-    VOID_KIND = "VOID_KIND"
+    STRING_KIND = "STRING"
+    """A string value."""
+
+    VOID = "VOID"
+    """A special kind used to signify that no value is returned.
+
+    This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
+    """
+
+    VOID_KIND = "VOID"
     """A special kind used to signify that no value is returned.
 
     This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
@@ -465,7 +513,7 @@ class Container(Type):
         *,
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
-        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        media_types: ImageMediaType | None = ImageMediaType.OCI,
     ) -> "File":
         """Returns a File representing the container serialized to a tarball.
 
@@ -495,7 +543,7 @@ class Container(Type):
                 (),
             ),
             Arg("forcedCompression", forced_compression, None),
-            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("mediaTypes", media_types, ImageMediaType.OCI),
         ]
         _ctx = self._select("asTarball", _args)
         return File(_ctx)
@@ -718,7 +766,7 @@ class Container(Type):
         *,
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
-        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        media_types: ImageMediaType | None = ImageMediaType.OCI,
         expand: bool | None = False,
     ) -> str:
         """Writes the container as an OCI tarball to the destination file path on
@@ -774,7 +822,7 @@ class Container(Type):
                 (),
             ),
             Arg("forcedCompression", forced_compression, None),
-            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("mediaTypes", media_types, ImageMediaType.OCI),
             Arg("expand", expand, False),
         ]
         _ctx = self._select("export", _args)
@@ -1014,7 +1062,7 @@ class Container(Type):
         *,
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
-        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        media_types: ImageMediaType | None = ImageMediaType.OCI,
     ) -> str:
         """Publishes this container as a new image to the specified address.
 
@@ -1067,7 +1115,7 @@ class Container(Type):
                 (),
             ),
             Arg("forcedCompression", forced_compression, None),
-            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("mediaTypes", media_types, ImageMediaType.OCI),
         ]
         _ctx = self._select("publish", _args)
         return await _ctx.execute(str)
@@ -3381,6 +3429,104 @@ class EngineCacheEntrySet(Type):
 
 
 @typecheck
+class EnumMemberTypeDef(Type):
+    """A definition of a value in a custom enum defined in a Module."""
+
+    async def description(self) -> str:
+        """A doc string for the enum value, if any.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> EnumMemberTypeDefID:
+        """A unique identifier for this EnumMemberTypeDef.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        EnumMemberTypeDefID
+            The `EnumMemberTypeDefID` scalar type represents an identifier for
+            an object of type EnumMemberTypeDef.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(EnumMemberTypeDefID)
+
+    async def name(self) -> str:
+        """The name of the enum value.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    def source_map(self) -> "SourceMap":
+        """The location of this enum value declaration."""
+        _args: list[Arg] = []
+        _ctx = self._select("sourceMap", _args)
+        return SourceMap(_ctx)
+
+    async def value(self) -> str:
+        """The value of the enum value
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("value", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
 class EnumTypeDef(Type):
     """A definition of a custom enum defined in a Module."""
 
@@ -3428,6 +3574,27 @@ class EnumTypeDef(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(EnumTypeDefID)
+
+    async def members(self) -> list[EnumMemberTypeDef]:
+        """The members of the enum."""
+        _args: list[Arg] = []
+        _ctx = self._select("members", _args)
+        _ctx = EnumMemberTypeDef(_ctx)._select("id", [])
+
+        @dataclass
+        class Response:
+            id: EnumMemberTypeDefID
+
+        _ids = await _ctx.execute(list[Response])
+        return [
+            EnumMemberTypeDef(
+                Client.from_context(_ctx)._select(
+                    "loadEnumMemberTypeDefFromID",
+                    [Arg("id", v.id)],
+                )
+            )
+            for v in _ids
+        ]
 
     async def name(self) -> str:
         """The name of the enum.
@@ -3477,104 +3644,6 @@ class EnumTypeDef(Type):
         _args: list[Arg] = []
         _ctx = self._select("sourceModuleName", _args)
         return await _ctx.execute(str)
-
-    async def values(self) -> list["EnumValueTypeDef"]:
-        """The values of the enum."""
-        _args: list[Arg] = []
-        _ctx = self._select("values", _args)
-        _ctx = EnumValueTypeDef(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: EnumValueTypeDefID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            EnumValueTypeDef(
-                Client.from_context(_ctx)._select(
-                    "loadEnumValueTypeDefFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
-
-
-@typecheck
-class EnumValueTypeDef(Type):
-    """A definition of a value in a custom enum defined in a Module."""
-
-    async def description(self) -> str:
-        """A doc string for the enum value, if any.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("description", _args)
-        return await _ctx.execute(str)
-
-    async def id(self) -> EnumValueTypeDefID:
-        """A unique identifier for this EnumValueTypeDef.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        EnumValueTypeDefID
-            The `EnumValueTypeDefID` scalar type represents an identifier for
-            an object of type EnumValueTypeDef.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(EnumValueTypeDefID)
-
-    async def name(self) -> str:
-        """The name of the enum value.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("name", _args)
-        return await _ctx.execute(str)
-
-    def source_map(self) -> "SourceMap":
-        """The location of this enum value declaration."""
-        _args: list[Arg] = []
-        _ctx = self._select("sourceMap", _args)
-        return SourceMap(_ctx)
 
 
 @typecheck
@@ -6818,6 +6887,16 @@ class Client(Root):
         _ctx = self._select("loadEngineFromID", _args)
         return Engine(_ctx)
 
+    def load_enum_member_type_def_from_id(
+        self, id: EnumMemberTypeDefID
+    ) -> EnumMemberTypeDef:
+        """Load a EnumMemberTypeDef from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadEnumMemberTypeDefFromID", _args)
+        return EnumMemberTypeDef(_ctx)
+
     def load_enum_type_def_from_id(self, id: EnumTypeDefID) -> EnumTypeDef:
         """Load a EnumTypeDef from its ID."""
         _args = [
@@ -6825,16 +6904,6 @@ class Client(Root):
         ]
         _ctx = self._select("loadEnumTypeDefFromID", _args)
         return EnumTypeDef(_ctx)
-
-    def load_enum_value_type_def_from_id(
-        self, id: EnumValueTypeDefID
-    ) -> EnumValueTypeDef:
-        """Load a EnumValueTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEnumValueTypeDefFromID", _args)
-        return EnumValueTypeDef(_ctx)
 
     def load_env_variable_from_id(self, id: EnvVariableID) -> EnvVariable:
         """Load a EnvVariable from its ID."""
@@ -8007,6 +8076,37 @@ class TypeDef(Type):
         _ctx = self._select("withEnum", _args)
         return TypeDef(_ctx)
 
+    def with_enum_member(
+        self,
+        name: str,
+        value: str,
+        *,
+        description: str | None = "",
+        source_map: SourceMap | None = None,
+    ) -> Self:
+        """Adds a static value for an Enum TypeDef, failing if the type is not an
+        enum.
+
+        Parameters
+        ----------
+        name:
+            The name of the member in the enum
+        value:
+            The value of the member in the enum
+        description:
+            A doc string for the value, if any
+        source_map:
+            The source map for the enum value definition.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description, ""),
+            Arg("sourceMap", source_map, None),
+        ]
+        _ctx = self._select("withEnumMember", _args)
+        return TypeDef(_ctx)
+
     def with_enum_value(
         self,
         value: str,
@@ -8184,10 +8284,10 @@ __all__ = [
     "EngineCacheEntrySetID",
     "EngineCacheID",
     "EngineID",
+    "EnumMemberTypeDef",
+    "EnumMemberTypeDefID",
     "EnumTypeDef",
     "EnumTypeDefID",
-    "EnumValueTypeDef",
-    "EnumValueTypeDefID",
     "EnvVariable",
     "EnvVariableID",
     "Error",
@@ -8213,7 +8313,7 @@ __all__ = [
     "Host",
     "HostID",
     "ImageLayerCompression",
-    "ImageMediaTypes",
+    "ImageMediaType",
     "InputTypeDef",
     "InputTypeDefID",
     "InterfaceTypeDef",

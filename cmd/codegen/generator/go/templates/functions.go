@@ -74,6 +74,7 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"FormatName":              formatName,
 		"FormatEnum":              funcs.formatEnum,
 		"SortEnumFields":          funcs.sortEnumFields,
+		"GroupEnumByValue":        funcs.groupEnumByValue,
 		"FieldOptionsStructName":  funcs.fieldOptionsStructName,
 		"FieldFunction":           funcs.fieldFunction,
 		"IsArgOptional":           funcs.isArgOptional,
@@ -164,6 +165,19 @@ func (funcs goTemplateFuncs) sortEnumFields(s []introspection.EnumValue) []intro
 		return s[i].Name < s[j].Name
 	})
 	return s
+}
+
+func (funcs goTemplateFuncs) groupEnumByValue(s []introspection.EnumValue) [][]introspection.EnumValue {
+	m := map[string][]introspection.EnumValue{}
+	for _, v := range s {
+		value := v.Directives.EnumValue()
+		m[value] = append(m[value], v)
+	}
+	var result [][]introspection.EnumValue
+	for _, v := range m {
+		result = append(result, v)
+	}
+	return result
 }
 
 func (funcs goTemplateFuncs) formatArrayField(fields []*introspection.Field) string {
