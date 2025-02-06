@@ -3313,6 +3313,39 @@ func (r *EnumTypeDef) SourceModuleName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Deprecated: use members instead
+func (r *EnumTypeDef) Values(ctx context.Context) ([]EnumMemberTypeDef, error) {
+	q := r.query.Select("values")
+
+	q = q.Select("id")
+
+	type values struct {
+		Id EnumMemberTypeDefID
+	}
+
+	convert := func(fields []values) []EnumMemberTypeDef {
+		out := []EnumMemberTypeDef{}
+
+		for i := range fields {
+			val := EnumMemberTypeDef{id: &fields[i].Id}
+			val.query = q.Root().Select("loadEnumMemberTypeDefFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []values
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // An environment variable name and value.
 type EnvVariable struct {
 	query *querybuilder.Selection
@@ -8654,13 +8687,14 @@ func (CacheSharingMode) IsEnum() {}
 
 const (
 	// Shares the cache volume amongst many build pipelines, but will serialize the writes
-	CacheSharingModeLocked CacheSharingMode = "LOCKED"
+	CacheSharingModeLocked CacheSharingMode = "LOCKED" // LOCKED
 
 	// Keeps a cache volume for a single build pipeline
-	CacheSharingModePrivate CacheSharingMode = "PRIVATE"
+	CacheSharingModePrivate CacheSharingMode = "PRIVATE" // PRIVATE
 
 	// Shares the cache volume amongst many build pipelines
-	CacheSharingModeShared CacheSharingMode = "SHARED"
+	CacheSharingModeShared CacheSharingMode = "SHARED" // SHARED
+
 )
 
 // Compression algorithm to use for image layers.
@@ -8669,13 +8703,14 @@ type ImageLayerCompression string
 func (ImageLayerCompression) IsEnum() {}
 
 const (
-	ImageLayerCompressionEstargz ImageLayerCompression = "ESTARGZ"
+	ImageLayerCompressionEstargz ImageLayerCompression = "ESTARGZ" // ESTARGZ
 
-	ImageLayerCompressionGzip ImageLayerCompression = "GZIP"
+	ImageLayerCompressionGzip ImageLayerCompression = "GZIP" // GZIP
 
-	ImageLayerCompressionUncompressed ImageLayerCompression = "UNCOMPRESSED"
+	ImageLayerCompressionUncompressed ImageLayerCompression = "UNCOMPRESSED" // UNCOMPRESSED
 
-	ImageLayerCompressionZstd ImageLayerCompression = "ZSTD"
+	ImageLayerCompressionZstd ImageLayerCompression = "ZSTD" // ZSTD
+
 )
 
 // Mediatypes to use in published or exported image metadata.
@@ -8684,9 +8719,10 @@ type ImageMediaType string
 func (ImageMediaType) IsEnum() {}
 
 const (
-	ImageMediaTypeDocker ImageMediaType = "DOCKER"
+	ImageMediaTypeDocker ImageMediaType = "DOCKER" // DOCKER
 
-	ImageMediaTypeOci ImageMediaType = "OCI"
+	ImageMediaTypeOci ImageMediaType = "OCI" // OCI
+
 )
 
 // The kind of module source.
@@ -8695,9 +8731,10 @@ type ModuleSourceKind string
 func (ModuleSourceKind) IsEnum() {}
 
 const (
-	ModuleSourceKindGit ModuleSourceKind = "GIT"
+	ModuleSourceKindGit ModuleSourceKind = "GIT" // GIT
 
-	ModuleSourceKindLocal ModuleSourceKind = "LOCAL"
+	ModuleSourceKindLocal ModuleSourceKind = "LOCAL" // LOCAL
+
 )
 
 // Transport layer network protocol associated to a port.
@@ -8706,9 +8743,10 @@ type NetworkProtocol string
 func (NetworkProtocol) IsEnum() {}
 
 const (
-	NetworkProtocolTcp NetworkProtocol = "TCP"
+	NetworkProtocolTcp NetworkProtocol = "TCP" // TCP
 
-	NetworkProtocolUdp NetworkProtocol = "UDP"
+	NetworkProtocolUdp NetworkProtocol = "UDP" // UDP
+
 )
 
 // Expected return type of an execution
@@ -8718,13 +8756,14 @@ func (ReturnType) IsEnum() {}
 
 const (
 	// Any execution (exit codes 0-127)
-	ReturnTypeAny ReturnType = "ANY"
+	ReturnTypeAny ReturnType = "ANY" // ANY
 
 	// A failed execution (exit codes 1-127)
-	ReturnTypeFailure ReturnType = "FAILURE"
+	ReturnTypeFailure ReturnType = "FAILURE" // FAILURE
 
 	// A successful execution (exit code 0)
-	ReturnTypeSuccess ReturnType = "SUCCESS"
+	ReturnTypeSuccess ReturnType = "SUCCESS" // SUCCESS
+
 )
 
 // Distinguishes the different kinds of TypeDefs.
@@ -8734,45 +8773,46 @@ func (TypeDefKind) IsEnum() {}
 
 const (
 	// A boolean value.
-	TypeDefKindBoolean TypeDefKind = "BOOLEAN"
+	TypeDefKindBoolean TypeDefKind = "BOOLEAN" // BOOLEAN
 
 	// A GraphQL enum type and its values
 	//
 	// Always paired with an EnumTypeDef.
-	TypeDefKindEnum TypeDefKind = "ENUM"
+	TypeDefKindEnum TypeDefKind = "ENUM" // ENUM
 
 	// A float value.
-	TypeDefKindFloat TypeDefKind = "FLOAT"
+	TypeDefKindFloat TypeDefKind = "FLOAT" // FLOAT
 
 	// A graphql input type, used only when representing the core API via TypeDefs.
-	TypeDefKindInput TypeDefKind = "INPUT"
+	TypeDefKindInput TypeDefKind = "INPUT" // INPUT
 
 	// An integer value.
-	TypeDefKindInteger TypeDefKind = "INTEGER"
+	TypeDefKindInteger TypeDefKind = "INTEGER" // INTEGER
 
 	// A named type of functions that can be matched+implemented by other objects+interfaces.
 	//
 	// Always paired with an InterfaceTypeDef.
-	TypeDefKindInterface TypeDefKind = "INTERFACE"
+	TypeDefKindInterface TypeDefKind = "INTERFACE" // INTERFACE
 
 	// A list of values all having the same type.
 	//
 	// Always paired with a ListTypeDef.
-	TypeDefKindList TypeDefKind = "LIST"
+	TypeDefKindList TypeDefKind = "LIST" // LIST
 
 	// A named type defined in the GraphQL schema, with fields and functions.
 	//
 	// Always paired with an ObjectTypeDef.
-	TypeDefKindObject TypeDefKind = "OBJECT"
+	TypeDefKindObject TypeDefKind = "OBJECT" // OBJECT
 
 	// A scalar value of any basic kind.
-	TypeDefKindScalar TypeDefKind = "SCALAR"
+	TypeDefKindScalar TypeDefKind = "SCALAR" // SCALAR
 
 	// A string value.
-	TypeDefKindString TypeDefKind = "STRING"
+	TypeDefKindString TypeDefKind = "STRING" // STRING
 
 	// A special kind used to signify that no value is returned.
 	//
 	// This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
-	TypeDefKindVoid TypeDefKind = "VOID"
+	TypeDefKindVoid TypeDefKind = "VOID" // VOID
+
 )
