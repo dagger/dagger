@@ -265,7 +265,7 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr 
 
 	for _, typeDef := range res.TypeDefs {
 		switch typeDef.Kind {
-		case dagger.TypeDefKindObjectKind:
+		case dagger.TypeDefKindObject:
 			obj := typeDef.AsObject
 			// FIXME: we could get the real constructor's name through the field
 			// in Query which would avoid the need to convert the module name,
@@ -287,11 +287,11 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr 
 				}
 			}
 			m.Objects = append(m.Objects, typeDef)
-		case dagger.TypeDefKindInterfaceKind:
+		case dagger.TypeDefKindInterface:
 			m.Interfaces = append(m.Interfaces, typeDef)
-		case dagger.TypeDefKindEnumKind:
+		case dagger.TypeDefKindEnum:
 			m.Enums = append(m.Enums, typeDef)
-		case dagger.TypeDefKindInputKind:
+		case dagger.TypeDefKindInput:
 			m.Inputs = append(m.Inputs, typeDef)
 		}
 	}
@@ -567,27 +567,27 @@ type modTypeDef struct {
 
 func (t *modTypeDef) String() string {
 	switch t.Kind {
-	case dagger.TypeDefKindStringKind:
+	case dagger.TypeDefKindString:
 		return "string"
-	case dagger.TypeDefKindIntegerKind:
+	case dagger.TypeDefKindInteger:
 		return "int"
-	case dagger.TypeDefKindFloatKind:
+	case dagger.TypeDefKindFloat:
 		return "float"
-	case dagger.TypeDefKindBooleanKind:
+	case dagger.TypeDefKindBoolean:
 		return "bool"
-	case dagger.TypeDefKindVoidKind:
+	case dagger.TypeDefKindVoid:
 		return "void"
-	case dagger.TypeDefKindScalarKind:
+	case dagger.TypeDefKindScalar:
 		return t.AsScalar.Name
-	case dagger.TypeDefKindEnumKind:
+	case dagger.TypeDefKindEnum:
 		return t.AsEnum.Name
-	case dagger.TypeDefKindInputKind:
+	case dagger.TypeDefKindInput:
 		return t.AsInput.Name
-	case dagger.TypeDefKindObjectKind:
+	case dagger.TypeDefKindObject:
 		return t.AsObject.Name
-	case dagger.TypeDefKindInterfaceKind:
+	case dagger.TypeDefKindInterface:
 		return t.AsInterface.Name
-	case dagger.TypeDefKindListKind:
+	case dagger.TypeDefKindList:
 		return "[]" + t.AsList.ElementTypeDef.String()
 	default:
 		// this should never happen because all values for kind are covered,
@@ -598,23 +598,19 @@ func (t *modTypeDef) String() string {
 
 func (t *modTypeDef) KindDisplay() string {
 	switch t.Kind {
-	case dagger.TypeDefKindStringKind,
-		dagger.TypeDefKindIntegerKind,
-		dagger.TypeDefKindFloatKind,
-		dagger.TypeDefKindBooleanKind:
+	case dagger.TypeDefKindString:
 		return "Scalar"
-	case dagger.TypeDefKindScalarKind,
-		dagger.TypeDefKindVoidKind:
+	case dagger.TypeDefKindScalar:
 		return "Custom scalar"
-	case dagger.TypeDefKindEnumKind:
+	case dagger.TypeDefKindEnum:
 		return "Enum"
-	case dagger.TypeDefKindInputKind:
+	case dagger.TypeDefKindInput:
 		return "Input"
-	case dagger.TypeDefKindObjectKind:
+	case dagger.TypeDefKindObject:
 		return "Object"
-	case dagger.TypeDefKindInterfaceKind:
+	case dagger.TypeDefKindInterface:
 		return "Interface"
-	case dagger.TypeDefKindListKind:
+	case dagger.TypeDefKindList:
 		return "List of " + strings.ToLower(t.AsList.ElementTypeDef.KindDisplay()) + "s"
 	default:
 		return ""
@@ -623,24 +619,21 @@ func (t *modTypeDef) KindDisplay() string {
 
 func (t *modTypeDef) Description() string {
 	switch t.Kind {
-	case dagger.TypeDefKindStringKind,
-		dagger.TypeDefKindIntegerKind,
-		dagger.TypeDefKindFloatKind,
-		dagger.TypeDefKindBooleanKind:
+	case dagger.TypeDefKindString:
 		return "Primitive type."
-	case dagger.TypeDefKindVoidKind:
+	case dagger.TypeDefKindVoid:
 		return ""
-	case dagger.TypeDefKindScalarKind:
+	case dagger.TypeDefKindScalar:
 		return t.AsScalar.Description
-	case dagger.TypeDefKindEnumKind:
+	case dagger.TypeDefKindEnum:
 		return t.AsEnum.Description
-	case dagger.TypeDefKindInputKind:
+	case dagger.TypeDefKindInput:
 		return t.AsInput.Description
-	case dagger.TypeDefKindObjectKind:
+	case dagger.TypeDefKindObject:
 		return t.AsObject.Description
-	case dagger.TypeDefKindInterfaceKind:
+	case dagger.TypeDefKindInterface:
 		return t.AsInterface.Description
-	case dagger.TypeDefKindListKind:
+	case dagger.TypeDefKindList:
 		return t.AsList.ElementTypeDef.Description()
 	default:
 		// this should never happen because all values for kind are covered,
@@ -742,13 +735,13 @@ func GetLeafFunctions(fp functionProvider) []*modFunction {
 
 	for _, fn := range fns {
 		kind := fn.ReturnType.Kind
-		if kind == dagger.TypeDefKindListKind {
+		if kind == dagger.TypeDefKindList {
 			kind = fn.ReturnType.AsList.ElementTypeDef.Kind
 		}
 		switch kind {
-		case dagger.TypeDefKindObjectKind, dagger.TypeDefKindInterfaceKind, dagger.TypeDefKindVoidKind:
+		case dagger.TypeDefKindObject:
 			continue
-		case dagger.TypeDefKindScalarKind:
+		case dagger.TypeDefKindScalar:
 			// FIXME: ID types are coming from TypeDef with the wrong case ("Id")
 			if fn.ReturnType.AsScalar.Name == fmt.Sprintf("%sId", fp.ProviderName()) {
 				continue
@@ -1034,7 +1027,7 @@ func (r *modFunctionArg) Long() string {
 		sb.WriteString(fmt.Sprintf("(default: %s)", defVal))
 	}
 
-	if r.TypeDef.Kind == dagger.TypeDefKindEnumKind {
+	if r.TypeDef.Kind == dagger.TypeDefKindEnum {
 		names := strings.Join(r.TypeDef.AsEnum.ValueNames(), ", ")
 		if multiline {
 			sb.WriteString("\n\n")
@@ -1074,7 +1067,7 @@ func (r *modFunctionArg) defValue() string {
 	}
 	t := r.TypeDef
 	switch t.Kind {
-	case dagger.TypeDefKindStringKind:
+	case dagger.TypeDefKindString:
 		v, err := getDefaultValue[string](r)
 		if err == nil {
 			return fmt.Sprintf("%q", v)

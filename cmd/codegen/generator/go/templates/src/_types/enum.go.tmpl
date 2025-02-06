@@ -6,20 +6,24 @@ type {{ $enumName }} string
 
 func ({{ $enumName }}) IsEnum() {}
 
-{{- $needsScopedEnums := CheckVersionCompatibility "v0.15.0" | not }}
+{{- $needsUnscopedEnums := CheckVersionCompatibility "v0.15.0" | not }}
 const (
 	{{- range $index, $field := .EnumValues | SortEnumFields }}
 	{{- $fieldName := ($field.Name | FormatEnum "") }}
 	{{- $fullFieldName := print ($field.Name | FormatEnum $enumName) }}
+	{{- $fieldValue := $field.Directives.EnumValue }}
+	{{- if not $fieldValue }}
+		{{- $fieldValue = $field.Name }}
+	{{- end }}
 	{{ $field.Description | Comment }}
-	{{ $fullFieldName }} {{ $enumName }} = "{{ $field.Name }}"
+	{{ $fullFieldName }} {{ $enumName }} = "{{ $fieldValue }}"
 	{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
-	{{ if $needsScopedEnums }}
+	{{- if $needsUnscopedEnums }}
 	{{ $field.Description | Comment }}
 	{{ print "use " $fullFieldName " instead" | FormatDeprecation }}
 	{{ $fieldName }} {{ $enumName }} = {{ $fullFieldName }}
 	{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
-	{{ end }}
+	{{- end }}
 	{{ end }}
 )
 
