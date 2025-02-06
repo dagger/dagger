@@ -794,6 +794,9 @@ func parseRefString(
 	refPin string,
 	stable bool,
 ) (*parsedRefString, error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("parseRefString: %s", refString), telemetry.Internal())
+	defer span.End()
+
 	kind := fastModuleSourceKindCheck(refString, refPin, stable)
 	switch kind {
 	case core.ModuleSourceKindLocal:
@@ -2405,19 +2408,44 @@ func (s *moduleSchema) moduleSourceAsModule(
 		SDKConfig: src.Self.SDK,
 	}
 
-	// TODO: dedupe w/ generatedContextDiff
+	// TODO: wrap up in nicer looking util/interface
+	_, _, err = s.dag.Cache.GetOrInitialize(ctx, digest.Digest(src.Self.Digest), func(context.Context) (dagql.Typed, error) {
+		return src, nil
+	})
+	if err != nil {
+		return inst, fmt.Errorf("failed to get or initialize instance: %w", err)
+	}
+	srcInstContentHashed := src.WithMetadata(digest.Digest(src.Self.Digest), true)
+
+	loadDepModsCtx, loadDepModsSpan := core.Tracer(ctx).Start(ctx, "asModule load deps + sdk", telemetry.Internal())
+
 	var eg errgroup.Group
+
 	depMods := make([]dagql.Instance[*core.Module], len(src.Self.Dependencies))
 	for i, depSrc := range src.Self.Dependencies {
 		eg.Go(func() error {
-			return s.dag.Select(ctx, depSrc, &depMods[i],
+			return s.dag.Select(loadDepModsCtx, depSrc, &depMods[i],
 				dagql.Selector{Field: "asModule"},
 			)
 		})
 	}
+
+	var sdk core.SDK
+	eg.Go(func() error {
+		s, err := s.sdkForModule(ctx, src.Self.Query, src.Self.SDK, srcInstContentHashed)
+		if err != nil {
+			return fmt.Errorf("failed to get SDK for module: %w", err)
+		}
+		sdk = s
+		return nil
+	})
+
 	if err := eg.Wait(); err != nil {
+		loadDepModsSpan.End()
 		return inst, fmt.Errorf("failed to load module dependencies: %w", err)
 	}
+	loadDepModsSpan.End()
+
 	defaultDeps, err := src.Self.Query.DefaultDeps(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get default dependencies: %w", err)
@@ -2458,31 +2486,23 @@ func (s *moduleSchema) moduleSourceAsModule(
 	}
 	mod.Deps = deps
 
-	// TODO: wrap up in nicer looking util/interface
-	_, _, err = s.dag.Cache.GetOrInitialize(ctx, digest.Digest(src.Self.Digest), func(context.Context) (dagql.Typed, error) {
-		return src, nil
-	})
-	if err != nil {
-		return inst, fmt.Errorf("failed to get or initialize instance: %w", err)
-	}
-	srcInstContentHashed := src.WithMetadata(digest.Digest(src.Self.Digest), true)
+	runtimeCtx, runtimeSpan := core.Tracer(ctx).Start(ctx, "asModule runtime", telemetry.Internal())
 
-	// TODO: parallelize sdkForModule w/ above too?
-	sdk, err := s.sdkForModule(ctx, src.Self.Query, src.Self.SDK, srcInstContentHashed)
+	mod.Runtime, err = sdk.Runtime(runtimeCtx, mod.Deps, srcInstContentHashed)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get SDK for module: %w", err)
-	}
-	mod.Runtime, err = sdk.Runtime(ctx, mod.Deps, srcInstContentHashed)
-	if err != nil {
+		runtimeSpan.End()
 		return inst, fmt.Errorf("failed to get module runtime: %w", err)
 	}
+	runtimeSpan.End()
+
+	getModDefCtx, getModDefSpan := core.Tracer(ctx).Start(ctx, "asModule getModDef", telemetry.Internal())
 
 	// construct a special function with no object or function name, which tells
 	// the SDK to return the module's definition (in terms of objects, fields and
 	// functions)
 	modName := src.Self.ModuleName
 	getModDefFn, err := core.NewModFunction(
-		ctx,
+		getModDefCtx,
 		src.Self.Query,
 		mod,
 		nil,
@@ -2492,17 +2512,26 @@ func (s *moduleSchema) moduleSourceAsModule(
 			AsObject: dagql.NonNull(core.NewObjectTypeDef("Module", "")),
 		}))
 	if err != nil {
+		getModDefSpan.End()
 		return inst, fmt.Errorf("failed to create module definition function for module %q: %w", modName, err)
 	}
 
-	result, err := getModDefFn.Call(ctx, &core.CallOpts{Cache: true, SkipSelfSchema: true, Server: s.dag})
+	result, err := getModDefFn.Call(getModDefCtx, &core.CallOpts{
+		Cache:                  true,
+		SkipSelfSchema:         true,
+		Server:                 s.dag,
+		SkipCallDigestCacheKey: true,
+	})
 	if err != nil {
+		getModDefSpan.End()
 		return inst, fmt.Errorf("failed to call module %q to get functions: %w", modName, err)
 	}
 	resultInst, ok := result.(dagql.Instance[*core.Module])
 	if !ok {
+		getModDefSpan.End()
 		return inst, fmt.Errorf("expected Module result, got %T", result)
 	}
+	getModDefSpan.End()
 
 	mod.Description = resultInst.Self.Description
 	for _, obj := range resultInst.Self.ObjectDefs {

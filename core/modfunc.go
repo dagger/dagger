@@ -92,6 +92,9 @@ type CallOpts struct {
 	Cache          bool
 	SkipSelfSchema bool
 	Server         *dagql.Server
+
+	// TODO: cleanup
+	SkipCallDigestCacheKey bool
 }
 
 type CallInput struct {
@@ -239,9 +242,12 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		CallID:          dagql.CurrentID(ctx),
 		ExecID:          identity.NewID(),
 		CachePerSession: !opts.Cache,
-		CacheByCall:     true, // scope the cache key to the function arguments+receiver values
 		Internal:        true,
 		ModuleName:      mod.NameField,
+
+		// TODO: cleanup
+		// CacheByCall:     true, // scope the cache key to the function arguments+receiver values
+		CacheByCall: !opts.SkipCallDigestCacheKey,
 	}
 
 	if opts.ParentTyped != nil {
