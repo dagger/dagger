@@ -70,6 +70,10 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 }
 
 func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, error) {
+	sdkCache := dag.Container().
+		From(consts.TypescriptImage).
+		WithExec([]string{"npm", "install", "-g", "tsx@4.15.6"})
+
 	rootfs := dag.Directory().WithDirectory("/", build.source.Directory("sdk/typescript"), dagger.DirectoryWithDirectoryOpts{
 		Include: []string{
 			"src/**/*.ts",
@@ -89,6 +93,7 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 	sdkCtrTarball := dag.Container().
 		WithRootfs(rootfs).
 		WithFile("/codegen", build.CodegenBinary()).
+		WithDirectory("/tsx_module", sdkCache.Directory("/usr/local/lib/node_modules/tsx")).
 		AsTarball(dagger.ContainerAsTarballOpts{
 			ForcedCompression: dagger.ImageLayerCompressionZstd,
 		})
