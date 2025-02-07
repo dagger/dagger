@@ -639,9 +639,11 @@ func (sdk *goSDK) baseWithCodegen(
 	// for now allow only Env with prefix GO
 	cfg, ok, _ := src.Self.ModuleConfig(ctx)
 	if ok && cfg.SDK != nil {
-		// for `go mod tidy` with GOPRIVATE env
-		// we need to disable strict host checking
-		// to ensure it runs successfully.
+		// codegen runs `go mod tidy` and for private deps
+		// we allow users to configure GOPRIVATE env variable.
+		// But for it to work, we need to ensure we don't run into
+		// host checking prompt. So customizing GIT_SSH_COMMAND to
+		// allow skipping the prompt.
 		selectors = append(selectors, dagql.Selector{
 			Field: "withEnvVariable",
 			Args: []dagql.NamedInput{
