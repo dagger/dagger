@@ -989,6 +989,8 @@ type EnumMemberTypeDef struct {
 	Value       string     `field:"true" doc:"The value of the enum value"`
 	Description string     `field:"true" doc:"A doc string for the enum value, if any."`
 	SourceMap   *SourceMap `field:"true" doc:"The location of this enum value declaration."`
+
+	OriginalName string
 }
 
 func (*EnumMemberTypeDef) Type() *ast.Type {
@@ -1004,10 +1006,11 @@ func (*EnumMemberTypeDef) TypeDescription() string {
 
 func NewEnumMemberTypeDef(name, value, description string, sourceMap *SourceMap) *EnumMemberTypeDef {
 	return &EnumMemberTypeDef{
-		Name:        name,
-		Value:       value,
-		Description: description,
-		SourceMap:   sourceMap,
+		Name:         strcase.ToScreamingSnake(name),
+		OriginalName: name,
+		Value:        value,
+		Description:  description,
+		SourceMap:    sourceMap,
 	}
 }
 
