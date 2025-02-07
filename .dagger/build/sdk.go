@@ -136,7 +136,6 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 	sdkCtrTarball := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
 		From(consts.GolangImage).
 		With(build.goPlatformEnv).
-		//need to confirm if we need openssh. i think we do.
 		WithExec([]string{"apk", "add", "git", "openssh"}).
 		WithEnvVariable("GOTOOLCHAIN", "auto").
 		WithFile("/usr/local/bin/codegen", build.CodegenBinary()).
