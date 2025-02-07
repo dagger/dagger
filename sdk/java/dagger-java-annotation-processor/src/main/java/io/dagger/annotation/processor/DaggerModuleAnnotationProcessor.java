@@ -84,7 +84,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           }
           if (!element.getModifiers().contains(Modifier.PUBLIC)) {
             throw new RuntimeException(
-                "The object %s must be public if annotated with @Object".formatted(qName));
+                "The class %s must be public if annotated with @Object".formatted(qName));
           }
 
           List<FieldInfo> fieldInfoInfos =
