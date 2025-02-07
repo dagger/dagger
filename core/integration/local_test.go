@@ -9,7 +9,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/containerd/continuity/fs/fstest"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )
@@ -17,7 +17,7 @@ import (
 type LocalDirSuite struct{}
 
 func TestLocalDir(t *testing.T) {
-	testctx.Run(testCtx, t, LocalDirSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(LocalDirSuite{})
 }
 
 func (LocalDirSuite) TestLocalImportsAcrossSessions(ctx context.Context, t *testctx.T) {

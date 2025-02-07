@@ -10,16 +10,15 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
-
-	"github.com/dagger/dagger/testctx"
 )
 
 // LegacySuite contains tests for module versioning compatibility
 type LegacySuite struct{}
 
 func TestLegacy(t *testing.T) {
-	testctx.Run(testCtx, t, LegacySuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(LegacySuite{})
 }
 
 func (LegacySuite) TestLegacyExportAbsolutePath(ctx context.Context, t *testctx.T) {

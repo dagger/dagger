@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
@@ -18,7 +18,7 @@ import (
 type GPUSuite struct{}
 
 func TestGPU(t *testing.T) {
-	testctx.Run(testCtx, t, GPUSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(GPUSuite{})
 }
 
 const (

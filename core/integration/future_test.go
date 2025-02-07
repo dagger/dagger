@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 )
 
 // FutureSuite contains tests for behavior changes that are "scheduled" - that
@@ -16,7 +16,7 @@ import (
 type FutureSuite struct{}
 
 func TestFuture(t *testing.T) {
-	testctx.Run(testCtx, t, FutureSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(FutureSuite{})
 }
 
 //nolint:unused

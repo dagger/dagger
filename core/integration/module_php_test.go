@@ -4,14 +4,14 @@ import (
 	"context"
 	"testing"
 
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
 type PHPSuite struct{}
 
 func TestPHP(t *testing.T) {
-	testctx.Run(testCtx, t, PHPSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(PHPSuite{})
 }
 
 func (PHPSuite) TestInit(ctx context.Context, t *testctx.T) {

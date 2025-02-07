@@ -18,13 +18,13 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/testutil"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 )
 
 type GitSuite struct{}
 
 func TestGit(t *testing.T) {
-	testctx.Run(testCtx, t, GitSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(GitSuite{})
 }
 
 func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {

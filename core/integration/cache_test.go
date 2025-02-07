@@ -11,13 +11,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 )
 
 type CacheSuite struct{}
 
 func TestCache(t *testing.T) {
-	testctx.Run(testCtx, t, CacheSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(CacheSuite{})
 }
 
 func (CacheSuite) TestVolume(ctx context.Context, t *testctx.T) {

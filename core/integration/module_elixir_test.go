@@ -4,14 +4,14 @@ import (
 	"context"
 	"testing"
 
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
 type ElixirSuite struct{}
 
 func TestElixir(t *testing.T) {
-	testctx.Run(testCtx, t, ElixirSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(ElixirSuite{})
 }
 
 func (ElixirSuite) TestInit(ctx context.Context, t *testctx.T) {

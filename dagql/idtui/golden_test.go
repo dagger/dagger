@@ -19,11 +19,9 @@ import (
 	"github.com/vito/midterm"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
-	"go.opentelemetry.io/otel/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.25.0"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"google.golang.org/protobuf/proto"
@@ -35,33 +33,19 @@ import (
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/testutil"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
+	"github.com/dagger/testctx/oteltest"
 )
 
-var testCtx = context.Background()
-
 func TestMain(m *testing.M) {
-	testCtx = telemetry.InitEmbedded(testCtx, nil)
-	code := m.Run()
-	telemetry.Close()
-	os.Exit(code) // don't use defer!
-}
-
-const InstrumentationLibrary = "dagger.io/golden"
-
-func Tracer() trace.Tracer {
-	return otel.Tracer(InstrumentationLibrary)
-}
-
-func Logger() log.Logger {
-	return telemetry.Logger(testCtx, InstrumentationLibrary)
+	os.Exit(oteltest.Main(m))
 }
 
 func Middleware() []testctx.Middleware[*testing.T] {
 	return []testctx.Middleware[*testing.T]{
-		testctx.WithParallel,
-		testctx.WithOTelLogging[*testing.T](Logger()),
-		testctx.WithOTelTracing[*testing.T](Tracer()),
+		testctx.WithParallel(),
+		oteltest.WithLogging[*testing.T](),
+		oteltest.WithTracing[*testing.T](),
 	}
 }
 
@@ -70,9 +54,9 @@ type TelemetrySuite struct {
 }
 
 func TestTelemetry(t *testing.T) {
-	testctx.Run(testCtx, t, TelemetrySuite{
+	testctx.New(t, Middleware()...).RunTests(TelemetrySuite{
 		Home: t.TempDir(),
-	}, Middleware()...)
+	})
 }
 
 func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
@@ -209,7 +193,7 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 	// the things that should be cacheable, and the second run will be the final
 	// result. Each test is responsible for busting its own caches.
 	func() {
-		ctx, span := Tracer().Start(ctx, "warmup")
+		ctx, span := otel.Tracer("dagger.io/golden").Start(ctx, "warmup")
 		defer telemetry.End(span, func() error { return nil })
 		warmup := exec.Command(daggerBin, daggerArgs...)
 		warmup.Env = append(
