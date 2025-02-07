@@ -140,6 +140,7 @@ type LocalImportOpts struct {
 	StatPathOnly       bool     `json:"stat_path_only"`
 	StatReturnAbsPath  bool     `json:"stat_return_abs_path"`
 	StatResolvePath    bool     `json:"stat_resolve_path"`
+	GetAbsPathOnly     bool     `json:"get_abs_path_only"`
 }
 
 func (o LocalImportOpts) ToGRPCMD() metadata.MD {

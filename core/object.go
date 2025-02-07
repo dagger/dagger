@@ -183,7 +183,7 @@ func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callab
 		}, nil
 	}
 	if fun, ok := t.typeDef.FunctionByName(name); ok {
-		return newModFunction(
+		return NewModFunction(
 			ctx,
 			mod.Query,
 			mod,
@@ -325,7 +325,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		return fmt.Errorf("constructor function for object %s must return that object", objDef.OriginalName)
 	}
 
-	fn, err := newModFunction(ctx, mod.Query, mod, objDef, mod.Runtime, fnTypeDef)
+	fn, err := NewModFunction(ctx, mod.Query, mod, objDef, mod.Runtime, fnTypeDef)
 	if err != nil {
 		return fmt.Errorf("failed to create function: %w", err)
 	}
@@ -425,7 +425,7 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 
 func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Function, dag *dagql.Server) (dagql.Field[*ModuleObject], error) {
 	var f dagql.Field[*ModuleObject]
-	modFun, err := newModFunction(
+	modFun, err := NewModFunction(
 		ctx,
 		mod.Query,
 		mod,
