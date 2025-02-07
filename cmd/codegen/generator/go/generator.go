@@ -64,6 +64,23 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 
 	mfs := memfs.New()
 
+	if g.Config.ClientOnly {
+		genSt := &generator.GeneratedState{
+			Overlay: layerfs.New(mfs),
+		}
+
+		if err := generateCode(ctx, g.Config, schema, schemaVersion, mfs, &PackageInfo{
+			PackageName:   "dagger",
+
+			// Use the published package library for external dagger packages.
+			PackageImport: "dagger.io/dagger",
+		}, nil, nil, 1); err != nil {
+			return nil, fmt.Errorf("generate code: %w", err)
+		}
+
+		return genSt, nil
+	}
+
 	var overlay fs.FS = mfs
 	if g.Config.ModuleName != "" {
 		overlay = layerfs.New(
@@ -319,7 +336,7 @@ func generateCode(
 	fset *token.FileSet,
 	pass int,
 ) error {
-	funcs := templates.GoTemplateFuncs(ctx, schema, schemaVersion, cfg.ModuleName, cfg.ModuleParentPath, pkg, fset, pass)
+	funcs := templates.GoTemplateFuncs(ctx, schema, schemaVersion, cfg.ModuleName, cfg.ModuleParentPath, pkg, fset, pass, cfg.ClientOnly)
 	tmpls := templates.Templates(funcs)
 
 	for k, tmpl := range tmpls {

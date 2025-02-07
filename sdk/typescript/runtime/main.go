@@ -170,6 +170,30 @@ func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *dagger.ModuleSou
 		}), nil
 }
 
+func (t *TypescriptSdk) GenerateClient(ctx context.Context, introspectionJSON *dagger.File) (*dagger.Directory, error) {
+	outPath := "/out"
+
+	genDir := dag.Container().
+		From(nodeImageRef).
+		WithoutEntrypoint().
+		// Add dagger codegen binary.
+		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
+		// Mount the introspection file.
+		WithMountedFile(schemaPath, introspectionJSON).
+		// Execute the code generator using the given introspection file.
+		WithExec([]string{
+			codegenBinPath,
+			"--lang", "typescript",
+			"--output", outPath,
+			"--introspection-json-path", schemaPath,
+			"--client-only",
+		}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).Directory("/out")
+
+	return dag.Directory().WithDirectory("/dagger", genDir), nil
+}
+
 // CodegenBase returns a Container containing the SDK from the engine container
 // and the user's code with a generated API based on what he did.
 func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, installDep bool) (*dagger.Container, error) {
