@@ -50,13 +50,13 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
-    "@trivago/prettier-plugin-sort-imports": "^5.2.1",
+    "@trivago/prettier-plugin-sort-imports": "^5.2.2",
     "@types/adm-zip": "^0.5.7",
-    "@types/mocha": "^10.0.7",
-    "@types/node": "~22.10.10",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "~22.13.0",
     "@types/tar": "^6.1.13",
-    "@typescript-eslint/eslint-plugin": "^8.21.0",
-    "@typescript-eslint/parser": "^8.21.0",
+    "@typescript-eslint/eslint-plugin": "^8.22.0",
+    "@typescript-eslint/parser": "^8.22.0",
     "eslint": "^9.19.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.3",
@@ -64,6 +64,6 @@
     "prettier": "^3.4.2",
     "ts-node": "^10.9.2",
     "tsx": "^4.19.2",
-    "typescript-eslint": "^8.21.0"
+    "typescript-eslint": "^8.22.0"
   }
 }
