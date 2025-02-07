@@ -639,6 +639,23 @@ func (sdk *goSDK) baseWithCodegen(
 	// for now allow only Env with prefix GO
 	cfg, ok, _ := src.Self.ModuleConfig(ctx)
 	if ok && cfg.SDK != nil {
+		// for `go mod tidy` with GOPRIVATE env
+		// we need to disable strict host checking
+		// to ensure it runs successfully.
+		selectors = append(selectors, dagql.Selector{
+			Field: "withEnvVariable",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "name",
+					Value: dagql.NewString("GIT_SSH_COMMAND"),
+				},
+				{
+					Name:  "value",
+					Value: dagql.NewString("ssh -o StrictHostKeyChecking=no"),
+				},
+			},
+		})
+
 		for k, v := range cfg.SDK.Env {
 			if !strings.HasPrefix(k, "GO") {
 				continue
