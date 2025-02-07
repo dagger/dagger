@@ -72,6 +72,12 @@ func (s *moduleSchema) Install() {
 		dagql.NodeFunc("generatedContextDirectory", s.moduleGeneratedContextDirectory).
 			Doc(`The generated files and directories made on top of the module source's context directory.`),
 
+		dagql.Func("generateClient", s.moduleGenerateClient).
+			Doc(`Generates a client for the module.`).
+			ArgDoc("generator", `The generator to use`).
+			ArgDoc("outputDir", `The output directory for the generated client.`).
+			ArgDoc("localSdk", `Use local SDK dependency`),
+
 		dagql.Func("withDescription", s.moduleWithDescription).
 			Doc(`Retrieves the module with the given description`).
 			ArgDoc("description", `The description to set`),
@@ -650,6 +656,36 @@ func (s *moduleSchema) currentModuleWorkdirFile(
 		},
 	)
 	return inst, err
+}
+func (s *moduleSchema) moduleGenerateClient(
+	ctx context.Context,
+	mod *core.Module,
+	args struct {
+		Generator dagql.String
+		OutputDir dagql.String
+		LocalSdk  dagql.Optional[dagql.Boolean]
+	},
+) (*core.Directory, error) {
+	generator, err := s.sdkForModule(ctx, mod.Query, &core.SDKConfig{
+		Source: args.Generator.String(),
+	}, mod.Source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get generator: %w", err)
+	}
+
+	// Clone the module and add it to the deps so its binding are also generated
+	mod.Deps = mod.Deps.Append(mod.Clone())
+
+	// HACK: Is there actually a better
+	// Remove the definitions from the module so they does not conflict with its self dependency
+	mod = mod.CloneWithoutDefs()
+
+	generatedClientDir, err := generator.GenerateClient(ctx, mod.Source, mod.Deps, args.OutputDir.String(), args.LocalSdk.GetOr(false).Bool())
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate clients: %w", err)
+	}
+
+	return generatedClientDir.Self, nil
 }
 
 func (s *moduleSchema) loadSourceMap(ctx context.Context, sourceMap dagql.Optional[core.SourceMapID]) (*core.SourceMap, error) {

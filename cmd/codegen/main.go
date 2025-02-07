@@ -25,6 +25,10 @@ var (
 
 	outputSchema string
 	merge        bool
+
+	clientOnly bool
+
+	localSDK bool
 	isInit       bool
 )
 
@@ -52,6 +56,8 @@ func init() {
 	rootCmd.Flags().StringVar(&moduleName, "module-name", "", "name of module to generate code for")
 	rootCmd.Flags().BoolVar(&merge, "merge", false, "merge module deps with project's existing go.mod in a parent directory")
 	rootCmd.Flags().BoolVar(&isInit, "is-init", false, "whether this command is initializing a new module")
+	rootCmd.Flags().BoolVar(&clientOnly, "client-only", false, "generate only client code")
+	rootCmd.Flags().BoolVar(&localSDK, "local-sdk", false, "use local SDK dependency")
 
 	introspectCmd.Flags().StringVarP(&outputSchema, "output", "o", "", "save introspection result to file")
 	rootCmd.AddCommand(introspectCmd)
@@ -62,12 +68,12 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 	ctx = telemetry.InitEmbedded(ctx, nil)
 
 	cfg := generator.Config{
-		Lang: generator.SDKLang(lang),
-
-		OutputDir: outputDir,
-
-		Merge:  merge,
+		Lang:       generator.SDKLang(lang),
+		OutputDir:  outputDir,
+		Merge:       merge,
 		IsInit: isInit,
+		ClientOnly: clientOnly,
+		LocalSDK:   localSDK,
 	}
 
 	if moduleName != "" {
