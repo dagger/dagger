@@ -21,14 +21,14 @@ import (
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/internal/testutil"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
 type EngineSuite struct{}
 
 func TestEngine(t *testing.T) {
-	testctx.Run(testCtx, t, EngineSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunSuite(EngineSuite{})
 }
 
 func devEngineContainerAsService(ctr *dagger.Container) *dagger.Service {
