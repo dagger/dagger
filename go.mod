@@ -37,7 +37,7 @@ require (
 	github.com/containernetworking/cni v1.2.3
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/creack/pty v1.1.24
-	github.com/dagger/testctx v0.0.3-0.20250207062127-1ad0d2e00498
+	github.com/dagger/testctx v0.0.3-0.20250207153440-46f01fa4ebe1
 	github.com/dagger/testctx/otelmw v0.0.2
 	github.com/dave/jennifer v1.7.1
 	github.com/denisbrodbeck/machineid v1.0.1

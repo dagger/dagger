@@ -48,10 +48,10 @@ func Middleware() []testctx.Middleware[*testing.T] {
 	}
 }
 
-func BenchMiddleware() []testctx.MiddlewareB {
-	return []testctx.MiddlewareB{
-		testctx.WithOTelLogging[*testing.B](Logger()),
-		testctx.WithOTelTracing[*testing.B](Tracer()),
+func BenchMiddleware() []testctx.Middleware[*testing.B] {
+	return []testctx.Middleware[*testing.B]{
+		otelmw.WithTracing[*testing.B](),
+		otelmw.WithLogging[*testing.B](),
 	}
 }
 

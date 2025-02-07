@@ -182,8 +182,8 @@ github.com/cyphar/filepath-securejoin v0.3.6 h1:4d9N5ykBnSp5Xn2JkhocYDkOpURL/18C
 github.com/cyphar/filepath-securejoin v0.3.6/go.mod h1:Sdj7gXlvMcPZsbhwhQ33GguGLDGQL7h7bg04C/+u9jI=
 github.com/dagger/buildkit v0.0.0-20250128235329-9c8ee9e867a5 h1:kHrNkDPdy52wlZxMJ3jYS8+Ps/WvDqsBVvUYy08GgS4=
 github.com/dagger/buildkit v0.0.0-20250128235329-9c8ee9e867a5/go.mod h1:QLaQ4vyvIrzCaeg/4saPBcEibMXiGvIe+HaP5Ji0LCY=
-github.com/dagger/testctx v0.0.3-0.20250207062127-1ad0d2e00498 h1:OWDpF9mqBfcyACwA9Lo4OpAc4Ovu1SjlVp29GfrH8lY=
-github.com/dagger/testctx v0.0.3-0.20250207062127-1ad0d2e00498/go.mod h1:vfRtiq0HrtSux/H60iD1x7zYfrBgEtoDR1P3hJ523Oo=
+github.com/dagger/testctx v0.0.3-0.20250207153440-46f01fa4ebe1 h1:caQ9pkGHMyNbyljP7RstZM887VhuTWpBtithp0mrQeE=
+github.com/dagger/testctx v0.0.3-0.20250207153440-46f01fa4ebe1/go.mod h1:vfRtiq0HrtSux/H60iD1x7zYfrBgEtoDR1P3hJ523Oo=
 github.com/dagger/testctx/otelmw v0.0.2 h1:QaifLhS5O4/UMrXBXFwCZQFbPb7KK2G9ZAzUYgjuVnU=
 github.com/dagger/testctx/otelmw v0.0.2/go.mod h1:mIwWLQZb7qM/LPF9CFMihiMvNgiEo5Gzxp/uvAryLW4=
 github.com/danielgatis/go-ansicode v1.0.6 h1:OO8DcQVS0QxcCrG8NjdJDwvjBnDvgDF9Gp3VgADpDW4=

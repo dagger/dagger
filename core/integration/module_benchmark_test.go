@@ -10,16 +10,17 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/core/modules"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/iancoleman/strcase"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )
 
 func BenchmarkModule(b *testing.B) {
-	testctx.Bench(testCtx, b, ModuleSuite{}, BenchMiddleware()...)
+	testctx.New(b, BenchMiddleware()...).RunSuite(ModuleSuite{})
 }
 
+// FIXME: this just gets ignored atm
 func (ModuleSuite) BenchmarkLotsOfFunctions(ctx context.Context, b *testctx.B) {
 	const funcCount = 100
 
