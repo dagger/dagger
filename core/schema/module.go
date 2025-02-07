@@ -840,7 +840,8 @@ func (s *moduleSchema) moduleInitialize(
 	inst dagql.Instance[*core.Module],
 	args struct{},
 ) (*core.Module, error) {
-	if inst.Self.NameField == "" || inst.Self.SDKConfig == nil || inst.Self.SDKConfig.Source == "" {
+	// If SDK config is set, we expect the name and sdk source field to be set
+	if inst.Self.SDKConfig != nil && (inst.Self.NameField == ""  || inst.Self.SDKConfig.Source == "") {
 		return nil, fmt.Errorf("module name and SDK must be set")
 	}
 
@@ -858,7 +859,10 @@ func (s *moduleSchema) moduleGenerateClient(
 		Generator dagql.String
 	},
 ) (*core.Directory, error) {
-	generator, err := s.sdkForModule(ctx, mod.Query, args.Generator.String(), mod.Source)
+	generator, err := s.sdkForModule(ctx, mod.Query, &core.SDKConfig{
+		Source: args.Generator.String(),
+		Env: make(map[string]string),
+	}, mod.Source)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get generator: %w", err)
 	}
@@ -870,7 +874,7 @@ func (s *moduleSchema) moduleGenerateClient(
 	// Remove the definitions from the module so they does not conflict with its self dependency
 	mod = mod.CloneWithoutDefs()
 
-	generatedClientDir, err := generator.GenerateClient(ctx, mod.Deps)
+	generatedClientDir, err := generator.GenerateClient(ctx, mod.Deps, mod.Source)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate clients: %w", err)
 	}
@@ -1101,7 +1105,7 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 		return fmt.Errorf("failed to get source root subpath: %w", err)
 	}
 
-	if mod.SDKConfig != "" {
+	if mod.SDKConfig != nil {
 		sdk, err := s.sdkForModule(ctx, src.Self.Query, mod.SDKConfig, src)
 		if err != nil {
 			return fmt.Errorf("failed to load sdk for module: %w", err)
