@@ -874,31 +874,40 @@ func (arr Array[T]) Nth(i int) (Typed, error) {
 	return arr[i-1], nil
 }
 
-type EnumValue interface {
+type enumValue interface {
 	Input
 	~string
 }
 
-// EnumValues is a list of possible values for an Enum.
-type EnumValues[T EnumValue] struct {
-	values       []T
-	descriptions []string
-	aliases      map[T]struct {
-		Target T
-		View   View
-	}
+type EnumValue[T enumValue] struct {
+	Value       T
+	Description string
+
+	Aliases     []T
+	AliasesView []View
 }
 
-// NewEnum creates a new EnumType with the given possible values.
-func NewEnum[T EnumValue](vals ...T) *EnumValues[T] {
-	return &EnumValues[T]{
-		values:       vals,
-		descriptions: make([]string, len(vals)),
-		aliases: make(map[T]struct {
-			Target T
-			View   View
-		}),
+func (val EnumValue[T]) aliasesForView(view string) (aliases []T) {
+	for i, alias := range val.Aliases {
+		if val.AliasesView[i].Contains(view) {
+			aliases = append(aliases, alias)
+		}
 	}
+	return aliases
+}
+
+// EnumValues is a list of possible values for an Enum.
+type EnumValues[T enumValue] []EnumValue[T]
+
+// NewEnum creates a new EnumType with the given possible values.
+func NewEnum[T enumValue](vals ...T) *EnumValues[T] {
+	enum := make(EnumValues[T], len(vals))
+	for _, val := range vals {
+		enum = append(enum, EnumValue[T]{
+			Value: val,
+		})
+	}
+	return &enum
 }
 
 func (e *EnumValues[T]) Type() *ast.Type {
@@ -932,30 +941,23 @@ func (e *EnumValues[T]) DecodeInput(val any) (Input, error) {
 }
 
 func (e *EnumValues[T]) PossibleValues(view string) ast.EnumValueList {
-	original := map[T]int{}
-
 	var values ast.EnumValueList
-	for i, val := range e.values {
+	for _, val := range *e {
 		values = append(values, &ast.EnumValueDefinition{
-			Name:        string(val),
-			Description: e.descriptions[i],
-			Directives:  []*ast.Directive{enumValueDirective(val)},
+			Name:        string(val.Value),
+			Description: val.Description,
+			Directives: []*ast.Directive{
+				enumValueDirective(val.Value),
+				// XXX: use this to create actual aliases in the tmpl generation
+				aliasDirective(val.aliasesForView(view)),
+			},
 		})
-		original[val] = i
-	}
-	for val, alias := range e.aliases {
-		if !alias.View.Contains(view) {
-			continue
-		}
-		def := *values[original[alias.Target]]
-		def.Name = string(val)
-		values = append(values, &def)
 	}
 
 	return values
 }
 
-func enumValueDirective[T EnumValue](val T) *ast.Directive {
+func enumValueDirective[T enumValue](val T) *ast.Directive {
 	return &ast.Directive{
 		Name: "enumValue",
 		Arguments: ast.ArgumentList{
@@ -970,40 +972,67 @@ func enumValueDirective[T EnumValue](val T) *ast.Directive {
 	}
 }
 
+func aliasDirective[T enumValue](aliases []T) *ast.Directive {
+	var children ast.ChildValueList
+	for _, alias := range aliases {
+		children = append(children, &ast.ChildValue{
+			Value: &ast.Value{
+				Kind: ast.StringValue,
+				Raw:  string(alias),
+			},
+		})
+	}
+	return &ast.Directive{
+		Name: "alias",
+		Arguments: ast.ArgumentList{
+			{
+				Name: "names",
+				Value: &ast.Value{
+					Kind:     ast.ListValue,
+					Children: children,
+				},
+			},
+		},
+	}
+}
+
 func (e *EnumValues[T]) Literal(val T) call.Literal {
 	return call.NewLiteralEnum(string(val))
 }
 
 func (e *EnumValues[T]) Lookup(val string) (T, error) {
 	var enum T
-	for _, possible := range e.values {
-		if val == string(possible) {
-			return possible, nil
+	for _, possible := range *e {
+		if val == string(possible.Value) {
+			return possible.Value, nil
 		}
-	}
-	for name, alias := range e.aliases {
-		if val == string(name) {
-			return alias.Target, nil
+		for _, alias := range possible.Aliases {
+			if val == string(alias) {
+				return possible.Value, nil
+			}
 		}
 	}
 	return enum, fmt.Errorf("invalid enum value %q", val)
 }
 
 func (e *EnumValues[T]) Register(val T, desc ...string) T {
-	e.values = append(e.values, val)
-	e.descriptions = append(e.descriptions, FormatDescription(desc...))
+	*e = append(*e, EnumValue[T]{
+		Value:       val,
+		Description: FormatDescription(desc...),
+	})
 	return val
 }
 
 func (e *EnumValues[T]) Alias(val T, target T, view View) T {
-	e.aliases[val] = struct {
-		Target T
-		View   View
-	}{
-		Target: target,
-		View:   view,
+	for i, v := range *e {
+		if v.Value == target {
+			v.Aliases = append(v.Aliases, val)
+			v.AliasesView = append(v.AliasesView, view)
+			(*e)[i] = v
+			return val
+		}
 	}
-	return val
+	panic(fmt.Sprintf("cannot find enum %q", target))
 }
 
 func (e *EnumValues[T]) Install(srv *Server) {

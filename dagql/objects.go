@@ -877,7 +877,6 @@ func (field Field[T]) ArgDoc(name string, paras ...string) Field[T] {
 		panic("cannot call on extended field")
 	}
 	for i, arg := range field.Spec.Args {
-		fmt.Println("trying", arg.Name)
 		if arg.Name == name {
 			field.Spec.Args[i].Description = FormatDescription(paras...)
 			return field
