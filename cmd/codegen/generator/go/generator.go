@@ -10,6 +10,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -291,6 +292,23 @@ func (g *GoGenerator) syncModReplaceAndTidy(mod *modfile.File, genSt *generator.
 			genSt.PostCommands = append(genSt.PostCommands,
 				exec.Command("go", "work", "edit", "-replace", minReq.Old.Path+"="+minReq.New.Path+"@"+minReq.New.Version))
 		}
+	}
+
+	// for all GOPRIVATE hosts, add their key to known_hosts
+	entries := strings.Split(os.Getenv("GOPRIVATE"), ",")
+	for _, entry := range entries {
+		trimmed := strings.TrimSpace(entry)
+		if trimmed == "" {
+			continue
+		}
+
+		parsed, err := url.Parse(trimmed)
+		if err != nil {
+			// possibly print a warning msg here
+			continue
+		}
+
+		genSt.PostCommands = append(genSt.PostCommands, exec.Command("ssh", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no", "-o", "BatchMode=yes", "-T", entry))
 	}
 
 	genSt.PostCommands = append(genSt.PostCommands,
