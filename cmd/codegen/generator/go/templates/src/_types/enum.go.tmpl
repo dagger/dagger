@@ -23,6 +23,28 @@ func (v {{ $enumName }}) Value() string {
 	return string(v)
 }
 
+func (v *{{ $enumName }}) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Name())
+}
+
+func (v *{{ $enumName }}) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	{{- range $index, $field := .EnumValues | SortEnumFields }}
+	{{- $fieldName := ($field.Name | FormatEnum "") }}
+	{{- $fullFieldName := print ($field.Name | FormatEnum $enumName) }}
+	case "{{ $field.Name }}":
+		*v = {{ $fullFieldName }}
+	{{- end }}
+	default:
+		return fmt.Errorf("unknown enum value %q", s)
+	}
+	return nil
+}
+
 {{- $needsUnscopedEnums := CheckVersionCompatibility "v0.15.0" | not }}
 const (
 	{{- range $index, $field := .EnumValues | SortEnumFields }}
