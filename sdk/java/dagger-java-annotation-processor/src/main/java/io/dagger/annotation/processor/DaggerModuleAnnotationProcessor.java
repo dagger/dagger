@@ -83,7 +83,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
             name = typeElement.getSimpleName().toString();
           }
           if (!element.getModifiers().contains(Modifier.PUBLIC)) {
-            throw new RuntimeException("The object %s must be public if annotated with @Object".formatted(qName));
+            throw new RuntimeException("The class %s must be public if annotated with @Object".formatted(qName));
           }
           List<FunctionInfo> functionInfos =
               typeElement.getEnclosedElements().stream()
