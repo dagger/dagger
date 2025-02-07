@@ -61,9 +61,7 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 		return fmt.Sprintf("%f", v.Float()), nil
 	case reflect.String:
 		if t.Implements(enumT) {
-			// enums render as their literal value
-			// XXX: no they don't
-			return v.String(), nil
+			return marshalEnumName(v), nil
 		}
 
 		// escape strings following graphQL spec
@@ -151,6 +149,14 @@ func marshalCustom(ctx context.Context, v reflect.Value) (string, error) {
 	}
 
 	return fmt.Sprintf("%q", result[0].String()), nil
+}
+
+func marshalEnumName(v reflect.Value) string {
+	result := v.MethodByName("Name").Call(nil)
+	if len(result) != 1 {
+		panic(result)
+	}
+	return fmt.Sprintf("%q", result[0].String())
 }
 
 func IsZeroValue(value any) bool {
