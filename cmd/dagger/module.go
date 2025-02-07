@@ -505,6 +505,9 @@ This command is idempotent: you can run it at any time, any number of times. It 
 			if engineVersion == "skip" {
 				engineVersion = ""
 			}
+			if engineVersion != "" {
+				modSrc = modSrc.WithEngineVersion(engineVersion)
+			}
 
 			modSDK, err := modSrc.SDK(ctx)
 			if err != nil {

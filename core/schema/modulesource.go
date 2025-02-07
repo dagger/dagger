@@ -228,7 +228,7 @@ func (s *moduleSchema) localModuleSource(
 			dagql.Selector{
 				Field: "withDirectory",
 				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(sourceRootRelPath)},
+					{Name: "path", Value: dagql.String(localSrc.SourceRootSubpath)},
 					{Name: "directory", Value: dagql.NewID[*core.Directory](srcRootDir.ID())},
 				},
 			},
@@ -247,9 +247,6 @@ func (s *moduleSchema) localModuleSource(
 			return inst, fmt.Errorf("failed to decode module config: %w", err)
 		}
 
-		sourceRelSubpath := filepath.Join(sourceRootRelPath, modCfg.Source)
-		localSrc.SourceSubpath = sourceRelSubpath
-
 		localSrc.ModuleName = modCfg.Name
 		localSrc.ModuleOriginalName = modCfg.Name
 		localSrc.EngineVersion = modCfg.EngineVersion
@@ -257,13 +254,34 @@ func (s *moduleSchema) localModuleSource(
 		localSrc.IncludePaths = modCfg.Include
 		localSrc.CodegenConfig = modCfg.Codegen
 
-		// TODO: incorporate Exclude or deprecate it
-		includes := []string{
-			// always load the source dir
-			sourceRelSubpath + "/**" + "/*",
-			// always load the config file (currently mainly so it gets incorporated into the digest)
-			sourceRootRelPath + "/" + modules.Filename,
+		// figure out source subpath
+		if modCfg.Source != "" && !filepath.IsLocal(modCfg.Source) {
+			return inst, fmt.Errorf("source path %q contains parent directory components", modCfg.Source)
 		}
+		switch {
+		case modCfg.SDK == "" && modCfg.Source != "":
+			// invalid, can't have source when no sdk
+			return inst, fmt.Errorf("source path %q specified without sdk", modCfg.Source)
+		case modCfg.SDK == "":
+			// skip setting source subpath when no sdk
+		case modCfg.SDK != "" && modCfg.Source == "":
+			// sdk was set but source was not, it's implicitly "." and thus the source root
+			localSrc.SourceSubpath = localSrc.SourceRootSubpath
+		case modCfg.SDK != "" && modCfg.Source != "":
+			// sdk was set and source was too, get the full rel path under the context
+			localSrc.SourceSubpath = filepath.Join(localSrc.SourceRootSubpath, modCfg.Source)
+		}
+
+		// figure out includes so we can load the context dir
+		includes := []string{
+			// always load the config file (currently mainly so it gets incorporated into the digest)
+			localSrc.SourceRootSubpath + "/" + modules.Filename,
+		}
+		if localSrc.SourceSubpath != "" {
+			// load the source dir if set
+			includes = append(includes, localSrc.SourceSubpath+"/**/*")
+		}
+
 		// add the config file includes, rebasing them from being relative to the config file
 		// to being relative to the context dir
 		for _, pattern := range modCfg.Include {
@@ -316,7 +334,7 @@ func (s *moduleSchema) localModuleSource(
 				}
 				switch parsedDepRef.kind {
 				case core.ModuleSourceKindLocal:
-					depPath := filepath.Join(contextDirPath, sourceRootRelPath, depCfg.Source)
+					depPath := filepath.Join(contextDirPath, localSrc.SourceRootSubpath, depCfg.Source)
 					err := s.dag.Select(ctx, s.dag.Root(), &localSrc.Dependencies[i],
 						dagql.Selector{
 							Field: "moduleSource",
@@ -532,12 +550,6 @@ func (s *moduleSchema) gitModuleSource(
 		return inst, fmt.Errorf("failed to unmarshal module config: %w", err)
 	}
 
-	if !filepath.IsLocal(modCfg.Source) {
-		return inst, fmt.Errorf("source path %q contains parent directory components", modCfg.Source)
-	}
-	sourceRelSubpath := filepath.Join(gitSrc.SourceRootSubpath, modCfg.Source)
-	gitSrc.SourceSubpath = sourceRelSubpath
-
 	gitSrc.ModuleName = modCfg.Name
 	gitSrc.ModuleOriginalName = modCfg.Name
 	gitSrc.EngineVersion = modCfg.EngineVersion
@@ -545,13 +557,33 @@ func (s *moduleSchema) gitModuleSource(
 	gitSrc.IncludePaths = modCfg.Include
 	gitSrc.CodegenConfig = modCfg.Codegen
 
-	// TODO: incorporate Exclude or deprecate it
+	// figure out source subpath
+	if modCfg.Source != "" && !filepath.IsLocal(modCfg.Source) {
+		return inst, fmt.Errorf("source path %q contains parent directory components", modCfg.Source)
+	}
+	switch {
+	case modCfg.SDK == "" && modCfg.Source != "":
+		// invalid, can't have source when no sdk
+		return inst, fmt.Errorf("source path %q specified without sdk", modCfg.Source)
+	case modCfg.SDK == "":
+		// skip setting source subpath when no sdk
+	case modCfg.SDK != "" && modCfg.Source == "":
+		// sdk was set but source was not, it's implicitly "." and thus the source root
+		gitSrc.SourceSubpath = gitSrc.SourceRootSubpath
+	case modCfg.SDK != "" && modCfg.Source != "":
+		// sdk was set and source was too, get the full rel path under the context
+		gitSrc.SourceSubpath = filepath.Join(gitSrc.SourceRootSubpath, modCfg.Source)
+	}
+
 	includes := []string{
-		// always load the source dir
-		sourceRelSubpath + "/**" + "/*",
 		// always load the config file (currently mainly so it gets incorporated into the digest)
 		gitSrc.SourceRootSubpath + "/" + modules.Filename,
 	}
+	if gitSrc.SourceSubpath != "" {
+		// load the source dir if set
+		includes = append(includes, gitSrc.SourceSubpath+"/**/*")
+	}
+
 	// add the config file includes, rebasing them from being relative to the config file
 	// to being relative to the context dir
 	for _, pattern := range modCfg.Include {
@@ -1099,7 +1131,7 @@ func (s *moduleSchema) directoryAsModuleSource(
 		Kind:              core.ModuleSourceKindDir,
 	}
 
-	configPath := filepath.Join(sourceRootSubpath, modules.Filename)
+	configPath := filepath.Join(dirSrc.SourceRootSubpath, modules.Filename)
 	var configContents string
 	err = s.dag.Select(ctx, contextDir, &configContents,
 		dagql.Selector{
@@ -1118,9 +1150,6 @@ func (s *moduleSchema) directoryAsModuleSource(
 		return inst, fmt.Errorf("failed to unmarshal module config: %w", err)
 	}
 
-	sourceRelSubpath := filepath.Join(sourceRootSubpath, modCfg.Source)
-	dirSrc.SourceSubpath = sourceRelSubpath
-
 	dirSrc.ModuleName = modCfg.Name
 	dirSrc.ModuleOriginalName = modCfg.Name
 	dirSrc.EngineVersion = modCfg.EngineVersion
@@ -1128,19 +1157,42 @@ func (s *moduleSchema) directoryAsModuleSource(
 	dirSrc.IncludePaths = modCfg.Include
 	dirSrc.CodegenConfig = modCfg.Codegen
 
-	// TODO: incorporate Exclude or deprecate it
-	includes := []string{
-		// always load the source dir
-		sourceRelSubpath + "/**" + "/*",
-		// always load the config file (currently mainly so it gets incorporated into the digest)
-		sourceRootSubpath + "/" + modules.Filename,
+	// figure out source subpath
+	if modCfg.Source != "" && !filepath.IsLocal(modCfg.Source) {
+		return inst, fmt.Errorf("source path %q contains parent directory components", modCfg.Source)
 	}
+	switch {
+	case modCfg.SDK == "" && modCfg.Source != "":
+		// invalid, can't have source when no sdk
+		return inst, fmt.Errorf("source path %q specified without sdk", modCfg.Source)
+	case modCfg.SDK == "":
+		// skip setting source subpath when no sdk
+	case modCfg.SDK != "" && modCfg.Source == "":
+		// sdk was set but source was not, it's implicitly "." and thus the source root
+		dirSrc.SourceSubpath = dirSrc.SourceRootSubpath
+	case modCfg.SDK != "" && modCfg.Source != "":
+		// sdk was set and source was too, get the full rel path under the context
+		dirSrc.SourceSubpath = filepath.Join(dirSrc.SourceRootSubpath, modCfg.Source)
+	}
+
+	// figure out includes so we can load the context dir
+	// TODO: includes is being ignored here right now?
+	// TODO: includes is being ignored here right now?
+	includes := []string{
+		// always load the config file (currently mainly so it gets incorporated into the digest)
+		dirSrc.SourceRootSubpath + "/" + modules.Filename,
+	}
+	if dirSrc.SourceSubpath != "" {
+		// load the source dir if set
+		includes = append(includes, dirSrc.SourceSubpath+"/**/*")
+	}
+
 	// add the config file includes, rebasing them from being relative to the config file
 	// to being relative to the context dir
 	for _, pattern := range modCfg.Include {
 		isNegation := strings.HasPrefix(pattern, "!")
 		pattern = strings.TrimPrefix(pattern, "!")
-		absPath := filepath.Join(sourceRootSubpath, pattern)
+		absPath := filepath.Join(dirSrc.SourceRootSubpath, pattern)
 		relPath, err := pathutil.LexicalRelativePath("/", absPath)
 		if err != nil {
 			return inst, fmt.Errorf("failed to get relative path from context to include: %w", err)
@@ -1176,7 +1228,7 @@ func (s *moduleSchema) directoryAsModuleSource(
 			}
 			switch parsedDepRef.kind {
 			case core.ModuleSourceKindLocal:
-				depPath := filepath.Join(sourceRootSubpath, depCfg.Source)
+				depPath := filepath.Join(dirSrc.SourceRootSubpath, depCfg.Source)
 				err := s.dag.Select(ctx, contextDir, &dirSrc.Dependencies[i],
 					dagql.Selector{
 						Field: "asModuleSource",
@@ -1244,16 +1296,14 @@ func (s *moduleSchema) directoryAsModuleSource(
 	return inst, nil
 }
 
+// TODO: DOC THAT THIS ARG IS RELATIVE TO THE SOURCE ROOT
 func (s *moduleSchema) moduleSourceSubpath(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct{},
 ) (string, error) {
-	srcSubpath := src.SourceSubpath
-	if srcSubpath == "." {
-		srcSubpath = ""
-	}
-	return srcSubpath, nil
+	// TODO: could just make it a field again if it stays like this
+	return src.SourceSubpath, nil
 }
 
 // TODO: DOC THAT THIS ARG IS RELATIVE TO THE SOURCE ROOT
@@ -1336,11 +1386,15 @@ func (s *moduleSchema) moduleSourceWithInit(
 		Merge bool
 	},
 ) (*core.ModuleSource, error) {
+	if !args.Merge {
+		return src, nil
+	}
+
 	src = src.Clone()
 	if src.InitConfig == nil {
 		src.InitConfig = &core.ModuleInitConfig{}
 	}
-	src.InitConfig.Merge = args.Merge
+	src.InitConfig.Merge = true
 	return src, nil
 }
 
@@ -2095,7 +2149,6 @@ func (s *moduleSchema) moduleSourceGeneratedContextDirectory(
 		EngineVersion: src.EngineVersion,
 		SDK:           src.SDK,
 		Include:       src.IncludePaths,
-		Source:        src.SourceSubpath,
 		Codegen:       src.CodegenConfig,
 	}
 
@@ -2115,10 +2168,9 @@ func (s *moduleSchema) moduleSourceGeneratedContextDirectory(
 		return genDirInst, fmt.Errorf("module requires dagger %s, but you have %s", modCfg.EngineVersion, engine.Version)
 	}
 
-	switch modCfg.Source {
+	switch srcInst.Self.SourceSubpath {
 	case "":
-	case ".":
-		modCfg.Source = ""
+		// leave unset
 	default:
 		var err error
 		modCfg.Source, err = pathutil.LexicalRelativePath(
@@ -2128,6 +2180,7 @@ func (s *moduleSchema) moduleSourceGeneratedContextDirectory(
 		if err != nil {
 			return genDirInst, fmt.Errorf("failed to get relative path from source root to source: %w", err)
 		}
+		// if source is ".", leave it unset in dagger.json as that's the default
 		if modCfg.Source == "." {
 			modCfg.Source = ""
 		}
