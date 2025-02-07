@@ -5618,6 +5618,16 @@ func (r *Module) Enums(ctx context.Context) ([]TypeDef, error) {
 	return convert(response), nil
 }
 
+// Generates a client for the module.
+func (r *Module) GenerateClient(generator string) *Directory {
+	q := r.query.Select("generateClient")
+	q = q.Arg("generator", generator)
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // The generated files and directories made on top of the module source's context directory.
 func (r *Module) GeneratedContextDiff() *Directory {
 	q := r.query.Select("generatedContextDiff")

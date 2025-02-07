@@ -231,6 +231,10 @@ func (s *moduleSchema) Install() {
 		dagql.NodeFunc("initialize", s.moduleInitialize).
 			Doc(`Retrieves the module with the objects loaded via its SDK.`),
 
+		dagql.Func("generateClient", s.moduleGenerateClient).
+			Doc(`Generates a client for the module.`).
+			ArgDoc("generator", `The generator to use`),
+
 		dagql.Func("withDescription", s.moduleWithDescription).
 			Doc(`Retrieves the module with the given description`).
 			ArgDoc("description", `The description to set`),
@@ -836,14 +840,46 @@ func (s *moduleSchema) moduleInitialize(
 	inst dagql.Instance[*core.Module],
 	args struct{},
 ) (*core.Module, error) {
-	if inst.Self.NameField == "" || inst.Self.SDKConfig == nil || inst.Self.SDKConfig.Source == "" {
+	// If SDK config is set, we expect the name and sdk source field to be set
+	if inst.Self.SDKConfig != nil && (inst.Self.NameField == ""  || inst.Self.SDKConfig.Source == "") {
 		return nil, fmt.Errorf("module name and SDK must be set")
 	}
+
 	mod, err := inst.Self.Initialize(ctx, inst.ID(), dagql.CurrentID(ctx), s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize module: %w", err)
 	}
 	return mod, nil
+}
+
+func (s *moduleSchema) moduleGenerateClient(
+	ctx context.Context,
+	mod *core.Module,
+	args struct {
+		Generator dagql.String
+	},
+) (*core.Directory, error) {
+	generator, err := s.sdkForModule(ctx, mod.Query, &core.SDKConfig{
+		Source: args.Generator.String(),
+		Env: make(map[string]string),
+	}, mod.Source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get generator: %w", err)
+	}
+
+	// Clone the module and add it to the deps so its binding are also generated
+	mod.Deps = mod.Deps.Append(mod.Clone())
+
+	// HACK: Is there actually a better 
+	// Remove the definitions from the module so they does not conflict with its self dependency
+	mod = mod.CloneWithoutDefs()
+
+	generatedClientDir, err := generator.GenerateClient(ctx, mod.Deps, mod.Source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate clients: %w", err)
+	}
+
+	return generatedClientDir, nil
 }
 
 func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, args struct {
@@ -1069,136 +1105,138 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 		return fmt.Errorf("failed to get source root subpath: %w", err)
 	}
 
-	sdk, err := s.sdkForModule(ctx, src.Self.Query, mod.SDKConfig, src)
-	if err != nil {
-		return fmt.Errorf("failed to load sdk for module: %w", err)
-	}
-
-	generatedCode, err := sdk.Codegen(ctx, mod.Deps, src)
-	if err != nil {
-		return fmt.Errorf("failed to generate code: %w", err)
-	}
-
-	var diff dagql.Instance[*core.Directory]
-	err = s.dag.Select(ctx, baseContext, &diff,
-		dagql.Selector{
-			Field: "diff",
-			Args: []dagql.NamedInput{
-				{Name: "other", Value: dagql.NewID[*core.Directory](generatedCode.Code.ID())},
-			},
-		},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to diff generated code: %w", err)
-	}
-
-	err = s.dag.Select(ctx, mod.GeneratedContextDirectory, &mod.GeneratedContextDirectory,
-		dagql.Selector{
-			Field: "withDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String("/")},
-				{Name: "directory", Value: dagql.NewID[*core.Directory](diff.ID())},
-			},
-		},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to add codegen to module context directory: %w", err)
-	}
-
-	// update .gitattributes
-	// (linter thinks this chunk of code is too similar to the below, but not clear abstraction is worth it)
-	//nolint:dupl
-	if len(generatedCode.VCSGeneratedPaths) > 0 {
-		gitAttrsPath := filepath.Join(sourceSubpath, ".gitattributes")
-		var gitAttrsContents []byte
-		gitAttrsFile, err := baseContext.Self.File(ctx, gitAttrsPath)
-		if err == nil {
-			gitAttrsContents, err = gitAttrsFile.Contents(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get git attributes file contents: %w", err)
-			}
-			if !bytes.HasSuffix(gitAttrsContents, []byte("\n")) {
-				gitAttrsContents = append(gitAttrsContents, []byte("\n")...)
-			}
-		}
-		for _, fileName := range generatedCode.VCSGeneratedPaths {
-			if bytes.Contains(gitAttrsContents, []byte(fileName)) {
-				// already has some config for the file
-				continue
-			}
-			fileName := strings.TrimPrefix(fileName, "/")
-			gitAttrsContents = append(gitAttrsContents,
-				[]byte(fmt.Sprintf("/%s linguist-generated\n", fileName))...,
-			)
+	if mod.SDKConfig != nil {
+		sdk, err := s.sdkForModule(ctx, src.Self.Query, mod.SDKConfig, src)
+		if err != nil {
+			return fmt.Errorf("failed to load sdk for module: %w", err)
 		}
 
-		err = s.dag.Select(ctx, mod.GeneratedContextDirectory, &mod.GeneratedContextDirectory,
+		generatedCode, err := sdk.Codegen(ctx, mod.Deps, src)
+		if err != nil {
+			return fmt.Errorf("failed to generate code: %w", err)
+		}
+
+		var diff dagql.Instance[*core.Directory]
+		err = s.dag.Select(ctx, baseContext, &diff,
 			dagql.Selector{
-				Field: "withNewFile",
+				Field: "diff",
 				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(gitAttrsPath)},
-					{Name: "contents", Value: dagql.String(gitAttrsContents)},
-					{Name: "permissions", Value: dagql.Int(0o600)},
+					{Name: "other", Value: dagql.NewID[*core.Directory](generatedCode.Code.ID())},
 				},
 			},
 		)
 		if err != nil {
-			return fmt.Errorf("failed to add vcs generated file: %w", err)
-		}
-	}
-
-	// update .gitignore
-	automaticGitignoreSetting, err := src.Self.AutomaticGitignore(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get automatic gitignore setting: %w", err)
-	}
-	writeGitignore := true // default to true if not set
-	if automaticGitignoreSetting != nil {
-		writeGitignore = *automaticGitignoreSetting
-	}
-	// (linter thinks this chunk of code is too similar to the above, but not clear abstraction is worth it)
-	//nolint:dupl
-	if writeGitignore && len(generatedCode.VCSIgnoredPaths) > 0 {
-		gitIgnorePath := filepath.Join(sourceSubpath, ".gitignore")
-		var gitIgnoreContents []byte
-		gitIgnoreFile, err := baseContext.Self.File(ctx, gitIgnorePath)
-		if err == nil {
-			gitIgnoreContents, err = gitIgnoreFile.Contents(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get .gitignore file contents: %w", err)
-			}
-			if !bytes.HasSuffix(gitIgnoreContents, []byte("\n")) {
-				gitIgnoreContents = append(gitIgnoreContents, []byte("\n")...)
-			}
-		}
-		for _, fileName := range generatedCode.VCSIgnoredPaths {
-			if bytes.Contains(gitIgnoreContents, []byte(fileName)) {
-				continue
-			}
-			fileName := strings.TrimPrefix(fileName, "/")
-			gitIgnoreContents = append(gitIgnoreContents,
-				[]byte(fmt.Sprintf("/%s\n", fileName))...,
-			)
+			return fmt.Errorf("failed to diff generated code: %w", err)
 		}
 
 		err = s.dag.Select(ctx, mod.GeneratedContextDirectory, &mod.GeneratedContextDirectory,
 			dagql.Selector{
-				Field: "withNewFile",
+				Field: "withDirectory",
 				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(gitIgnorePath)},
-					{Name: "contents", Value: dagql.String(gitIgnoreContents)},
-					{Name: "permissions", Value: dagql.Int(0o600)},
+					{Name: "path", Value: dagql.String("/")},
+					{Name: "directory", Value: dagql.NewID[*core.Directory](diff.ID())},
 				},
 			},
 		)
 		if err != nil {
-			return fmt.Errorf("failed to add vcs ignore file: %w", err)
+			return fmt.Errorf("failed to add codegen to module context directory: %w", err)
 		}
-	}
 
-	mod.Runtime, err = sdk.Runtime(ctx, mod.Deps, src)
-	if err != nil {
-		return fmt.Errorf("failed to get module runtime: %w", err)
+		// update .gitattributes
+		// (linter thinks this chunk of code is too similar to the below, but not clear abstraction is worth it)
+		//nolint:dupl
+		if len(generatedCode.VCSGeneratedPaths) > 0 {
+			gitAttrsPath := filepath.Join(sourceSubpath, ".gitattributes")
+			var gitAttrsContents []byte
+			gitAttrsFile, err := baseContext.Self.File(ctx, gitAttrsPath)
+			if err == nil {
+				gitAttrsContents, err = gitAttrsFile.Contents(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get git attributes file contents: %w", err)
+				}
+				if !bytes.HasSuffix(gitAttrsContents, []byte("\n")) {
+					gitAttrsContents = append(gitAttrsContents, []byte("\n")...)
+				}
+			}
+			for _, fileName := range generatedCode.VCSGeneratedPaths {
+				if bytes.Contains(gitAttrsContents, []byte(fileName)) {
+					// already has some config for the file
+					continue
+				}
+				fileName := strings.TrimPrefix(fileName, "/")
+				gitAttrsContents = append(gitAttrsContents,
+					[]byte(fmt.Sprintf("/%s linguist-generated\n", fileName))...,
+				)
+			}
+
+			err = s.dag.Select(ctx, mod.GeneratedContextDirectory, &mod.GeneratedContextDirectory,
+				dagql.Selector{
+					Field: "withNewFile",
+					Args: []dagql.NamedInput{
+						{Name: "path", Value: dagql.String(gitAttrsPath)},
+						{Name: "contents", Value: dagql.String(gitAttrsContents)},
+						{Name: "permissions", Value: dagql.Int(0o600)},
+					},
+				},
+			)
+			if err != nil {
+				return fmt.Errorf("failed to add vcs generated file: %w", err)
+			}
+		}
+
+		// update .gitignore
+		automaticGitignoreSetting, err := src.Self.AutomaticGitignore(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get automatic gitignore setting: %w", err)
+		}
+		writeGitignore := true // default to true if not set
+		if automaticGitignoreSetting != nil {
+			writeGitignore = *automaticGitignoreSetting
+		}
+		// (linter thinks this chunk of code is too similar to the above, but not clear abstraction is worth it)
+		//nolint:dupl
+		if writeGitignore && len(generatedCode.VCSIgnoredPaths) > 0 {
+			gitIgnorePath := filepath.Join(sourceSubpath, ".gitignore")
+			var gitIgnoreContents []byte
+			gitIgnoreFile, err := baseContext.Self.File(ctx, gitIgnorePath)
+			if err == nil {
+				gitIgnoreContents, err = gitIgnoreFile.Contents(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get .gitignore file contents: %w", err)
+				}
+				if !bytes.HasSuffix(gitIgnoreContents, []byte("\n")) {
+					gitIgnoreContents = append(gitIgnoreContents, []byte("\n")...)
+				}
+			}
+			for _, fileName := range generatedCode.VCSIgnoredPaths {
+				if bytes.Contains(gitIgnoreContents, []byte(fileName)) {
+					continue
+				}
+				fileName := strings.TrimPrefix(fileName, "/")
+				gitIgnoreContents = append(gitIgnoreContents,
+					[]byte(fmt.Sprintf("/%s\n", fileName))...,
+				)
+			}
+
+			err = s.dag.Select(ctx, mod.GeneratedContextDirectory, &mod.GeneratedContextDirectory,
+				dagql.Selector{
+					Field: "withNewFile",
+					Args: []dagql.NamedInput{
+						{Name: "path", Value: dagql.String(gitIgnorePath)},
+						{Name: "contents", Value: dagql.String(gitIgnoreContents)},
+						{Name: "permissions", Value: dagql.Int(0o600)},
+					},
+				},
+			)
+			if err != nil {
+				return fmt.Errorf("failed to add vcs ignore file: %w", err)
+			}
+		}
+
+		mod.Runtime, err = sdk.Runtime(ctx, mod.Deps, src)
+		if err != nil {
+			return fmt.Errorf("failed to get module runtime: %w", err)
+		}
 	}
 
 	return nil

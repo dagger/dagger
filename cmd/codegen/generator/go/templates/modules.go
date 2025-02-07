@@ -30,6 +30,10 @@ func (funcs goTemplateFuncs) isModuleCode() bool {
 	return funcs.moduleName != ""
 }
 
+func (funcs goTemplateFuncs) isStandaloneClient() bool {
+	return funcs.standaloneClient
+}
+
 func (funcs goTemplateFuncs) moduleRelPath(path string) string {
 	return filepath.Join(
 		// path to the root of this module (since we're probably in internal/dagger/)
