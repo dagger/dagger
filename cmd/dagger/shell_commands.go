@@ -434,7 +434,7 @@ Without arguments, the current working directory is replaced by the initial cont
 				if len(args) > 0 {
 					path = args[0]
 				}
-				dir, err := h.CurrentDirectory(path)
+				dir, err := h.Directory(path)
 				if err != nil {
 					return err
 				}
@@ -452,7 +452,7 @@ Without arguments, the current working directory is replaced by the initial cont
 			Args:        MaximumArgs(2),
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-				path := "."
+				path := ""
 				pattern := "**"
 
 				if len(args) > 0 {
@@ -462,14 +462,16 @@ Without arguments, the current working directory is replaced by the initial cont
 					pattern = args[1]
 				}
 
-				dir, err := h.CurrentDirectory(path)
+				dir, err := h.Directory(path)
 				if err != nil {
 					return err
 				}
+
 				contents, err := dir.Glob(ctx, pattern)
 				if err != nil {
 					return err
 				}
+
 				return h.Print(ctx, strings.Join(contents, "\n"))
 			},
 		},
