@@ -326,7 +326,9 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 	path := v.String()
 	path = strings.TrimPrefix(path, "file://")
 
-	return dag.Host().Directory(path), nil
+	return dag.Host().Directory(path, dagger.HostDirectoryOpts{
+		Exclude: modArg.Ignore,
+	}), nil
 }
 
 // makeGitDirectory creates a dagger.Directory object from a parsed gitutil.GitURL
