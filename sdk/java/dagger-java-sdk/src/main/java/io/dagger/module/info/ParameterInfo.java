@@ -5,5 +5,4 @@ public record ParameterInfo(
     String description,
     TypeInfo type,
     boolean optional,
-    boolean hasDefaultValue,
-    String defaultValue) {}
+    StringOptionInfo defaultValue) {}

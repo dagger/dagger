@@ -132,8 +132,8 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                               parseParameterDescription(elt, paramName),
                                               new TypeInfo(tm.toString(), tk.name()),
                                               isOptional,
-                                              hasDefaultAnnotation,
-                                              defaultValue);
+                                              new StringOptionInfo(
+                                                  hasDefaultAnnotation, defaultValue));
                                         })
                                     .toList();
 
@@ -215,7 +215,8 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
               rm.addCode(".withOptional(true)");
             }
             boolean hasDescription = isNotBlank(parameterInfo.description());
-            boolean hasDefaultValue = parameterInfo.hasDefaultValue();
+            boolean hasDefaultValue = parameterInfo.defaultValue().isSet();
+            ;
             if (hasDescription || hasDefaultValue) {
               rm.addCode(", new $T.WithArgArguments()", io.dagger.client.Function.class);
               if (hasDescription) {
@@ -223,7 +224,9 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
               }
               if (hasDefaultValue) {
                 rm.addCode(
-                    ".withDefaultValue($T.from($S))", JSON.class, parameterInfo.defaultValue());
+                    ".withDefaultValue($T.from($S))",
+                    JSON.class,
+                    parameterInfo.defaultValue().value());
               }
             }
             rm.addCode(")");
