@@ -123,7 +123,7 @@ func (e *ExecError) Unwrap() error {
 {{ if eq .Kind "ENUM" }}{{ template "_types/enum.go.tmpl" . }}{{ end }}
 {{ end }}
 
-{{ if IsModuleCode }}
+{{ if or (IsModuleCode) (IsStandaloneClient) }}
 type Client struct {
 	query *querybuilder.Selection
 	client graphql.Client

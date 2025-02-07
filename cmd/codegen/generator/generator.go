@@ -42,6 +42,8 @@ type Config struct {
 
 	// Merge indicates whether to merge the module deps with the existing project.
 	Merge *bool
+
+	ClientOnly bool
 }
 
 type Generator interface {

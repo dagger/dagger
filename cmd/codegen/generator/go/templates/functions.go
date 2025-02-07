@@ -25,6 +25,7 @@ func GoTemplateFuncs(
 	pkg *packages.Package,
 	fset *token.FileSet,
 	pass int,
+	standaloneClient bool,
 ) template.FuncMap {
 	return goTemplateFuncs{
 		CommonFunctions: generator.NewCommonFunctions(schemaVersion, &FormatTypeFunc{}),
@@ -36,19 +37,21 @@ func GoTemplateFuncs(
 		schema:          schema,
 		schemaVersion:   schemaVersion,
 		pass:            pass,
+		standaloneClient: standaloneClient,
 	}.FuncMap()
 }
 
 type goTemplateFuncs struct {
 	*generator.CommonFunctions
-	ctx           context.Context
-	moduleName    string
-	moduleParent  string
-	modulePkg     *packages.Package
-	moduleFset    *token.FileSet
-	schema        *introspection.Schema
-	schemaVersion string
-	pass          int
+	ctx              context.Context
+	standaloneClient bool
+	moduleName       string
+	moduleParent     string
+	modulePkg        *packages.Package
+	moduleFset       *token.FileSet
+	schema           *introspection.Schema
+	schemaVersion    string
+	pass             int
 }
 
 func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
@@ -84,6 +87,7 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"FormatArrayToSingleType": funcs.formatArrayToSingleType,
 		"IsPartial":               funcs.isPartial,
 		"IsModuleCode":            funcs.isModuleCode,
+		"IsStandaloneClient":      funcs.isStandaloneClient,
 		"ModuleMainSrc":           funcs.moduleMainSrc,
 		"ModuleRelPath":           funcs.moduleRelPath,
 	}

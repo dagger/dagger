@@ -17,11 +17,13 @@ func TypescriptTemplateFuncs(
 	schemaVersion string,
 	moduleName string,
 	moduleParentPath string,
+	clientOnly bool,
 ) template.FuncMap {
 	return typescriptTemplateFuncs{
 		moduleName:       moduleName,
 		moduleParentPath: moduleParentPath,
 		schemaVersion:    schemaVersion,
+		clientOnly:       clientOnly,
 	}.FuncMap()
 }
 
@@ -29,6 +31,7 @@ type typescriptTemplateFuncs struct {
 	moduleName       string
 	moduleParentPath string
 	schemaVersion    string
+	clientOnly       bool
 }
 
 func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
@@ -68,6 +71,7 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"CheckVersionCompatibility": commonFunc.CheckVersionCompatibility,
 		"ModuleRelPath":             funcs.moduleRelPath,
 		"FormatProtected":           funcs.formatProtected,
+		"IsClientOnly":              funcs.isClientOnly,
 	}
 }
 
@@ -321,4 +325,8 @@ func (funcs typescriptTemplateFuncs) moduleRelPath(path string) string {
 
 func (funcs typescriptTemplateFuncs) formatProtected(s string) string {
 	return strings.TrimSuffix(s, "_")
+}
+
+func (funcs typescriptTemplateFuncs) isClientOnly() bool {
+	return funcs.clientOnly
 }

@@ -154,6 +154,12 @@ func (mod *Module) Initialize(ctx context.Context, oldID *call.ID, newID *call.I
 	newMod := mod.Clone()
 	newMod.InstanceID = oldID // updated to newID once the call to initialize is done
 
+	// If no SDK is configured, that means the module is not implementing any 
+	// code with custom functions.
+	if newMod.SDKConfig == "" {
+		return mod, nil
+	}
+
 	// construct a special function with no object or function name, which tells
 	// the SDK to return the module's definition (in terms of objects, fields and
 	// functions)
@@ -722,6 +728,12 @@ type Mod interface {
 	TypeDefs(ctx context.Context) ([]*TypeDef, error)
 }
 
+// ClientGenerator is an interface that a module can implements to give client generation capabilities.
+type ClientGenerator interface {
+	// Generate client returns client binding for the module with the given dependencies.
+	GenerateClient(context.Context, *ModDeps) (*Directory, error)
+}
+
 /*
 An SDK is an implementation of the functionality needed to generate code for and execute a module.
 
@@ -741,6 +753,8 @@ to be used without hard dependencies on the internet. They are loaded w/ the `lo
 loads them as modules from the engine container.
 */
 type SDK interface {
+	ClientGenerator
+
 	/* Codegen generates code for the module at the given source directory and subpath.
 
 	The Code field of the returned GeneratedCode object should be the generated contents of the module sourceDirSubpath,
@@ -834,6 +848,16 @@ func (mod Module) Clone() *Module {
 	}
 
 	return &cp
+}
+
+func (mod Module) CloneWithoutDefs() *Module {
+	cp := mod.Clone()
+
+	cp.EnumDefs = []*TypeDef{}
+	cp.ObjectDefs = []*TypeDef{}
+	cp.InterfaceDefs = []*TypeDef{}
+
+	return cp
 }
 
 func (mod *Module) WithDescription(desc string) *Module {
