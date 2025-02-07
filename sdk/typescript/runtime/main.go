@@ -262,7 +262,7 @@ func (t *TypescriptSdk) Base() (*dagger.Container, error) {
 		return ctr.
 			WithoutEntrypoint().
 			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", bunVersion)), dagger.ContainerWithMountedCacheOpts{
-				Sharing: dagger.Private,
+				Sharing: dagger.CacheSharingModePrivate,
 			}), nil
 	case Node:
 		return ctr.
@@ -275,8 +275,10 @@ func (t *TypescriptSdk) Base() (*dagger.Container, error) {
 			WithMountedCache("/root/.npm", dag.CacheVolume(fmt.Sprintf("npm-cache-%s-%s", runtime, version))).
 			WithMountedCache("/root/.cache/yarn", dag.CacheVolume(fmt.Sprintf("yarn-cache-%s-%s", runtime, version))).
 			WithMountedCache("/root/.pnpm-store", dag.CacheVolume(fmt.Sprintf("pnpm-cache-%s-%s", runtime, version))).
-			// Install tsx
-			WithExec([]string{"npm", "install", "-g", "tsx@4.15.6"}), nil
+			// install tsx from its bundled location in the engine image
+			WithDirectory("/usr/local/lib/node_modules/tsx", t.SDKSourceDir.Directory("/tsx_module")).
+			WithExec([]string{"ln", "-s", "/usr/local/lib/node_modules/tsx/dist/cli.mjs", "/usr/local/bin/tsx"}), nil
+
 	default:
 		return nil, fmt.Errorf("unknown runtime: %s", runtime)
 	}
@@ -352,7 +354,8 @@ func (t *TypescriptSdk) configureModule(ctr *dagger.Container) *dagger.Container
 func (t *TypescriptSdk) addSDK() *dagger.Directory {
 	return t.SDKSourceDir.
 		WithoutDirectory("codegen").
-		WithoutDirectory("runtime")
+		WithoutDirectory("runtime").
+		WithoutDirectory("tsx_module")
 }
 
 // generateClient uses the given container to generate the client code.
