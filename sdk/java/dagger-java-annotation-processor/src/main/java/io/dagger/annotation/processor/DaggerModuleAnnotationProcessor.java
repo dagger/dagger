@@ -155,6 +155,21 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                             hasDefaultAnnotation = false;
                                           }
 
+                                          Ignore ignoreAnnotation =
+                                              param.getAnnotation(Ignore.class);
+                                          var hasIgnoreAnnotation = ignoreAnnotation != null;
+                                          if (hasIgnoreAnnotation
+                                              && !tm.toString()
+                                                  .equals("io.dagger.client.Directory")) {
+                                            throw new IllegalArgumentException(
+                                                "Parameter "
+                                                    + param.getSimpleName()
+                                                    + " cannot have @Ignore annotation if it is not a Directory");
+                                          }
+
+                                          String[] ignoreValue =
+                                              hasIgnoreAnnotation ? ignoreAnnotation.value() : null;
+
                                           String paramName = param.getSimpleName().toString();
                                           return new ParameterInfo(
                                               paramName,
@@ -164,7 +179,9 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                               new StringOptionInfo(
                                                   hasDefaultAnnotation, defaultValue),
                                               new StringOptionInfo(
-                                                  hasDefaultPathAnnotation, defaultPath));
+                                                  hasDefaultPathAnnotation, defaultPath),
+                                              new StringArrayOptionInfo(
+                                                  hasIgnoreAnnotation, ignoreValue));
                                         })
                                     .toList();
 
@@ -248,7 +265,8 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
             boolean hasDescription = isNotBlank(parameterInfo.description());
             boolean hasDefaultValue = parameterInfo.defaultValue().isSet();
             boolean hasDefaultPath = parameterInfo.defaultPath().isSet();
-            if (hasDescription || hasDefaultValue || hasDefaultPath) {
+            boolean hasIgnore = parameterInfo.ignore().isSet();
+            if (hasDescription || hasDefaultValue || hasDefaultPath || hasIgnore) {
               rm.addCode(", new $T.WithArgArguments()", io.dagger.client.Function.class);
               if (hasDescription) {
                 rm.addCode(".withDescription($S)", parameterInfo.description());
@@ -261,6 +279,11 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
               }
               if (hasDefaultPath) {
                 rm.addCode(".withDefaultPath($S)", parameterInfo.defaultPath().value());
+              }
+              if (hasIgnore) {
+                rm.addCode(".withIgnore(")
+                    .addCode(stringArrayToList(parameterInfo.ignore().value()))
+                    .addCode(")");
               }
             }
             rm.addCode(")");
@@ -600,5 +623,16 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
             .filter(tag -> tag.getName().isPresent() && tag.getName().get().equals(paramName))
             .findFirst();
     return blockTag.map(tag -> tag.getContent().toText()).orElse("");
+  }
+
+  private static CodeBlock stringArrayToList(String[] array) {
+    CodeBlock.Builder code = CodeBlock.builder().add("$T.of(", List.class);
+    for (int i = 0; i < array.length; i++) {
+      if (i > 0) {
+        code.add(", ");
+      }
+      code.add("$S", array[i]);
+    }
+    return code.add(")").build();
   }
 }

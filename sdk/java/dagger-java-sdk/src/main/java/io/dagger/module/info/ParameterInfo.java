@@ -6,4 +6,5 @@ public record ParameterInfo(
     TypeInfo type,
     boolean optional,
     StringOptionInfo defaultValue,
-    StringOptionInfo defaultPath) {}
+    StringOptionInfo defaultPath,
+    StringArrayOptionInfo ignore) {}
