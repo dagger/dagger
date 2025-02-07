@@ -9,9 +9,8 @@ const (
 )
 
 const (
-	GolangVersion   = distconsts.GolangVersion
-	GolangImage     = distconsts.GolangImage
-	TypescriptImage = "node:22.11.0-alpine"
+	GolangVersion = distconsts.GolangVersion
+	GolangImage   = distconsts.GolangImage
 
 	AlpineVersion = distconsts.AlpineVersion
 	UbuntuVersion = "22.04"

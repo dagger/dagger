@@ -94,8 +94,9 @@ const (
 	ModSourceDirPath         = "/src"
 	EntrypointExecutableFile = "__dagger.entrypoint.ts"
 
-	SrcDir = "src"
-	GenDir = "sdk"
+	SrcDir         = "src"
+	GenDir         = "sdk"
+	NodeModulesDir = "node_modules"
 
 	schemaPath     = "/schema.json"
 	codegenBinPath = "/codegen"
@@ -192,7 +193,8 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.Modul
 				Include: t.moduleConfigFiles(t.moduleConfig.subPath),
 			})).
 		WithDirectory(filepath.Join(t.moduleConfig.modulePath(), GenDir), sdk).
-		WithWorkdir(t.moduleConfig.modulePath())
+		WithWorkdir(t.moduleConfig.modulePath()).
+		WithMountedDirectory(filepath.Join(t.moduleConfig.modulePath(), NodeModulesDir), t.SDKSourceDir.Directory("/sdk_node_modules"))
 
 	base = t.configureModule(base)
 
@@ -276,7 +278,7 @@ func (t *TypescriptSdk) Base() (*dagger.Container, error) {
 			WithMountedCache("/root/.cache/yarn", dag.CacheVolume(fmt.Sprintf("yarn-cache-%s-%s", runtime, version))).
 			WithMountedCache("/root/.pnpm-store", dag.CacheVolume(fmt.Sprintf("pnpm-cache-%s-%s", runtime, version))).
 			// install tsx from its bundled location in the engine image
-			WithDirectory("/usr/local/lib/node_modules/tsx", t.SDKSourceDir.Directory("/tsx_module")).
+			WithMountedDirectory("/usr/local/lib/node_modules/tsx", t.SDKSourceDir.Directory("/tsx_module")).
 			WithExec([]string{"ln", "-s", "/usr/local/lib/node_modules/tsx/dist/cli.mjs", "/usr/local/bin/tsx"}), nil
 
 	default:
@@ -355,7 +357,8 @@ func (t *TypescriptSdk) addSDK() *dagger.Directory {
 	return t.SDKSourceDir.
 		WithoutDirectory("codegen").
 		WithoutDirectory("runtime").
-		WithoutDirectory("tsx_module")
+		WithoutDirectory("tsx_module").
+		WithoutDirectory("sdk_node_modules")
 }
 
 // generateClient uses the given container to generate the client code.

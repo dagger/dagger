@@ -3,6 +3,7 @@ package build
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"runtime"
 
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -69,10 +70,13 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 	}, nil
 }
 
+const NodeImage = "node:22.11.0-alpine"
+
 func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, error) {
-	sdkCache := dag.Container().
-		From(consts.TypescriptImage).
-		WithExec([]string{"npm", "install", "-g", "tsx@4.15.6"})
+	tsxNodeModule := dag.Container().
+		From(NodeImage).
+		WithExec([]string{"npm", "install", "-g", "tsx@4.15.6"}). // TODO: dont hardcode this version
+		Directory("/usr/local/lib/node_modules/tsx")
 
 	rootfs := dag.Directory().WithDirectory("/", build.source.Directory("sdk/typescript"), dagger.DirectoryWithDirectoryOpts{
 		Include: []string{
@@ -90,10 +94,36 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 		},
 	})
 
+	// sdkNodeModules, err := dag.Container().
+	// 	From("oven/bun:1.1.38").
+	// 	WithDirectory("/sdk", rootfs).
+	// 	WithoutEntrypoint().
+	// 	WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", "1.1.8")), dagger.ContainerWithMountedCacheOpts{
+	// 		Sharing: dagger.CacheSharingModePrivate,
+	// 	}).
+	// 	// WithExec([]string{"bun", "/opt/module/bin/__tsconfig.updator.ts"}).
+	// 	WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--summary", "--shamefully-hoist", "/sdk"}).
+	// 	Terminal().Sync(ctx)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	sdkNodeModules := dag.Container().
+		From(NodeImage).
+		WithDirectory("./sdk", rootfs).
+		WithoutEntrypoint().
+		WithMountedCache("/root/.cache/yarn", dag.CacheVolume(fmt.Sprintf("yarn-cache-%s-%s", "node", "22.11.10"))).
+		WithFile("./package.json", rootfs.File("./runtime/template/package.json")).
+		WithExec([]string{"corepack", "enable"}).
+		WithExec([]string{"corepack", "use", fmt.Sprintf("yarn@%s", "1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e")}).
+		WithExec([]string{"yarn", "install", "--mode", "update-lockfile"}). // TODO: is update-lockfile necessary?
+		Directory("/node_modules")
+
 	sdkCtrTarball := dag.Container().
 		WithRootfs(rootfs).
 		WithFile("/codegen", build.CodegenBinary()).
-		WithDirectory("/tsx_module", sdkCache.Directory("/usr/local/lib/node_modules/tsx")).
+		WithDirectory("/tsx_module", tsxNodeModule).
+		WithDirectory("/sdk_node_modules", sdkNodeModules).
 		AsTarball(dagger.ContainerAsTarballOpts{
 			ForcedCompression: dagger.ImageLayerCompressionZstd,
 		})
