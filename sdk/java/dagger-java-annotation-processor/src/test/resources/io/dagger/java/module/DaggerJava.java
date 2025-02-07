@@ -43,7 +43,9 @@ public class DaggerJava extends AbstractModule {
    * @return Standard output of the grep command
    */
   @Function
-  public String grepDir(@DefaultPath("/sdk/java") Directory directoryArg, @Nullable String pattern)
+  public String grepDir(
+      @DefaultPath("sdk/java") @Ignore({"**", "!*.java"}) Directory directoryArg,
+      @Nullable String pattern)
       throws InterruptedException, ExecutionException, DaggerQueryException {
     if (pattern == null) {
       pattern = "dagger";
