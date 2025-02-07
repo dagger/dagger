@@ -32,8 +32,8 @@ const (
 
 type enum interface {
 	IsEnum()
-	Name()
-	Value()
+	Name() string
+	Value() string
 }
 
 var (

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
+	"github.com/iancoleman/strcase"
 )
 
 func (ps *parseState) parseGoEnum(t *types.Basic, named *types.Named) (*parsedEnumType, error) {
@@ -50,8 +51,9 @@ func (ps *parseState) parseGoEnum(t *types.Basic, named *types.Named) (*parsedEn
 		}
 
 		valueSpec := &parsedEnumValue{
-			name:  name,
-			value: value,
+			originalName: name,
+			name:         name,
+			value:        value,
 		}
 		if doc := docForAstSpec(astSpec); doc != nil {
 			valueSpec.doc = doc.Text()
@@ -104,10 +106,11 @@ type parsedEnumType struct {
 }
 
 type parsedEnumValue struct {
-	name      string
-	value     string
-	doc       string
-	sourceMap *sourceMap
+	originalName string
+	name         string
+	value        string
+	doc          string
+	sourceMap    *sourceMap
 }
 
 var _ NamedParsedType = &parsedEnumType{}
@@ -132,7 +135,7 @@ func (spec *parsedEnumType) TypeDefCode() (*Statement, error) {
 	for _, val := range spec.values {
 		// XXX: fallback to ye-olde behavior where name = value on ye-olde dagger versions
 		valueTypeDefCode := []Code{
-			Lit(val.name),
+			Lit(strcase.ToScreamingSnake(val.name)),
 			Lit(val.value),
 		}
 		var withEnumMemberOpts []Code
@@ -171,5 +174,75 @@ func (spec *parsedEnumType) ModuleName() string {
 
 // Extra generated code needed for the object implementation.
 func (spec *parsedEnumType) ImplementationCode() (*Statement, error) {
-	return Empty(), nil
+	code := Empty().
+		Add(spec.isEnumMethodCode()).Line().Line().
+		Add(spec.nameMethodCode()).Line().Line().
+		Add(spec.valueMethodCode()).Line().Line().
+		Add(spec.marshalJSONMethodCode()).Line().Line().
+		Add(spec.unmarshalJSONMethodCode()).Line().Line()
+	return code, nil
+}
+
+func (spec *parsedEnumType) isEnumMethodCode() *Statement {
+	return Func().Params(Id("r").Id(spec.name)).
+		Id("IsEnum").Params().Params().Block()
+}
+
+func (spec *parsedEnumType) nameMethodCode() *Statement {
+	return Func().Params(Id("r").Id(spec.name)).
+		Id("Name").
+		Params().
+		Params(String()).
+		BlockFunc(func(g *Group) {
+			var cases []Code
+			for _, v := range spec.values {
+				raw := strcase.ToScreamingSnake(v.name)
+				cases = append(cases, Case(Id(v.originalName)).Block(Return(Lit(raw))))
+			}
+			g.Switch(Id("r")).Block(cases...)
+			g.Return(Lit(""))
+		})
+}
+
+func (spec *parsedEnumType) valueMethodCode() *Statement {
+	return Func().Params(Id("r").Id(spec.name)).
+		Id("Value").
+		Params().
+		Params(String()).
+		BlockFunc(func(g *Group) {
+			g.Return(String().Call(Id("r")))
+		})
+}
+
+func (spec *parsedEnumType) marshalJSONMethodCode() *Statement {
+	return Func().Params(Id("r").Id(spec.name)).
+		Id("MarshalJSON").
+		Params().
+		Params(Id("[]byte"), Id("error")).
+		BlockFunc(func(g *Group) {
+			g.Return(Id("json").Dot("Marshal").Call(Id("r").Dot("Name").Call()))
+		})
+}
+
+func (spec *parsedEnumType) unmarshalJSONMethodCode() *Statement {
+	return Func().Params(Id("r").Op("*").Id(spec.name)).
+		Id("UnmarshalJSON").
+		Params(Id("bs").Id("[]byte")).
+		Params(Id("error")).
+		BlockFunc(func(g *Group) {
+			g.Var().Id("s").String()
+			g.Id("err").Op(":=").Id("json").Dot("Unmarshal").Call(Id("bs"), Op("&").Id("s"))
+			g.If(Id("err").Op("!=").Nil()).Block(Return(Id("err")))
+
+			var cases []Code
+			for _, v := range spec.values {
+				raw := strcase.ToScreamingSnake(v.name)
+				cases = append(cases, Case(Lit(raw)).Block(Op("*").Id("r").Op("=").Id(v.originalName)))
+			}
+			cases = append(cases, Default().Block(Return(
+				Qual("fmt", "Errorf").Call(Lit("unknown enum value %q"), Id("s")),
+			)))
+			g.Switch(Id("s")).Block(cases...)
+			g.Return(Nil())
+		})
 }

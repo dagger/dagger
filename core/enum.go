@@ -40,17 +40,18 @@ func (m *ModuleEnumType) ConvertFromSDKResult(ctx context.Context, value any) (d
 
 	switch value := value.(type) {
 	case string:
-		decoder, err := m.getDecoder(ctx)
+		enum, local, err := m.getEnum(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("%T.ConvertFromSDKResult: failed to get decoder: %w", m, err)
+			return nil, fmt.Errorf("%T.ConvertFromSDKResult: failed to get enum: %w", m, err)
 		}
-
-		val, err := decoder.DecodeInput(value)
-		if err != nil {
-			return nil, fmt.Errorf("%T.ConvertFromSDKResult: invalid enum value %q for %q: %w", m, value, m.typeDef.Name, err)
+		for _, member := range enum.TypeDef.Members {
+			if local && member.OriginalName == value {
+				return enum.Lookup(member.Name)
+			} else if !local && member.Name == value {
+				return enum.Lookup(member.Name)
+			}
 		}
-
-		return val, nil
+		return nil, fmt.Errorf("%T.ConvertFromSDKResult: invalid enum value %q for %q: %w", m, value, m.typeDef.Name, err)
 	default:
 		return nil, fmt.Errorf("unexpected result value type %T for enum %q", value, m.typeDef.Name)
 	}
@@ -60,43 +61,55 @@ func (m *ModuleEnumType) ConvertToSDKInput(ctx context.Context, value dagql.Type
 	if value == nil {
 		return nil, nil
 	}
-	decoder, err := m.getDecoder(ctx)
+
+	enum, local, err := m.getEnum(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("%T.ConvertToSDKInput: failed to get decoder: %w", m, err)
+		return nil, fmt.Errorf("%T.ConvertFromSDKResult: failed to get enum: %w", m, err)
 	}
-	return decoder.DecodeInput(value)
+	result, err := enum.DecodeInput(value)
+	if err != nil {
+		return nil, err
+	}
+	enum = result.(*ModuleEnum)
+	if local {
+		return enum.getTypeDef().OriginalName, nil
+	}
+	return enum.getTypeDef().Name, nil
 }
 
 func (m *ModuleEnumType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
 	return nil
 }
 
-func (m *ModuleEnumType) getDecoder(ctx context.Context) (dagql.InputDecoder, error) {
+func (m *ModuleEnumType) getEnum(ctx context.Context) (*ModuleEnum, bool, error) {
 	// Check the dependencies
 	srv, err := m.mod.Deps.Schema(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("%T.getDecoder: failed to get schema: %w", m, err)
+		return nil, false, fmt.Errorf("%T.getDecoder: failed to get schema: %w", m, err)
 	}
 
-	enumType, ok := srv.ScalarType(m.typeDef.Name)
+	scalar, ok := srv.ScalarType(m.typeDef.Name)
 	if ok {
-		return enumType, nil
+		enum, ok := scalar.(*ModuleEnum)
+		if !ok {
+			return nil, false, fmt.Errorf("%T.getDecoder: incorrect type %T for scalar", scalar)
+		}
+		return enum, false, nil
 	}
 
 	// If not check if the enum is part of its own module
 	for _, enumTypeDef := range m.mod.EnumDefs {
 		if enumTypeDef.AsEnum.Value.Name == m.typeDef.Name {
-			return &ModuleEnum{TypeDef: enumTypeDef.AsEnum.Value}, nil
+			return &ModuleEnum{TypeDef: enumTypeDef.AsEnum.Value}, true, nil
 		}
 	}
 
-	return nil, fmt.Errorf("%T.getDecoder: failed to get enum type %q", m, m.typeDef.Name)
+	return nil, false, fmt.Errorf("%T.getDecoder: failed to get enum type %q", m, m.typeDef.Name)
 }
 
 type ModuleEnum struct {
 	TypeDef *EnumTypeDef
 	Name    string
-	Value   string
 }
 
 func (e *ModuleEnum) TypeName() string {
@@ -171,12 +184,20 @@ func (e *ModuleEnum) Lookup(val string) (dagql.Input, error) {
 			return &ModuleEnum{
 				TypeDef: e.TypeDef,
 				Name:    possible.Name,
-				Value:   possible.Value,
 			}, nil
 		}
 	}
 
 	return nil, fmt.Errorf("invalid enum value %q", val)
+}
+
+func (e *ModuleEnum) getTypeDef() *EnumMemberTypeDef {
+	for _, possible := range e.TypeDef.Members {
+		if possible.Name == e.Name {
+			return possible
+		}
+	}
+	return nil
 }
 
 func (e *ModuleEnum) MarshalJSON() ([]byte, error) {
