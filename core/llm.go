@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/dagger/dagger/core/bbi"
@@ -164,25 +165,55 @@ func (llm *Llm) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error)
 // A convenience function to ask the model a question directly, and get an answer
 // The state of the agent is not changed.
 func (llm *Llm) Ask(ctx context.Context, question string, srv *dagql.Server) (string, error) {
-	llm, err := llm.WithPrompt(ctx, question, false, srv)
+	llm, err := llm.WithPrompt(ctx, question, false, nil, srv)
 	if err != nil {
 		return "", err
 	}
 	return llm.LastReply()
 }
 
-func (llm *Llm) Please(ctx context.Context, task string, srv *dagql.Server) (*Llm, error) {
-	return llm.WithPrompt(ctx, task, false, srv)
-}
-
 // Append a user message (prompt) to the message history
-func (llm *Llm) WithPrompt(ctx context.Context, prompt string, lazy bool, srv *dagql.Server) (*Llm, error) {
+func (llm *Llm) WithPrompt(ctx context.Context,
+	// The prompt message.
+	prompt string,
+	// Append the prompt to the context, but don't sync with the LLM endpoint
+	lazy bool,
+	// An array of key-value pairs for variable expansion. The array alternates between keys and their
+	// corresponding values. If empty, no variable expansion occurs.
+	vars []string,
+	srv *dagql.Server) (*Llm, error) {
+	if len(vars) > 0 {
+		prompt = os.Expand(prompt, func(key string) string {
+			// Iterate through vars array taking elements in pairs, looking
+			// for a key that matches the template variable being expanded
+			for i := 0; i < len(vars)-1; i += 2 {
+				if vars[i] == key {
+					return vars[i+1]
+				}
+			}
+			// If vars array has odd length and the last key has no value,
+			// return empty string when that key is looked up
+			if len(vars)%2 == 1 && vars[len(vars)-1] == key {
+				return ""
+			}
+			return key
+		})
+	}
 	llm = llm.Clone()
 	llm.history = append(llm.history, openai.UserMessage(prompt))
 	if lazy {
 		return llm, nil
 	}
-	return llm.Run(ctx, 0, srv)
+	return llm.Sync(ctx, 0, srv)
+}
+
+// WithPromptFile is like WithPrompt but reads the prompt from a file
+func (llm *Llm) WithPromptFile(ctx context.Context, file *File, lazy bool, vars []string, srv *dagql.Server) (*Llm, error) {
+	contents, err := file.Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return llm.WithPrompt(ctx, string(contents), lazy, vars, srv)
 }
 
 // Append a system prompt message to the history
@@ -219,21 +250,13 @@ func (llm *Llm) LastReply() (string, error) {
 // BBI allows a LLM to consume the Dagger API via tool calls
 func (llm *Llm) BBI(srv *dagql.Server) (bbi.Session, error) {
 	var target dagql.Object
-	// FIX<E: support multiple variables in state
-	//	for _, val := range llm.state {
-	//		obj, isObj := val.(dagql.Object)
-	//		if isObj {
-	//			target = obj
-	//			break
-	//		}
-	//	}
 	if llm.state != nil {
 		target = llm.state.(dagql.Object)
 	}
 	return bbi.NewSession("flat", target, srv)
 }
 
-func (llm *Llm) Run(
+func (llm *Llm) Sync(
 	ctx context.Context,
 	maxLoops int,
 	srv *dagql.Server,
