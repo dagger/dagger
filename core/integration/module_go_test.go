@@ -437,7 +437,7 @@ func main() {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithExec([]string{"mkdir", "-p", ".git"}).
+			WithExec([]string{"mkdir", "-p", ".foo"}).
 			With(daggerExec("init", "--name=bare", "--sdk=go"))
 
 		daggerDirEnts, err := modGen.Directory("/work").Entries(ctx)
