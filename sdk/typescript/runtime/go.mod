@@ -1,4 +1,4 @@
-module main
+module typescript-sdk
 
 go 1.22.7
 
