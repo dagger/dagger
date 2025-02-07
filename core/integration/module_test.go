@@ -5481,7 +5481,7 @@ func sdkCodegenFile(t *testctx.T, sdk string) string {
 
 func modInit(t *testctx.T, c *dagger.Client, sdk, contents string) *dagger.Container {
 	t.Helper()
-	return daggerCliBase(t, c).With(withModInit(sdk, contents))
+	return goGitBase(t, c).With(withModInit(sdk, contents))
 }
 
 func withModInit(sdk, contents string) dagger.WithContainerFunc {
