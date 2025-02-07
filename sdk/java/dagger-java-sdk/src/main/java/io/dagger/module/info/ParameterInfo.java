@@ -8,4 +8,5 @@ public record ParameterInfo(
     TypeInfo type,
     boolean optional,
     Optional<String> defaultValue,
-    Optional<String> defaultPath) {}
+    Optional<String> defaultPath,
+    Optional<String[]> ignore) {}

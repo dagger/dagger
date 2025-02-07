@@ -185,6 +185,21 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                             hasDefaultAnnotation = false;
                                           }
 
+                                          Ignore ignoreAnnotation =
+                                              param.getAnnotation(Ignore.class);
+                                          var hasIgnoreAnnotation = ignoreAnnotation != null;
+                                          if (hasIgnoreAnnotation
+                                              && !tm.toString()
+                                                  .equals("io.dagger.client.Directory")) {
+                                            throw new IllegalArgumentException(
+                                                "Parameter "
+                                                    + param.getSimpleName()
+                                                    + " cannot have @Ignore annotation if it is not a Directory");
+                                          }
+
+                                          String[] ignoreValue =
+                                              hasIgnoreAnnotation ? ignoreAnnotation.value() : null;
+
                                           String paramName = param.getSimpleName().toString();
                                           return new ParameterInfo(
                                               paramName,
@@ -192,7 +207,8 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                               new TypeInfo(tm.toString(), tk.name()),
                                               isOptional,
                                               Optional.ofNullable(defaultValue),
-                                              Optional.ofNullable(defaultPath));
+                                              Optional.ofNullable(defaultPath),
+                                              Optional.ofNullable(ignoreValue));
                                         })
                                     .toList();
 
@@ -277,7 +293,8 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
             boolean hasDescription = isNotBlank(parameterInfo.description());
             boolean hasDefaultValue = parameterInfo.defaultValue().isPresent();
             boolean hasDefaultPath = parameterInfo.defaultPath().isPresent();
-            if (hasDescription || hasDefaultValue || hasDefaultPath) {
+            boolean hasIgnore = parameterInfo.ignore().isPresent();
+            if (hasDescription || hasDefaultValue || hasDefaultPath || hasIgnore) {
               rm.addCode(", new $T.WithArgArguments()", io.dagger.client.Function.class);
               if (hasDescription) {
                 rm.addCode(".withDescription($S)", parameterInfo.description());
@@ -290,6 +307,11 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
               }
               if (hasDefaultPath) {
                 rm.addCode(".withDefaultPath($S)", parameterInfo.defaultPath().get());
+              }
+              if (hasIgnore) {
+                rm.addCode(".withIgnore(")
+                    .addCode(listOf(parameterInfo.ignore().get()))
+                    .addCode(")");
               }
             }
             rm.addCode(")");
@@ -650,5 +672,13 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
             .filter(tag -> tag.getName().isPresent() && tag.getName().get().equals(paramName))
             .findFirst();
     return blockTag.map(tag -> tag.getContent().toText()).orElse("");
+  }
+
+  private static CodeBlock listOf(String[] array) {
+    return CodeBlock.builder()
+        .add("$T.of(", List.class)
+        .add(CodeBlock.join(Arrays.stream(array).map(s -> CodeBlock.of("$S", s)).toList(), ", "))
+        .add(")")
+        .build();
   }
 }
