@@ -4863,7 +4863,7 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 		})
 	})
 
-	// We don't need to test all ignore pattenrs, just that it works with given directory instead of the context one and that
+	// We don't need to test all ignore patterns, just that it works with given directory instead of the context one and that
 	// ignore is correctly applied.
 	t.Run("ignore with argument directory", func(ctx context.Context, t *testctx.T) {
 		t.Run("ignore all", func(ctx context.Context, t *testctx.T) {
