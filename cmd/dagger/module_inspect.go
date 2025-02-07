@@ -117,6 +117,12 @@ type moduleDef struct {
 	Dependencies []*moduleDependency
 }
 
+type clientGeneratorModuleDef struct {
+	mod *dagger.Module
+
+	Dependencies []*moduleDependency
+}
+
 type moduleDependency struct {
 	Name        string
 	Description string

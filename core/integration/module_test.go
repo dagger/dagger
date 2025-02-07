@@ -5396,6 +5396,28 @@ func daggerExec(args ...string) dagger.WithContainerFunc {
 	}
 }
 
+func daggerUnprivilegedExec(args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: false,
+		})
+	}
+}
+
+func daggerUnprivilegedRun(args ...string) dagger.WithContainerFunc {
+	args = append([]string{"run"}, args...)
+
+	return daggerUnprivilegedExec(args...)
+}
+
+func daggerClientAdd(generator string) dagger.WithContainerFunc {
+	return daggerExec("client", "add", "--generator="+generator, "--local-sdk")
+}
+
+func daggerClientAddAt(generator string, outputDirPath string) dagger.WithContainerFunc {
+	return daggerExec("client", "add", "--generator="+generator, "--local-sdk", outputDirPath)
+}
+
 func daggerQuery(query string, args ...any) dagger.WithContainerFunc {
 	return daggerQueryAt("", query, args...)
 }

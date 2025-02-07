@@ -5175,10 +5175,21 @@ export class Module_ extends BaseClient {
   }
 
   /**
-   * The generated files and directories made on top of the module source's context directory.
+   * Generates a client for the module.
+   * @param generator The generator to use
+   * @param outputDir The output directory for the generated client.
+   * @param opts.localSdk Use local SDK dependency
    */
-  generatedContextDirectory = (): Directory => {
-    const ctx = this._ctx.select("generatedContextDirectory")
+  generateClient = (
+    generator: string,
+    outputDir: string,
+    opts?: ModuleGenerateClientOpts,
+  ): Directory => {
+    const ctx = this._ctx.select("generateClient", {
+      generator,
+      outputDir,
+      ...opts,
+    })
     return new Directory(ctx)
   }
 
