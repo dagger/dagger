@@ -70,7 +70,7 @@ type ModuleSource struct {
 	WithoutDependencies       []string
 	WithUpdateDependencies    []string
 	WithUpdateAllDependencies bool
-	WithSDK                   string
+	WithSDK                   SDKConfig
 	WithInitConfig            *ModuleInitConfig
 	WithSourceSubpath         string
 	WithViews                 []*ModuleSourceView
@@ -284,18 +284,21 @@ func (src *ModuleSource) ModuleEngineVersion(ctx context.Context) (string, error
 	return cfg.EngineVersion, nil
 }
 
-func (src *ModuleSource) SDK(ctx context.Context) (string, error) {
-	if src.WithSDK != "" {
-		return src.WithSDK, nil
+func (src *ModuleSource) SDK(ctx context.Context) (*SDKConfig, error) {
+	if src.WithSDK.Source != "" {
+		return &SDKConfig{Source: src.WithSDK.Source}, nil
 	}
 	modCfg, ok, err := src.ModuleConfig(ctx)
 	if err != nil {
-		return "", fmt.Errorf("module config: %w", err)
+		return nil, fmt.Errorf("module config: %w", err)
 	}
-	if !ok {
-		return "", nil
+	if modCfg == nil || modCfg.SDK == nil || !ok {
+		return nil, nil
 	}
-	return modCfg.SDK, nil
+	return &SDKConfig{
+		Source: modCfg.SDK.Source,
+		Env:    modCfg.SDK.Env,
+	}, nil
 }
 
 func (src *ModuleSource) AutomaticGitignore(ctx context.Context) (*bool, error) {

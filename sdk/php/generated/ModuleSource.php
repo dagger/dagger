@@ -272,10 +272,10 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     /**
      * Update the module source with a new SDK.
      */
-    public function withSDK(string $sdk): ModuleSource
+    public function withSDK(string $source): ModuleSource
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSDK');
-        $innerQueryBuilder->setArgument('sdk', $sdk);
+        $innerQueryBuilder->setArgument('source', $source);
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

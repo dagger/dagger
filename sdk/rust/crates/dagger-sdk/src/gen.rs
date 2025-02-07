@@ -1216,6 +1216,41 @@ impl PortId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct SdkConfigId(pub String);
+impl From<&str> for SdkConfigId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for SdkConfigId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<SdkConfigId> for SdkConfig {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<SdkConfigId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<SdkConfigId> for SdkConfigId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<SdkConfigId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<SdkConfigId, DaggerError>(self) })
+    }
+}
+impl SdkConfigId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ScalarTypeDefId(pub String);
 impl From<&str> for ScalarTypeDefId {
     fn from(value: &str) -> Self {
@@ -6185,10 +6220,14 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
-    pub async fn sdk(&self) -> Result<String, DaggerError> {
+    /// The SDK config used by this module.
+    pub fn sdk(&self) -> SdkConfig {
         let query = self.selection.select("sdk");
-        query.execute(self.graphql_client.clone()).await
+        SdkConfig {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Serve a module's API in the current session.
     /// Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
@@ -6679,10 +6718,10 @@ impl ModuleSource {
     ///
     /// # Arguments
     ///
-    /// * `sdk` - The SDK to set.
-    pub fn with_sdk(&self, sdk: impl Into<String>) -> ModuleSource {
+    /// * `source` - The SDK source to set.
+    pub fn with_sdk(&self, source: impl Into<String>) -> ModuleSource {
         let mut query = self.selection.select("withSDK");
-        query = query.arg("sdk", sdk.into());
+        query = query.arg("source", source.into());
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,
@@ -7804,6 +7843,22 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Load a SDKConfig from its ID.
+    pub fn load_sdk_config_from_id(&self, id: impl IntoID<SdkConfigId>) -> SdkConfig {
+        let mut query = self.selection.select("loadSDKConfigFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        SdkConfig {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Load a ScalarTypeDef from its ID.
     pub fn load_scalar_type_def_from_id(&self, id: impl IntoID<ScalarTypeDefId>) -> ScalarTypeDef {
         let mut query = self.selection.select("loadScalarTypeDefFromID");
@@ -8113,6 +8168,24 @@ impl Query {
     /// Get the current Dagger Engine version.
     pub async fn version(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("version");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
+pub struct SdkConfig {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl SdkConfig {
+    /// A unique identifier for this SDKConfig.
+    pub async fn id(&self) -> Result<SdkConfigId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
+    pub async fn source(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("source");
         query.execute(self.graphql_client.clone()).await
     }
 }

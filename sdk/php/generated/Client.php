@@ -528,6 +528,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a SDKConfig from its ID.
+     */
+    public function loadSDKConfigFromID(SDKConfigId|SDKConfig $id): SDKConfig
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSDKConfigFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\SDKConfig($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a ScalarTypeDef from its ID.
      */
     public function loadScalarTypeDefFromID(ScalarTypeDefId|ScalarTypeDef $id): ScalarTypeDef
