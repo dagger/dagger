@@ -5028,7 +5028,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 		work := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.0.0"}`).
+			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "engineVersion": "v0.0.0"}`).
 			WithNewFile("main.go", moduleSrc)
 
 		work = work.With(daggerExec("develop"))
@@ -5036,7 +5036,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 			File("dagger.json").
 			Contents(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "source": ".", "engineVersion": "`+engine.Version+`"}`, daggerJSON)
+		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "engineVersion": "`+engine.Version+`"}`, daggerJSON)
 	})
 
 	t.Run("from high", func(ctx context.Context, t *testctx.T) {
@@ -5045,7 +5045,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 		work := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v100.0.0"}`).
+			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "engineVersion": "v100.0.0"}`).
 			WithNewFile("main.go", moduleSrc)
 
 		work = work.With(daggerExec("develop"))
@@ -5053,7 +5053,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 			File("dagger.json").
 			Contents(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "source": ".", "engineVersion": "`+engine.Version+`"}`, daggerJSON)
+		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "engineVersion": "`+engine.Version+`"}`, daggerJSON)
 	})
 
 	t.Run("from missing", func(ctx context.Context, t *testctx.T) {
@@ -5062,7 +5062,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 		work := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": "."}`).
+			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go"}`).
 			WithNewFile("main.go", moduleSrc)
 
 		work = work.With(daggerExec("develop"))
@@ -5070,7 +5070,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 			File("dagger.json").
 			Contents(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "source": ".", "engineVersion": "`+engine.Version+`"}`, daggerJSON)
+		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "engineVersion": "`+engine.Version+`"}`, daggerJSON)
 	})
 
 	t.Run("to specified", func(ctx context.Context, t *testctx.T) {
@@ -5079,14 +5079,14 @@ func schemaVersion(ctx context.Context) (string, error) {
 		work := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.0.0"}`)
+			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "engineVersion": "v0.0.0"}`)
 
 		work = work.With(daggerExec("develop", "--compat=v0.9.9"))
 		daggerJSON, err := work.
 			File("dagger.json").
 			Contents(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "source": ".", "engineVersion": "v0.9.9"}`, daggerJSON)
+		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "engineVersion": "v0.9.9"}`, daggerJSON)
 	})
 
 	t.Run("skipped", func(ctx context.Context, t *testctx.T) {
@@ -5095,14 +5095,14 @@ func schemaVersion(ctx context.Context) (string, error) {
 		work := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.9.9"}`)
+			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "engineVersion": "v0.9.9"}`)
 
 		work = work.With(daggerExec("develop", "--compat"))
 		daggerJSON, err := work.
 			File("dagger.json").
 			Contents(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "source": ".", "engineVersion": "v0.9.9"}`, daggerJSON)
+		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "engineVersion": "v0.9.9"}`, daggerJSON)
 	})
 }
 

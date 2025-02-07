@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 
 	"dagger.io/dagger/telemetry"
@@ -598,21 +597,6 @@ func (sdk *goSDK) baseWithCodegen(
 		return ctr, fmt.Errorf("failed to get schema introspection json during module sdk codegen: %w", err)
 	}
 
-	/* TODO: cleanup
-	modName, err := src.Self.ModuleOriginalName(ctx)
-	if err != nil {
-		return ctr, fmt.Errorf("failed to get module name for go module sdk codegen: %w", err)
-	}
-
-	contextDir, err := src.Self.ContextDirectory()
-	if err != nil {
-		return ctr, fmt.Errorf("failed to get context directory for go module sdk codegen: %w", err)
-	}
-	srcSubpath, err := src.Self.SourceSubpathWithDefault(ctx)
-	if err != nil {
-		return ctr, fmt.Errorf("failed to get subpath for go module sdk codegen: %w", err)
-	}
-	*/
 	modName := src.Self.ModuleOriginalName
 	contextDir := src.Self.ContextDirectory
 	srcSubpath := src.Self.SourceSubpath
@@ -647,9 +631,8 @@ func (sdk *goSDK) baseWithCodegen(
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
 	}
 
-	if src.Self.InitConfig != nil {
-		codegenArgs = append(codegenArgs,
-			dagql.String("--merge="+strconv.FormatBool(src.Self.InitConfig.Merge)))
+	if src.Self.InitConfig != nil && src.Self.InitConfig.Merge {
+		codegenArgs = append(codegenArgs, "--merge=true")
 	}
 
 	selectors := []dagql.Selector{

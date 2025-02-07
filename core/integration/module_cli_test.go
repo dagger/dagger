@@ -150,7 +150,7 @@ func (CLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 
 		_, err := ctr.Stdout(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "source subdir path \"../..\" escapes context")
+		requireErrOut(t, err, "source subpath \"../..\" escapes source root")
 	})
 }
 
