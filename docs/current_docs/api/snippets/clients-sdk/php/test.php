@@ -6,7 +6,7 @@ use function Dagger\dag;
 
 function test() {
     // set PHP versions against which to test
-    $phpVersions = ['8.2', '8.3', '8.4'];
+    $phpVersions = ['8.2', '8.3'];
 
     // get reference to the local project
     $src = dag()
@@ -33,8 +33,8 @@ function test() {
 
         // execute
         echo "Starting tests for PHP $version...\n";
-        $php->sync();
-        echo "Completed tests for PHP $version\n";
+        echo $php->stdout();
+        echo "Completed tests for PHP $version\n**********\n";
     }
 }
 
