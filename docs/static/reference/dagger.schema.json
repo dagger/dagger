@@ -68,7 +68,7 @@
           "description": "The version of the engine this module was last updated with."
         },
         "sdk": {
-          "type": "string",
+          "$ref": "#/$defs/SDK",
           "description": "The SDK this module uses"
         },
         "include": {
@@ -115,6 +115,25 @@
         "engineVersion"
       ],
       "description": "ModuleConfigWithUserFields is the config for a single module as loaded from a dagger.json file."
+    },
+    "SDK": {
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "source"
+      ],
+      "description": "SDK represents the sdk field in dagger.json The source can be reference to a built-in sdk e.g."
     }
   }
 }

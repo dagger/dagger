@@ -48,7 +48,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 		var modCfg modules.ModuleConfigWithUserFields
 		require.NoError(t, json.Unmarshal([]byte(confContents), &modCfg))
 		require.Equal(t, "test", modCfg.Name)
-		require.Equal(t, "go", modCfg.SDK)
+		require.Equal(t, &modules.SDK{Source: "go"}, modCfg.SDK)
 		require.Equal(t, []string{"foo"}, modCfg.Include)
 		require.Equal(t, []string{"blah"}, modCfg.Exclude)
 		require.Len(t, modCfg.Dependencies, 1)
@@ -100,8 +100,10 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 				base := baseCtr(t, c).
 					With(configFile(".", &modules.ModuleConfig{
-						Name:   "evil",
-						SDK:    "go",
+						Name: "evil",
+						SDK: &modules.SDK{
+							Source: "go",
+						},
 						Source: "..",
 					}))
 
@@ -120,8 +122,10 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 				base := baseCtr(t, c).
 					With(configFile(".", &modules.ModuleConfig{
-						Name:   "evil",
-						SDK:    "go",
+						Name: "evil",
+						SDK: &modules.SDK{
+							Source: "go",
+						},
 						Source: "/tmp",
 					}))
 
@@ -153,7 +157,9 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				base := baseCtr(t, c).
 					With(configFile(".", &modules.ModuleConfig{
 						Name: "evil",
-						SDK:  "go",
+						SDK: &modules.SDK{
+							Source: "go",
+						},
 						Dependencies: []*modules.ModuleConfigDependency{{
 							Name:   "escape",
 							Source: "..",
@@ -172,7 +178,9 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				base = base.
 					With(configFile(".", &modules.ModuleConfig{
 						Name: "evil",
-						SDK:  "go",
+						SDK: &modules.SDK{
+							Source: "go",
+						},
 						Dependencies: []*modules.ModuleConfigDependency{{
 							Name:   "escape",
 							Source: "../work/dep",
@@ -195,7 +203,9 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				base := baseCtr(t, c).
 					With(configFile(".", &modules.ModuleConfig{
 						Name: "evil",
-						SDK:  "go",
+						SDK: &modules.SDK{
+							Source: "go",
+						},
 						Dependencies: []*modules.ModuleConfigDependency{{
 							Name:   "escape",
 							Source: "/tmp/foo",
@@ -214,7 +224,9 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				base = base.
 					With(configFile(".", &modules.ModuleConfig{
 						Name: "evil",
-						SDK:  "go",
+						SDK: &modules.SDK{
+							Source: "go",
+						},
 						Dependencies: []*modules.ModuleConfigDependency{{
 							Name:   "escape",
 							Source: "/./dep",
@@ -630,8 +642,10 @@ func (m *Coolsdk) RequiredPaths() []string {
 			// TODO: use cli to configure include/exclude once supported
 			ctr = ctr.
 				With(configFile(".", &modules.ModuleConfig{
-					Name:    "test",
-					SDK:     tc.sdk,
+					Name: "test",
+					SDK: &modules.SDK{
+						Source: tc.sdk,
+					},
 					Include: []string{"dagger/subdir/keepdir"},
 					Exclude: []string{"dagger/subdir/keepdir/rmdir"},
 					Source:  "dagger",
@@ -719,8 +733,10 @@ func (m *%[1]s) ContextDirectory() ([]string, error) {
 			WithNewFile("foo", "").
 			WithNewFile(".dagger/bar", "").
 			With(configFile(".", &modules.ModuleConfig{
-				Name:    "dep",
-				SDK:     "go",
+				Name: "dep",
+				SDK: &modules.SDK{
+					Source: "go",
+				},
 				Include: []string{"**/foo"},
 				Exclude: []string{"**/bar"},
 				Source:  ".dagger",

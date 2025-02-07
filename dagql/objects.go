@@ -1146,9 +1146,9 @@ func getField(obj any, optIn bool, fieldName string) (res Typed, found bool, rer
 			if err != nil {
 				return nil, false, fmt.Errorf("get field %q: %w", name, err)
 			}
-			// if !t.Type().NonNull && objV.Field(i).IsZero() {
-			// 	return nil, true, nil
-			// }
+			if !t.Type().NonNull && objV.Field(i).IsZero() {
+				return nil, true, nil
+			}
 			return t, true, nil
 		}
 	}
