@@ -963,7 +963,7 @@ func (r *modFunctionArg) GetFlagValue(ctx context.Context, flag *pflag.Flag, dag
 
 	switch val := v.(type) {
 	case DaggerValue:
-		obj, err := val.Get(ctx, dag, md.Conf.Source, r)
+		obj, err := val.Get(ctx, dag, md.Source, r)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get value for argument %q: %w", r.FlagName(), err)
 		}
