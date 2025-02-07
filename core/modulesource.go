@@ -20,6 +20,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -424,6 +425,14 @@ func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, pat
 			); err != nil {
 				return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
 			}
+		}
+
+		mainClientCallerID, err := src.Query.MainClientCallerID(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to retrieve mainClientCallerID: %w", err)
+		}
+		if err := src.Query.AddClientResourcesFromID(ctx, &resource.ID{ID: *ctxDir.ID()}, mainClientCallerID, false); err != nil {
+			return inst, fmt.Errorf("failed to add client resources from ID: %w", err)
 		}
 
 		return MakeDirectoryContentHashed(ctx, bk, ctxDir)
