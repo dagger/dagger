@@ -3,6 +3,7 @@ package io.dagger.annotation.processor;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.dagger.client.ImageMediaTypes;
+import io.dagger.client.Platform;
 import io.dagger.module.info.TypeInfo;
 import javax.lang.model.type.TypeKind;
 import org.junit.jupiter.api.Test;
@@ -73,6 +74,16 @@ public class TypeDefTest {
                     new TypeInfo(v.getClass().getCanonicalName(), TypeKind.DECLARED.name()))
                 .toString())
         .isEqualTo("dag.typeDef().withEnum(\"ImageMediaTypes\")");
+  }
+
+  @Test
+  public void testTypeDefScalar() throws ClassNotFoundException {
+    Platform platform = Platform.from("linux/amd64");
+    assertThat(
+            DaggerModuleAnnotationProcessor.typeDef(
+                    new TypeInfo(platform.getClass().getCanonicalName(), TypeKind.DECLARED.name()))
+                .toString())
+        .isEqualTo("dag.typeDef().withScalar(\"Platform\")");
   }
 
   @Test
