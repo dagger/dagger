@@ -155,8 +155,8 @@ func (mod *Module) Initialize(ctx context.Context, oldID *call.ID, newID *call.I
 	newMod.InstanceID = oldID // updated to newID once the call to initialize is done
 
 	// If no SDK is configured, that means the module is not implementing any 
-	// code with custom functions.
-	if newMod.SDKConfig == "" {
+	// code with custom functions so we can return it as it is.
+	if newMod.SDKConfig == nil {
 		return mod, nil
 	}
 
@@ -731,7 +731,7 @@ type Mod interface {
 // ClientGenerator is an interface that a module can implements to give client generation capabilities.
 type ClientGenerator interface {
 	// Generate client returns client binding for the module with the given dependencies.
-	GenerateClient(context.Context, *ModDeps) (*Directory, error)
+	GenerateClient(context.Context, *ModDeps, dagql.Instance[*ModuleSource]) (*Directory, error)
 }
 
 /*

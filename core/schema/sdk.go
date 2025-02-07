@@ -243,7 +243,7 @@ func (s *moduleSchema) newModuleSDK(
 	return &moduleSDK{mod: sdkModMeta, dag: dag, sdk: sdk}, nil
 }
 
-func (sdk *moduleSDK) GenerateClient(ctx context.Context, deps *core.ModDeps) (*core.Directory, error) {
+func (sdk *moduleSDK) GenerateClient(ctx context.Context, deps *core.ModDeps, modSource dagql.Instance[*core.ModuleSource]) (*core.Directory, error) {
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
@@ -256,6 +256,10 @@ func (sdk *moduleSDK) GenerateClient(ctx context.Context, deps *core.ModDeps) (*
 			{
 				Name:  "introspectionJson",
 				Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
+			},
+			{
+				Name:  "modSource",
+				Value: dagql.NewID[*core.ModuleSource](modSource.ID()),
 			},
 		},
 	})
@@ -428,6 +432,7 @@ type goSDK struct {
 func (sdk *goSDK) GenerateClient(
 	ctx context.Context,
 	deps *core.ModDeps,
+	modSource dagql.Instance[*core.ModuleSource],
 ) (*core.Directory, error) {
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
 	if err != nil {
