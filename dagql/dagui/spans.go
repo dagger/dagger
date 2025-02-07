@@ -449,9 +449,23 @@ func (span *Span) IsRunning() bool {
 	return span.EndTime.Before(span.StartTime)
 }
 
+// CausalSpans iterates over the spans that directly cause this span, by following
+// links (for newer engines) or attributes (for old engines).
 func (span *Span) CausalSpans(f func(*Span) bool) {
+	var visit func(*Span) bool
+	visit = func(s *Span) bool {
+		if !f(s) {
+			return false
+		}
+		for cause := range s.CausalSpans {
+			if !visit(cause) {
+				return false
+			}
+		}
+		return true
+	}
 	for _, cause := range span.causesViaLinks.Order {
-		if !f(cause) {
+		if !visit(cause) {
 			return
 		}
 	}
@@ -461,7 +475,7 @@ func (span *Span) CausalSpans(f func(*Span) bool) {
 				// cannot possibly be "caused" by it, since it came after
 				continue
 			}
-			if !f(cause) {
+			if !visit(cause) {
 				return
 			}
 		}
