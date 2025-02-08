@@ -9,6 +9,6 @@ dag = Client()
 
 
 __all__ = [
-    "dag",
     "Client",
+    "dag",
 ]
