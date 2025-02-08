@@ -96,7 +96,7 @@ func namespaceFromModule(ctx context.Context, m *core.Module) (string, error) {
 		return "mainClient", nil
 	}
 
-	name := m.Source.Self.ModuleName
+	name := m.Source.Self.ModuleOriginalName
 
 	// TODO: cleanup
 	var symbolic string
