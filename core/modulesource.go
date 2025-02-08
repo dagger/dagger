@@ -485,7 +485,7 @@ func (src *ModuleSource) ResolveContextPathFromModule(ctx context.Context) (cont
 	return contextAbsPath, moduleRootAbsPath, nil
 }
 
-// resolveContextPaths returns the context path to the .git directory
+// ResolveContextPathFromCaller returns the context path to the .git directory
 // if it exists. Otherwise, it returns the source root directory.
 func (src *ModuleSource) ResolveContextPathFromCaller(ctx context.Context) (contextRootAbsPath, sourceRootAbsPath string, _ error) {
 	if src.Kind != ModuleSourceKindLocal {

@@ -1714,7 +1714,7 @@ func (ServiceSuite) TestStartStopKill(ctx context.Context, t *testctx.T) {
 	require.Empty(t, out)
 }
 
-// TestServiceNoCrossTalk shows that services spawned in one client cannot be
+// TestNoCrossTalk shows that services spawned in one client cannot be
 // reached by another client.
 func (ServiceSuite) TestNoCrossTalk(ctx context.Context, t *testctx.T) {
 	c1 := connect(ctx, t)
