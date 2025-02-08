@@ -48,6 +48,8 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 		},
 		Exclude: []string{
 			"src/dagger/_engine/",
+			"src/dagger/provisioning/",
+			"src/dagger/gen/",
 		},
 	})
 
@@ -135,7 +137,8 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 		WithExec([]string{"xx-go", "build", "std"}).
 		// pre-cache common deps
 		WithDirectory("/sdk", build.source.Directory("sdk/go")).
-		WithExec([]string{"xx-go", "list",
+		WithExec([]string{
+			"xx-go", "list",
 			"-C", "/sdk",
 			"-e",
 			"-export=true",

@@ -15,7 +15,7 @@ const (
 	ModSourceDirPath      = "/src"
 	RuntimeExecutablePath = "/runtime"
 	GenDir                = "sdk"
-	GenPath               = "src/dagger/client/gen.py"
+	GenPath               = "src/dagger/gen/client.py"
 	SchemaPath            = "/schema.json"
 	VenvPath              = "/opt/venv"
 	ProjectCfg            = "pyproject.toml"
@@ -343,7 +343,7 @@ func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
 			}).
 			File("/gen.py")
 
-		m.AddFile(path.Join(GenDir, GenPath), genFile)
+		m.AddFile(GenPath, genFile)
 	}
 
 	return m

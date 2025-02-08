@@ -194,9 +194,9 @@ def generate(schema: GraphQLSchema) -> Iterator[str]:
 
         from typing_extensions import Self
 
-        from dagger.client._core import Arg, Root
+        from dagger.client._core import Arg
         from dagger.client._guards import typecheck
-        from dagger.client.base import Enum, Input, Scalar, Type
+        from dagger.client.base import Enum, Input, Root, Scalar, Type
         """,
     )
 
@@ -575,7 +575,7 @@ class _ObjectField:
         return sig
 
     @joiner
-    def func_body(self) -> Iterator[str]:
+    def func_body(self) -> Iterator[str]:  # noqa: C901, PLR0912
         if docstring := self.func_doc():
             yield doc(docstring)
 
@@ -593,12 +593,21 @@ class _ObjectField:
                 """
             )
 
-        if not self.args:
-            yield "_args: list[Arg] = []"
-        else:
+        if self.args:
             yield "_args = ["
             yield from (indent(arg.as_arg()) for arg in self.args)
             yield "]"
+        elif not self.is_sync:
+            yield "_args: list[Arg] = []"
+
+        if self.is_sync:
+            args = ["self"]
+            if self.graphql_name != "sync":
+                args.append(f'"{self.graphql_name}"')
+            if self.args:
+                args.append("_args")
+            yield f"return await self._ctx.execute_sync({', '.join(args)})"
+            return
 
         yield f'_ctx = self._select("{self.graphql_name}", _args)'
 
@@ -616,16 +625,7 @@ class _ObjectField:
                 yield "await _ctx.execute()"
                 yield "return self"
         elif self.is_list:
-            _target = self.named_type.name
-            yield f'_ctx = {_target}(_ctx)._select("id", [])'
-            yield "@dataclass"
-            yield "class Response:"
-            yield f"    id: {self.named_type.name}ID"
-            yield "_ids = await _ctx.execute(list[Response])"
-            yield (
-                f"return [{_target}(Client.from_context(_ctx)._select("
-                f'"load{_target}FromID", [Arg("id", v.id)],)) for v in _ids]'
-            )
+            yield f"return await _ctx.execute_object_list({self.named_type.name})"
         elif self.is_void:
             yield "await _ctx.execute()"
         else:

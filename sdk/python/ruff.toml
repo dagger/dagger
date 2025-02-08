@@ -59,7 +59,7 @@ ignore = [
     # False positive on __str__ decorator.
     "PLE0307",
 ]
-"./src/dagger/client/gen/*" = [
+"./src/dagger/gen/*" = [
     # Not much control over field names and docs coming from the API.
     # Note: We could detect built-in shadowing like the reserved
     # keywords but these built-ins aren't being used in the generated
