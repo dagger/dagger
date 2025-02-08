@@ -37,13 +37,13 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/network"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 )
 
 type ServiceSuite struct{}
 
-func TestService(t *testing.T) {
-	testctx.Run(testCtx, t, ServiceSuite{}, Middleware()...)
+func TestServices(t *testing.T) {
+	testctx.New(t, Middleware()...).RunTests(ServiceSuite{})
 }
 
 func (ServiceSuite) TestHostnamesAreStable(ctx context.Context, t *testctx.T) {
