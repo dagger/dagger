@@ -20,7 +20,7 @@ import (
 type ClientSuite struct{}
 
 func TestClient(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(ClientSuite{})
+	testctx.New(t, Middleware()...).RunTests(ClientSuite{})
 }
 
 func (ClientSuite) TestClose(ctx context.Context, t *testctx.T) {

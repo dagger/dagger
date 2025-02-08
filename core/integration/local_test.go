@@ -17,7 +17,7 @@ import (
 type LocalDirSuite struct{}
 
 func TestLocalDir(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(LocalDirSuite{})
+	testctx.New(t, Middleware()...).RunTests(LocalDirSuite{})
 }
 
 func (LocalDirSuite) TestLocalImportsAcrossSessions(ctx context.Context, t *testctx.T) {

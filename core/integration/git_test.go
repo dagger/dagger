@@ -24,7 +24,7 @@ import (
 type GitSuite struct{}
 
 func TestGit(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(GitSuite{})
+	testctx.New(t, Middleware()...).RunTests(GitSuite{})
 }
 
 func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {

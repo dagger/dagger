@@ -11,7 +11,7 @@ import (
 type PHPSuite struct{}
 
 func TestPHP(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(PHPSuite{})
+	testctx.New(t, Middleware()...).RunTests(PHPSuite{})
 }
 
 func (PHPSuite) TestInit(ctx context.Context, t *testctx.T) {

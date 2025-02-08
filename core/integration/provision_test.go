@@ -21,7 +21,7 @@ import (
 type ProvisionSuite struct{}
 
 func TestProvision(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(ProvisionSuite{})
+	testctx.New(t, Middleware()...).RunTests(ProvisionSuite{})
 }
 
 func (ProvisionSuite) TestDockerDriver(ctx context.Context, t *testctx.T) {

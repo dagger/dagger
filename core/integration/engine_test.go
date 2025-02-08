@@ -28,7 +28,7 @@ import (
 type EngineSuite struct{}
 
 func TestEngine(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(EngineSuite{})
+	testctx.New(t, Middleware()...).RunTests(EngineSuite{})
 }
 
 func devEngineContainerAsService(ctr *dagger.Container) *dagger.Service {

@@ -16,7 +16,7 @@ import (
 type FutureSuite struct{}
 
 func TestFuture(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(FutureSuite{})
+	testctx.New(t, Middleware()...).RunTests(FutureSuite{})
 }
 
 //nolint:unused

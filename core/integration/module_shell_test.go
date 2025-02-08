@@ -15,7 +15,7 @@ import (
 type ShellSuite struct{}
 
 func TestShell(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(ShellSuite{})
+	testctx.New(t, Middleware()...).RunTests(ShellSuite{})
 }
 
 func daggerShell(script string) dagger.WithContainerFunc {

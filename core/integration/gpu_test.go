@@ -18,7 +18,7 @@ import (
 type GPUSuite struct{}
 
 func TestGPU(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(GPUSuite{})
+	testctx.New(t, Middleware()...).RunTests(GPUSuite{})
 }
 
 const (

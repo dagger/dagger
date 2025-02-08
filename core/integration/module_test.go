@@ -37,7 +37,7 @@ import (
 type ModuleSuite struct{}
 
 func TestModule(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(ModuleSuite{})
+	testctx.New(t, Middleware()...).RunTests(ModuleSuite{})
 }
 
 func (ModuleSuite) TestInvalidSDK(ctx context.Context, t *testctx.T) {

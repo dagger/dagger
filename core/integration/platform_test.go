@@ -18,7 +18,7 @@ import (
 type PlatformSuite struct{}
 
 func TestPlatform(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(PlatformSuite{})
+	testctx.New(t, Middleware()...).RunTests(PlatformSuite{})
 }
 
 var platformToUname = map[dagger.Platform]string{

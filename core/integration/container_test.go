@@ -39,7 +39,7 @@ import (
 type ContainerSuite struct{}
 
 func TestContainer(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(ContainerSuite{})
+	testctx.New(t, Middleware()...).RunTests(ContainerSuite{})
 }
 
 func (ContainerSuite) TestScratch(ctx context.Context, t *testctx.T) {

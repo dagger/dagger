@@ -18,7 +18,7 @@ import (
 type ConfigSuite struct{}
 
 func TestConfig(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(ConfigSuite{})
+	testctx.New(t, Middleware()...).RunTests(ConfigSuite{})
 }
 
 func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {

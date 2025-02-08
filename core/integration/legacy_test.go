@@ -20,7 +20,7 @@ import (
 type LegacySuite struct{}
 
 func TestLegacy(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(LegacySuite{})
+	testctx.New(t, Middleware()...).RunTests(LegacySuite{})
 }
 
 func (LegacySuite) TestLegacyExportAbsolutePath(ctx context.Context, t *testctx.T) {

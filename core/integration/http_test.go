@@ -14,7 +14,7 @@ import (
 type HTTPSuite struct{}
 
 func TestHTTP(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(HTTPSuite{})
+	testctx.New(t, Middleware()...).RunTests(HTTPSuite{})
 }
 
 func (HTTPSuite) TestHTTP(ctx context.Context, t *testctx.T) {

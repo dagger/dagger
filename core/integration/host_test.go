@@ -20,7 +20,7 @@ import (
 type HostSuite struct{}
 
 func TestHost(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(HostSuite{})
+	testctx.New(t, Middleware()...).RunTests(HostSuite{})
 }
 
 func (HostSuite) TestWorkdir(ctx context.Context, t *testctx.T) {

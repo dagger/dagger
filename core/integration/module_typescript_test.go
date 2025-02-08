@@ -15,7 +15,7 @@ import (
 type TypescriptSuite struct{}
 
 func TestTypescript(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(TypescriptSuite{})
+	testctx.New(t, Middleware()...).RunTests(TypescriptSuite{})
 }
 
 func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {

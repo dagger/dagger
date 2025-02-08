@@ -25,7 +25,7 @@ import (
 type FileSuite struct{}
 
 func TestFile(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(FileSuite{})
+	testctx.New(t, Middleware()...).RunTests(FileSuite{})
 }
 
 func (FileSuite) TestFile(ctx context.Context, t *testctx.T) {

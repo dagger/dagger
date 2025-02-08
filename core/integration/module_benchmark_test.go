@@ -17,10 +17,9 @@ import (
 )
 
 func BenchmarkModule(b *testing.B) {
-	testctx.New(b, BenchMiddleware()...).RunSuite(ModuleSuite{})
+	testctx.New(b, BenchMiddleware()...).RunBenchmarks(ModuleSuite{})
 }
 
-// FIXME: this just gets ignored atm
 func (ModuleSuite) BenchmarkLotsOfFunctions(ctx context.Context, b *testctx.B) {
 	const funcCount = 100
 

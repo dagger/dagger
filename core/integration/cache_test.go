@@ -17,7 +17,7 @@ import (
 type CacheSuite struct{}
 
 func TestCache(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(CacheSuite{})
+	testctx.New(t, Middleware()...).RunTests(CacheSuite{})
 }
 
 func (CacheSuite) TestVolume(ctx context.Context, t *testctx.T) {

@@ -11,7 +11,7 @@ import (
 type ElixirSuite struct{}
 
 func TestElixir(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(ElixirSuite{})
+	testctx.New(t, Middleware()...).RunTests(ElixirSuite{})
 }
 
 func (ElixirSuite) TestInit(ctx context.Context, t *testctx.T) {

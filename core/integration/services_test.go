@@ -43,7 +43,7 @@ import (
 type ServiceSuite struct{}
 
 func TestServices(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(ServiceSuite{})
+	testctx.New(t, Middleware()...).RunTests(ServiceSuite{})
 }
 
 func (ServiceSuite) TestHostnamesAreStable(ctx context.Context, t *testctx.T) {

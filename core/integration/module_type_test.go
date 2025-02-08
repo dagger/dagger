@@ -16,7 +16,7 @@ import (
 type TypeSuite struct{}
 
 func TestType(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(TypeSuite{})
+	testctx.New(t, Middleware()...).RunTests(TypeSuite{})
 }
 
 func (TypeSuite) TestCustomTypes(ctx context.Context, t *testctx.T) {

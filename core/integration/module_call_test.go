@@ -25,7 +25,7 @@ import (
 type CallSuite struct{}
 
 func TestCall(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(CallSuite{})
+	testctx.New(t, Middleware()...).RunTests(CallSuite{})
 }
 
 func (CallSuite) TestHelp(ctx context.Context, t *testctx.T) {

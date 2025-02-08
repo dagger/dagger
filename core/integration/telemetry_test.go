@@ -15,7 +15,7 @@ import (
 type TelemetrySuite struct{}
 
 func TestTelemetry(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(TelemetrySuite{})
+	testctx.New(t, Middleware()...).RunTests(TelemetrySuite{})
 }
 
 func (TelemetrySuite) TestInternalVertexes(ctx context.Context, t *testctx.T) {

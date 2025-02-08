@@ -18,7 +18,7 @@ import (
 type CLISuite struct{}
 
 func TestCLI(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(CLISuite{})
+	testctx.New(t, Middleware()...).RunTests(CLISuite{})
 }
 
 func (CLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {

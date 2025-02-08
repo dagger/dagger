@@ -17,7 +17,7 @@ import (
 type SecretSuite struct{}
 
 func TestSecret(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(SecretSuite{})
+	testctx.New(t, Middleware()...).RunTests(SecretSuite{})
 }
 
 func (SecretSuite) TestEnvFromFile(ctx context.Context, t *testctx.T) {

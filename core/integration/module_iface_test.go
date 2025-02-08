@@ -15,7 +15,7 @@ import (
 type InterfaceSuite struct{}
 
 func TestInterface(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(InterfaceSuite{})
+	testctx.New(t, Middleware()...).RunTests(InterfaceSuite{})
 }
 
 func (InterfaceSuite) TestIfaceBasic(ctx context.Context, t *testctx.T) {

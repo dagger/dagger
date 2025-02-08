@@ -33,7 +33,7 @@ func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *da
 type RemoteCacheSuite struct{}
 
 func TestRemoteCache(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(RemoteCacheSuite{})
+	testctx.New(t, Middleware()...).RunTests(RemoteCacheSuite{})
 }
 
 func (RemoteCacheSuite) TestRegistry(ctx context.Context, t *testctx.T) {

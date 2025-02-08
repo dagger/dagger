@@ -23,7 +23,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
-	"github.com/dagger/testctx/otelmw"
+	"github.com/dagger/testctx/oteltest"
 )
 
 func TestMain(m *testing.M) {
@@ -32,7 +32,7 @@ func TestMain(m *testing.M) {
 	origAuthSock := os.Getenv("SSH_AUTH_SOCK")
 	os.Unsetenv("SSH_AUTH_SOCK")
 
-	res := otelmw.Main(m)
+	res := oteltest.Main(m)
 
 	if origAuthSock != "" {
 		os.Setenv("SSH_AUTH_SOCK", origAuthSock)
@@ -43,15 +43,15 @@ func TestMain(m *testing.M) {
 func Middleware() []testctx.Middleware[*testing.T] {
 	return []testctx.Middleware[*testing.T]{
 		testctx.WithParallel(),
-		otelmw.WithTracing[*testing.T](),
-		otelmw.WithLogging[*testing.T](),
+		oteltest.WithTracing[*testing.T](),
+		oteltest.WithLogging[*testing.T](),
 	}
 }
 
 func BenchMiddleware() []testctx.Middleware[*testing.B] {
 	return []testctx.Middleware[*testing.B]{
-		otelmw.WithTracing[*testing.B](),
-		otelmw.WithLogging[*testing.B](),
+		oteltest.WithTracing[*testing.B](),
+		oteltest.WithLogging[*testing.B](),
 	}
 }
 

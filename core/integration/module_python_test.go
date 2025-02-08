@@ -19,7 +19,7 @@ import (
 type PythonSuite struct{}
 
 func TestPython(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(PythonSuite{})
+	testctx.New(t, Middleware()...).RunTests(PythonSuite{})
 }
 
 func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {

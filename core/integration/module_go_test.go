@@ -15,7 +15,7 @@ import (
 type GoSuite struct{}
 
 func TestGo(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(GoSuite{})
+	testctx.New(t, Middleware()...).RunTests(GoSuite{})
 }
 
 func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {

@@ -34,18 +34,18 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
-	"github.com/dagger/testctx/otelmw"
+	"github.com/dagger/testctx/oteltest"
 )
 
 func TestMain(m *testing.M) {
-	os.Exit(otelmw.Main(m))
+	os.Exit(oteltest.Main(m))
 }
 
 func Middleware() []testctx.Middleware[*testing.T] {
 	return []testctx.Middleware[*testing.T]{
 		testctx.WithParallel(),
-		otelmw.WithLogging[*testing.T](),
-		otelmw.WithTracing[*testing.T](),
+		oteltest.WithLogging[*testing.T](),
+		oteltest.WithTracing[*testing.T](),
 	}
 }
 
@@ -54,7 +54,7 @@ type TelemetrySuite struct {
 }
 
 func TestTelemetry(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(TelemetrySuite{
+	testctx.New(t, Middleware()...).RunTests(TelemetrySuite{
 		Home: t.TempDir(),
 	})
 }

@@ -16,7 +16,7 @@ import (
 type GitCredentialSuite struct{}
 
 func TestGitCredential(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(GitCredentialSuite{})
+	testctx.New(t, Middleware()...).RunTests(GitCredentialSuite{})
 }
 
 // TestGitCredentialErrors verifies Git authentication for private modules across different providers

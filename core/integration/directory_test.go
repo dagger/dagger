@@ -21,7 +21,7 @@ import (
 type DirectorySuite struct{}
 
 func TestDirectory(t *testing.T) {
-	testctx.New(t, Middleware()...).RunSuite(DirectorySuite{})
+	testctx.New(t, Middleware()...).RunTests(DirectorySuite{})
 }
 
 func (DirectorySuite) TestEmpty(ctx context.Context, t *testctx.T) {
