@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -82,6 +83,9 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 	ctx, span := telemetry.Tracer(ctx, InstrumentationLibrary).
 		Start(ctx, spanName, trace.WithAttributes(attrs...))
 
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
+
 	return ctx, func(res dagql.Typed, cached bool, err error) {
 		defer telemetry.End(span, func() error {
 			if err != nil {
@@ -111,12 +115,18 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 			slog.Warn("error resolving "+id.Display(), "error", err)
 		}
 
+		// Take care not to print any sensitive values.
+		sensitive := true
+		if spec, ok := self.ObjectType().FieldSpec(id.Field()); ok {
+			sensitive = spec.Sensitive
+		}
+		switch x := res.(type) {
 		// Record an object result as an output of this call.
 		//
 		// This allows the UI to "simplify" the returned object's ID back to the
 		// current call's ID, so we can show the user myMod().unit().stdout()
 		// instead of container().from().[...].stdout().
-		if obj, ok := res.(dagql.Object); ok {
+		case dagql.Object:
 			// Don't consider loadFooFromID to be a 'creator' as that would only
 			// obfuscate the real ID.
 			//
@@ -125,8 +135,35 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 			// consider it.
 			isLoader := strings.HasPrefix(id.Field(), "load") && strings.HasSuffix(id.Field(), "FromID")
 			if !isLoader {
-				objDigest := obj.ID().Digest()
+				objDigest := x.ID().Digest()
 				span.SetAttributes(attribute.String(telemetry.DagOutputAttr, objDigest.String()))
+			}
+		case dagql.Enumerable:
+			if sensitive {
+				break
+			}
+			items := x.Len()
+			for n := 1; n <= items; n++ {
+				item, err := x.Nth(n)
+				if err != nil {
+					break
+				}
+				if _, isObj := item.(dagql.Object); isObj {
+					fmt.Fprintf(stdio.Stdout, "%d %ss", items, item.Type().Name())
+				} else {
+					enc := json.NewEncoder(stdio.Stdout)
+					enc.SetIndent("", "  ")
+					enc.Encode(x)
+				}
+				break
+			}
+		case dagql.String:
+			if !sensitive {
+				fmt.Fprint(stdio.Stdout, x)
+			}
+		case call.Literate:
+			if !sensitive {
+				fmt.Fprint(stdio.Stdout, x.ToLiteral().Display())
 			}
 		}
 
