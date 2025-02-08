@@ -460,6 +460,9 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
       if (clazz.isEnum()) {
         String typeName = name.substring(name.lastIndexOf('.') + 1);
         return CodeBlock.of("dag.typeDef().withEnum($S)", typeName);
+      } else if (Scalar.class.isAssignableFrom(clazz)) {
+        String typeName = name.substring(name.lastIndexOf('.') + 1);
+        return CodeBlock.of("dag.typeDef().withScalar($S)", typeName);
       }
     } catch (ClassNotFoundException e) {
       // we are ignoring here any ClassNotFoundException
