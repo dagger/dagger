@@ -6,8 +6,8 @@ from ._exceptions import DownloadError, ProvisionError, SessionError
 __all__ = [
     "Config",
     "Connection",
-    "connection",
     "DownloadError",
     "ProvisionError",
     "SessionError",
+    "connection",
 ]

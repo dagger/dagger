@@ -4,13 +4,13 @@ import contextlib
 from dagger._exceptions import *
 
 # Engine provisioning (doesn't make sense in modules)
-with contextlib.suppress(ImportError):
+with contextlib.suppress(ModuleNotFoundError):
     from dagger.provisioning import *
 
 # Client bindings
 try:
-    from dagger.client.gen.root import *
-except ImportError:
+    from dagger.gen.client import *
+except ModuleNotFoundError:
     from dagger.client._gen_placeholder import *
 
 # Client connection
@@ -20,7 +20,7 @@ from dagger.client._connection import connect as connect
 from dagger.client._connection import close as close
 
 # Module support (only makes sense in a module runtime container)
-with contextlib.suppress(ImportError):
+with contextlib.suppress(ModuleNotFoundError):
     from dagger.mod import *
 
 # Re-export imports so they look like they live directly in this package.
