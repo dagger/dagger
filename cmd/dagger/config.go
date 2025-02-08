@@ -1,8 +1,15 @@
 package main
 
 import (
+	"context"
+	"fmt"
+	"path/filepath"
 	"strings"
 
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/engine/client"
+	"github.com/juju/ansiterm/tabwriter"
 	"github.com/spf13/cobra"
 )
 
@@ -25,17 +32,20 @@ dagger config -m github.com/dagger/hello-dagger
 	Args:    cobra.NoArgs,
 	GroupID: moduleGroup.ID,
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
-		return nil
-	},
+		ctx := cmd.Context()
 
-	// TODO: FIX
-	// TODO: FIX
-	// TODO: FIX
-	// TODO: FIX
-	/*
-		RunE: configSubcmdRun(func(ctx context.Context, cmd *cobra.Command, _ []string, modConf *configuredModule) (err error) {
+		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			dag := engineClient.Dagger()
+
+			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault())
+
+			sourceRootSubpath, err := modSrc.SourceRootSubpath(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get module source root subpath: %w", err)
+			}
+
 			if configJSONOutput {
-				cfgContents, err := modConf.Source.Directory(".").File(modules.Filename).Contents(ctx)
+				cfgContents, err := modSrc.ContextDirectory().File(filepath.Join(sourceRootSubpath, modules.Filename)).Contents(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to read module config: %w", err)
 				}
@@ -43,13 +53,11 @@ dagger config -m github.com/dagger/hello-dagger
 				return nil
 			}
 
-			mod := modConf.Source.AsModule()
-
-			name, err := mod.Name(ctx)
+			name, err := modSrc.ModuleName(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get module name: %w", err)
 			}
-			sdk, err := mod.SDK(ctx)
+			sdk, err := modSrc.SDK(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get module SDK: %w", err)
 			}
@@ -63,16 +71,29 @@ dagger config -m github.com/dagger/hello-dagger
 				"SDK:",
 				sdk,
 			)
-			fmt.Fprintf(tw, "%s\t%s\n",
-				"Root Directory:",
-				modConf.LocalContextPath,
-			)
-			fmt.Fprintf(tw, "%s\t%s\n",
-				"Source Directory:",
-				modConf.LocalRootSourcePath,
-			)
+
+			kind, err := modSrc.Kind(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get module kind: %w", err)
+			}
+			if kind == dagger.ModuleSourceKindLocalSource {
+				contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get local context directory path: %w", err)
+				}
+				sourceRootPath := filepath.Join(contextDirPath, sourceRootSubpath)
+
+				fmt.Fprintf(tw, "%s\t%s\n",
+					"Context Directory:",
+					contextDirPath,
+				)
+				fmt.Fprintf(tw, "%s\t%s\n",
+					"Source Root Directory:",
+					sourceRootPath,
+				)
+			}
 
 			return tw.Flush()
-		}).RunE,
-	*/
+		})
+	},
 }
