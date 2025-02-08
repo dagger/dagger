@@ -37,7 +37,7 @@ func initializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDe
 	if modRef == "" {
 		modRef = moduleURLDefault
 	}
-	return initializeModule(ctx, dag, modRef, true)
+	return initializeModule(ctx, dag, modRef)
 }
 
 // maybeInitializeDefaultModule optionally loads the module referenced by the -m,--mod flag,
@@ -57,14 +57,13 @@ func initializeModule(
 	ctx context.Context,
 	dag *dagger.Client,
 	srcRef string,
-	doFindUp bool,
 	srcOpts ...dagger.ModuleSourceOpts,
 ) (rdef *moduleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "load module")
 	defer telemetry.End(span, func() error { return rerr })
 
 	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
-	modSrc := dag.ModuleSource(srcRef)
+	modSrc := dag.ModuleSource(srcRef, srcOpts...)
 	configExists, err := modSrc.ConfigExists(findCtx)
 	telemetry.End(findSpan, func() error { return err })
 
@@ -98,11 +97,13 @@ func tryInitializeModule(ctx context.Context, dag *dagger.Client, srcRef string)
 	defer telemetry.End(span, func() error { return rerr })
 
 	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
-	modSrc := dag.ModuleSource(srcRef)
+	modSrc := dag.ModuleSource(srcRef, dagger.ModuleSourceOpts{
+		DisableFindUp: true,
+	})
 	configExists, _ := modSrc.ConfigExists(findCtx)
 	findSpan.End()
 
-	if configExists {
+	if !configExists {
 		return nil, nil
 	}
 
