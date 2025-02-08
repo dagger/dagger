@@ -639,6 +639,25 @@ func (sdk *goSDK) baseWithCodegen(
 	// for now allow only Env with prefix GO
 	cfg, ok, _ := src.Self.ModuleConfig(ctx)
 	if ok && cfg.SDK != nil {
+		// codegen runs `go mod tidy` and for private deps
+		// we allow users to configure GOPRIVATE env variable.
+		// But for it to work, we need to ensure we don't run into
+		// host checking prompt. So customizing GIT_SSH_COMMAND to
+		// allow skipping the prompt.
+		selectors = append(selectors, dagql.Selector{
+			Field: "withEnvVariable",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "name",
+					Value: dagql.NewString("GIT_SSH_COMMAND"),
+				},
+				{
+					Name:  "value",
+					Value: dagql.NewString("ssh -o StrictHostKeyChecking=no"),
+				},
+			},
+		})
+
 		for k, v := range cfg.SDK.Env {
 			if !strings.HasPrefix(k, "GO") {
 				continue
@@ -660,6 +679,73 @@ func (sdk *goSDK) baseWithCodegen(
 		}
 	}
 
+	// bkclient to fetch git config
+	bk, err := src.Self.Query.Buildkit(ctx)
+	if err != nil {
+		return ctr, err
+	}
+
+	gitconfig, err := bk.GetGitConfig(ctx)
+	if err != nil {
+		return ctr, err
+	}
+
+	// unfortunately git does not support export/import of git config
+	// so we basically have to translate the fetched git config into
+	// git config command for each fetched config.
+	// TODO(rajatjindal): maybe we should do this in the attachable itself?
+	for _, entry := range gitconfig {
+		selectors = append(selectors,
+			dagql.Selector{
+				Field: "withExec",
+				Args: []dagql.NamedInput{
+					{
+						Name: "args",
+						Value: dagql.ArrayInput[dagql.String]{
+							"git", "config", "--global", "--add", dagql.NewString(entry.Key), dagql.NewString(entry.Value),
+						},
+					},
+				},
+			},
+		)
+	}
+
+	//TODO(rajatjindal): only when ssh auth sock is available
+	sockInst, err := sdk.getAuthSocket(ctx, src)
+	if err != nil {
+		return ctr, fmt.Errorf("failed to get auth socket: %w", err)
+	}
+	selectors = append(selectors,
+		dagql.Selector{
+			Field: "withUnixSocket",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.String("/tmp/dagger-ssh-auth-sock"),
+				},
+				{
+					Name:  "source",
+					Value: dagql.NewID[*core.Socket](sockInst.ID()),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withEnvVariable",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "name",
+					Value: dagql.String("SSH_AUTH_SOCK"),
+				},
+				{
+					Name:  "value",
+					Value: dagql.String("/tmp/dagger-ssh-auth-sock"),
+				},
+			},
+		},
+	)
+
+	// now that we are done with gitconfig and injecting env
+	// variables, we can run the codegen command.
 	selectors = append(selectors,
 		dagql.Selector{
 			Field: "withoutDefaultArgs",
@@ -677,7 +763,7 @@ func (sdk *goSDK) baseWithCodegen(
 		},
 	)
 
-	if err = sdk.dag.Select(ctx, ctr, &ctr, selectors...); err != nil {
+	if err := sdk.dag.Select(ctx, ctr, &ctr, selectors...); err != nil {
 		return ctr, fmt.Errorf("failed to mount introspection json file into go module sdk container codegen: %w", err)
 	}
 
@@ -828,4 +914,50 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], er
 		return inst, fmt.Errorf("failed to get container from go module sdk tarball: %w", err)
 	}
 	return ctr, nil
+}
+
+func (sdk *goSDK) getAuthSocket(ctx context.Context, src dagql.Instance[*core.ModuleSource]) (dagql.Instance[*core.Socket], error) {
+	var inst dagql.Instance[*core.Socket]
+
+	socketStore, err := sdk.root.Sockets(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get socket store: %w", err)
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get client metadata from context: %w", err)
+	}
+
+	accessor, err := core.GetClientResourceAccessor(ctx, src.Self.Query, clientMetadata.SSHAuthSocketPath)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get client resource name: %w", err)
+	}
+
+	if err := sdk.dag.Select(ctx, sdk.dag.Root(), &inst,
+		dagql.Selector{
+			Field: "host",
+		},
+		dagql.Selector{
+			Field: "__internalSocket",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "accessor",
+					Value: dagql.NewString(accessor),
+				},
+			},
+		},
+	); err != nil {
+		return inst, fmt.Errorf("failed to select internal socket: %w", err)
+	}
+
+	if inst.Self == nil {
+		return inst, fmt.Errorf("sockInst.Self is NIL")
+	}
+
+	if err := socketStore.AddUnixSocket(inst.Self, clientMetadata.ClientID, clientMetadata.SSHAuthSocketPath); err != nil {
+		return inst, fmt.Errorf("failed to add unix socket to store: %w", err)
+	}
+
+	return inst, nil
 }

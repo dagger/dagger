@@ -275,3 +275,45 @@ func main() {
 		})
 	}
 }
+
+func TestIsGitConfigKeyAllowed(t *testing.T) {
+	testcases := []struct {
+		gitconfig string
+		expected  *GitConfig
+	}{
+		{
+			gitconfig: `credential.helper=osxkeychain
+init.defaultbranch=main
+user.name=User Name
+user.email=user-name@gmail.com
+commit.gpgsign=true
+url.ssh://git@github.com/.insteadof=https://github.com/
+core.excludesfile=~/.config/git/.gitignore
+protocol.file.allow=always
+core.repositoryformatversion=0
+core.filemode=true
+core.bare=false
+core.logallrefupdates=true
+core.ignorecase=true
+core.precomposeunicode=true
+remote.origin.url=git@github.com:some-user/some-repo.git
+remote.origin.fetch=+refs/heads/*:refs/remotes/origin/*`,
+			expected: &GitConfig{
+				Entries: []*GitConfigEntry{
+					{
+						Key:   "url.ssh://git@github.com/.insteadof",
+						Value: "https://github.com/",
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.gitconfig, func(t *testing.T) {
+			parsed, err := parseGitConfigOutput([]byte(tc.gitconfig))
+			require.Nil(t, err)
+			require.Equal(t, tc.expected, parsed)
+		})
+	}
+}

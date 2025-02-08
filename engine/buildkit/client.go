@@ -632,7 +632,7 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 		return nil, fmt.Errorf("failed to get main client caller: %w", err)
 	}
 
-	response, err := session.NewGitCredentialClient(caller.Conn()).GetCredential(ctx, &session.GitCredentialRequest{
+	response, err := session.NewGitClient(caller.Conn()).GetCredential(ctx, &session.GitCredentialRequest{
 		Protocol: protocol,
 		Host:     host,
 		Path:     path,
@@ -646,6 +646,27 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 		return result.Credential, nil
 	case *session.GitCredentialResponse_Error:
 		return nil, fmt.Errorf("git credential error: %s", result.Error.Message)
+	default:
+		return nil, fmt.Errorf("unexpected response type")
+	}
+}
+
+func (c *Client) GetGitConfig(ctx context.Context) ([]*session.GitConfigEntry, error) {
+	caller, err := c.GetMainClientCaller()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get main client caller: %w", err)
+	}
+
+	response, err := session.NewGitClient(caller.Conn()).GetConfig(ctx, &session.GitConfigRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to query git config: %w", err)
+	}
+
+	switch result := response.Result.(type) {
+	case *session.GitConfigResponse_Config:
+		return result.Config.Entries, nil
+	case *session.GitConfigResponse_Error:
+		return nil, fmt.Errorf("git config error: %s", result.Error.Message)
 	default:
 		return nil, fmt.Errorf("unexpected response type")
 	}
