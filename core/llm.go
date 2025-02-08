@@ -200,6 +200,10 @@ func (llm *Llm) WithPrompt(ctx context.Context,
 		})
 	}
 	llm = llm.Clone()
+	func() {
+		_, span := Tracer(ctx).Start(ctx, "🧑 💬"+prompt)
+		span.End()
+	}()
 	llm.history = append(llm.history, openai.UserMessage(prompt))
 	if lazy {
 		return llm, nil
@@ -276,7 +280,7 @@ func (llm *Llm) Sync(
 		reply := res.Choices[0].Message
 		// Add the model reply to the history
 		if reply.Content != "" {
-			_, span := Tracer(ctx).Start(ctx, "🤖💬 "+reply.Content)
+			_, span := Tracer(ctx).Start(ctx, "🤖 💬"+reply.Content)
 			span.End()
 		}
 		llm.history = append(llm.history, reply)
