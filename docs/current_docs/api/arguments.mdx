@@ -70,6 +70,17 @@ def hello(self):
 ```typescript file=./snippets/functions/arguments-string/typescript/index.ts
 ```
 </TabItem>
+<TabItem value="PHP">
+```php file=./snippets/functions/arguments-string/php/src/MyModule.php
+```
+
+Even though PHP doesn't enforce [type annotations][typing] at runtime,
+it's important to define them with Dagger Functions. The PHP SDK needs the
+typing information at runtime to correctly report to the API.
+
+[typing]: https://www.php.net/manual/en/language.types.type-system.php
+
+</TabItem>
 </Tabs>
 
 Here is an example call for this Dagger Function:
@@ -119,6 +130,10 @@ Here is an example of a Dagger Function that accepts a Boolean argument:
 ```typescript file=./snippets/functions/arguments-boolean/typescript/index.ts
 ```
 </TabItem>
+<TabItem value="PHP">
+```php file=./snippets/functions/arguments-boolean/php/src/MyModule.php
+```
+</TabItem>
 </Tabs>
 
 Here is an example call for this Dagger Function:
@@ -153,6 +168,11 @@ Here is an example of a Dagger function that accepts an integer argument:
 
 <TabItem value="TypeScript">
 ```typescript file=./snippets/functions/arguments-return-values-integer/typescript/index.ts
+```
+</TabItem>
+
+<TabItem value="PHP">
+```php file=./snippets/functions/arguments-return-values-integer/php/src/MyModule.php
 ```
 </TabItem>
 
@@ -199,6 +219,13 @@ The imported `float` type is a `number` underneath, so you can use it as you wou
 ```typescript file=./snippets/functions/arguments-return-values-float/typescript/index.ts
 ```
 </TabItem>
+
+<TabItem value="PHP">
+
+```php file=./snippets/functions/arguments-return-values-float/php/src/MyModule.php
+```
+</TabItem>
+
 </Tabs>
 
 Here is an example call for this Dagger Function:
@@ -228,6 +255,16 @@ To pass an array argument to a Dagger Function, add the corresponding flag, foll
 </TabItem>
 <TabItem value="TypeScript">
 ```typescript file=./snippets/functions/arguments-array/typescript/index.ts
+```
+</TabItem>
+<TabItem value="PHP">
+:::note
+Lists must have their subtype specified by adding the `#[ListOfType]` attribute to the relevant function argument.
+
+The PHP SDK needs the typing information at runtime to correctly report to the API.
+:::
+
+```php file=./snippets/functions/arguments-array/php/src/MyModule.php
 ```
 </TabItem>
 </Tabs>
@@ -263,6 +300,10 @@ Here's an example of a Dagger Function that accepts a `Directory` as argument. T
 </TabItem>
 <TabItem value="TypeScript">
 ```typescript file=./snippets/functions/arguments-directory/typescript/index.ts
+```
+</TabItem>
+<TabItem value="PHP">
+```php file=./snippets/functions/arguments-directory/php/src/MyModule.php
 ```
 </TabItem>
 </Tabs>
@@ -332,6 +373,10 @@ Here's an example of a Dagger Function that accepts a `File` as argument, reads 
 ```typescript file=./snippets/functions/arguments-file/typescript/index.ts
 ```
 </TabItem>
+<TabItem value="PHP">
+```php file=./snippets/functions/arguments-file/php/src/MyModule.php
+```
+</TabItem>
 </Tabs>
 
 Here is an example of passing a local file to this Dagger Function as argument:
@@ -367,6 +412,10 @@ Here is an example of a Dagger Function that accepts a container image reference
 </TabItem>
 <TabItem value="TypeScript">
 ```typescript file=./snippets/functions/arguments-container/typescript/index.ts
+```
+</TabItem>
+<TabItem value="PHP">
+```php file=./snippets/functions/arguments-container/php/src/MyModule.php
 ```
 </TabItem>
 </Tabs>
@@ -412,6 +461,12 @@ Secrets can be passed to Dagger Functions as arguments using the `Secret` core t
 <TabItem value="TypeScript">
 
 ```typescript file=../cookbook/snippets/secret-variable/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="PHP">
+
+```php file=../cookbook/snippets/secret-variable/php/src/MyModule.php
 ```
 
 </TabItem>
@@ -490,6 +545,19 @@ Here's an example of a Dagger Function with an optional argument:
 ```typescript file=./snippets/functions/arguments-optional/typescript/index.ts
 ```
 </TabItem>
+<TabItem value="PHP">
+:::note
+The definition of _optional_ varies between Dagger and PHP.
+
+An _optional_ argument to PHP is one that has a default value.
+
+An _optional_ argument to Dagger can be omitted entirely. It is truly optional.
+
+To specify a function argument as _optional_, simply make it nullable. When using the Dagger CLI, if the argument is omitted; the PHP SDK will treat this as receiving the value `null`.
+:::
+```php file=./snippets/functions/arguments-optional/php/src/MyModule.php
+```
+</TabItem>
 </Tabs>
 
 Here is an example call for this Dagger Function, with the optional argument:
@@ -533,6 +601,10 @@ Here's an example of a Dagger Function with a default value for a string argumen
 </TabItem>
 <TabItem value="TypeScript">
 ```typescript file=./snippets/functions/arguments-default-string/typescript/index.ts
+```
+</TabItem>
+<TabItem value="PHP">
+```php file=./snippets/functions/arguments-default-string/php/src/MyModule.php
 ```
 </TabItem>
 </Tabs>
