@@ -36,6 +36,10 @@ func (s llmSchema) Install() {
 			Doc("append the contents of a file to the llm context").
 			ArgDoc("file", "The file to read the prompt from").
 			ArgDoc("lazy", "Buffer the prompt locally without sending"),
+		dagql.Func("withPrompVar", s.withPromptVar).
+			Doc("set a variable for expansion in the prompt").
+			ArgDoc("name", "The name of the variable").
+			ArgDoc("value", "The value of the variable"),
 		dagql.Func("sync", s.sync).
 			Doc("synchronize the llm state: send outstanding prompts, process replies and tool calls").
 			ArgDoc("maxLoops", "The maximum number of loops to allow."),
@@ -70,35 +74,28 @@ func (s *llmSchema) lastReply(ctx context.Context, llm *core.Llm, args struct{})
 func (s *llmSchema) withPrompt(ctx context.Context, llm *core.Llm, args struct {
 	Prompt string
 	Lazy   dagql.Optional[dagql.Boolean]
-	Vars   dagql.Optional[dagql.ArrayInput[dagql.String]]
 }) (*core.Llm, error) {
-	var vars []string
-	if args.Vars.Valid {
-		for _, v := range args.Vars.Value {
-			vars = append(vars, v.String())
-		}
-	}
 	lazy := args.Lazy.GetOr(dagql.NewBoolean(false)).Bool()
-	return llm.WithPrompt(ctx, args.Prompt, lazy, vars, s.srv)
+	return llm.WithPrompt(ctx, args.Prompt, lazy, s.srv)
+}
+
+func (s *llmSchema) withPromptVar(ctx context.Context, llm *core.Llm, args struct {
+	Name  dagql.String
+	Value dagql.String
+}) (*core.Llm, error) {
+	return llm.WithPromptVar(args.Name.String(), args.Value.String()), nil
 }
 
 func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.Llm, args struct {
 	File core.FileID
 	Lazy dagql.Optional[dagql.Boolean]
-	Vars dagql.Optional[dagql.ArrayInput[dagql.String]]
 }) (*core.Llm, error) {
 	file, err := args.File.Load(ctx, s.srv)
 	if err != nil {
 		return nil, err
 	}
-	var vars []string
-	if args.Vars.Valid {
-		for _, v := range args.Vars.Value {
-			vars = append(vars, v.String())
-		}
-	}
 	lazy := args.Lazy.GetOr(dagql.NewBoolean(false)).Bool()
-	return llm.WithPromptFile(ctx, file.Self, lazy, vars, s.srv)
+	return llm.WithPromptFile(ctx, file.Self, lazy, s.srv)
 }
 
 func (s *llmSchema) sync(ctx context.Context, llm *core.Llm, args struct {
