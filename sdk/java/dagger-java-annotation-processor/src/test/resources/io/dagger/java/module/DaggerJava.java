@@ -1,5 +1,6 @@
 package io.dagger.java.module;
 
+import io.dagger.client.Client;
 import io.dagger.client.Container;
 import io.dagger.client.DaggerQueryException;
 import io.dagger.client.Directory;
@@ -14,8 +15,33 @@ import java.util.concurrent.ExecutionException;
 /** Dagger Java Module main object */
 @Object
 public class DaggerJava extends AbstractModule {
+  private String notExportedField;
+
+  /** Project source directory */
+  public Directory source;
+
+  public String version;
+
   public DaggerJava() {
     super();
+  }
+
+  /**
+   * Initialize the DaggerJava module
+   *
+   * @param source Project source directory
+   * @param version Go version
+   */
+  public DaggerJava(
+      Client dag, @Nullable Directory source, @Nullable @Default("1.23.2") String version) {
+    super(dag);
+    if (source == null) {
+      this.source = dag.directory();
+    } else {
+      this.source = source;
+    }
+
+    this.version = version;
   }
 
   /**
