@@ -276,13 +276,18 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 }
 
 func isInterpBuiltin(name string) bool {
+	// Allow the following:
+	//  - invalid function/module names: "[", ":"
+	//  - unlikely to conflict: "true", "false"
 	switch name {
-	case "true", ":", "false", "exit", "set", "shift", "unset",
+	case "exit", "set", "shift", "unset",
 		"echo", "printf", "break", "continue", "pwd", "cd",
 		"wait", "builtin", "trap", "type", "source", ".", "command",
-		"dirs", "pushd", "popd", "umask", "alias", "unalias",
-		"fg", "bg", "getopts", "eval", "test", "[", "exec",
-		"return", "read", "mapfile", "readarray", "shopt":
+		"dirs", "pushd", "popd", "alias", "unalias",
+		"getopts", "eval", "test", "exec",
+		"return", "read", "mapfile", "readarray", "shopt",
+		//  not implemented
+		"umask", "fg", "bg":
 		return true
 	}
 	return false
@@ -411,7 +416,9 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 		}
 	}()
 
+	var exit bool
 	var runErr error
+
 	for {
 		Frontend.SetPrimary(dagui.SpanID{})
 		Frontend.SetCustomExit(func() {})
@@ -461,8 +468,7 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 		if err != nil {
 			// EOF or Ctrl+D to exit
 			if errors.Is(err, io.EOF) {
-				Frontend.SetCustomExit(nil)
-				Frontend.SetVerbosity(0)
+				exit = true
 				break
 			}
 			// Ctrl+C should move to the next line
@@ -470,6 +476,11 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 				continue
 			}
 			return err
+		}
+
+		if line == "exit" {
+			exit = true
+			break
 		}
 
 		if strings.TrimSpace(line) == "" {
@@ -482,9 +493,15 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 		Frontend.SetCustomExit(cancel)
 		runErr = h.run(newCtx, strings.NewReader(line), "")
 		if runErr != nil {
+			span.RecordError(runErr)
 			span.SetStatus(codes.Error, runErr.Error())
 		}
 		span.End()
+	}
+
+	if exit {
+		Frontend.SetCustomExit(nil)
+		Frontend.SetVerbosity(0)
 	}
 
 	return nil
