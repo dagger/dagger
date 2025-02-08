@@ -29,7 +29,8 @@ type Llm struct {
 	// FIXME: rename to 'messages'
 	history []openai.ChatCompletionMessageParamUnion
 	// History of tool calls and their result
-	calls map[string]string
+	calls      map[string]string
+	promptVars []string
 
 	// LLM state
 	// Can hold typed variables for all the types available in the schema
@@ -139,6 +140,7 @@ func (*Llm) Type() *ast.Type {
 func (llm *Llm) Clone() *Llm {
 	cp := *llm
 	cp.history = cloneSlice(cp.history)
+	cp.promptVars = cloneSlice(cp.promptVars)
 	cp.calls = cloneMap(cp.calls)
 	// FIXME: support multiple variables in state
 	// cp.state = cloneMap(cp.state)
@@ -165,7 +167,7 @@ func (llm *Llm) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error)
 // A convenience function to ask the model a question directly, and get an answer
 // The state of the agent is not changed.
 func (llm *Llm) Ask(ctx context.Context, question string, srv *dagql.Server) (string, error) {
-	llm, err := llm.WithPrompt(ctx, question, false, nil, srv)
+	llm, err := llm.WithPrompt(ctx, question, false, srv)
 	if err != nil {
 		return "", err
 	}
@@ -178,10 +180,9 @@ func (llm *Llm) WithPrompt(ctx context.Context,
 	prompt string,
 	// Append the prompt to the context, but don't sync with the LLM endpoint
 	lazy bool,
-	// An array of key-value pairs for variable expansion. The array alternates between keys and their
-	// corresponding values. If empty, no variable expansion occurs.
-	vars []string,
-	srv *dagql.Server) (*Llm, error) {
+	srv *dagql.Server,
+) (*Llm, error) {
+	vars := llm.promptVars
 	if len(vars) > 0 {
 		prompt = os.Expand(prompt, func(key string) string {
 			// Iterate through vars array taking elements in pairs, looking
@@ -212,12 +213,18 @@ func (llm *Llm) WithPrompt(ctx context.Context,
 }
 
 // WithPromptFile is like WithPrompt but reads the prompt from a file
-func (llm *Llm) WithPromptFile(ctx context.Context, file *File, lazy bool, vars []string, srv *dagql.Server) (*Llm, error) {
+func (llm *Llm) WithPromptFile(ctx context.Context, file *File, lazy bool, srv *dagql.Server) (*Llm, error) {
 	contents, err := file.Contents(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return llm.WithPrompt(ctx, string(contents), lazy, vars, srv)
+	return llm.WithPrompt(ctx, string(contents), lazy, srv)
+}
+
+func (llm *Llm) WithPromptVar(name, value string) *Llm {
+	llm = llm.Clone()
+	llm.promptVars = append(llm.promptVars, name, value)
+	return llm
 }
 
 // Append a system prompt message to the history
