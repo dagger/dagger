@@ -48,6 +48,7 @@ import javax.lang.model.util.Elements;
   "io.dagger.module.annotation.Function",
   "io.dagger.module.annotation.Optional",
   "io.dagger.module.annotation.Default",
+  "io.dagger.module.annotation.DefaultPath",
   "io.dagger.module.annotation.Nullable"
 })
 @SupportedSourceVersion(SourceVersion.RELEASE_17)
@@ -106,17 +107,45 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                           Default defaultAnnotation =
                                               param.getAnnotation(
                                                   io.dagger.module.annotation.Default.class);
+                                          var hasDefaultAnnotation = defaultAnnotation != null;
+
+                                          DefaultPath defaultPathAnnotation =
+                                              param.getAnnotation(
+                                                  io.dagger.module.annotation.DefaultPath.class);
+                                          var hasDefaultPathAnnotation =
+                                              defaultPathAnnotation != null;
+
+                                          if (hasDefaultPathAnnotation
+                                              && !tm.toString().equals("io.dagger.client.Directory")
+                                              && !tm.toString().equals("io.dagger.client.File")) {
+                                            throw new IllegalArgumentException(
+                                                "Parameter "
+                                                    + param.getSimpleName()
+                                                    + " cannot have @DefaultPath annotation if it is not a Directory or File type");
+                                          }
+
+                                          if (hasDefaultAnnotation && hasDefaultPathAnnotation) {
+                                            throw new IllegalArgumentException(
+                                                "Parameter "
+                                                    + param.getSimpleName()
+                                                    + " cannot have both @Default and @DefaultPath annotations");
+                                          }
+
                                           Nullable nullableAnnotation =
                                               param.getAnnotation(
                                                   io.dagger.module.annotation.Nullable.class);
 
                                           boolean isOptional = nullableAnnotation != null;
 
-                                          var hasDefaultAnnotation = defaultAnnotation != null;
                                           String defaultValue =
                                               hasDefaultAnnotation
                                                   ? quoteIfString(
                                                       defaultAnnotation.value(), tm.toString())
+                                                  : null;
+
+                                          String defaultPath =
+                                              hasDefaultPathAnnotation
+                                                  ? defaultPathAnnotation.value()
                                                   : null;
 
                                           // if @Default("null") we handle that as @Nullable only
@@ -126,14 +155,33 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                                             hasDefaultAnnotation = false;
                                           }
 
+                                          Ignore ignoreAnnotation =
+                                              param.getAnnotation(Ignore.class);
+                                          var hasIgnoreAnnotation = ignoreAnnotation != null;
+                                          if (hasIgnoreAnnotation
+                                              && !tm.toString()
+                                                  .equals("io.dagger.client.Directory")) {
+                                            throw new IllegalArgumentException(
+                                                "Parameter "
+                                                    + param.getSimpleName()
+                                                    + " cannot have @Ignore annotation if it is not a Directory");
+                                          }
+
+                                          String[] ignoreValue =
+                                              hasIgnoreAnnotation ? ignoreAnnotation.value() : null;
+
                                           String paramName = param.getSimpleName().toString();
                                           return new ParameterInfo(
                                               paramName,
                                               parseParameterDescription(elt, paramName),
                                               new TypeInfo(tm.toString(), tk.name()),
                                               isOptional,
-                                              hasDefaultAnnotation,
-                                              defaultValue);
+                                              new StringOptionInfo(
+                                                  hasDefaultAnnotation, defaultValue),
+                                              new StringOptionInfo(
+                                                  hasDefaultPathAnnotation, defaultPath),
+                                              new StringArrayOptionInfo(
+                                                  hasIgnoreAnnotation, ignoreValue));
                                         })
                                     .toList();
 
@@ -215,15 +263,27 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
               rm.addCode(".withOptional(true)");
             }
             boolean hasDescription = isNotBlank(parameterInfo.description());
-            boolean hasDefaultValue = parameterInfo.hasDefaultValue();
-            if (hasDescription || hasDefaultValue) {
+            boolean hasDefaultValue = parameterInfo.defaultValue().isSet();
+            boolean hasDefaultPath = parameterInfo.defaultPath().isSet();
+            boolean hasIgnore = parameterInfo.ignore().isSet();
+            if (hasDescription || hasDefaultValue || hasDefaultPath || hasIgnore) {
               rm.addCode(", new $T.WithArgArguments()", io.dagger.client.Function.class);
               if (hasDescription) {
                 rm.addCode(".withDescription($S)", parameterInfo.description());
               }
               if (hasDefaultValue) {
                 rm.addCode(
-                    ".withDefaultValue($T.from($S))", JSON.class, parameterInfo.defaultValue());
+                    ".withDefaultValue($T.from($S))",
+                    JSON.class,
+                    parameterInfo.defaultValue().value());
+              }
+              if (hasDefaultPath) {
+                rm.addCode(".withDefaultPath($S)", parameterInfo.defaultPath().value());
+              }
+              if (hasIgnore) {
+                rm.addCode(".withIgnore(")
+                    .addCode(stringArrayToList(parameterInfo.ignore().value()))
+                    .addCode(")");
               }
             }
             rm.addCode(")");
@@ -563,5 +623,16 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
             .filter(tag -> tag.getName().isPresent() && tag.getName().get().equals(paramName))
             .findFirst();
     return blockTag.map(tag -> tag.getContent().toText()).orElse("");
+  }
+
+  private static CodeBlock stringArrayToList(String[] array) {
+    CodeBlock.Builder code = CodeBlock.builder().add("$T.of(", List.class);
+    for (int i = 0; i < array.length; i++) {
+      if (i > 0) {
+        code.add(", ");
+      }
+      code.add("$S", array[i]);
+    }
+    return code.add(")").build();
   }
 }
