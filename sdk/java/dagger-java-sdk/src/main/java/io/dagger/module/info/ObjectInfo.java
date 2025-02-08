@@ -1,4 +1,8 @@
 package io.dagger.module.info;
 
 public record ObjectInfo(
-    String name, String qualifiedName, String description, FunctionInfo[] functions) {}
+    String name,
+    String qualifiedName,
+    String description,
+    FieldInfo[] fields,
+    FunctionInfo[] functions) {}

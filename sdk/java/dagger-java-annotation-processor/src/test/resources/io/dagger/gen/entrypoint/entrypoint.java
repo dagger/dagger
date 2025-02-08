@@ -121,7 +121,9 @@ public class Entrypoint {
                     dag.function("nullableDefault",
                         dag.typeDef().withKind(TypeDefKind.STRING_KIND))
                         .withDescription("Set a default value in case the user doesn't provide a value and allow for null value.")
-                        .withArg("stringArg", dag.typeDef().withKind(TypeDefKind.STRING_KIND).withOptional(true), new Function.WithArgArguments().withDefaultValue(JSON.from("\"Foo\"")))));
+                        .withArg("stringArg", dag.typeDef().withKind(TypeDefKind.STRING_KIND).withOptional(true), new Function.WithArgArguments().withDefaultValue(JSON.from("\"Foo\""))))
+                .withField("source", dag.typeDef().withObject("Directory"), new TypeDef.WithFieldArguments().withDescription("Project source directory"))
+                .withField("version", dag.typeDef().withKind(TypeDefKind.STRING_KIND)));
     return module.id();
   }
 
