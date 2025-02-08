@@ -259,7 +259,7 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 	for _, def := range mod.EnumDefs {
 		enumDef := def.AsEnum.Value
 
-		slog.ExtraDebug("installing enum", "name", mod.Name(), "enum", enumDef.Name, "values", len(enumDef.Values))
+		slog.ExtraDebug("installing enum", "name", mod.Name(), "enum", enumDef.Name, "members", len(enumDef.Members))
 
 		enum := &ModuleEnum{
 			TypeDef: enumDef,
@@ -658,14 +658,14 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
 		if ok {
-			enum.Values = mtype.TypeDef().AsEnum.Value.Values
+			enum.Members = mtype.TypeDef().AsEnum.Value.Members
 		}
 		if !ok {
 			enum.Name = namespaceObject(enum.OriginalName, mod.Name(), mod.OriginalName)
 			enum.SourceMap = mod.namespaceSourceMap(modPath, enum.SourceMap)
 		}
 
-		for _, value := range enum.Values {
+		for _, value := range enum.Members {
 			value.SourceMap = mod.namespaceSourceMap(modPath, value.SourceMap)
 		}
 	}

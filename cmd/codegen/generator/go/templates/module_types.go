@@ -173,17 +173,17 @@ func (spec *parsedPrimitiveType) TypeDefCode() (*Statement, error) {
 		// NOTE: this is odd, but it doesn't matter, because the module won't
 		// pass the compilation step if there are invalid types - we just want
 		// to not error out horribly in codegen
-		kind = Id("dagger").Dot("TypeDefKindVoidKind")
+		kind = Id("dagger").Dot("TypeDefKindVoid")
 	} else {
 		switch spec.goType.Info() {
 		case types.IsString:
-			kind = Id("dagger").Dot("TypeDefKindStringKind")
+			kind = Id("dagger").Dot("TypeDefKindString")
 		case types.IsInteger:
-			kind = Id("dagger").Dot("TypeDefKindIntegerKind")
+			kind = Id("dagger").Dot("TypeDefKindInteger")
 		case types.IsBoolean:
-			kind = Id("dagger").Dot("TypeDefKindBooleanKind")
+			kind = Id("dagger").Dot("TypeDefKindBoolean")
 		case types.IsFloat:
-			kind = Id("dagger").Dot("TypeDefKindFloatKind")
+			kind = Id("dagger").Dot("TypeDefKindFloat")
 		default:
 			return nil, fmt.Errorf("unsupported basic type: %+v", spec.goType)
 		}
