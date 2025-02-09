@@ -30,8 +30,9 @@ type Builder struct {
 	platform     dagger.Platform
 	platformSpec ocispecs.Platform
 
-	base       string
-	gpuSupport bool
+	base           string
+	gpuSupport     bool
+	thunderSupport bool
 
 	race bool
 }
@@ -129,6 +130,12 @@ func (build *Builder) WithGPUSupport() *Builder {
 	return &b
 }
 
+func (build *Builder) WithThunderSupport() *Builder {
+	b := *build
+	b.thunderSupport = true
+	return &b
+}
+
 func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 
@@ -157,6 +164,20 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		case "wolfi":
 		default:
 			return nil, fmt.Errorf("gpu support requires %q base, not %q", "ubuntu or wolfi", build.base)
+		}
+	}
+
+	if build.thunderSupport {
+		switch build.platformSpec.Architecture {
+		case "amd64":
+		default:
+			return nil, fmt.Errorf("thunder support requires %q arch, not %q", "amd64", build.platformSpec.Architecture)
+		}
+
+		switch build.base {
+		case "ubuntu":
+		default:
+			return nil, fmt.Errorf("thunder support requires %q base, not %q", "ubuntu", build.base)
 		}
 	}
 
@@ -209,6 +230,46 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 				With(util.ShellCmd(`curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg`)).
 				With(util.ShellCmd(`curl -s -L https://nvidia.github.io/libnvidia-container/experimental/"$(. /etc/os-release;echo $ID$VERSION_ID)"/libnvidia-container.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list`)).
 				With(util.ShellCmd(`apt-get update && apt-get install -y nvidia-container-toolkit`))
+		}
+		if build.thunderSupport {
+			base = base.
+				// Install dependencies
+				WithExec([]string{"apt-get", "install", "-y", "wget", "gpg", "curl", "ca-certificates", "jq", "openssh-server"}).
+				// Install Thunder
+				WithExec([]string{"mkdir", "-p", "/etc/thunder"}).
+				WithExec([]string{"wget", "-O", "/etc/thunder/libthunder.so", "https://storage.googleapis.com/client-binary/client_linux_x86_64"}).
+				// Install CUDA and remove unused files
+				WithExec([]string{"wget", "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb", "-O", "/tmp/cuda-keyring.deb"}).
+				WithExec([]string{"dpkg", "-i", "/tmp/cuda-keyring.deb"}).
+				WithExec([]string{"apt-get", "update"}).
+				WithExec([]string{"/bin/sh", "-c",
+					"apt-get install -y cuda-toolkit-12-5 cuda-drivers libnccl2=2.24.3-1+cuda12.6 libnccl-dev=2.24.3-1+cuda12.6 && " +
+						"rm -rf /tmp/cuda-keyring.deb /var/lib/apt/lists/* /usr/local/cuda/lib64/ /opt/nvidia/ /usr/local/cuda-*/",
+				}).
+				// Set up nvidia-container-runtime-hook to avoid errors
+				WithExec([]string{"sh", "-c", "echo '#!/bin/sh\nexit 0' > /usr/bin/nvidia-container-runtime-hook && chmod +x /usr/bin/nvidia-container-runtime-hook"}).
+				// Set up Thunder
+				WithExec([]string{"chmod", "644", "/etc/thunder/libthunder.so"}).
+				WithExec([]string{"sh", "-c", "echo /etc/thunder/libthunder.so > /etc/ld.so.preload"}).
+				// Set up environment variables
+				WithEnvVariable("_EXPERIMENTAL_DAGGER_THUNDER_SUPPORT", "true").
+				WithEnvVariable("NVIDIA_VISIBLE_DEVICES", "all").
+				WithEnvVariable("NVIDIA_DRIVER_CAPABILITIES", "all").
+				// Set up entrypoint
+				WithEntrypoint([]string{"/bin/sh", "-c", `
+					if [ ! -z "$TNR_API_TOKEN" ]; then
+						echo "$TNR_API_TOKEN" > /etc/thunder/token
+					fi
+					# Generate random device ID between 1 and 10000
+					DEVICE_ID=$(shuf -i 1-10000 -n 1)
+					# Set default GPU count to 1 if not specified
+					GPU_TYPE=${TNR_GPU_TYPE:-t4}
+					GPU_COUNT=${TNR_GPU_COUNT:-1}
+					echo "{\"instanceId\": null, \"deviceId\": \"$DEVICE_ID\", \"gpuType\": \"$GPU_TYPE\", \"gpuCount\": $GPU_COUNT}" > /etc/thunder/config.json
+					mkdir -p /run/sshd
+					/usr/sbin/sshd
+					/usr/local/bin/dagger-entrypoint.sh "$@"
+				`})
 		}
 	case "wolfi":
 		pkgs := []string{
