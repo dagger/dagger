@@ -6975,6 +6975,14 @@ class Client(Root):
         _ctx = self._select("currentModule", _args)
         return CurrentModule(_ctx)
 
+    def current_span(self, name: str, *, key: str | None = "") -> "Span":
+        _args = [
+            Arg("name", name),
+            Arg("key", key, ""),
+        ]
+        _ctx = self._select("currentSpan", _args)
+        return Span(_ctx)
+
     async def current_type_defs(self) -> list["TypeDef"]:
         """The TypeDef representations of the objects currently being served in
         the session.
@@ -8275,6 +8283,27 @@ class SourceMap(Type):
 class Span(Type):
     """An OpenTelemetry span."""
 
+    async def actor(self) -> str:
+        """An optional actor to display for the span.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("actor", _args)
+        return await _ctx.execute(str)
+
     async def end(self, *, error: Error | None = None) -> Void | None:
         """End the OpenTelemetry span, with an optional error.
 
@@ -8321,6 +8350,26 @@ class Span(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(SpanID)
 
+    async def internal(self) -> bool:
+        """Indicates that the span contains details that are not important to the
+        user in the happy path.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("internal", _args)
+        return await _ctx.execute(bool)
+
     async def internal_id(self) -> str:
         """Returns the internal ID of the span.
 
@@ -8343,7 +8392,9 @@ class Span(Type):
         return await _ctx.execute(str)
 
     async def name(self) -> str:
-        """Returns
+        """The name of the span.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -8361,6 +8412,31 @@ class Span(Type):
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
 
+    async def reveal(self) -> bool:
+        """Indicates that the span should be revealed in the UI.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("reveal", _args)
+        return await _ctx.execute(bool)
+
+    def revealed(self) -> Self:
+        """Returns a new span with the reveal attribute set to true."""
+        _args: list[Arg] = []
+        _ctx = self._select("revealed", _args)
+        return Span(_ctx)
+
     async def start(self) -> Self:
         """Start a new instance of the span.
 
@@ -8375,6 +8451,19 @@ class Span(Type):
         _ctx = self._select("start", _args)
         _id = await _ctx.execute(SpanID)
         _ctx = Client.from_context(_ctx)._select("loadSpanFromID", [Arg("id", _id)])
+        return Span(_ctx)
+
+    def with_actor(self, actor: str) -> Self:
+        _args = [
+            Arg("actor", actor),
+        ]
+        _ctx = self._select("withActor", _args)
+        return Span(_ctx)
+
+    def with_internal(self) -> Self:
+        """Returns a new span with the internal attribute set to true."""
+        _args: list[Arg] = []
+        _ctx = self._select("withInternal", _args)
         return Span(_ctx)
 
     def __init__(self, *args, **kwargs):
@@ -8428,6 +8517,13 @@ class Span(Type):
         if self.token:
             opentelemetry.context.detach(self.token)
         return void
+
+    def with_(self, cb: Callable[["Span"], "Span"]) -> "Span":
+        """Call the provided callable with current Span.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 @typecheck

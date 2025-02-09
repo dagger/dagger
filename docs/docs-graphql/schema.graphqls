@@ -2677,6 +2677,7 @@ type Query {
 
   """The module currently being served in the session, if any."""
   currentModule: CurrentModule!
+  currentSpan(key: String = "", name: String!): Span!
 
   """
   The TypeDef representations of the objects currently being served in the session.
@@ -3140,18 +3141,38 @@ scalar SourceMapID
 
 """An OpenTelemetry span."""
 type Span {
+  """An optional actor to display for the span."""
+  actor: String!
+
   """End the OpenTelemetry span, with an optional error."""
   end(error: ErrorID): Void
 
   """A unique identifier for this Span."""
   id: SpanID!
 
+  """
+  Indicates that the span contains details that are not important to the user in the happy path.
+  """
+  internal: Boolean!
+
   """Returns the internal ID of the span."""
   internalId: String!
+
+  """The name of the span."""
   name: String!
+
+  """Indicates that the span should be revealed in the UI."""
+  reveal: Boolean!
+
+  """Returns a new span with the reveal attribute set to true."""
+  revealed: Span!
 
   """Start a new instance of the span."""
   start: SpanID!
+  withActor(actor: String!): Span!
+
+  """Returns a new span with the internal attribute set to true."""
+  withInternal: Span!
 }
 
 """

@@ -5948,7 +5948,8 @@ func (r *Module) SDK() *SDKConfig {
 	q := r.query.Select("sdk")
 
 	return &SDKConfig{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7089,6 +7090,27 @@ func (r *Client) CurrentModule() *CurrentModule {
 	}
 }
 
+// CurrentSpanOpts contains options for Client.CurrentSpan
+type CurrentSpanOpts struct {
+	Key string
+}
+
+func (r *Client) CurrentSpan(name string, opts ...CurrentSpanOpts) *Span {
+	q := r.query.Select("currentSpan")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `key` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Key) {
+			q = q.Arg("key", opts[i].Key)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return &Span{
+		query:  q,
+		client: r.client,
+	}
+}
+
 // The TypeDef representations of the objects currently being served in the session.
 func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
 	q := r.query.Select("currentTypeDefs")
@@ -7642,7 +7664,8 @@ func (r *Client) LoadSDKConfigFromID(id SDKConfigID) *SDKConfig {
 	q = q.Arg("id", id)
 
 	return &SDKConfig{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7685,7 +7708,8 @@ func (r *Client) LoadSecretFromName(name string, opts ...LoadSecretFromNameOpts)
 	q = q.Arg("name", name)
 
 	return &Secret{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -7906,7 +7930,8 @@ func (r *Client) Version(ctx context.Context) (string, error) {
 
 // The SDK config of the module.
 type SDKConfig struct {
-	query *querybuilder.Selection
+	query  *querybuilder.Selection
+	client graphql.Client
 
 	id     *SDKConfigID
 	source *string
@@ -7914,7 +7939,8 @@ type SDKConfig struct {
 
 func (r *SDKConfig) WithGraphQLQuery(q *querybuilder.Selection) *SDKConfig {
 	return &SDKConfig{
-		query: q,
+		query:  q,
+		client: r.client,
 	}
 }
 
@@ -8566,11 +8592,22 @@ type Span struct {
 	query  *querybuilder.Selection
 	client graphql.Client
 
+	actor      *string
 	end        *Void
 	id         *SpanID
+	internal   *bool
 	internalId *string
 	name       *string
+	reveal     *bool
 	start      *SpanID
+}
+type WithSpanFunc func(r *Span) *Span
+
+// With calls the provided function with current Span.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Span) With(f WithSpanFunc) *Span {
+	return f(r)
 }
 
 func (r *Span) WithGraphQLQuery(q *querybuilder.Selection) *Span {
@@ -8617,6 +8654,19 @@ func (r *Span) Run(ctx context.Context, cb func(context.Context) error) error {
 		endErr = span.End(ctx)
 	}
 	return errors.Join(err, endErr)
+}
+
+// An optional actor to display for the span.
+func (r *Span) Actor(ctx context.Context) (string, error) {
+	if r.actor != nil {
+		return *r.actor, nil
+	}
+	q := r.query.Select("actor")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // SpanEndOpts contains options for Span.End
@@ -8680,6 +8730,19 @@ func (r *Span) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// Indicates that the span contains details that are not important to the user in the happy path.
+func (r *Span) Internal(ctx context.Context) (bool, error) {
+	if r.internal != nil {
+		return *r.internal, nil
+	}
+	q := r.query.Select("internal")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // Returns the internal ID of the span.
 func (r *Span) InternalID(ctx context.Context) (string, error) {
 	if r.internalId != nil {
@@ -8693,6 +8756,7 @@ func (r *Span) InternalID(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// The name of the span.
 func (r *Span) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -8703,6 +8767,29 @@ func (r *Span) Name(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Indicates that the span should be revealed in the UI.
+func (r *Span) Reveal(ctx context.Context) (bool, error) {
+	if r.reveal != nil {
+		return *r.reveal, nil
+	}
+	q := r.query.Select("reveal")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Returns a new span with the reveal attribute set to true.
+func (r *Span) Revealed() *Span {
+	q := r.query.Select("revealed")
+
+	return &Span{
+		query:  q,
+		client: r.client,
+	}
 }
 
 // Start a new instance of the span.
@@ -8716,6 +8803,26 @@ func (r *Span) Start(ctx context.Context) (*Span, error) {
 	return &Span{
 		query: q.Root().Select("loadSpanFromID").Arg("id", id),
 	}, nil
+}
+
+func (r *Span) WithActor(actor string) *Span {
+	q := r.query.Select("withActor")
+	q = q.Arg("actor", actor)
+
+	return &Span{
+		query:  q,
+		client: r.client,
+	}
+}
+
+// Returns a new span with the internal attribute set to true.
+func (r *Span) WithInternal() *Span {
+	q := r.query.Select("withInternal")
+
+	return &Span{
+		query:  q,
+		client: r.client,
+	}
 }
 
 // An interactive terminal that clients can connect to.

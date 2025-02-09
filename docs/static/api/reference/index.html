@@ -33,6 +33,7 @@
               <li><a href="#query-container">container</a></li>
               <li><a href="#query-currentFunctionCall">currentFunctionCall</a></li>
               <li><a href="#query-currentModule">currentModule</a></li>
+              <li><a href="#query-currentSpan">currentSpan</a></li>
               <li><a href="#query-currentTypeDefs">currentTypeDefs</a></li>
               <li><a href="#query-defaultPlatform">defaultPlatform</a></li>
               <li><a href="#query-directory">directory</a></li>
@@ -454,6 +455,57 @@
                   <p>
                     <a href="#definition-CurrentModule"><code>CurrentModule!</code></a>
                   </p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-currentSpan" class="operation operation-query" data-traverse-target="query-currentSpan">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>currentSpan</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Span"><code>Span!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>key</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
+                        </td>
+                        <td> Default = <code>""</code> </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
@@ -9507,6 +9559,10 @@
                       </tr>
                     </thead>
                     <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Span-actor" href="#Span-actor"><code>actor</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> An optional actor to display for the span. </td>
+                      </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Span-end" href="#Span-end"><code>end</code></a> - <span class="property-type"><a href="#definition-Void"><code>Void</code></a></span> </td>
                         <td> End the OpenTelemetry span, with an optional error. </td>
@@ -9528,17 +9584,49 @@
                         <td> A unique identifier for this Span. </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Span-internal" href="#Span-internal"><code>internal</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> Indicates that the span contains details that are not important to the user in the happy path. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Span-internalId" href="#Span-internalId"><code>internalId</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> Returns the internal ID of the span. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Span-name" href="#Span-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td>
-                        </td>
+                        <td> The name of the span. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Span-reveal" href="#Span-reveal"><code>reveal</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> Indicates that the span should be revealed in the UI. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Span-revealed" href="#Span-revealed"><code>revealed</code></a> - <span class="property-type"><a href="#definition-Span"><code>Span!</code></a></span> </td>
+                        <td> Returns a new span with the reveal attribute set to true. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Span-start" href="#Span-start"><code>start</code></a> - <span class="property-type"><a href="#definition-SpanID"><code>SpanID!</code></a></span> </td>
                         <td> Start a new instance of the span. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Span-withActor" href="#Span-withActor"><code>withActor</code></a> - <span class="property-type"><a href="#definition-Span"><code>Span!</code></a></span> </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>actor</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Span-withInternal" href="#Span-withInternal"><code>withInternal</code></a> - <span class="property-type"><a href="#definition-Span"><code>Span!</code></a></span> </td>
+                        <td> Returns a new span with the internal attribute set to true. </td>
                       </tr>
                     </tbody>
                   </table>
