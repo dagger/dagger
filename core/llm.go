@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core/bbi"
 	_ "github.com/dagger/dagger/core/bbi/empty"
 	_ "github.com/dagger/dagger/core/bbi/flat"
@@ -287,7 +288,7 @@ func (llm *Llm) Sync(
 		reply := res.Choices[0].Message
 		// Add the model reply to the history
 		if reply.Content != "" {
-			_, span := Tracer(ctx).Start(ctx, "🤖 💬"+reply.Content)
+			_, span := Tracer(ctx).Start(ctx, "🤖 💬"+reply.Content, telemetry.Reveal())
 			span.End()
 		}
 		llm.history = append(llm.history, reply)
@@ -306,7 +307,7 @@ func (llm *Llm) Sync(
 						return llm, fmt.Errorf("failed to unmarshal arguments: %w", err)
 					}
 					result := func() string {
-						ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("🤖 💻 %s(%s)", call.Function.Name, call.Function.Arguments))
+						ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("🤖 💻 %s(%s)", call.Function.Name, call.Function.Arguments), telemetry.Reveal())
 						defer span.End()
 						result, err := tool.Call(ctx, args)
 						if err != nil {
@@ -328,7 +329,7 @@ func (llm *Llm) Sync(
 						}
 					}()
 					func() {
-						_, span := Tracer(ctx).Start(ctx, fmt.Sprintf("💻 %s", result))
+						_, span := Tracer(ctx).Start(ctx, fmt.Sprintf("💻 %s", result), telemetry.Reveal())
 						span.End()
 						llm.calls[call.ID] = result
 						llm.history = append(llm.history, openai.ToolMessage(call.ID, result))
@@ -402,7 +403,7 @@ func (llm *Llm) State(ctx context.Context) (dagql.Typed, error) {
 }
 
 func (llm *Llm) sendQuery(ctx context.Context, tools []bbi.Tool) (res *openai.ChatCompletion, rerr error) {
-	ctx, span := Tracer(ctx).Start(ctx, "[🤖] 💭")
+	ctx, span := Tracer(ctx).Start(ctx, "[🤖] 💭", telemetry.Reveal())
 	defer func() {
 		if rerr != nil {
 			span.SetStatus(codes.Error, rerr.Error())
