@@ -75,7 +75,7 @@ func (v *Viztest) NestedSpans(ctx context.Context,
 	// +default=false
 	fail bool,
 ) (res string, rerr error) {
-	err := dag.Span("custom span").Run(ctx, func(ctx context.Context) error {
+	err := dag.Span("custom span").Revealed().Run(ctx, func(ctx context.Context) error {
 		if _, err := v.Echo(ctx, "outer: "+time.Now().String()); err != nil {
 			return err
 		}
@@ -92,7 +92,7 @@ func (v *Viztest) NestedSpans(ctx context.Context,
 			return err
 		}
 		return dag.Span("another sub span").Run(ctx, func(ctx context.Context) error {
-			return dag.Span("sub span").Run(ctx, func(ctx context.Context) error {
+			return dag.Span("sub span").Revealed().Run(ctx, func(ctx context.Context) error {
 				if fail {
 					return errors.New("oh no")
 				} else {
