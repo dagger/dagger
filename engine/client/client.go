@@ -265,6 +265,7 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	c.connector, err = driver.Provision(provisionCtx, remote, &drivers.DriverOpts{
 		DaggerCloudToken: cloudToken,
 		GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
+		ThunderSupport:   os.Getenv(drivers.EnvThunderSupport),
 	})
 	provisionCancel()
 	telemetry.End(provisionSpan, func() error { return err })

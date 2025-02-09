@@ -25,11 +25,13 @@ type Connector interface {
 type DriverOpts struct {
 	DaggerCloudToken string
 	GPUSupport       string
+	ThunderSupport   string
 }
 
 const (
 	EnvDaggerCloudToken = "DAGGER_CLOUD_TOKEN"
 	EnvGPUSupport       = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
+	EnvThunderSupport   = "_EXPERIMENTAL_DAGGER_THUNDER_SUPPORT"
 )
 
 var drivers = map[string]Driver{}

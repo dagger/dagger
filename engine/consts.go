@@ -28,6 +28,7 @@ const (
 	DaggerMinimumVersionEnv = "_EXPERIMENTAL_DAGGER_MIN_VERSION"
 
 	GPUSupportEnv = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
+	ThunderSupportEnv = "_EXPERIMENTAL_DAGGER_THUNDER_SUPPORT"
 	RunnerHostEnv = "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
 )
 
@@ -42,7 +43,7 @@ func RunnerHost() string {
 		// semi-reasonable)
 		return "docker-container://" + distconsts.EngineContainerName
 	}
-	if os.Getenv(GPUSupportEnv) != "" {
+	if os.Getenv(GPUSupportEnv) != "" || os.Getenv(ThunderSupportEnv) != "" {
 		tag += "-gpu"
 	}
 	return fmt.Sprintf("docker-image://%s:%s", EngineImageRepo, tag)

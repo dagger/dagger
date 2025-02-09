@@ -880,7 +880,7 @@ func (w *Worker) enableGPU(_ context.Context, state *execState) error {
 	if state.spec.Hooks == nil {
 		state.spec.Hooks = &specs.Hooks{}
 	}
-	//nolint:staticcheck
+	// nolint:staticcheck
 	state.spec.Hooks.Prestart = append(state.spec.Hooks.Prestart, specs.Hook{
 		Args: []string{
 			"nvidia-container-runtime-hook",
@@ -891,6 +891,65 @@ func (w *Worker) enableGPU(_ context.Context, state *execState) error {
 	state.spec.Process.Env = append(state.spec.Process.Env, fmt.Sprintf("NVIDIA_VISIBLE_DEVICES=%s",
 		strings.Join(w.execMD.EnabledGPUs, ","),
 	))
+
+	return nil
+}
+
+func createThunderMounts() []specs.Mount {
+	// Map of destination -> source
+	mounts := map[string]string{
+		// Custom mounts
+		"/etc/thunder/libthunder.so": "/etc/thunder/libthunder.so",
+		"/etc/thunder/token":         "/etc/thunder/token",
+		"/etc/ld.so.preload":         "/etc/ld.so.preload",
+		"/etc/thunder/config.json":   "/etc/thunder/config.json",
+
+		// Library mounts
+		"/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1": "/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1",
+		"/usr/lib/x86_64-linux-gnu/libcuda.so.1":      "/usr/lib/x86_64-linux-gnu/libcuda.so.1",
+		"/usr/bin/nvidia-smi":                         "/usr/bin/nvidia-smi",
+		"/usr/bin/nvidia-container-runtime-hook":      "/usr/bin/nvidia-container-runtime-hook",
+		// Device mounts
+		// I mount these because a lot of GPU detection tools look for these
+		// but aren't actually present on the host, and don't need to be in order to
+		// use Thunder.
+		"/dev/nvidia-uvm":       "/dev/null",
+		"/dev/nvidia-uvm-tools": "/dev/null",
+		"/dev/nvidia-modeset":   "/dev/null",
+		"/dev/nvidiactl":        "/dev/null",
+		"/dev/nvidia0":          "/dev/null",
+	}
+
+	var result []specs.Mount
+	for dest, source := range mounts {
+		result = append(result, specs.Mount{
+			Destination: dest,
+			Type:        "bind",
+			Source:      source,
+			Options:     []string{"rbind", "rw"},
+		})
+	}
+
+	return result
+}
+
+func createThunderEnvs() []string {
+	return []string{
+		"NVIDIA_VISIBLE_DEVICES=all",
+		"LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}",
+	}
+}
+
+func (w *Worker) setupThunderMounts(_ context.Context, state *execState) error {
+	if w.execMD == nil || !w.execMD.EnableThunder {
+		return nil
+	}
+
+	// Add Thunder mounts
+	state.spec.Mounts = append(state.spec.Mounts, createThunderMounts()...)
+
+	// Add Thunder environment variables
+	state.spec.Process.Env = append(state.spec.Process.Env, createThunderEnvs()...)
 
 	return nil
 }

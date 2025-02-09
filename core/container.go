@@ -66,6 +66,8 @@ type Container struct {
 	// List of GPU devices that will be exposed to the container
 	EnabledGPUs []string `json:"enabledGPUs,omitempty"`
 
+	EnableThunder bool `json:"enableThunder,omitempty"`
+
 	// Mount points configured for the container.
 	Mounts ContainerMounts `json:"mounts,omitempty"`
 
