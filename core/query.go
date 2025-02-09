@@ -144,6 +144,9 @@ func (q *Query) StartSpan(ctx context.Context, s *Span) *Span {
 	if s.Internal {
 		opts = append(opts, telemetry.Internal())
 	}
+	if s.Reveal {
+		opts = append(opts, trace.WithAttributes(attribute.Bool(telemetry.UIRevealAttr, true)))
+	}
 	_, started.Span = Tracer(ctx).Start(ctx, s.Name, opts...)
 	q.spansL.Lock()
 	q.spans[started.InternalID()] = started

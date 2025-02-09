@@ -172,9 +172,9 @@ type SpanSnapshot struct {
 	Internal     bool `json:",omitempty"`
 	Encapsulate  bool `json:",omitempty"`
 	Encapsulated bool `json:",omitempty"`
-	Mask         bool `json:",omitempty"`
 	Passthrough  bool `json:",omitempty"`
 	Ignore       bool `json:",omitempty"`
+	Reveal       bool `json:",omitempty"`
 
 	Inputs []string `json:",omitempty"`
 	Output string   `json:",omitempty"`
@@ -220,6 +220,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 
 	case telemetry.UIEncapsulatedAttr:
 		snapshot.Encapsulated = val.(bool)
+
+	case telemetry.UIRevealAttr:
+		snapshot.Reveal = val.(bool)
 
 	case telemetry.UIInternalAttr:
 		snapshot.Internal = val.(bool)
@@ -697,5 +700,20 @@ func FormatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dh%dm%ds", hours, minutes, int(math.Round(seconds)))
 	default:
 		return fmt.Sprintf("%dd%dh%dm%ds", days, hours, minutes, int(math.Round(seconds)))
+	}
+}
+
+func (span *Span) RevealedSpans(f func(*Span) bool) {
+	for _, child := range span.ChildSpans.Order {
+		if child.Reveal {
+			if !f(child) {
+				return
+			}
+		}
+		for child := range child.RevealedSpans {
+			if !f(child) {
+				return
+			}
+		}
 	}
 }

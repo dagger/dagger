@@ -103,11 +103,19 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 			// deep-dive.
 			return true
 		}
+		if span.Reveal {
+			// always include revealed spans
+			return true
+		}
 		if span.Passthrough {
 			// include any passthrough spans to ensure failures are collected.
 			// the POST /query span for example never fails on its own.
 			for _, child := range span.ChildSpans.Order {
 				if child.IsFailedOrCausedFailure() {
+					return true
+				}
+				if span.Reveal {
+					// always include revealed spans
 					return true
 				}
 			}
@@ -956,4 +964,17 @@ func collectParents(rows []*TraceTree, targets map[*TraceTree]struct{}) []*Trace
 	}
 
 	return result
+}
+
+func (db *DB) CollectRevealed(rows *RowsView) []*TraceTree {
+	var revealed []*TraceTree
+	for _, row := range rows.Body {
+		if row.Span.Reveal {
+			revealed = append(revealed, row)
+		}
+		for child := range row.Span.RevealedSpans {
+			revealed = append(revealed, rows.BySpan[child.ID])
+		}
+	}
+	return revealed
 }

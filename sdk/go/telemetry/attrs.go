@@ -48,6 +48,9 @@ const (
 	// on a child instead of a parent.
 	UIEncapsulatedAttr = "dagger.io/ui.encapsulated"
 
+	// Reveal the span, all the way through its parent spans.
+	UIRevealAttr = "dagger.io/ui.reveal"
+
 	// Substitute the span for its children and move its logs to its parent.
 	UIPassthroughAttr = "dagger.io/ui.passthrough" //nolint: gosec // lol
 

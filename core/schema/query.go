@@ -96,7 +96,11 @@ func (s *querySchema) Install() {
 
 		dagql.Func("withActor", s.spanWithActor),
 
-		dagql.Func("withInternal", s.spanWithInternal),
+		dagql.Func("withInternal", s.spanWithInternal).
+			Doc(`Returns a new span with the internal attribute set to true.`),
+
+		dagql.Func("revealed", s.spanRevealed).
+			Doc(`Returns a new span with the reveal attribute set to true.`),
 
 		dagql.Func("internalId", s.spanInternalID).
 			Doc(`Returns the internal ID of the span.`),
@@ -260,4 +264,8 @@ func (s *querySchema) spanWithActor(ctx context.Context, parent *core.Span, args
 
 func (s *querySchema) spanWithInternal(ctx context.Context, parent *core.Span, args struct{}) (*core.Span, error) {
 	return parent.WithInternal(), nil
+}
+
+func (s *querySchema) spanRevealed(ctx context.Context, parent *core.Span, args struct{}) (*core.Span, error) {
+	return parent.Revealed(), nil
 }
