@@ -103,11 +103,19 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 			// deep-dive.
 			return true
 		}
+		if span.Reveal {
+			// always include revealed spans
+			return true
+		}
 		if span.Passthrough {
 			// include any passthrough spans to ensure failures are collected.
 			// the POST /query span for example never fails on its own.
 			for _, child := range span.ChildSpans.Order {
 				if child.IsFailedOrCausedFailure() {
+					return true
+				}
+				if span.Reveal {
+					// always include revealed spans
 					return true
 				}
 			}

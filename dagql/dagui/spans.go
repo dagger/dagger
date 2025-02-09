@@ -222,14 +222,14 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 	case telemetry.UIEncapsulatedAttr:
 		snapshot.Encapsulated = val.(bool)
 
+	case telemetry.UIRevealAttr:
+		snapshot.Reveal = val.(bool)
+
 	case telemetry.UIInternalAttr:
 		snapshot.Internal = val.(bool)
 
 	case telemetry.UIPassthroughAttr:
 		snapshot.Passthrough = val.(bool)
-
-	case telemetry.UIRevealAttr:
-		snapshot.Reveal = val.(bool)
 
 	case telemetry.UIActorAttr:
 		snapshot.Actor = val.(string)
