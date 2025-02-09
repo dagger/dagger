@@ -36,7 +36,7 @@ func (s llmSchema) Install() {
 			Doc("append the contents of a file to the llm context").
 			ArgDoc("file", "The file to read the prompt from").
 			ArgDoc("lazy", "Buffer the prompt locally without sending"),
-		dagql.Func("withPrompVar", s.withPromptVar).
+		dagql.Func("withPromptVar", s.withPromptVar).
 			Doc("set a variable for expansion in the prompt").
 			ArgDoc("name", "The name of the variable").
 			ArgDoc("value", "The value of the variable"),
