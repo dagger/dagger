@@ -14,6 +14,15 @@ namespace Dagger;
 class Span extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * An optional actor to display for the span.
+     */
+    public function actor(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('actor');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'actor');
+    }
+
+    /**
      * End the OpenTelemetry span, with an optional error.
      */
     public function end(ErrorId|Error|null $error = null): void
@@ -35,6 +44,15 @@ class Span extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Indicates that the span contains details that are not important to the user in the happy path.
+     */
+    public function internal(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('internal');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'internal');
+    }
+
+    /**
      * Returns the internal ID of the span.
      */
     public function internalId(): string
@@ -43,10 +61,31 @@ class Span extends Client\AbstractObject implements Client\IdAble
         return (string)$this->queryLeaf($leafQueryBuilder, 'internalId');
     }
 
+    /**
+     * The name of the span.
+     */
     public function name(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * Indicates that the span should be revealed in the UI.
+     */
+    public function reveal(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('reveal');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'reveal');
+    }
+
+    /**
+     * Returns a new span with the reveal attribute set to true.
+     */
+    public function revealed(): Span
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('revealed');
+        return new \Dagger\Span($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -56,5 +95,21 @@ class Span extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('start');
         return new \Dagger\SpanId((string)$this->queryLeaf($leafQueryBuilder, 'start'));
+    }
+
+    public function withActor(string $actor): Span
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withActor');
+        $innerQueryBuilder->setArgument('actor', $actor);
+        return new \Dagger\Span($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns a new span with the internal attribute set to true.
+     */
+    public function withInternal(): Span
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withInternal');
+        return new \Dagger\Span($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

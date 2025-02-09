@@ -82,6 +82,20 @@ defmodule Dagger.Client do
     }
   end
 
+  @spec current_span(t(), String.t(), [{:key, String.t() | nil}]) :: Dagger.Span.t()
+  def current_span(%__MODULE__{} = client, name, optional_args \\ []) do
+    query_builder =
+      client.query_builder
+      |> QB.select("currentSpan")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("key", optional_args[:key])
+
+    %Dagger.Span{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
   @doc "The TypeDef representations of the objects currently being served in the session."
   @spec current_type_defs(t()) :: {:ok, [Dagger.TypeDef.t()]} | {:error, term()}
   def current_type_defs(%__MODULE__{} = client) do

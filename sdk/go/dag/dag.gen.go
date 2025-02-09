@@ -74,6 +74,11 @@ func CurrentModule() *dagger.CurrentModule {
 	return client.CurrentModule()
 }
 
+func CurrentSpan(name string, opts ...dagger.CurrentSpanOpts) *dagger.Span {
+	client := initClient()
+	return client.CurrentSpan(name, opts...)
+}
+
 // The TypeDef representations of the objects currently being served in the session.
 func CurrentTypeDefs(ctx context.Context) ([]dagger.TypeDef, error) {
 	client := initClient()

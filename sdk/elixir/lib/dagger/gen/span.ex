@@ -11,6 +11,15 @@ defmodule Dagger.Span do
 
   @type t() :: %__MODULE__{}
 
+  @doc "An optional actor to display for the span."
+  @spec actor(t()) :: {:ok, String.t()} | {:error, term()}
+  def actor(%__MODULE__{} = span) do
+    query_builder =
+      span.query_builder |> QB.select("actor")
+
+    Client.execute(span.client, query_builder)
+  end
+
   @doc "End the OpenTelemetry span, with an optional error."
   @spec end_(t(), [{:error, Dagger.ErrorID.t() | nil}]) :: :ok | {:error, term()}
   def end_(%__MODULE__{} = span, optional_args \\ []) do
@@ -32,6 +41,15 @@ defmodule Dagger.Span do
     Client.execute(span.client, query_builder)
   end
 
+  @doc "Indicates that the span contains details that are not important to the user in the happy path."
+  @spec internal(t()) :: {:ok, boolean()} | {:error, term()}
+  def internal(%__MODULE__{} = span) do
+    query_builder =
+      span.query_builder |> QB.select("internal")
+
+    Client.execute(span.client, query_builder)
+  end
+
   @doc "Returns the internal ID of the span."
   @spec internal_id(t()) :: {:ok, String.t()} | {:error, term()}
   def internal_id(%__MODULE__{} = span) do
@@ -41,12 +59,34 @@ defmodule Dagger.Span do
     Client.execute(span.client, query_builder)
   end
 
+  @doc "The name of the span."
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = span) do
     query_builder =
       span.query_builder |> QB.select("name")
 
     Client.execute(span.client, query_builder)
+  end
+
+  @doc "Indicates that the span should be revealed in the UI."
+  @spec reveal(t()) :: {:ok, boolean()} | {:error, term()}
+  def reveal(%__MODULE__{} = span) do
+    query_builder =
+      span.query_builder |> QB.select("reveal")
+
+    Client.execute(span.client, query_builder)
+  end
+
+  @doc "Returns a new span with the reveal attribute set to true."
+  @spec revealed(t()) :: Dagger.Span.t()
+  def revealed(%__MODULE__{} = span) do
+    query_builder =
+      span.query_builder |> QB.select("revealed")
+
+    %Dagger.Span{
+      query_builder: query_builder,
+      client: span.client
+    }
   end
 
   @doc "Start a new instance of the span."
@@ -65,5 +105,28 @@ defmodule Dagger.Span do
          client: span.client
        }}
     end
+  end
+
+  @spec with_actor(t(), String.t()) :: Dagger.Span.t()
+  def with_actor(%__MODULE__{} = span, actor) do
+    query_builder =
+      span.query_builder |> QB.select("withActor") |> QB.put_arg("actor", actor)
+
+    %Dagger.Span{
+      query_builder: query_builder,
+      client: span.client
+    }
+  end
+
+  @doc "Returns a new span with the internal attribute set to true."
+  @spec with_internal(t()) :: Dagger.Span.t()
+  def with_internal(%__MODULE__{} = span) do
+    query_builder =
+      span.query_builder |> QB.select("withInternal")
+
+    %Dagger.Span{
+      query_builder: query_builder,
+      client: span.client
+    }
   end
 end

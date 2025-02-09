@@ -70,6 +70,16 @@ class Client extends Client\AbstractClient
         return new \Dagger\CurrentModule($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
+    public function currentSpan(string $name, ?string $key = ''): Span
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('currentSpan');
+        $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $key) {
+        $innerQueryBuilder->setArgument('key', $key);
+        }
+        return new \Dagger\Span($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
     /**
      * The TypeDef representations of the objects currently being served in the session.
      */
