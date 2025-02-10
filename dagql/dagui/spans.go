@@ -99,12 +99,15 @@ type SpanSnapshot struct {
 	Cached   bool `json:",omitempty"`
 
 	// UI preferences reported by the span, or applied to it (sync=>passthrough)
-	Internal     bool `json:",omitempty"`
-	Encapsulate  bool `json:",omitempty"`
-	Encapsulated bool `json:",omitempty"`
-	Mask         bool `json:",omitempty"`
-	Passthrough  bool `json:",omitempty"`
-	Ignore       bool `json:",omitempty"`
+	Internal     bool   `json:",omitempty"`
+	Encapsulate  bool   `json:",omitempty"`
+	Encapsulated bool   `json:",omitempty"`
+	Mask         bool   `json:",omitempty"`
+	Passthrough  bool   `json:",omitempty"`
+	Ignore       bool   `json:",omitempty"`
+	Reveal       bool   `json:",omitempty"`
+	Actor        string `json:",omitempty"`
+	Message      string `json:",omitempty"`
 
 	Inputs []string `json:",omitempty"`
 	Output string   `json:",omitempty"`
@@ -118,9 +121,6 @@ type SpanSnapshot struct {
 
 	ChildCount int  `json:",omitempty"`
 	HasLogs    bool `json:",omitempty"`
-
-	Actor   string `json:",omitempty"`
-	Message string `json:",omitempty"`
 }
 
 func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
@@ -157,6 +157,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 
 	case telemetry.UIPassthroughAttr:
 		snapshot.Passthrough = val.(bool)
+
+	case telemetry.UIRevealAttr:
+		snapshot.Reveal = val.(bool)
 
 	case telemetry.UIActorAttr:
 		snapshot.Actor = val.(string)
@@ -414,6 +417,21 @@ func (span *Span) EffectSpans(f func(*Span) bool) {
 	for _, set := range span.effectsViaAttrs {
 		for _, span := range set.Order {
 			if !f(span) {
+				return
+			}
+		}
+	}
+}
+
+func (span *Span) RevealedSpans(f func(*Span) bool) {
+	for _, child := range span.ChildSpans.Order {
+		if child.Reveal {
+			if !f(child) {
+				return
+			}
+		}
+		for revealed := range child.RevealedSpans {
+			if !f(revealed) {
 				return
 			}
 		}
