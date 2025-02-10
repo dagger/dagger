@@ -1,4 +1,11 @@
-import { dag, Container, Directory, object, func, argument } from "@dagger.io/dagger"
+import {
+  dag,
+  Container,
+  Directory,
+  object,
+  func,
+  argument,
+} from "@dagger.io/dagger"
 
 @object()
 class HelloDagger {
@@ -7,7 +14,7 @@ class HelloDagger {
    */
   @func()
   async publish(
-    @argument({ defaultPath: "/" }) source: Directory
+    @argument({ defaultPath: "/" }) source: Directory,
   ): Promise<string> {
     await this.test(source)
     return await this.build(source).publish(
@@ -19,9 +26,7 @@ class HelloDagger {
    * Build the application container
    */
   @func()
-  build(
-    @argument({ defaultPath: "/" }) source: Directory
-  ): Container {
+  build(@argument({ defaultPath: "/" }) source: Directory): Container {
     const build = dag
       .node({ ctr: this.buildEnv(source) })
       .commands()
@@ -39,7 +44,7 @@ class HelloDagger {
    */
   @func()
   async test(
-    @argument({ defaultPath: "/" }) source: Directory
+    @argument({ defaultPath: "/" }) source: Directory,
   ): Promise<string> {
     return await dag
       .node({ ctr: this.buildEnv(source) })
@@ -52,9 +57,7 @@ class HelloDagger {
    * Build a ready-to-use development environment
    */
   @func()
-  buildEnv(
-    @argument({ defaultPath: "/" }) source: Directory
-  ): Container {
+  buildEnv(@argument({ defaultPath: "/" }) source: Directory): Container {
     return dag
       .node({ version: "21" })
       .withNpm()
