@@ -15,6 +15,9 @@ func (e *DaggerEngine) LoadToDocker(
 	ctx context.Context,
 
 	docker *dagger.Socket,
+
+	// +optional
+	// +default="localhost/dagger-engine.dev:latest"
 	name string,
 
 	// +optional
@@ -88,6 +91,11 @@ func (e LoadedEngine) Start(
 	name string,
 	// +optional
 	cloudToken *dagger.Secret,
+	// +optional
+	cloudURL string,
+
+	// +optional
+	debug bool,
 ) error {
 	loader := e.Loader
 
@@ -105,17 +113,27 @@ func (e LoadedEngine) Start(
 		args = append(args, "--gpus", "all")
 		loader = loader.WithEnvVariable("_EXPERIMENTAL_DAGGER_GPU_SUPPORT", "true")
 	}
+
+	// NOTE: this is only for connecting to dagger cloud's cache service
 	if cloudToken != nil {
-		// NOTE: this is only for connecting to dagger cloud's cache service
 		args = append(args, "-e", "DAGGER_CLOUD_TOKEN")
 		loader = loader.WithSecretVariable("DAGGER_CLOUD_TOKEN", cloudToken)
 	}
+	if cloudURL != "" {
+		args = append(args, "-e", "DAGGER_CLOUD_URL")
+		loader = loader.WithEnvVariable("DAGGER_CLOUD_URL", cloudURL)
+	}
+	if debug {
+		args = append(args, "-p", "6060:6060")
+	}
+
 	args = append(args, []string{
 		"-v", name + ":" + distconsts.EngineDefaultStateDir,
 		"--name", name,
 		"--privileged",
 	}...)
-	args = append(args, e.Image, "--extra-debug", "--debugaddr=0.0.0.0:6060")
+	args = append(args, e.Image)
+	args = append(args, "--extra-debug", "--debugaddr=0.0.0.0:6060")
 
 	_, err = loader.WithExec(args).Sync(ctx)
 	return err
