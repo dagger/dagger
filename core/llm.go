@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"strings"
@@ -17,7 +18,10 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // An instance of a LLM (large language model), with its state and tool calling environment
@@ -203,8 +207,15 @@ func (llm *Llm) WithPrompt(ctx context.Context,
 	}
 	llm = llm.Clone()
 	func() {
-		_, span := Tracer(ctx).Start(ctx, "🧑 💬"+prompt)
-		span.End()
+		ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
+			attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
+			attribute.String(telemetry.UIMessageAttr, "sent"),
+		))
+		defer span.End()
+		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+			log.String(telemetry.ContentTypeAttr, "text/markdown"))
+		defer stdio.Close()
+		fmt.Fprint(stdio.Stdout, prompt)
 	}()
 	llm.history = append(llm.history, openai.UserMessage(prompt))
 	if lazy {
@@ -287,27 +298,26 @@ func (llm *Llm) Sync(
 		}
 		reply := res.Choices[0].Message
 		// Add the model reply to the history
-		if reply.Content != "" {
-			_, span := Tracer(ctx).Start(ctx, "🤖 💬"+reply.Content, telemetry.Reveal())
-			span.End()
-		}
 		llm.history = append(llm.history, reply)
 		// Handle tool calls
 		calls := res.Choices[0].Message.ToolCalls
 		if len(calls) == 0 {
 			break
 		}
-		for _, call := range calls {
+		for _, toolCall := range calls {
 			for _, tool := range tools {
-				if tool.Name == call.Function.Name {
-					var args interface{}
-					decoder := json.NewDecoder(strings.NewReader(call.Function.Arguments))
+				if tool.Name == toolCall.Function.Name {
+					var args map[string]any
+					decoder := json.NewDecoder(strings.NewReader(toolCall.Function.Arguments))
 					decoder.UseNumber()
 					if err := decoder.Decode(&args); err != nil {
 						return llm, fmt.Errorf("failed to unmarshal arguments: %w", err)
 					}
 					result := func() string {
-						ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("🤖 💻 %s(%s)", call.Function.Name, call.Function.Arguments), telemetry.Reveal())
+						ctx, span := Tracer(ctx).Start(ctx,
+							fmt.Sprintf("🤖 💻 %s", toolCall.Function.Name),
+							telemetry.Passthrough(),
+							telemetry.Reveal())
 						defer span.End()
 						result, err := tool.Call(ctx, args)
 						if err != nil {
@@ -316,8 +326,11 @@ func (llm *Llm) Sync(
 							span.SetStatus(codes.Error, err.Error())
 							return fmt.Sprintf("error calling tool %q: %s", tool.Name, err.Error())
 						}
+						stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+						defer stdio.Close()
 						switch v := result.(type) {
 						case string:
+							fmt.Fprint(stdio.Stdout, v)
 							return v
 						default:
 							jsonBytes, err := json.Marshal(v)
@@ -325,14 +338,13 @@ func (llm *Llm) Sync(
 								span.SetStatus(codes.Error, err.Error())
 								return fmt.Sprintf("error processing tool result: %s", err.Error())
 							}
+							fmt.Fprint(stdio.Stdout, string(jsonBytes))
 							return string(jsonBytes)
 						}
 					}()
 					func() {
-						_, span := Tracer(ctx).Start(ctx, fmt.Sprintf("💻 %s", result), telemetry.Reveal())
-						span.End()
-						llm.calls[call.ID] = result
-						llm.history = append(llm.history, openai.ToolMessage(call.ID, result))
+						llm.calls[toolCall.ID] = result
+						llm.history = append(llm.history, openai.ToolMessage(toolCall.ID, result))
 					}()
 				}
 			}
@@ -403,13 +415,6 @@ func (llm *Llm) State(ctx context.Context) (dagql.Typed, error) {
 }
 
 func (llm *Llm) sendQuery(ctx context.Context, tools []bbi.Tool) (res *openai.ChatCompletion, rerr error) {
-	ctx, span := Tracer(ctx).Start(ctx, "[🤖] 💭", telemetry.Reveal())
-	defer func() {
-		if rerr != nil {
-			span.SetStatus(codes.Error, rerr.Error())
-		}
-		span.End()
-	}()
 	params := openai.ChatCompletionNewParams{
 		Seed:     openai.Int(0),
 		Model:    openai.F(openai.ChatModel(llm.Config.Model)),
@@ -429,7 +434,41 @@ func (llm *Llm) sendQuery(ctx context.Context, tools []bbi.Tool) (res *openai.Ch
 		}
 		params.Tools = openai.F(toolParams)
 	}
-	return llm.client().Chat.Completions.New(ctx, params)
+
+	stream := llm.client().Chat.Completions.NewStreaming(ctx, params)
+	defer stream.Close()
+
+	var logsW io.Writer
+	acc := new(openai.ChatCompletionAccumulator)
+	for stream.Next() {
+		if stream.Err() != nil {
+			return nil, stream.Err()
+		}
+
+		res := stream.Current()
+		acc.AddChunk(res)
+
+		if content := res.Choices[0].Delta.Content; content != "" {
+			if logsW == nil {
+				// only show a message if we actually get a text response back
+				// (as opposed to tool calls)
+				ctx, span := Tracer(ctx).Start(ctx, "LLM response", telemetry.Reveal(), trace.WithAttributes(
+					attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+					attribute.String(telemetry.UIMessageAttr, "received"),
+				))
+				defer telemetry.End(span, func() error { return rerr })
+
+				stdio := telemetry.SpanStdio(ctx, "",
+					log.String(telemetry.ContentTypeAttr, "text/markdown"))
+
+				logsW = stdio.Stdout
+			}
+
+			fmt.Fprint(logsW, content)
+		}
+	}
+
+	return &acc.ChatCompletion, nil
 }
 
 // Create a new openai client
