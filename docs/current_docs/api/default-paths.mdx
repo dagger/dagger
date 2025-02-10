@@ -81,7 +81,7 @@ The following sections contain examples of how a `Directory` argument is resolve
 
 - If the default path is an absolute path `/` (or `/src`),  the context directory is the directory containing `dagger.json` (say, `/my-module`). The resolved path will then be `/my-module` (or `/my-module/src`).
 - If the default path is the relative path `.`, the context directory is still the directory containing `dagger.json`. The resolved path will then be `/my-module`.
-- If the default path is the relative path `..`, the context directory is still the directory containing `dagger.json` (say, `/my-module`). The resolved path will then be the parent of the context directory. This will trigger an error, since Dagger does not permit access to paths outside the context directory.
+- If the default path is the relative path `..`, the context directory is still the directory containing `dagger.json`. The resolved path will then be the parent of the context directory. This will trigger an error, since Dagger does not permit access to paths outside the context directory.
 
 :::tip
 It's also possible to provide an `ignore` parameter to a contextual argument of type `Directory` to [automatically ignore or include files in the directory](./fs-filters.mdx).
