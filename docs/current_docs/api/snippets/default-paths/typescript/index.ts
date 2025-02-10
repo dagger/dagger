@@ -8,11 +8,4 @@ class MyModule {
   ): Promise<string[]> {
     return await source.entries()
   }
-
-  @func()
-  async readFile(
-    @argument({ defaultPath: "/README.md" }) source: File,
-  ): Promise<string> {
-    return await source.contents()
-  }
 }
