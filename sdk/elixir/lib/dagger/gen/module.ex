@@ -80,6 +80,18 @@ defmodule Dagger.Module do
     end
   end
 
+  @doc "Generates a client for the module."
+  @spec generate_client(t(), String.t()) :: Dagger.Directory.t()
+  def generate_client(%__MODULE__{} = module, generator) do
+    query_builder =
+      module.query_builder |> QB.select("generateClient") |> QB.put_arg("generator", generator)
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: module.client
+    }
+  end
+
   @doc "The generated files and directories made on top of the module source's context directory."
   @spec generated_context_diff(t()) :: Dagger.Directory.t()
   def generated_context_diff(%__MODULE__{} = module) do

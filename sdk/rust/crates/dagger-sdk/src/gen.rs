@@ -6156,6 +6156,20 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         }]
     }
+    /// Generates a client for the module.
+    ///
+    /// # Arguments
+    ///
+    /// * `generator` - The generator to use
+    pub fn generate_client(&self, generator: impl Into<String>) -> Directory {
+        let mut query = self.selection.select("generateClient");
+        query = query.arg("generator", generator.into());
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// The generated files and directories made on top of the module source's context directory.
     pub fn generated_context_diff(&self) -> Directory {
         let query = self.selection.select("generatedContextDiff");

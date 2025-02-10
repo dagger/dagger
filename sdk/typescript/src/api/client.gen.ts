@@ -5461,6 +5461,15 @@ export class Module_ extends BaseClient {
   }
 
   /**
+   * Generates a client for the module.
+   * @param generator The generator to use
+   */
+  generateClient = (generator: string): Directory => {
+    const ctx = this._ctx.select("generateClient", { generator })
+    return new Directory(ctx)
+  }
+
+  /**
    * The generated files and directories made on top of the module source's context directory.
    */
   generatedContextDiff = (): Directory => {

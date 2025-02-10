@@ -2244,6 +2244,12 @@ type Module {
   """Enumerations served by this module."""
   enums: [TypeDef!]!
 
+  """Generates a client for the module."""
+  generateClient(
+    """The generator to use"""
+    generator: String!
+  ): Directory!
+
   """
   The generated files and directories made on top of the module source's context directory.
   """
