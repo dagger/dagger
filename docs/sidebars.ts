@@ -82,6 +82,7 @@ module.exports = {
             "api/arguments",
             "api/return-values",
             "api/ide-integration",
+            "api/default-paths",
             "api/module-dependencies",
             "api/packages",
             "api/services",
