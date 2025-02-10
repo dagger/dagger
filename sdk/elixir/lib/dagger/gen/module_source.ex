@@ -161,12 +161,15 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc "TODO"
-  @spec sdk(t()) :: {:ok, String.t()} | {:error, term()}
+  @spec sdk(t()) :: Dagger.SDKConfig.t() | nil
   def sdk(%__MODULE__{} = module_source) do
     query_builder =
       module_source.query_builder |> QB.select("sdk")
 
-    Client.execute(module_source.client, query_builder)
+    %Dagger.SDKConfig{
+      query_builder: query_builder,
+      client: module_source.client
+    }
   end
 
   @doc "TODO"
@@ -178,7 +181,7 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "TODO"
+  @doc "A human readable ref string representation of this module source."
   @spec source_subpath(t()) :: {:ok, String.t()} | {:error, term()}
   def source_subpath(%__MODULE__{} = module_source) do
     query_builder =

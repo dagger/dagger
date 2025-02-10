@@ -75,7 +75,7 @@ func (s *moduleSchema) sdkForModule(
 			bk:  bk,
 			src: parentSrc.Self,
 		},
-		sdk,
+		sdk.Source,
 		"",
 		false,
 	)
@@ -89,7 +89,7 @@ func (s *moduleSchema) sdkForModule(
 	case core.ModuleSourceKindLocal:
 		switch parentSrc.Self.Kind {
 		case core.ModuleSourceKindLocal:
-			path := filepath.Join(parentSrc.Self.Local.ContextDirectoryPath, parentSrc.Self.SourceRootSubpath, sdk)
+			path := filepath.Join(parentSrc.Self.Local.ContextDirectoryPath, parentSrc.Self.SourceRootSubpath, sdk.Source)
 			err := s.dag.Select(ctx, s.dag.Root(), &sdkMod,
 				dagql.Selector{
 					Field: "moduleSource",
@@ -100,11 +100,11 @@ func (s *moduleSchema) sdkForModule(
 				dagql.Selector{Field: "asModule"},
 			)
 			if err != nil {
-				return nil, fmt.Errorf("failed to load sdk module %q: %w", sdk, err)
+				return nil, fmt.Errorf("failed to load sdk module %q: %w", sdk.Source, err)
 			}
 
 		case core.ModuleSourceKindGit:
-			path := filepath.Join("/", parentSrc.Self.SourceRootSubpath, sdk)
+			path := filepath.Join("/", parentSrc.Self.SourceRootSubpath, sdk.Source)
 			sdkGitRef := parentSrc.Self.Git.CloneRef
 			if path != "/" {
 				sdkGitRef += path
@@ -126,7 +126,7 @@ func (s *moduleSchema) sdkForModule(
 			}
 
 		case core.ModuleSourceKindDir:
-			path := filepath.Join("/", parentSrc.Self.SourceRootSubpath, sdk)
+			path := filepath.Join("/", parentSrc.Self.SourceRootSubpath, sdk.Source)
 			err := s.dag.Select(ctx, parentSrc.Self.ContextDirectory, &sdkMod,
 				dagql.Selector{
 					Field: "asModuleSource",

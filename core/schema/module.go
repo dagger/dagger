@@ -165,6 +165,8 @@ func (s *moduleSchema) Install() {
 		*/
 	}.Install(s.dag)
 
+	dagql.Fields[*core.SDKConfig]{}.Install(s.dag)
+
 	dagql.Fields[*core.Module]{
 		Syncer[*core.Module]().
 			Doc(`TODO`),

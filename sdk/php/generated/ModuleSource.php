@@ -142,10 +142,10 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     /**
      * TODO
      */
-    public function sdk(): string
+    public function sdk(): SDKConfig
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sdk');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'sdk');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sdk');
+        return new \Dagger\SDKConfig($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -158,7 +158,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * A human readable ref string representation of this module source.
      */
     public function sourceSubpath(): string
     {
