@@ -5321,7 +5321,6 @@ export class ModuleSource extends BaseClient {
   private readonly _moduleName?: string = undefined
   private readonly _moduleOriginalName?: string = undefined
   private readonly _pin?: string = undefined
-  private readonly _sdk?: string = undefined
   private readonly _sourceRootSubpath?: string = undefined
   private readonly _sourceSubpath?: string = undefined
   private readonly _sync?: ModuleSourceID = undefined
@@ -5341,7 +5340,6 @@ export class ModuleSource extends BaseClient {
     _moduleName?: string,
     _moduleOriginalName?: string,
     _pin?: string,
-    _sdk?: string,
     _sourceRootSubpath?: string,
     _sourceSubpath?: string,
     _sync?: ModuleSourceID,
@@ -5358,7 +5356,6 @@ export class ModuleSource extends BaseClient {
     this._moduleName = _moduleName
     this._moduleOriginalName = _moduleOriginalName
     this._pin = _pin
-    this._sdk = _sdk
     this._sourceRootSubpath = _sourceRootSubpath
     this._sourceSubpath = _sourceSubpath
     this._sync = _sync
@@ -5558,16 +5555,9 @@ export class ModuleSource extends BaseClient {
   /**
    * TODO
    */
-  sdk = async (): Promise<string> => {
-    if (this._sdk) {
-      return this._sdk
-    }
-
+  sdk = (): SDKConfig => {
     const ctx = this._ctx.select("sdk")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
+    return new SDKConfig(ctx)
   }
 
   /**
@@ -5586,7 +5576,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * TODO
+   * A human readable ref string representation of this module source.
    */
   sourceSubpath = async (): Promise<string> => {
     if (this._sourceSubpath) {

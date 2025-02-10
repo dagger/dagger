@@ -6175,16 +6175,20 @@ impl ModuleSource {
         query.execute(self.graphql_client.clone()).await
     }
     /// TODO
-    pub async fn sdk(&self) -> Result<String, DaggerError> {
+    pub fn sdk(&self) -> SdkConfig {
         let query = self.selection.select("sdk");
-        query.execute(self.graphql_client.clone()).await
+        SdkConfig {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// TODO
     pub async fn source_root_subpath(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sourceRootSubpath");
         query.execute(self.graphql_client.clone()).await
     }
-    /// TODO
+    /// A human readable ref string representation of this module source.
     pub async fn source_subpath(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sourceSubpath");
         query.execute(self.graphql_client.clone()).await
