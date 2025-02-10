@@ -22,7 +22,7 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/idtui"
-	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
@@ -274,17 +274,17 @@ func setupTelemetryProxy(ctx context.Context) ([]string, error) {
 	}()
 
 	return []string{
-		buildkit.OTelExporterProtocolEnv + "=" + otelProto,
-		buildkit.OTelExporterEndpointEnv + "=" + otelEndpoint,
-		buildkit.OTelTracesProtocolEnv + "=" + otelProto,
-		buildkit.OTelTracesEndpointEnv + "=" + otelEndpoint + "/v1/traces",
+		engine.OTelExporterProtocolEnv + "=" + otelProto,
+		engine.OTelExporterEndpointEnv + "=" + otelEndpoint,
+		engine.OTelTracesProtocolEnv + "=" + otelProto,
+		engine.OTelTracesEndpointEnv + "=" + otelEndpoint + "/v1/traces",
 		// Indicate that the /v1/trace endpoint accepts live telemetry.
-		buildkit.OTelTracesLiveEnv + "=1",
+		engine.OTelTracesLiveEnv + "=1",
 		// Dagger sets up log+metric exporters too. Explicitly set them
 		// so things can detect support for it.
-		buildkit.OTelLogsProtocolEnv + "=" + otelProto,
-		buildkit.OTelLogsEndpointEnv + "=" + otelEndpoint + "/v1/logs",
-		buildkit.OTelMetricsProtocolEnv + "=" + otelProto,
-		buildkit.OTelMetricsEndpointEnv + "=" + otelEndpoint + "/v1/metrics",
+		engine.OTelLogsProtocolEnv + "=" + otelProto,
+		engine.OTelLogsEndpointEnv + "=" + otelEndpoint + "/v1/logs",
+		engine.OTelMetricsProtocolEnv + "=" + otelProto,
+		engine.OTelMetricsEndpointEnv + "=" + otelEndpoint + "/v1/metrics",
 	}, nil
 }
