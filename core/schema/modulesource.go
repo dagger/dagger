@@ -117,19 +117,25 @@ func (s *moduleSchema) localModuleSource(
 
 			namedDep, ok := modCfg.DependencyByName(localPath)
 			if ok {
-				// TODO: relying on Pin to determine local vs. git is a bit hacky
-				if namedDep.Pin != "" {
-					// git ref
-					// TODO:
-					// TODO:
-					// TODO:
-					// TODO:
-					// TODO:
-					// TODO:
-				} else {
-					// local ref
+				parsedRef, err := parseRefString(
+					ctx,
+					dirExistsFunc(func(ctx context.Context, path string) (bool, error) {
+						path = filepath.Join(defaultFindUpSourceRootDir, path)
+						return callerDirExistsFS{bk}.dirExists(ctx, path)
+					}),
+					namedDep.Source,
+					namedDep.Pin,
+					true,
+				)
+				if err != nil {
+					return inst, fmt.Errorf("failed to parse named dep ref string: %w", err)
+				}
+				switch parsedRef.kind {
+				case core.ModuleSourceKindLocal:
 					depModPath := filepath.Join(defaultFindUpSourceRootDir, namedDep.Source)
 					return s.localModuleSource(ctx, query, bk, depModPath, false)
+				case core.ModuleSourceKindGit:
+					return s.gitModuleSource(ctx, query, parsedRef.git, namedDep.Pin, false)
 				}
 			}
 		}
@@ -765,6 +771,12 @@ type dirExistsFS interface {
 	dirExists(ctx context.Context, path string) (bool, error)
 }
 
+type dirExistsFunc func(ctx context.Context, path string) (bool, error)
+
+func (f dirExistsFunc) dirExists(ctx context.Context, path string) (bool, error) {
+	return f(ctx, path)
+}
+
 type callerDirExistsFS struct {
 	bk *buildkit.Client
 }
@@ -875,9 +887,6 @@ func parseRefString(
 			},
 		}, nil
 	}
-	/*
-		stat, err := bk.StatCallerHostPath(ctx, refString, false)
-	*/
 
 	// Parse scheme and attempt to parse as git endpoint
 	parsedGitRef, err := parseGitRefString(ctx, refString)
