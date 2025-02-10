@@ -25,6 +25,43 @@ type Literal interface {
 	gatherCalls(map[string]*callpbv1.Call)
 }
 
+func ToLiteral(val any) (Literal, error) {
+	switch v := val.(type) {
+	case Literal:
+		return v, nil
+	case string:
+		return NewLiteralString(v), nil
+	case float64:
+		return NewLiteralFloat(v), nil
+	case bool:
+		return NewLiteralBool(v), nil
+	case []any:
+		items := make([]Literal, len(v))
+		for i, item := range v {
+			itemLit, err := ToLiteral(item)
+			if err != nil {
+				return nil, err
+			}
+			items[i] = itemLit
+		}
+		return NewLiteralList(items...), nil
+	case map[string]any:
+		fields := make([]*Argument, 0, len(v))
+		for k, val := range v {
+			fieldLit, err := ToLiteral(val)
+			if err != nil {
+				return nil, err
+			}
+			fields = append(fields, NewArgument(k, fieldLit, false))
+		}
+		return NewLiteralObject(fields...), nil
+	case nil:
+		return NewLiteralNull(), nil
+	default:
+		return nil, fmt.Errorf("unknown literal value type %T", v)
+	}
+}
+
 type LiteralID struct {
 	id *ID
 }
