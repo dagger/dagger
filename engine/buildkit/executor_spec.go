@@ -65,17 +65,6 @@ const (
 	// this is set by buildkit, we cannot change
 	BuildkitSessionIDHeader = "x-docker-expose-session-uuid"
 
-	OTelTraceParentEnv      = "TRACEPARENT"
-	OTelExporterProtocolEnv = "OTEL_EXPORTER_OTLP_PROTOCOL"
-	OTelExporterEndpointEnv = "OTEL_EXPORTER_OTLP_ENDPOINT"
-	OTelTracesProtocolEnv   = "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"
-	OTelTracesEndpointEnv   = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
-	OTelTracesLiveEnv       = "OTEL_EXPORTER_OTLP_TRACES_LIVE"
-	OTelLogsProtocolEnv     = "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL"
-	OTelLogsEndpointEnv     = "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"
-	OTelMetricsProtocolEnv  = "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL"
-	OTelMetricsEndpointEnv  = "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"
-
 	buildkitQemuEmulatorMountPoint = "/dev/.buildkit_qemu_emulator"
 
 	cgroupSampleInterval     = 3 * time.Second
@@ -729,18 +718,18 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 	otelProto := "http/protobuf"
 	otelEndpoint := "http://" + listener.Addr().String()
 	state.spec.Process.Env = append(state.spec.Process.Env,
-		OTelExporterProtocolEnv+"="+otelProto,
-		OTelExporterEndpointEnv+"="+otelEndpoint,
-		OTelTracesProtocolEnv+"="+otelProto,
-		OTelTracesEndpointEnv+"="+otelEndpoint+"/v1/traces",
+		engine.OTelExporterProtocolEnv+"="+otelProto,
+		engine.OTelExporterEndpointEnv+"="+otelEndpoint,
+		engine.OTelTracesProtocolEnv+"="+otelProto,
+		engine.OTelTracesEndpointEnv+"="+otelEndpoint+"/v1/traces",
 		// Indicate that the /v1/trace endpoint accepts live telemetry.
-		OTelTracesLiveEnv+"=1",
+		engine.OTelTracesLiveEnv+"=1",
 		// Dagger sets up log+metric exporters too. Explicitly set them
 		// so things can detect support for it.
-		OTelLogsProtocolEnv+"="+otelProto,
-		OTelLogsEndpointEnv+"="+otelEndpoint+"/v1/logs",
-		OTelMetricsProtocolEnv+"="+otelProto,
-		OTelMetricsEndpointEnv+"="+otelEndpoint+"/v1/metrics",
+		engine.OTelLogsProtocolEnv+"="+otelProto,
+		engine.OTelLogsEndpointEnv+"="+otelEndpoint+"/v1/logs",
+		engine.OTelMetricsProtocolEnv+"="+otelProto,
+		engine.OTelMetricsEndpointEnv+"="+otelEndpoint+"/v1/metrics",
 	)
 
 	// Telemetry propagation (traceparent, tracestate, baggage, etc)
