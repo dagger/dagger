@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/telemetry"
 	"github.com/adrg/xdg"
 	"github.com/chzyer/readline"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -550,6 +551,7 @@ func (h *shellCallHandler) withTerminal(fn func(stdin io.Reader, stdout, stderr 
 
 func (*shellCallHandler) Print(ctx context.Context, args ...any) error {
 	hctx := interp.HandlerCtx(ctx)
-	_, err := fmt.Fprintln(hctx.Stdout, args...)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	_, err := fmt.Fprintln(io.MultiWriter(hctx.Stdout, stdio.Stdout), args...)
 	return err
 }
