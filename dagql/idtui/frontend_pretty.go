@@ -1003,26 +1003,41 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, r *renderer, row *dagui
 		row.Previous.Depth >= row.Depth &&
 		!row.Chained &&
 		(row.Previous.Depth > row.Depth || row.Span.Call != nil ||
-			(row.Previous.Span.Call != nil && row.Span.Call == nil)) {
+			(row.Previous.Span.Call != nil && row.Span.Call == nil) ||
+			row.Previous.Span.Message != "") {
 		fmt.Fprint(out, prefix)
 		r.indent(out, row.Depth)
 		fmt.Fprintln(out)
 	}
-	fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
-	fe.renderStepLogs(out, r, row, prefix)
+	span := row.Span
+	if span.Message != "" {
+		r.indent(out, row.Depth-1)
+		fmt.Fprint(out, out.String(VertBar).
+			Foreground(termenv.ANSIBrightBlack).
+			Faint())
+		if span.Actor != "" {
+			fmt.Fprint(out, span.Actor+" ")
+		} else {
+			fmt.Fprint(out, "💬 ")
+		}
+		fe.renderStepLogs(out, r, row, prefix)
+	} else {
+		fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
+		if row.IsRunningOrChildRunning || row.Span.IsFailedOrCausedFailure() || fe.Verbosity >= dagui.ExpandCompletedVerbosity {
+			fe.renderStepLogs(out, r, row, prefix)
+		}
+	}
 	fe.renderStepError(out, r, row.Span, row.Depth, prefix)
 }
 
 func (fe *frontendPretty) renderStepLogs(out *termenv.Output, r *renderer, row *dagui.TraceRow, prefix string) {
-	if row.IsRunningOrChildRunning || row.Span.IsFailedOrCausedFailure() || fe.Verbosity >= dagui.ExpandCompletedVerbosity {
-		if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
-			fe.renderLogs(out, r,
-				logs,
-				row.Depth,
-				fe.window.Height/3,
-				prefix,
-			)
-		}
+	if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
+		fe.renderLogs(out, r,
+			logs,
+			row.Depth,
+			fe.window.Height/3,
+			prefix,
+		)
 	}
 }
 
@@ -1155,8 +1170,22 @@ func newPrettyLogs() *prettyLogs {
 
 func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 	for _, log := range logs {
-		// render vterm for TUI
-		_, _ = fmt.Fprint(l.spanLogs(log.SpanID()), log.Body().AsString())
+		vterm := l.spanLogs(log.SpanID())
+
+		// Check for Markdown content type
+		contentType := ""
+		for attr := range log.WalkAttributes {
+			if attr.Key == "dagger.io/content.type" {
+				contentType = attr.Value.AsString()
+				break
+			}
+		}
+
+		if contentType == "text/markdown" {
+			_, _ = vterm.WriteMarkdown([]byte(log.Body().AsString()))
+		} else {
+			_, _ = fmt.Fprint(vterm, log.Body().AsString())
+		}
 	}
 	return nil
 }
