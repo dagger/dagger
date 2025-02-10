@@ -303,7 +303,7 @@ var moduleInstallCmd = &cobra.Command{
 				return fmt.Errorf("failed to update dependencies: %w", err)
 			}
 
-			sdk, err := depSrc.SDK(ctx)
+			sdk, err := depSrc.SDK().Source(ctx)
 			if err != nil {
 				return err
 			}
@@ -509,7 +509,7 @@ This command is idempotent: you can run it at any time, any number of times. It 
 				modSrc = modSrc.WithEngineVersion(engineVersion)
 			}
 
-			modSDK, err := modSrc.SDK(ctx)
+			modSDK, err := modSrc.SDK().Source(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get module SDK: %w", err)
 			}

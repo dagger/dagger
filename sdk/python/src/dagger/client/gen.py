@@ -5909,26 +5909,11 @@ class ModuleSource(Type):
         _ctx = self._select("pin", _args)
         return await _ctx.execute(str)
 
-    async def sdk(self) -> str:
-        """TODO
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
+    def sdk(self) -> "SDKConfig":
+        """TODO"""
         _args: list[Arg] = []
         _ctx = self._select("sdk", _args)
-        return await _ctx.execute(str)
+        return SDKConfig(_ctx)
 
     async def source_root_subpath(self) -> str:
         """TODO
@@ -5952,7 +5937,7 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     async def source_subpath(self) -> str:
-        """TODO
+        """A human readable ref string representation of this module source.
 
         Returns
         -------

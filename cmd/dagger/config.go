@@ -57,7 +57,7 @@ dagger config -m github.com/dagger/hello-dagger
 			if err != nil {
 				return fmt.Errorf("failed to get module name: %w", err)
 			}
-			sdk, err := modSrc.SDK(ctx)
+			sdk, err := modSrc.SDK().Source(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get module SDK: %w", err)
 			}

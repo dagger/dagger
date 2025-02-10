@@ -251,24 +251,29 @@ func (s *moduleSchema) localModuleSource(
 		localSrc.ModuleName = modCfg.Name
 		localSrc.ModuleOriginalName = modCfg.Name
 		localSrc.EngineVersion = modCfg.EngineVersion
-		localSrc.SDK = modCfg.SDK
 		localSrc.IncludePaths = modCfg.Include
 		localSrc.CodegenConfig = modCfg.Codegen
+
+		if modCfg.SDK != nil {
+			localSrc.SDK = &core.SDKConfig{
+				Source: modCfg.SDK.Source,
+			}
+		}
 
 		// figure out source subpath
 		if modCfg.Source != "" && !filepath.IsLocal(modCfg.Source) {
 			return inst, fmt.Errorf("source path %q contains parent directory components", modCfg.Source)
 		}
 		switch {
-		case modCfg.SDK == "" && modCfg.Source != "":
+		case modCfg.SDK.Source == "" && modCfg.Source != "":
 			// invalid, can't have source when no sdk
 			return inst, fmt.Errorf("source path %q specified without sdk", modCfg.Source)
-		case modCfg.SDK == "":
+		case modCfg.SDK.Source == "":
 			// skip setting source subpath when no sdk
-		case modCfg.SDK != "" && modCfg.Source == "":
+		case modCfg.SDK.Source != "" && modCfg.Source == "":
 			// sdk was set but source was not, it's implicitly "." and thus the source root
 			localSrc.SourceSubpath = localSrc.SourceRootSubpath
-		case modCfg.SDK != "" && modCfg.Source != "":
+		case modCfg.SDK.Source != "" && modCfg.Source != "":
 			// sdk was set and source was too, get the full rel path under the context
 			localSrc.SourceSubpath = filepath.Join(localSrc.SourceRootSubpath, modCfg.Source)
 		}
@@ -556,24 +561,29 @@ func (s *moduleSchema) gitModuleSource(
 	gitSrc.ModuleName = modCfg.Name
 	gitSrc.ModuleOriginalName = modCfg.Name
 	gitSrc.EngineVersion = modCfg.EngineVersion
-	gitSrc.SDK = modCfg.SDK
 	gitSrc.IncludePaths = modCfg.Include
 	gitSrc.CodegenConfig = modCfg.Codegen
+
+	if modCfg.SDK != nil {
+		gitSrc.SDK = &core.SDKConfig{
+			Source: modCfg.SDK.Source,
+		}
+	}
 
 	// figure out source subpath
 	if modCfg.Source != "" && !filepath.IsLocal(modCfg.Source) {
 		return inst, fmt.Errorf("source path %q contains parent directory components", modCfg.Source)
 	}
 	switch {
-	case modCfg.SDK == "" && modCfg.Source != "":
+	case modCfg.SDK.Source == "" && modCfg.Source != "":
 		// invalid, can't have source when no sdk
 		return inst, fmt.Errorf("source path %q specified without sdk", modCfg.Source)
-	case modCfg.SDK == "":
+	case modCfg.SDK.Source == "":
 		// skip setting source subpath when no sdk
-	case modCfg.SDK != "" && modCfg.Source == "":
+	case modCfg.SDK.Source != "" && modCfg.Source == "":
 		// sdk was set but source was not, it's implicitly "." and thus the source root
 		gitSrc.SourceSubpath = gitSrc.SourceRootSubpath
-	case modCfg.SDK != "" && modCfg.Source != "":
+	case modCfg.SDK.Source != "" && modCfg.Source != "":
 		// sdk was set and source was too, get the full rel path under the context
 		gitSrc.SourceSubpath = filepath.Join(gitSrc.SourceRootSubpath, modCfg.Source)
 	}
@@ -1158,24 +1168,29 @@ func (s *moduleSchema) directoryAsModuleSource(
 	dirSrc.ModuleName = modCfg.Name
 	dirSrc.ModuleOriginalName = modCfg.Name
 	dirSrc.EngineVersion = modCfg.EngineVersion
-	dirSrc.SDK = modCfg.SDK
 	dirSrc.IncludePaths = modCfg.Include
 	dirSrc.CodegenConfig = modCfg.Codegen
+
+	if modCfg.SDK != nil {
+		dirSrc.SDK = &core.SDKConfig{
+			Source: modCfg.SDK.Source,
+		}
+	}
 
 	// figure out source subpath
 	if modCfg.Source != "" && !filepath.IsLocal(modCfg.Source) {
 		return inst, fmt.Errorf("source path %q contains parent directory components", modCfg.Source)
 	}
 	switch {
-	case modCfg.SDK == "" && modCfg.Source != "":
+	case modCfg.SDK.Source == "" && modCfg.Source != "":
 		// invalid, can't have source when no sdk
 		return inst, fmt.Errorf("source path %q specified without sdk", modCfg.Source)
-	case modCfg.SDK == "":
+	case modCfg.SDK.Source == "":
 		// skip setting source subpath when no sdk
-	case modCfg.SDK != "" && modCfg.Source == "":
+	case modCfg.SDK.Source != "" && modCfg.Source == "":
 		// sdk was set but source was not, it's implicitly "." and thus the source root
 		dirSrc.SourceSubpath = dirSrc.SourceRootSubpath
-	case modCfg.SDK != "" && modCfg.Source != "":
+	case modCfg.SDK.Source != "" && modCfg.Source != "":
 		// sdk was set and source was too, get the full rel path under the context
 		dirSrc.SourceSubpath = filepath.Join(dirSrc.SourceRootSubpath, modCfg.Source)
 	}
@@ -1382,7 +1397,10 @@ func (s *moduleSchema) moduleSourceWithSDK(
 	},
 ) (*core.ModuleSource, error) {
 	src = src.Clone()
-	src.SDK = args.SDK
+	if src.SDK == nil {
+		src.SDK = &core.SDKConfig{}
+	}
+	src.SDK.Source = args.Source
 	return src, nil
 }
 
@@ -1574,231 +1592,7 @@ func (s *moduleSchema) moduleSourceWithUpdateDependencies(
 			if existingDep.Self.Git.Version != "" {
 				depRef += "@" + existingDep.Self.Git.Version
 			}
-<<<<<<< HEAD
-			sdkSet[localDep.sdkKey] = localDep.sdk
-		}
-
-		// rebase user defined include/exclude relative to context
-		rebaseIncludeExclude := func(baseAbsPath, pattern string, set *core.SliceSet[string]) error {
-			isNegation := strings.HasPrefix(pattern, "!")
-			pattern = strings.TrimPrefix(pattern, "!")
-			absPath := filepath.Join(baseAbsPath, pattern)
-			relPath, err := filepath.Rel(contextAbsPath, absPath)
-			if err != nil {
-				return fmt.Errorf("failed to get relative path of config include/exclude: %w", err)
-			}
-			if !filepath.IsLocal(relPath) {
-				return fmt.Errorf("local module dep source include/exclude path %q escapes context %q", relPath, contextAbsPath)
-			}
-			if isNegation {
-				relPath = "!" + relPath
-			}
-			set.Append(relPath)
-			return nil
-		}
-		for _, pattern := range localDep.modCfg.Include {
-			if err := rebaseIncludeExclude(localDep.sourceRootAbsPath, pattern, &includeSet); err != nil {
-				return inst, err
-			}
-		}
-		for _, pattern := range localDep.modCfg.Exclude {
-			if err := rebaseIncludeExclude(localDep.sourceRootAbsPath, pattern, &excludeSet); err != nil {
-				return inst, err
-			}
-		}
-
-		// always include the config file
-		configRelPath, err := filepath.Rel(contextAbsPath, filepath.Join(rootPath, modules.Filename))
-		if err != nil {
-			return inst, fmt.Errorf("failed to get relative path: %w", err)
-		}
-		includeSet.Append(configRelPath)
-
-		// always include the source dir
-		source := localDep.modCfg.Source
-		if source == "" {
-			source = "."
-		}
-		sourceAbsSubpath := filepath.Join(rootPath, source)
-		sourceRelSubpath, err := filepath.Rel(contextAbsPath, sourceAbsSubpath)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get relative path: %w", err)
-		}
-		if !filepath.IsLocal(sourceRelSubpath) {
-			return inst, fmt.Errorf("local module source path %q escapes context %q", sourceRelSubpath, contextAbsPath)
-		}
-		includeSet.Append(sourceRelSubpath + "/**/*")
-	}
-
-	for _, sdk := range sdkSet {
-		// NOTE: required paths are currently **-style globs that apply to the whole context subtree
-		// This is a bit of a delicate assumption, if need arises for including exact paths, this
-		// will need some adjustment.
-		requiredPaths, err := sdk.RequiredPaths(ctx)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get sdk required paths: %w", err)
-		}
-		for _, path := range requiredPaths {
-			includeSet.Append(path)
-		}
-	}
-
-	includes := make([]string, 0, len(includeSet))
-	for _, include := range includeSet {
-		includes = append(includes, include)
-	}
-	excludes := make([]string, 0, len(excludeSet))
-	for _, exclude := range excludeSet {
-		excludes = append(excludes, exclude)
-	}
-
-	var loadedDir dagql.Instance[*core.Directory]
-	err = s.dag.Select(ctx, s.dag.Root(), &loadedDir,
-		dagql.Selector{
-			Field: "host",
-		},
-		dagql.Selector{
-			Field: "directory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(contextAbsPath)},
-				{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(excludes...))},
-				{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(includes...))},
-			},
-		},
-	)
-	if err != nil {
-		return inst, fmt.Errorf("failed to create context directory: %w", err)
-	}
-
-	rootSubPath, err := src.SourceRootSubpath()
-	if err != nil {
-		return inst, fmt.Errorf("failed to get source root subpath: %w", err)
-	}
-
-	return s.normalizeCallerLoadedSource(ctx, src, sourceRootRelPath, rootSubPath, loadedDir)
-}
-
-// get an instance of ModuleSource with the context resolved from the caller that doesn't
-// encode any instructions to actually reload from the caller if the ID is loaded later, which
-// is possible due to blob-ifying the local import.
-func (s *moduleSchema) normalizeCallerLoadedSource(
-	ctx context.Context,
-	src *core.ModuleSource,
-	sourceRootRelPath string,
-	relHostPath string,
-	loadedDir dagql.Instance[*core.Directory],
-) (inst dagql.Instance[*core.ModuleSource], err error) {
-	err = s.dag.Select(ctx, s.dag.Root(), &inst,
-		dagql.Selector{
-			Field: "moduleSource",
-			Args: []dagql.NamedInput{
-				{Name: "refString", Value: dagql.String(sourceRootRelPath)},
-				{Name: "relHostPath", Value: dagql.String(relHostPath)},
-			},
-		},
-		dagql.Selector{
-			Field: "withContextDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "dir", Value: dagql.NewID[*core.Directory](loadedDir.ID())},
-			},
-		},
-	)
-	if err != nil {
-		return inst, fmt.Errorf("failed to load the context directory: %w", err)
-	}
-
-	if src.WithName != "" {
-		err = s.dag.Select(ctx, inst, &inst,
-			dagql.Selector{
-				Field: "withName",
-				Args: []dagql.NamedInput{
-					{Name: "name", Value: dagql.String(src.WithName)},
-				},
-			},
-		)
-		if err != nil {
-			return inst, fmt.Errorf("failed to set name: %w", err)
-		}
-	}
-	if src.WithSDK.Source != "" {
-		err = s.dag.Select(ctx, inst, &inst,
-			dagql.Selector{
-				Field: "withSDK",
-				Args: []dagql.NamedInput{
-					{Name: "source", Value: dagql.String(src.WithSDK.Source)},
-				},
-			},
-		)
-		if err != nil {
-			return inst, fmt.Errorf("failed to set sdk: %w", err)
-		}
-	}
-	if src.WithSourceSubpath != "" {
-		err = s.dag.Select(ctx, inst, &inst,
-			dagql.Selector{
-				Field: "withSourceSubpath",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(src.WithSourceSubpath)},
-				},
-			},
-		)
-		if err != nil {
-			return inst, fmt.Errorf("failed to set source subdir: %w", err)
-		}
-	}
-	if len(src.WithDependencies) > 0 {
-		depIDs := make([]core.ModuleDependencyID, len(src.WithDependencies))
-		for i, dep := range src.WithDependencies {
-			depIDs[i] = dagql.NewID[*core.ModuleDependency](dep.ID())
-		}
-
-		err = s.dag.Select(ctx, inst, &inst,
-			dagql.Selector{
-				Field: "withDependencies",
-				Args: []dagql.NamedInput{
-					{Name: "dependencies", Value: dagql.ArrayInput[core.ModuleDependencyID](depIDs)},
-				},
-			},
-		)
-		if err != nil {
-			return inst, fmt.Errorf("failed to set dependency: %w", err)
-		}
-	}
-
-	if len(src.WithUpdateDependencies) > 0 || src.WithUpdateAllDependencies {
-		err = s.dag.Select(ctx, inst, &inst,
-			dagql.Selector{
-				Field: "withUpdateDependencies",
-				Args: []dagql.NamedInput{
-					{Name: "dependencies", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(src.WithUpdateDependencies...))},
-				},
-			},
-		)
-		if err != nil {
-			return inst, fmt.Errorf("failed to set update dependency: %w", err)
-		}
-	}
-
-	if len(src.WithoutDependencies) > 0 {
-		err = s.dag.Select(ctx, inst, &inst,
-			dagql.Selector{
-				Field: "withoutDependencies",
-				Args: []dagql.NamedInput{
-					{Name: "dependencies", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(src.WithoutDependencies...))},
-				},
-			},
-		)
-		if err != nil {
-			return inst, fmt.Errorf("failed to set dependency: %w", err)
-		}
-	}
-
-	if src.WithViews != nil {
-		for _, view := range src.WithViews {
-			err = s.dag.Select(ctx, inst, &inst,
-=======
 			err := s.dag.Select(ctx, s.dag.Root(), &updatedDep,
->>>>>>> b2002af0d (wip)
 				dagql.Selector{
 					Field: "moduleSource",
 					Args: []dagql.NamedInput{
@@ -1918,119 +1712,12 @@ func (s *moduleSchema) moduleSourceWithoutDependencies(
 ) (*core.ModuleSource, error) {
 	parentSrc = parentSrc.Clone()
 
-<<<<<<< HEAD
-		bk, err := query.Buildkit(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-		}
-		var modCfg modules.ModuleConfig
-		configPath := filepath.Join(sourceRootAbsPath, modules.Filename)
-		configBytes, err := bk.ReadCallerHostFile(ctx, configPath)
-		switch {
-		case err == nil:
-			if err := json.Unmarshal(configBytes, &modCfg); err != nil {
-				return nil, fmt.Errorf("error unmarshaling config at %s: %w", configPath, err)
-			}
-
-		// TODO: remove the strings.Contains check here (which aren't cross-platform),
-		// since we now set NotFound (since v0.11.2)
-		case status.Code(err) == codes.NotFound || strings.Contains(err.Error(), "no such file or directory"):
-			// This is only allowed for the top-level module (which may be in the process of being newly initialized).
-			// sentinel via nil modCfg unless there's WithSDK/WithDependencies/etc. to be applied
-			if !topLevel {
-				return nil, fmt.Errorf("missing config file %s", configPath)
-			}
-			if src.WithSDK.Source == "" && len(src.WithDependencies) == 0 {
-				return &callerLocalDep{sourceRootAbsPath: sourceRootAbsPath}, nil
-			}
-
-		default:
-			return nil, fmt.Errorf("error reading config %s: %w", configPath, err)
-		}
-
-		if topLevel {
-			if src.WithName != "" {
-				modCfg.Name = src.WithName
-			}
-			if src.WithSDK.Source != "" {
-				modCfg.SDK = &modules.SDK{
-					Source: src.WithSDK.Source,
-				}
-			}
-			for _, dep := range src.WithDependencies {
-				refString, err := dep.Self.Source.Self.RefString()
-				if err != nil {
-					return nil, fmt.Errorf("failed to get ref string for dependency: %w", err)
-				}
-				pin, err := dep.Self.Source.Self.Pin()
-				if err != nil {
-					return nil, fmt.Errorf("failed to get ref string for dependency: %w", err)
-				}
-				modCfg.Dependencies = append(modCfg.Dependencies, &modules.ModuleConfigDependency{
-					Name:   dep.Self.Name,
-					Source: refString,
-					Pin:    pin,
-				})
-			}
-		}
-
-		localDep := &callerLocalDep{
-			sourceRootAbsPath: sourceRootAbsPath,
-			modCfg:            &modCfg,
-		}
-
-		for _, depCfg := range modCfg.Dependencies {
-			parsed := parseRefString(ctx, bk, depCfg.Source)
-			if parsed.kind != core.ModuleSourceKindLocal {
-				continue
-			}
-
-			// dont load dependency module source during uninstallation
-			// as it may have been removed before calling the uninstall
-			uninstallRequested := false
-			for _, removedDep := range src.WithoutDependencies {
-				var cleanPath = filepath.Clean(removedDep)
-
-				// ignore the dependency that we are currently uninstalling
-				if depCfg.Source == cleanPath || depCfg.Name == cleanPath {
-					uninstallRequested = true
-					break
-				}
-			}
-
-			// this dependency has been requested to be uninstalled.
-			// skip loading it
-			if uninstallRequested {
-				continue
-			}
-
-			depAbsPath := filepath.Join(sourceRootAbsPath, parsed.modPath)
-			err = s.collectCallerLocalDeps(ctx, query, contextAbsPath, depAbsPath, false, src, collectedDeps)
-			if err != nil {
-				return nil, fmt.Errorf("failed to collect local module source dep: %w", err)
-			}
-		}
-
-		if modCfg.SDK == nil || modCfg.SDK.Source == "" {
-			return localDep, nil
-		}
-
-		localDep.sdkKey = modCfg.SDK.Source
-
-		localDep.sdk, err = s.builtinSDK(ctx, query, &core.SDKConfig{Source: modCfg.SDK.Source})
-		switch {
-		case err == nil:
-		case errors.Is(err, errUnknownBuiltinSDK):
-			parsed := parseRefString(ctx, bk, modCfg.SDK.Source)
-			switch parsed.kind {
-=======
 	var filteredDeps []dagql.Instance[*core.ModuleSource]
 	for _, existingDep := range parentSrc.Dependencies {
 		var existingName, existingSymbolic, existingVersion string
 		switch parentSrc.Kind {
 		case core.ModuleSourceKindLocal:
 			switch existingDep.Self.Kind {
->>>>>>> b2002af0d (wip)
 			case core.ModuleSourceKindLocal:
 				// parent=local, dep=local
 				existingName = existingDep.Self.ModuleName
@@ -2039,17 +1726,10 @@ func (s *moduleSchema) moduleSourceWithoutDependencies(
 				var err error
 				existingSymbolic, err = pathutil.LexicalRelativePath(parentSrcRoot, depSrcRoot)
 				if err != nil {
-<<<<<<< HEAD
-					return nil, getInvalidBuiltinSDKError(modCfg.SDK.Source)
-=======
 					return nil, fmt.Errorf("failed to get relative path: %w", err)
->>>>>>> b2002af0d (wip)
 				}
 
 			case core.ModuleSourceKindGit:
-<<<<<<< HEAD
-				localDep.sdk, err = s.sdkForModule(ctx, query, &core.SDKConfig{Source: modCfg.SDK.Source}, dagql.Instance[*core.ModuleSource]{})
-=======
 				// parent=local, dep=git
 				existingName = existingDep.Self.ModuleName
 				existingSymbolic = existingDep.Self.Git.CloneRef
@@ -2117,7 +1797,6 @@ func (s *moduleSchema) moduleSourceWithoutDependencies(
 				// TODO: don't rerun this every loop, could just use a map and delete once matched
 				// TODO: don't rerun this every loop, could just use a map and delete once matched
 				parsedDepGitRef, err := parseGitRefString(ctx, depArg)
->>>>>>> b2002af0d (wip)
 				if err != nil {
 					return nil, fmt.Errorf("failed to parse git ref string %q: %w", depArg, err)
 				}
@@ -2154,9 +1833,14 @@ func (s *moduleSchema) moduleSourceGeneratedContextDirectory(
 	modCfg := &modules.ModuleConfig{
 		Name:          src.ModuleName,
 		EngineVersion: src.EngineVersion,
-		SDK:           src.SDK,
 		Include:       src.IncludePaths,
 		Codegen:       src.CodegenConfig,
+	}
+
+	if src.SDK != nil {
+		modCfg.SDK = &modules.SDK{
+			Source: src.SDK.Source,
+		}
 	}
 
 	switch modCfg.EngineVersion {
@@ -2267,10 +1951,10 @@ func (s *moduleSchema) moduleSourceGeneratedContextDirectory(
 
 	// run codegen too if we have a name and SDK
 	genDirInst = src.ContextDirectory
-	if modCfg.Name != "" && modCfg.SDK != "" {
+	if modCfg.Name != "" && modCfg.SDK != nil && modCfg.SDK.Source != "" {
 		if srcInst.Self.InitConfig != nil &&
 			srcInst.Self.InitConfig.Merge &&
-			srcInst.Self.SDK != string(SDKGo) {
+			srcInst.Self.SDK.Source != string(SDKGo) {
 			return genDirInst, fmt.Errorf("merge is only supported for Go SDKs")
 		}
 
@@ -2313,7 +1997,9 @@ func (s *moduleSchema) moduleSourceGeneratedContextDirectory(
 			return genDirInst, fmt.Errorf("failed to get or initialize instance: %w", err)
 		}
 		srcInstContentHashed := srcInst.WithMetadata(digest.Digest(srcInst.Self.Digest), true)
-		sdk, err := s.sdkForModule(ctx, src.Query, modCfg.SDK, srcInstContentHashed)
+
+		// TODO: parallelize w/ dep load
+		sdk, err := s.sdkForModule(ctx, src.Query, src.SDK, srcInstContentHashed)
 		if err != nil {
 			return genDirInst, fmt.Errorf("failed to get SDK for module: %w", err)
 		}
@@ -2453,7 +2139,7 @@ func (s *moduleSchema) moduleSourceAsModule(
 	src dagql.Instance[*core.ModuleSource],
 	args struct{},
 ) (inst dagql.Instance[*core.Module], err error) {
-	if src.Self.ModuleName == "" || src.Self.SDK == "" {
+	if src.Self.ModuleName == "" || src.Self.SDK == nil || src.Self.SDK.Source == "" {
 		return inst, fmt.Errorf("module name and SDK must be set")
 	}
 

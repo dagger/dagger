@@ -5580,7 +5580,6 @@ type ModuleSource struct {
 	moduleName                *string
 	moduleOriginalName        *string
 	pin                       *string
-	sdk                       *string
 	sourceRootSubpath         *string
 	sourceSubpath             *string
 	sync                      *ModuleSourceID
@@ -5818,16 +5817,12 @@ func (r *ModuleSource) Pin(ctx context.Context) (string, error) {
 }
 
 // TODO
-func (r *ModuleSource) SDK(ctx context.Context) (string, error) {
-	if r.sdk != nil {
-		return *r.sdk, nil
-	}
+func (r *ModuleSource) SDK() *SDKConfig {
 	q := r.query.Select("sdk")
 
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return &SDKConfig{
+		query: q,
+	}
 }
 
 // TODO
@@ -5843,7 +5838,7 @@ func (r *ModuleSource) SourceRootSubpath(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// TODO
+// A human readable ref string representation of this module source.
 func (r *ModuleSource) SourceSubpath(ctx context.Context) (string, error) {
 	if r.sourceSubpath != nil {
 		return *r.sourceSubpath, nil

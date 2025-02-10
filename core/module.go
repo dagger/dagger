@@ -56,6 +56,7 @@ type Module struct {
 	InstanceID *call.ID
 }
 
+<<<<<<< HEAD
 type SDKConfig struct {
 	Source string `field:"true" name:"source" doc:"Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
 }
@@ -78,6 +79,8 @@ func (sdk SDKConfig) Clone() *SDKConfig {
 	return &cp
 }
 
+=======
+>>>>>>> e72fec8a4 (rebase fixes)
 func (*Module) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Module",
