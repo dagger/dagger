@@ -23,6 +23,7 @@ type TraceTree struct {
 	IsRunningOrChildRunning bool
 	Chained                 bool
 	Final                   bool
+	RevealedSpans           bool
 
 	Children []*TraceTree
 }
@@ -39,6 +40,7 @@ type TraceRow struct {
 	Previous                *TraceRow
 	Parent                  *Span
 	HasChildren             bool
+	RevealedSpans           bool
 }
 
 type RowsView struct {
@@ -104,6 +106,7 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans []*Span, f func(*TraceTree)) {
 			Span:   span,
 			Parent: parent,
 		}
+
 		if span.Base != nil && lastTree != nil {
 			tree.Chained = span.Base.Digest == lastTree.Span.CallDigest ||
 				span.Base.Digest == lastTree.Span.Output
@@ -115,16 +118,35 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans []*Span, f func(*TraceTree)) {
 		if span.IsRunningOrEffectsRunning() {
 			tree.setRunning()
 		}
+
+		revealedSpans := false
+		if opts.Verbosity < ShowEncapsulatedVerbosity {
+			// Process revealed spans before normal children
+			for revealed := range span.RevealedSpans {
+				if opts.ShouldShow(db, revealed) {
+					walk(revealed, tree)
+					revealedSpans = true
+				}
+			}
+			tree.RevealedSpans = revealedSpans
+		}
+
 		f(tree)
 		lastTree = tree
-		for _, child := range span.ChildSpans.Order {
-			walk(child, tree)
+
+		// Only process children if we didn't use revealed spans
+		if !revealedSpans {
+			for _, child := range span.ChildSpans.Order {
+				walk(child, tree)
+			}
 		}
+
 		if lastTree != nil {
 			lastTree.Final = true
 		}
 		lastTree = tree
 	}
+
 	for _, span := range spans {
 		walk(span, nil)
 	}
@@ -152,6 +174,7 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 			IsRunningOrChildRunning: tree.IsRunningOrChildRunning,
 			Parent:                  parent,
 			HasChildren:             len(tree.Children) > 0,
+			RevealedSpans:           tree.RevealedSpans,
 		}
 		if len(rows.Order) > 0 {
 			row.Previous = rows.Order[len(rows.Order)-1]
