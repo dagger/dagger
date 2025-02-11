@@ -251,8 +251,8 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 		return err
 	}
 
-	if def.Conf != nil {
-		if err := h.setContext(ctx, def.Conf); err != nil {
+	if def.Source != nil {
+		if err := h.setContext(ctx, def.Source, def.SourceKind); err != nil {
 			return err
 		}
 		h.initContext = h.workdir
@@ -538,14 +538,11 @@ func (h *shellCallHandler) Prompt(out *termenv.Output, fg termenv.Color) string 
 	sb := new(strings.Builder)
 
 	if def, _ := h.GetModuleDef(nil); def != nil {
-		sb.WriteString(out.String(def.Name).Bold().Foreground(termenv.ANSICyan).String())
+		sb.WriteString(out.String("(" + def.Name + ")").Bold().Foreground(termenv.ANSICyan).String())
 		sb.WriteString(" ")
 	}
 
 	if path := h.WorkdirPath(); path != "" {
-		if sb.Len() > 0 {
-			sb.WriteString("in ")
-		}
 		sb.WriteString(out.String(path).Bold().Foreground(termenv.ANSIMagenta).String())
 		sb.WriteString(" ")
 	}
