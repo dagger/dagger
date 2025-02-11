@@ -173,17 +173,20 @@ func (term *Vterm) View() string {
 	return term.viewBuf.String()
 }
 
+var style = styles.LightStyleConfig
+
+func init() {
+	if isDark {
+		style = styles.DarkStyleConfig
+	}
+	style.Document.Margin = nil
+}
+
 func (term *Vterm) redraw() {
 	term.viewBuf.Reset()
 
 	// First render any Markdown content
 	if term.markdownBuf.Len() > 0 {
-		style := styles.LightStyleConfig
-		if termenv.HasDarkBackground() {
-			style = styles.DarkStyleConfig
-		}
-		style.Document.Margin = nil
-
 		renderer, _ := glamour.NewTermRenderer(
 			glamour.WithAutoStyle(),
 			glamour.WithWordWrap(term.Width),
