@@ -113,8 +113,8 @@ type moduleDef struct {
 
 	// the ModuleSource definition for the module, needed by some arg types
 	// applying module-specific configs to the arg value.
-	Source *dagger.ModuleSource
-	Conf   *configuredModule
+	Source     *dagger.ModuleSource
+	SourceKind dagger.ModuleSourceKind
 
 	// ModRef is the human readable module source reference as returned by the API
 	ModRef string
@@ -148,7 +148,7 @@ var loadModConfQuery string
 //go:embed typedefs.graphql
 var loadTypeDefsQuery string
 
-func inspectModule(ctx context.Context, dag *dagger.Client, conf *configuredModule) (rdef *moduleDef, rerr error) {
+func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.ModuleSource) (rdef *moduleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "inspecting module metadata", telemetry.Encapsulate())
 	defer telemetry.End(span, func() error { return rerr })
 
@@ -160,6 +160,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, conf *configuredModu
 
 	var res struct {
 		Source struct {
+			Kind     dagger.ModuleSourceKind
 			AsString string
 			Kind     dagger.ModuleSourceKind
 			Module   struct {
@@ -177,7 +178,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, conf *configuredModu
 		}
 	}
 
-	id, err := conf.Source.ID(ctx)
+	id, err := source.ID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -205,8 +206,8 @@ func inspectModule(ctx context.Context, dag *dagger.Client, conf *configuredModu
 	}
 
 	def := &moduleDef{
-		Source:       conf.Source,
-		Conf:         conf,
+		Source:       source,
+		SourceKind:   res.Source.Kind,
 		ModRef:       res.Source.AsString,
 		Name:         res.Source.Module.Name,
 		Description:  res.Source.Module.Description,
