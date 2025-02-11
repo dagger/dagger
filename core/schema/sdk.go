@@ -51,12 +51,12 @@ func (s *moduleSchema) sdkForModule(
 	sdk *core.SDKConfig,
 	parentSrc *core.ModuleSource,
 ) (core.SDK, error) {
-	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("sdkForModule: %s", sdk.Source), telemetry.Internal())
-	defer span.End()
-
 	if sdk == nil {
 		return nil, errors.New("sdk ref is required")
 	}
+
+	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("sdkForModule: %s", sdk.Source), telemetry.Internal())
+	defer span.End()
 
 	builtinSDK, err := s.builtinSDK(ctx, query, sdk)
 	if err == nil {
@@ -67,7 +67,7 @@ func (s *moduleSchema) sdkForModule(
 
 	bk, err := query.Buildkit(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit for sdk %s: %w", sdk, err)
+		return nil, fmt.Errorf("failed to get buildkit for sdk %s: %w", sdk.Source, err)
 	}
 	sdkRef, err := parseRefString(
 		ctx,
@@ -80,7 +80,7 @@ func (s *moduleSchema) sdkForModule(
 		false,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse sdk ref %s: %w", sdk, err)
+		return nil, fmt.Errorf("failed to parse sdk ref %s: %w", sdk.Source, err)
 	}
 
 	// TODO: highly duped with other dep code
@@ -156,7 +156,7 @@ func (s *moduleSchema) sdkForModule(
 			},
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load sdk module source %q: %w", sdk, err)
+			return nil, fmt.Errorf("failed to load sdk module source %q: %w", sdk.Source, err)
 		}
 	}
 
