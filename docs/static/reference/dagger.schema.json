@@ -120,6 +120,12 @@
       "properties": {
         "source": {
           "type": "string"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
         }
       },
       "additionalProperties": false,

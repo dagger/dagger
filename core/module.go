@@ -67,7 +67,8 @@ type Module struct {
 }
 
 type SDKConfig struct {
-	Source string `field:"true" name:"source" doc:"Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
+	Source string            `field:"true" name:"source" doc:"Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
+	Env    map[string]string `name:"env" doc:"Environment variables used in codegen and runtime. e.g. GOPRIVATE"`
 }
 
 func (*SDKConfig) Type() *ast.Type {
@@ -83,6 +84,7 @@ func (*SDKConfig) TypeDescription() string {
 
 func (sdk SDKConfig) Clone() *SDKConfig {
 	cp := sdk
+	cp.Env = cloneMap(sdk.Env)
 	cp.Source = sdk.Source
 
 	return &cp

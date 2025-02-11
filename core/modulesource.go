@@ -298,6 +298,7 @@ func (src *ModuleSource) SDK(ctx context.Context) (*SDKConfig, error) {
 	}
 	return &SDKConfig{
 		Source: modCfg.SDK.Source,
+		Env:    modCfg.SDK.Env,
 	}, nil
 }
 
