@@ -326,6 +326,21 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 	path := v.String()
 	path = strings.TrimPrefix(path, "file://")
 
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	path, err = pathutil.ExpandHomeDir(homeDir, path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to expand home directory: %w", err)
+	}
+	if !filepath.IsAbs(path) {
+		path, err = pathutil.Abs(path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve absolute path: %w", err)
+		}
+	}
+
 	return dag.Host().Directory(path, dagger.HostDirectoryOpts{
 		Exclude: modArg.Ignore,
 	}), nil
