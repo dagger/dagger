@@ -26,6 +26,8 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
+var isDark = termenv.HasDarkBackground()
+
 type frontendPretty struct {
 	dagui.FrontendOpts
 
