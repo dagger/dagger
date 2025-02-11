@@ -2,7 +2,6 @@ package dagui
 
 import (
 	"fmt"
-	"iter"
 	"math"
 	"time"
 
@@ -86,40 +85,6 @@ func (span *Span) Base() *callpbv1.Call {
 	}
 
 	return nil
-}
-
-func (span *Span) Sift() SpanSet {
-	set := NewSpanSet()
-	span.siftInto(set)
-	return set
-}
-
-func (span *Span) Children(opts FrontendOpts) iter.Seq[*Span] {
-	return func(f func(*Span) bool) {
-		if _, sifted := opts.SiftedSpans[span.ID]; sifted {
-			for _, child := range span.Sift().Order {
-				if !f(child) {
-					break
-				}
-			}
-		} else {
-			for _, child := range span.ChildSpans.Order {
-				if !f(child) {
-					break
-				}
-			}
-		}
-	}
-}
-
-func (span *Span) siftInto(set SpanSet) {
-	for _, child := range span.ChildSpans.Order {
-		if child.Call() != nil || child.Passthrough {
-			child.siftInto(set)
-		} else {
-			set.Add(child)
-		}
-	}
 }
 
 func countChildren(set SpanSet) int {
@@ -426,14 +391,18 @@ func (span *Span) VisibleParent(opts FrontendOpts) *Span {
 }
 
 func (span *Span) Hidden(opts FrontendOpts) bool {
-	if span.IsInternal() && opts.Verbosity < ShowInternalVerbosity {
+	verbosity := opts.Verbosity
+	if v, ok := opts.SpanVerbosity[span.ID]; ok {
+		verbosity = v
+	}
+	if span.IsInternal() && verbosity < ShowInternalVerbosity {
 		// internal spans are hidden by default
 		return true
 	}
 	if span.ParentSpan != nil &&
 		(span.Encapsulated || span.ParentSpan.Encapsulate) &&
 		!span.ParentSpan.IsFailed() &&
-		opts.Verbosity < ShowEncapsulatedVerbosity {
+		verbosity < ShowEncapsulatedVerbosity {
 		// encapsulated steps are hidden (even on error) unless their parent errors
 		return true
 	}
