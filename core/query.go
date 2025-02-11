@@ -2,13 +2,17 @@ package core
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
+	"sync"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/containerd/containerd/content"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/auth"
@@ -23,6 +27,9 @@ import (
 // dependencies for evaluating queries.
 type Query struct {
 	Server
+
+	spans  map[string]*Span
+	spansL *sync.Mutex
 }
 
 var ErrNoCurrentModule = fmt.Errorf("no current module")
@@ -96,10 +103,17 @@ type Server interface {
 	// or a nested exec). Useful for figuring out where local sources should be resolved from through
 	// chains of dependency modules.
 	NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error)
+
+	// Open a client's SQLite database. Be sure to close it!
+	OpenClientDB(clientID string) (*sql.DB, error)
 }
 
 func NewRoot(srv Server) *Query {
-	return &Query{Server: srv}
+	return &Query{
+		Server: srv,
+		spans:  map[string]*Span{},
+		spansL: new(sync.Mutex),
+	}
 }
 
 func (*Query) Type() *ast.Type {
@@ -119,6 +133,32 @@ func (q Query) Clone() *Query {
 
 func (q *Query) WithPipeline(name, desc string) *Query {
 	return q.Clone()
+}
+
+func (q *Query) StartSpan(ctx context.Context, s *Span) *Span {
+	started := s.Clone()
+	var opts []trace.SpanStartOption
+	if s.Actor != "" {
+		opts = append(opts, trace.WithAttributes(attribute.String("dagger.io/ui.actor", s.Actor)))
+	}
+	if s.Internal {
+		opts = append(opts, telemetry.Internal())
+	}
+	if s.Reveal {
+		opts = append(opts, trace.WithAttributes(attribute.Bool(telemetry.UIRevealAttr, true)))
+	}
+	_, started.Span = Tracer(ctx).Start(ctx, s.Name, opts...)
+	q.spansL.Lock()
+	q.spans[started.InternalID()] = started
+	q.spansL.Unlock()
+	return started
+}
+
+func (q *Query) LookupSpan(spanID string) (*Span, bool) {
+	q.spansL.Lock()
+	span, found := q.spans[spanID]
+	q.spansL.Unlock()
+	return span, found
 }
 
 func (q *Query) NewContainer(platform Platform) *Container {

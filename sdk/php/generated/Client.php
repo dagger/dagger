@@ -70,6 +70,16 @@ class Client extends Client\AbstractClient
         return new \Dagger\CurrentModule($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
+    public function currentSpan(string $name, ?string $key = ''): Span
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('currentSpan');
+        $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $key) {
+        $innerQueryBuilder->setArgument('key', $key);
+        }
+        return new \Dagger\Span($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
     /**
      * The TypeDef representations of the objects currently being served in the session.
      */
@@ -601,6 +611,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a Span from its ID.
+     */
+    public function loadSpanFromID(SpanId|Span $id): Span
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSpanFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Span($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Terminal from its ID.
      */
     public function loadTerminalFromID(TerminalId|Terminal $id): Terminal
@@ -698,6 +718,19 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder->setArgument('line', $line);
         $innerQueryBuilder->setArgument('column', $column);
         return new \Dagger\SourceMap($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Create a new OpenTelemetry span.
+     */
+    public function span(string $name, ?string $key = ''): Span
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('span');
+        $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $key) {
+        $innerQueryBuilder->setArgument('key', $key);
+        }
+        return new \Dagger\Span($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

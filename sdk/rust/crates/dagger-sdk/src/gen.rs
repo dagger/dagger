@@ -1420,6 +1420,39 @@ impl SourceMapId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct SpanId(pub String);
+impl From<&str> for SpanId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for SpanId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<SpanId> for Span {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<SpanId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<SpanId> for SpanId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<SpanId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<SpanId, DaggerError>(self) })
+    }
+}
+impl SpanId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct TerminalId(pub String);
 impl From<&str> for TerminalId {
     fn from(value: &str) -> Self {
@@ -6947,6 +6980,11 @@ pub struct QueryContainerOpts {
     pub platform: Option<Platform>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct QueryCurrentSpanOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub key: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct QueryGitOpts<'a> {
     /// A service which must be started before the repo is fetched.
     #[builder(setter(into, strip_option), default)]
@@ -6989,6 +7027,11 @@ pub struct QueryModuleSourceOpts<'a> {
     /// If true, enforce that the source is a stable version for source kinds that support versioning.
     #[builder(setter(into, strip_option), default)]
     pub stable: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct QuerySpanOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub key: Option<&'a str>,
 }
 impl Query {
     /// Retrieves a container builtin to the engine.
@@ -7087,6 +7130,39 @@ impl Query {
     pub fn current_module(&self) -> CurrentModule {
         let query = self.selection.select("currentModule");
         CurrentModule {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn current_span(&self, name: impl Into<String>) -> Span {
+        let mut query = self.selection.select("currentSpan");
+        query = query.arg("name", name.into());
+        Span {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn current_span_opts<'a>(
+        &self,
+        name: impl Into<String>,
+        opts: QueryCurrentSpanOpts<'a>,
+    ) -> Span {
+        let mut query = self.selection.select("currentSpan");
+        query = query.arg("name", name.into());
+        if let Some(key) = opts.key {
+            query = query.arg("key", key);
+        }
+        Span {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -7974,6 +8050,22 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Load a Span from its ID.
+    pub fn load_span_from_id(&self, id: impl IntoID<SpanId>) -> Span {
+        let mut query = self.selection.select("loadSpanFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        Span {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Load a Terminal from its ID.
     pub fn load_terminal_from_id(&self, id: impl IntoID<TerminalId>) -> Terminal {
         let mut query = self.selection.select("loadTerminalFromID");
@@ -8151,6 +8243,39 @@ impl Query {
         query = query.arg("line", line);
         query = query.arg("column", column);
         SourceMap {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create a new OpenTelemetry span.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the span.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn span(&self, name: impl Into<String>) -> Span {
+        let mut query = self.selection.select("span");
+        query = query.arg("name", name.into());
+        Span {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create a new OpenTelemetry span.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the span.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn span_opts<'a>(&self, name: impl Into<String>, opts: QuerySpanOpts<'a>) -> Span {
+        let mut query = self.selection.select("span");
+        query = query.arg("name", name.into());
+        if let Some(key) = opts.key {
+            query = query.arg("key", key);
+        }
+        Span {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -8437,6 +8562,102 @@ impl SourceMap {
     pub async fn module(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("module");
         query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
+pub struct Span {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct SpanEndOpts {
+    #[builder(setter(into, strip_option), default)]
+    pub error: Option<ErrorId>,
+}
+impl Span {
+    /// An optional actor to display for the span.
+    pub async fn actor(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("actor");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// End the OpenTelemetry span, with an optional error.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn end(&self) -> Result<Void, DaggerError> {
+        let query = self.selection.select("end");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// End the OpenTelemetry span, with an optional error.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn end_opts(&self, opts: SpanEndOpts) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("end");
+        if let Some(error) = opts.error {
+            query = query.arg("error", error);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this Span.
+    pub async fn id(&self) -> Result<SpanId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Indicates that the span contains details that are not important to the user in the happy path.
+    pub async fn internal(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("internal");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Returns the internal ID of the span.
+    pub async fn internal_id(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("internalId");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The name of the span.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Indicates that the span should be revealed in the UI.
+    pub async fn reveal(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("reveal");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Returns a new span with the reveal attribute set to true.
+    pub fn revealed(&self) -> Span {
+        let query = self.selection.select("revealed");
+        Span {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Start a new instance of the span.
+    pub async fn start(&self) -> Result<SpanId, DaggerError> {
+        let query = self.selection.select("start");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub fn with_actor(&self, actor: impl Into<String>) -> Span {
+        let mut query = self.selection.select("withActor");
+        query = query.arg("actor", actor.into());
+        Span {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Returns a new span with the internal attribute set to true.
+    pub fn with_internal(&self) -> Span {
+        let query = self.selection.select("withInternal");
+        Span {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
 }
 #[derive(Clone)]

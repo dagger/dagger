@@ -270,19 +270,19 @@ func (fe *frontendPretty) renderErrorLogs(out *termenv.Output, r *renderer) bool
 	})
 	errTree := fe.db.CollectErrors(rowsView)
 	var anyHasLogs bool
-	dagui.WalkTree(errTree, func(row *dagui.TraceTree, _ int) bool {
+	dagui.WalkTree(errTree, func(row *dagui.TraceTree, _ int) dagui.WalkDecision {
 		logs := fe.logs.Logs[row.Span.ID]
 		if logs != nil && logs.UsedHeight() > 0 {
 			anyHasLogs = true
-			return true
+			return dagui.WalkStop
 		}
-		return false
+		return dagui.WalkContinue
 	})
 	if anyHasLogs {
 		fmt.Fprintln(out)
 		fmt.Fprintln(out, out.String("Error logs:").Bold())
 	}
-	dagui.WalkTree(errTree, func(tree *dagui.TraceTree, _ int) bool {
+	dagui.WalkTree(errTree, func(tree *dagui.TraceTree, _ int) dagui.WalkDecision {
 		logs := fe.logs.Logs[tree.Span.ID]
 		if logs != nil && logs.UsedHeight() > 0 {
 			fmt.Fprintln(out)
@@ -290,7 +290,7 @@ func (fe *frontendPretty) renderErrorLogs(out *termenv.Output, r *renderer) bool
 			fe.renderLogs(out, r, logs, -1, logs.UsedHeight(), "")
 			fe.renderStepError(out, r, tree.Span, 0, "")
 		}
-		return false
+		return dagui.WalkContinue
 	})
 	return len(errTree) > 0
 }
@@ -463,6 +463,7 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 		{"unzoom", []string{"esc"}, fe.ZoomedSpan.IsValid() &&
 			fe.ZoomedSpan != fe.db.PrimarySpan},
 		{fmt.Sprintf("verbosity=%d", fe.Verbosity), []string{"+/-", "+", "-"}, true},
+		{"sift", []string{"s"}, true},
 		{quitMsg, []string{"q", "ctrl+c"}, true},
 	} {
 		if !key.show {
@@ -883,6 +884,9 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				}
 				return nil
 			}
+		case "s":
+			fe.Opts().Sift(fe.FocusedSpan)
+			return fe, nil
 		case "?":
 			fe.debugged = fe.FocusedSpan
 			return fe, nil
@@ -1004,8 +1008,8 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, r *renderer, row *dagui
 	if row.Previous != nil &&
 		row.Previous.Depth >= row.Depth &&
 		!row.Chained &&
-		(row.Previous.Depth > row.Depth || row.Span.Call != nil ||
-			(row.Previous.Span.Call != nil && row.Span.Call == nil) ||
+		(row.Previous.Depth > row.Depth || row.Span.Call() != nil ||
+			(row.Previous.Span.Call() != nil && row.Span.Call() == nil) ||
 			row.Previous.Span.Message != "") {
 		fmt.Fprint(out, prefix)
 		r.indent(out, row.Depth)
@@ -1064,9 +1068,8 @@ func (fe *frontendPretty) renderStepError(out *termenv.Output, r *renderer, span
 func (fe *frontendPretty) renderStep(out *termenv.Output, r *renderer, span *dagui.Span, chained bool, depth int, prefix string) error {
 	isFocused := span.ID == fe.FocusedSpan
 
-	id := span.Call
-	if id != nil {
-		if err := r.renderCall(out, span, id, prefix, chained, depth, false, span.Internal, isFocused); err != nil {
+	if call := span.Call(); call != nil {
+		if err := r.renderCall(out, span, call, prefix, chained, depth, false, span.Internal, isFocused); err != nil {
 			return err
 		}
 	} else if span != nil {

@@ -42,10 +42,6 @@ const (
 	// Example: "sent", "received"
 	UIMessageAttr = "dagger.io/ui.message"
 
-	// Reveal the span through all parent spans so that it is visible at the top
-	// level.
-	UIRevealAttr = "dagger.io/ui.reveal"
-
 	// Hide child spans by default.
 	//
 	// Encapsulated child spans may typically be revealed if the parent span errors.
@@ -56,6 +52,9 @@ const (
 	// This is functionally the same as UIEncapsulateAttr, but is instead set
 	// on a child instead of a parent.
 	UIEncapsulatedAttr = "dagger.io/ui.encapsulated"
+
+	// Reveal the span, all the way through its parent spans.
+	UIRevealAttr = "dagger.io/ui.reveal"
 
 	// Substitute the span for its children and move its logs to its parent.
 	UIPassthroughAttr = "dagger.io/ui.passthrough" //nolint: gosec // lol
@@ -97,6 +96,11 @@ const (
 
 	// Indicates whether the log stream has ended.
 	StdioEOFAttr = "stdio.eof"
+
+	// The MIME type of the associated content (i.e. log message).
+	//
+	// Example: text/plain, text/markdown, text/html
+	ContentTypeAttr = "dagger.io/content.type"
 
 	// Indicates whether the log should be shown globally.
 	LogsGlobalAttr = "dagger.io/logs.global"

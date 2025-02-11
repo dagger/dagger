@@ -2,6 +2,7 @@ package dagui
 
 import (
 	"fmt"
+	"iter"
 	"math"
 	"time"
 
@@ -18,20 +19,21 @@ type SpanSet = *OrderedSet[SpanID, *Span]
 type Span struct {
 	SpanSnapshot
 
-	ParentSpan    *Span          `json:"-"`
-	ChildSpans    SpanSet        `json:"-"`
-	RunningSpans  SpanSet        `json:"-"`
-	FailedLinks   SpanSet        `json:"-"`
-	RevealedSpans SpanSet        `json:"-"`
-	Call          *callpbv1.Call `json:"-"`
-	Base          *callpbv1.Call `json:"-"`
+	ParentSpan    *Span   `json:"-"`
+	ChildSpans    SpanSet `json:"-"`
+	RunningSpans  SpanSet `json:"-"`
+	FailedLinks   SpanSet `json:"-"`
+	RevealedSpans SpanSet `json:"-"`
+
+	callCache *callpbv1.Call
+	baseCache *callpbv1.Call
 
 	// v0.15+
-	causesViaLinks  SpanSet `json:"-"`
-	effectsViaLinks SpanSet `json:"-"`
+	causesViaLinks  SpanSet
+	effectsViaLinks SpanSet
 	// v0.14 and below
-	causesViaAttrs  SpanSet            `json:"-"`
-	effectsViaAttrs map[string]SpanSet `json:"-"`
+	causesViaAttrs  SpanSet
+	effectsViaAttrs map[string]SpanSet
 
 	// Indicates that this span was actually exported to the database, and not
 	// just allocated due to a span parent or other relationship.
@@ -50,6 +52,74 @@ func (span *Span) Snapshot() SpanSnapshot {
 	snapshot := span.SpanSnapshot
 	snapshot.Final = true // NOTE: applied to copy
 	return snapshot
+}
+
+func (span *Span) Call() *callpbv1.Call {
+	if span.callCache != nil {
+		return span.callCache
+	}
+	if span.CallDigest == "" {
+		return nil
+	}
+	span.callCache = span.db.Call(span.CallDigest)
+	return span.callCache
+}
+
+func (span *Span) Base() *callpbv1.Call {
+	if span.baseCache != nil {
+		return span.baseCache
+	}
+
+	call := span.Call()
+	if call == nil {
+		return nil
+	}
+
+	// TODO: respect an already-set base value computed server-side, and client
+	// subsequently requests necessary DAG
+	if call.ReceiverDigest != "" {
+		parentCall := span.db.MustCall(call.ReceiverDigest)
+		if parentCall != nil {
+			span.baseCache = span.db.Simplify(parentCall, span.Internal)
+			return span.baseCache
+		}
+	}
+
+	return nil
+}
+
+func (span *Span) Sift() SpanSet {
+	set := NewSpanSet()
+	span.siftInto(set)
+	return set
+}
+
+func (span *Span) Children(opts FrontendOpts) iter.Seq[*Span] {
+	return func(f func(*Span) bool) {
+		if _, sifted := opts.SiftedSpans[span.ID]; sifted {
+			for _, child := range span.Sift().Order {
+				if !f(child) {
+					break
+				}
+			}
+		} else {
+			for _, child := range span.ChildSpans.Order {
+				if !f(child) {
+					break
+				}
+			}
+		}
+	}
+}
+
+func (span *Span) siftInto(set SpanSet) {
+	for _, child := range span.ChildSpans.Order {
+		if child.Call() != nil || child.Passthrough {
+			child.siftInto(set)
+		} else {
+			set.Add(child)
+		}
+	}
 }
 
 func countChildren(set SpanSet) int {
@@ -103,7 +173,6 @@ type SpanSnapshot struct {
 	Internal     bool   `json:",omitempty"`
 	Encapsulate  bool   `json:",omitempty"`
 	Encapsulated bool   `json:",omitempty"`
-	Mask         bool   `json:",omitempty"`
 	Passthrough  bool   `json:",omitempty"`
 	Ignore       bool   `json:",omitempty"`
 	Reveal       bool   `json:",omitempty"`
@@ -153,14 +222,14 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 	case telemetry.UIEncapsulatedAttr:
 		snapshot.Encapsulated = val.(bool)
 
+	case telemetry.UIRevealAttr:
+		snapshot.Reveal = val.(bool)
+
 	case telemetry.UIInternalAttr:
 		snapshot.Internal = val.(bool)
 
 	case telemetry.UIPassthroughAttr:
 		snapshot.Passthrough = val.(bool)
-
-	case telemetry.UIRevealAttr:
-		snapshot.Reveal = val.(bool)
 
 	case telemetry.UIActorAttr:
 		snapshot.Actor = val.(string)
@@ -375,9 +444,23 @@ func (span *Span) IsRunning() bool {
 	return span.EndTime.Before(span.StartTime)
 }
 
+// CausalSpans iterates over the spans that directly cause this span, by following
+// links (for newer engines) or attributes (for old engines).
 func (span *Span) CausalSpans(f func(*Span) bool) {
+	var visit func(*Span) bool
+	visit = func(s *Span) bool {
+		if !f(s) {
+			return false
+		}
+		for cause := range s.CausalSpans {
+			if !visit(cause) {
+				return false
+			}
+		}
+		return true
+	}
 	for _, cause := range span.causesViaLinks.Order {
-		if !f(cause) {
+		if !visit(cause) {
 			return
 		}
 	}
@@ -387,7 +470,7 @@ func (span *Span) CausalSpans(f func(*Span) bool) {
 				// cannot possibly be "caused" by it, since it came after
 				continue
 			}
-			if !f(cause) {
+			if !visit(cause) {
 				return
 			}
 		}
@@ -557,11 +640,6 @@ func (span *Span) CanceledReason() (bool, []string) {
 	var reasons []string
 	if span.Canceled {
 		reasons = append(reasons, "span says it is canceled")
-	}
-	if span.db.RootSpan != nil &&
-		!span.db.RootSpan.IsRunning() &&
-		span.IsRunningOrEffectsRunning() {
-		reasons = append(reasons, "root span completed, but this span span was still running")
 	}
 	return len(reasons) > 0, reasons
 }

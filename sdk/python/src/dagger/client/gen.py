@@ -4,6 +4,9 @@ import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 
+import opentelemetry.context
+import opentelemetry.trace
+from opentelemetry.trace.span import TraceState
 from typing_extensions import Self
 
 from dagger.client._core import Arg, Root
@@ -219,6 +222,11 @@ class SocketID(Scalar):
 class SourceMapID(Scalar):
     """The `SourceMapID` scalar type represents an identifier for an
     object of type SourceMap."""
+
+
+class SpanID(Scalar):
+    """The `SpanID` scalar type represents an identifier for an object of
+    type Span."""
 
 
 class TerminalID(Scalar):
@@ -6967,6 +6975,14 @@ class Client(Root):
         _ctx = self._select("currentModule", _args)
         return CurrentModule(_ctx)
 
+    def current_span(self, name: str, *, key: str | None = "") -> "Span":
+        _args = [
+            Arg("name", name),
+            Arg("key", key, ""),
+        ]
+        _ctx = self._select("currentSpan", _args)
+        return Span(_ctx)
+
     async def current_type_defs(self) -> list["TypeDef"]:
         """The TypeDef representations of the objects currently being served in
         the session.
@@ -7480,6 +7496,14 @@ class Client(Root):
         _ctx = self._select("loadSourceMapFromID", _args)
         return SourceMap(_ctx)
 
+    def load_span_from_id(self, id: SpanID) -> "Span":
+        """Load a Span from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadSpanFromID", _args)
+        return Span(_ctx)
+
     def load_terminal_from_id(self, id: TerminalID) -> "Terminal":
         """Load a Terminal from its ID."""
         _args = [
@@ -7616,6 +7640,22 @@ class Client(Root):
         ]
         _ctx = self._select("sourceMap", _args)
         return SourceMap(_ctx)
+
+    def span(self, name: str, *, key: str | None = "") -> "Span":
+        """Create a new OpenTelemetry span.
+
+        Parameters
+        ----------
+        name:
+            Name of the span.
+        key:
+        """
+        _args = [
+            Arg("name", name),
+            Arg("key", key, ""),
+        ]
+        _ctx = self._select("span", _args)
+        return Span(_ctx)
 
     def type_def(self) -> "TypeDef":
         """Create a new TypeDef."""
@@ -8240,6 +8280,253 @@ class SourceMap(Type):
 
 
 @typecheck
+class Span(Type):
+    """An OpenTelemetry span."""
+
+    async def actor(self) -> str:
+        """An optional actor to display for the span.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("actor", _args)
+        return await _ctx.execute(str)
+
+    async def end(self, *, error: Error | None = None) -> Void | None:
+        """End the OpenTelemetry span, with an optional error.
+
+        Returns
+        -------
+        Void | None
+            The absence of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("error", error, None),
+        ]
+        _ctx = self._select("end", _args)
+        await _ctx.execute()
+
+    async def id(self) -> SpanID:
+        """A unique identifier for this Span.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        SpanID
+            The `SpanID` scalar type represents an identifier for an object of
+            type Span.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(SpanID)
+
+    async def internal(self) -> bool:
+        """Indicates that the span contains details that are not important to the
+        user in the happy path.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("internal", _args)
+        return await _ctx.execute(bool)
+
+    async def internal_id(self) -> str:
+        """Returns the internal ID of the span.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("internalId", _args)
+        return await _ctx.execute(str)
+
+    async def name(self) -> str:
+        """The name of the span.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    async def reveal(self) -> bool:
+        """Indicates that the span should be revealed in the UI.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("reveal", _args)
+        return await _ctx.execute(bool)
+
+    def revealed(self) -> Self:
+        """Returns a new span with the reveal attribute set to true."""
+        _args: list[Arg] = []
+        _ctx = self._select("revealed", _args)
+        return Span(_ctx)
+
+    async def start(self) -> Self:
+        """Start a new instance of the span.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("start", _args)
+        _id = await _ctx.execute(SpanID)
+        _ctx = Client.from_context(_ctx)._select("loadSpanFromID", [Arg("id", _id)])
+        return Span(_ctx)
+
+    def with_actor(self, actor: str) -> Self:
+        _args = [
+            Arg("actor", actor),
+        ]
+        _ctx = self._select("withActor", _args)
+        return Span(_ctx)
+
+    def with_internal(self) -> Self:
+        """Returns a new span with the internal attribute set to true."""
+        _args: list[Arg] = []
+        _ctx = self._select("withInternal", _args)
+        return Span(_ctx)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.token = None
+        self.started = None
+
+    async def __aenter__(self) -> "Span":
+        # Fetch the actual span ID created by the engine
+        started = await self.start()
+        span_id_hex = await started.internal_id()
+        span_id = int(span_id_hex, 16)
+
+        # Get the current span context
+        current_span = opentelemetry.trace.get_current_span()
+        current_span_context = current_span.get_span_context()
+
+        # Extract trace ID and other fields from the current span context
+        trace_id = current_span_context.trace_id
+        trace_flags = current_span_context.trace_flags
+        trace_state = current_span_context.trace_state
+
+        # Construct the new SpanContext
+        new_span_context = opentelemetry.trace.SpanContext(
+            trace_id=trace_id,
+            span_id=span_id,
+            is_remote=True,
+            trace_flags=trace_flags,
+            trace_state=trace_state or TraceState(),
+        )
+
+        # Create a new context with the new SpanContext
+        new_context = opentelemetry.trace.set_span_in_context(
+            opentelemetry.trace.NonRecordingSpan(new_span_context)
+        )
+
+        # Attach the new context and save the token for detachment
+        self.token = opentelemetry.context.attach(new_context)
+        self.started = started
+        return started
+
+    async def __aexit__(
+        self, exception_type, exception_value, exception_traceback
+    ) -> Void | None:
+        error: Error | None = None
+        void: Void | None = None
+        if exception_type:
+            error = dag.error(f"{exception_type.__name__}: {exception_value}")
+        if self.started:
+            void = await self.started.end(error=error)
+        if self.token:
+            opentelemetry.context.detach(self.token)
+        return void
+
+    def with_(self, cb: Callable[["Span"], "Span"]) -> "Span":
+        """Call the provided callable with current Span.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+@typecheck
 class Terminal(Type):
     """An interactive terminal that clients can connect to."""
 
@@ -8692,6 +8979,8 @@ __all__ = [
     "SocketID",
     "SourceMap",
     "SourceMapID",
+    "Span",
+    "SpanID",
     "Terminal",
     "TerminalID",
     "TypeDef",
