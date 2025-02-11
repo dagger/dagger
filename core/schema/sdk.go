@@ -644,31 +644,6 @@ func (sdk *goSDK) baseWithCodegen(
 		},
 	}
 
-	// inject sdk specific env variables before withExec
-	// for now allow only Env with prefix GO
-	cfg, ok, _ := src.Self.ModuleConfig(ctx)
-	if ok && cfg.SDK != nil {
-		for k, v := range cfg.SDK.Env {
-			if !strings.HasPrefix(k, "GO") {
-				continue
-			}
-
-			selectors = append(selectors, dagql.Selector{
-				Field: "withEnvVariable",
-				Args: []dagql.NamedInput{
-					{
-						Name:  "name",
-						Value: dagql.NewString(k),
-					},
-					{
-						Name:  "value",
-						Value: dagql.NewString(v),
-					},
-				},
-			})
-		}
-	}
-
 	selectors = append(selectors,
 		dagql.Selector{
 			Field: "withoutDefaultArgs",
