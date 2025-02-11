@@ -1,10 +1,16 @@
 module main
 
-go 1.22.7
+go 1.23.2
 
-toolchain go1.23.2
+toolchain go1.23.6
 
 require github.com/iancoleman/strcase v0.3.0
+
+require github.com/dagger/dagger/sdk/typescript/runtime/tsdistconsts v0.15.3
+
+require go.opentelemetry.io/auto/sdk v1.1.0 // indirect
+
+replace github.com/dagger/dagger/sdk/typescript/runtime/tsdistconsts => ./tsdistconsts/
 
 require (
 	github.com/99designs/gqlgen v0.17.57
@@ -15,9 +21,8 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
 	github.com/sosodev/duration v1.3.1 // indirect
-	github.com/stretchr/testify v1.10.0 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.19
-	go.opentelemetry.io/otel v1.27.0
+	go.opentelemetry.io/otel v1.34.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.0.0-20240518090000-14441aefdf88
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.3.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.27.0
@@ -26,11 +31,11 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.27.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.27.0
 	go.opentelemetry.io/otel/log v0.3.0
-	go.opentelemetry.io/otel/metric v1.27.0
+	go.opentelemetry.io/otel/metric v1.34.0
 	go.opentelemetry.io/otel/sdk v1.27.0
 	go.opentelemetry.io/otel/sdk/log v0.3.0
 	go.opentelemetry.io/otel/sdk/metric v1.27.0
-	go.opentelemetry.io/otel/trace v1.27.0
+	go.opentelemetry.io/otel/trace v1.34.0
 	go.opentelemetry.io/proto/otlp v1.3.1
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa
 	golang.org/x/mod v0.20.0

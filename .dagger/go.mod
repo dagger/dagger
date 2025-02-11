@@ -6,6 +6,10 @@ require github.com/dagger/dagger/engine/distconsts v0.15.3
 
 replace github.com/dagger/dagger/engine/distconsts => ../engine/distconsts
 
+require github.com/dagger/dagger/sdk/typescript/runtime/tsdistconsts v0.15.3
+
+replace github.com/dagger/dagger/sdk/typescript/runtime/tsdistconsts => ../sdk/typescript/runtime/tsdistconsts/
+
 require (
 	github.com/99designs/gqlgen v0.17.57
 	github.com/BurntSushi/toml v0.3.1
