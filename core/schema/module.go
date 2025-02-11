@@ -863,7 +863,6 @@ func (s *moduleSchema) moduleGenerateClient(
 ) (*core.Directory, error) {
 	generator, err := s.sdkForModule(ctx, mod.Query, &core.SDKConfig{
 		Source: args.Generator.String(),
-		Env: make(map[string]string),
 	}, mod.Source)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get generator: %w", err)
