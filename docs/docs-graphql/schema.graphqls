@@ -2248,6 +2248,9 @@ type Module {
   generateClient(
     """The generator to use"""
     generator: String!
+
+    """Use local SDK dependency"""
+    localSdk: Boolean!
   ): Directory!
 
   """
