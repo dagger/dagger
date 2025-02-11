@@ -1464,7 +1464,7 @@ jobs:
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                COMMAND: dagger call -q test specific --race=true --parallel=16 --skip='TestModule|TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestCLI|TestEngine|TestProvision|TestTelemetry'
+                COMMAND: dagger call -q test specific --race=true --parallel=16 --skip='TestModule|TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestJava|TestCLI|TestEngine|TestProvision|TestTelemetry'
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 NO_OUTPUT: "true"
               shell: bash
@@ -1651,7 +1651,7 @@ jobs:
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                COMMAND: dagger call -q test specific --race=true --parallel=16 --run='TestGo|TestPython|TestTypescript|TestElixir|TestPHP'
+                COMMAND: dagger call -q test specific --race=true --parallel=16 --run='TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestJava'
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 NO_OUTPUT: "true"
               shell: bash
@@ -2309,7 +2309,7 @@ jobs:
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                COMMAND: dagger call -q test specific --race=true --parallel=16 --run='TestGo|TestPython|TestTypescript|TestElixir|TestPHP'
+                COMMAND: dagger call -q test specific --race=true --parallel=16 --run='TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestJava'
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 NO_OUTPUT: "true"
               shell: bash
