@@ -520,6 +520,7 @@ func (t *TypescriptSdk) generateLockFile(ctr *dagger.Container) (*dagger.Contain
 	switch packageManager {
 	case Yarn:
 		// Enable corepack
+		// NOTE: this incidentally fetches and installs node modules, maybe we could install yarn some other way?
 		ctr = ctr.
 			WithExec([]string{"corepack", "enable"}).
 			WithExec([]string{"corepack", "use", fmt.Sprintf("yarn@%s", version)})

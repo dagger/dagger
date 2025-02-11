@@ -97,14 +97,14 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 
 	sdkNodeModules := dag.Container().
 		From(tsdistconsts.DefaultNodeImageRef).
-		WithDirectory("./sdk", rootfs).
+		WithWorkdir("/work").
+		WithDirectory("/work/sdk", rootfs).
 		WithoutEntrypoint().
-		WithMountedCache("/root/.cache/yarn", dag.CacheVolume(fmt.Sprintf("yarn-cache-%s-%s", "node", "22.11.10"))).
-		WithFile("./package.json", rootfs.File("./runtime/template/package.json")).
-		WithExec([]string{"corepack", "enable"}).
-		WithExec([]string{"corepack", "use", fmt.Sprintf("yarn@%s", "1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e")}).
-		// WithExec([]string{"yarn", "install", "--mode", "update-lockfile"}). // TODO: is update-lockfile necessary?
-		Directory("/node_modules")
+		WithMountedCache("/root/.npm", dag.CacheVolume(fmt.Sprintf("npm-cache-node-%s", tsdistconsts.DefaultNodeVersion))).
+		WithFile("/work/package.json", rootfs.File("./runtime/template/package.json")).
+		WithExec([]string{"npm", "install", "--package-lock-only"}).
+		WithExec([]string{"npm", "ci"}).
+		Directory("/work/node_modules")
 
 	sdkCtrTarball := dag.Container().
 		WithRootfs(rootfs).
