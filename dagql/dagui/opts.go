@@ -46,9 +46,8 @@ type FrontendOpts struct {
 	// FocusedSpan is the currently selected span, i.e. the cursor position.
 	FocusedSpan SpanID
 
-	// SiftedSpans is a set of spans whose children should be filtered to only
-	// show non-Call spans, skipping through any intermediate Calls.
-	SiftedSpans map[SpanID]struct{}
+	// SpanVerbosity tracks per-span verbosity.
+	SpanVerbosity map[SpanID]int
 
 	// Filter is applied while constructing the tree.
 	Filter func(*Span) WalkDecision
@@ -65,14 +64,11 @@ const (
 	ShowMetricsVerbosity      = 3
 )
 
-func (opts *FrontendOpts) Sift(id SpanID) {
-	if opts.SiftedSpans == nil {
-		opts.SiftedSpans = make(map[SpanID]struct{})
-	}
-	opts.SiftedSpans[id] = struct{}{}
-}
-
 func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
+	verbosity := opts.Verbosity
+	if v, ok := opts.SpanVerbosity[span.ID]; ok {
+		verbosity = v
+	}
 	if opts.Debug {
 		// debug reveals all
 		return true
@@ -124,7 +120,7 @@ func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
 	// }
 	if opts.GCThreshold > 0 &&
 		time.Since(span.EndTime) > opts.GCThreshold &&
-		opts.Verbosity < ShowCompletedVerbosity {
+		verbosity < ShowCompletedVerbosity {
 		// stop showing steps that ended after a given threshold
 		return false
 	}

@@ -463,7 +463,6 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 		{"unzoom", []string{"esc"}, fe.ZoomedSpan.IsValid() &&
 			fe.ZoomedSpan != fe.db.PrimarySpan},
 		{fmt.Sprintf("verbosity=%d", fe.Verbosity), []string{"+/-", "+", "-"}, true},
-		{"sift", []string{"s"}, true},
 		{quitMsg, []string{"q", "ctrl+c"}, true},
 	} {
 		if !key.show {
@@ -884,9 +883,6 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				}
 				return nil
 			}
-		case "s":
-			fe.Opts().Sift(fe.FocusedSpan)
-			return fe, nil
 		case "?":
 			fe.debugged = fe.FocusedSpan
 			return fe, nil

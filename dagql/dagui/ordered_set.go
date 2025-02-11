@@ -2,6 +2,7 @@ package dagui
 
 import (
 	"encoding/json"
+	"iter"
 )
 
 type OrderedSet[K, V comparable] struct {
@@ -95,6 +96,16 @@ func (set *OrderedSet[K, V]) Remove(value V) bool {
 func (set *OrderedSet[K, V]) Clear() {
 	set.Order = nil
 	clear(set.Map)
+}
+
+func (set *OrderedSet[K, V]) Iter() iter.Seq[V] {
+	return func(f func(V) bool) {
+		for _, v := range set.Order {
+			if !f(v) {
+				break
+			}
+		}
+	}
 }
 
 func insert[T any](slice []T, value T, less func(a, b T) bool) []T {

@@ -51,13 +51,7 @@ type RowsView struct {
 }
 
 func (db *DB) AllSpans() iter.Seq[*Span] {
-	return func(f func(*Span) bool) {
-		for _, span := range db.Spans.Order {
-			if !f(span) {
-				break
-			}
-		}
-	}
+	return db.Spans.Iter()
 }
 
 func (db *DB) RowsView(opts FrontendOpts) *RowsView {
@@ -69,7 +63,7 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	}
 	var spans iter.Seq[*Span]
 	if view.Zoomed != nil {
-		spans = view.Zoomed.Children(opts)
+		spans = view.Zoomed.ChildSpans.Iter()
 	} else {
 		spans = db.AllSpans()
 	}
@@ -107,7 +101,7 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 			// can happen if we're within a larger trace - we'll allocate our parent,
 			// but not actually see it, so just move along to its children.
 			!span.Received {
-			for child := range span.Children(opts) {
+			for _, child := range span.ChildSpans.Order {
 				walk(child, parent)
 			}
 			return
@@ -126,7 +120,7 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 				if lastTree != nil {
 					lastTree.Final = true
 				}
-				for child := range span.Children(opts) {
+				for _, child := range span.ChildSpans.Order {
 					walk(child, parent)
 				}
 				return
@@ -149,23 +143,24 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 			tree.setRunning()
 		}
 
-		revealedSpans := false
-		if opts.Verbosity < ShowEncapsulatedVerbosity {
-			// Process revealed spans before normal children
-			for _, revealed := range span.RevealedSpans.Order {
-				if opts.ShouldShow(db, revealed) {
-					walk(revealed, tree)
-					revealedSpans = true
-				}
-			}
-			tree.RevealedSpans = revealedSpans
-		}
-
 		f(tree)
 		lastTree = tree
 
+		verbosity := opts.Verbosity
+		if v, ok := opts.SpanVerbosity[span.ID]; ok {
+			verbosity = v
+		}
+
+		if verbosity < ShowSpammyVerbosity {
+			// Process revealed spans before normal children
+			for _, revealed := range span.RevealedSpans.Order {
+				walk(revealed, tree)
+				tree.RevealedSpans = true
+			}
+		}
+
 		// Only process children if we didn't use revealed spans
-		if !revealedSpans {
+		if !tree.RevealedSpans {
 			for _, child := range span.ChildSpans.Order {
 				walk(child, tree)
 			}
