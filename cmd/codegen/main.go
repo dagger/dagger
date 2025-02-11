@@ -47,7 +47,7 @@ func init() {
 	rootCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "output directory")
 	rootCmd.Flags().StringVar(&introspectionJSONPath, "introspection-json-path", "", "optional path to file containing pre-computed graphql introspection JSON")
 
-	rootCmd.Flags().StringVar(&modulePath, "module-context-path", "", "path to context directory of the module")
+	rootCmd.Flags().StringVar(&modulePath, "module-source-path", "", "path to source subpath of the module")
 	rootCmd.Flags().StringVar(&moduleName, "module-name", "", "name of module to generate code for")
 	rootCmd.Flags().BoolVar(&merge, "merge", false, "merge module deps with project's")
 
@@ -78,7 +78,7 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		cfg.ModuleName = moduleName
 
 		if modulePath == "" {
-			return fmt.Errorf("--module-name requires --module-context-path")
+			return fmt.Errorf("--module-name requires --module-source-path")
 		}
 		modPath, err := relativeTo(outputDir, modulePath)
 		if err != nil {
@@ -87,7 +87,7 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		if part, _, _ := strings.Cut(modPath, string(filepath.Separator)); part == ".." {
 			return fmt.Errorf("module path must be child of output directory")
 		}
-		cfg.ModuleContextPath = modPath
+		cfg.ModuleSourcePath = modPath
 		moduleParentPath, err := relativeTo(modulePath, outputDir)
 		if err != nil {
 			return err
