@@ -12,6 +12,10 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// returnToInitialContextPath allows returning to the initial path when the
+// current context was changed.
+//
+// Not to be confused with empty `.cd` which changes the context to the initial one.
 // TODO: bikeshed
 const returnToInitialContextPath = "-"
 
@@ -83,11 +87,9 @@ func (src gitSource) Ref(path string) string {
 }
 
 func (src gitSource) Source(dag *dagger.Client) *dagger.ModuleSource {
-	opts := dagger.ModuleSourceOpts{}
-	if src.Pin != "" {
-		opts.RefPin = src.Pin
-	}
-	return dag.ModuleSource(src.Ref(src.Path), opts)
+	return dag.ModuleSource(src.Ref(src.Path), dagger.ModuleSourceOpts{
+		RefPin: src.Pin,
+	})
 }
 
 func (src gitSource) Subpath() string {
@@ -110,37 +112,52 @@ func (wd shellWorkdir) modulePathFindUp(path string) string {
 }
 
 func (h *shellCallHandler) ChangeWorkdir(ctx context.Context, path string) error {
-	if path != returnToInitialContextPath && !h.HasContext() {
-		conf, err := getModuleConfigurationForSourceRef(ctx, h.dag, path, true, true)
-		if err != nil {
-			return err
-		}
-		return h.setContext(ctx, conf)
+	if path == returnToInitialContextPath {
+		return h.setPath(ctx, path)
 	}
-	return h.setPath(ctx, path)
-}
 
-func (h *shellCallHandler) setContext(ctx context.Context, conf *configuredModule) error {
-	source, err := newShellSource(ctx, conf)
+	modSrc := h.dag.ModuleSource(path)
+	kind, err := modSrc.Kind(ctx)
 	if err != nil {
 		return err
 	}
 
-	moduleRoot := source.Ref("")
+	if !h.HasContext() || kind == dagger.ModuleSourceKindGitSource {
+		return h.setContext(ctx, modSrc, kind)
+	}
 
-	if conf.ModuleSourceConfigExists {
-		def, err := h.getOrInitDef(moduleRoot, func() (*moduleDef, error) {
-			return initializeModuleConfig(ctx, h.dag, conf)
+	return h.setPath(ctx, path)
+}
+
+func (h *shellCallHandler) setContext(ctx context.Context, modSrc *dagger.ModuleSource, kind dagger.ModuleSourceKind) error {
+	source, configExists, err := newShellSource(ctx, modSrc, kind)
+	if err != nil {
+		return err
+	}
+
+	if h.debug {
+		shellDebug(ctx, "setContext", "resolved source", source)
+	}
+
+	var moduleRoot string
+
+	modSrc = source.Source(h.dag)
+
+	if configExists {
+		modRef := source.Ref("")
+
+		def, err := h.getOrInitDef(modRef, func() (*moduleDef, error) {
+			return initializeModuleConfig(ctx, h.dag, modSrc)
 		})
 		if err != nil {
 			return err
 		}
-		if def == nil {
-			moduleRoot = ""
+		if def != nil {
+			moduleRoot = modRef
 		}
 	}
 
-	entries, err := conf.Source.ContextDirectory().Glob(ctx, "**/"+modules.Filename)
+	entries, err := modSrc.ContextDirectory().Glob(ctx, "**/"+modules.Filename)
 	if err != nil {
 		return err
 	}
@@ -157,31 +174,75 @@ func (h *shellCallHandler) setContext(ctx context.Context, conf *configuredModul
 		ContextModules: modulePaths,
 		Path:           filepath.Join("/", source.Subpath()),
 	}
+	if h.debug {
+		shellDebug(ctx, "setContext", "saved workdir", h.workdir)
+	}
 	h.mu.Unlock()
 
 	return nil
 }
 
-func newShellSource(ctx context.Context, conf *configuredModule) (shellModSource, error) {
-	if conf.SourceKind == dagger.ModuleSourceKindLocalSource {
-		path, err := filepath.Rel(conf.LocalContextPath, conf.LocalRootSourcePath)
-		if err != nil {
-			return nil, err
-		}
-		return localSource{
-			Root: conf.LocalContextPath,
-			Path: path,
-		}, nil
-	}
-
-	source := conf.Source.AsGitSource()
-
+func newShellSource(ctx context.Context, modSrc *dagger.ModuleSource, kind dagger.ModuleSourceKind) (src shellModSource, exists bool, rerr error) {
 	var root string
-	var version string
-	var pin string
 	var path string
 
-	eg, gctx := errgroup.WithContext(ctx)
+	if kind == dagger.ModuleSourceKindLocalSource {
+		modSrc = modSrc.ResolveFromCaller()
+	}
+
+	cancelCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	eg, gctx := errgroup.WithContext(cancelCtx)
+
+	eg.Go(func() error {
+		v, err := modSrc.SourceRootSubpath(gctx)
+		if err != nil {
+			return err
+		}
+		path = v
+
+		// Check if the path is valid
+		_, err = modSrc.ContextDirectory().Directory(path).Sync(gctx)
+		return err
+	})
+
+	eg.Go(func() error {
+		v, err := modSrc.ConfigExists(gctx)
+		if err != nil {
+			return err
+		}
+		exists = v
+		return nil
+	})
+
+	if kind == dagger.ModuleSourceKindLocalSource {
+		eg.Go(func() error {
+			v, err := modSrc.ResolveContextPathFromCaller(gctx)
+			if err != nil {
+				return err
+			}
+			root = v
+			return nil
+		})
+
+		if err := eg.Wait(); err != nil {
+			rerr = err
+			return
+		}
+
+		src = localSource{
+			Root: root,
+			Path: path,
+		}
+
+		return
+	}
+
+	source := modSrc.AsGitSource()
+
+	var version string
+	var pin string
 
 	eg.Go(func() error {
 		v, err := source.CloneRef(gctx)
@@ -210,28 +271,26 @@ func newShellSource(ctx context.Context, conf *configuredModule) (shellModSource
 		return nil
 	})
 
-	eg.Go(func() error {
-		v, err := source.RootSubpath(gctx)
-		if err != nil {
-			return err
-		}
-		path = v
-		return nil
-	})
-
 	if err := eg.Wait(); err != nil {
-		return gitSource{}, err
+		rerr = err
+		return
 	}
 
-	return gitSource{
+	src = gitSource{
 		Root:    root,
 		Version: version,
 		Pin:     pin,
 		Path:    path,
-	}, nil
+	}
+
+	return
 }
 
 func (h *shellCallHandler) setPath(ctx context.Context, path string) error {
+	if h.debug {
+		shellDebug(ctx, "setPath", path)
+	}
+
 	path, err := h.absPath(path)
 	if err != nil {
 		return err
@@ -241,6 +300,7 @@ func (h *shellCallHandler) setPath(ctx context.Context, path string) error {
 		return err
 	}
 	// TODO: replace with dir.Exists() when it's implemented
+	// See https://github.com/dagger/dagger/issues/6713
 	_, err = dir.Sync(ctx)
 	if err != nil {
 		return err
@@ -258,6 +318,10 @@ func (h *shellCallHandler) setPath(ctx context.Context, path string) error {
 	}
 	h.mu.RUnlock()
 
+	if h.debug {
+		shellDebug(ctx, "modRef", modRef)
+	}
+
 	if modRef != "" {
 		def, err := h.getOrInitDef(modRef, func() (*moduleDef, error) {
 			return initializeModule(ctx, h.dag, modRef, false)
@@ -268,9 +332,16 @@ func (h *shellCallHandler) setPath(ctx context.Context, path string) error {
 	}
 
 	h.mu.Lock()
-	h.workdir.ModuleRoot = modRef
+	// Stay on the same module even outside of it, until we enter a different one
+	if modRef != "" {
+		h.workdir.ModuleRoot = modRef
+	}
 	h.workdir.Path = path
+	if h.debug {
+		shellDebug(ctx, "workdir", h.workdir)
+	}
 	h.mu.Unlock()
+
 	return nil
 }
 
@@ -346,11 +417,12 @@ func (h *shellCallHandler) Pwd() string {
 }
 
 func (h *shellCallHandler) ContextDirectory() (*dagger.Directory, error) {
-	def, err := h.GetModuleDef(nil)
-	if err != nil {
-		return nil, err
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if h.workdir.Source == nil {
+		return nil, fmt.Errorf("no context set")
 	}
-	return def.Conf.Source.ContextDirectory(), nil
+	return h.workdir.Source.Source(h.dag).ContextDirectory(), nil
 }
 
 func (h *shellCallHandler) Directory(path string) (*dagger.Directory, error) {

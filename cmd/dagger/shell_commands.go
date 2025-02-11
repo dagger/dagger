@@ -351,9 +351,6 @@ modules in different contexts.
 If the target path is in a different module within the same context, it will be
 loaded as the default automatically, making its functions available at the top level.
 
-If the target path is NOT inside a module, the current module is unloaded as the
-default but navigation is still possible within the context directory for inspection.
-
 Without arguments, the current working directory is replaced by the initial context.
 `,
 			GroupID: moduleGroup.ID,
