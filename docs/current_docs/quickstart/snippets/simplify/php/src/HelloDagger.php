@@ -17,18 +17,24 @@ class HelloDagger
 {
     #[DaggerFunction]
     #[Doc('Publish the application container after building and testing it on-the-fly')]
-    public function publish(Directory $source): string
+    public function publish(
+        #[DefaultPath('/')]
+        Directory $source,
+    ): string
     {
         $this->test($source);
 
         return $this
             ->build($source)
-            ->publish('ttl.sh/hello-dagger-'.rand(0, 10000000));
+            ->publish('ttl.sh/myapp-'.rand(0, 10000000));
     }
 
     #[DaggerFunction]
     #[Doc('Build the application container')]
-    public function build(Directory $source): Container
+    public function build(
+        #[DefaultPath('/')]
+        Directory $source
+    ): Container
     {
         $build = dag()
             ->node(null, $this->buildEnv($source))
@@ -45,7 +51,10 @@ class HelloDagger
 
     #[DaggerFunction]
     #[Doc('Return the result of running unit tests')]
-    public function test(Directory $source): string
+    public function test(
+        #[DefaultPath('/')]
+        Directory $source,
+    ): string
     {
         return dag()
             ->node(null, $this->buildEnv($source))
@@ -56,7 +65,10 @@ class HelloDagger
 
     #[DaggerFunction]
     #[Doc('Build a ready-to-use development environment')]
-    public function buildEnv(Directory $source): Container
+    public function buildEnv(
+        #[DefaultPath('/')]
+        Directory $source,
+    ): Container
     {
         return dag()
             ->node('21')
