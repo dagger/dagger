@@ -317,6 +317,7 @@ func (db *DB) newSpan(spanID SpanID) *Span {
 		},
 		ChildSpans:      NewSpanSet(),
 		RunningSpans:    NewSpanSet(),
+		RevealedSpans:   NewSpanSet(),
 		FailedLinks:     NewSpanSet(),
 		causesViaLinks:  NewSpanSet(),
 		effectsViaLinks: NewSpanSet(),

@@ -183,6 +183,7 @@ func (term *Vterm) redraw() {
 			style = styles.DarkStyleConfig
 		}
 		style.Document.Margin = nil
+
 		renderer, _ := glamour.NewTermRenderer(
 			glamour.WithAutoStyle(),
 			glamour.WithWordWrap(term.Width),
