@@ -24,7 +24,7 @@ type TraceTree struct {
 	IsRunningOrChildRunning bool
 	Chained                 bool
 	Final                   bool
-	RevealedSpans           bool
+	RevealedChildren        bool
 
 	Children []*TraceTree
 }
@@ -41,7 +41,6 @@ type TraceRow struct {
 	Previous                *TraceRow
 	Parent                  *Span
 	HasChildren             bool
-	RevealedSpans           bool
 }
 
 type RowsView struct {
@@ -155,12 +154,12 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 			// Process revealed spans before normal children
 			for _, revealed := range span.RevealedSpans.Order {
 				walk(revealed, tree)
-				tree.RevealedSpans = true
+				tree.RevealedChildren = true
 			}
 		}
 
 		// Only process children if we didn't use revealed spans
-		if !tree.RevealedSpans {
+		if !tree.RevealedChildren {
 			for _, child := range span.ChildSpans.Order {
 				walk(child, tree)
 			}
@@ -199,7 +198,6 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 			IsRunningOrChildRunning: tree.IsRunningOrChildRunning,
 			Parent:                  parent,
 			HasChildren:             len(tree.Children) > 0,
-			RevealedSpans:           tree.RevealedSpans,
 		}
 		if len(rows.Order) > 0 {
 			row.Previous = rows.Order[len(rows.Order)-1]
