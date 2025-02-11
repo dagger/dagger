@@ -5,9 +5,7 @@ import io.dagger.client.DaggerQueryException;
 import io.dagger.client.Directory;
 import io.dagger.client.Platform;
 import io.dagger.module.AbstractModule;
-import io.dagger.module.annotation.Default;
-import io.dagger.module.annotation.Function;
-import io.dagger.module.annotation.Nullable;
+import io.dagger.module.annotation.*;
 import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -45,7 +43,7 @@ public class DaggerJava extends AbstractModule {
    * @return Standard output of the grep command
    */
   @Function
-  public String grepDir(Directory directoryArg, @Nullable String pattern)
+  public String grepDir(@DefaultPath("/sdk/java") Directory directoryArg, @Nullable String pattern)
       throws InterruptedException, ExecutionException, DaggerQueryException {
     if (pattern == null) {
       pattern = "dagger";
