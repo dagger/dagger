@@ -4613,7 +4613,7 @@ func (m *Dep) GetSource(
 }
 
 func (m *Dep) GetRelSource(
-	// +defaultPath="./dep"
+	// +defaultPath="."
 	// +ignore=["**","!yo"]
 	source *dagger.Directory,
 ) *dagger.Directory {
@@ -4637,7 +4637,7 @@ import (
 type Test struct{}
 
 func (m *Test) GetDepSource(ctx context.Context, src *dagger.Directory) (*dagger.Directory, error) {
-	err := src.AsModule().Initialize().Serve(ctx)
+	err := src.AsModule(dagger.DirectoryAsModuleOpts{SourceRootPath: "dep"}).Serve(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -4666,7 +4666,7 @@ func (m *Test) GetDepSource(ctx context.Context, src *dagger.Directory) (*dagger
 }
 
 func (m *Test) GetRelDepSource(ctx context.Context, src *dagger.Directory) (*dagger.Directory, error) {
-  err := src.AsModule().Initialize().Serve(ctx)
+	err := src.AsModule(dagger.DirectoryAsModuleOpts{SourceRootPath: "dep"}).Serve(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -4696,11 +4696,11 @@ func (m *Test) GetRelDepSource(ctx context.Context, src *dagger.Directory) (*dag
 			`,
 			)
 
-		out, err := ctr.With(daggerCall("get-dep-source", "--src", "./dep", "entries")).Stdout(ctx)
+		out, err := ctr.With(daggerCall("get-dep-source", "--src", ".", "entries")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "yo\n", out)
 
-		out, err = ctr.With(daggerCall("get-rel-dep-source", "--src", "./dep", "entries")).Stdout(ctx)
+		out, err = ctr.With(daggerCall("get-rel-dep-source", "--src", ".", "entries")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "yo\n", out)
 	})
