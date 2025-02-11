@@ -136,24 +136,17 @@ func run(cmd *cobra.Command, args []string) error {
 		}
 
 		if configExist {
-			w := cmd.OutOrStdout()
-			fmt.Fprintf(w, "found dagger.json file in %s.\nAdding module to the session...\n", moduleSrcPath)
-
 			mod, err := initializeClientGeneratorModule(ctx, engineClient.Dagger(), moduleSrcPath, false)
 			if err != nil {
 				return fmt.Errorf("failed to initialize current module: %w", err)
 			}
 
 			for _, dep := range mod.Dependencies {
-				fmt.Fprintf(w, "serving dependency %s...\n", dep.Name)
-
 				err := dep.Source.AsModule().Initialize().Serve(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to serve dependency %s: %w", dep.Name, err)
 				}
 			}
-
-			fmt.Fprintf(w, "module served to the session.\n")
 		}
 
 		sessionL, err := net.Listen("tcp", "127.0.0.1:0")

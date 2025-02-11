@@ -188,6 +188,13 @@ func (t *TypescriptSdk) GenerateClient(
 	ctr := dag.Container().
 		From(nodeImageRef).
 		WithoutEntrypoint().
+		// Add client config update file
+		WithMountedFile(
+			"/opt/__tsclientconfig.updator.ts",
+			dag.CurrentModule().Source().Directory("bin").File("__tsclientconfig.updator.ts"),
+		).
+		// Install tsx to execute it
+		WithExec([]string{"npm", "install", "-g", "tsx@4.15.6"}).
 		// Add dagger codegen binary.
 		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
 		// Mount the introspection file.
@@ -212,9 +219,12 @@ func (t *TypescriptSdk) GenerateClient(
 			WithoutDirectory("codegen").
 			WithoutDirectory("runtime"),
 		).
-			WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=./sdk"})
+			WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=./sdk"}).
+			WithExec([]string{"tsx", "/opt/__tsclientconfig.updator.ts", "--local-sdk=true"})
 	} else {
-		ctr = ctr.WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=@dagger.io/dagger"})
+		ctr = ctr.
+			WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=@dagger.io/dagger"}).
+			WithExec([]string{"tsx", "/opt/__tsclientconfig.updator.ts", "--local-sdk=false"})
 	}
 
 	return dag.Directory().WithDirectory("/", ctr.Directory(workdirPath)), nil
