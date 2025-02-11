@@ -20,6 +20,7 @@ import (
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -179,6 +180,17 @@ func (fc *FuncCommand) Command() *cobra.Command {
 						// Return the same ExecError exit code.
 						var ex *dagger.ExecError
 						if errors.As(err, &ex) {
+							tty := !silent && (hasTTY && progress == "auto" || progress == "tty")
+							// Only the pretty frontend prints the stderr of
+							// the exec error in the final render
+							if !tty && ex.Stdout != "" {
+								c.Println("Stdout:")
+								c.Println(ex.Stdout)
+							}
+							if !tty && ex.Stderr != "" {
+								c.PrintErrln("Stderr:")
+								c.PrintErrln(ex.Stderr)
+							}
 							return ExitError{Code: ex.ExitCode}
 						}
 						return Fail
@@ -669,7 +681,7 @@ func handleResponse(returnType *modTypeDef, response any, o, e io.Writer) error 
 		if err := writeOutputFile(outputPath, buf); err != nil {
 			return fmt.Errorf("couldn't write output to file: %w", err)
 		}
-		path, err := client.Abs(outputPath)
+		path, err := pathutil.Abs(outputPath)
 		if err != nil {
 			// don't fail because at this point the output has been saved successfully
 			slog.Warn("Failed to get absolute path", "error", err)

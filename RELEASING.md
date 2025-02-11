@@ -131,9 +131,8 @@ Setup some variables used throughout the release process:
 # 🚨 change this from `main` to `release-vX.Y.Z` if releasing off a non-main branch
 export RELEASE_BRANCH=main
 
-# If not named "origin" in your local checkout, replace "origin" with whatever the
-# github.com/dagger/dagger repo is named for you locally
-export DAGGER_REPO_REMOTE=origin
+# set to whatever github.com/dagger/dagger repo is named for you locally
+export DAGGER_REPO_REMOTE=$(git remote -v | grep -E "(github.com.dagger/dagger)" | head -n 1 | awk '{print $1}')
 ```
 
 > [!NOTE]
@@ -211,7 +210,7 @@ git checkout -b prep-$ENGINE_VERSION
 - [ ] Bump internal versions (sdks + docs + helm chart) to the target version
 
 ```console
-dagger call release bump --version="$ENGINE_VERSION" -o ./
+dagger call -m releaser bump --version="$ENGINE_VERSION" -o ./
 git add docs sdk helm
 git commit -s -m "chore: bump dependencies to $ENGINE_VERSION"
 ```
@@ -402,6 +401,7 @@ Be sure to use "Rebase and Merge" when merging the PR to `main` to preserve the 
 - [ ] Submit PR with the version bump.
 
 ```console
+dagger develop -m dev --compat=$ENGINE_VERSION
 dagger call -m dev bump --version=$ENGINE_VERSION -o .
 git checkout -b bump-dagger-$ENGINE_VERSION
 git add .

@@ -55,6 +55,7 @@ final readonly class DecodesValue
         switch ($type->typeDefKind) {
             case TypeDefKind::BOOLEAN_KIND:
             case TypeDefKind::INTEGER_KIND:
+            case TypeDefKind::FLOAT_KIND:
             case TypeDefKind::STRING_KIND:
                 return json_decode($value, true);
             case TypeDefKind::SCALAR_KIND:

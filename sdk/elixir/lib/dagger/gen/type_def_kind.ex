@@ -4,6 +4,7 @@ defmodule Dagger.TypeDefKind do
 
   @type t() ::
           :STRING_KIND
+          | :FLOAT_KIND
           | :INTEGER_KIND
           | :BOOLEAN_KIND
           | :SCALAR_KIND
@@ -17,6 +18,10 @@ defmodule Dagger.TypeDefKind do
   @doc "A string value."
   @spec string_kind() :: :STRING_KIND
   def string_kind(), do: :STRING_KIND
+
+  @doc "A float value."
+  @spec float_kind() :: :FLOAT_KIND
+  def float_kind(), do: :FLOAT_KIND
 
   @doc "An integer value."
   @spec integer_kind() :: :INTEGER_KIND
@@ -79,6 +84,7 @@ defmodule Dagger.TypeDefKind do
   def from_string(string)
 
   def from_string("STRING_KIND"), do: :STRING_KIND
+  def from_string("FLOAT_KIND"), do: :FLOAT_KIND
   def from_string("INTEGER_KIND"), do: :INTEGER_KIND
   def from_string("BOOLEAN_KIND"), do: :BOOLEAN_KIND
   def from_string("SCALAR_KIND"), do: :SCALAR_KIND

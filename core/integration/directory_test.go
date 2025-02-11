@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -395,28 +396,34 @@ func (DirectorySuite) TestWithFiles(ctx context.Context, t *testctx.T) {
 		WithNewFile("second-file", "file2 content").
 		File("second-file")
 	files := []*dagger.File{file1, file2}
-	dir := c.Directory().
-		WithFiles("/", files)
 
-	// check file1 contents
-	content, err := dir.File("/first-file").Contents(ctx)
-	require.Equal(t, "file1 content", content)
-	require.NoError(t, err)
+	check := func(ctx context.Context, t *testctx.T, dir *dagger.Directory, path string) {
+		contents, err := dir.File(filepath.Join(path, "first-file")).Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file1 content", contents)
 
-	// check file2 contents
-	content, err = dir.File("/second-file").Contents(ctx)
-	require.Equal(t, "file2 content", content)
-	require.NoError(t, err)
+		contents, err = dir.File(filepath.Join(path, "second-file")).Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file2 content", contents)
+	}
 
-	_, err = dir.File("/some-other-file").Contents(ctx)
-	require.Error(t, err)
+	t.Run("root", func(ctx context.Context, t *testctx.T) {
+		path := "/"
+		dir := c.Directory().WithFiles(path, files)
+		check(ctx, t, dir, path)
+	})
 
-	// test sub directory
-	subDir := c.Directory().
-		WithFiles("/a/b/c", files)
-	content, err = subDir.File("/a/b/c/first-file").Contents(ctx)
-	require.Equal(t, "file1 content", content)
-	require.NoError(t, err)
+	t.Run("sub", func(ctx context.Context, t *testctx.T) {
+		path := "/a/b/c"
+		dir := c.Directory().WithFiles(path, files)
+		check(ctx, t, dir, path)
+	})
+
+	t.Run("sub trailing", func(ctx context.Context, t *testctx.T) {
+		path := "/a/b/c/"
+		dir := c.Directory().WithFiles(path, files)
+		check(ctx, t, dir, path)
+	})
 
 	t.Run("respects permissions", func(ctx context.Context, t *testctx.T) {
 		file1 := c.Directory().

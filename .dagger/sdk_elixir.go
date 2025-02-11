@@ -33,7 +33,7 @@ type ElixirSDK struct {
 
 // Lint the Elixir SDK
 func (t ElixirSDK) Lint(ctx context.Context) error {
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 	eg.Go(func() (rerr error) {
 		ctx, span := Tracer().Start(ctx, "lint the elixir source")
 		defer func() {
@@ -100,7 +100,7 @@ func (t ElixirSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 
 // Test the publishing process
 func (t ElixirSDK) TestPublish(ctx context.Context, tag string) error {
-	return t.Publish(ctx, tag, true, nil, "https://github.com/dagger/dagger.git", nil, nil)
+	return t.Publish(ctx, tag, true, nil)
 }
 
 // Publish the Elixir SDK
@@ -112,15 +112,6 @@ func (t ElixirSDK) Publish(
 	dryRun bool,
 	// +optional
 	hexAPIKey *dagger.Secret,
-
-	// +optional
-	// +default="https://github.com/dagger/dagger.git"
-	gitRepoSource string,
-
-	// +optional
-	githubToken *dagger.Secret,
-	// +optional
-	discordWebhook *dagger.Secret,
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/elixir/")
 
@@ -148,23 +139,6 @@ func (t ElixirSDK) Publish(
 	_, err := ctr.Sync(ctx)
 	if err != nil {
 		return err
-	}
-
-	if semver.IsValid(version) {
-		if err := dag.Releaser().GithubRelease(ctx, gitRepoSource, "sdk/elixir/"+version, tag, dagger.ReleaserGithubReleaseOpts{
-			Notes:  dag.Releaser().ChangeNotes("sdk/elixir", version),
-			Token:  githubToken,
-			DryRun: dryRun,
-		}); err != nil {
-			return err
-		}
-
-		if err := dag.Releaser().Notify(ctx, gitRepoSource, "sdk/elixir/"+version, "🧪 Elixir SDK", dagger.ReleaserNotifyOpts{
-			DiscordWebhook: discordWebhook,
-			DryRun:         dryRun,
-		}); err != nil {
-			return err
-		}
 	}
 
 	return nil

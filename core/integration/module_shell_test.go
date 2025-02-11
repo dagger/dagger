@@ -665,6 +665,15 @@ func (ShellSuite) TestCommandStateArgs(ctx context.Context, t *testctx.T) {
 	requireErrOut(t, err, `"foo" not found`)
 }
 
+func (ShellSuite) TestExecStderr(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	script := fmt.Sprintf("container | from %s | with-exec ls wat | stdout", alpineImage)
+	_, err := daggerCliBase(t, c).
+		With(daggerShell(script)).
+		Sync(ctx)
+	requireErrOut(t, err, "ls: wat: No such file or directory")
+}
+
 func (ShellSuite) TestInstall(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -675,4 +684,54 @@ func (ShellSuite) TestInstall(ctx context.Context, t *testctx.T) {
 		Sync(ctx)
 
 	require.NoError(t, err)
+}
+
+func (ShellSuite) TestMultipleCommandOutputs(ctx context.Context, t *testctx.T) {
+	t.Run("sync", func(ctx context.Context, t *testctx.T) {
+		script := `
+directory | with-new-file test foo | file test | contents
+directory | with-new-file test bar | file test | contents
+`
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(script)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foobar", out)
+	})
+
+	t.Run("async", func(ctx context.Context, t *testctx.T) {
+		script := `
+directory | with-new-file test foo | file test | contents &
+directory | with-new-file test bar | file test | contents & _wait
+`
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(script)).
+			Stdout(ctx)
+		require.NoError(t, err)
+
+		if out != "foobar" && out != "barfoo" {
+			t.Errorf("unexpected output: %q", out)
+		}
+	})
+}
+
+func (ShellSuite) TestInterpreterBuiltins(ctx context.Context, t *testctx.T) {
+	t.Run("builtin", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`_echo foobar`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foobar\n", out)
+	})
+
+	t.Run("internal", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		_, err := daggerCliBase(t, c).
+			With(daggerShell(`__dag`)).
+			Sync(ctx)
+		requireErrOut(t, err, "reserved for internal use")
+	})
 }

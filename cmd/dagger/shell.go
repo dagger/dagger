@@ -32,6 +32,15 @@ const (
 	// as it suggests the idea of dependencies, intersections, and points where separate paths
 	// or data sets come together.
 	shellPrompt = "⋈"
+
+	// shellInternalCmd is the command that is used internally to avoid conflicts
+	// with interpreter builtins. For example when `echo` is used, the command becomes
+	// `__dag echo`. Otherwise we can't have a function named `echo`.
+	shellInternalCmd = "__dag"
+
+	// shellInterpBuiltinPrefix is the prefix that users should add to an
+	// interpreter builtin command to force running it.
+	shellInterpBuiltinPrefix = "_"
 )
 
 // shellCode is the code to be executed in the shell command
@@ -69,39 +78,44 @@ var shellCmd = &cobra.Command{
 	},
 }
 
-type safeBuffer struct {
-	bu bytes.Buffer
+func newTerminalWriter(fn func([]byte) (int, error)) *terminalWriter {
+	return &terminalWriter{
+		fn: fn,
+	}
+}
+
+// terminalWriter is a custom io.Writer that synchronously calls the handler's
+// withTerminal on each write from the runner
+type terminalWriter struct {
 	mu sync.Mutex
+	fn func([]byte) (int, error)
+
+	// processFn is a function that can be used to process the incoming data
+	// before writing to the terminal
+	//
+	// This can be used to resolve shell state just before printing to screen,
+	// and make necessary API requests.
+	processFn func([]byte) ([]byte, error)
 }
 
-func (s *safeBuffer) Write(p []byte) (n int, err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.bu.Write(p)
+func (o *terminalWriter) Write(p []byte) (n int, err error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if o.processFn != nil {
+		r, err := o.processFn(p)
+		if err != nil {
+			return 0, err
+		}
+		p = r
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.fn(p)
 }
 
-func (s *safeBuffer) Read(p []byte) (n int, err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.bu.Read(p)
-}
-
-func (s *safeBuffer) HasUnread() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.bu.Len() > 0
-}
-
-func (s *safeBuffer) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.bu.String()
-}
-
-func (s *safeBuffer) Reset() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.bu.Reset()
+func (o *terminalWriter) SetProcessFunc(fn func([]byte) ([]byte, error)) {
+	o.processFn = fn
 }
 
 type shellCallHandler struct {
@@ -112,15 +126,17 @@ type shellCallHandler struct {
 	stdout io.Writer
 	stderr io.Writer
 
-	// switch to Frontend.Background for rendering output while the TUI is
-	// running when in interactive mode
-	tui bool
+	// tty is set to true when running the TUI (pretty frontend)
+	tty bool
 
-	// stdoutBuf is used to capture the final stdout that the runner produces
-	stdoutBuf *safeBuffer
+	// repl is set to true when running in interactive mode
+	repl bool
 
-	// stderrBuf is used to capture the final stderr that the runner produces
-	stderrBuf *safeBuffer
+	// stdoutWriter is used to call withTerminal on each write the runner makes to stdout
+	stdoutWriter *terminalWriter
+
+	// stderrWriter is used to call withTerminal on each write the runner makes to stderr
+	stderrWriter *terminalWriter
 
 	// debug writes to the handler context's stderr what the arguments, input,
 	// and output are for each command that the exec handler processes
@@ -151,13 +167,39 @@ type shellCallHandler struct {
 // - File: when a file path is provided as an argument
 // - Code: when code is passed inline using the `-c,--code` flag or via stdin
 func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
-	h.tui = !silent && (hasTTY && progress == "auto" || progress == "tty")
+	h.tty = !silent && (hasTTY && progress == "auto" || progress == "tty")
 
-	h.stdoutBuf = new(safeBuffer)
-	h.stderrBuf = new(safeBuffer)
+	h.stdoutWriter = newTerminalWriter(func(b []byte) (int, error) {
+		var written int
+		err := h.withTerminal(func(_ io.Reader, stdout, _ io.Writer) error {
+			// FIXME: in the REPL, the output can be "swallowed" if we don't add a newline.
+			// However, this may lead to extra newlines than intended so we need a
+			// better solution.
+			if h.repl && h.tty && !bytes.HasSuffix(b, []byte("\n")) {
+				b = append(b, '\n')
+			}
+			n, err := stdout.Write(b)
+			written = n
+			return err
+		})
+		return written, err
+	})
+
+	h.stderrWriter = newTerminalWriter(func(b []byte) (int, error) {
+		var written int
+		err := h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
+			if h.repl && h.tty && !bytes.HasSuffix(b, []byte("\n")) {
+				b = append(b, '\n')
+			}
+			n, err := stderr.Write(b)
+			written = n
+			return err
+		})
+		return written, err
+	})
 
 	r, err := interp.New(
-		interp.StdIO(nil, h.stdoutBuf, h.stderrBuf),
+		interp.StdIO(nil, h.stdoutWriter, h.stderrWriter),
 		interp.Params("-e", "-u", "-o", "pipefail"),
 
 		// The "Interactive" option is useful even when not running dagger shell
@@ -169,18 +211,21 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 		// slightly in order to resolve naming conflicts. For example, "echo"
 		// is an interpreter builtin but can also be a Dagger function.
 		interp.CallHandler(func(ctx context.Context, args []string) ([]string, error) {
+			if args[0] == shellInternalCmd {
+				return args, fmt.Errorf("command %q is reserved for internal use", shellInternalCmd)
+			}
 			// When there's a Dagger function with a name that conflicts
 			// with an interpreter builtin, the Dagger function is favored.
 			// To force the builtin to execute instead, prefix the command
 			// with "..". For example: "container | from $(..echo alpine)".
-			if strings.HasPrefix(args[0], "..") {
-				args[0] = strings.TrimPrefix(args[0], "..")
+			if strings.HasPrefix(args[0], shellInterpBuiltinPrefix) {
+				args[0] = strings.TrimPrefix(args[0], shellInterpBuiltinPrefix)
 				return args, nil
 			}
 			// If the command is an interpreter builtin, bypass the interpreter
 			// builtins to ensure the exec handler is executed.
 			if isInterpBuiltin(args[0]) {
-				return append([]string{".dag"}, args...), nil
+				return append([]string{shellInternalCmd}, args...), nil
 			}
 			return args, nil
 		}),
@@ -231,13 +276,18 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 }
 
 func isInterpBuiltin(name string) bool {
+	// Allow the following:
+	//  - invalid function/module names: "[", ":"
+	//  - unlikely to conflict: "true", "false"
 	switch name {
-	case "true", ":", "false", "exit", "set", "shift", "unset",
+	case "exit", "set", "shift", "unset",
 		"echo", "printf", "break", "continue", "pwd", "cd",
 		"wait", "builtin", "trap", "type", "source", ".", "command",
-		"dirs", "pushd", "popd", "umask", "alias", "unalias",
-		"fg", "bg", "getopts", "eval", "test", "[", "exec",
-		"return", "read", "mapfile", "readarray", "shopt":
+		"dirs", "pushd", "popd", "alias", "unalias",
+		"getopts", "eval", "test", "exec",
+		"return", "read", "mapfile", "readarray", "shopt",
+		//  not implemented
+		"umask", "fg", "bg":
 		return true
 	}
 	return false
@@ -254,48 +304,63 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 		return err
 	}
 
-	h.stdoutBuf.Reset()
-	h.stderrBuf.Reset()
+	// Shell state is piped between exec handlers and only in the end the runner
+	// writes the final output to the stdoutWriter. We need to check if that
+	// state needs to be resolved into an API request and handle the response
+	// appropriately. Note that this can happen in parallel if commands are
+	// separated with a '&'.
 
-	// Make sure every run flushes any stderr output.
-	defer func() {
-		h.withTerminal(func(_ io.Reader, stdout, stderr io.Writer) error {
-			// We could also have missing output in stdoutBuf, but probably
-			// for propagating a ShellState.Error. Just ignore those.
-			if h.stderrBuf.HasUnread() {
-				fmt.Fprintln(stderr, h.stderrBuf.String())
-				h.stderrBuf.Reset()
-			}
-			return nil
-		})
-	}()
-
-	var handlerError bool
+	h.stdoutWriter.SetProcessFunc(func(b []byte) ([]byte, error) {
+		resp, typeDef, err := h.Result(ctx, bytes.NewReader(b), handleObjectLeaf)
+		if err != nil {
+			return nil, h.checkExecError(err)
+		}
+		if typeDef != nil && typeDef.Kind == dagger.TypeDefKindVoidKind {
+			return nil, nil
+		}
+		buf := new(bytes.Buffer)
+		frmt := outputFormat(typeDef)
+		err = printResponse(buf, resp, frmt)
+		return buf.Bytes(), err
+	})
 
 	err = h.runner.Run(ctx, file)
 	if exit, ok := interp.IsExitStatus(err); ok {
-		handlerError = int(exit) == shellHandlerExit
-		if !handlerError {
+		if int(exit) != shellHandlerExit {
 			return ExitError{Code: int(exit)}
 		}
 		err = nil
 	}
-	if err != nil {
-		return err
-	}
+	return err
+}
 
-	resp, err := h.Result(ctx, h.stdoutBuf, true, handleObjectLeaf)
-	if err != nil || resp == nil {
-		return err
-	}
-
-	return h.withTerminal(func(_ io.Reader, stdout, _ io.Writer) error {
-		fmt.Fprint(stdout, resp)
-		if sval, ok := resp.(string); ok && stdoutIsTTY && !strings.HasSuffix(sval, "\n") {
-			fmt.Fprintln(stdout)
+func (h *shellCallHandler) checkExecError(err error) error {
+	exitCode := 1
+	var ex *dagger.ExecError
+	if errors.As(err, &ex) {
+		if h.repl || !h.tty {
+			return wrapExecError(ex)
 		}
-		return nil
-	})
+		exitCode = ex.ExitCode
+	}
+	if !h.repl && h.tty {
+		err = ExitError{Code: exitCode}
+	}
+	return err
+}
+
+func wrapExecError(e *dagger.ExecError) error {
+	out := make([]string, 0, 2)
+	if e.Stdout != "" {
+		out = append(out, "Stdout:\n"+e.Stdout)
+	}
+	if e.Stderr != "" {
+		out = append(out, "Stderr:\n"+e.Stderr)
+	}
+	if len(out) > 0 {
+		return fmt.Errorf("%w\n%s", e, strings.Join(out, "\n"))
+	}
+	return e
 }
 
 func parseShell(reader io.Reader, name string, opts ...syntax.ParserOption) (*syntax.File, error) {
@@ -311,7 +376,7 @@ func parseShell(reader io.Reader, name string, opts ...syntax.ParserOption) (*sy
 				// Rewrite command substitutions from $(foo; bar) to $(exec <&-; foo; bar)
 				// so that all the original commands run with a closed (nil) standard input.
 				node.Stmts = append([]*syntax.Stmt{{
-					Cmd: &syntax.CallExpr{Args: []*syntax.Word{litWord("..exec")}},
+					Cmd: &syntax.CallExpr{Args: []*syntax.Word{litWord(shellInterpBuiltinPrefix + "exec")}},
 					Redirs: []*syntax.Redirect{{
 						Op:   syntax.DplIn,
 						Word: litWord("-"),
@@ -337,6 +402,8 @@ func (h *shellCallHandler) runPath(ctx context.Context, path string) error {
 
 // runInteractive executes the runner on a REPL (Read-Eval-Print Loop)
 func (h *shellCallHandler) runInteractive(ctx context.Context) error {
+	h.repl = true
+
 	h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
 		fmt.Fprintln(stderr, `Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`)
 		return nil
@@ -349,7 +416,9 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 		}
 	}()
 
+	var exit bool
 	var runErr error
+
 	for {
 		Frontend.SetPrimary(dagui.SpanID{})
 		Frontend.SetCustomExit(func() {})
@@ -399,8 +468,7 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 		if err != nil {
 			// EOF or Ctrl+D to exit
 			if errors.Is(err, io.EOF) {
-				Frontend.SetCustomExit(nil)
-				Frontend.SetVerbosity(0)
+				exit = true
 				break
 			}
 			// Ctrl+C should move to the next line
@@ -408,6 +476,11 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 				continue
 			}
 			return err
+		}
+
+		if line == "exit" {
+			exit = true
+			break
 		}
 
 		if strings.TrimSpace(line) == "" {
@@ -420,9 +493,15 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 		Frontend.SetCustomExit(cancel)
 		runErr = h.run(newCtx, strings.NewReader(line), "")
 		if runErr != nil {
+			span.RecordError(runErr)
 			span.SetStatus(codes.Error, runErr.Error())
 		}
 		span.End()
+	}
+
+	if exit {
+		Frontend.SetCustomExit(nil)
+		Frontend.SetVerbosity(0)
 	}
 
 	return nil
@@ -457,9 +536,9 @@ func (h *shellCallHandler) Prompt(out *termenv.Output, fg termenv.Color) string 
 	return sb.String()
 }
 
-// withTerminal handles using stdin, stdout, and stderr when the TUI is runnin
+// withTerminal handles using stdin, stdout, and stderr when the TUI is running
 func (h *shellCallHandler) withTerminal(fn func(stdin io.Reader, stdout, stderr io.Writer) error) error {
-	if h.tui {
+	if h.repl && h.tty {
 		return Frontend.Background(&terminalSession{
 			fn: func(stdin io.Reader, stdout, stderr io.Writer) error {
 				return fn(stdin, stdout, stderr)

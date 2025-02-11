@@ -14,16 +14,6 @@ namespace Dagger;
 class Client extends Client\AbstractClient
 {
     /**
-     * Retrieves a content-addressed blob.
-     */
-    public function blob(string $digest): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('blob');
-        $innerQueryBuilder->setArgument('digest', $digest);
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Retrieves a container builtin to the engine.
      */
     public function builtinContainer(string $digest): Container
@@ -538,6 +528,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a SDKConfig from its ID.
+     */
+    public function loadSDKConfigFromID(SDKConfigId|SDKConfig $id): SDKConfig
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSDKConfigFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\SDKConfig($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a ScalarTypeDef from its ID.
      */
     public function loadScalarTypeDefFromID(ScalarTypeDefId|ScalarTypeDef $id): ScalarTypeDef
@@ -554,6 +554,19 @@ class Client extends Client\AbstractClient
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSecretFromID');
         $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Secret from its Name.
+     */
+    public function loadSecretFromName(string $name, ?string $accessor = null): Secret
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSecretFromName');
+        $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $accessor) {
+        $innerQueryBuilder->setArgument('accessor', $accessor);
+        }
         return new \Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -653,15 +666,12 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Reference a secret by name.
+     * Creates a new secret.
      */
-    public function secret(string $name, ?string $accessor = null): Secret
+    public function secret(string $uri): Secret
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('secret');
-        $innerQueryBuilder->setArgument('name', $name);
-        if (null !== $accessor) {
-        $innerQueryBuilder->setArgument('accessor', $accessor);
-        }
+        $innerQueryBuilder->setArgument('uri', $uri);
         return new \Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

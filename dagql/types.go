@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/exp/constraints"
 
@@ -47,7 +48,8 @@ type ObjectType interface {
 	//
 	// Unlike natively added fields, the extended func is limited to the external
 	// Object interface.
-	Extend(spec FieldSpec, fun FieldFunc)
+	// cacheKeyFun is optional, if not set the default dagql ID cache key will be used.
+	Extend(spec FieldSpec, fun FieldFunc, cacheKeyFun FieldCacheKeyFunc)
 }
 
 type IDType interface {
@@ -59,6 +61,11 @@ type IDType interface {
 // FieldFunc is a function that implements a field on an object while limited
 // to the object's external interface.
 type FieldFunc func(context.Context, Object, map[string]Input) (Typed, error)
+
+// FieldCacheKeyFunc is a function that computes a cache key for a field on an object. The cache key
+// will be used to cache the result of the field call in dagql's cache and serve as the digest of the
+// call's ID.
+type FieldCacheKeyFunc func(context.Context, Object, map[string]Input, digest.Digest) (digest.Digest, error)
 
 type IDable interface {
 	// ID returns the ID of the value.
@@ -72,15 +79,22 @@ type Object interface {
 	IDable
 	// ObjectType returns the type of the object.
 	ObjectType() ObjectType
-	// IDFor returns the ID representing the return value of the given field.
-	IDFor(context.Context, Selector) (*call.ID, error)
-	// Select evaluates the selected field and returns the result.
+
+	// Call evaluates the field selected by the given ID and returns the result.
 	//
 	// The returned value is the raw Typed value returned from the field; it must
 	// be instantiated with a class for further selection.
 	//
 	// Any Nullable values are automatically unwrapped.
-	Select(context.Context, Selector) (Typed, error)
+	Call(context.Context, *Server, *call.ID) (Typed, *call.ID, error)
+
+	// Select evaluates the field selected by the given selector and returns the result.
+	//
+	// The returned value is the raw Typed value returned from the field; it must
+	// be instantiated with a class for further selection.
+	//
+	// Any Nullable values are automatically unwrapped.
+	Select(context.Context, *Server, Selector) (Typed, *call.ID, error)
 }
 
 // ScalarType represents a GraphQL Scalar type.

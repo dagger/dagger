@@ -2274,11 +2274,8 @@ type Module {
   """
   runtime: Container!
 
-  """
-  The SDK used by this module. Either a name of a builtin SDK or a module source
-  ref string pointing to the SDK's implementation.
-  """
-  sdk: String!
+  """The SDK config used by this module."""
+  sdk: SDKConfig
 
   """
   Serve a module's API in the current session.
@@ -2496,8 +2493,8 @@ type ModuleSource {
 
   """Update the module source with a new SDK."""
   withSDK(
-    """The SDK to set."""
-    sdk: String!
+    """The SDK source to set."""
+    source: String!
   ): ModuleSource!
 
   """Update the module source with a new source subpath."""
@@ -2645,12 +2642,6 @@ scalar PortID
 
 """The root of the DAG."""
 type Query {
-  """Retrieves a content-addressed blob."""
-  blob(
-    """Digest of the blob"""
-    digest: String!
-  ): Directory!
-
   """Retrieves a container builtin to the engine."""
   builtinContainer(
     """Digest of the image manifest"""
@@ -2864,8 +2855,14 @@ type Query {
   """Load a ScalarTypeDef from its ID."""
   loadScalarTypeDefFromID(id: ScalarTypeDefID!): ScalarTypeDef!
 
+  """Load a SDKConfig from its ID."""
+  loadSDKConfigFromID(id: SDKConfigID!): SDKConfig
+
   """Load a Secret from its ID."""
   loadSecretFromID(id: SecretID!): Secret!
+
+  """Load a Secret from its Name."""
+  loadSecretFromName(accessor: String, name: String!): Secret!
 
   """Load a Service from its ID."""
   loadServiceFromID(id: ServiceID!): Service!
@@ -2916,8 +2913,11 @@ type Query {
     stable: Boolean = false
   ): ModuleSource!
 
-  """Reference a secret by name."""
-  secret(accessor: String, name: String!): Secret!
+  """Creates a new secret."""
+  secret(
+    """The URI of the secret store"""
+    uri: String!
+  ): Secret!
 
   """
   Sets a secret given a user defined name to its plaintext and returns the secret.
@@ -2985,6 +2985,22 @@ The `ScalarTypeDefID` scalar type represents an identifier for an object of type
 """
 scalar ScalarTypeDefID
 
+"""The SDK config of the module."""
+type SDKConfig {
+  """A unique identifier for this SDKConfig."""
+  id: SDKConfigID!
+
+  """
+  Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
+  """
+  source: String!
+}
+
+"""
+The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
+"""
+scalar SDKConfigID
+
 """
 A reference to a secret value, which can be handled more safely than the value itself.
 """
@@ -2997,6 +3013,9 @@ type Secret {
 
   """The value of this secret."""
   plaintext: String!
+
+  """The URI of this secret."""
+  uri: String!
 }
 
 """
@@ -3262,6 +3281,9 @@ scalar TypeDefID
 enum TypeDefKind {
   """A string value."""
   STRING_KIND
+
+  """A float value."""
+  FLOAT_KIND
 
   """An integer value."""
   INTEGER_KIND

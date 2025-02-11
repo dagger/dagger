@@ -12,16 +12,11 @@ on:
         type: number
         default: 10
         required: false
-      dev:
-        description: "Use a development version of Dagger"
-        type: string
-        default: "false"
-        required: false
 jobs:
   remote-dagger-engine:
     if: ${{ github.repository == 'dagger/dagger' }}
     runs-on:
-        - 'dagger-g3-v0-15-2-16c-st-magic'
+        - 'dagger-g3-v0-15-3-16c-st-magic'
     timeout-minutes: ${{ inputs.timeout }}
     steps:
       - name: Checkout repo
@@ -32,9 +27,7 @@ jobs:
         uses: ./.github/actions/call
         with:
           function: ${{ inputs.function }}
-          dev-engine: "false"
       - name: ${{ inputs.function }} (CACHE TEST)
         uses: ./.github/actions/call
         with:
           function: ${{ inputs.function }}
-          dev-engine: "false"

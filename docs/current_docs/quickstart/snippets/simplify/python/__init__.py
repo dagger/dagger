@@ -1,21 +1,28 @@
 import random
+from typing import Annotated
 
 import dagger
-from dagger import dag, function, object_type
+from dagger import DefaultPath, dag, function, object_type
 
 
 @object_type
 class HelloDagger:
     @function
-    async def publish(self, source: dagger.Directory) -> str:
+    async def publish(
+        self,
+        source: Annotated[dagger.Directory, DefaultPath("/")],
+    ) -> str:
         """Publish the application container after building and testing it on-the-fly"""
         await self.test(source)
         return await self.build(source).publish(
-            f"ttl.sh/hello-dagger-{random.randrange(10 ** 8)}"
+            f"ttl.sh/hello-dagger-{random.randrange(10**8)}"
         )
 
     @function
-    def build(self, source: dagger.Directory) -> dagger.Container:
+    def build(
+        self,
+        source: Annotated[dagger.Directory, DefaultPath("/")],
+    ) -> dagger.Container:
         """Build the application container"""
         build = (
             dag.node(ctr=self.build_env(source))
@@ -31,7 +38,10 @@ class HelloDagger:
         )
 
     @function
-    async def test(self, source: dagger.Directory) -> str:
+    async def test(
+        self,
+        source: Annotated[dagger.Directory, DefaultPath("/")],
+    ) -> str:
         """Return the result of running unit tests"""
         return await (
             dag.node(ctr=self.build_env(source))
@@ -41,7 +51,10 @@ class HelloDagger:
         )
 
     @function
-    def build_env(self, source: dagger.Directory) -> dagger.Container:
+    def build_env(
+        self,
+        source: Annotated[dagger.Directory, DefaultPath("/")],
+    ) -> dagger.Container:
         """Build a ready-to-use development environment"""
         return (
             dag.node(version="21").with_npm().with_source(source).install().container()

@@ -17,7 +17,7 @@ concurrency:
 jobs:
     deploy:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-2-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-3-4c' || 'ubuntu-latest' }}
         name: deploy
         steps:
             - name: Checkout
@@ -47,7 +47,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin sh
               env:
-                DAGGER_VERSION: v0.15.2
+                DAGGER_VERSION: v0.15.3
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -96,8 +96,13 @@ jobs:
                     mkfifo stdout.fifo stderr.fifo
 
                     # Set up tee to capture and display stdout and stderr
-                    tee stdout.txt < stdout.fifo &
-                    tee stderr.txt < stderr.fifo >&2 &
+                    if [ -n "$NO_OUTPUT" ]; then
+                        tee stdout.txt < stdout.fifo > /dev/null &
+                        tee stderr.txt < stderr.fifo > /dev/null &
+                    else
+                        tee stdout.txt < stdout.fifo &
+                        tee stderr.txt < stderr.fifo >&2 &
+                    fi
                 )
 
                 # Run the command, capturing stdout and stderr in the FIFOs
@@ -178,6 +183,9 @@ jobs:
                 .
 
                 } >"${GITHUB_STEP_SUMMARY}"
+
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
 
                 exit $EXIT_CODE
               env:

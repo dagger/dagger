@@ -23,14 +23,14 @@
     "clsx": "^2.1.1",
     "docusaurus-plugin-image-zoom": "^2.0.0",
     "docusaurus-plugin-sass": "^0.2.6",
-    "docusaurus-plugin-typedoc": "^1.2.1",
+    "docusaurus-plugin-typedoc": "^1.2.2",
     "posthog-docusaurus": "^2.0.2",
     "prism-react-renderer": "^2.4.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "remark-code-import": "^1.2.0",
     "unist-util-visit": "^5.0.0",
-    "sass": "^1.83.1",
+    "sass": "^1.83.4",
     "typedoc": "^0.27.6",
     "typedoc-plugin-frontmatter": "^1.1.2",
     "typedoc-plugin-markdown": "^4.4.1",
@@ -55,5 +55,8 @@
   },
   "engines": {
     "node": ">=18.0"
+  },
+  "resolutions": {
+    "**/webpack-dev-server/**/path-to-regexp": "^0.1.12"
   }
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 )
 
 type secretSchema struct {
@@ -25,19 +26,26 @@ func (s *secretSchema) Install() {
 			ArgSensitive("plaintext"),
 
 		dagql.Func("secret", s.secret).
-			Doc(`Reference a secret by name.`),
+			Impure("`secret` mutates state in the internal secret store.").
+			Doc(`Creates a new secret.`).
+			ArgDoc("uri", `The URI of the secret store`),
+
+		dagql.Func("loadSecretFromName", s.loadSecretFromName).
+			Doc(`Load a Secret from its Name.`),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Secret]{
 		dagql.Func("name", s.name).
 			Doc(`The name of this secret.`),
+		dagql.Func("uri", s.uri).
+			Doc(`The URI of this secret.`),
 		dagql.Func("plaintext", s.plaintext).
 			Impure("A secret's `plaintext` value in the internal secret store state can change.").
 			Doc(`The value of this secret.`),
 	}.Install(s.srv)
 }
 
-type secretArgs struct {
+type loadSecretFromNameArgs struct {
 	Name string
 
 	// Accessor is the scoped per-module name, which should guarantee uniqueness.
@@ -46,7 +54,7 @@ type secretArgs struct {
 	Accessor dagql.Optional[dagql.String]
 }
 
-func (s *secretSchema) secret(ctx context.Context, parent *core.Query, args secretArgs) (*core.Secret, error) {
+func (s *secretSchema) loadSecretFromName(ctx context.Context, parent *core.Query, args loadSecretFromNameArgs) (*core.Secret, error) {
 	return &core.Secret{
 		Query:    parent,
 		IDDigest: dagql.CurrentID(ctx).Digest(),
@@ -72,7 +80,7 @@ func (s *secretSchema) setSecret(ctx context.Context, parent *core.Query, args s
 	// NB: to avoid putting the plaintext value in the graph, return a freshly
 	// minted Object that just gets the secret by name
 	if err := s.srv.Select(ctx, s.srv.Root(), &i, dagql.Selector{
-		Field: "secret",
+		Field: "loadSecretFromName",
 		Args: []dagql.NamedInput{
 			{
 				Name:  "name",
@@ -94,6 +102,51 @@ func (s *secretSchema) setSecret(ctx context.Context, parent *core.Query, args s
 	return i, nil
 }
 
+type secretArgs struct {
+	URI string
+}
+
+func (s *secretSchema) secret(ctx context.Context, parent *core.Query, args secretArgs) (i dagql.Instance[*core.Secret], err error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return i, fmt.Errorf("failed to get client metadata from context: %w", err)
+	}
+
+	secretStore, err := parent.Secrets(ctx)
+	if err != nil {
+		return i, fmt.Errorf("failed to get secret store: %w", err)
+	}
+
+	accessor, err := core.GetClientResourceAccessor(ctx, parent, args.URI)
+	if err != nil {
+		return i, fmt.Errorf("failed to get client resource name: %w", err)
+	}
+
+	// NB: to avoid putting the plaintext value in the graph, return a freshly
+	// minted Object that just gets the secret by name
+	if err := s.srv.Select(ctx, s.srv.Root(), &i, dagql.Selector{
+		Field: "loadSecretFromName",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "name",
+				Value: dagql.NewString(args.URI),
+			},
+			{
+				Name:  "accessor",
+				Value: dagql.Opt(dagql.NewString(accessor)),
+			},
+		},
+	}); err != nil {
+		return i, fmt.Errorf("failed to select secret: %w", err)
+	}
+
+	if err := secretStore.NewSecret(i.Self, clientMetadata.ClientID, args.URI); err != nil {
+		return i, fmt.Errorf("failed to map secret: %w", err)
+	}
+
+	return i, nil
+}
+
 func (s *secretSchema) name(ctx context.Context, secret *core.Secret, args struct{}) (dagql.String, error) {
 	secretStore, err := secret.Query.Secrets(ctx)
 	if err != nil {
@@ -107,14 +160,27 @@ func (s *secretSchema) name(ctx context.Context, secret *core.Secret, args struc
 	return dagql.NewString(name), nil
 }
 
+func (s *secretSchema) uri(ctx context.Context, secret *core.Secret, args struct{}) (dagql.String, error) {
+	secretStore, err := secret.Query.Secrets(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get secret store: %w", err)
+	}
+	name, ok := secretStore.GetSecretURI(secret.IDDigest)
+	if !ok {
+		return "", fmt.Errorf("secret not found: %s", secret.IDDigest)
+	}
+
+	return dagql.NewString(name), nil
+}
+
 func (s *secretSchema) plaintext(ctx context.Context, secret *core.Secret, args struct{}) (dagql.String, error) {
 	secretStore, err := secret.Query.Secrets(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get secret store: %w", err)
 	}
-	plaintext, ok := secretStore.GetSecretPlaintext(secret.IDDigest)
-	if !ok {
-		return "", fmt.Errorf("secret not found: %s", secret.IDDigest)
+	plaintext, err := secretStore.GetSecretPlaintext(ctx, secret.IDDigest)
+	if err != nil {
+		return "", err
 	}
 
 	return dagql.NewString(string(plaintext)), nil

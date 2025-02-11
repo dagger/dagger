@@ -48,7 +48,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 		var modCfg modules.ModuleConfigWithUserFields
 		require.NoError(t, json.Unmarshal([]byte(confContents), &modCfg))
 		require.Equal(t, "test", modCfg.Name)
-		require.Equal(t, "go", modCfg.SDK)
+		require.Equal(t, &modules.SDK{Source: "go"}, modCfg.SDK)
 		require.Equal(t, []string{"foo"}, modCfg.Include)
 		require.Equal(t, []string{"blah"}, modCfg.Exclude)
 		require.Len(t, modCfg.Dependencies, 1)
@@ -100,8 +100,10 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 				base := baseCtr(t, c).
 					With(configFile(".", &modules.ModuleConfig{
-						Name:   "evil",
-						SDK:    "go",
+						Name: "evil",
+						SDK: &modules.SDK{
+							Source: "go",
+						},
 						Source: "..",
 					}))
 
@@ -120,8 +122,10 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 				base := baseCtr(t, c).
 					With(configFile(".", &modules.ModuleConfig{
-						Name:   "evil",
-						SDK:    "go",
+						Name: "evil",
+						SDK: &modules.SDK{
+							Source: "go",
+						},
 						Source: "/tmp",
 					}))
 
@@ -153,7 +157,9 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				base := baseCtr(t, c).
 					With(configFile(".", &modules.ModuleConfig{
 						Name: "evil",
-						SDK:  "go",
+						SDK: &modules.SDK{
+							Source: "go",
+						},
 						Dependencies: []*modules.ModuleConfigDependency{{
 							Name:   "escape",
 							Source: "..",
@@ -172,7 +178,9 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				base = base.
 					With(configFile(".", &modules.ModuleConfig{
 						Name: "evil",
-						SDK:  "go",
+						SDK: &modules.SDK{
+							Source: "go",
+						},
 						Dependencies: []*modules.ModuleConfigDependency{{
 							Name:   "escape",
 							Source: "../work/dep",
@@ -195,7 +203,9 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				base := baseCtr(t, c).
 					With(configFile(".", &modules.ModuleConfig{
 						Name: "evil",
-						SDK:  "go",
+						SDK: &modules.SDK{
+							Source: "go",
+						},
 						Dependencies: []*modules.ModuleConfigDependency{{
 							Name:   "escape",
 							Source: "/tmp/foo",
@@ -214,7 +224,9 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				base = base.
 					With(configFile(".", &modules.ModuleConfig{
 						Name: "evil",
-						SDK:  "go",
+						SDK: &modules.SDK{
+							Source: "go",
+						},
 						Dependencies: []*modules.ModuleConfigDependency{{
 							Name:   "escape",
 							Source: "/./dep",
@@ -630,8 +642,10 @@ func (m *Coolsdk) RequiredPaths() []string {
 			// TODO: use cli to configure include/exclude once supported
 			ctr = ctr.
 				With(configFile(".", &modules.ModuleConfig{
-					Name:    "test",
-					SDK:     tc.sdk,
+					Name: "test",
+					SDK: &modules.SDK{
+						Source: tc.sdk,
+					},
 					Include: []string{"dagger/subdir/keepdir"},
 					Exclude: []string{"dagger/subdir/keepdir/rmdir"},
 					Source:  "dagger",
@@ -719,8 +733,10 @@ func (m *%[1]s) ContextDirectory() ([]string, error) {
 			WithNewFile("foo", "").
 			WithNewFile(".dagger/bar", "").
 			With(configFile(".", &modules.ModuleConfig{
-				Name:    "dep",
-				SDK:     "go",
+				Name: "dep",
+				SDK: &modules.SDK{
+					Source: "go",
+				},
 				Include: []string{"**/foo"},
 				Exclude: []string{"**/bar"},
 				Source:  ".dagger",
@@ -843,7 +859,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "GitHub public",
 		gitTestRepoRef:           "github.com/dagger/dagger-test-modules",
-		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
+		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
 		expectedHost:             "github.com",
 		expectedBaseHTMLURL:      "github.com/dagger/dagger-test-modules",
 		expectedURLPathComponent: "tree",
@@ -852,7 +868,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "GitLab public",
 		gitTestRepoRef:           "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
-		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
+		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
 		expectedHost:             "gitlab.com",
 		expectedBaseHTMLURL:      "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
 		expectedURLPathComponent: "tree",
@@ -861,7 +877,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "BitBucket public",
 		gitTestRepoRef:           "bitbucket.org/dagger-modules/dagger-test-modules-public",
-		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
+		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
 		expectedHost:             "bitbucket.org",
 		expectedBaseHTMLURL:      "bitbucket.org/dagger-modules/dagger-test-modules-public",
 		expectedURLPathComponent: "src",
@@ -870,7 +886,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "Azure DevOps public",
 		gitTestRepoRef:           "dev.azure.com/daggere2e/public/_git/dagger-test-modules",
-		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
+		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
 		expectedHost:             "dev.azure.com",
 		expectedBaseHTMLURL:      "dev.azure.com/daggere2e/public/_git/dagger-test-modules",
 		expectedURLPathComponent: "commit",
@@ -884,7 +900,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "SSH Private GitLab",
 		gitTestRepoRef:           "ssh://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git",
-		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
+		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
 		expectedHost:             "gitlab.com",
 		expectedBaseHTMLURL:      "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private",
 		expectedURLPathComponent: "tree",
@@ -896,7 +912,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "SSH Private BitBucket",
 		gitTestRepoRef:           "git@bitbucket.org:dagger-modules/private-modules-test.git",
-		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
+		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
 		expectedHost:             "bitbucket.org",
 		expectedBaseHTMLURL:      "bitbucket.org/dagger-modules/private-modules-test",
 		expectedURLPathComponent: "src",
@@ -909,7 +925,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "SSH Public GitHub",
 		gitTestRepoRef:           "git@github.com:dagger/dagger-test-modules.git",
-		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
+		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
 		expectedHost:             "github.com",
 		expectedBaseHTMLURL:      "github.com/dagger/dagger-test-modules",
 		expectedURLPathComponent: "tree",

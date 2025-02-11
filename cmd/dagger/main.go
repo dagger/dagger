@@ -25,7 +25,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.25.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
 
@@ -33,7 +33,7 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
@@ -388,12 +388,12 @@ func NormalizeWorkdir(workdir string) (string, error) {
 
 	if workdir == "" {
 		var err error
-		workdir, err = client.Getwd()
+		workdir, err = pathutil.Getwd()
 		if err != nil {
 			return "", err
 		}
 	}
-	workdir, err := client.Abs(workdir)
+	workdir, err := pathutil.Abs(workdir)
 	if err != nil {
 		return "", err
 	}

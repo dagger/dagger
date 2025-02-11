@@ -209,6 +209,9 @@ type Platform string
 // The `PortID` scalar type represents an identifier for an object of type Port.
 type PortID string
 
+// The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
+type SDKConfigID string
+
 // The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
 type ScalarTypeDefID string
 
@@ -5486,7 +5489,6 @@ type Module struct {
 	description *string
 	id          *ModuleID
 	name        *string
-	sdk         *string
 	serve       *Void
 }
 type WithModuleFunc func(r *Module) *Module
@@ -5771,17 +5773,13 @@ func (r *Module) Runtime() *Container {
 	}
 }
 
-// The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
-func (r *Module) SDK(ctx context.Context) (string, error) {
-	if r.sdk != nil {
-		return *r.sdk, nil
-	}
+// The SDK config used by this module.
+func (r *Module) SDK() *SDKConfig {
 	q := r.query.Select("sdk")
 
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return &SDKConfig{
+		query: q,
+	}
 }
 
 // Serve a module's API in the current session.
@@ -6383,9 +6381,9 @@ func (r *ModuleSource) WithName(name string) *ModuleSource {
 }
 
 // Update the module source with a new SDK.
-func (r *ModuleSource) WithSDK(sdk string) *ModuleSource {
+func (r *ModuleSource) WithSDK(source string) *ModuleSource {
 	q := r.query.Select("withSDK")
-	q = q.Arg("sdk", sdk)
+	q = q.Arg("source", source)
 
 	return &ModuleSource{
 		query: q,
@@ -6802,16 +6800,6 @@ func (r *Client) WithGraphQLQuery(q *querybuilder.Selection) *Client {
 	return &Client{
 		query:  q,
 		client: r.client,
-	}
-}
-
-// Retrieves a content-addressed blob.
-func (r *Client) Blob(digest string) *Directory {
-	q := r.query.Select("blob")
-	q = q.Arg("digest", digest)
-
-	return &Directory{
-		query: q,
 	}
 }
 
@@ -7394,6 +7382,16 @@ func (r *Client) LoadPortFromID(id PortID) *Port {
 	}
 }
 
+// Load a SDKConfig from its ID.
+func (r *Client) LoadSDKConfigFromID(id SDKConfigID) *SDKConfig {
+	q := r.query.Select("loadSDKConfigFromID")
+	q = q.Arg("id", id)
+
+	return &SDKConfig{
+		query: q,
+	}
+}
+
 // Load a ScalarTypeDef from its ID.
 func (r *Client) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
 	q := r.query.Select("loadScalarTypeDefFromID")
@@ -7408,6 +7406,27 @@ func (r *Client) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
 func (r *Client) LoadSecretFromID(id SecretID) *Secret {
 	q := r.query.Select("loadSecretFromID")
 	q = q.Arg("id", id)
+
+	return &Secret{
+		query: q,
+	}
+}
+
+// LoadSecretFromNameOpts contains options for Client.LoadSecretFromName
+type LoadSecretFromNameOpts struct {
+	Accessor string
+}
+
+// Load a Secret from its Name.
+func (r *Client) LoadSecretFromName(name string, opts ...LoadSecretFromNameOpts) *Secret {
+	q := r.query.Select("loadSecretFromName")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `accessor` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Accessor) {
+			q = q.Arg("accessor", opts[i].Accessor)
+		}
+	}
+	q = q.Arg("name", name)
 
 	return &Secret{
 		query: q,
@@ -7530,21 +7549,10 @@ func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *Modul
 	}
 }
 
-// SecretOpts contains options for Client.Secret
-type SecretOpts struct {
-	Accessor string
-}
-
-// Reference a secret by name.
-func (r *Client) Secret(name string, opts ...SecretOpts) *Secret {
+// Creates a new secret.
+func (r *Client) Secret(uri string) *Secret {
 	q := r.query.Select("secret")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `accessor` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Accessor) {
-			q = q.Arg("accessor", opts[i].Accessor)
-		}
-	}
-	q = q.Arg("name", name)
+	q = q.Arg("uri", uri)
 
 	return &Secret{
 		query: q,
@@ -7588,6 +7596,73 @@ func (r *Client) TypeDef() *TypeDef {
 // Get the current Dagger Engine version.
 func (r *Client) Version(ctx context.Context) (string, error) {
 	q := r.query.Select("version")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The SDK config of the module.
+type SDKConfig struct {
+	query *querybuilder.Selection
+
+	id     *SDKConfigID
+	source *string
+}
+
+func (r *SDKConfig) WithGraphQLQuery(q *querybuilder.Selection) *SDKConfig {
+	return &SDKConfig{
+		query: q,
+	}
+}
+
+// A unique identifier for this SDKConfig.
+func (r *SDKConfig) ID(ctx context.Context) (SDKConfigID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response SDKConfigID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *SDKConfig) XXX_GraphQLType() string {
+	return "SDKConfig"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *SDKConfig) XXX_GraphQLIDType() string {
+	return "SDKConfigID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *SDKConfig) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *SDKConfig) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
+func (r *SDKConfig) Source(ctx context.Context) (string, error) {
+	if r.source != nil {
+		return *r.source, nil
+	}
+	q := r.query.Select("source")
 
 	var response string
 
@@ -7697,6 +7772,7 @@ type Secret struct {
 	id        *SecretID
 	name      *string
 	plaintext *string
+	uri       *string
 }
 
 func (r *Secret) WithGraphQLQuery(q *querybuilder.Selection) *Secret {
@@ -7764,6 +7840,19 @@ func (r *Secret) Plaintext(ctx context.Context) (string, error) {
 		return *r.plaintext, nil
 	}
 	q := r.query.Select("plaintext")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The URI of this secret.
+func (r *Secret) URI(ctx context.Context) (string, error) {
+	if r.uri != nil {
+		return *r.uri, nil
+	}
+	q := r.query.Select("uri")
 
 	var response string
 
@@ -8683,6 +8772,9 @@ const (
 	//
 	// Always paired with an EnumTypeDef.
 	TypeDefKindEnumKind TypeDefKind = "ENUM_KIND"
+
+	// A float value.
+	TypeDefKindFloatKind TypeDefKind = "FLOAT_KIND"
 
 	// A graphql input type, used only when representing the core API via TypeDefs.
 	TypeDefKindInputKind TypeDefKind = "INPUT_KIND"

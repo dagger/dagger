@@ -12,6 +12,7 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/iancoleman/strcase"
 	"github.com/spf13/pflag"
 )
@@ -509,36 +510,35 @@ func (m *moduleDef) HasFunction(fp functionProvider, name string) bool {
 // object type with with one from the module's object type definitions, to
 // recover missing function definitions in those places when chaining functions.
 func (m *moduleDef) LoadTypeDef(typeDef *modTypeDef) {
-	typeDef.mu.Lock()
-	defer typeDef.mu.Unlock()
-
-	if typeDef.AsObject != nil && typeDef.AsObject.Functions == nil && typeDef.AsObject.Fields == nil {
-		obj := m.GetObject(typeDef.AsObject.Name)
-		if obj != nil {
-			typeDef.AsObject = obj
+	typeDef.once.Do(func() {
+		if typeDef.AsObject != nil && typeDef.AsObject.Functions == nil && typeDef.AsObject.Fields == nil {
+			obj := m.GetObject(typeDef.AsObject.Name)
+			if obj != nil {
+				typeDef.AsObject = obj
+			}
 		}
-	}
-	if typeDef.AsInterface != nil && typeDef.AsInterface.Functions == nil {
-		iface := m.GetInterface(typeDef.AsInterface.Name)
-		if iface != nil {
-			typeDef.AsInterface = iface
+		if typeDef.AsInterface != nil && typeDef.AsInterface.Functions == nil {
+			iface := m.GetInterface(typeDef.AsInterface.Name)
+			if iface != nil {
+				typeDef.AsInterface = iface
+			}
 		}
-	}
-	if typeDef.AsEnum != nil {
-		enum := m.GetEnum(typeDef.AsEnum.Name)
-		if enum != nil {
-			typeDef.AsEnum = enum
+		if typeDef.AsEnum != nil {
+			enum := m.GetEnum(typeDef.AsEnum.Name)
+			if enum != nil {
+				typeDef.AsEnum = enum
+			}
 		}
-	}
-	if typeDef.AsInput != nil && typeDef.AsInput.Fields == nil {
-		input := m.GetInput(typeDef.AsInput.Name)
-		if input != nil {
-			typeDef.AsInput = input
+		if typeDef.AsInput != nil && typeDef.AsInput.Fields == nil {
+			input := m.GetInput(typeDef.AsInput.Name)
+			if input != nil {
+				typeDef.AsInput = input
+			}
 		}
-	}
-	if typeDef.AsList != nil {
-		m.LoadTypeDef(typeDef.AsList.ElementTypeDef)
-	}
+		if typeDef.AsList != nil {
+			m.LoadTypeDef(typeDef.AsList.ElementTypeDef)
+		}
+	})
 }
 
 func (m *moduleDef) LoadFunctionTypeDefs(fn *modFunction) {
@@ -561,8 +561,8 @@ type modTypeDef struct {
 	AsScalar    *modScalar
 	AsEnum      *modEnum
 
-	// mu protects concurrent update from LoadTypeDef
-	mu sync.Mutex
+	// once protects concurrent update from LoadTypeDef
+	once sync.Once
 }
 
 func (t *modTypeDef) String() string {
@@ -571,6 +571,8 @@ func (t *modTypeDef) String() string {
 		return "string"
 	case dagger.TypeDefKindIntegerKind:
 		return "int"
+	case dagger.TypeDefKindFloatKind:
+		return "float"
 	case dagger.TypeDefKindBooleanKind:
 		return "bool"
 	case dagger.TypeDefKindVoidKind:
@@ -598,6 +600,7 @@ func (t *modTypeDef) KindDisplay() string {
 	switch t.Kind {
 	case dagger.TypeDefKindStringKind,
 		dagger.TypeDefKindIntegerKind,
+		dagger.TypeDefKindFloatKind,
 		dagger.TypeDefKindBooleanKind:
 		return "Scalar"
 	case dagger.TypeDefKindScalarKind,
@@ -622,6 +625,7 @@ func (t *modTypeDef) Description() string {
 	switch t.Kind {
 	case dagger.TypeDefKindStringKind,
 		dagger.TypeDefKindIntegerKind,
+		dagger.TypeDefKindFloatKind,
 		dagger.TypeDefKindBooleanKind:
 		return "Primitive type."
 	case dagger.TypeDefKindVoidKind:
@@ -672,7 +676,7 @@ func GetSupportedFunctions(fp functionProvider) ([]*modFunction, []string) {
 	fns := make([]*modFunction, 0, len(allFns))
 	skipped := make([]string, 0, len(allFns))
 	for _, fn := range allFns {
-		if skipFunction(fp.ProviderName(), fn.Name) || fn.HasUnsupportedFlags() {
+		if dagui.ShouldSkipFunction(fp.ProviderName(), fn.Name) || fn.HasUnsupportedFlags() {
 			skipped = append(skipped, fn.CmdName())
 		} else {
 			fns = append(fns, fn)
@@ -691,33 +695,6 @@ func GetSupportedFunction(md *moduleDef, fp functionProvider, name string) (*mod
 		return nil, fmt.Errorf("function %q in type %q is not supported", name, fp.ProviderName())
 	}
 	return fn, nil
-}
-
-func skipFunction(obj, field string) bool {
-	// TODO: make this configurable in the API but may not be easy to
-	// generalize because an "internal" field may still need to exist in
-	// codegen, for example. Could expose if internal via the TypeDefs though.
-	skip := map[string][]string{
-		"Query": {
-			// for SDKs only
-			"builtinContainer",
-			"generatedCode",
-			"currentFunctionCall",
-			"currentModule",
-			"typeDef",
-			// not useful until the CLI accepts ID inputs
-			"cacheVolume",
-			"setSecret",
-			// for tests only
-			"secret",
-			// deprecated
-			"pipeline",
-		},
-	}
-	if fields, ok := skip[obj]; ok {
-		return slices.Contains(fields, field)
-	}
-	return false
 }
 
 // skipLeaves is a map of provider names to function names that should be skipped

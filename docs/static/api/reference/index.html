@@ -28,7 +28,6 @@
           <div class="nav-group">
             <h4 class="nav-group-title">Queries</h4>
             <ul class="nav-group-items">
-              <li><a href="#query-blob">blob</a></li>
               <li><a href="#query-builtinContainer">builtinContainer</a></li>
               <li><a href="#query-cacheVolume">cacheVolume</a></li>
               <li><a href="#query-container">container</a></li>
@@ -78,8 +77,10 @@
               <li><a href="#query-loadModuleSourceViewFromID">loadModuleSourceViewFromID</a></li>
               <li><a href="#query-loadObjectTypeDefFromID">loadObjectTypeDefFromID</a></li>
               <li><a href="#query-loadPortFromID">loadPortFromID</a></li>
+              <li><a href="#query-loadSDKConfigFromID">loadSDKConfigFromID</a></li>
               <li><a href="#query-loadScalarTypeDefFromID">loadScalarTypeDefFromID</a></li>
               <li><a href="#query-loadSecretFromID">loadSecretFromID</a></li>
+              <li><a href="#query-loadSecretFromName">loadSecretFromName</a></li>
               <li><a href="#query-loadServiceFromID">loadServiceFromID</a></li>
               <li><a href="#query-loadSocketFromID">loadSocketFromID</a></li>
               <li><a href="#query-loadSourceMapFromID">loadSourceMapFromID</a></li>
@@ -179,6 +180,8 @@
               <li><a href="#definition-PortForward">PortForward</a></li>
               <li><a href="#definition-PortID">PortID</a></li>
               <li><a href="#definition-ReturnType">ReturnType</a></li>
+              <li><a href="#definition-SDKConfig">SDKConfig</a></li>
+              <li><a href="#definition-SDKConfigID">SDKConfigID</a></li>
               <li><a href="#definition-ScalarTypeDef">ScalarTypeDef</a></li>
               <li><a href="#definition-ScalarTypeDefID">ScalarTypeDefID</a></li>
               <li><a href="#definition-Secret">Secret</a></li>
@@ -212,59 +215,7 @@
           <div id="introduction" data-traverse-target="introduction">
           </div>
           <h1 id="group-Queries" class="group-heading" data-traverse-target="group-Queries">Queries</h1>
-          <section id="query-blob" class="operation operation-query" data-traverse-target="query-blob">
-            <h2 class="operation-heading ">
-              <code>blob</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Retrieves a content-addressed blob.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-Directory"><code>Directory!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>digest</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
-                        </td>
-                        <td> Digest of the blob </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
           <section id="query-builtinContainer" class="operation operation-query" data-traverse-target="query-builtinContainer">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
             <h2 class="operation-heading ">
               <code>builtinContainer</code>
             </h2>
@@ -2838,6 +2789,59 @@
               </div>
             </div>
           </section>
+          <section id="query-loadSDKConfigFromID" class="operation operation-query" data-traverse-target="query-loadSDKConfigFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadSDKConfigFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a SDKConfig from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-SDKConfig"><code>SDKConfig</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-SDKConfigID"><code>SDKConfigID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-loadScalarTypeDefFromID" class="operation operation-query" data-traverse-target="query-loadScalarTypeDefFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -2927,6 +2931,66 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadSecretFromName" class="operation operation-query" data-traverse-target="query-loadSecretFromName">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadSecretFromName</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a Secret from its Name.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Secret"><code>Secret!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>accessor</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -3381,7 +3445,7 @@
               <div class="doc-copy">
                 <div class="operation-description doc-copy-section">
                   <h5>Description</h5>
-                  <p>Reference a secret by name.</p>
+                  <p>Creates a new secret.</p>
                 </div>
               </div>
             </div>
@@ -3405,17 +3469,9 @@
                     <tbody>
                       <tr>
                         <td>
-                          <span class="property-name"><code>accessor</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
+                          <span class="property-name"><code>uri</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
                         </td>
-                        <td>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
-                        </td>
-                        <td>
-                        </td>
+                        <td> The URI of the secret store </td>
                       </tr>
                     </tbody>
                   </table>
@@ -7902,8 +7958,8 @@
                         <td> The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Module-sdk" href="#Module-sdk"><code>sdk</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation. </td>
+                        <td data-property-name=""><a class="property-name" id="Module-sdk" href="#Module-sdk"><code>sdk</code></a> - <span class="property-type"><a href="#definition-SDKConfig"><code>SDKConfig</code></a></span> </td>
+                        <td> The SDK config used by this module. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Module-serve" href="#Module-serve"><code>serve</code></a> - <span class="property-type"><a href="#definition-Void"><code>Void</code></a></span> </td>
@@ -8352,8 +8408,8 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>sdk</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The SDK to set.</p>
+                                <h6 class="field-argument-name"><span class="property-name"><code>source</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The SDK source to set.</p>
                               </div>
                             </div>
                           </div>
@@ -8905,6 +8961,55 @@
               </div>
             </div>
           </section>
+          <section id="definition-SDKConfig" class="definition definition-object" data-traverse-target="definition-SDKConfig">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">SDKConfig</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The SDK config of the module.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="SDKConfig-id" href="#SDKConfig-id"><code>id</code></a> - <span class="property-type"><a href="#definition-SDKConfigID"><code>SDKConfigID!</code></a></span> </td>
+                        <td> A unique identifier for this SDKConfig. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="SDKConfig-source" href="#SDKConfig-source"><code>source</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-SDKConfigID" class="definition definition-scalar" data-traverse-target="definition-SDKConfigID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">SDKConfigID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>SDKConfigID</code> scalar type represents an identifier for an object of type SDKConfig.</p>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="definition-ScalarTypeDef" class="definition definition-object" data-traverse-target="definition-ScalarTypeDef">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -8994,6 +9099,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Secret-plaintext" href="#Secret-plaintext"><code>plaintext</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The value of this secret. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Secret-uri" href="#Secret-uri"><code>uri</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The URI of this secret. </td>
                       </tr>
                     </tbody>
                   </table>
@@ -9659,6 +9768,12 @@
                           <p><code>STRING_KIND</code></p>
                         </td>
                         <td> A string value. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>FLOAT_KIND</code></p>
+                        </td>
+                        <td> A float value. </td>
                       </tr>
                       <tr>
                         <td>

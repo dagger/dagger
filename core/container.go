@@ -23,7 +23,6 @@ import (
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	"github.com/moby/buildkit/frontend/dockerui"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/opencontainers/go-digest"
@@ -579,13 +578,14 @@ func (container *Container) WithDirectory(ctx context.Context, subdir string, sr
 func (container *Container) WithFile(ctx context.Context, destPath string, src *File, permissions *int, owner string) (*Container, error) {
 	container = container.Clone()
 
-	return container.writeToPath(ctx, path.Dir(destPath), func(dir *Directory) (*Directory, error) {
+	dir, file := filepath.Split(filepath.Clean(destPath))
+	return container.writeToPath(ctx, dir, func(dir *Directory) (*Directory, error) {
 		ownership, err := container.ownership(ctx, owner)
 		if err != nil {
 			return nil, err
 		}
 
-		return dir.WithFile(ctx, path.Base(destPath), src, permissions, ownership)
+		return dir.WithFile(ctx, file, src, permissions, ownership)
 	})
 }
 
@@ -607,20 +607,21 @@ func (container *Container) WithoutPaths(ctx context.Context, destPaths ...strin
 func (container *Container) WithFiles(ctx context.Context, destDir string, src []*File, permissions *int, owner string) (*Container, error) {
 	container = container.Clone()
 
-	return container.writeToPath(ctx, path.Dir(destDir), func(dir *Directory) (*Directory, error) {
+	dir, file := filepath.Split(filepath.Clean(destDir))
+	return container.writeToPath(ctx, path.Dir(dir), func(dir *Directory) (*Directory, error) {
 		ownership, err := container.ownership(ctx, owner)
 		if err != nil {
 			return nil, err
 		}
 
-		return dir.WithFiles(ctx, path.Base(destDir), src, permissions, ownership)
+		return dir.WithFiles(ctx, file, src, permissions, ownership)
 	})
 }
 
 func (container *Container) WithNewFile(ctx context.Context, dest string, content []byte, permissions fs.FileMode, owner string) (*Container, error) {
 	container = container.Clone()
 
-	dir, file := filepath.Split(dest)
+	dir, file := filepath.Split(filepath.Clean(dest))
 	return container.writeToPath(ctx, dir, func(dir *Directory) (*Directory, error) {
 		ownership, err := container.ownership(ctx, owner)
 		if err != nil {
@@ -1381,116 +1382,6 @@ func (container *Container) Export(
 
 	_, err = bk.ExportContainerImage(ctx, inputByPlatform, dest, opts)
 	return err
-}
-
-func (container *Container) AsTarball(
-	ctx context.Context,
-	srv *dagql.Server,
-	platformVariants []*Container,
-	forcedCompression ImageLayerCompression,
-	mediaTypes ImageMediaTypes,
-) (*File, error) {
-	bk, err := container.Query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	svcs, err := container.Query.Services(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
-	engineHostPlatform := container.Query.Platform()
-
-	if mediaTypes == "" {
-		mediaTypes = OCIMediaTypes
-	}
-
-	opts := map[string]string{
-		"tar":                           strconv.FormatBool(true),
-		string(exptypes.OptKeyOCITypes): strconv.FormatBool(mediaTypes == OCIMediaTypes),
-	}
-	if forcedCompression != "" {
-		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(forcedCompression))
-		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
-	}
-
-	inputByPlatform := map[string]buildkit.ContainerExport{}
-	services := ServiceBindings{}
-
-	variants := append([]*Container{container}, platformVariants...)
-	for _, variant := range variants {
-		if variant.FS == nil {
-			continue
-		}
-		st, err := variant.FSState()
-		if err != nil {
-			return nil, err
-		}
-
-		platformSpec := variant.Platform.Spec()
-		def, err := st.Marshal(ctx, llb.Platform(platformSpec))
-		if err != nil {
-			return nil, err
-		}
-
-		platformString := platforms.Format(variant.Platform.Spec())
-		if _, ok := inputByPlatform[platformString]; ok {
-			return nil, fmt.Errorf("duplicate platform %q", platformString)
-		}
-		inputByPlatform[platformString] = buildkit.ContainerExport{
-			Definition: def.ToPB(),
-			Config:     variant.Config,
-		}
-
-		if len(variants) == 1 {
-			// single platform case
-			for _, annotation := range variant.Annotations {
-				opts[exptypes.AnnotationManifestKey(nil, annotation.Key)] = annotation.Value
-				opts[exptypes.AnnotationManifestDescriptorKey(nil, annotation.Key)] = annotation.Value
-			}
-		} else {
-			// multi platform case
-			for _, annotation := range variant.Annotations {
-				opts[exptypes.AnnotationManifestKey(&platformSpec, annotation.Key)] = annotation.Value
-				opts[exptypes.AnnotationManifestDescriptorKey(&platformSpec, annotation.Key)] = annotation.Value
-			}
-		}
-
-		services.Merge(variant.Services)
-	}
-	if len(inputByPlatform) == 0 {
-		return nil, errors.New("no containers to export")
-	}
-
-	detach, _, err := svcs.StartBindings(ctx, services)
-	if err != nil {
-		return nil, err
-	}
-	defer detach()
-
-	fileName := identity.NewID() + ".tar"
-
-	dgst, err := bk.ContainerImageToTarball(ctx, engineHostPlatform.Spec(), fileName, inputByPlatform, opts)
-	if err != nil {
-		return nil, fmt.Errorf("container image to tarball file conversion failed: %w", err)
-	}
-	dirInst, err := LoadBlob(ctx, srv, dgst)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load tarball file blob: %w", err)
-	}
-
-	var fileInst dagql.Instance[*File]
-	if err := srv.Select(ctx, dirInst, &fileInst,
-		dagql.Selector{
-			Field: "file",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(fileName)},
-			},
-		},
-	); err != nil {
-		return nil, fmt.Errorf("failed to select tarball file: %w", err)
-	}
-
-	return fileInst.Self, nil
 }
 
 func (container *Container) Import(

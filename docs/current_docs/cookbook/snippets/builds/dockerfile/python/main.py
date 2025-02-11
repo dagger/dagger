@@ -1,7 +1,7 @@
 from typing import Annotated
 
 import dagger
-from dagger import Doc, dag, function, object_type
+from dagger import Doc, function, object_type
 
 
 @object_type
@@ -15,12 +15,5 @@ class MyModule:
         ],
     ) -> str:
         """Build and publish image from existing Dockerfile"""
-        ref = (
-            dag.container()
-            .with_directory("/src", src)
-            .with_workdir("/src")
-            .directory("/src")
-            .docker_build()  # build from Dockerfile
-            .publish("ttl.sh/hello-dagger")
-        )
+        ref = src.docker_build().publish("ttl.sh/hello-dagger")  # build from Dockerfile
         return await ref

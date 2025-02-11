@@ -133,6 +133,86 @@ The result will look like this:
 HELLO, WORLD
 ```
 
+## Integer arguments
+
+To pass an integer argument to a Dagger function, add the corresponding flag to the `dagger call` command, followed by the integer value.
+
+Here is an example of a Dagger function that accepts an integer argument:
+
+<Tabs groupId="language">
+
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-return-values-integer/go/main.go
+```
+</TabItem>
+
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-return-values-integer/python/main.py
+```
+</TabItem>
+
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/arguments-return-values-integer/typescript/index.ts
+```
+</TabItem>
+
+</Tabs>
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call add-integer --a 1 --b 2
+```
+
+The result will look like this:
+
+```shell
+3
+```
+
+## Floating-point number arguments
+
+To pass a floating-point number as argument to a Dagger function, add the corresponding flag to the `dagger call` command, followed by the value.
+
+Here is an example of a Dagger function that accepts a floating-point number as argument:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-return-values-float/go/main.go
+```
+</TabItem>
+
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-return-values-float/python/main.py
+```
+</TabItem>
+
+<TabItem value="TypeScript">
+
+:::note
+There's no `float` type keyword in TypeScript because the type keyword `number` already supports floating point numbers.
+
+To declare a `float` argument on the function signature, import `float` from `@dagger.io/dagger` and use it as an argument's type.
+The imported `float` type is a `number` underneath, so you can use it as you would use a `number` inside your function.
+:::
+
+```typescript file=./snippets/functions/arguments-return-values-float/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call add-float --a 1.4 --b 2.7
+```
+
+The result will look like this:
+
+```shell
+4.1
+```
+
 ## Array arguments
 
 To pass an array argument to a Dagger Function, add the corresponding flag, followed by a comma-separated list of values.
@@ -470,107 +550,6 @@ Hello, world
 ```
 
 Passing null to an optional argument signals that no default value should be used.
-
-### Directories and files
-
-It is possible to automatically load a filesystem path as a `Directory` or `File` object in a Dagger Function, by passing it as a "default path" to the corresponding argument. The `Directory` or `File` loaded in this manner is not merely a string, but it is the actual filesystem state of the specified directory or file, managed by the Dagger Engine and handled in code just like any another variable.
-
-:::important
-Default contexts are only available for arguments of type `Directory` and `File`. They are commonly used to load constant filesystem locations, such as an application's source code directory.
-:::
-
-When determining how to resolve a default path, Dagger first identifies a "context directory".
-
-- For Git repositories (defined by the presence of a `.git` sub-directory), the context directory is the repository root (for absolute paths), or the directory containing a `dagger.json` file (for relative paths).
-- For all other cases, the context directory is the directory containing a `dagger.json` file.
-
-The default path is then resolved starting from the context directory.
-
-:::important
-For security reasons, it is not possible to retrieve files or directories outside the context directory.
-:::
-
-The best way to understand this is with an example. Consider the following directory structure, representing a project with a Dagger module in `my-module`:
-
-```shell
-.
-├── README.md
-├── my-module
-│   ├── dagger.json
-│   ├── ...
-│   └── src
-│       └── main
-├── index.html
-├── public
-│   └── ...
-├── src
-│   └── ...
-```
-
-Here are two Dagger Functions with default paths for their directory and file arguments:
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-The default path is set by adding a `defaultPath` pragma on the corresponding Dagger Function `source` argument.
-
-```go file=./snippets/functions/arguments-context-dir-file/go/main.go
-```
-</TabItem>
-<TabItem value="Python">
-
-The default path is set by adding a `DefaultPath` annotation on the corresponding Dagger Function `source` argument.
-
-```python file=./snippets/functions/arguments-context-dir-file/python/main.py
-```
-</TabItem>
-<TabItem value="TypeScript">
-
-The default path is set by adding an `@argument` decorator with a `defaultPath` parameter on the corresponding Dagger Function `source` argument.
-
-```typescript file=./snippets/functions/arguments-context-dir-file/typescript/index.ts
-```
-</TabItem>
-</Tabs>
-
-The following table describes how the context directory and `source` argument is resolved, depending on whether or not the project directory is a Git repository.
-
-When the given project directory is a Git repository:
-
-| Default path ('defaultPath`) | Context directory | Dagger Function invocation | `source` argument resolves to |
-| --- | --- | --- | --- |
-| `/` | `/` | `dagger call -m my-module read-dir` | `/` |
-| `/src` | `/` | `dagger call -m my-module read-dir` | `/src` |
-| `/README.md` | `/` | `dagger call -m my-module read-file` | `/README.md` |
-| `.` | `/my-module` | `dagger call -m my-module read-dir` | `/my-module` |
-| `..` | `/my-module` | `dagger call -m my-module read-dir` | `/` |
-| `./README.md` | `/my-module` | `dagger call -m my-module read-file` | `Error: no such file or directory` |
-| `../README.md`| `/my-module`  | `dagger call -m my-module read-file` | `/README.md` |
-
-When the given project directory is not a Git repository:
-
-| Default path ('defaultPath`) | Context directory | Dagger Function invocation | `source` argument resolves to |
-| --- | --- | --- | --- |
-| `/` | `/my-module` | `dagger call -m my-module read-dir` | `/my-module` |
-| `/src` | `/my-module` | `dagger call -m my-module read-dir` | `/my-module/src` |
-| `/README.md` | `/my-module` | `dagger call -m my-module read-file` | `Error: no such file or directory` |
-| `.` | `/my-module` | `dagger call -m my-module read-dir` | `/my-module` |
-| `..` | `/my-module` | `dagger call -m my-module read-dir` | `Error: path outside of context directory` |
-| `./README.md` | `/my-module` | `dagger call -m my-module read-file` | `Error: no such file or directory` |
-| `../README.md` | `/my-module` | `dagger call -m my-module read-file` | `Error: path outside of context directory` |
-
-If a value is explicitly passed to the Dagger Function argument, it always overrides the default path.
-
-| Default path ('defaultPath`) | Dagger Function invocation | `source` argument resolves to |
-| --- | --- | --- |
-| `/` | `dagger call -m my-module read-dir --source=public` | `./public` |
-| `/src` | `dagger call -m my-module read-dir --source=public` | `./public` |
-| `.` | `dagger call -m my-module read-dir --source=public` | `./public` |
-| `..` | `dagger call -m my-module read-dir --source=public` | `./public` |
-
-:::tip
-It's also possible to provide an `ignore` parameter to a contextual argument of type `Directory` to [automatically ignore or include files in the directory](./fs-filters.mdx).
-:::
 
 ## Reference schemes for remote repositories
 

@@ -1216,6 +1216,41 @@ impl PortId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct SdkConfigId(pub String);
+impl From<&str> for SdkConfigId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for SdkConfigId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<SdkConfigId> for SdkConfig {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<SdkConfigId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<SdkConfigId> for SdkConfigId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<SdkConfigId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<SdkConfigId, DaggerError>(self) })
+    }
+}
+impl SdkConfigId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ScalarTypeDefId(pub String);
 impl From<&str> for ScalarTypeDefId {
     fn from(value: &str) -> Self {
@@ -6185,10 +6220,14 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
-    pub async fn sdk(&self) -> Result<String, DaggerError> {
+    /// The SDK config used by this module.
+    pub fn sdk(&self) -> SdkConfig {
         let query = self.selection.select("sdk");
-        query.execute(self.graphql_client.clone()).await
+        SdkConfig {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Serve a module's API in the current session.
     /// Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
@@ -6679,10 +6718,10 @@ impl ModuleSource {
     ///
     /// # Arguments
     ///
-    /// * `sdk` - The SDK to set.
-    pub fn with_sdk(&self, sdk: impl Into<String>) -> ModuleSource {
+    /// * `source` - The SDK source to set.
+    pub fn with_sdk(&self, source: impl Into<String>) -> ModuleSource {
         let mut query = self.selection.select("withSDK");
-        query = query.arg("sdk", sdk.into());
+        query = query.arg("source", source.into());
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,
@@ -6929,6 +6968,11 @@ pub struct QueryHttpOpts {
     pub experimental_service_host: Option<ServiceId>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct QueryLoadSecretFromNameOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub accessor: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct QueryModuleDependencyOpts<'a> {
     /// If set, the name to use for the dependency. Otherwise, once installed to a parent module, the name of the dependency module will be used by default.
     #[builder(setter(into, strip_option), default)]
@@ -6946,26 +6990,7 @@ pub struct QueryModuleSourceOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub stable: Option<bool>,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct QuerySecretOpts<'a> {
-    #[builder(setter(into, strip_option), default)]
-    pub accessor: Option<&'a str>,
-}
 impl Query {
-    /// Retrieves a content-addressed blob.
-    ///
-    /// # Arguments
-    ///
-    /// * `digest` - Digest of the blob
-    pub fn blob(&self, digest: impl Into<String>) -> Directory {
-        let mut query = self.selection.select("blob");
-        query = query.arg("digest", digest.into());
-        Directory {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Retrieves a container builtin to the engine.
     ///
     /// # Arguments
@@ -7818,6 +7843,22 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Load a SDKConfig from its ID.
+    pub fn load_sdk_config_from_id(&self, id: impl IntoID<SdkConfigId>) -> SdkConfig {
+        let mut query = self.selection.select("loadSDKConfigFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        SdkConfig {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Load a ScalarTypeDef from its ID.
     pub fn load_scalar_type_def_from_id(&self, id: impl IntoID<ScalarTypeDefId>) -> ScalarTypeDef {
         let mut query = self.selection.select("loadScalarTypeDefFromID");
@@ -7844,6 +7885,41 @@ impl Query {
                 Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
+        Secret {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a Secret from its Name.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn load_secret_from_name(&self, name: impl Into<String>) -> Secret {
+        let mut query = self.selection.select("loadSecretFromName");
+        query = query.arg("name", name.into());
+        Secret {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a Secret from its Name.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn load_secret_from_name_opts<'a>(
+        &self,
+        name: impl Into<String>,
+        opts: QueryLoadSecretFromNameOpts<'a>,
+    ) -> Secret {
+        let mut query = self.selection.select("loadSecretFromName");
+        query = query.arg("name", name.into());
+        if let Some(accessor) = opts.accessor {
+            query = query.arg("accessor", accessor);
+        }
         Secret {
             proc: self.proc.clone(),
             selection: query,
@@ -8031,31 +8107,14 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Reference a secret by name.
+    /// Creates a new secret.
     ///
     /// # Arguments
     ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn secret(&self, name: impl Into<String>) -> Secret {
+    /// * `uri` - The URI of the secret store
+    pub fn secret(&self, uri: impl Into<String>) -> Secret {
         let mut query = self.selection.select("secret");
-        query = query.arg("name", name.into());
-        Secret {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Reference a secret by name.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn secret_opts<'a>(&self, name: impl Into<String>, opts: QuerySecretOpts<'a>) -> Secret {
-        let mut query = self.selection.select("secret");
-        query = query.arg("name", name.into());
-        if let Some(accessor) = opts.accessor {
-            query = query.arg("accessor", accessor);
-        }
+        query = query.arg("uri", uri.into());
         Secret {
             proc: self.proc.clone(),
             selection: query,
@@ -8113,6 +8172,24 @@ impl Query {
     }
 }
 #[derive(Clone)]
+pub struct SdkConfig {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl SdkConfig {
+    /// A unique identifier for this SDKConfig.
+    pub async fn id(&self) -> Result<SdkConfigId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
+    pub async fn source(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("source");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
 pub struct ScalarTypeDef {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -8160,6 +8237,11 @@ impl Secret {
     /// The value of this secret.
     pub async fn plaintext(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("plaintext");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The URI of this secret.
+    pub async fn uri(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("uri");
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -8875,6 +8957,8 @@ pub enum TypeDefKind {
     BooleanKind,
     #[serde(rename = "ENUM_KIND")]
     EnumKind,
+    #[serde(rename = "FLOAT_KIND")]
+    FloatKind,
     #[serde(rename = "INPUT_KIND")]
     InputKind,
     #[serde(rename = "INTEGER_KIND")]

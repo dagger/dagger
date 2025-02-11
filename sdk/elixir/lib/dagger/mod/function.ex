@@ -49,6 +49,11 @@ defmodule Dagger.Mod.Function do
     |> Dagger.TypeDef.with_kind(Dagger.TypeDefKind.integer_kind())
   end
 
+  defp define_type(_dag, type_def, :float) do
+    type_def
+    |> Dagger.TypeDef.with_kind(Dagger.TypeDefKind.float_kind())
+  end
+
   defp define_type(_dag, type_def, :boolean) do
     type_def
     |> Dagger.TypeDef.with_kind(Dagger.TypeDefKind.boolean_kind())

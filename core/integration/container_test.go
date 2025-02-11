@@ -1895,19 +1895,31 @@ func (ContainerSuite) TestWithFiles(ctx context.Context, t *testctx.T) {
 		File("second-file")
 	files := []*dagger.File{file1, file2}
 
-	ctr := c.Container().
-		From(alpineImage).
-		WithFiles("myfiles", files)
+	check := func(ctx context.Context, t *testctx.T, ctr *dagger.Container) {
+		contents, err := ctr.WithExec([]string{"cat", "/myfiles/first-file"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file1 content", contents)
 
-	contents, err := ctr.WithExec([]string{"cat", "/myfiles/first-file"}).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "file1 content", contents)
+		contents, err = ctr.WithExec([]string{"cat", "/myfiles/second-file"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file2 content", contents)
+	}
 
-	contents, err = ctr.WithExec([]string{"cat", "/myfiles/second-file"}).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "file2 content", contents)
+	t.Run("no trailing slash", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithFiles("myfiles", files)
+		check(ctx, t, ctr)
+	})
+
+	t.Run("trailing slash", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithFiles("myfiles/", files)
+		check(ctx, t, ctr)
+	})
 }
 
 func (ContainerSuite) TestWithFilesAbsolute(ctx context.Context, t *testctx.T) {
@@ -4171,7 +4183,7 @@ EXPOSE 8080
 
 	// random order since ImageConfig.ExposedPorts is a map
 	for _, p := range res.Container.ExposedPorts {
-		require.Equal(t, core.NetworkProtocolTCP, p.Protocol)
+		require.Equalf(t, core.NetworkProtocolTCP, p.Protocol, "unexpected protocol for port %d", p.Port)
 		switch p.Port {
 		case 8080:
 			require.Nil(t, p.Description)

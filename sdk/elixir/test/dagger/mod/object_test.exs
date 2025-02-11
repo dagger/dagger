@@ -21,9 +21,16 @@ defmodule Dagger.Mod.ObjectTest do
                accept_integer: [
                  self: false,
                  args: [
-                   name: [{:ignore, nil}, {:default_path, nil}, {:doc, nil}, {:type, :integer}]
+                   value: [{:ignore, nil}, {:default_path, nil}, {:doc, nil}, {:type, :integer}]
                  ],
                  return: :integer
+               ],
+               accept_float: [
+                 self: false,
+                 args: [
+                   value: [{:ignore, nil}, {:default_path, nil}, {:doc, nil}, {:type, :float}]
+                 ],
+                 return: :float
                ],
                accept_boolean: [
                  self: false,

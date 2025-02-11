@@ -16,6 +16,9 @@ enum TypeDefKind: string
     /** A string value. */
     case STRING_KIND = 'STRING_KIND';
 
+    /** A float value. */
+    case FLOAT_KIND = 'FLOAT_KIND';
+
     /** An integer value. */
     case INTEGER_KIND = 'INTEGER_KIND';
 

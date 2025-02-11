@@ -165,6 +165,11 @@ func (dev *DaggerDev) Test() *Test {
 	return &Test{Dagger: dev}
 }
 
+// Run all benchmarks
+func (dev *DaggerDev) Bench() *Bench {
+	return &Bench{Test: dev.Test()}
+}
+
 // Run all code generation - SDKs, docs, etc
 func (dev *DaggerDev) Generate(ctx context.Context) (*dagger.Directory, error) {
 	var docs, sdks, engine *dagger.Directory
@@ -172,19 +177,26 @@ func (dev *DaggerDev) Generate(ctx context.Context) (*dagger.Directory, error) {
 
 	eg.Go(func() error {
 		var err error
-		docs, err = dev.Docs().Generate(ctx)
+		docs = dev.Docs().Generate()
+		docs, err = docs.Sync(ctx)
 		return err
 	})
 
 	eg.Go(func() error {
 		var err error
 		sdks, err = dev.SDK().All().Generate(ctx)
+		if err != nil {
+			return err
+		}
+		sdks, err = sdks.Sync(ctx)
 		return err
 	})
 
 	eg.Go(func() error {
+		var err error
 		engine = dev.Engine().Generate()
-		return nil
+		docs, err = engine.Sync(ctx)
+		return err
 	})
 
 	if err := eg.Wait(); err != nil {
@@ -209,11 +221,6 @@ func (dev *DaggerDev) SDK() *SDK {
 		Java:       &JavaSDK{Dagger: dev},
 		Dotnet:     &DotnetSDK{Dagger: dev},
 	}
-}
-
-// Run Dagger release-related tasks
-func (dev *DaggerDev) Release() *Release {
-	return &Release{SDK: dev.SDK(), Docs: dev.Docs()}
 }
 
 // Creates a dev container that has a running CLI connected to a dagger engine

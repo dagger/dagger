@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 
 	gqlgen "github.com/99designs/gqlgen/graphql"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -55,6 +55,8 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 		return fmt.Sprintf("%t", v.Bool()), nil
 	case reflect.Int:
 		return fmt.Sprintf("%d", v.Int()), nil
+	case reflect.Float32, reflect.Float64:
+		return fmt.Sprintf("%f", v.Float()), nil
 	case reflect.String:
 		if t.Implements(enumT) {
 			// enums render as their literal value

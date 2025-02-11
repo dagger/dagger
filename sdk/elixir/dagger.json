@@ -1,6 +1,6 @@
 {
   "name": "elixir-sdk",
-  "engineVersion": "v0.13.0",
+  "engineVersion": "v0.15.2",
   "sdk": "go",
   "source": "runtime"
 }

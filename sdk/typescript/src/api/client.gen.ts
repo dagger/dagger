@@ -4,6 +4,11 @@
  */
 import { Context } from "../common/context.js"
 
+/**
+ * Declare a number as float in the Dagger API.
+ */
+export type float = number
+
 class BaseClient {
   /**
    * @hidden
@@ -1177,6 +1182,10 @@ export type ClientHttpOpts = {
   experimentalServiceHost?: Service
 }
 
+export type ClientLoadSecretFromNameOpts = {
+  accessor?: string
+}
+
 export type ClientModuleDependencyOpts = {
   /**
    * If set, the name to use for the dependency. Otherwise, once installed to a parent module, the name of the dependency module will be used by default.
@@ -1201,10 +1210,6 @@ export type ClientModuleSourceOpts = {
   relHostPath?: string
 }
 
-export type ClientSecretOpts = {
-  accessor?: string
-}
-
 /**
  * Expected return type of an execution
  */
@@ -1224,6 +1229,11 @@ export enum ReturnType {
    */
   Success = "SUCCESS",
 }
+/**
+ * The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
+ */
+export type SDKConfigID = string & { __SDKConfigID: never }
+
 /**
  * The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
  */
@@ -1357,6 +1367,11 @@ export enum TypeDefKind {
    * Always paired with an EnumTypeDef.
    */
   EnumKind = "ENUM_KIND",
+
+  /**
+   * A float value.
+   */
+  FloatKind = "FLOAT_KIND",
 
   /**
    * A graphql input type, used only when representing the core API via TypeDefs.
@@ -5348,7 +5363,6 @@ export class Module_ extends BaseClient {
   private readonly _id?: ModuleID = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
-  private readonly _sdk?: string = undefined
   private readonly _serve?: Void = undefined
 
   /**
@@ -5359,7 +5373,6 @@ export class Module_ extends BaseClient {
     _id?: ModuleID,
     _description?: string,
     _name?: string,
-    _sdk?: string,
     _serve?: Void,
   ) {
     super(ctx)
@@ -5367,7 +5380,6 @@ export class Module_ extends BaseClient {
     this._id = _id
     this._description = _description
     this._name = _name
-    this._sdk = _sdk
     this._serve = _serve
   }
 
@@ -5526,18 +5538,11 @@ export class Module_ extends BaseClient {
   }
 
   /**
-   * The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
+   * The SDK config used by this module.
    */
-  sdk = async (): Promise<string> => {
-    if (this._sdk) {
-      return this._sdk
-    }
-
+  sdk = (): SDKConfig => {
     const ctx = this._ctx.select("sdk")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
+    return new SDKConfig(ctx)
   }
 
   /**
@@ -6044,10 +6049,10 @@ export class ModuleSource extends BaseClient {
 
   /**
    * Update the module source with a new SDK.
-   * @param sdk The SDK to set.
+   * @param source The SDK source to set.
    */
-  withSDK = (sdk: string): ModuleSource => {
-    const ctx = this._ctx.select("withSDK", { sdk })
+  withSDK = (source: string): ModuleSource => {
+    const ctx = this._ctx.select("withSDK", { source })
     return new ModuleSource(ctx)
   }
 
@@ -6421,15 +6426,6 @@ export class Client extends BaseClient {
    */
   public getGQLClient() {
     return this._ctx.getGQLClient()
-  }
-
-  /**
-   * Retrieves a content-addressed blob.
-   * @param digest Digest of the blob
-   */
-  blob = (digest: string): Directory => {
-    const ctx = this._ctx.select("blob", { digest })
-    return new Directory(ctx)
   }
 
   /**
@@ -6862,6 +6858,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a SDKConfig from its ID.
+   */
+  loadSDKConfigFromID = (id: SDKConfigID): SDKConfig => {
+    const ctx = this._ctx.select("loadSDKConfigFromID", { id })
+    return new SDKConfig(ctx)
+  }
+
+  /**
    * Load a ScalarTypeDef from its ID.
    */
   loadScalarTypeDefFromID = (id: ScalarTypeDefID): ScalarTypeDef => {
@@ -6874,6 +6878,17 @@ export class Client extends BaseClient {
    */
   loadSecretFromID = (id: SecretID): Secret => {
     const ctx = this._ctx.select("loadSecretFromID", { id })
+    return new Secret(ctx)
+  }
+
+  /**
+   * Load a Secret from its Name.
+   */
+  loadSecretFromName = (
+    name: string,
+    opts?: ClientLoadSecretFromNameOpts,
+  ): Secret => {
+    const ctx = this._ctx.select("loadSecretFromName", { name, ...opts })
     return new Secret(ctx)
   }
 
@@ -6954,10 +6969,11 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Reference a secret by name.
+   * Creates a new secret.
+   * @param uri The URI of the secret store
    */
-  secret = (name: string, opts?: ClientSecretOpts): Secret => {
-    const ctx = this._ctx.select("secret", { name, ...opts })
+  secret = (uri: string): Secret => {
+    const ctx = this._ctx.select("secret", { uri })
     return new Secret(ctx)
   }
 
@@ -6997,6 +7013,54 @@ export class Client extends BaseClient {
    */
   version = async (): Promise<string> => {
     const ctx = this._ctx.select("version")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * The SDK config of the module.
+ */
+export class SDKConfig extends BaseClient {
+  private readonly _id?: SDKConfigID = undefined
+  private readonly _source?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: SDKConfigID, _source?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._source = _source
+  }
+
+  /**
+   * A unique identifier for this SDKConfig.
+   */
+  id = async (): Promise<SDKConfigID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<SDKConfigID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
+   */
+  source = async (): Promise<string> => {
+    if (this._source) {
+      return this._source
+    }
+
+    const ctx = this._ctx.select("source")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -7099,6 +7163,7 @@ export class Secret extends BaseClient {
   private readonly _id?: SecretID = undefined
   private readonly _name?: string = undefined
   private readonly _plaintext?: string = undefined
+  private readonly _uri?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -7108,12 +7173,14 @@ export class Secret extends BaseClient {
     _id?: SecretID,
     _name?: string,
     _plaintext?: string,
+    _uri?: string,
   ) {
     super(ctx)
 
     this._id = _id
     this._name = _name
     this._plaintext = _plaintext
+    this._uri = _uri
   }
 
   /**
@@ -7155,6 +7222,21 @@ export class Secret extends BaseClient {
     }
 
     const ctx = this._ctx.select("plaintext")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The URI of this secret.
+   */
+  uri = async (): Promise<string> => {
+    if (this._uri) {
+      return this._uri
+    }
+
+    const ctx = this._ctx.select("uri")
 
     const response: Awaited<string> = await ctx.execute()
 

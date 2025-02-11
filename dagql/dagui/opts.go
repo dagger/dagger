@@ -1,6 +1,7 @@
 package dagui
 
 import (
+	"slices"
 	"time"
 )
 
@@ -57,7 +58,7 @@ const (
 	ShowMetricsVerbosity      = 3
 )
 
-func (opts FrontendOpts) ShouldShow(span *Span) bool {
+func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
 	if opts.Debug {
 		// debug reveals all
 		return true
@@ -77,6 +78,19 @@ func (opts FrontendOpts) ShouldShow(span *Span) bool {
 		// prioritize showing failed things, even if they're internal
 		return true
 	}
+	if span.Call != nil {
+		if span.Call.ReceiverDigest == "" {
+			if ShouldSkipFunction("Query", span.Call.Field) {
+				return false
+			}
+		} else {
+			rcvr := db.MustCall(span.Call.ReceiverDigest)
+			if ShouldSkipFunction(rcvr.Type.NamedType, span.Call.Field) {
+				return false
+			}
+		}
+	}
+
 	if span.Hidden(opts) {
 		return false
 	}
@@ -101,4 +115,46 @@ func (opts FrontendOpts) ShouldShow(span *Span) bool {
 		return false
 	}
 	return true
+}
+
+func ShouldSkipFunction(obj, field string) bool {
+	// TODO: make this configurable in the API but may not be easy to
+	// generalize because an "internal" field may still need to exist in
+	// codegen, for example. Could expose if internal via the TypeDefs though.
+	skip := map[string][]string{
+		"Query": {
+			// for SDKs only
+			"builtinContainer",
+			"generatedCode",
+			"currentFunctionCall",
+			"currentModule",
+			"typeDef",
+			"sourceMap",
+			"function",
+			// not useful until the CLI accepts ID inputs
+			"cacheVolume",
+			"setSecret",
+			// for tests only
+			"secret",
+			// deprecated
+			"pipeline",
+		},
+		// for SDKs only
+		"TypeDef":  nil,
+		"Function": nil,
+		"Module": {
+			"withDescription",
+			"withObject",
+			"withInterface",
+			"withEnum",
+		},
+	}
+	if fields, ok := skip[obj]; ok {
+		if fields == nil {
+			// if no sub-fields specified, skip all fields
+			return true
+		}
+		return slices.Contains(fields, field)
+	}
+	return false
 }

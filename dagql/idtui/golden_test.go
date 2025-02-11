@@ -22,7 +22,7 @@ import (
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.25.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -30,6 +30,7 @@ import (
 	"gotest.tools/v3/golden"
 
 	"dagger.io/dagger/telemetry"
+
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/slog"
@@ -56,11 +57,11 @@ func Logger() log.Logger {
 	return telemetry.Logger(testCtx, InstrumentationLibrary)
 }
 
-func Middleware() []testctx.Middleware {
-	return []testctx.Middleware{
+func Middleware() []testctx.Middleware[*testing.T] {
+	return []testctx.Middleware[*testing.T]{
 		testctx.WithParallel,
-		testctx.WithOTelLogging(Logger()),
-		testctx.WithOTelTracing(Tracer()),
+		testctx.WithOTelLogging[*testing.T](Logger()),
+		testctx.WithOTelTracing[*testing.T](Tracer()),
 	}
 }
 
@@ -76,6 +77,7 @@ func TestTelemetry(t *testing.T) {
 
 func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 	for _, ex := range []Example{
+		// implementations of these functions can be found in viztest/main.go
 		{Function: "hello-world"},
 		{Function: "fail-log", Fail: true},
 		{Function: "fail-effect", Fail: true},
@@ -106,6 +108,28 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 			"with-exec", "--args", "echo,hey",
 			"stdout",
 		}, Fail: true},
+
+		// tests intended to trigger consistent tui exec metrics output
+		{Function: "disk-metrics", Verbosity: 3, FuzzyTest: func(t *testctx.T, out string) {
+			require.NotEmpty(t, out)
+
+			lines := strings.Split(out, "\n")
+			var ddLine string
+			for _, line := range lines {
+				if strings.Contains(line, "dd if=/dev/urandom") {
+					ddLine = line
+					break
+				}
+			}
+
+			require.NotEmpty(t, ddLine, "line containing 'dd if=/dev/urandom' not found")
+			require.Contains(t, ddLine, "| Disk Write: X.X B")
+			require.Contains(t, ddLine, "| Memory Bytes (current): X.X B")
+			require.Contains(t, ddLine, "| Memory Bytes (peak): X.X B")
+
+			// note cpu pressure, io pressure, and network stats are not tested here. they only appear when nonzero.
+		}},
+
 		{Module: "./viztest/broken", Function: "broken", Fail: true},
 
 		// FIXME: these constantly fail in CI/Dagger, but not against a local
@@ -125,13 +149,16 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 	} {
 		t.Run(path.Join(ex.Module, ex.Function), func(ctx context.Context, t *testctx.T) {
 			out, db := ex.Run(ctx, t, s)
-			if ex.Flaky != "" {
+			switch {
+			case ex.Flaky != "":
 				cmp := golden.String(out, t.Name())()
 				if !cmp.Success() {
 					t.Log(cmp.(interface{ FailureMessage() string }).FailureMessage())
 					t.Skip("Flaky: " + ex.Flaky)
 				}
-			} else {
+			case ex.FuzzyTest != nil:
+				ex.FuzzyTest(t, out)
+			default:
 				golden.Assert(t, out, t.Name())
 			}
 			if ex.DBTest != nil {
@@ -145,10 +172,16 @@ type Example struct {
 	Module   string
 	Function string
 	Args     []string
-	Fail     bool
-	Flaky    string
-	Env      []string
-	DBTest   func(*testctx.T, *dagui.DB)
+	// verbosities 3 and higher do not work well with golden, they're not very deterministic atm
+	Verbosity int
+	Fail      bool
+	// if a reason is given for Flaky, ignore failures, but log the failure and the provided explanation.
+	// ineffectual if FuzzyTest is in use.
+	Flaky  string
+	Env    []string
+	DBTest func(*testctx.T, *dagui.DB)
+	// Using fuzzytest will eschew golden assertions and testdata and allow string assertions instead
+	FuzzyTest func(*testctx.T, string)
 }
 
 func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (string, *dagui.DB) {
@@ -165,6 +198,10 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 
 	daggerArgs := []string{"--progress=report", "call", "-m", ex.Module, ex.Function}
 	daggerArgs = append(daggerArgs, ex.Args...)
+
+	if ex.Verbosity > 0 {
+		daggerArgs = append(daggerArgs, "-"+strings.Repeat("v", ex.Verbosity))
+	}
 
 	// NOTE: we care about CACHED states for these tests, so we need some way for
 	// them to not be flaky (cache hit/miss), but still produce the same golden
@@ -262,7 +299,7 @@ var scrubs = []scrubber{
 	},
 	// Durations
 	{
-		regexp.MustCompile(`\b(\d+m)?\d+\.\d+s\b`),
+		regexp.MustCompile(`\b(\d+m)?\d+(\.\d+)?s\b`),
 		"1m2.345s",
 		"X.Xs",
 	},
@@ -352,23 +389,11 @@ var scrubs = []scrubber{
 		"docker.io/library/alpine:latest@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d",
 		"sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
 	},
-	// Memory Bytes telemetry
+	// byte quantities
 	{
-		regexp.MustCompile(`\s?\| Memory Bytes \((current|peak)\): \d+(\.\d+)?\s(B|kB|MB|GB|TB)`),
-		" | Memory Bytes (current): 9.3 kB",
-		"",
-	},
-	// Disk IO telemetry
-	{
-		regexp.MustCompile(`\s?\| (Disk Read|Disk Write): \d+(\.\d+)?\s(B|kB|MB|GB|TB)`),
-		" | Disk Read: 9.3 kB",
-		"",
-	},
-	// Network telemetry
-	{
-		regexp.MustCompile(`\s?\| Network (Tx|Rx): \d+(\.\d+)?\s(B|kB|MB|GB|TB)(\s\(\d+(\.\d+)?\% dropped\))?`),
-		" | Network Tx: 3 kB (0.1% dropped)",
-		"",
+		regexp.MustCompile(`\d+(\.\d+)?\s(B|kB|MB|GB|TB)`),
+		"9.3 kB",
+		"X.X B",
 	},
 }
 

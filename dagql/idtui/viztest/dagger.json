@@ -1,6 +1,6 @@
 {
   "name": "viztest",
+  "engineVersion": "v0.15.1",
   "sdk": "go",
-  "source": ".",
-  "engineVersion": "v0.13.3"
+  "source": "."
 }

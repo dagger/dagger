@@ -75,6 +75,19 @@ const (
 	SessionMethodNameMetaKey = "X-Docker-Expose-Session-Grpc-Method"
 )
 
+const (
+	OTelTraceParentEnv      = "TRACEPARENT"
+	OTelExporterProtocolEnv = "OTEL_EXPORTER_OTLP_PROTOCOL"
+	OTelExporterEndpointEnv = "OTEL_EXPORTER_OTLP_ENDPOINT"
+	OTelTracesProtocolEnv   = "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"
+	OTelTracesEndpointEnv   = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
+	OTelTracesLiveEnv       = "OTEL_EXPORTER_OTLP_TRACES_LIVE"
+	OTelLogsProtocolEnv     = "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL"
+	OTelLogsEndpointEnv     = "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"
+	OTelMetricsProtocolEnv  = "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL"
+	OTelMetricsEndpointEnv  = "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"
+)
+
 var ProxyEnvNames = []string{
 	HTTPProxyEnvName,
 	HTTPSProxyEnvName,

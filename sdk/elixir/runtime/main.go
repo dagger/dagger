@@ -68,6 +68,8 @@ func (m *ElixirSdk) ModuleRuntime(
 	return ctr.
 		WithWorkdir(elixirApplication).
 		WithExec([]string{"mix", "deps.get", "--only", "dev"}).
+		WithExec([]string{"mix", "deps.compile"}).
+		WithExec([]string{"mix", "compile"}).
 		WithEntrypoint([]string{
 			"mix", "cmd",
 			"--cd", path.Join(ModSourceDirPath, subPath, elixirApplication),
@@ -183,10 +185,8 @@ func (m *ElixirSdk) GenerateCode(introspectionJSON *dagger.File) *dagger.Directo
 }
 
 func (m *ElixirSdk) baseContainer(ctr *dagger.Container) *dagger.Container {
-	mixCache := dag.CacheVolume(".mix")
 	return ctr.
 		From(elixirImage).
-		WithMountedCache("/root/.mix", mixCache).
 		WithExec([]string{"apk", "add", "--no-cache", "git"}).
 		WithExec([]string{"mix", "local.hex", "--force"}).
 		WithExec([]string{"mix", "local.rebar", "--force"})

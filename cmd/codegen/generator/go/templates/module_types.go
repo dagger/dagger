@@ -182,6 +182,8 @@ func (spec *parsedPrimitiveType) TypeDefCode() (*Statement, error) {
 			kind = Id("dagger").Dot("TypeDefKindIntegerKind")
 		case types.IsBoolean:
 			kind = Id("dagger").Dot("TypeDefKindBooleanKind")
+		case types.IsFloat:
+			kind = Id("dagger").Dot("TypeDefKindFloatKind")
 		default:
 			return nil, fmt.Errorf("unsupported basic type: %+v", spec.goType)
 		}

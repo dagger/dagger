@@ -551,7 +551,7 @@ func (m *Test) Insecure(ctx context.Context, token *dagger.Secret) (string, erro
 
 		t.Run("invalid source", func(ctx context.Context, t *testctx.T) {
 			_, err := modGen.With(daggerCall("insecure", "--token", "wtf:HUH")).Stdout(ctx)
-			requireErrOut(t, err, `unsupported secret arg source: "wtf"`)
+			requireErrOut(t, err, `unsupported secret provider: "wtf"`)
 		})
 	})
 
@@ -2525,5 +2525,39 @@ func (CallSuite) TestCore(ctx context.Context, t *testctx.T) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "Alpine Linux")
+	})
+}
+
+func (CallSuite) TestExecStderr(ctx context.Context, t *testctx.T) {
+	t.Run("no TUI", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := daggerCliBase(t, c).
+			With(daggerExec(
+				"core", "--silent",
+				"container",
+				"from", "--address", alpineImage,
+				"with-exec", "--args", "ls,wat",
+				"stdout",
+			)).
+			Sync(ctx)
+
+		requireErrOut(t, err, "ls: wat: No such file or directory")
+	})
+
+	t.Run("plain", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := daggerCliBase(t, c).
+			With(daggerExec(
+				"core", "--progress", "plain",
+				"container",
+				"from", "--address", alpineImage,
+				"with-exec", "--args", "ls,wat",
+				"stdout",
+			)).
+			Sync(ctx)
+
+		requireErrOut(t, err, "ls: wat: No such file or directory")
 	})
 }

@@ -10,9 +10,7 @@ class QueryBuilder extends GqlQueryBuilder
 {
     public function setArgument(string $argumentName, $argumentValue): QueryBuilder|AbstractQueryBuilder
     {
-        if ($argumentValue instanceof BackedEnum) {
-            $value = $argumentValue->value;
-        } elseif ($argumentValue instanceof IdAble) {
+        if ($argumentValue instanceof IdAble) {
             $value = $argumentValue->id();
         } else {
             $value = $argumentValue;

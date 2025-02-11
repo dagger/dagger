@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"go.opentelemetry.io/otel/codes"
-	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
@@ -24,7 +23,7 @@ type PythonSDK struct {
 
 // Lint the Python SDK
 func (t PythonSDK) Lint(ctx context.Context) (rerr error) {
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 
 	// TODO: create function in PythonSDKDev to lint any directory as input
 	// but reusing the same linter configuration in the SDK.
@@ -103,7 +102,7 @@ func (t PythonSDK) Test(ctx context.Context) (rerr error) {
 		return err
 	}
 
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 	for _, version := range versions {
 		eg.Go(func() error {
 			_, err := dev.
@@ -135,7 +134,7 @@ func (t PythonSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 
 // Test the publishing process
 func (t PythonSDK) TestPublish(ctx context.Context, tag string) error {
-	return t.Publish(ctx, tag, true, "", nil, "https://github.com/dagger/dagger.git", nil, nil)
+	return t.Publish(ctx, tag, true, "", nil)
 }
 
 // Publish the Python SDK
@@ -150,15 +149,6 @@ func (t PythonSDK) Publish(
 	pypiRepo string,
 	// +optional
 	pypiToken *dagger.Secret,
-
-	// +optional
-	// +default="https://github.com/dagger/dagger.git"
-	gitRepoSource string,
-
-	// +optional
-	githubToken *dagger.Secret,
-	// +optional
-	discordWebhook *dagger.Secret,
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/python/")
 
@@ -177,23 +167,6 @@ func (t PythonSDK) Publish(
 	_, err := ctr.Sync(ctx)
 	if err != nil {
 		return err
-	}
-
-	if semver.IsValid(version) {
-		if err := dag.Releaser().GithubRelease(ctx, gitRepoSource, "sdk/python/"+version, tag, dagger.ReleaserGithubReleaseOpts{
-			Notes:  dag.Releaser().ChangeNotes("sdk/python", version),
-			Token:  githubToken,
-			DryRun: dryRun,
-		}); err != nil {
-			return err
-		}
-
-		if err := dag.Releaser().Notify(ctx, gitRepoSource, "sdk/python/"+version, "🐍 Python SDK", dagger.ReleaserNotifyOpts{
-			DiscordWebhook: discordWebhook,
-			DryRun:         dryRun,
-		}); err != nil {
-			return err
-		}
 	}
 
 	return nil

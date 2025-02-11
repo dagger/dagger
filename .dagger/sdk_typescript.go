@@ -33,7 +33,7 @@ type TypescriptSDK struct {
 
 // Lint the Typescript SDK
 func (t TypescriptSDK) Lint(ctx context.Context) (rerr error) {
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 
 	base := t.nodeJsBase()
 
@@ -119,7 +119,7 @@ func (t TypescriptSDK) Test(ctx context.Context) (rerr error) {
 		return err
 	}
 
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 
 	// Loop over the LTS and Maintenance versions and test them
 	for _, version := range []string{nodeCurrentLTS, nodePreviousLTS} {
@@ -166,7 +166,7 @@ func (t TypescriptSDK) Generate(ctx context.Context) (*dagger.Directory, error) 
 
 // Test the publishing process
 func (t TypescriptSDK) TestPublish(ctx context.Context, tag string) error {
-	return t.Publish(ctx, tag, true, nil, "https://github.com/dagger/dagger.git", nil, nil)
+	return t.Publish(ctx, tag, true, nil)
 }
 
 // Publish the Typescript SDK
@@ -178,15 +178,6 @@ func (t TypescriptSDK) Publish(
 	dryRun bool,
 	// +optional
 	npmToken *dagger.Secret,
-
-	// +optional
-	// +default="https://github.com/dagger/dagger.git"
-	gitRepoSource string,
-
-	// +optional
-	githubToken *dagger.Secret,
-	// +optional
-	discordWebhook *dagger.Secret,
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/typescript/")
 	versionFlag := strings.TrimPrefix(version, "v")
@@ -221,23 +212,6 @@ always-auth=true`, plaintext)
 	_, err = publish.Sync(ctx)
 	if err != nil {
 		return err
-	}
-
-	if semver.IsValid(version) {
-		if err := dag.Releaser().GithubRelease(ctx, gitRepoSource, "sdk/typescript/"+version, tag, dagger.ReleaserGithubReleaseOpts{
-			Notes:  dag.Releaser().ChangeNotes("sdk/typescript", version),
-			Token:  githubToken,
-			DryRun: dryRun,
-		}); err != nil {
-			return err
-		}
-
-		if err := dag.Releaser().Notify(ctx, gitRepoSource, "sdk/typescript/"+version, "⬢ TypeScript SDK", dagger.ReleaserNotifyOpts{
-			DiscordWebhook: discordWebhook,
-			DryRun:         dryRun,
-		}); err != nil {
-			return err
-		}
 	}
 
 	return nil

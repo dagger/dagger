@@ -77,15 +77,6 @@ func (fn *Function) FieldSpec() (dagql.FieldSpec, error) {
 		Name:        fn.Name,
 		Description: formatGqlDescription(fn.Description),
 		Type:        fn.ReturnType.ToTyped(),
-
-		// NB: functions actually _are_ cached per-session, which matches the
-		// lifetime of the server, so we might as well consider them pure. That way
-		// there will be locking around concurrent calls, so the user won't see
-		// multiple in parallel.
-		//
-		// However, we can't *quite* mark them as pure, since Call has special
-		// logic for transferring secrets between cached calls.
-		ImpurityReason: "secrets still need transferring on cached calls",
 	}
 	for _, arg := range fn.Args {
 		input := arg.TypeDef.ToInput()
@@ -354,6 +345,8 @@ func (typeDef *TypeDef) ToTyped() dagql.Typed {
 		typed = dagql.String("")
 	case TypeDefKindInteger:
 		typed = dagql.Int(0)
+	case TypeDefKindFloat:
+		typed = dagql.Float(0)
 	case TypeDefKindBoolean:
 		typed = dagql.Boolean(false)
 	case TypeDefKindScalar:
@@ -386,6 +379,8 @@ func (typeDef *TypeDef) ToInput() dagql.Input {
 		typed = dagql.String("")
 	case TypeDefKindInteger:
 		typed = dagql.Int(0)
+	case TypeDefKindFloat:
+		typed = dagql.Float(0)
 	case TypeDefKindBoolean:
 		typed = dagql.Boolean(false)
 	case TypeDefKindScalar:
@@ -553,7 +548,7 @@ func (typeDef *TypeDef) IsSubtypeOf(otherDef *TypeDef) bool {
 	}
 
 	switch typeDef.Kind {
-	case TypeDefKindString, TypeDefKindInteger, TypeDefKindBoolean, TypeDefKindVoid:
+	case TypeDefKindString, TypeDefKindInteger, TypeDefKindFloat, TypeDefKindBoolean, TypeDefKindVoid:
 		return typeDef.Kind == otherDef.Kind
 	case TypeDefKindScalar:
 		return typeDef.AsScalar.Value.Name == otherDef.AsScalar.Value.Name
@@ -1046,6 +1041,10 @@ var TypeDefKinds = dagql.NewEnum[TypeDefKind]()
 var (
 	TypeDefKindString = TypeDefKinds.Register("STRING_KIND",
 		"A string value.")
+
+	TypeDefKindFloat = TypeDefKinds.Register("FLOAT_KIND",
+		"A float value.")
+
 	TypeDefKindInteger = TypeDefKinds.Register("INTEGER_KIND",
 		"An integer value.")
 	TypeDefKindBoolean = TypeDefKinds.Register("BOOLEAN_KIND",

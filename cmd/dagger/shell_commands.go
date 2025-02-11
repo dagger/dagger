@@ -152,7 +152,7 @@ func (c *ShellCommand) Execute(ctx context.Context, h *shellCallHandler, args []
 	for i, arg := range args {
 		if strings.HasPrefix(arg, shellStatePrefix) {
 			w := strings.NewReader(arg)
-			v, err := h.Result(ctx, w, false, nil)
+			v, _, err := h.Result(ctx, w, nil)
 			if err != nil {
 				return fmt.Errorf("cannot expand command argument at %d", i)
 			}
@@ -178,7 +178,7 @@ func (h *shellCallHandler) BuiltinCommand(name string) (*ShellCommand, error) {
 			return c, nil
 		}
 	}
-	return nil, fmt.Errorf("command not found %q", name)
+	return nil, fmt.Errorf("command not found: %q", name)
 }
 
 func (h *shellCallHandler) StdlibCommand(name string) (*ShellCommand, error) {
@@ -187,7 +187,7 @@ func (h *shellCallHandler) StdlibCommand(name string) (*ShellCommand, error) {
 			return c, nil
 		}
 	}
-	return nil, fmt.Errorf("command not found %q", name)
+	return nil, fmt.Errorf("command not found: %q", name)
 }
 
 func (h *shellCallHandler) Builtins() []*ShellCommand {
@@ -238,7 +238,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 						return err
 					}
 					if c == nil {
-						err = fmt.Errorf("command not found %q", args[0])
+						err = fmt.Errorf("command not found: %q", args[0])
 						if !strings.HasPrefix(args[0], ".") {
 							if builtin, _ := h.BuiltinCommand("." + args[0]); builtin != nil {
 								err = fmt.Errorf("%w, did you mean %q?", err, "."+args[0])

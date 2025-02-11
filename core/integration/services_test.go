@@ -1619,7 +1619,7 @@ func (FileSuite) TestServiceTimestamp(ctx context.Context, t *testctx.T) {
 	require.Contains(t, stdout, "1991-06-03")
 }
 
-// TestServiceStartStop tests that a service can be started and stopped. While
+// TestStartStop tests that a service can be started and stopped. While
 // started it can be reached by containers that do not explicitly bind it.
 //
 // TODO(vito): test that the service stops when the client closes... somehow
@@ -1657,7 +1657,7 @@ func (ServiceSuite) TestStartStop(ctx context.Context, t *testctx.T) {
 	require.Empty(t, out)
 }
 
-// TestServiceStartStopKill tests that we send SIGTERM by default, instead of SIGKILL.
+// TestStartStopKill tests that we send SIGTERM by default, instead of SIGKILL.
 // Additionally, we check that we can attempt to SIGKILL a process that is not
 // responding to SIGTERM.
 func (ServiceSuite) TestStartStopKill(ctx context.Context, t *testctx.T) {
@@ -2064,7 +2064,7 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 	// verify that even if the engine doesn't have any search domains to propagate to execs, we still
 	// set search domains in those execs
 
-	c, err := dagger.Connect(ctx, dagger.WithLogOutput(testutil.NewTWriter(t.T)))
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(testutil.NewTWriter(t)))
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 
@@ -2106,7 +2106,7 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 
 	c2, err := dagger.Connect(ctx,
 		dagger.WithRunnerHost("tcp://127.0.0.1:32132"),
-		dagger.WithLogOutput(testutil.NewTWriter(t.T)))
+		dagger.WithLogOutput(testutil.NewTWriter(t)))
 	require.NoError(t, err)
 	t.Cleanup(func() { c2.Close() })
 

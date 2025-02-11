@@ -3,7 +3,9 @@ package call
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
+	"sync"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -13,6 +15,11 @@ import (
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 )
+
+var marshalBufPool = &sync.Pool{New: func() any {
+	b := make([]byte, 0, 1024)
+	return &b
+}}
 
 func New() *ID {
 	// we start with nil so there's always a nil parent at the bottom
@@ -181,6 +188,9 @@ func (id *ID) DisplaySelf() string {
 	buf := new(bytes.Buffer)
 	fmt.Fprintf(buf, "%s", id.pb.Field)
 	for ai, arg := range id.args {
+		if arg.isSensitive {
+			continue
+		}
 		if ai == 0 {
 			fmt.Fprintf(buf, "(")
 		} else {
@@ -201,7 +211,15 @@ func (id *ID) Display() string {
 	return fmt.Sprintf("%s: %s", id.Path(), id.typ.ToAST())
 }
 
+// Return a new ID that's the selection of the nth element of the return value of the existing ID.
+// The new digest is derived from the existing ID's digest and the nth index.
 func (id *ID) SelectNth(nth int) *ID {
+	buf := []byte(id.Digest())
+	buf = binary.LittleEndian.AppendUint64(buf, uint64(nth))
+	h := xxh3.New()
+	h.Write(buf)
+	dgst := digest.NewDigest("xxh3", h)
+
 	return id.receiver.Append(
 		id.pb.Type.Elem.ToAST(),
 		id.pb.Field,
@@ -209,6 +227,7 @@ func (id *ID) SelectNth(nth int) *ID {
 		id.module,
 		id.pb.Tainted,
 		nth,
+		dgst,
 		id.args...,
 	)
 }
@@ -220,6 +239,7 @@ func (id *ID) Append(
 	mod *Module,
 	tainted bool,
 	nth int,
+	customDigest digest.Digest,
 	args ...*Argument,
 ) *ID {
 	newID := &ID{
@@ -227,7 +247,7 @@ func (id *ID) Append(
 			ReceiverDigest: string(id.Digest()),
 			Field:          field,
 			View:           view,
-			Args:           make([]*callpbv1.Argument, len(args)),
+			Args:           make([]*callpbv1.Argument, 0, len(args)),
 			Tainted:        tainted,
 			Nth:            int64(nth),
 		},
@@ -243,22 +263,45 @@ func (id *ID) Append(
 		newID.pb.Module = mod.pb
 	}
 
-	for i, arg := range args {
+	for _, arg := range args {
 		if arg.Tainted() {
 			newID.pb.Tainted = true
 		}
-		newID.pb.Args[i] = arg.pb
+		if arg.isSensitive {
+			continue
+		}
+		newID.pb.Args = append(newID.pb.Args, arg.pb)
 	}
 
-	var err error
-	newID.pb.Digest, err = newID.calcDigest()
-	if err != nil {
-		// something has to be deeply wrong if we can't
-		// marshal proto and hash the bytes
-		panic(err)
+	if customDigest != "" {
+		newID.pb.Digest = string(customDigest)
+	} else {
+		var err error
+		newID.pb.Digest, err = newID.calcDigest()
+		if err != nil {
+			// something has to be deeply wrong if we can't
+			// marshal proto and hash the bytes
+			panic(err)
+		}
 	}
 
 	return newID
+}
+
+// Return a new ID that's the same as before except with the given metadata changed.
+// customDigest, if not empty string, will become the ID's digest.
+// tainted sets the ID's tainted flag.
+func (id *ID) WithMetadata(customDigest digest.Digest, tainted bool) *ID {
+	return id.receiver.Append(
+		id.pb.Type.ToAST(),
+		id.pb.Field,
+		id.pb.View,
+		id.module,
+		tainted,
+		int(id.pb.Nth),
+		customDigest,
+		id.args...,
+	)
 }
 
 func (id *ID) Encode() (string, error) {
@@ -267,8 +310,11 @@ func (id *ID) Encode() (string, error) {
 		return "", fmt.Errorf("failed to convert ID to proto: %w", err)
 	}
 
+	buf := *(marshalBufPool.Get().(*[]byte))
+	buf = buf[:0]
+	defer marshalBufPool.Put(&buf)
 	// Deterministic is strictly needed so the CallsByDigest map is sorted in the serialized proto
-	proto, err := proto.MarshalOptions{Deterministic: true}.Marshal(dagPB)
+	proto, err := proto.MarshalOptions{Deterministic: true}.MarshalAppend(buf, dagPB)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal ID proto: %w", err)
 	}
@@ -394,8 +440,8 @@ func (id *ID) decode(
 	return nil
 }
 
-// presumes that id.pb.Digest is NOT set already, otherwise that value
-// will be incorrectly included in the digest
+// presumes that id.pb.Digest are NOT set already,
+// otherwise those values will be incorrectly included in the digest
 func (id *ID) calcDigest() (string, error) {
 	if id == nil {
 		return "", nil
@@ -405,7 +451,10 @@ func (id *ID) calcDigest() (string, error) {
 		return "", fmt.Errorf("call digest already set")
 	}
 
-	pbBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(id.pb)
+	buf := *(marshalBufPool.Get().(*[]byte))
+	buf = buf[:0]
+	defer marshalBufPool.Put(&buf)
+	pbBytes, err := proto.MarshalOptions{Deterministic: true}.MarshalAppend(buf, id.pb)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal Call proto: %w", err)
 	}

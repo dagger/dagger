@@ -19,7 +19,7 @@ concurrency:
 jobs:
     dotnet:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-2-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-3-4c' || 'ubuntu-latest' }}
         name: dotnet
         steps:
             - name: Checkout
@@ -49,7 +49,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin sh
               env:
-                DAGGER_VERSION: v0.15.2
+                DAGGER_VERSION: v0.15.3
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -98,8 +98,13 @@ jobs:
                     mkfifo stdout.fifo stderr.fifo
 
                     # Set up tee to capture and display stdout and stderr
-                    tee stdout.txt < stdout.fifo &
-                    tee stderr.txt < stderr.fifo >&2 &
+                    if [ -n "$NO_OUTPUT" ]; then
+                        tee stdout.txt < stdout.fifo > /dev/null &
+                        tee stderr.txt < stderr.fifo > /dev/null &
+                    else
+                        tee stdout.txt < stdout.fifo &
+                        tee stderr.txt < stderr.fifo >&2 &
+                    fi
                 )
 
                 # Run the command, capturing stdout and stderr in the FIFOs
@@ -181,6 +186,9 @@ jobs:
 
                 } >"${GITHUB_STEP_SUMMARY}"
 
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
@@ -190,7 +198,7 @@ jobs:
         timeout-minutes: 10
     dotnet-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-2-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-3-8c-dind' || 'ubuntu-latest' }}
         name: dotnet-dev
         steps:
             - name: Checkout
@@ -312,8 +320,13 @@ jobs:
                     mkfifo stdout.fifo stderr.fifo
 
                     # Set up tee to capture and display stdout and stderr
-                    tee stdout.txt < stdout.fifo &
-                    tee stderr.txt < stderr.fifo >&2 &
+                    if [ -n "$NO_OUTPUT" ]; then
+                        tee stdout.txt < stdout.fifo > /dev/null &
+                        tee stderr.txt < stderr.fifo > /dev/null &
+                    else
+                        tee stdout.txt < stdout.fifo &
+                        tee stderr.txt < stderr.fifo >&2 &
+                    fi
                 )
 
                 # Run the command, capturing stdout and stderr in the FIFOs
@@ -395,6 +408,9 @@ jobs:
 
                 } >"${GITHUB_STEP_SUMMARY}"
 
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
@@ -404,7 +420,7 @@ jobs:
         timeout-minutes: 10
     elixir:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-2-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-3-4c' || 'ubuntu-latest' }}
         name: elixir
         steps:
             - name: Checkout
@@ -434,7 +450,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin sh
               env:
-                DAGGER_VERSION: v0.15.2
+                DAGGER_VERSION: v0.15.3
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -483,8 +499,13 @@ jobs:
                     mkfifo stdout.fifo stderr.fifo
 
                     # Set up tee to capture and display stdout and stderr
-                    tee stdout.txt < stdout.fifo &
-                    tee stderr.txt < stderr.fifo >&2 &
+                    if [ -n "$NO_OUTPUT" ]; then
+                        tee stdout.txt < stdout.fifo > /dev/null &
+                        tee stderr.txt < stderr.fifo > /dev/null &
+                    else
+                        tee stdout.txt < stdout.fifo &
+                        tee stderr.txt < stderr.fifo >&2 &
+                    fi
                 )
 
                 # Run the command, capturing stdout and stderr in the FIFOs
@@ -566,6 +587,9 @@ jobs:
 
                 } >"${GITHUB_STEP_SUMMARY}"
 
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
@@ -575,7 +599,7 @@ jobs:
         timeout-minutes: 10
     elixir-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-2-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-3-8c-dind' || 'ubuntu-latest' }}
         name: elixir-dev
         steps:
             - name: Checkout
@@ -697,8 +721,13 @@ jobs:
                     mkfifo stdout.fifo stderr.fifo
 
                     # Set up tee to capture and display stdout and stderr
-                    tee stdout.txt < stdout.fifo &
-                    tee stderr.txt < stderr.fifo >&2 &
+                    if [ -n "$NO_OUTPUT" ]; then
+                        tee stdout.txt < stdout.fifo > /dev/null &
+                        tee stderr.txt < stderr.fifo > /dev/null &
+                    else
+                        tee stdout.txt < stdout.fifo &
+                        tee stderr.txt < stderr.fifo >&2 &
+                    fi
                 )
 
                 # Run the command, capturing stdout and stderr in the FIFOs
@@ -780,6 +809,9 @@ jobs:
 
                 } >"${GITHUB_STEP_SUMMARY}"
 
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
@@ -789,7 +821,7 @@ jobs:
         timeout-minutes: 10
     go:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-2-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-3-4c' || 'ubuntu-latest' }}
         name: go
         steps:
             - name: Checkout
@@ -819,7 +851,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin sh
               env:
-                DAGGER_VERSION: v0.15.2
+                DAGGER_VERSION: v0.15.3
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -868,8 +900,13 @@ jobs:
                     mkfifo stdout.fifo stderr.fifo
 
                     # Set up tee to capture and display stdout and stderr
-                    tee stdout.txt < stdout.fifo &
-                    tee stderr.txt < stderr.fifo >&2 &
+                    if [ -n "$NO_OUTPUT" ]; then
+                        tee stdout.txt < stdout.fifo > /dev/null &
+                        tee stderr.txt < stderr.fifo > /dev/null &
+                    else
+                        tee stdout.txt < stdout.fifo &
+                        tee stderr.txt < stderr.fifo >&2 &
+                    fi
                 )
 
                 # Run the command, capturing stdout and stderr in the FIFOs
@@ -951,6 +988,9 @@ jobs:
 
                 } >"${GITHUB_STEP_SUMMARY}"
 
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
@@ -960,7 +1000,7 @@ jobs:
         timeout-minutes: 10
     go-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-2-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-3-8c-dind' || 'ubuntu-latest' }}
         name: go-dev
         steps:
             - name: Checkout
@@ -1082,8 +1122,13 @@ jobs:
                     mkfifo stdout.fifo stderr.fifo
 
                     # Set up tee to capture and display stdout and stderr
-                    tee stdout.txt < stdout.fifo &
-                    tee stderr.txt < stderr.fifo >&2 &
+                    if [ -n "$NO_OUTPUT" ]; then
+                        tee stdout.txt < stdout.fifo > /dev/null &
+                        tee stderr.txt < stderr.fifo > /dev/null &
+                    else
+                        tee stdout.txt < stdout.fifo &
+                        tee stderr.txt < stderr.fifo >&2 &
+                    fi
                 )
 
                 # Run the command, capturing stdout and stderr in the FIFOs
@@ -1165,6 +1210,9 @@ jobs:
 
                 } >"${GITHUB_STEP_SUMMARY}"
 
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
@@ -1174,7 +1222,7 @@ jobs:
         timeout-minutes: 10
     java:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-2-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-3-4c' || 'ubuntu-latest' }}
         name: java
         steps:
             - name: Checkout
@@ -1204,7 +1252,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin sh
               env:
-                DAGGER_VERSION: v0.15.2
+                DAGGER_VERSION: v0.15.3
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -1253,8 +1301,13 @@ jobs:
                     mkfifo stdout.fifo stderr.fifo
 
                     # Set up tee to capture and display stdout and stderr
-                    tee stdout.txt < stdout.fifo &
-                    tee stderr.txt < stderr.fifo >&2 &
+                    if [ -n "$NO_OUTPUT" ]; then
+                        tee stdout.txt < stdout.fifo > /dev/null &
+                        tee stderr.txt < stderr.fifo > /dev/null &
+                    else
+                        tee stdout.txt < stdout.fifo &
+                        tee stderr.txt < stderr.fifo >&2 &
+                    fi
                 )
 
                 # Run the command, capturing stdout and stderr in the FIFOs
@@ -1336,6 +1389,9 @@ jobs:
 
                 } >"${GITHUB_STEP_SUMMARY}"
 
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
@@ -1345,7 +1401,7 @@ jobs:
         timeout-minutes: 10
     java-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-2-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-3-8c-dind' || 'ubuntu-latest' }}
         name: java-dev
         steps:
             - name: Checkout
@@ -1467,8 +1523,13 @@ jobs:
                     mkfifo stdout.fifo stderr.fifo
 
                     # Set up tee to capture and display stdout and stderr
-                    tee stdout.txt < stdout.fifo &
-                    tee stderr.txt < stderr.fifo >&2 &
+                    if [ -n "$NO_OUTPUT" ]; then
+                        tee stdout.txt < stdout.fifo > /dev/null &
+                        tee stderr.txt < stderr.fifo > /dev/null &
+                    else
+                        tee stdout.txt < stdout.fifo &
+                        tee stderr.txt < stderr.fifo >&2 &
+                    fi
                 )
 
                 # Run the command, capturing stdout and stderr in the FIFOs
@@ -1550,6 +1611,9 @@ jobs:
 
                 } >"${GITHUB_STEP_SUMMARY}"
 
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
@@ -1559,7 +1623,7 @@ jobs:
         timeout-minutes: 10
     php:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-2-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-3-4c' || 'ubuntu-latest' }}
         name: php
         steps:
             - name: Checkout
@@ -1589,7 +1653,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin sh
               env:
-                DAGGER_VERSION: v0.15.2
+                DAGGER_VERSION: v0.15.3
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -1638,8 +1702,13 @@ jobs:
                     mkfifo stdout.fifo stderr.fifo
 
                     # Set up tee to capture and display stdout and stderr
-                    tee stdout.txt < stdout.fifo &
-                    tee stderr.txt < stderr.fifo >&2 &
+                    if [ -n "$NO_OUTPUT" ]; then
+                        tee stdout.txt < stdout.fifo > /dev/null &
+                        tee stderr.txt < stderr.fifo > /dev/null &
+                    else
+                        tee stdout.txt < stdout.fifo &
+                        tee stderr.txt < stderr.fifo >&2 &
+                    fi
                 )
 
                 # Run the command, capturing stdout and stderr in the FIFOs
@@ -1721,6 +1790,9 @@ jobs:
 
                 } >"${GITHUB_STEP_SUMMARY}"
 
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
@@ -1730,7 +1802,7 @@ jobs:
         timeout-minutes: 10
     php-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-2-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-3-8c-dind' || 'ubuntu-latest' }}
         name: php-dev
         steps:
             - name: Checkout
@@ -1852,8 +1924,13 @@ jobs:
                     mkfifo stdout.fifo stderr.fifo
 
                     # Set up tee to capture and display stdout and stderr
-                    tee stdout.txt < stdout.fifo &
-                    tee stderr.txt < stderr.fifo >&2 &
+                    if [ -n "$NO_OUTPUT" ]; then
+                        tee stdout.txt < stdout.fifo > /dev/null &
+                        tee stderr.txt < stderr.fifo > /dev/null &
+                    else
+                        tee stdout.txt < stdout.fifo &
+                        tee stderr.txt < stderr.fifo >&2 &
+                    fi
                 )
 
                 # Run the command, capturing stdout and stderr in the FIFOs
@@ -1935,6 +2012,9 @@ jobs:
 
                 } >"${GITHUB_STEP_SUMMARY}"
 
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
@@ -1944,7 +2024,7 @@ jobs:
         timeout-minutes: 10
     python:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-2-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-3-4c' || 'ubuntu-latest' }}
         name: python
         steps:
             - name: Checkout
@@ -1974,7 +2054,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin sh
               env:
-                DAGGER_VERSION: v0.15.2
+                DAGGER_VERSION: v0.15.3
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -2023,8 +2103,13 @@ jobs:
                     mkfifo stdout.fifo stderr.fifo
 
                     # Set up tee to capture and display stdout and stderr
-                    tee stdout.txt < stdout.fifo &
-                    tee stderr.txt < stderr.fifo >&2 &
+                    if [ -n "$NO_OUTPUT" ]; then
+                        tee stdout.txt < stdout.fifo > /dev/null &
+                        tee stderr.txt < stderr.fifo > /dev/null &
+                    else
+                        tee stdout.txt < stdout.fifo &
+                        tee stderr.txt < stderr.fifo >&2 &
+                    fi
                 )
 
                 # Run the command, capturing stdout and stderr in the FIFOs
@@ -2106,6 +2191,9 @@ jobs:
 
                 } >"${GITHUB_STEP_SUMMARY}"
 
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
@@ -2115,7 +2203,7 @@ jobs:
         timeout-minutes: 10
     python-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-2-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-3-8c-dind' || 'ubuntu-latest' }}
         name: python-dev
         steps:
             - name: Checkout
@@ -2237,8 +2325,13 @@ jobs:
                     mkfifo stdout.fifo stderr.fifo
 
                     # Set up tee to capture and display stdout and stderr
-                    tee stdout.txt < stdout.fifo &
-                    tee stderr.txt < stderr.fifo >&2 &
+                    if [ -n "$NO_OUTPUT" ]; then
+                        tee stdout.txt < stdout.fifo > /dev/null &
+                        tee stderr.txt < stderr.fifo > /dev/null &
+                    else
+                        tee stdout.txt < stdout.fifo &
+                        tee stderr.txt < stderr.fifo >&2 &
+                    fi
                 )
 
                 # Run the command, capturing stdout and stderr in the FIFOs
@@ -2320,6 +2413,9 @@ jobs:
 
                 } >"${GITHUB_STEP_SUMMARY}"
 
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
@@ -2329,7 +2425,7 @@ jobs:
         timeout-minutes: 10
     rust:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-2-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-3-4c' || 'ubuntu-latest' }}
         name: rust
         steps:
             - name: Checkout
@@ -2359,7 +2455,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin sh
               env:
-                DAGGER_VERSION: v0.15.2
+                DAGGER_VERSION: v0.15.3
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -2408,8 +2504,13 @@ jobs:
                     mkfifo stdout.fifo stderr.fifo
 
                     # Set up tee to capture and display stdout and stderr
-                    tee stdout.txt < stdout.fifo &
-                    tee stderr.txt < stderr.fifo >&2 &
+                    if [ -n "$NO_OUTPUT" ]; then
+                        tee stdout.txt < stdout.fifo > /dev/null &
+                        tee stderr.txt < stderr.fifo > /dev/null &
+                    else
+                        tee stdout.txt < stdout.fifo &
+                        tee stderr.txt < stderr.fifo >&2 &
+                    fi
                 )
 
                 # Run the command, capturing stdout and stderr in the FIFOs
@@ -2491,6 +2592,9 @@ jobs:
 
                 } >"${GITHUB_STEP_SUMMARY}"
 
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
@@ -2500,7 +2604,7 @@ jobs:
         timeout-minutes: 10
     rust-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-2-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-3-8c-dind' || 'ubuntu-latest' }}
         name: rust-dev
         steps:
             - name: Checkout
@@ -2622,8 +2726,13 @@ jobs:
                     mkfifo stdout.fifo stderr.fifo
 
                     # Set up tee to capture and display stdout and stderr
-                    tee stdout.txt < stdout.fifo &
-                    tee stderr.txt < stderr.fifo >&2 &
+                    if [ -n "$NO_OUTPUT" ]; then
+                        tee stdout.txt < stdout.fifo > /dev/null &
+                        tee stderr.txt < stderr.fifo > /dev/null &
+                    else
+                        tee stdout.txt < stdout.fifo &
+                        tee stderr.txt < stderr.fifo >&2 &
+                    fi
                 )
 
                 # Run the command, capturing stdout and stderr in the FIFOs
@@ -2705,6 +2814,9 @@ jobs:
 
                 } >"${GITHUB_STEP_SUMMARY}"
 
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
@@ -2714,7 +2826,7 @@ jobs:
         timeout-minutes: 10
     typescript:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-2-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-3-4c' || 'ubuntu-latest' }}
         name: typescript
         steps:
             - name: Checkout
@@ -2744,7 +2856,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin sh
               env:
-                DAGGER_VERSION: v0.15.2
+                DAGGER_VERSION: v0.15.3
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -2793,8 +2905,13 @@ jobs:
                     mkfifo stdout.fifo stderr.fifo
 
                     # Set up tee to capture and display stdout and stderr
-                    tee stdout.txt < stdout.fifo &
-                    tee stderr.txt < stderr.fifo >&2 &
+                    if [ -n "$NO_OUTPUT" ]; then
+                        tee stdout.txt < stdout.fifo > /dev/null &
+                        tee stderr.txt < stderr.fifo > /dev/null &
+                    else
+                        tee stdout.txt < stdout.fifo &
+                        tee stderr.txt < stderr.fifo >&2 &
+                    fi
                 )
 
                 # Run the command, capturing stdout and stderr in the FIFOs
@@ -2876,6 +2993,9 @@ jobs:
 
                 } >"${GITHUB_STEP_SUMMARY}"
 
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
+
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
@@ -2885,7 +3005,7 @@ jobs:
         timeout-minutes: 10
     typescript-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-2-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-3-8c-dind' || 'ubuntu-latest' }}
         name: typescript-dev
         steps:
             - name: Checkout
@@ -3007,8 +3127,13 @@ jobs:
                     mkfifo stdout.fifo stderr.fifo
 
                     # Set up tee to capture and display stdout and stderr
-                    tee stdout.txt < stdout.fifo &
-                    tee stderr.txt < stderr.fifo >&2 &
+                    if [ -n "$NO_OUTPUT" ]; then
+                        tee stdout.txt < stdout.fifo > /dev/null &
+                        tee stderr.txt < stderr.fifo > /dev/null &
+                    else
+                        tee stdout.txt < stdout.fifo &
+                        tee stderr.txt < stderr.fifo >&2 &
+                    fi
                 )
 
                 # Run the command, capturing stdout and stderr in the FIFOs
@@ -3089,6 +3214,9 @@ jobs:
                 .
 
                 } >"${GITHUB_STEP_SUMMARY}"
+
+                echo "stdout_file=$tmp/stdout.txt" >>"$GITHUB_OUTPUT"
+                echo "stderr_file=$tmp/stderr.txt" >>"$GITHUB_OUTPUT"
 
                 exit $EXIT_CODE
               env:

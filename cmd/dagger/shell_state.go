@@ -107,10 +107,10 @@ func (st ShellState) WriteTo(w io.Writer) error {
 		return err
 	}
 
-	w.Write([]byte(shellStatePrefix))
-	w.Write(buf.Bytes())
+	// Use a single write call so we can decode it in the runner's stdout write handler
+	_, err := w.Write(append([]byte(shellStatePrefix), buf.Bytes()...))
 
-	return nil
+	return err
 }
 
 // Function returns the last function in the chain, if not empty

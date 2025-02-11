@@ -35,7 +35,7 @@ type Module struct {
 	Description string `field:"true" doc:"The doc string of the module, if any"`
 
 	// The module's SDKConfig, as set in the module config file
-	SDKConfig string `field:"true" name:"sdk" doc:"The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
+	SDKConfig *SDKConfig `field:"true" name:"sdk" doc:"The SDK config used by this module."`
 
 	GeneratedContextDirectory dagql.Instance[*Directory] `field:"true" name:"generatedContextDirectory" doc:"The module source's context plus any configuration and source files created by codegen."`
 
@@ -64,6 +64,30 @@ type Module struct {
 
 	// InstanceID is the ID of the initialized module.
 	InstanceID *call.ID
+}
+
+type SDKConfig struct {
+	Source string            `field:"true" name:"source" doc:"Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
+	Env    map[string]string `name:"env" doc:"Environment variables used in codegen and runtime. e.g. GOPRIVATE"`
+}
+
+func (*SDKConfig) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "SDKConfig",
+		NonNull:   false,
+	}
+}
+
+func (*SDKConfig) TypeDescription() string {
+	return "The SDK config of the module."
+}
+
+func (sdk SDKConfig) Clone() *SDKConfig {
+	cp := sdk
+	cp.Env = cloneMap(sdk.Env)
+	cp.Source = sdk.Source
+
+	return &cp
 }
 
 func (*Module) Type() *ast.Type {
@@ -286,7 +310,7 @@ func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirect
 	var err error
 
 	switch typeDef.Kind {
-	case TypeDefKindString, TypeDefKindInteger, TypeDefKindBoolean, TypeDefKindVoid:
+	case TypeDefKindString, TypeDefKindInteger, TypeDefKindFloat, TypeDefKindBoolean, TypeDefKindVoid:
 		modType, ok = mod.modTypeForPrimitive(typeDef)
 	case TypeDefKindList:
 		modType, ok, err = mod.modTypeForList(ctx, typeDef, checkDirectDeps)
@@ -805,6 +829,10 @@ func (mod Module) Clone() *Module {
 	cp.EnumDefs = make([]*TypeDef, len(mod.EnumDefs))
 	for i, def := range mod.EnumDefs {
 		cp.EnumDefs[i] = def.Clone()
+	}
+
+	if cp.SDKConfig != nil {
+		cp.SDKConfig = cp.SDKConfig.Clone()
 	}
 
 	return &cp

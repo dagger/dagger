@@ -13,6 +13,7 @@ defmodule Dagger.ModTest do
   test "decode/2", %{dag: dag} do
     assert {:ok, "hello"} = Mod.decode(json("hello"), :string, dag)
     assert {:ok, 1} = Mod.decode(json(1), :integer, dag)
+    assert {:ok, 2.0} = Mod.decode(json(2.0), :float, dag)
     assert {:ok, true} = Mod.decode(json(true), :boolean, dag)
     assert {:ok, false} = Mod.decode(json(false), :boolean, dag)
 
@@ -33,6 +34,7 @@ defmodule Dagger.ModTest do
   test "encode/2", %{dag: dag} do
     assert {:ok, "\"hello\""} = Mod.encode("hello", :string)
     assert {:ok, "1"} = Mod.encode(1, :integer)
+    assert {:ok, "2.0"} = Mod.encode(2.0, :float)
     assert {:ok, "true"} = Mod.encode(true, :boolean)
     assert {:ok, "false"} = Mod.encode(false, :boolean)
     assert {:ok, "[1,2,3]"} = Mod.encode([1, 2, 3], {:list, :integer})

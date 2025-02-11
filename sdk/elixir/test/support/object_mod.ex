@@ -11,8 +11,12 @@ defmodule ObjectMod do
     "Hello, #{name}"
   end
 
-  defn accept_integer(name: integer()) :: integer() do
-    "Hello, #{name}"
+  defn accept_integer(value: integer()) :: integer() do
+    value
+  end
+
+  defn accept_float(value: float()) :: float() do
+    value
   end
 
   defn accept_boolean(name: boolean()) :: String.t() do

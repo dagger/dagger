@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"dagger.io/dagger/telemetry"
-	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/containerd/containerd/content"
 	"github.com/koron-go/prefixw"
@@ -415,7 +414,7 @@ func (srv *Server) initializeDaggerClient(
 	opts *ClientInitOpts,
 ) error {
 	// initialize all the buildkit+session attachable state for the client
-	client.secretStore = core.NewSecretStore()
+	client.secretStore = core.NewSecretStore(srv.bkSessionManager)
 	client.socketStore = core.NewSocketStore(srv.bkSessionManager)
 	if opts.CallID != nil {
 		if opts.CallerClientID == "" {
@@ -1090,7 +1089,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 		return gqlErr(fmt.Errorf("failed to get schema: %w", err), http.StatusBadRequest)
 	}
 
-	gqlSrv := handler.NewDefaultServer(schema)
+	gqlSrv := dagql.NewDefaultHandler(schema)
 	// NB: break glass when needed:
 	// gqlSrv.AroundResponses(func(ctx context.Context, next graphql.ResponseHandler) *graphql.Response {
 	// 	res := next(ctx)

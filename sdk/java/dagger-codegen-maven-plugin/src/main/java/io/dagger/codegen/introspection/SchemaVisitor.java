@@ -1,5 +1,7 @@
 package io.dagger.codegen.introspection;
 
+import java.util.List;
+
 public interface SchemaVisitor {
 
   void visitScalar(Type type);
@@ -11,4 +13,6 @@ public interface SchemaVisitor {
   void visitEnum(Type type);
 
   void visitVersion(String version);
+
+  void visitIDAbles(List<Type> types);
 }
