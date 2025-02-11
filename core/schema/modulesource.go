@@ -125,7 +125,7 @@ func (s *moduleSchema) localModuleSource(
 					}),
 					namedDep.Source,
 					namedDep.Pin,
-					true,
+					false,
 				)
 				if err != nil {
 					return inst, fmt.Errorf("failed to parse named dep ref string: %w", err)

@@ -856,6 +856,45 @@ func (m *Test) ToStatus(status string) Status {
 		})
 	})
 
+	t.Run("module args", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+		defer cleanup()
+
+		modGen := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(mountedSocket).
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithNewFile("foo.txt", "foo").
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (m *Test) ModSrc(ctx context.Context, modSrc *dagger.ModuleSource) *dagger.ModuleSource {
+	return modSrc
+}
+
+func (m *Test) Mod(ctx context.Context, module *dagger.Module) *dagger.Module {
+	return module
+}
+`,
+			)
+
+		out, err := modGen.With(daggerCall("mod-src", "--mod-src", ".", "context-directory", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, ".git\n.gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
+
+		out, err = modGen.With(daggerCall("mod", "--module", ".", "source", "context-directory", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, ".git\n.gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
+	})
+
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		t.Run("module args", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
@@ -887,15 +926,7 @@ func (m *Test) Mod(ctx context.Context, module *dagger.Module) *dagger.Module {
 `,
 				)
 
-			out, err := modGen.With(daggerCall("mod-src", "--mod-src", ".", "directory", "--path", ".", "entries")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
-
-			out, err = modGen.With(daggerCall("mod", "--module", ".", "source", "directory", "--path", ".", "entries")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
-
-			out, err = modGen.With(daggerCall("mod-src", "--mod-src", testGitModuleRef(tc, "top-level"), "as-string")).Stdout(ctx)
+			out, err := modGen.With(daggerCall("mod-src", "--mod-src", testGitModuleRef(tc, "top-level"), "as-string")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, testGitModuleRef(tc, "top-level"), out)
 

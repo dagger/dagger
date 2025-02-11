@@ -690,7 +690,25 @@ func (s *moduleSchema) currentModuleSource(
 		srcSubpath = curMod.Module.Source.Self.SourceRootSubpath
 	}
 
-	err = s.dag.Select(ctx, curMod.Module.Source.Self.ContextDirectory, &inst,
+	var generatedDiff dagql.Instance[*core.Directory]
+	err = s.dag.Select(ctx, curMod.Module.Source, &generatedDiff,
+		dagql.Selector{Field: "generatedContextDirectory"},
+	)
+	if err != nil {
+		return inst, err
+	}
+
+	err = s.dag.Select(ctx, curMod.Module.Source, &inst,
+		dagql.Selector{
+			Field: "contextDirectory",
+		},
+		dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String("/")},
+				{Name: "directory", Value: dagql.NewID[*core.Directory](generatedDiff.ID())},
+			},
+		},
 		dagql.Selector{
 			Field: "directory",
 			Args: []dagql.NamedInput{
