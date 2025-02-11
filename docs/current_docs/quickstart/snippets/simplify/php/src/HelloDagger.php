@@ -27,7 +27,7 @@ class HelloDagger
 
         return $this
             ->build($source)
-            ->publish('ttl.sh/myapp-'.rand(0, 10000000));
+            ->publish('ttl.sh/hello-dagger-'.rand(0, 10000000));
     }
 
     #[DaggerFunction]
