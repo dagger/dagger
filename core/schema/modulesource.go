@@ -313,7 +313,7 @@ func (s *moduleSchema) localModuleSource(
 			includes = append(includes, relPath)
 		}
 
-		// load this module source's context directory and deps in parallel
+		// load this module source's context directory, sdk and deps in parallel
 		var eg errgroup.Group
 		eg.Go(func() error {
 			err := s.dag.Select(ctx, s.dag.Root(), &localSrc.ContextDirectory,
@@ -329,8 +329,15 @@ func (s *moduleSchema) localModuleSource(
 			if err != nil {
 				return fmt.Errorf("failed to load local module source context directory: %w", err)
 			}
+
+			localSrc.SDKImpl, err = s.sdkForModule(ctx, query.Self, localSrc.SDK, localSrc)
+			if err != nil {
+				return fmt.Errorf("failed to load sdk for local module source: %w", err)
+			}
+
 			return nil
 		})
+
 		localSrc.Dependencies = make([]dagql.Instance[*core.ModuleSource], len(modCfg.Dependencies))
 		for i, depCfg := range modCfg.Dependencies {
 			eg.Go(func() error {
@@ -637,6 +644,12 @@ func (s *moduleSchema) gitModuleSource(
 		if err != nil {
 			return fmt.Errorf("failed to load git module source context directory: %w", err)
 		}
+
+		gitSrc.SDKImpl, err = s.sdkForModule(ctx, query.Self, gitSrc.SDK, gitSrc)
+		if err != nil {
+			return fmt.Errorf("failed to load sdk for git module source: %w", err)
+		}
+
 		return nil
 	})
 
@@ -1242,6 +1255,17 @@ func (s *moduleSchema) directoryAsModuleSource(
 	}
 
 	var eg errgroup.Group
+
+	eg.Go(func() error {
+		var err error
+		dirSrc.SDKImpl, err = s.sdkForModule(ctx, contextDir.Self.Query, dirSrc.SDK, dirSrc)
+		if err != nil {
+			return fmt.Errorf("failed to load sdk for dir module source: %w", err)
+		}
+
+		return nil
+	})
+
 	dirSrc.Dependencies = make([]dagql.Instance[*core.ModuleSource], len(modCfg.Dependencies))
 	for i, depCfg := range modCfg.Dependencies {
 		eg.Go(func() error {
@@ -1410,6 +1434,13 @@ func (s *moduleSchema) moduleSourceWithSDK(
 		src.SDK = &core.SDKConfig{}
 	}
 	src.SDK.Source = args.Source
+
+	var err error
+	src.SDKImpl, err = s.sdkForModule(ctx, src.Query, src.SDK, src)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load sdk for module source: %w", err)
+	}
+
 	return src, nil
 }
 
@@ -2007,13 +2038,7 @@ func (s *moduleSchema) moduleSourceGeneratedContextDirectory(
 		}
 		srcInstContentHashed := srcInst.WithMetadata(digest.Digest(srcInst.Self.Digest), true)
 
-		// TODO: parallelize w/ dep load
-		sdk, err := s.sdkForModule(ctx, src.Query, src.SDK, srcInstContentHashed)
-		if err != nil {
-			return genDirInst, fmt.Errorf("failed to get SDK for module: %w", err)
-		}
-
-		generatedCode, err := sdk.Codegen(ctx, deps, srcInstContentHashed)
+		generatedCode, err := srcInst.Self.SDKImpl.Codegen(ctx, deps, srcInstContentHashed)
 		if err != nil {
 			return genDirInst, fmt.Errorf("failed to generate code: %w", err)
 		}
@@ -2105,7 +2130,6 @@ func (s *moduleSchema) moduleSourceGeneratedContextDirectory(
 				return genDirInst, fmt.Errorf("failed to add vcs ignore file: %w", err)
 			}
 		}
-
 	}
 
 	modCfgBytes, err := json.MarshalIndent(modCfg, "", "  ")
@@ -2185,16 +2209,6 @@ func (s *moduleSchema) moduleSourceAsModule(
 		})
 	}
 
-	var sdk core.SDK
-	eg.Go(func() error {
-		s, err := s.sdkForModule(ctx, src.Self.Query, src.Self.SDK, srcInstContentHashed)
-		if err != nil {
-			return fmt.Errorf("failed to get SDK for module: %w", err)
-		}
-		sdk = s
-		return nil
-	})
-
 	if err := eg.Wait(); err != nil {
 		loadDepModsSpan.End()
 		return inst, fmt.Errorf("failed to load module dependencies: %w", err)
@@ -2243,7 +2257,7 @@ func (s *moduleSchema) moduleSourceAsModule(
 
 	runtimeCtx, runtimeSpan := core.Tracer(ctx).Start(ctx, "asModule runtime", telemetry.Internal())
 
-	mod.Runtime, err = sdk.Runtime(runtimeCtx, mod.Deps, srcInstContentHashed)
+	mod.Runtime, err = src.Self.SDKImpl.Runtime(runtimeCtx, mod.Deps, srcInstContentHashed)
 	if err != nil {
 		runtimeSpan.End()
 		return inst, fmt.Errorf("failed to get module runtime: %w", err)
