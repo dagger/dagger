@@ -233,7 +233,8 @@ func (s *moduleSchema) Install() {
 
 		dagql.Func("generateClient", s.moduleGenerateClient).
 			Doc(`Generates a client for the module.`).
-			ArgDoc("generator", `The generator to use`),
+			ArgDoc("generator", `The generator to use`).
+			ArgDoc("localSdk", `Use local SDK dependency`),
 
 		dagql.Func("withDescription", s.moduleWithDescription).
 			Doc(`Retrieves the module with the given description`).
@@ -857,6 +858,7 @@ func (s *moduleSchema) moduleGenerateClient(
 	mod *core.Module,
 	args struct {
 		Generator dagql.String
+		LocalSdk dagql.Boolean
 	},
 ) (*core.Directory, error) {
 	generator, err := s.sdkForModule(ctx, mod.Query, &core.SDKConfig{
@@ -874,12 +876,12 @@ func (s *moduleSchema) moduleGenerateClient(
 	// Remove the definitions from the module so they does not conflict with its self dependency
 	mod = mod.CloneWithoutDefs()
 
-	generatedClientDir, err := generator.GenerateClient(ctx, mod.Deps, mod.Source)
+	generatedClientDir, err := generator.GenerateClient(ctx, mod.Source, mod.Deps, args.LocalSdk.Bool())
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate clients: %w", err)
 	}
 
-	return generatedClientDir, nil
+	return generatedClientDir.Self, nil
 }
 
 func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, args struct {

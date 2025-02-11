@@ -44,6 +44,8 @@ type Config struct {
 	Merge *bool
 
 	ClientOnly bool
+
+	LocalSDK bool
 }
 
 type Generator interface {

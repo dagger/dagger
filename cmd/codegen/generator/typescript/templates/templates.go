@@ -10,7 +10,13 @@ import (
 var srcs embed.FS
 
 // New creates a new template with all the template dependencies set up.
-func New(schemaVersion string, moduleName string, moduleParentPath string, clientOnly bool) *template.Template {
+func New(
+	schemaVersion string,
+	moduleName string,
+	moduleParentPath string,
+	clientOnly bool,
+	localSDK bool,
+) *template.Template {
 	topLevelTemplate := "api"
 	templateDeps := []string{
 		topLevelTemplate, "header", "objects", "object", "method", "method_solve", "call_args", "method_comment", "types", "args", "default",
@@ -21,7 +27,7 @@ func New(schemaVersion string, moduleName string, moduleParentPath string, clien
 		fileNames = append(fileNames, fmt.Sprintf("src/%s.ts.gtpl", tmpl))
 	}
 
-	funcs := TypescriptTemplateFuncs(schemaVersion, moduleName, moduleParentPath, clientOnly)
+	funcs := TypescriptTemplateFuncs(schemaVersion, moduleName, moduleParentPath, clientOnly, localSDK)
 	tmpl := template.Must(template.New(topLevelTemplate).Funcs(funcs).ParseFS(srcs, fileNames...))
 	return tmpl
 }

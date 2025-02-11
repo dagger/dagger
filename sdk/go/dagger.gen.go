@@ -5619,9 +5619,10 @@ func (r *Module) Enums(ctx context.Context) ([]TypeDef, error) {
 }
 
 // Generates a client for the module.
-func (r *Module) GenerateClient(generator string) *Directory {
+func (r *Module) GenerateClient(generator string, localSdk bool) *Directory {
 	q := r.query.Select("generateClient")
 	q = q.Arg("generator", generator)
+	q = q.Arg("localSdk", localSdk)
 
 	return &Directory{
 		query: q,

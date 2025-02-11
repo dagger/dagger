@@ -243,30 +243,38 @@ func (s *moduleSchema) newModuleSDK(
 	return &moduleSDK{mod: sdkModMeta, dag: dag, sdk: sdk}, nil
 }
 
-func (sdk *moduleSDK) GenerateClient(ctx context.Context, deps *core.ModDeps, modSource dagql.Instance[*core.ModuleSource]) (*core.Directory, error) {
+func (sdk *moduleSDK) GenerateClient(
+	ctx context.Context,
+	modSource dagql.Instance[*core.ModuleSource],
+	deps *core.ModDeps,
+	useLocalSDK bool,
+) (inst dagql.Instance[*core.Directory], err error) {
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
+		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
 	}
 
-	var inst dagql.Instance[*core.Directory]
 	err = sdk.dag.Select(ctx, sdk.sdk, &inst, dagql.Selector{
 		Field: "generateClient",
 		Args: []dagql.NamedInput{
+			{
+				Name:  "modSource",
+				Value: dagql.NewID[*core.ModuleSource](modSource.ID()),
+			},
 			{
 				Name:  "introspectionJson",
 				Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
 			},
 			{
-				Name:  "modSource",
-				Value: dagql.NewID[*core.ModuleSource](modSource.ID()),
+				Name:  "useLocalSdk",
+				Value: dagql.NewBoolean(useLocalSDK),
 			},
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to call sdk module generate client: %w", err)
+		return inst, fmt.Errorf("failed to call sdk module generate client: %w", err)
 	}
-	return inst.Self, nil
+	return inst, nil
 }
 
 // Codegen calls the Codegen function on the SDK Module
@@ -431,25 +439,50 @@ type goSDK struct {
 
 func (sdk *goSDK) GenerateClient(
 	ctx context.Context,
-	deps *core.ModDeps,
 	modSource dagql.Instance[*core.ModuleSource],
-) (*core.Directory, error) {
+	deps *core.ModDeps,
+	useLocalSDK bool,
+) (inst dagql.Instance[*core.Directory], err error) {
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
+		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
 	}
 
 	ctr, err := sdk.base(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get base container during module client generation: %w", err)
+		return inst, fmt.Errorf("failed to get base container during module client generation: %w", err)
 	}
 
-	genWorkdir := "/out"
+	workdirPath := "/module"
 
 	codegenArgs := dagql.ArrayInput[dagql.String]{
-		"--output", dagql.String(genWorkdir),
+		"--output", "./dagger",
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
+		dagql.String(fmt.Sprintf("--local-sdk=%t", useLocalSDK)),
 		"--client-only",
+	}
+
+	currentModuleDirectoryPath, err := modSource.Self.SourceRootSubpath()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get module source root subpath: %w", err)
+	}
+
+	var currentModuleDirectory dagql.Instance[*core.Directory]
+	err = sdk.dag.Select(ctx, modSource, &currentModuleDirectory,
+		dagql.Selector{
+			Field: "contextDirectory",
+		},
+		dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.String(currentModuleDirectoryPath),
+				},
+			},
+		})
+	if err != nil {
+		return inst, fmt.Errorf("failed to get module source root directory: %w", err)
 	}
 
 	err = sdk.dag.Select(ctx, ctr, &ctr,
@@ -470,11 +503,24 @@ func (sdk *goSDK) GenerateClient(
 			Field: "withoutDefaultArgs",
 		},
 		dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.String(workdirPath),
+				},
+				{
+					Name:  "directory",
+					Value: dagql.NewID[*core.Directory](currentModuleDirectory.ID()),
+				},
+			},
+		},
+		dagql.Selector{
 			Field: "withWorkdir",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "path",
-					Value: dagql.String(genWorkdir),
+					Value: dagql.String(workdirPath),
 				},
 			},
 		},
@@ -491,7 +537,7 @@ func (sdk *goSDK) GenerateClient(
 		},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to run  module client generation: %w", err)
+		return inst, fmt.Errorf("failed to run  module client generation: %w", err)
 	}
 
 	var modifiedSrcDir dagql.Instance[*core.Directory]
@@ -500,37 +546,14 @@ func (sdk *goSDK) GenerateClient(
 		Args: []dagql.NamedInput{
 			{
 				Name:  "path",
-				Value: dagql.String(genWorkdir),
+				Value: dagql.String(workdirPath),
 			},
 		},
 	}); err != nil {
-		return nil, fmt.Errorf("failed to get modified source directory for go module sdk codegen: %w", err)
+		return inst, fmt.Errorf("failed to get modified source directory for go module sdk codegen: %w", err)
 	}
 
-	var dir dagql.Instance[*core.Directory]
-	err = sdk.dag.Select(ctx, sdk.dag.Root(), &dir,
-		dagql.Selector{
-			Field: "directory",
-		},
-		dagql.Selector{
-			Field: "withDirectory",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.String("/dagger"),
-				},
-				{
-					Name:  "directory",
-					Value: dagql.NewID[*core.Directory](modifiedSrcDir.ID()),
-				},
-			},
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to write files: %w", err)
-	}
-
-	return dir.Self, nil
+	return modifiedSrcDir, nil
 }
 
 func (sdk *goSDK) Codegen(

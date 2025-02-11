@@ -26,18 +26,20 @@ func GoTemplateFuncs(
 	fset *token.FileSet,
 	pass int,
 	standaloneClient bool,
+	localSDK bool,
 ) template.FuncMap {
 	return goTemplateFuncs{
-		CommonFunctions: generator.NewCommonFunctions(schemaVersion, &FormatTypeFunc{}),
-		ctx:             ctx,
-		moduleName:      moduleName,
-		moduleParent:    moduleParent,
-		modulePkg:       pkg,
-		moduleFset:      fset,
-		schema:          schema,
-		schemaVersion:   schemaVersion,
-		pass:            pass,
+		CommonFunctions:  generator.NewCommonFunctions(schemaVersion, &FormatTypeFunc{}),
+		ctx:              ctx,
+		moduleName:       moduleName,
+		moduleParent:     moduleParent,
+		modulePkg:        pkg,
+		moduleFset:       fset,
+		schema:           schema,
+		schemaVersion:    schemaVersion,
+		pass:             pass,
 		standaloneClient: standaloneClient,
+		localSDK:         localSDK,
 	}.FuncMap()
 }
 
@@ -45,6 +47,7 @@ type goTemplateFuncs struct {
 	*generator.CommonFunctions
 	ctx              context.Context
 	standaloneClient bool
+	localSDK         bool
 	moduleName       string
 	moduleParent     string
 	modulePkg        *packages.Package
@@ -88,6 +91,7 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"IsPartial":               funcs.isPartial,
 		"IsModuleCode":            funcs.isModuleCode,
 		"IsStandaloneClient":      funcs.isStandaloneClient,
+		"IsLocalSDK":              funcs.isLocalSDK,
 		"ModuleMainSrc":           funcs.moduleMainSrc,
 		"ModuleRelPath":           funcs.moduleRelPath,
 	}

@@ -5300,6 +5300,11 @@ func daggerExec(args ...string) dagger.WithContainerFunc {
 	}
 }
 
+// We need to also generate local SDK sources to test eventual SDK library changes.
+func daggerClientAdd(generator string) dagger.WithContainerFunc {
+	return daggerExec("client", "add", "--generator="+generator, "--local-sdk")
+}
+
 func daggerQuery(query string, args ...any) dagger.WithContainerFunc {
 	return daggerQueryAt("", query, args...)
 }
@@ -5330,6 +5335,14 @@ func daggerCallAt(modPath string, args ...string) dagger.WithContainerFunc {
 		}
 		return c.WithExec(append(execArgs, args...), dagger.ContainerWithExecOpts{
 			UseEntrypoint:                 true,
+			ExperimentalPrivilegedNesting: true,
+		})
+	}
+}
+
+func daggerInit(args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec(append([]string{"dagger", "init"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}

@@ -19,6 +19,9 @@ import (
 {{ if IsModuleCode }}
 	"{{.PackageImport}}/internal/querybuilder"
 	"{{.PackageImport}}/internal/telemetry"
+{{ else if IsLocalSDK }}
+	"{{.PackageImport}}/dagger/internal/querybuilder"
+	"{{.PackageImport}}/dagger/internal/telemetry"
 {{ else }}
 	"{{.PackageImport}}/querybuilder"
 	"{{.PackageImport}}/telemetry"

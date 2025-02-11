@@ -18,12 +18,14 @@ func TypescriptTemplateFuncs(
 	moduleName string,
 	moduleParentPath string,
 	clientOnly bool,
+	localSDK bool,
 ) template.FuncMap {
 	return typescriptTemplateFuncs{
 		moduleName:       moduleName,
 		moduleParentPath: moduleParentPath,
 		schemaVersion:    schemaVersion,
 		clientOnly:       clientOnly,
+		localSDK:         localSDK,
 	}.FuncMap()
 }
 
@@ -32,6 +34,7 @@ type typescriptTemplateFuncs struct {
 	moduleParentPath string
 	schemaVersion    string
 	clientOnly       bool
+	localSDK         bool
 }
 
 func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
@@ -72,6 +75,7 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"ModuleRelPath":             funcs.moduleRelPath,
 		"FormatProtected":           funcs.formatProtected,
 		"IsClientOnly":              funcs.isClientOnly,
+		"IsLocalSDK":                funcs.isLocalSDK,
 	}
 }
 
@@ -329,4 +333,8 @@ func (funcs typescriptTemplateFuncs) formatProtected(s string) string {
 
 func (funcs typescriptTemplateFuncs) isClientOnly() bool {
 	return funcs.clientOnly
+}
+
+func (funcs typescriptTemplateFuncs) isLocalSDK() bool {
+	return funcs.localSDK
 }

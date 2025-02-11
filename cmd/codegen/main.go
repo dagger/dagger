@@ -27,6 +27,8 @@ var (
 	merge        bool
 
 	clientOnly bool
+
+	localSDK bool
 )
 
 var rootCmd = &cobra.Command{
@@ -53,6 +55,7 @@ func init() {
 	rootCmd.Flags().StringVar(&moduleName, "module-name", "", "name of module to generate code for")
 	rootCmd.Flags().BoolVar(&merge, "merge", false, "merge module deps with project's")
 	rootCmd.Flags().BoolVar(&clientOnly, "client-only", false, "generate only client code")
+	rootCmd.Flags().BoolVar(&localSDK, "local-sdk", false, "use local SDK dependency")
 
 	introspectCmd.Flags().StringVarP(&outputSchema, "output", "o", "", "save introspection result to file")
 	rootCmd.AddCommand(introspectCmd)
@@ -71,12 +74,10 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 
 	cfg := generator.Config{
 		Lang: generator.SDKLang(lang),
-
 		OutputDir: outputDir,
-
 		Merge: mergePtr,
-
 		ClientOnly: clientOnly,
+		LocalSDK: localSDK,
 	}
 
 	if moduleName != "" {

@@ -731,7 +731,7 @@ type Mod interface {
 // ClientGenerator is an interface that a module can implements to give client generation capabilities.
 type ClientGenerator interface {
 	// Generate client returns client binding for the module with the given dependencies.
-	GenerateClient(context.Context, *ModDeps, dagql.Instance[*ModuleSource]) (*Directory, error)
+	GenerateClient(context.Context, dagql.Instance[*ModuleSource], *ModDeps, bool) (dagql.Instance[*Directory], error)
 }
 
 /*
