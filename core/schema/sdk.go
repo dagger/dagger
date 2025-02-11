@@ -14,6 +14,7 @@ import (
 	"github.com/opencontainers/go-digest"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
@@ -281,9 +282,8 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, deps *core.ModDeps, source da
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.Self.Name(), err)
 	}
 
-	var inst dagql.Instance[*core.Container]
-	err = sdk.dag.Select(ctx, sdk.sdk, &inst,
-		dagql.Selector{
+	selectors := []dagql.Selector{
+		{
 			Field: "moduleRuntime",
 			Args: []dagql.NamedInput{
 				{
@@ -296,7 +296,7 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, deps *core.ModDeps, source da
 				},
 			},
 		},
-		dagql.Selector{
+		{
 			Field: "withWorkdir",
 			Args: []dagql.NamedInput{
 				{
@@ -305,8 +305,15 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, deps *core.ModDeps, source da
 				},
 			},
 		},
-	)
-	if err != nil {
+	}
+
+	cfg, ok, _ := source.Self.ModuleConfig(ctx)
+	if ok && cfg.SDK != nil {
+		selectors = append(selectors, selectorsForSDK(cfg.SDK)...)
+	}
+
+	var inst dagql.Instance[*core.Container]
+	if err = sdk.dag.Select(ctx, sdk.sdk, &inst, selectors...); err != nil {
 		return nil, fmt.Errorf("failed to call sdk module moduleRuntime: %w", err)
 	}
 	return inst.Self, nil
@@ -645,28 +652,9 @@ func (sdk *goSDK) baseWithCodegen(
 	}
 
 	// inject sdk specific env variables before withExec
-	// for now allow only Env with prefix GO
 	cfg, ok, _ := src.Self.ModuleConfig(ctx)
 	if ok && cfg.SDK != nil {
-		for k, v := range cfg.SDK.Env {
-			if !strings.HasPrefix(k, "GO") {
-				continue
-			}
-
-			selectors = append(selectors, dagql.Selector{
-				Field: "withEnvVariable",
-				Args: []dagql.NamedInput{
-					{
-						Name:  "name",
-						Value: dagql.NewString(k),
-					},
-					{
-						Name:  "value",
-						Value: dagql.NewString(v),
-					},
-				},
-			})
-		}
+		selectors = append(selectors, selectorsForSDK(cfg.SDK)...)
 	}
 
 	selectors = append(selectors,
@@ -691,6 +679,25 @@ func (sdk *goSDK) baseWithCodegen(
 	}
 
 	return ctr, nil
+}
+
+func selectorsForSDK(sdk *modules.SDK) (selectors []dagql.Selector) {
+	for k, v := range sdk.Env {
+		selectors = append(selectors, dagql.Selector{
+			Field: "withEnvVariable",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "name",
+					Value: dagql.NewString(k),
+				},
+				{
+					Name:  "value",
+					Value: dagql.NewString(v),
+				},
+			},
+		})
+	}
+	return selectors
 }
 
 func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], error) {
