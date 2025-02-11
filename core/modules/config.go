@@ -47,8 +47,7 @@ type ModuleConfig struct {
 // The source can be reference to a built-in sdk e.g. go, php, elixir or
 // can be a reference to a git path e.g. github.com/username/reponame/sdk-name
 type SDK struct {
-	Source string            `json:"source"`
-	Env    map[string]string `json:"env,omitempty"`
+	Source string `json:"source"`
 }
 
 func (sdk *SDK) UnmarshalJSON(data []byte) error {
