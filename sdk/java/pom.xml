@@ -39,6 +39,11 @@
                 <version>${netty-common.version}</version>
             </dependency>
             <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-handler</artifactId>
+                <version>${netty-handler.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>jakarta.json</groupId>
                 <artifactId>jakarta.json-api</artifactId>
                 <version>${jakarta.json-api.version}</version>
@@ -310,6 +315,7 @@
         <slf4j-simple.version>2.0.16</slf4j-simple.version>
         <smallrye-graphql.version>2.12.1</smallrye-graphql.version>
         <netty-common.version>4.1.117.Final</netty-common.version>
+        <netty-handler.version>4.1.118.Final</netty-handler.version>
         <system-stubs-jupiter.version>2.1.7</system-stubs-jupiter.version>
         <xdg-java.version>0.1.1</xdg-java.version>
         <yasson.version>3.0.4</yasson.version>
