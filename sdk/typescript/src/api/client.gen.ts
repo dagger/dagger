@@ -5463,9 +5463,10 @@ export class Module_ extends BaseClient {
   /**
    * Generates a client for the module.
    * @param generator The generator to use
+   * @param localSdk Use local SDK dependency
    */
-  generateClient = (generator: string): Directory => {
-    const ctx = this._ctx.select("generateClient", { generator })
+  generateClient = (generator: string, localSdk: boolean): Directory => {
+    const ctx = this._ctx.select("generateClient", { generator, localSdk })
     return new Directory(ctx)
   }
 

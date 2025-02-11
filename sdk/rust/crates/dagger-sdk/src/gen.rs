@@ -6161,9 +6161,11 @@ impl Module {
     /// # Arguments
     ///
     /// * `generator` - The generator to use
-    pub fn generate_client(&self, generator: impl Into<String>) -> Directory {
+    /// * `local_sdk` - Use local SDK dependency
+    pub fn generate_client(&self, generator: impl Into<String>, local_sdk: bool) -> Directory {
         let mut query = self.selection.select("generateClient");
         query = query.arg("generator", generator.into());
+        query = query.arg("localSdk", local_sdk);
         Directory {
             proc: self.proc.clone(),
             selection: query,
