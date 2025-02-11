@@ -188,7 +188,6 @@ func (term *Vterm) redraw() {
 	// First render any Markdown content
 	if term.markdownBuf.Len() > 0 {
 		renderer, _ := glamour.NewTermRenderer(
-			glamour.WithAutoStyle(),
 			glamour.WithWordWrap(term.Width),
 			glamour.WithStyles(style),
 		)
