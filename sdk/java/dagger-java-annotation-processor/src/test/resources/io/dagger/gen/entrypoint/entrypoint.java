@@ -87,7 +87,7 @@ public class Entrypoint {
                     dag.function("grepDir",
                         dag.typeDef().withKind(TypeDefKind.STRING_KIND))
                         .withDescription("Returns lines that match a pattern in the files of the provided Directory")
-                        .withArg("directoryArg", dag.typeDef().withObject("Directory"), new Function.WithArgArguments().withDescription("Directory to grep"))
+                        .withArg("directoryArg", dag.typeDef().withObject("Directory"), new Function.WithArgArguments().withDescription("Directory to grep").withDefaultPath("/sdk/java"))
                         .withArg("pattern", dag.typeDef().withKind(TypeDefKind.STRING_KIND).withOptional(true), new Function.WithArgArguments().withDescription("Pattern to search for in the directory")))
                 .withFunction(
                     dag.function("itself",
