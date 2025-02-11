@@ -82,6 +82,26 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           if (name.isEmpty()) {
             name = typeElement.getSimpleName().toString();
           }
+          List<FieldInfo> fieldInfoInfos =
+              typeElement.getEnclosedElements().stream()
+                  .filter(elt -> elt.getKind() == ElementKind.FIELD)
+                  .filter(elt -> elt.getModifiers().contains(Modifier.PUBLIC))
+                  .filter(
+                      elt ->
+                          !elt.getModifiers().containsAll(List.of(Modifier.STATIC, Modifier.FINAL)))
+                  .map(
+                      elt -> {
+                        String fieldName = elt.getSimpleName().toString();
+                        TypeMirror tm = elt.asType();
+                        TypeKind tk = tm.getKind();
+                        FieldInfo f =
+                            new FieldInfo(
+                                fieldName,
+                                parseSimpleDescription(elt),
+                                new TypeInfo(tm.toString(), tk.name()));
+                        return f;
+                      })
+                  .toList();
           List<FunctionInfo> functionInfos =
               typeElement.getEnclosedElements().stream()
                   .filter(elt -> elt.getKind() == ElementKind.METHOD)
@@ -154,6 +174,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                   name,
                   qName,
                   parseTypeDescription(typeElement),
+                  fieldInfoInfos.toArray(new FieldInfo[fieldInfoInfos.size()]),
                   functionInfos.toArray(new FunctionInfo[functionInfos.size()])));
         }
       }
@@ -229,6 +250,16 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
             rm.addCode(")");
           }
           rm.addCode(")"); // end of .withFunction(
+        }
+        for (var fieldInfo : objectInfo.fields()) {
+          rm.addCode("\n            .withField(")
+              .addCode("$S, ", fieldInfo.name())
+              .addCode(typeDef(fieldInfo.type()));
+          if (isNotBlank(fieldInfo.description())) {
+            rm.addCode(", new $T.WithFieldArguments()", io.dagger.client.TypeDef.class)
+                .addCode(".withDescription($S)", fieldInfo.description());
+          }
+          rm.addCode(")");
         }
         rm.addCode(")"); // end of .withObject(
       }
@@ -532,6 +563,14 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
 
   private static Boolean isNotBlank(String str) {
     return str != null && !str.isBlank();
+  }
+
+  private String parseSimpleDescription(Element element) {
+    String javadocString = elementUtils.getDocComment(element);
+    if (javadocString == null) {
+      return "";
+    }
+    return StaticJavaParser.parseJavadoc(javadocString).getDescription().toText().trim();
   }
 
   private String parseTypeDescription(Element element) {
