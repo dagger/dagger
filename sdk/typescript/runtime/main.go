@@ -368,7 +368,7 @@ func (t *TypescriptSdk) generateClient(ctr *dagger.Container, introspectionJSON 
 			"--lang", "typescript",
 			"--output", ModSourceDirPath,
 			"--module-name", t.moduleConfig.name,
-			"--module-context-path", t.moduleConfig.modulePath(),
+			"--module-source-path", t.moduleConfig.modulePath(),
 			"--introspection-json-path", schemaPath,
 		}, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,

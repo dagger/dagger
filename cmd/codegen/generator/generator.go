@@ -32,9 +32,11 @@ type Config struct {
 
 	// ModuleName is the module name to generate code for.
 	ModuleName string
-	// ModuleContextPath is the subpath in OutputDir to where a module root can be found.
-	ModuleContextPath string
-	// ModuleParentPath is the path from the module root to the context directory
+
+	// ModuleSourcePath is the subpath in OutputDir where a the module source subpath is located.
+	ModuleSourcePath string
+
+	// ModuleParentPath is the path from the module source subpath to the context directory
 	ModuleParentPath string
 
 	// IntrospectionJSON is an optional pre-computed introspection json string.
