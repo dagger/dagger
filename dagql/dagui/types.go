@@ -122,7 +122,7 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans []*Span, f func(*TraceTree)) {
 		revealedSpans := false
 		if opts.Verbosity < ShowEncapsulatedVerbosity {
 			// Process revealed spans before normal children
-			for revealed := range span.RevealedSpans {
+			for _, revealed := range span.RevealedSpans.Order {
 				if opts.ShouldShow(db, revealed) {
 					walk(revealed, tree)
 					revealedSpans = true

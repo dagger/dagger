@@ -18,12 +18,13 @@ type SpanSet = *OrderedSet[SpanID, *Span]
 type Span struct {
 	SpanSnapshot
 
-	ParentSpan   *Span          `json:"-"`
-	ChildSpans   SpanSet        `json:"-"`
-	RunningSpans SpanSet        `json:"-"`
-	FailedLinks  SpanSet        `json:"-"`
-	Call         *callpbv1.Call `json:"-"`
-	Base         *callpbv1.Call `json:"-"`
+	ParentSpan    *Span          `json:"-"`
+	ChildSpans    SpanSet        `json:"-"`
+	RunningSpans  SpanSet        `json:"-"`
+	FailedLinks   SpanSet        `json:"-"`
+	RevealedSpans SpanSet        `json:"-"`
+	Call          *callpbv1.Call `json:"-"`
+	Base          *callpbv1.Call `json:"-"`
 
 	// v0.15+
 	causesViaLinks  SpanSet `json:"-"`
@@ -207,49 +208,43 @@ func sliceOf[T any](val any) []T {
 // NOTE: failed state only propagates to spans that installed the current
 // span's effect - it does _not_ propagate through the parent span.
 func (span *Span) PropagateStatusToParentsAndLinks() {
-	for parent := range span.Parents {
+	propagate := func(parent *Span, failure, activity bool) bool {
 		var changed bool
 		if span.IsRunningOrEffectsRunning() {
 			changed = parent.RunningSpans.Add(span)
 		} else {
 			changed = parent.RunningSpans.Remove(span)
 		}
-		if changed {
+		if span.Reveal {
+			changed = parent.RevealedSpans.Add(span) || changed
+		}
+		if failure && span.IsFailed() {
+			changed = parent.FailedLinks.Add(span) || changed
+		}
+		if activity && parent.Activity.Add(span) {
+			changed = true
+		}
+		return changed
+	}
+
+	for parent := range span.Parents {
+		// don't propagate failure, to respect encapsulation
+		// don't propagate activity, since these are direct parents
+		if propagate(parent, false, false) {
 			span.db.update(parent)
 		}
 	}
 
 	for causal := range span.CausalSpans {
-		var changed bool
-		if span.IsRunning() {
-			changed = causal.RunningSpans.Add(span)
-		} else {
-			changed = causal.RunningSpans.Remove(span)
-		}
-
-		if span.IsFailed() {
-			causal.FailedLinks.Add(span)
-		}
-
-		if causal.Activity.Add(span) {
-			changed = true
-		}
-
-		if changed {
+		// propagate activity and failure, since causal spans inherit both
+		if propagate(causal, true, true) {
 			span.db.update(causal)
 		}
 
 		for parent := range causal.Parents {
-			var changed bool
-			if span.IsRunning() {
-				changed = parent.RunningSpans.Add(span)
-			} else {
-				changed = parent.RunningSpans.Remove(span)
-			}
-			if parent.Activity.Add(span) {
-				changed = true
-			}
-			if changed {
+			// don't propagate failure, to respect encapsulation
+			// do propagate activity, since these are indirect parents
+			if propagate(parent, false, true) {
 				span.db.update(parent)
 			}
 		}
@@ -334,20 +329,14 @@ func (span *Span) FailedReason() (bool, []string) {
 }
 
 func (span *Span) Parents(f func(*Span) bool) {
-	var keepGoing bool
-	// if the loop breaks while recursing we need to stop recursing, so we track
-	// that by man-in-the-middling the return value.
-	recurse := func(s *Span) bool {
-		keepGoing = f(s)
-		return keepGoing
-	}
 	if span.ParentSpan != nil {
 		if !f(span.ParentSpan) {
 			return
 		}
-		span.ParentSpan.Parents(recurse)
-		if !keepGoing {
-			return
+		for parent := range span.ParentSpan.Parents {
+			if !f(parent) {
+				break
+			}
 		}
 	}
 }
@@ -417,21 +406,6 @@ func (span *Span) EffectSpans(f func(*Span) bool) {
 	for _, set := range span.effectsViaAttrs {
 		for _, span := range set.Order {
 			if !f(span) {
-				return
-			}
-		}
-	}
-}
-
-func (span *Span) RevealedSpans(f func(*Span) bool) {
-	for _, child := range span.ChildSpans.Order {
-		if child.Reveal {
-			if !f(child) {
-				return
-			}
-		}
-		for revealed := range child.RevealedSpans {
-			if !f(revealed) {
 				return
 			}
 		}
