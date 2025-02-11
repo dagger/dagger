@@ -84,23 +84,22 @@ func (s *moduleSchema) sdkForModule(
 	}
 
 	// TODO: highly duped with other dep code
-	var sdkMod dagql.Instance[*core.Module]
+	var sdkModSrc dagql.Instance[*core.ModuleSource]
 	switch sdkRef.kind {
 	case core.ModuleSourceKindLocal:
 		switch parentSrc.Self.Kind {
 		case core.ModuleSourceKindLocal:
 			path := filepath.Join(parentSrc.Self.Local.ContextDirectoryPath, parentSrc.Self.SourceRootSubpath, sdk.Source)
-			err := s.dag.Select(ctx, s.dag.Root(), &sdkMod,
+			err := s.dag.Select(ctx, s.dag.Root(), &sdkModSrc,
 				dagql.Selector{
 					Field: "moduleSource",
 					Args: []dagql.NamedInput{
 						{Name: "refString", Value: dagql.String(path)},
 					},
 				},
-				dagql.Selector{Field: "asModule"},
 			)
 			if err != nil {
-				return nil, fmt.Errorf("failed to load sdk module %q: %w", sdk.Source, err)
+				return nil, getInvalidBuiltinSDKError(sdk.Source)
 			}
 
 		case core.ModuleSourceKindGit:
@@ -112,32 +111,30 @@ func (s *moduleSchema) sdkForModule(
 			if parentSrc.Self.Git.Version != "" {
 				sdkGitRef += "@" + parentSrc.Self.Git.Version
 			}
-			err := s.dag.Select(ctx, s.dag.Root(), &sdkMod,
+			err := s.dag.Select(ctx, s.dag.Root(), &sdkModSrc,
 				dagql.Selector{
 					Field: "moduleSource",
 					Args: []dagql.NamedInput{
 						{Name: "refString", Value: dagql.String(sdkGitRef)},
 					},
 				},
-				dagql.Selector{Field: "asModule"},
 			)
 			if err != nil {
-				return nil, fmt.Errorf("failed to load sdk module %q: %w", sdk, err)
+				return nil, getInvalidBuiltinSDKError(sdk.Source)
 			}
 
 		case core.ModuleSourceKindDir:
 			path := filepath.Join("/", parentSrc.Self.SourceRootSubpath, sdk.Source)
-			err := s.dag.Select(ctx, parentSrc.Self.ContextDirectory, &sdkMod,
+			err := s.dag.Select(ctx, parentSrc.Self.ContextDirectory, &sdkModSrc,
 				dagql.Selector{
 					Field: "asModuleSource",
 					Args: []dagql.NamedInput{
 						{Name: "sourceRootPath", Value: dagql.String(path)},
 					},
 				},
-				dagql.Selector{Field: "asModule"},
 			)
 			if err != nil {
-				return nil, fmt.Errorf("failed to load sdk module %q: %w", sdk, err)
+				return nil, getInvalidBuiltinSDKError(sdk.Source)
 			}
 		}
 
@@ -149,18 +146,29 @@ func (s *moduleSchema) sdkForModule(
 		if sdkRef.git.modVersion != "" {
 			sdkGitRef += "@" + sdkRef.git.modVersion
 		}
-		err := s.dag.Select(ctx, s.dag.Root(), &sdkMod,
+		err := s.dag.Select(ctx, s.dag.Root(), &sdkModSrc,
 			dagql.Selector{
 				Field: "moduleSource",
 				Args: []dagql.NamedInput{
 					{Name: "refString", Value: dagql.String(sdkGitRef)},
 				},
 			},
-			dagql.Selector{Field: "asModule"},
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load sdk module %q: %w", sdk, err)
+			return nil, fmt.Errorf("failed to load sdk module source %q: %w", sdk, err)
 		}
+	}
+
+	if !sdkModSrc.Self.ConfigExists {
+		return nil, getInvalidBuiltinSDKError(sdk.Source)
+	}
+
+	var sdkMod dagql.Instance[*core.Module]
+	err = s.dag.Select(ctx, sdkModSrc, &sdkMod,
+		dagql.Selector{Field: "asModule"},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load sdk module %q: %w", sdk, err)
 	}
 
 	// TODO: include sdk source dir from module config dagger.json once we support default-args/scripts
