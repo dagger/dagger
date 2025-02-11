@@ -220,11 +220,17 @@ If --sdk is specified, the given SDK is installed in the module. You can do this
 				}
 			}
 
+			modSrc = modSrc.
+				WithName(moduleName)
+			if sdk != "" {
+				modSrc = modSrc.
+					WithSDK(sdk).
+					WithInit(mergeDeps)
+			}
+			if moduleSourcePath != "" {
+				modSrc = modSrc.WithSourceSubpath(moduleSourcePath)
+			}
 			_, err = modSrc.
-				WithName(moduleName).
-				WithSDK(sdk).
-				WithInit(mergeDeps).
-				WithSourceSubpath(moduleSourcePath).
 				WithEngineVersion(modules.EngineVersionLatest).
 				GeneratedContextDirectory().
 				Export(ctx, contextDirPath)

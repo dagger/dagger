@@ -270,16 +270,21 @@ func (s *moduleSchema) localModuleSource(
 		if modCfg.Source != "" && !filepath.IsLocal(modCfg.Source) {
 			return inst, fmt.Errorf("source path %q contains parent directory components", modCfg.Source)
 		}
+
+		var sdkSource string
+		if modCfg.SDK != nil {
+			sdkSource = modCfg.SDK.Source
+		}
 		switch {
-		case modCfg.SDK.Source == "" && modCfg.Source != "":
+		case sdkSource == "" && modCfg.Source != "":
 			// invalid, can't have source when no sdk
 			return inst, fmt.Errorf("source path %q specified without sdk", modCfg.Source)
-		case modCfg.SDK.Source == "":
+		case sdkSource == "":
 			// skip setting source subpath when no sdk
-		case modCfg.SDK.Source != "" && modCfg.Source == "":
+		case sdkSource != "" && modCfg.Source == "":
 			// sdk was set but source was not, it's implicitly "." and thus the source root
 			localSrc.SourceSubpath = localSrc.SourceRootSubpath
-		case modCfg.SDK.Source != "" && modCfg.Source != "":
+		case sdkSource != "" && modCfg.Source != "":
 			// sdk was set and source was too, get the full rel path under the context
 			localSrc.SourceSubpath = filepath.Join(localSrc.SourceRootSubpath, modCfg.Source)
 		}
@@ -330,9 +335,11 @@ func (s *moduleSchema) localModuleSource(
 				return fmt.Errorf("failed to load local module source context directory: %w", err)
 			}
 
-			localSrc.SDKImpl, err = s.sdkForModule(ctx, query.Self, localSrc.SDK, localSrc)
-			if err != nil {
-				return fmt.Errorf("failed to load sdk for local module source: %w", err)
+			if localSrc.SDK != nil {
+				localSrc.SDKImpl, err = s.sdkForModule(ctx, query.Self, localSrc.SDK, localSrc)
+				if err != nil {
+					return fmt.Errorf("failed to load sdk for local module source: %w", err)
+				}
 			}
 
 			return nil
@@ -587,16 +594,21 @@ func (s *moduleSchema) gitModuleSource(
 	if modCfg.Source != "" && !filepath.IsLocal(modCfg.Source) {
 		return inst, fmt.Errorf("source path %q contains parent directory components", modCfg.Source)
 	}
+
+	var sdkSource string
+	if modCfg.SDK != nil {
+		sdkSource = modCfg.SDK.Source
+	}
 	switch {
-	case modCfg.SDK.Source == "" && modCfg.Source != "":
+	case sdkSource == "" && modCfg.Source != "":
 		// invalid, can't have source when no sdk
 		return inst, fmt.Errorf("source path %q specified without sdk", modCfg.Source)
-	case modCfg.SDK.Source == "":
+	case sdkSource == "":
 		// skip setting source subpath when no sdk
-	case modCfg.SDK.Source != "" && modCfg.Source == "":
+	case sdkSource != "" && modCfg.Source == "":
 		// sdk was set but source was not, it's implicitly "." and thus the source root
 		gitSrc.SourceSubpath = gitSrc.SourceRootSubpath
-	case modCfg.SDK.Source != "" && modCfg.Source != "":
+	case sdkSource != "" && modCfg.Source != "":
 		// sdk was set and source was too, get the full rel path under the context
 		gitSrc.SourceSubpath = filepath.Join(gitSrc.SourceRootSubpath, modCfg.Source)
 	}
@@ -645,9 +657,11 @@ func (s *moduleSchema) gitModuleSource(
 			return fmt.Errorf("failed to load git module source context directory: %w", err)
 		}
 
-		gitSrc.SDKImpl, err = s.sdkForModule(ctx, query.Self, gitSrc.SDK, gitSrc)
-		if err != nil {
-			return fmt.Errorf("failed to load sdk for git module source: %w", err)
+		if gitSrc.SDK != nil {
+			gitSrc.SDKImpl, err = s.sdkForModule(ctx, query.Self, gitSrc.SDK, gitSrc)
+			if err != nil {
+				return fmt.Errorf("failed to load sdk for git module source: %w", err)
+			}
 		}
 
 		return nil
@@ -1203,16 +1217,21 @@ func (s *moduleSchema) directoryAsModuleSource(
 	if modCfg.Source != "" && !filepath.IsLocal(modCfg.Source) {
 		return inst, fmt.Errorf("source path %q contains parent directory components", modCfg.Source)
 	}
+
+	var sdkSource string
+	if modCfg.SDK != nil {
+		sdkSource = modCfg.SDK.Source
+	}
 	switch {
-	case modCfg.SDK.Source == "" && modCfg.Source != "":
+	case sdkSource == "" && modCfg.Source != "":
 		// invalid, can't have source when no sdk
 		return inst, fmt.Errorf("source path %q specified without sdk", modCfg.Source)
-	case modCfg.SDK.Source == "":
+	case sdkSource == "":
 		// skip setting source subpath when no sdk
-	case modCfg.SDK.Source != "" && modCfg.Source == "":
+	case sdkSource != "" && modCfg.Source == "":
 		// sdk was set but source was not, it's implicitly "." and thus the source root
 		dirSrc.SourceSubpath = dirSrc.SourceRootSubpath
-	case modCfg.SDK.Source != "" && modCfg.Source != "":
+	case sdkSource != "" && modCfg.Source != "":
 		// sdk was set and source was too, get the full rel path under the context
 		dirSrc.SourceSubpath = filepath.Join(dirSrc.SourceRootSubpath, modCfg.Source)
 	}
@@ -1256,15 +1275,17 @@ func (s *moduleSchema) directoryAsModuleSource(
 
 	var eg errgroup.Group
 
-	eg.Go(func() error {
-		var err error
-		dirSrc.SDKImpl, err = s.sdkForModule(ctx, contextDir.Self.Query, dirSrc.SDK, dirSrc)
-		if err != nil {
-			return fmt.Errorf("failed to load sdk for dir module source: %w", err)
-		}
+	if dirSrc.SDK != nil {
+		eg.Go(func() error {
+			var err error
+			dirSrc.SDKImpl, err = s.sdkForModule(ctx, contextDir.Self.Query, dirSrc.SDK, dirSrc)
+			if err != nil {
+				return fmt.Errorf("failed to load sdk for dir module source: %w", err)
+			}
 
-		return nil
-	})
+			return nil
+		})
+	}
 
 	dirSrc.Dependencies = make([]dagql.Instance[*core.ModuleSource], len(modCfg.Dependencies))
 	for i, depCfg := range modCfg.Dependencies {
@@ -1430,6 +1451,12 @@ func (s *moduleSchema) moduleSourceWithSDK(
 	},
 ) (*core.ModuleSource, error) {
 	src = src.Clone()
+	if args.Source == "" {
+		src.SDK = nil
+		src.SDKImpl = nil
+		return src, nil
+	}
+
 	if src.SDK == nil {
 		src.SDK = &core.SDKConfig{}
 	}
