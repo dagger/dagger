@@ -49,9 +49,9 @@ func (s *moduleSchema) sdkForModule(
 	ctx context.Context,
 	query *core.Query,
 	sdk *core.SDKConfig,
-	parentSrc dagql.Instance[*core.ModuleSource],
+	parentSrc *core.ModuleSource,
 ) (core.SDK, error) {
-	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("sdkForModule: %s", sdk), telemetry.Internal())
+	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("sdkForModule: %s", sdk.Source), telemetry.Internal())
 	defer span.End()
 
 	if sdk == nil {
@@ -73,7 +73,7 @@ func (s *moduleSchema) sdkForModule(
 		ctx,
 		moduleSourceDirExistsFS{
 			bk:  bk,
-			src: parentSrc.Self,
+			src: parentSrc,
 		},
 		sdk.Source,
 		"",
@@ -87,29 +87,30 @@ func (s *moduleSchema) sdkForModule(
 	var sdkModSrc dagql.Instance[*core.ModuleSource]
 	switch sdkRef.kind {
 	case core.ModuleSourceKindLocal:
-		switch parentSrc.Self.Kind {
+		switch parentSrc.Kind {
 		case core.ModuleSourceKindLocal:
-			path := filepath.Join(parentSrc.Self.Local.ContextDirectoryPath, parentSrc.Self.SourceRootSubpath, sdk.Source)
+			path := filepath.Join(parentSrc.Local.ContextDirectoryPath, parentSrc.SourceRootSubpath, sdk.Source)
 			err := s.dag.Select(ctx, s.dag.Root(), &sdkModSrc,
 				dagql.Selector{
 					Field: "moduleSource",
 					Args: []dagql.NamedInput{
 						{Name: "refString", Value: dagql.String(path)},
+						{Name: "disableFindUp", Value: dagql.Boolean(true)},
 					},
 				},
 			)
 			if err != nil {
-				return nil, getInvalidBuiltinSDKError(sdk.Source)
+				return nil, fmt.Errorf("failed to load sdk local module source: %w", getInvalidBuiltinSDKError(sdk.Source))
 			}
 
 		case core.ModuleSourceKindGit:
-			path := filepath.Join("/", parentSrc.Self.SourceRootSubpath, sdk.Source)
-			sdkGitRef := parentSrc.Self.Git.CloneRef
+			path := filepath.Join("/", parentSrc.SourceRootSubpath, sdk.Source)
+			sdkGitRef := parentSrc.Git.CloneRef
 			if path != "/" {
 				sdkGitRef += path
 			}
-			if parentSrc.Self.Git.Version != "" {
-				sdkGitRef += "@" + parentSrc.Self.Git.Version
+			if parentSrc.Git.Version != "" {
+				sdkGitRef += "@" + parentSrc.Git.Version
 			}
 			err := s.dag.Select(ctx, s.dag.Root(), &sdkModSrc,
 				dagql.Selector{
@@ -120,12 +121,12 @@ func (s *moduleSchema) sdkForModule(
 				},
 			)
 			if err != nil {
-				return nil, getInvalidBuiltinSDKError(sdk.Source)
+				return nil, fmt.Errorf("failed to load sdk git module source: %w", getInvalidBuiltinSDKError(sdk.Source))
 			}
 
 		case core.ModuleSourceKindDir:
-			path := filepath.Join("/", parentSrc.Self.SourceRootSubpath, sdk.Source)
-			err := s.dag.Select(ctx, parentSrc.Self.ContextDirectory, &sdkModSrc,
+			path := filepath.Join("/", parentSrc.SourceRootSubpath, sdk.Source)
+			err := s.dag.Select(ctx, parentSrc.ContextDirectory, &sdkModSrc,
 				dagql.Selector{
 					Field: "asModuleSource",
 					Args: []dagql.NamedInput{
@@ -134,7 +135,7 @@ func (s *moduleSchema) sdkForModule(
 				},
 			)
 			if err != nil {
-				return nil, getInvalidBuiltinSDKError(sdk.Source)
+				return nil, fmt.Errorf("failed to load sdk dir module source: %w", getInvalidBuiltinSDKError(sdk.Source))
 			}
 		}
 
@@ -160,7 +161,7 @@ func (s *moduleSchema) sdkForModule(
 	}
 
 	if !sdkModSrc.Self.ConfigExists {
-		return nil, getInvalidBuiltinSDKError(sdk.Source)
+		return nil, fmt.Errorf("sdk module source has no dagger.json: %w", getInvalidBuiltinSDKError(sdk.Source))
 	}
 
 	var sdkMod dagql.Instance[*core.Module]
@@ -168,7 +169,7 @@ func (s *moduleSchema) sdkForModule(
 		dagql.Selector{Field: "asModule"},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load sdk module %q: %w", sdk, err)
+		return nil, fmt.Errorf("failed to load sdk module %q: %w", sdk.Source, err)
 	}
 
 	// TODO: include sdk source dir from module config dagger.json once we support default-args/scripts
@@ -244,11 +245,11 @@ func (s *moduleSchema) builtinSDK(ctx context.Context, root *core.Query, sdk *co
 	case SDKTypescript:
 		return s.loadBuiltinSDK(ctx, root, sdk.Source, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
 	case SDKJava:
-		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/java" + sdkSuffix}, dagql.Instance[*core.ModuleSource]{})
+		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/java" + sdkSuffix}, nil)
 	case SDKPHP:
-		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/php" + sdkSuffix}, dagql.Instance[*core.ModuleSource]{})
+		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/php" + sdkSuffix}, nil)
 	case SDKElixir:
-		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/elixir" + sdkSuffix}, dagql.Instance[*core.ModuleSource]{})
+		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/elixir" + sdkSuffix}, nil)
 	}
 
 	return nil, getInvalidBuiltinSDKError(sdk.Source)

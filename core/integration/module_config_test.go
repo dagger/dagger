@@ -596,18 +596,11 @@ func (m *Coolsdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJso
 }
 
 func (m *Coolsdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.GeneratedCode {
-	return dag.GeneratedCode(modSource.WithSDK("go").AsModule().GeneratedContextDirectory())
-}
-
-func (m *Coolsdk) RequiredPaths() []string {
-	return []string{
-		"**/go.mod",
-		"**/go.sum",
-		"**/go.work",
-		"**/go.work.sum",
-		"**/vendor/",
-		"**/*.go",
-	}
+	modSource = modSource.WithSDK("go")
+	return dag.GeneratedCode(
+		// apply generated diff over context directory
+		modSource.ContextDirectory().WithDirectory("/", modSource.GeneratedContextDirectory()),
+	)
 }
 `,
 		},
