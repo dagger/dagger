@@ -10,19 +10,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dagger/dagger/sdk/typescript/runtime/tsdistconsts"
 	"github.com/iancoleman/strcase"
 	"golang.org/x/mod/semver"
-)
-
-const (
-	bunVersion  = "1.1.38"
-	nodeVersion = "22.11.0" // LTS version, JOD (https://nodejs.org/en/about/previous-releases)
-
-	nodeImageDigest = "sha256:b64ced2e7cd0a4816699fe308ce6e8a08ccba463c757c00c14cd372e3d2c763e"
-	bunImageDigest  = "sha256:5148f6742ac31fac28e6eab391ab1f11f6dfc0c8512c7a3679b374ec470f5982"
-
-	nodeImageRef = "node:" + nodeVersion + "-alpine@" + nodeImageDigest
-	bunImageRef  = "oven/bun:" + bunVersion + "-alpine@" + bunImageDigest
 )
 
 type SupportedTSRuntime string
@@ -263,7 +253,7 @@ func (t *TypescriptSdk) Base() (*dagger.Container, error) {
 	case Bun:
 		return ctr.
 			WithoutEntrypoint().
-			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", bunVersion)), dagger.ContainerWithMountedCacheOpts{
+			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", tsdistconsts.DefaultBunVersion)), dagger.ContainerWithMountedCacheOpts{
 				Sharing: dagger.CacheSharingModePrivate,
 			}), nil
 	case Node:
@@ -409,13 +399,13 @@ func (t *TypescriptSdk) detectBaseImageRef() (string, error) {
 			return fmt.Sprintf("oven/%s:%s-alpine", Bun, version), nil
 		}
 
-		return bunImageRef, nil
+		return tsdistconsts.DefaultBunImageRef, nil
 	case Node:
 		if version != "" {
 			return fmt.Sprintf("%s:%s-alpine", Node, version), nil
 		}
 
-		return nodeImageRef, nil
+		return tsdistconsts.DefaultNodeImageRef, nil
 	default:
 		return "", fmt.Errorf("unknown runtime: %q", runtime)
 	}
