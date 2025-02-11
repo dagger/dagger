@@ -93,6 +93,8 @@ type ModuleSource struct {
 
 	Dependencies []dagql.Instance[*ModuleSource] `field:"true" name:"dependencies" doc:"TODO"`
 
+	SDKImpl SDK
+
 	// SourceRootSubpath is the relative path from the context dir to the dir containing the module's dagger.json
 	SourceRootSubpath string `field:"true" name:"sourceRootSubpath" doc:"TODO"`
 	// SourceSubpath is the relative path from the context dir to the dir containing the module's source code

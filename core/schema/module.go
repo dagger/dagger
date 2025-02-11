@@ -681,27 +681,25 @@ func (s *moduleSchema) currentModuleSource(
 	curMod *core.CurrentModule,
 	args struct{},
 ) (inst dagql.Instance[*core.Directory], err error) {
-	if curMod.Module.Source.Self == nil {
+	curSrc := curMod.Module.Source
+	if curSrc.Self == nil {
 		return inst, fmt.Errorf("module source not available during initialization")
 	}
 
-	srcSubpath := curMod.Module.Source.Self.SourceSubpath
+	srcSubpath := curSrc.Self.SourceSubpath
 	if srcSubpath == "" {
-		srcSubpath = curMod.Module.Source.Self.SourceRootSubpath
+		srcSubpath = curSrc.Self.SourceRootSubpath
 	}
 
 	var generatedDiff dagql.Instance[*core.Directory]
-	err = s.dag.Select(ctx, curMod.Module.Source, &generatedDiff,
+	err = s.dag.Select(ctx, curSrc, &generatedDiff,
 		dagql.Selector{Field: "generatedContextDirectory"},
 	)
 	if err != nil {
-		return inst, err
+		return inst, fmt.Errorf("failed to get generated context directory: %w", err)
 	}
 
-	err = s.dag.Select(ctx, curMod.Module.Source, &inst,
-		dagql.Selector{
-			Field: "contextDirectory",
-		},
+	err = s.dag.Select(ctx, curSrc.Self.ContextDirectory, &inst,
 		dagql.Selector{
 			Field: "withDirectory",
 			Args: []dagql.NamedInput{
@@ -716,6 +714,10 @@ func (s *moduleSchema) currentModuleSource(
 			},
 		},
 	)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get source directory: %w", err)
+	}
+
 	return inst, err
 }
 
