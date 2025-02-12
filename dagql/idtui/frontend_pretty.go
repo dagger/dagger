@@ -257,7 +257,8 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Conte
 	fe.runCtx, fe.interrupt = context.WithCancelCause(ctx)
 
 	opts := []tea.ProgramOption{
-		tea.WithMouseCellMotion(),
+		// FIXME: is this just annoying everyone? especially annoying in shell.
+		// tea.WithMouseCellMotion(),
 	}
 
 	in, out := findTTYs()
