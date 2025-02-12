@@ -1742,8 +1742,9 @@ func (ModuleSuite) TestLoops(ctx context.Context, t *testctx.T) {
 		With(daggerExec("install", "-m=depC", "./depB")).
 		With(daggerExec("install", "-m=depB", "./depA")).
 		With(daggerExec("install", "-m=depA", "./depC")).
+		With(daggerCallAt("depA", "--help")).
 		Sync(ctx)
-	requireErrOut(t, err, `local module at "/work/depA" has a circular dependency`)
+	requireErrOut(t, err, `module "depA" has a circular dependency on itself through dependency "depC"`)
 }
 
 //go:embed testdata/modules/go/id/arg/main.go
