@@ -90,7 +90,7 @@ type Frontend interface {
 	// Shell is called when the CLI enters interactive mode.
 	Shell(
 		ctx context.Context,
-		fn func(input string) error,
+		fn func(ctx context.Context, input string) error,
 		autocomplete editline.AutoCompleteFn,
 		prompt func(out *termenv.Output, err error) string,
 	)
