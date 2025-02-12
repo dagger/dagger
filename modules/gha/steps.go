@@ -47,7 +47,7 @@ func (j *Job) installDaggerSteps() []api.JobStep {
 	return []api.JobStep{
 		// Install latest dagger to bootstrap dev dagger
 		// FIXME: let's daggerize this, using dagger in dagger :)
-		j.bashStep("install-dagger", map[string]string{"DAGGER_VERSION": "latest"}),
+		j.bashStep("install-dagger", map[string]string{"DAGGER_VERSION_FILE": "dagger.json"}),
 		{
 			Name: "Install go",
 			Uses: "actions/setup-go@v5",
