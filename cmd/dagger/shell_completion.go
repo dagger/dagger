@@ -4,7 +4,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/chzyer/readline"
+	"github.com/knz/bubbline/computil"
+	"github.com/knz/bubbline/editline"
 	"mvdan.cc/sh/v3/syntax"
 )
 
@@ -15,14 +16,15 @@ type shellAutoComplete struct {
 	*shellCallHandler
 }
 
-var _ readline.AutoCompleter = (*shellAutoComplete)(nil)
+var _ editline.AutoCompleteFn = (*shellAutoComplete)(nil).Do
 
-func (h *shellAutoComplete) Do(line []rune, pos int) (newLine [][]rune, length int) {
+func (h *shellAutoComplete) Do(entireInput [][]rune, row, col int) (msg string, comp editline.Completions) {
+	line, pos := computil.Flatten(entireInput, row, col)
 	line = line[:pos]
 
 	file, err := parseShell(strings.NewReader(string(line)), "", syntax.RecoverErrors(5))
 	if err != nil {
-		return nil, 0
+		return "", nil
 	}
 
 	// find the smallest stmt next to the cursor - this allows accurate
@@ -106,16 +108,23 @@ func (h *shellAutoComplete) Do(line []rune, pos int) (newLine [][]rune, length i
 		shctx = h.dispatch(shctx, stmt, cursor)
 	}
 	if shctx == nil {
-		return nil, 0
+		return "", nil
 	}
 
-	var results [][]rune
-	for _, result := range shctx.completions(inprogressPrefix) {
-		if result, ok := strings.CutPrefix(result, inprogressPrefix); ok {
-			results = append(results, []rune(result+" "))
+	completions := shctx.completions(inprogressPrefix)
+	var matches []string
+	for _, c := range completions {
+		if strings.HasPrefix(c, inprogressPrefix) {
+			matches = append(matches, c)
 		}
 	}
-	return results, len(inprogressPrefix)
+	return "", editline.SimpleWordsCompletion(
+		matches,
+		"completion",
+		col,
+		pos-len(inprogressPrefix),
+		pos,
+	)
 }
 
 func (h *shellAutoComplete) dispatch(previous *CompletionContext, stmt *syntax.Stmt, cursor uint) *CompletionContext {
