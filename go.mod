@@ -61,6 +61,7 @@ require (
 	github.com/jackpal/gateway v1.0.15
 	github.com/juju/ansiterm v1.0.0
 	github.com/klauspost/compress v1.17.11
+	github.com/knz/bubbline v0.0.0-20230717192058-486954f9953f
 	github.com/koron-go/prefixw v1.0.0
 	github.com/lmittmann/tint v1.0.5
 	github.com/mackerelio/go-osstat v0.2.5
@@ -102,6 +103,7 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.57.0
 	go.opentelemetry.io/otel v1.34.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.8.0
+	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.32.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.32.0
 	go.opentelemetry.io/otel/log v0.8.0
 	go.opentelemetry.io/otel/metric v1.34.0
@@ -129,7 +131,12 @@ require (
 	resenje.org/singleflight v0.4.3
 )
 
-require go.opentelemetry.io/auto/sdk v1.1.0 // indirect
+require (
+	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.8.0 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.32.0 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.32.0 // indirect
+)
 
 require (
 	dario.cat/mergo v1.0.0 // indirect
@@ -146,6 +153,7 @@ require (
 	github.com/agnivade/levenshtein v1.2.0 // indirect
 	github.com/anchore/go-struct-converter v0.0.0-20221118182256-c68fdcfa2092 // indirect
 	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2 // indirect
+	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.24.1 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.5.4 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.26.6 // indirect
@@ -170,6 +178,7 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/charmbracelet/bubbles v0.15.1-0.20230123181021-a6a12c4a31eb // indirect
 	github.com/charmbracelet/x/ansi v0.4.5 // indirect
 	github.com/charmbracelet/x/term v0.2.1 // indirect
 	github.com/cloudflare/circl v1.3.7 // indirect
@@ -266,6 +275,7 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
+	github.com/sahilm/fuzzy v0.1.0 // indirect
 	github.com/samber/lo v1.44.0 // indirect
 	github.com/samber/slog-common v0.17.0 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.4.0 // indirect
@@ -290,11 +300,7 @@ require (
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.57.0 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.8.0 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.32.0 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.32.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.32.0 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.32.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/time v0.6.0 // indirect
 	google.golang.org/genproto v0.0.0-20240227224415-6ceb2ff114de // indirect
