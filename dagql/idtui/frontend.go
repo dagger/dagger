@@ -88,7 +88,12 @@ type Frontend interface {
 	SetCloudURL(ctx context.Context, url string, msg string, logged bool)
 
 	// Shell is called when the CLI enters interactive mode.
-	Shell(ctx context.Context, fn func(input string) error, autocomplete editline.AutoCompleteFn)
+	Shell(
+		ctx context.Context,
+		fn func(input string) error,
+		autocomplete editline.AutoCompleteFn,
+		prompt func(out *termenv.Output, err error) string,
+	)
 }
 
 type Dump struct {
