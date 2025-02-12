@@ -3,6 +3,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"dagger/releaser/internal/dagger"
 	_ "embed"
@@ -232,7 +233,7 @@ func (r *Releaser) Publish(
 			name: "🐹 Go SDK",
 			path: "sdk/go/",
 			tag:  "sdk/go/",
-			link: "https://pkg.go.dev/dagger.io/dagger@" + version,
+			link: "https://pkg.go.dev/dagger.io/dagger@" + cmp.Or(version, "main"),
 			dev:  true,
 			publish: func() error {
 				return r.Dagger.SDK().Go().Publish(ctx, tag, dagger.DaggerDevGoSDKPublishOpts{
@@ -282,7 +283,7 @@ func (r *Releaser) Publish(
 			name: "⚙️ Rust SDK",
 			path: "sdk/rust/",
 			tag:  "sdk/rust/",
-			link: "https://crates.io/crates/dagger-sdk/" + version,
+			link: "https://crates.io/crates/dagger-sdk/" + strings.TrimPrefix(version, "v"),
 			publish: func() error {
 				return r.Dagger.SDK().Rust().Publish(ctx, tag, dagger.DaggerDevRustSDKPublishOpts{
 					CargoRegistryToken: cargoRegistryToken,
@@ -294,7 +295,7 @@ func (r *Releaser) Publish(
 			name: "🐘 PHP SDK",
 			path: "sdk/php/",
 			tag:  "sdk/php/",
-			link: "https://packagist.org/packages/dagger/dagger#" + version,
+			link: "https://packagist.org/packages/dagger/dagger#" + cmp.Or(version, "dev-main"),
 			dev:  true,
 			publish: func() error {
 				return r.Dagger.SDK().Php().Publish(ctx, tag, dagger.DaggerDevPhpsdkPublishOpts{
