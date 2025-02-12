@@ -85,6 +85,9 @@ type Frontend interface {
 	ConnectedToEngine(ctx context.Context, name string, version string, clientID string)
 	// SetCloudURL is called after the CLI checks auth and sets the cloud URL.
 	SetCloudURL(ctx context.Context, url string, msg string, logged bool)
+
+	// Shell is called when the CLI enters interactive mode.
+	Shell(ctx context.Context, fn func(input string) error)
 }
 
 type Dump struct {

@@ -118,6 +118,10 @@ func NewPlain() Frontend {
 	}
 }
 
+func (fe *frontendPlain) Shell(ctx context.Context, fn func(input string) error) {
+	fmt.Fprintln(os.Stderr, "Shell mode not supported")
+}
+
 func (fe *frontendPlain) ConnectedToEngine(ctx context.Context, name string, version string, clientID string) {
 	if fe.Silent {
 		return

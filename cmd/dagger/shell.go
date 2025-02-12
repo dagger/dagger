@@ -7,21 +7,17 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
-	"github.com/adrg/xdg"
-	"github.com/chzyer/readline"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/mattn/go-isatty"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
-	"go.opentelemetry.io/otel/codes"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -115,6 +111,11 @@ func (o *terminalWriter) Write(p []byte) (n int, err error) {
 	return o.fn(p)
 }
 
+// Shell state is piped between exec handlers and only in the end the runner
+// writes the final output to the stdoutWriter. We need to check if that
+// state needs to be resolved into an API request and handle the response
+// appropriately. Note that this can happen in parallel if commands are
+// separated with a '&'.
 func (o *terminalWriter) SetProcessFunc(fn func([]byte) ([]byte, error)) {
 	o.processFn = fn
 }
@@ -170,34 +171,9 @@ type shellCallHandler struct {
 func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 	h.tty = !silent && (hasTTY && progress == "auto" || progress == "tty")
 
-	h.stdoutWriter = newTerminalWriter(func(b []byte) (int, error) {
-		var written int
-		err := h.withTerminal(func(_ io.Reader, stdout, _ io.Writer) error {
-			// FIXME: in the REPL, the output can be "swallowed" if we don't add a newline.
-			// However, this may lead to extra newlines than intended so we need a
-			// better solution.
-			if h.repl && h.tty && !bytes.HasSuffix(b, []byte("\n")) {
-				b = append(b, '\n')
-			}
-			n, err := stdout.Write(b)
-			written = n
-			return err
-		})
-		return written, err
-	})
-
-	h.stderrWriter = newTerminalWriter(func(b []byte) (int, error) {
-		var written int
-		err := h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
-			if h.repl && h.tty && !bytes.HasSuffix(b, []byte("\n")) {
-				b = append(b, '\n')
-			}
-			n, err := stderr.Write(b)
-			written = n
-			return err
-		})
-		return written, err
-	})
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	h.stdoutWriter = newTerminalWriter(stdio.Stdout.Write)
+	h.stderrWriter = newTerminalWriter(stdio.Stderr.Write)
 
 	r, err := interp.New(
 		interp.StdIO(nil, h.stdoutWriter, h.stderrWriter),
@@ -298,20 +274,8 @@ func litWord(s string) *syntax.Word {
 	return &syntax.Word{Parts: []syntax.WordPart{&syntax.Lit{Value: s}}}
 }
 
-// run parses code and executes the interpreter's Runner
-func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name string) error {
-	file, err := parseShell(reader, name)
-	if err != nil {
-		return err
-	}
-
-	// Shell state is piped between exec handlers and only in the end the runner
-	// writes the final output to the stdoutWriter. We need to check if that
-	// state needs to be resolved into an API request and handle the response
-	// appropriately. Note that this can happen in parallel if commands are
-	// separated with a '&'.
-
-	h.stdoutWriter.SetProcessFunc(func(b []byte) ([]byte, error) {
+func (h *shellCallHandler) shellStateProcessor(ctx context.Context) func([]byte) ([]byte, error) {
+	return func(b []byte) ([]byte, error) {
 		resp, typeDef, err := h.Result(ctx, bytes.NewReader(b), handleObjectLeaf)
 		if err != nil {
 			return nil, h.checkExecError(err)
@@ -323,7 +287,17 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 		frmt := outputFormat(typeDef)
 		err = printResponse(buf, resp, frmt)
 		return buf.Bytes(), err
-	})
+	}
+}
+
+// run parses code and executes the interpreter's Runner
+func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name string) error {
+	file, err := parseShell(reader, name)
+	if err != nil {
+		return err
+	}
+
+	h.stdoutWriter.SetProcessFunc(h.shellStateProcessor(ctx))
 
 	err = h.runner.Run(ctx, file)
 	if exit, ok := interp.IsExitStatus(err); ok {
@@ -405,122 +379,38 @@ func (h *shellCallHandler) runPath(ctx context.Context, path string) error {
 func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 	h.repl = true
 
-	h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
-		fmt.Fprintln(stderr, `Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`)
-		return nil
-	})
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-	var rl *readline.Instance
-	defer func() {
-		if rl != nil {
-			rl.Close()
-		}
-	}()
+	// give ourselves a blank slate by zooming into a passthrough span
+	shellCtx, shellSpan := Tracer().Start(ctx, "shell", telemetry.Passthrough())
+	defer telemetry.End(shellSpan, func() error { return nil })
+	Frontend.SetPrimary(dagui.SpanID{SpanID: shellSpan.SpanContext().SpanID()})
 
-	var exit bool
-	var runErr error
-
-	for {
-		Frontend.SetPrimary(dagui.SpanID{})
-		Frontend.SetCustomExit(func() {})
-		fg := termenv.ANSIGreen
-
-		if runErr != nil {
-			fg = termenv.ANSIRed
-
-			h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
-				out := idtui.NewOutput(stderr)
-				fmt.Fprintln(stderr, out.String("Error:", runErr.Error()).Foreground(fg))
-				return nil
-			})
-
-			// Reset runError for next command
-			runErr = nil
-		}
-
-		var line string
-
-		err := h.withTerminal(func(stdin io.Reader, stdout, stderr io.Writer) error {
-			var err error
-
-			prompt := h.Prompt(idtui.NewOutput(stdout), fg)
-
-			if rl == nil {
-				cfg, err := h.loadReadlineConfig(prompt)
-				if err != nil {
-					return err
-				}
-				// NOTE: this relies on multiple calls to withTerminal
-				// returning the same readers/writers each time
-				cfg.Stdin = io.NopCloser(stdin)
-				cfg.Stdout = stdout
-				cfg.Stderr = stderr
-
-				rl, err = readline.NewEx(cfg)
-				if err != nil {
-					return err
-				}
-			} else {
-				rl.SetPrompt(prompt)
-			}
-			line, err = rl.Readline()
-			return err
-		})
-		if err != nil {
-			// EOF or Ctrl+D to exit
-			if errors.Is(err, io.EOF) {
-				exit = true
-				break
-			}
-			// Ctrl+C should move to the next line
-			if errors.Is(err, readline.ErrInterrupt) {
-				continue
-			}
-			return err
-		}
-
+	Frontend.Shell(shellCtx, func(line string) (rerr error) {
 		if line == "exit" {
-			exit = true
-			break
+			cancel()
+			return nil
 		}
 
 		if strings.TrimSpace(line) == "" {
-			continue
+			return nil
 		}
 
-		spanCtx, span := Tracer().Start(ctx, line)
-		newCtx, cancel := context.WithCancel(spanCtx)
-		Frontend.SetPrimary(dagui.SpanID{SpanID: span.SpanContext().SpanID()})
-		Frontend.SetCustomExit(cancel)
-		runErr = h.run(newCtx, strings.NewReader(line), "")
-		if runErr != nil {
-			span.RecordError(runErr)
-			span.SetStatus(codes.Error, runErr.Error())
-		}
-		span.End()
-	}
+		ctx, span := Tracer().Start(shellCtx, line)
+		defer telemetry.End(span, func() error { return rerr })
 
-	if exit {
-		Frontend.SetCustomExit(nil)
-		Frontend.SetVerbosity(0)
-	}
+		// redirect stdio to the current span
+		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+		stdoutW := newTerminalWriter(stdio.Stdout.Write)
+		stdoutW.SetProcessFunc(h.shellStateProcessor(ctx))
+		stderrW := newTerminalWriter(stdio.Stderr.Write)
+		interp.StdIO(nil, stdoutW, stderrW)(h.runner)
+
+		return h.run(ctx, strings.NewReader(line), "")
+	})
 
 	return nil
-}
-
-func (h *shellCallHandler) loadReadlineConfig(prompt string) (*readline.Config, error) {
-	dataRoot := filepath.Join(xdg.DataHome, "dagger")
-	err := os.MkdirAll(dataRoot, 0o700)
-	if err != nil {
-		return nil, err
-	}
-
-	return &readline.Config{
-		Prompt:       prompt,
-		HistoryFile:  filepath.Join(dataRoot, "histfile"),
-		HistoryLimit: 1000,
-		AutoComplete: &shellAutoComplete{h},
-	}, nil
 }
 
 func (h *shellCallHandler) Prompt(out *termenv.Output, fg termenv.Color) string {
@@ -551,7 +441,6 @@ func (h *shellCallHandler) withTerminal(fn func(stdin io.Reader, stdout, stderr 
 
 func (*shellCallHandler) Print(ctx context.Context, args ...any) error {
 	hctx := interp.HandlerCtx(ctx)
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	_, err := fmt.Fprintln(io.MultiWriter(hctx.Stdout, stdio.Stdout), args...)
+	_, err := fmt.Fprintln(hctx.Stdout, args...)
 	return err
 }

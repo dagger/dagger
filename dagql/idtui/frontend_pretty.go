@@ -7,12 +7,16 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/adrg/xdg"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/knz/bubbline/editline"
+	"github.com/knz/bubbline/history"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -27,6 +31,8 @@ import (
 )
 
 var isDark = termenv.HasDarkBackground()
+
+var historyFile = filepath.Join(xdg.DataHome, "dagger", "histfile")
 
 type frontendPretty struct {
 	dagui.FrontendOpts
@@ -43,6 +49,11 @@ type frontendPretty struct {
 	quitting    bool
 	done        bool
 	err         error
+
+	// updated by Shell
+	shell           func(string) error
+	editline        *editline.Model
+	editlineFocused bool
 
 	// updated as events are written
 	db           *dagui.DB
@@ -108,6 +119,15 @@ func NewWithDB(db *dagui.DB) *frontendPretty {
 	}
 }
 
+type startShellMsg struct {
+	handler func(input string) error
+}
+
+func (fe *frontendPretty) Shell(ctx context.Context, fn func(input string) error) {
+	fe.program.Send(startShellMsg{handler: fn})
+	<-ctx.Done()
+}
+
 func (fe *frontendPretty) ConnectedToEngine(ctx context.Context, name string, version string, clientID string) {
 	// noisy, so suppress this for now
 }
@@ -164,6 +184,12 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 	} else {
 		// run the function wrapped in the TUI
 		fe.err = fe.runWithTUI(ctx, run)
+	}
+
+	if fe.editline != nil {
+		if err := history.SaveHistory(fe.editline.GetHistory(), historyFile); err != nil {
+			slog.Error("failed to save history", "err", err)
+		}
 	}
 
 	// print the final output display to stderr
@@ -493,6 +519,10 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 func (fe *frontendPretty) Render(out *termenv.Output) error {
 	progHeight := fe.window.Height
 
+	if fe.editline != nil {
+		progHeight -= lipgloss.Height(fe.editline.View())
+	}
+
 	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
 
 	var progPrefix string
@@ -714,6 +744,9 @@ func (fe *frontendPretty) View() string {
 		// print nothing; make way for the pristine output in the final render
 		return ""
 	}
+	if fe.shell != nil {
+		return strings.TrimSpace(fe.view.String()) + "\n" + fe.editline.View()
+	}
 	return fe.view.String()
 }
 
@@ -727,6 +760,19 @@ func (fe *frontendPretty) spawn() (msg tea.Msg) {
 
 type backgroundDoneMsg struct {
 	backgroundMsg
+	err error
+}
+
+const (
+	// We need a prompt that conveys the unique nature of the Dagger shell. Per gpt4:
+	// The ⋈ symbol, known as the bowtie, has deep roots in relational databases and set theory,
+	// where it denotes a join operation. This makes it especially fitting for a DAG environment,
+	// as it suggests the idea of dependencies, intersections, and points where separate paths
+	// or data sets come together.
+	shellPrompt = "⋈"
+)
+
+type shellDoneMsg struct {
 	err error
 }
 
@@ -750,6 +796,36 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			return fe, tea.Quit
 		}
 		return fe, nil
+
+	case startShellMsg:
+		fe.shell = msg.handler
+
+		fe.editline = editline.New(fe.window.Width, fe.window.Height)
+
+		// put the bowtie on
+		fe.editline.Prompt = fe.viewOut.String(shellPrompt).Bold().Foreground(termenv.ANSIGreen).String() + " "
+
+		// TODO: implement auto-complete
+		// fe.editline.AutoComplete = func(entireInput [][]rune, line, col int) (msg string, comp editline.Completions) {
+		// }
+
+		// restore history
+		fe.editline.MaxHistorySize = 1000
+		if history, err := history.LoadHistory(historyFile); err == nil {
+			fe.editline.SetHistory(history)
+		}
+
+		// if input ends with a pipe, then it's not complete
+		fe.editline.CheckInputComplete = func(entireInput [][]rune, line int, col int) bool {
+			return !strings.HasSuffix(string(entireInput[line][col:]), "|")
+		}
+
+		fe.editlineFocused = true
+
+		return fe, tea.Batch(
+			tea.Println(`Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`),
+			fe.editline.Focus(),
+		)
 
 	case backgroundMsg:
 		fe.backgrounded = true
@@ -797,7 +873,48 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		}
 		return fe, nil
 
+	case editline.InputCompleteMsg:
+		if fe.shell != nil && fe.editlineFocused {
+			value := fe.editline.Value()
+			fe.editline.AddHistoryEntry(value)
+			fe.editline.Reset()
+			return fe, func() tea.Msg {
+				return shellDoneMsg{fe.shell(value)}
+			}
+		}
+		return fe, nil
+
+	case shellDoneMsg:
+		fg := termenv.ANSIGreen
+		if msg.err != nil {
+			fg = termenv.ANSIRed
+		}
+		// TODO: refactor
+		fe.editline.Prompt = fe.viewOut.String(shellPrompt).Bold().Foreground(fg).String() + " "
+		return fe, nil
+
 	case tea.KeyMsg:
+		// send all input to editline if it's focused
+		if fe.shell != nil && fe.editlineFocused {
+			switch msg.String() {
+			case "ctrl+d":
+				fe.quitting = true
+				return fe, tea.Quit
+			case "ctrl+c":
+				fe.interrupted = true
+				fe.interrupt(errors.New("interrupted"))
+				return fe, nil
+			case "esc":
+				fe.editlineFocused = false
+				fe.editline.Blur()
+				return fe, nil
+			default:
+				el, cmd := fe.editline.Update(msg)
+				fe.editline = el.(*editline.Model)
+				return fe, cmd
+			}
+		}
+
 		lastKey := fe.pressedKey
 		fe.pressedKey = msg.String()
 		fe.pressedKeyAt = time.Now()
@@ -889,6 +1006,12 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		case "enter":
 			fe.ZoomedSpan = fe.FocusedSpan
 			fe.recalculateViewLocked()
+			return fe, nil
+		case "tab":
+			if fe.editline != nil {
+				fe.editline.Focus()
+				fe.editlineFocused = true
+			}
 			return fe, nil
 		}
 
@@ -993,6 +1116,9 @@ func (fe *frontendPretty) goIn() {
 func (fe *frontendPretty) setWindowSizeLocked(msg tea.WindowSizeMsg) {
 	fe.window = msg
 	fe.logs.SetWidth(msg.Width)
+	if fe.editline != nil {
+		fe.editline.SetSize(msg.Width, msg.Height)
+	}
 }
 
 func (fe *frontendPretty) renderLocked() {
@@ -1062,7 +1188,7 @@ func (fe *frontendPretty) renderStepError(out *termenv.Output, r *renderer, span
 }
 
 func (fe *frontendPretty) renderStep(out *termenv.Output, r *renderer, span *dagui.Span, chained bool, depth int, prefix string) error {
-	isFocused := span.ID == fe.FocusedSpan
+	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused
 
 	if call := span.Call(); call != nil {
 		if err := r.renderCall(out, span, call, prefix, chained, depth, false, span.Internal, isFocused); err != nil {
