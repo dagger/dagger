@@ -52,7 +52,9 @@ type frontendPretty struct {
 	err         error
 
 	// updated by Shell
-	shell           func(string) error
+	shell           func(ctx context.Context, input string) error
+	shellCtx        context.Context
+	shellInterrupt  context.CancelCauseFunc
 	prompt          func(out *termenv.Output, err error) string
 	editline        *editline.Model
 	editlineFocused bool
@@ -122,18 +124,20 @@ func NewWithDB(db *dagui.DB) *frontendPretty {
 }
 
 type startShellMsg struct {
-	handler      func(input string) error
+	ctx          context.Context
+	handler      func(ctx context.Context, input string) error
 	autocomplete editline.AutoCompleteFn
 	prompt       func(out *termenv.Output, err error) string
 }
 
 func (fe *frontendPretty) Shell(
 	ctx context.Context,
-	fn func(input string) error,
+	fn func(ctx context.Context, input string) error,
 	autocomplete editline.AutoCompleteFn,
 	prompt func(out *termenv.Output, err error) string,
 ) {
 	fe.program.Send(startShellMsg{
+		ctx:          ctx,
 		handler:      fn,
 		autocomplete: autocomplete,
 		prompt:       prompt,
@@ -841,6 +845,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 
 	case startShellMsg:
 		fe.shell = msg.handler
+		fe.shellCtx = msg.ctx
 		fe.prompt = msg.prompt
 
 		fe.editline = editline.New(fe.window.Width, fe.window.Height)
@@ -925,15 +930,17 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			value := fe.editline.Value()
 			fe.editline.AddHistoryEntry(value)
 			fe.editline.Reset()
+			ctx, cancel := context.WithCancelCause(fe.shellCtx)
+			fe.shellInterrupt = cancel
 			return fe, func() tea.Msg {
-				return shellDoneMsg{fe.shell(value)}
+				return shellDoneMsg{fe.shell(ctx, value)}
 			}
 		}
 		return fe, nil
 
 	case shellDoneMsg:
 		fe.editline.Prompt = fe.prompt(fe.viewOut, msg.err)
-		return fe, nil
+		return fe, fe.editline.Focus()
 
 	case tea.KeyMsg:
 		// send all input to editline if it's focused
@@ -943,8 +950,9 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				fe.quitting = true
 				return fe, tea.Quit
 			case "ctrl+c":
-				fe.interrupted = true
-				fe.interrupt(errors.New("interrupted"))
+				if fe.shellInterrupt != nil {
+					fe.shellInterrupt(errors.New("interrupted"))
+				}
 				return fe, nil
 			case "esc":
 				fe.editlineFocused = false
