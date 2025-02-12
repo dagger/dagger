@@ -377,6 +377,9 @@ func (s *moduleSchema) localModuleSource(
 					}
 					err := s.dag.Select(ctx, s.dag.Root(), &localSrc.Dependencies[i], selectors...)
 					if err != nil {
+						if errors.Is(err, dagql.ErrCacheMapRecursiveCall) {
+							return fmt.Errorf("module %q has a circular dependency on itself through dependency %q", localSrc.ModuleName, depCfg.Name)
+						}
 						return fmt.Errorf("failed to load local dep: %w", err)
 					}
 					return nil
