@@ -119,7 +119,7 @@ func NewPlain() Frontend {
 	}
 }
 
-func (fe *frontendPlain) Shell(ctx context.Context, fn func(input string) error, autocomplete editline.AutoCompleteFn, prompt func(out *termenv.Output, err error) string) {
+func (fe *frontendPlain) Shell(ctx context.Context, fn func(ctx context.Context, input string) error, autocomplete editline.AutoCompleteFn, prompt func(out *termenv.Output, err error) string) {
 	fmt.Fprintln(os.Stderr, "Shell not supported in plain mode")
 }
 
