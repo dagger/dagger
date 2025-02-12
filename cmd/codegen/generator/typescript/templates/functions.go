@@ -18,14 +18,14 @@ func TypescriptTemplateFuncs(
 	cfg generator.Config,
 ) template.FuncMap {
 	return typescriptTemplateFuncs{
-		cfg:              cfg,
-		schemaVersion:    schemaVersion,
+		cfg:           cfg,
+		schemaVersion: schemaVersion,
 	}.FuncMap()
 }
 
 type typescriptTemplateFuncs struct {
-	schemaVersion    string
-	cfg              generator.Config
+	schemaVersion string
+	cfg           generator.Config
 }
 
 func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {

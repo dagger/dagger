@@ -125,7 +125,6 @@ main()
 	})
 
 	t.Run("use local dependency", func(ctx context.Context, t *testctx.T) {
-
 		type testCase struct {
 			baseImage string
 			generator string

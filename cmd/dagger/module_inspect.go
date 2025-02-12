@@ -99,12 +99,11 @@ func initializeClientGeneratorModule(
 		return nil, fmt.Errorf("module must be fully initialized")
 	}
 
-	return initializeClientGeneratorConfig(ctx, dag, conf)
+	return initializeClientGeneratorConfig(ctx, conf)
 }
 
 func initializeClientGeneratorConfig(
 	ctx context.Context,
-	dag *dagger.Client,
 	conf *configuredModule,
 ) (gdef *clientGeneratorModuleDef, rerr error) {
 	_, serveSpan := Tracer().Start(ctx, "initializing client generator module", telemetry.Encapsulate())

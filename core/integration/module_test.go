@@ -5312,7 +5312,6 @@ func daggerUnprivilegedRun(args ...string) dagger.WithContainerFunc {
 	args = append([]string{"run"}, args...)
 
 	return daggerUnprivilegedExec(args...)
-
 }
 
 // We need to also generate local SDK sources to test eventual SDK library changes.

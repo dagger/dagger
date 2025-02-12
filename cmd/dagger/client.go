@@ -7,8 +7,8 @@ func init() {
 }
 
 var clientCmd = &cobra.Command{
-	Use: "client",
-	Short: "Access Dagger client subcommands",
+	Use:    "client",
+	Short:  "Access Dagger client subcommands",
 	Hidden: true,
 	Annotations: map[string]string{
 		"experimental": "true",
