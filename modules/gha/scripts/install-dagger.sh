@@ -6,9 +6,13 @@ prefix_dir="${RUNNER_TEMP:-/usr/local}"
 
 # Ensure the dir is writable otherwise fallback to tmpdir
 if [[ ! -d "$prefix_dir" ]] || [[ ! -w "$prefix_dir" ]]; then
-    prefix_dir="$(mktemp -d)"
+  prefix_dir="$(mktemp -d)"
 fi
-printf '%s/bin' "$prefix_dir" >> $GITHUB_PATH
+printf '%s/bin' "$prefix_dir" >>$GITHUB_PATH
+
+if [ -f "$DAGGER_VERSION_FILE" ]; then
+  DAGGER_VERSION=$(cat "$DAGGER_VERSION_FILE" | jq -r .engineVersion)
+fi
 
 # If the dagger version is 'latest', set the version back to an empty
 # string. This allows the install script to detect and install the latest
@@ -18,4 +22,4 @@ if [[ "$DAGGER_VERSION" == "latest" ]]; then
 fi
 
 # The install.sh script creates path ${prefix_dir}/bin
-curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin sh
+curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
