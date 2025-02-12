@@ -155,6 +155,7 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 			layers,
 			&MountedFS{FS: dagger.QueryBuilder, Name: "internal"},
 			&MountedFS{FS: dagger.Telemetry, Name: "internal"},
+			&MountedFS{FS: dagger.EngineConn, Name: "internal"},
 		)
 
 		// Get the go package from the module

@@ -22,9 +22,14 @@ import (
 {{ else if IsLocalSDK }}
 	"{{.PackageImport}}/dagger/internal/querybuilder"
 	"{{.PackageImport}}/dagger/internal/telemetry"
+	"{{.PackageImport}}/dagger/internal/engineconn"
 {{ else }}
 	"{{.PackageImport}}/querybuilder"
 	"{{.PackageImport}}/telemetry"
+{{ end }}
+
+{{- if IsStandaloneClient }}
+	"dagger.io/dagger"
 {{ end }}
 )
 
@@ -126,7 +131,7 @@ func (e *ExecError) Unwrap() error {
 {{ if eq .Kind "ENUM" }}{{ template "_types/enum.go.tmpl" . }}{{ end }}
 {{ end }}
 
-{{ if or (IsModuleCode) (IsStandaloneClient) }}
+{{ if or (IsModuleCode) }}
 type Client struct {
 	query *querybuilder.Selection
 	client graphql.Client
@@ -219,4 +224,27 @@ func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Reques
 	}
 	return nil
 }
+{{ end }}
+
+{{ if IsStandaloneClient }}
+{{ if IsLocalSDK }}
+{{ template "_dagger.gen.go/client.go.tmpl" . }}
+{{ else }}
+type Client struct {
+	query  *querybuilder.Selection
+	client graphql.Client
+}
+
+func Connect(ctx context.Context, opts ...dagger.ClientOpt) (*Client, error) {
+	dag, err := dagger.Connect(ctx, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Client{
+		query:  dag.QueryBuilder(),
+		client: dag.GraphQLClient(),
+	}, nil
+}
+{{ end }}
 {{ end }}

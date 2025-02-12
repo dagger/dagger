@@ -45,7 +45,10 @@ func (ClientGeneratorTest) TestGenerateAndCallDependencies(ctx context.Context, 
 		func main() {
 			ctx := context.Background()
 		
-			dag := dagger.Connect()
+			dag, err := dagger.Connect(ctx)
+      if err != nil {
+			  panic(err)
+      }
 		
 			res, err := dag.Hello().Hello(ctx)
 			if err != nil {
@@ -151,7 +154,10 @@ main()
 		func main() {
 			ctx := context.Background()
 		
-			dag := dagger.Connect()
+			dag, err := dagger.Connect(ctx)
+      if err != nil {
+			  panic(err)
+      }
 		
 			res, err := dag.Test().Hello(ctx)
 			if err != nil {
