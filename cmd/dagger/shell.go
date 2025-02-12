@@ -389,7 +389,7 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 
 	complete := &shellAutoComplete{h}
 	Frontend.Shell(shellCtx,
-		func(line string) (rerr error) {
+		func(ctx context.Context, line string) (rerr error) {
 			if line == "exit" {
 				cancel()
 				return nil
@@ -399,7 +399,7 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 				return nil
 			}
 
-			ctx, span := Tracer().Start(shellCtx, line)
+			ctx, span := Tracer().Start(ctx, line)
 			defer telemetry.End(span, func() error { return rerr })
 
 			// redirect stdio to the current span
