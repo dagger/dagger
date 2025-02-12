@@ -2100,13 +2100,15 @@ func (s *moduleSchema) moduleSourceGeneratedContextDirectory(
 		}
 
 		// TODO: wrap up in nicer looking util/interface
-		_, _, err = s.dag.Cache.GetOrInitialize(ctx, digest.Digest(srcInst.Self.Digest), func(context.Context) (dagql.Typed, error) {
+		// TODO:
+		dgst := digest.Digest(srcInst.Self.Digest + modCfg.SDK.Source)
+		_, _, err = s.dag.Cache.GetOrInitialize(ctx, dgst, func(context.Context) (dagql.Typed, error) {
 			return srcInst, nil
 		})
 		if err != nil {
 			return genDirInst, fmt.Errorf("failed to get or initialize instance: %w", err)
 		}
-		srcInstContentHashed := srcInst.WithMetadata(digest.Digest(srcInst.Self.Digest), true)
+		srcInstContentHashed := srcInst.WithMetadata(dgst, true)
 
 		generatedCode, err := srcInst.Self.SDKImpl.Codegen(ctx, deps, srcInstContentHashed)
 		if err != nil {
@@ -2258,13 +2260,14 @@ func (s *moduleSchema) moduleSourceAsModule(
 	}
 
 	// TODO: wrap up in nicer looking util/interface
-	_, _, err = s.dag.Cache.GetOrInitialize(ctx, digest.Digest(src.Self.Digest), func(context.Context) (dagql.Typed, error) {
+	dgst := digest.Digest(src.Self.Digest + mod.SDKConfig.Source)
+	_, _, err = s.dag.Cache.GetOrInitialize(ctx, dgst, func(context.Context) (dagql.Typed, error) {
 		return src, nil
 	})
 	if err != nil {
 		return inst, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
-	srcInstContentHashed := src.WithMetadata(digest.Digest(src.Self.Digest), true)
+	srcInstContentHashed := src.WithMetadata(dgst, true)
 
 	loadDepModsCtx, loadDepModsSpan := core.Tracer(ctx).Start(ctx, "asModule load deps + sdk", telemetry.Internal())
 
