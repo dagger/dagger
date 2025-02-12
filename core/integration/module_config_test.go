@@ -145,7 +145,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 					defer cleanup()
 
 					_, err := baseCtr(t, c).With(mountedSocket).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-source"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
-					requireErrOut(t, err, `source root path "../../../" contains parent directory components`)
+					requireErrOut(t, err, `source path "../../../" contains parent directory components`)
 				})
 			})
 		})

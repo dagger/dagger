@@ -82,19 +82,26 @@ func (sdk SDKConfig) Clone() *SDKConfig {
 type ModuleSource struct {
 	Query *Query
 
-	ConfigExists           bool       `field:"true" name:"configExists" doc:"TODO"`
-	ModuleName             string     `field:"true" name:"moduleName" doc:"TODO"`
-	ModuleOriginalName     string     `field:"true" name:"moduleOriginalName" doc:"TODO"`
-	EngineVersion          string     `field:"true" name:"engineVersion" doc:"TODO"`
-	SDK                    *SDKConfig `field:"true" name:"sdk" doc:"TODO"`
-	IncludePaths           []string
+	ConfigExists           bool   `field:"true" name:"configExists" doc:"TODO"`
+	ModuleName             string `field:"true" name:"moduleName" doc:"TODO"`
+	ModuleOriginalName     string `field:"true" name:"moduleOriginalName" doc:"TODO"`
+	EngineVersion          string `field:"true" name:"engineVersion" doc:"TODO"`
 	CodegenConfig          *modules.ModuleCodegenConfig
 	InitConfig             *ModuleInitConfig
 	ModuleConfigUserFields modules.ModuleConfigUserFields
 
-	Dependencies []dagql.Instance[*ModuleSource] `field:"true" name:"dependencies" doc:"TODO"`
-
+	SDK     *SDKConfig `field:"true" name:"sdk" doc:"TODO"`
 	SDKImpl SDK
+
+	// IncludePaths are the includes as read from the module's dagger.json
+	IncludePaths []string
+	// FullIncludePaths are the include paths with the source root subpath prepended and implicit loads of dagger.json + source dir inculded
+	FullIncludePaths []string
+
+	// ConfigDependencies are the dependencies as read from the module's dagger.json
+	ConfigDependencies []*modules.ModuleConfigDependency
+	// Dependencies are the loaded sources for the module's dependencies
+	Dependencies []dagql.Instance[*ModuleSource] `field:"true" name:"dependencies" doc:"TODO"`
 
 	// SourceRootSubpath is the relative path from the context dir to the dir containing the module's dagger.json
 	SourceRootSubpath string `field:"true" name:"sourceRootSubpath" doc:"TODO"`
@@ -127,10 +134,6 @@ func (src ModuleSource) Clone() *ModuleSource {
 		src.Query = src.Query.Clone()
 	}
 
-	origIncludePaths := src.IncludePaths
-	src.IncludePaths = make([]string, len(origIncludePaths))
-	copy(src.IncludePaths, origIncludePaths)
-
 	if src.CodegenConfig != nil {
 		src.CodegenConfig = src.CodegenConfig.Clone()
 	}
@@ -139,6 +142,20 @@ func (src ModuleSource) Clone() *ModuleSource {
 		src.InitConfig = src.InitConfig.Clone()
 	}
 
+	if src.SDK != nil {
+		src.SDK = src.SDK.Clone()
+	}
+
+	origIncludePaths := src.IncludePaths
+	src.IncludePaths = make([]string, len(origIncludePaths))
+	copy(src.IncludePaths, origIncludePaths)
+	origFullIncludePaths := src.FullIncludePaths
+	src.FullIncludePaths = make([]string, len(origFullIncludePaths))
+	copy(src.FullIncludePaths, origFullIncludePaths)
+
+	origConfigDependencies := src.ConfigDependencies
+	src.ConfigDependencies = make([]*modules.ModuleConfigDependency, len(origConfigDependencies))
+	copy(src.ConfigDependencies, origConfigDependencies)
 	origDependencies := src.Dependencies
 	src.Dependencies = make([]dagql.Instance[*ModuleSource], len(origDependencies))
 	for i, dep := range origDependencies {

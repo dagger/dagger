@@ -20,9 +20,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/client/pathutil"
-	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/engine/vcs"
-	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/sync/errgroup"
@@ -261,81 +258,8 @@ func (s *moduleSchema) localModuleSource(
 		if err != nil {
 			return inst, fmt.Errorf("failed to read module config file: %w", err)
 		}
-		modCfg := &modules.ModuleConfigWithUserFields{}
-		if err := json.Unmarshal(contents, modCfg); err != nil {
-			return inst, fmt.Errorf("failed to decode module config: %w", err)
-		}
-
-		localSrc.ModuleName = modCfg.Name
-		localSrc.ModuleOriginalName = modCfg.Name
-		localSrc.EngineVersion = modCfg.EngineVersion
-		localSrc.IncludePaths = modCfg.Include
-		localSrc.CodegenConfig = modCfg.Codegen
-		localSrc.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
-
-		if modCfg.SDK != nil {
-			localSrc.SDK = &core.SDKConfig{
-				Source: modCfg.SDK.Source,
-			}
-		}
-
-		// figure out source subpath
-		if modCfg.Source != "" && !filepath.IsLocal(modCfg.Source) {
-			return inst, fmt.Errorf("source path %q contains parent directory components", modCfg.Source)
-		}
-
-		var sdkSource string
-		if modCfg.SDK != nil {
-			sdkSource = modCfg.SDK.Source
-		}
-		switch {
-		case sdkSource == "" && modCfg.Source != "":
-			// invalid, can't have source when no sdk
-			return inst, fmt.Errorf("source path %q specified without sdk", modCfg.Source)
-		case sdkSource == "":
-			// skip setting source subpath when no sdk
-		case sdkSource != "" && modCfg.Source == "":
-			// sdk was set but source was not, it's implicitly "." and thus the source root
-			localSrc.SourceSubpath = localSrc.SourceRootSubpath
-		case sdkSource != "" && modCfg.Source != "":
-			// sdk was set and source was too, get the full rel path under the context
-			localSrc.SourceSubpath = filepath.Join(localSrc.SourceRootSubpath, modCfg.Source)
-		}
-
-		// figure out includes so we can load the context dir
-		includes := []string{
-			// always load the config file (currently mainly so it gets incorporated into the digest)
-			localSrc.SourceRootSubpath + "/" + modules.Filename,
-		}
-		if localSrc.SourceSubpath != "" {
-			// load the source dir if set
-			includes = append(includes, localSrc.SourceSubpath+"/**/*")
-		} else {
-			// otherwise load the source root; this supports use cases like an sdk-less module w/ a pyproject.toml
-			// that's now going to be upgraded to using the python sdk and needs pyproject.toml to be loaded
-			// TODO: might be better to dynamically load more when WithSourceSubpath is called
-			// TODO: might be better to dynamically load more when WithSourceSubpath is called
-			// TODO: might be better to dynamically load more when WithSourceSubpath is called
-			includes = append(includes, localSrc.SourceRootSubpath+"/**/*")
-		}
-
-		// add the config file includes, rebasing them from being relative to the config file
-		// to being relative to the context dir
-		for _, pattern := range modCfg.Include {
-			isNegation := strings.HasPrefix(pattern, "!")
-			pattern = strings.TrimPrefix(pattern, "!")
-			absPath := filepath.Join(sourceRootPath, pattern)
-			relPath, err := pathutil.LexicalRelativePath(contextDirPath, absPath)
-			if err != nil {
-				return inst, fmt.Errorf("failed to get relative path from context to include: %w", err)
-			}
-			if !filepath.IsLocal(relPath) {
-				return inst, fmt.Errorf("local module dep source include/exclude path %q escapes context %q", relPath, contextDirPath)
-			}
-			if isNegation {
-				relPath = "!" + relPath
-			}
-			includes = append(includes, relPath)
+		if err := s.initFromModConfig(contents, localSrc); err != nil {
+			return inst, err
 		}
 
 		// load this module source's context directory, sdk and deps in parallel
@@ -347,7 +271,7 @@ func (s *moduleSchema) localModuleSource(
 					Field: "directory",
 					Args: []dagql.NamedInput{
 						{Name: "path", Value: dagql.String(contextDirPath)},
-						{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(includes...))},
+						{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(localSrc.FullIncludePaths...))},
 					},
 				},
 			)
@@ -365,8 +289,8 @@ func (s *moduleSchema) localModuleSource(
 			return nil
 		})
 
-		localSrc.Dependencies = make([]dagql.Instance[*core.ModuleSource], len(modCfg.Dependencies))
-		for i, depCfg := range modCfg.Dependencies {
+		localSrc.Dependencies = make([]dagql.Instance[*core.ModuleSource], len(localSrc.ConfigDependencies))
+		for i, depCfg := range localSrc.ConfigDependencies {
 			eg.Go(func() error {
 				parsedDepRef, err := parseRefString(
 					ctx,
@@ -459,60 +383,6 @@ func (s *moduleSchema) localModuleSource(
 	return dagql.NewInstanceForCurrentID(ctx, s.dag, query, localSrc)
 }
 
-func callerHostFindUp(
-	ctx context.Context,
-	bk *buildkit.Client,
-	curDirPath string,
-	soughtName string,
-) (string, bool, error) {
-	found, err := callerHostFindUpAll(ctx, bk, curDirPath, map[string]struct{}{soughtName: {}})
-	if err != nil {
-		return "", false, err
-	}
-	p, ok := found[soughtName]
-	return p, ok, nil
-}
-
-func callerHostFindUpAll(
-	ctx context.Context,
-	bk *buildkit.Client,
-	curDirPath string,
-	soughtNames map[string]struct{},
-) (map[string]string, error) {
-	found := make(map[string]string, len(soughtNames))
-	for {
-		for soughtName := range soughtNames {
-			stat, err := bk.StatCallerHostPath(ctx, filepath.Join(curDirPath, soughtName), true)
-			if err == nil {
-				delete(soughtNames, soughtName)
-				// NOTE: important that we use stat.Path here rather than curDirPath since the stat also
-				// does some normalization of paths when the client is using case-insensitive filesystems
-				found[soughtName] = filepath.Dir(stat.Path)
-				continue
-			}
-			// TODO: remove the strings.Contains check here (which aren't cross-platform),
-			// since we now set NotFound (since v0.11.2)
-			if status.Code(err) != codes.NotFound && !strings.Contains(err.Error(), "no such file or directory") {
-				return nil, fmt.Errorf("failed to lstat %s: %w", soughtName, err)
-			}
-		}
-
-		if len(soughtNames) == 0 {
-			// found everything
-			break
-		}
-
-		nextDirPath := filepath.Dir(curDirPath)
-		if curDirPath == nextDirPath {
-			// hit root, nowhere else to look
-			break
-		}
-		curDirPath = nextDirPath
-	}
-
-	return found, nil
-}
-
 func (s *moduleSchema) gitModuleSource(
 	ctx context.Context,
 	query dagql.Instance[*core.Query],
@@ -549,6 +419,9 @@ func (s *moduleSchema) gitModuleSource(
 	gitSrc.SourceRootSubpath = parsed.repoRootSubdir
 	if filepath.IsAbs(gitSrc.SourceRootSubpath) {
 		gitSrc.SourceRootSubpath = strings.TrimPrefix(gitSrc.SourceRootSubpath, "/")
+	}
+	if gitSrc.SourceRootSubpath == "" {
+		gitSrc.SourceRootSubpath = "."
 	}
 
 	parsedURL, err := url.Parse(gitSrc.Git.HTMLRepoURL)
@@ -605,71 +478,8 @@ func (s *moduleSchema) gitModuleSource(
 		}
 		return inst, fmt.Errorf("failed to load git module dagger config: %w", err)
 	}
-
-	// TODO: some of this logic is a bit dupe'd with local module source, could consolidate
-	modCfg := &modules.ModuleConfigWithUserFields{}
-	if err := json.Unmarshal([]byte(configContents), modCfg); err != nil {
-		return inst, fmt.Errorf("failed to unmarshal module config: %w", err)
-	}
-
-	gitSrc.ModuleName = modCfg.Name
-	gitSrc.ModuleOriginalName = modCfg.Name
-	gitSrc.EngineVersion = modCfg.EngineVersion
-	gitSrc.IncludePaths = modCfg.Include
-	gitSrc.CodegenConfig = modCfg.Codegen
-	gitSrc.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
-
-	if modCfg.SDK != nil {
-		gitSrc.SDK = &core.SDKConfig{
-			Source: modCfg.SDK.Source,
-		}
-	}
-
-	// figure out source subpath
-	if modCfg.Source != "" && !filepath.IsLocal(modCfg.Source) {
-		return inst, fmt.Errorf("source root path %q contains parent directory components", modCfg.Source)
-	}
-
-	var sdkSource string
-	if modCfg.SDK != nil {
-		sdkSource = modCfg.SDK.Source
-	}
-	switch {
-	case sdkSource == "" && modCfg.Source != "":
-		// invalid, can't have source when no sdk
-		return inst, fmt.Errorf("source path %q specified without sdk", modCfg.Source)
-	case sdkSource == "":
-		// skip setting source subpath when no sdk
-	case sdkSource != "" && modCfg.Source == "":
-		// sdk was set but source was not, it's implicitly "." and thus the source root
-		gitSrc.SourceSubpath = gitSrc.SourceRootSubpath
-	case sdkSource != "" && modCfg.Source != "":
-		// sdk was set and source was too, get the full rel path under the context
-		gitSrc.SourceSubpath = filepath.Join(gitSrc.SourceRootSubpath, modCfg.Source)
-	}
-
-	includes := []string{
-		// always load the config file (currently mainly so it gets incorporated into the digest)
-		gitSrc.SourceRootSubpath + "/" + modules.Filename,
-	}
-	if gitSrc.SourceSubpath != "" {
-		// load the source dir if set
-		includes = append(includes, gitSrc.SourceSubpath+"/**/*")
-	}
-
-	// add the config file includes, rebasing them from being relative to the config file
-	// to being relative to the context dir
-	for _, pattern := range modCfg.Include {
-		isNegation := strings.HasPrefix(pattern, "!")
-		pattern = strings.TrimPrefix(pattern, "!")
-		relPath := filepath.Join(gitSrc.SourceRootSubpath, pattern)
-		if !filepath.IsLocal(relPath) {
-			return inst, fmt.Errorf("git module dep source include/exclude path %q escapes context", relPath)
-		}
-		if isNegation {
-			relPath = "!" + relPath
-		}
-		includes = append(includes, relPath)
+	if err := s.initFromModConfig([]byte(configContents), gitSrc); err != nil {
+		return inst, err
 	}
 
 	// load this module source's context directory and deps in parallel
@@ -684,7 +494,7 @@ func (s *moduleSchema) gitModuleSource(
 					{Name: "directory", Value: dagql.NewID[*core.Directory](gitSrc.ContextDirectory.ID())},
 					// update the context dir to apply the includes, this makes it consistent with
 					// local module source equivalents and ensures we use a correctly scoped digest
-					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(includes...))},
+					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(gitSrc.FullIncludePaths...))},
 				},
 			},
 		)
@@ -706,8 +516,8 @@ func (s *moduleSchema) gitModuleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	gitSrc.Dependencies = make([]dagql.Instance[*core.ModuleSource], len(modCfg.Dependencies))
-	for i, depCfg := range modCfg.Dependencies {
+	gitSrc.Dependencies = make([]dagql.Instance[*core.ModuleSource], len(gitSrc.ConfigDependencies))
+	for i, depCfg := range gitSrc.ConfigDependencies {
 		eg.Go(func() error {
 			parsedDepRef, err := parseRefString(
 				ctx,
@@ -803,383 +613,6 @@ func (s *moduleSchema) gitModuleSource(
 	return dagql.NewInstanceForCurrentID(ctx, s.dag, query, gitSrc)
 }
 
-func fastModuleSourceKindCheck(
-	refString string,
-	refPin string,
-	stable bool,
-) core.ModuleSourceKind {
-	switch {
-	case refPin != "":
-		return core.ModuleSourceKindGit
-	case stable:
-		return core.ModuleSourceKindGit
-	case len(refString) > 0 && (refString[0] == '/' || refString[0] == '.'):
-		return core.ModuleSourceKindLocal
-	case len(refString) > 1 && refString[0:2] == "..":
-		return core.ModuleSourceKindLocal
-	case strings.HasPrefix(refString, core.SchemeHTTP.Prefix()):
-		return core.ModuleSourceKindGit
-	case strings.HasPrefix(refString, core.SchemeHTTPS.Prefix()):
-		return core.ModuleSourceKindGit
-	case strings.HasPrefix(refString, core.SchemeSSH.Prefix()):
-		return core.ModuleSourceKindGit
-	case !strings.Contains(refString, "."):
-		// technically host names can not have any dot, but we can save a lot of work
-		// by assuming a dot-free ref string is a local path. Users can prefix
-		// args with a scheme:// to disambiguate these obscure corner cases.
-		return core.ModuleSourceKindLocal
-	default:
-		return ""
-	}
-}
-
-type dirExistsFS interface {
-	dirExists(ctx context.Context, path string) (bool, error)
-}
-
-type dirExistsFunc func(ctx context.Context, path string) (bool, error)
-
-func (f dirExistsFunc) dirExists(ctx context.Context, path string) (bool, error) {
-	return f(ctx, path)
-}
-
-type callerDirExistsFS struct {
-	bk *buildkit.Client
-}
-
-func (fs callerDirExistsFS) dirExists(ctx context.Context, path string) (bool, error) {
-	stat, err := fs.bk.StatCallerHostPath(ctx, path, false)
-	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			return false, nil
-		}
-		return false, err
-	}
-	return stat.IsDir(), nil
-}
-
-type coreDirExistsFS struct {
-	dir *core.Directory
-	bk  *buildkit.Client
-}
-
-func (fs coreDirExistsFS) dirExists(ctx context.Context, path string) (bool, error) {
-	stat, err := fs.dir.Stat(ctx, fs.bk, nil, path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
-		}
-		return false, err
-	}
-	return stat.IsDir(), nil
-}
-
-type moduleSourceDirExistsFS struct {
-	bk  *buildkit.Client
-	src *core.ModuleSource
-}
-
-// path is assumed to be relative to source root
-func (fs moduleSourceDirExistsFS) dirExists(ctx context.Context, path string) (bool, error) {
-	if fs.src == nil {
-		return false, nil
-	}
-
-	switch fs.src.Kind {
-	case core.ModuleSourceKindLocal:
-		path = filepath.Join(fs.src.Local.ContextDirectoryPath, fs.src.SourceRootSubpath, path)
-		return callerDirExistsFS{fs.bk}.dirExists(ctx, path)
-	case core.ModuleSourceKindGit:
-		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
-		return coreDirExistsFS{
-			dir: fs.src.Git.UnfilteredContextDir.Self,
-			bk:  fs.bk,
-		}.dirExists(ctx, path)
-	case core.ModuleSourceKindDir:
-		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
-		return coreDirExistsFS{
-			dir: fs.src.ContextDirectory.Self,
-			bk:  fs.bk,
-		}.dirExists(ctx, path)
-	default:
-		return false, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
-	}
-}
-
-type parsedRefString struct {
-	kind  core.ModuleSourceKind
-	local *parsedLocalRefString
-	git   *parsedGitRefString
-}
-
-func parseRefString(
-	ctx context.Context,
-	checkDir dirExistsFS,
-	refString string,
-	refPin string,
-	stable bool,
-) (*parsedRefString, error) {
-	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("parseRefString: %s", refString), telemetry.Internal())
-	defer span.End()
-
-	kind := fastModuleSourceKindCheck(refString, refPin, stable)
-	switch kind {
-	case core.ModuleSourceKindLocal:
-		return &parsedRefString{
-			kind: kind,
-			local: &parsedLocalRefString{
-				modPath: refString,
-			},
-		}, nil
-	case core.ModuleSourceKindGit:
-		parsedGitRef, err := parseGitRefString(ctx, refString)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse git ref string: %w", err)
-		}
-		return &parsedRefString{
-			kind: kind,
-			git:  &parsedGitRef,
-		}, nil
-	}
-
-	// First, we stat ref in case the mod path github.com/username is a local directory
-	if isDir, err := checkDir.dirExists(ctx, refString); err != nil {
-		slog.Debug("parseRefString stat error", "error", err)
-	} else if isDir {
-		return &parsedRefString{
-			kind: core.ModuleSourceKindLocal,
-			local: &parsedLocalRefString{
-				modPath: refString,
-			},
-		}, nil
-	}
-
-	// Parse scheme and attempt to parse as git endpoint
-	parsedGitRef, err := parseGitRefString(ctx, refString)
-	switch {
-	case err == nil:
-		return &parsedRefString{
-			kind: core.ModuleSourceKindGit,
-			git:  &parsedGitRef,
-		}, nil
-	case errors.As(err, &gitEndpointError{}):
-		// couldn't connect to git endpoint, fallback to local
-		return &parsedRefString{
-			kind: core.ModuleSourceKindLocal,
-			local: &parsedLocalRefString{
-				modPath: refString,
-			},
-		}, nil
-	default:
-		return nil, fmt.Errorf("failed to parse ref string: %w", err)
-	}
-}
-
-type parsedLocalRefString struct {
-	modPath string
-}
-
-type parsedGitRefString struct {
-	modPath string
-
-	modVersion string
-	hasVersion bool
-
-	repoRoot       *vcs.RepoRoot
-	repoRootSubdir string
-
-	scheme core.SchemeType
-
-	sourceUser     string
-	cloneUser      string
-	sourceCloneRef string // original user-provided username
-	cloneRef       string // resolved username
-}
-
-type gitEndpointError struct{ error }
-
-func parseGitRefString(ctx context.Context, refString string) (parsedGitRefString, error) {
-	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("parseGitRefString: %s", refString), telemetry.Internal())
-	defer span.End()
-
-	scheme, schemelessRef := parseScheme(refString)
-
-	if scheme == core.NoScheme && isSCPLike(schemelessRef) {
-		scheme = core.SchemeSCPLike
-		// transform the ":" into a "/" to rely on a unified logic after
-		// works because "git@github.com:user" is equivalent to "ssh://git@ref/user"
-		schemelessRef = strings.Replace(schemelessRef, ":", "/", 1)
-	}
-
-	// Trick:
-	// as we removed the scheme above with `parseScheme``, and the SCP-like refs are
-	// now without ":", all refs are in such format: "[git@]github.com/user/path...@version"
-	// transport.NewEndpoint parses users only for SSH refs. As HTTP refs without scheme are valid SSH refs
-	// we use the "ssh://" prefix to parse properly both explicit / SCP-like and HTTP refs
-	// and delegate the logic to parse the host / path and user to the library
-	endpoint, err := transport.NewEndpoint("ssh://" + schemelessRef)
-	if err != nil {
-		return parsedGitRefString{}, gitEndpointError{fmt.Errorf("failed to create git endpoint: %w", err)}
-	}
-
-	gitParsed := parsedGitRefString{
-		modPath: endpoint.Host + endpoint.Path,
-		scheme:  scheme,
-	}
-
-	parts := strings.SplitN(endpoint.Path, "@", 2)
-	if len(parts) == 2 {
-		gitParsed.modPath = endpoint.Host + parts[0]
-		gitParsed.modVersion = parts[1]
-		gitParsed.hasVersion = true
-	}
-
-	// Try to isolate the root of the git repo
-	// RepoRootForImportPath does not support SCP-like ref style. In parseGitEndpoint, we made sure that all refs
-	// would be compatible with this function to benefit from the repo URL and root splitting
-	repoRoot, err := vcs.RepoRootForImportPath(gitParsed.modPath, false)
-	if err != nil {
-		return parsedGitRefString{}, gitEndpointError{fmt.Errorf("failed to get repo root for import path: %w", err)}
-	}
-	if repoRoot == nil || repoRoot.VCS == nil {
-		return parsedGitRefString{}, fmt.Errorf("invalid repo root for import path: %s", gitParsed.modPath)
-	}
-	if repoRoot.VCS.Name != "Git" {
-		return parsedGitRefString{}, fmt.Errorf("repo root is not a Git repo: %s", gitParsed.modPath)
-	}
-
-	gitParsed.repoRoot = repoRoot
-
-	// the extra "/" trim is important as subpath traversal such as /../ are being cleaned by filePath.Clean
-	gitParsed.repoRootSubdir = strings.TrimPrefix(strings.TrimPrefix(gitParsed.modPath, repoRoot.Root), "/")
-	if gitParsed.repoRootSubdir == "" {
-		gitParsed.repoRootSubdir = "/"
-	}
-	gitParsed.repoRootSubdir = filepath.Clean(gitParsed.repoRootSubdir)
-	if !filepath.IsAbs(gitParsed.repoRootSubdir) && !filepath.IsLocal(gitParsed.repoRootSubdir) {
-		return parsedGitRefString{}, fmt.Errorf("git module source subpath points out of root: %q", gitParsed.repoRootSubdir)
-	}
-
-	// Restore SCPLike ref format
-	if gitParsed.scheme == core.SchemeSCPLike {
-		gitParsed.repoRoot.Root = strings.Replace(gitParsed.repoRoot.Root, "/", ":", 1)
-	}
-
-	gitParsed.sourceUser, gitParsed.cloneUser = endpoint.User, endpoint.User
-	if gitParsed.cloneUser == "" && gitParsed.scheme.IsSSH() {
-		gitParsed.cloneUser = "git"
-	}
-	sourceUser := gitParsed.sourceUser
-	if sourceUser != "" {
-		sourceUser += "@"
-	}
-	cloneUser := gitParsed.cloneUser
-	if cloneUser != "" {
-		cloneUser += "@"
-	}
-
-	gitParsed.sourceCloneRef = gitParsed.scheme.Prefix() + sourceUser + gitParsed.repoRoot.Root
-	gitParsed.cloneRef = gitParsed.scheme.Prefix() + cloneUser + gitParsed.repoRoot.Root
-
-	return gitParsed, nil
-}
-
-func isSCPLike(ref string) bool {
-	return strings.Contains(ref, ":") && !strings.Contains(ref, "//")
-}
-
-func parseScheme(refString string) (core.SchemeType, string) {
-	schemes := []core.SchemeType{
-		core.SchemeHTTP,
-		core.SchemeHTTPS,
-		core.SchemeSSH,
-	}
-
-	for _, scheme := range schemes {
-		prefix := scheme.Prefix()
-		if strings.HasPrefix(refString, prefix) {
-			return scheme, strings.TrimPrefix(refString, prefix)
-		}
-	}
-
-	return core.NoScheme, refString
-}
-
-// TODO: consider just doing this in parseGitRefString if it's always called after
-func (p *parsedGitRefString) getGitRefAndModVersion(
-	ctx context.Context,
-	dag *dagql.Server,
-	pinCommitRef string, // "" if none
-) (inst dagql.Instance[*core.GitRef], _ string, rerr error) {
-	commitRef := pinCommitRef
-	var modVersion string
-	if p.hasVersion {
-		modVersion = p.modVersion
-		if isSemver(modVersion) {
-			var tags dagql.Array[dagql.String]
-			err := dag.Select(ctx, dag.Root(), &tags,
-				dagql.Selector{
-					Field: "git",
-					Args: []dagql.NamedInput{
-						{Name: "url", Value: dagql.String(p.cloneRef)},
-					},
-				},
-				dagql.Selector{
-					Field: "tags",
-				},
-			)
-			if err != nil {
-				return inst, "", fmt.Errorf("failed to resolve git tags: %w", err)
-			}
-
-			allTags := make([]string, len(tags))
-			for i, tag := range tags {
-				allTags[i] = tag.String()
-			}
-
-			matched, err := matchVersion(allTags, modVersion, p.repoRootSubdir)
-			if err != nil {
-				return inst, "", fmt.Errorf("matching version to tags: %w", err)
-			}
-			modVersion = matched
-		}
-		if commitRef == "" {
-			commitRef = modVersion
-		}
-	}
-
-	var commitRefSelector dagql.Selector
-	if commitRef == "" {
-		commitRefSelector = dagql.Selector{
-			Field: "head",
-		}
-	} else {
-		commitRefSelector = dagql.Selector{
-			Field: "commit",
-			Args: []dagql.NamedInput{
-				// reassign modVersion to matched tag which could be subPath/tag
-				{Name: "id", Value: dagql.String(commitRef)},
-			},
-		}
-	}
-
-	var gitRef dagql.Instance[*core.GitRef]
-	err := dag.Select(ctx, dag.Root(), &gitRef,
-		dagql.Selector{
-			Field: "git",
-			Args: []dagql.NamedInput{
-				{Name: "url", Value: dagql.String(p.cloneRef)},
-			},
-		},
-		commitRefSelector,
-	)
-	if err != nil {
-		return inst, "", fmt.Errorf("failed to resolve git src: %w", err)
-	}
-
-	return gitRef, modVersion, nil
-}
-
 type directoryAsModuleArgs struct {
 	SourceRootPath string `default:"."`
 }
@@ -1220,6 +653,9 @@ func (s *moduleSchema) directoryAsModuleSource(
 		ContextDirectory:  contextDir,
 		Kind:              core.ModuleSourceKindDir,
 	}
+	if dirSrc.SourceRootSubpath == "" {
+		dirSrc.SourceRootSubpath = "."
+	}
 
 	configPath := filepath.Join(dirSrc.SourceRootSubpath, modules.Filename)
 	var configContents string
@@ -1235,76 +671,8 @@ func (s *moduleSchema) directoryAsModuleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to load dir module dagger config: %w", err)
 	}
-	modCfg := &modules.ModuleConfigWithUserFields{}
-	if err := json.Unmarshal([]byte(configContents), modCfg); err != nil {
-		return inst, fmt.Errorf("failed to unmarshal module config: %w", err)
-	}
-
-	dirSrc.ModuleName = modCfg.Name
-	dirSrc.ModuleOriginalName = modCfg.Name
-	dirSrc.EngineVersion = modCfg.EngineVersion
-	dirSrc.IncludePaths = modCfg.Include
-	dirSrc.CodegenConfig = modCfg.Codegen
-	dirSrc.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
-
-	if modCfg.SDK != nil {
-		dirSrc.SDK = &core.SDKConfig{
-			Source: modCfg.SDK.Source,
-		}
-	}
-
-	// figure out source subpath
-	if modCfg.Source != "" && !filepath.IsLocal(modCfg.Source) {
-		return inst, fmt.Errorf("source path %q contains parent directory components", modCfg.Source)
-	}
-
-	var sdkSource string
-	if modCfg.SDK != nil {
-		sdkSource = modCfg.SDK.Source
-	}
-	switch {
-	case sdkSource == "" && modCfg.Source != "":
-		// invalid, can't have source when no sdk
-		return inst, fmt.Errorf("source path %q specified without sdk", modCfg.Source)
-	case sdkSource == "":
-		// skip setting source subpath when no sdk
-	case sdkSource != "" && modCfg.Source == "":
-		// sdk was set but source was not, it's implicitly "." and thus the source root
-		dirSrc.SourceSubpath = dirSrc.SourceRootSubpath
-	case sdkSource != "" && modCfg.Source != "":
-		// sdk was set and source was too, get the full rel path under the context
-		dirSrc.SourceSubpath = filepath.Join(dirSrc.SourceRootSubpath, modCfg.Source)
-	}
-
-	// figure out includes so we can load the context dir
-	// TODO: includes is being ignored here right now?
-	// TODO: includes is being ignored here right now?
-	includes := []string{
-		// always load the config file (currently mainly so it gets incorporated into the digest)
-		dirSrc.SourceRootSubpath + "/" + modules.Filename,
-	}
-	if dirSrc.SourceSubpath != "" {
-		// load the source dir if set
-		includes = append(includes, dirSrc.SourceSubpath+"/**/*")
-	}
-
-	// add the config file includes, rebasing them from being relative to the config file
-	// to being relative to the context dir
-	for _, pattern := range modCfg.Include {
-		isNegation := strings.HasPrefix(pattern, "!")
-		pattern = strings.TrimPrefix(pattern, "!")
-		absPath := filepath.Join(dirSrc.SourceRootSubpath, pattern)
-		relPath, err := pathutil.LexicalRelativePath("/", absPath)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get relative path from context to include: %w", err)
-		}
-		if !filepath.IsLocal(relPath) {
-			return inst, fmt.Errorf("dir module dep source include/exclude path %q escapes context %q", relPath, "/")
-		}
-		if isNegation {
-			relPath = "!" + relPath
-		}
-		includes = append(includes, relPath)
+	if err := s.initFromModConfig([]byte(configContents), dirSrc); err != nil {
+		return inst, err
 	}
 
 	// load this module source's deps in parallel
@@ -1327,8 +695,8 @@ func (s *moduleSchema) directoryAsModuleSource(
 		})
 	}
 
-	dirSrc.Dependencies = make([]dagql.Instance[*core.ModuleSource], len(modCfg.Dependencies))
-	for i, depCfg := range modCfg.Dependencies {
+	dirSrc.Dependencies = make([]dagql.Instance[*core.ModuleSource], len(dirSrc.ConfigDependencies))
+	for i, depCfg := range dirSrc.ConfigDependencies {
 		eg.Go(func() error {
 			parsedDepRef, err := parseRefString(
 				ctx,
@@ -1410,6 +778,88 @@ func (s *moduleSchema) directoryAsModuleSource(
 
 	inst = inst.WithMetadata(digest.Digest(dirSrc.Digest), true)
 	return inst, nil
+}
+
+func (s *moduleSchema) initFromModConfig(configBytes []byte, src *core.ModuleSource) error {
+	// sanity checks
+	if src.SourceRootSubpath == "" {
+		return fmt.Errorf("source root path must be set")
+	}
+
+	modCfg := &modules.ModuleConfigWithUserFields{}
+	if err := json.Unmarshal(configBytes, modCfg); err != nil {
+		return fmt.Errorf("failed to unmarshal module config: %w", err)
+	}
+
+	src.ModuleName = modCfg.Name
+	src.ModuleOriginalName = modCfg.Name
+	src.EngineVersion = modCfg.EngineVersion
+	src.IncludePaths = modCfg.Include
+	src.CodegenConfig = modCfg.Codegen
+	src.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
+	src.ConfigDependencies = modCfg.Dependencies
+
+	if modCfg.SDK != nil {
+		src.SDK = &core.SDKConfig{
+			Source: modCfg.SDK.Source,
+		}
+	}
+
+	// figure out source subpath
+	if modCfg.Source != "" && !filepath.IsLocal(modCfg.Source) {
+		return fmt.Errorf("source path %q contains parent directory components", modCfg.Source)
+	}
+
+	var sdkSource string
+	if modCfg.SDK != nil {
+		sdkSource = modCfg.SDK.Source
+	}
+	switch {
+	case sdkSource == "" && modCfg.Source != "":
+		// invalid, can't have source when no sdk
+		return fmt.Errorf("source path %q specified without sdk", modCfg.Source)
+	case sdkSource == "":
+		// skip setting source subpath when no sdk
+	case sdkSource != "" && modCfg.Source == "":
+		// sdk was set but source was not, it's implicitly "." and thus the source root
+		src.SourceSubpath = src.SourceRootSubpath
+	case sdkSource != "" && modCfg.Source != "":
+		// sdk was set and source was too, get the full rel path under the context
+		src.SourceSubpath = filepath.Join(src.SourceRootSubpath, modCfg.Source)
+	}
+
+	src.FullIncludePaths = append(src.FullIncludePaths,
+		// always load the config file (currently mainly so it gets incorporated into the digest)
+		src.SourceRootSubpath+"/"+modules.Filename,
+	)
+	if src.SourceSubpath != "" {
+		// load the source dir if set
+		src.FullIncludePaths = append(src.FullIncludePaths, src.SourceSubpath+"/**/*")
+	} else {
+		// otherwise load the source root; this supports use cases like an sdk-less module w/ a pyproject.toml
+		// that's now going to be upgraded to using the python sdk and needs pyproject.toml to be loaded
+		// TODO: might be better to dynamically load more when WithSourceSubpath is called
+		// TODO: might be better to dynamically load more when WithSourceSubpath is called
+		// TODO: might be better to dynamically load more when WithSourceSubpath is called
+		src.FullIncludePaths = append(src.FullIncludePaths, src.SourceRootSubpath+"/**/*")
+	}
+
+	// add the config file includes, rebasing them from being relative to the config file
+	// to being relative to the context dir
+	for _, pattern := range modCfg.Include {
+		isNegation := strings.HasPrefix(pattern, "!")
+		pattern = strings.TrimPrefix(pattern, "!")
+		relPath := filepath.Join(src.SourceRootSubpath, pattern)
+		if !filepath.IsLocal(relPath) {
+			return fmt.Errorf("git module dep source include/exclude path %q escapes context", relPath)
+		}
+		if isNegation {
+			relPath = "!" + relPath
+		}
+		src.FullIncludePaths = append(src.FullIncludePaths, relPath)
+	}
+
+	return nil
 }
 
 // TODO: DOC THAT THIS ARG IS RELATIVE TO THE SOURCE ROOT
@@ -2414,4 +1864,131 @@ func (s *moduleSchema) moduleSourceAsModule(
 	// TODO: UPDATE DIGEST ON MODULESOURCE ANYWHERE TO INCLUDE GENERATED STUFF???
 
 	return inst, nil
+}
+
+func callerHostFindUp(
+	ctx context.Context,
+	bk *buildkit.Client,
+	curDirPath string,
+	soughtName string,
+) (string, bool, error) {
+	found, err := callerHostFindUpAll(ctx, bk, curDirPath, map[string]struct{}{soughtName: {}})
+	if err != nil {
+		return "", false, err
+	}
+	p, ok := found[soughtName]
+	return p, ok, nil
+}
+
+func callerHostFindUpAll(
+	ctx context.Context,
+	bk *buildkit.Client,
+	curDirPath string,
+	soughtNames map[string]struct{},
+) (map[string]string, error) {
+	found := make(map[string]string, len(soughtNames))
+	for {
+		for soughtName := range soughtNames {
+			stat, err := bk.StatCallerHostPath(ctx, filepath.Join(curDirPath, soughtName), true)
+			if err == nil {
+				delete(soughtNames, soughtName)
+				// NOTE: important that we use stat.Path here rather than curDirPath since the stat also
+				// does some normalization of paths when the client is using case-insensitive filesystems
+				found[soughtName] = filepath.Dir(stat.Path)
+				continue
+			}
+			// TODO: remove the strings.Contains check here (which aren't cross-platform),
+			// since we now set NotFound (since v0.11.2)
+			if status.Code(err) != codes.NotFound && !strings.Contains(err.Error(), "no such file or directory") {
+				return nil, fmt.Errorf("failed to lstat %s: %w", soughtName, err)
+			}
+		}
+
+		if len(soughtNames) == 0 {
+			// found everything
+			break
+		}
+
+		nextDirPath := filepath.Dir(curDirPath)
+		if curDirPath == nextDirPath {
+			// hit root, nowhere else to look
+			break
+		}
+		curDirPath = nextDirPath
+	}
+
+	return found, nil
+}
+
+type dirExistsFS interface {
+	dirExists(ctx context.Context, path string) (bool, error)
+}
+
+type dirExistsFunc func(ctx context.Context, path string) (bool, error)
+
+func (f dirExistsFunc) dirExists(ctx context.Context, path string) (bool, error) {
+	return f(ctx, path)
+}
+
+type callerDirExistsFS struct {
+	bk *buildkit.Client
+}
+
+func (fs callerDirExistsFS) dirExists(ctx context.Context, path string) (bool, error) {
+	stat, err := fs.bk.StatCallerHostPath(ctx, path, false)
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return false, nil
+		}
+		return false, err
+	}
+	return stat.IsDir(), nil
+}
+
+type coreDirExistsFS struct {
+	dir *core.Directory
+	bk  *buildkit.Client
+}
+
+func (fs coreDirExistsFS) dirExists(ctx context.Context, path string) (bool, error) {
+	stat, err := fs.dir.Stat(ctx, fs.bk, nil, path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	return stat.IsDir(), nil
+}
+
+type moduleSourceDirExistsFS struct {
+	bk  *buildkit.Client
+	src *core.ModuleSource
+}
+
+// path is assumed to be relative to source root
+func (fs moduleSourceDirExistsFS) dirExists(ctx context.Context, path string) (bool, error) {
+	if fs.src == nil {
+		return false, nil
+	}
+
+	switch fs.src.Kind {
+	case core.ModuleSourceKindLocal:
+		path = filepath.Join(fs.src.Local.ContextDirectoryPath, fs.src.SourceRootSubpath, path)
+		return callerDirExistsFS{fs.bk}.dirExists(ctx, path)
+	case core.ModuleSourceKindGit:
+		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
+		return coreDirExistsFS{
+			dir: fs.src.Git.UnfilteredContextDir.Self,
+			bk:  fs.bk,
+		}.dirExists(ctx, path)
+	case core.ModuleSourceKindDir:
+		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
+		return coreDirExistsFS{
+			dir: fs.src.ContextDirectory.Self,
+			bk:  fs.bk,
+		}.dirExists(ctx, path)
+	default:
+		return false, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
+	}
 }
