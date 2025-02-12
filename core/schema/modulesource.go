@@ -32,9 +32,10 @@ import (
 
 type moduleSourceArgs struct {
 	// avoiding name "ref" due to that being a reserved word in some SDKs (e.g. Rust)
-	RefString     string
-	RefPin        string `default:""`
-	DisableFindUp bool   `default:"false"`
+	RefString      string
+	RefPin         string `default:""`
+	DisableFindUp  bool   `default:"false"`
+	AllowNotExists bool   `default:"false"`
 
 	// TODO: rm
 	// TODO: rm
@@ -65,7 +66,7 @@ func (s *moduleSchema) moduleSource(
 	}
 	switch parsedRef.kind {
 	case core.ModuleSourceKindLocal:
-		inst, err = s.localModuleSource(ctx, query, bk, parsedRef.local.modPath, !args.DisableFindUp)
+		inst, err = s.localModuleSource(ctx, query, bk, parsedRef.local.modPath, !args.DisableFindUp, args.AllowNotExists)
 		if err != nil {
 			return inst, err
 		}
@@ -93,6 +94,7 @@ func (s *moduleSchema) localModuleSource(
 
 	// TODO: doc
 	doFindUp bool,
+	allowNotExists bool,
 ) (inst dagql.Instance[*core.ModuleSource], err error) {
 	if doFindUp {
 		// need to check if localPath is a named module from the *default* dagger.json found-up from the cwd
@@ -133,7 +135,7 @@ func (s *moduleSchema) localModuleSource(
 				switch parsedRef.kind {
 				case core.ModuleSourceKindLocal:
 					depModPath := filepath.Join(defaultFindUpSourceRootDir, namedDep.Source)
-					return s.localModuleSource(ctx, query, bk, depModPath, false)
+					return s.localModuleSource(ctx, query, bk, depModPath, false, allowNotExists)
 				case core.ModuleSourceKindGit:
 					return s.gitModuleSource(ctx, query, parsedRef.git, namedDep.Pin, false)
 				}
@@ -144,10 +146,20 @@ func (s *moduleSchema) localModuleSource(
 	if localPath == "" {
 		localPath = "."
 	}
+
 	// make localPath absolute
-	localAbsPath, err := bk.AbsPath(ctx, localPath)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get absolute path: %w", err)
+	var localAbsPath string
+	if allowNotExists {
+		localAbsPath, err = bk.AbsPath(ctx, localPath)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get absolute path: %w", err)
+		}
+	} else {
+		stat, err := bk.StatCallerHostPath(ctx, localPath, true)
+		if err != nil {
+			return inst, fmt.Errorf("failed to stat local path: %w", err)
+		}
+		localAbsPath = stat.Path
 	}
 
 	const dotGit = ".git" // the context dir is the git repo root
@@ -188,7 +200,7 @@ func (s *moduleSchema) localModuleSource(
 		return inst, fmt.Errorf("failed to get relative path from context to source root: %w", err)
 	}
 	if !filepath.IsLocal(sourceRootRelPath) {
-		return inst, fmt.Errorf("source path %q contains parent directory components", sourceRootRelPath)
+		return inst, fmt.Errorf("source root path %q escapes context %q", sourceRootRelPath, contextDirPath)
 	}
 
 	localSrc := &core.ModuleSource{
@@ -360,7 +372,18 @@ func (s *moduleSchema) localModuleSource(
 				}
 				switch parsedDepRef.kind {
 				case core.ModuleSourceKindLocal:
+					if filepath.IsAbs(depCfg.Source) {
+						return fmt.Errorf("local module dep source path %q is absolute", depCfg.Source)
+					}
 					depPath := filepath.Join(contextDirPath, localSrc.SourceRootSubpath, depCfg.Source)
+					depRelPath, err := pathutil.LexicalRelativePath(contextDirPath, depPath)
+					if err != nil {
+						return fmt.Errorf("failed to get relative path from context to dep: %w", err)
+					}
+					if !filepath.IsLocal(depRelPath) {
+						return fmt.Errorf("local module dep source path %q escapes context %q", depRelPath, contextDirPath)
+					}
+
 					selectors := []dagql.Selector{{
 						Field: "moduleSource",
 						Args: []dagql.NamedInput{
@@ -375,7 +398,7 @@ func (s *moduleSchema) localModuleSource(
 							},
 						})
 					}
-					err := s.dag.Select(ctx, s.dag.Root(), &localSrc.Dependencies[i], selectors...)
+					err = s.dag.Select(ctx, s.dag.Root(), &localSrc.Dependencies[i], selectors...)
 					if err != nil {
 						if errors.Is(err, dagql.ErrCacheMapRecursiveCall) {
 							return fmt.Errorf("module %q has a circular dependency on itself through dependency %q", localSrc.ModuleName, depCfg.Name)
@@ -595,7 +618,7 @@ func (s *moduleSchema) gitModuleSource(
 
 	// figure out source subpath
 	if modCfg.Source != "" && !filepath.IsLocal(modCfg.Source) {
-		return inst, fmt.Errorf("source path %q contains parent directory components", modCfg.Source)
+		return inst, fmt.Errorf("source root path %q contains parent directory components", modCfg.Source)
 	}
 
 	var sdkSource string
@@ -689,6 +712,10 @@ func (s *moduleSchema) gitModuleSource(
 			}
 			switch parsedDepRef.kind {
 			case core.ModuleSourceKindLocal:
+				if filepath.IsAbs(depCfg.Source) {
+					return fmt.Errorf("local module dep source path %q is absolute", depCfg.Source)
+				}
+
 				refString := gitSrc.Git.CloneRef
 				subPath := filepath.Join("/", gitSrc.SourceRootSubpath, depCfg.Source)
 				if subPath != "/" {
