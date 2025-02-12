@@ -777,9 +777,9 @@ func (fe *frontendPretty) View() string {
 		prog := strings.TrimSpace(fe.view.String())
 		if prog != "" {
 			// keep an extra line above the prompt
-			prog += "\n"
+			prog += "\n\n"
 		}
-		return prog + "\n" + fe.editlineView()
+		return prog + fe.editlineView()
 	}
 	return fe.view.String()
 }
@@ -808,15 +808,6 @@ type backgroundDoneMsg struct {
 	backgroundMsg
 	err error
 }
-
-const (
-	// We need a prompt that conveys the unique nature of the Dagger shell. Per gpt4:
-	// The ⋈ symbol, known as the bowtie, has deep roots in relational databases and set theory,
-	// where it denotes a join operation. This makes it especially fitting for a DAG environment,
-	// as it suggests the idea of dependencies, intersections, and points where separate paths
-	// or data sets come together.
-	shellPrompt = "⋈"
-)
 
 type shellDoneMsg struct {
 	err error
@@ -875,7 +866,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		fe.editline.Update(nil)
 
 		return fe, tea.Batch(
-			tea.Println(`Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`),
+			tea.Println(`Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`+"\n"),
 			fe.editline.Focus(),
 		)
 
