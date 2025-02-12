@@ -14,7 +14,6 @@ import (
 	_ "github.com/dagger/dagger/core/bbi/empty"
 	_ "github.com/dagger/dagger/core/bbi/flat"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/joho/godotenv"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
@@ -315,34 +314,9 @@ func (llm *Llm) Sync(
 						return llm, fmt.Errorf("failed to unmarshal arguments: %w", err)
 					}
 					result := func() string {
-						callArgs := make([]*call.Argument, 0, len(toolCall.Function.Arguments))
-						for name, value := range args {
-							lit, err := call.ToLiteral(value)
-							if err != nil {
-								return fmt.Sprintf("error converting argument %q to literal: %s", name, err.Error())
-							}
-							callArgs = append(callArgs, call.NewArgument(name, lit, false))
-						}
-						id := call.New().Append(
-							&ast.Type{NamedType: "Void"},
-							toolCall.Function.Name,
-							"",
-							nil,
-							false,
-							0,
-							"",
-							callArgs...,
-						)
-						callEnc, err := id.Call().Encode()
-						if err != nil {
-							return fmt.Sprintf("error encoding call: %s", err.Error())
-						}
 						ctx, span := Tracer(ctx).Start(ctx,
 							fmt.Sprintf("🤖 💻 %s", toolCall.Function.Name),
-							trace.WithAttributes(
-								attribute.String(telemetry.DagCallAttr, callEnc),
-								attribute.String(telemetry.DagDigestAttr, id.Digest().String()),
-							),
+							telemetry.Passthrough(),
 							telemetry.Reveal())
 						defer span.End()
 						result, err := tool.Call(ctx, args)
