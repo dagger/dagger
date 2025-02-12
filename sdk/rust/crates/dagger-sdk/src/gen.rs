@@ -6118,6 +6118,12 @@ pub struct Module {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ModuleGenerateClientOpts {
+    /// Use local SDK dependency
+    #[builder(setter(into, strip_option), default)]
+    pub local_sdk: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ModuleWithSourceOpts<'a> {
     /// The engine version to upgrade to.
     #[builder(setter(into, strip_option), default)]
@@ -6161,11 +6167,32 @@ impl Module {
     /// # Arguments
     ///
     /// * `generator` - The generator to use
-    /// * `local_sdk` - Use local SDK dependency
-    pub fn generate_client(&self, generator: impl Into<String>, local_sdk: bool) -> Directory {
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn generate_client(&self, generator: impl Into<String>) -> Directory {
         let mut query = self.selection.select("generateClient");
         query = query.arg("generator", generator.into());
-        query = query.arg("localSdk", local_sdk);
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Generates a client for the module.
+    ///
+    /// # Arguments
+    ///
+    /// * `generator` - The generator to use
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn generate_client_opts(
+        &self,
+        generator: impl Into<String>,
+        opts: ModuleGenerateClientOpts,
+    ) -> Directory {
+        let mut query = self.selection.select("generateClient");
+        query = query.arg("generator", generator.into());
+        if let Some(local_sdk) = opts.local_sdk {
+            query = query.arg("localSdk", local_sdk);
+        }
         Directory {
             proc: self.proc.clone(),
             selection: query,

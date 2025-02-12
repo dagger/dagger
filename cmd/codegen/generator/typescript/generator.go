@@ -20,7 +20,7 @@ type TypeScriptGenerator struct {
 }
 
 // Generate will generate the TypeScript SDK code and might modify the schema to reorder types in a alphanumeric fashion.
-func (g *TypeScriptGenerator) Generate(_ context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
+func (g *TypeScriptGenerator) GenerateModule(_ context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
 	generator.SetSchema(schema)
 
 	sort.SliceStable(schema.Types, func(i, j int) bool {
@@ -43,7 +43,7 @@ func (g *TypeScriptGenerator) Generate(_ context.Context, schema *introspection.
 		})
 	}
 
-	tmpl := templates.New(schemaVersion, g.Config.ModuleName, g.Config.ModuleParentPath, g.Config.ClientOnly, g.Config.LocalSDK)
+	tmpl := templates.New(schemaVersion, g.Config)
 	data := struct {
 		Schema        *introspection.Schema
 		SchemaVersion string
@@ -76,4 +76,9 @@ func (g *TypeScriptGenerator) Generate(_ context.Context, schema *introspection.
 	return &generator.GeneratedState{
 		Overlay: mfs,
 	}, nil
+}
+
+func (g *TypeScriptGenerator) GenerateClient(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
+	// This is the same as the module generator for TypeScript
+	return g.GenerateModule(ctx, schema, schemaVersion)
 }

@@ -27,7 +27,8 @@ switch (args.length) {
     console.error(`Invalid flag configuration: ${args[0]}
 Usage: ts_client_config_updator <local-sdk=true|false>`)
     process.exit(1)
-
+    
+    break
   default:
     console.error(`Usage: ts_client_config_updator <local-sdk=true|false>`)
     process.exit(1)

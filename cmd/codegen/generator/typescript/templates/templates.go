@@ -4,6 +4,8 @@ import (
 	"embed"
 	"fmt"
 	"text/template"
+
+	"github.com/dagger/dagger/cmd/codegen/generator"
 )
 
 //go:embed src
@@ -12,10 +14,7 @@ var srcs embed.FS
 // New creates a new template with all the template dependencies set up.
 func New(
 	schemaVersion string,
-	moduleName string,
-	moduleParentPath string,
-	clientOnly bool,
-	localSDK bool,
+	cfg generator.Config,
 ) *template.Template {
 	topLevelTemplate := "api"
 	templateDeps := []string{
@@ -27,7 +26,7 @@ func New(
 		fileNames = append(fileNames, fmt.Sprintf("src/%s.ts.gtpl", tmpl))
 	}
 
-	funcs := TypescriptTemplateFuncs(schemaVersion, moduleName, moduleParentPath, clientOnly, localSDK)
+	funcs := TypescriptTemplateFuncs(schemaVersion, cfg)
 	tmpl := template.Must(template.New(topLevelTemplate).Funcs(funcs).ParseFS(srcs, fileNames...))
 	return tmpl
 }

@@ -15,26 +15,17 @@ import (
 
 func TypescriptTemplateFuncs(
 	schemaVersion string,
-	moduleName string,
-	moduleParentPath string,
-	clientOnly bool,
-	localSDK bool,
+	cfg generator.Config,
 ) template.FuncMap {
 	return typescriptTemplateFuncs{
-		moduleName:       moduleName,
-		moduleParentPath: moduleParentPath,
+		cfg:              cfg,
 		schemaVersion:    schemaVersion,
-		clientOnly:       clientOnly,
-		localSDK:         localSDK,
 	}.FuncMap()
 }
 
 type typescriptTemplateFuncs struct {
-	moduleName       string
-	moduleParentPath string
 	schemaVersion    string
-	clientOnly       bool
-	localSDK         bool
+	cfg              generator.Config
 }
 
 func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
@@ -321,7 +312,7 @@ func (funcs typescriptTemplateFuncs) moduleRelPath(path string) string {
 		// Path to the root of this module (since we're at the codegen root sdk/src/api/).
 		"../../../",
 		// Path to the module's context directory.
-		funcs.moduleParentPath,
+		funcs.cfg.ModuleParentPath,
 		// Path from the context directory to the target path.
 		path,
 	)
@@ -332,9 +323,9 @@ func (funcs typescriptTemplateFuncs) formatProtected(s string) string {
 }
 
 func (funcs typescriptTemplateFuncs) isClientOnly() bool {
-	return funcs.clientOnly
+	return funcs.cfg.ClientOnly
 }
 
 func (funcs typescriptTemplateFuncs) isLocalSDK() bool {
-	return funcs.localSDK
+	return funcs.cfg.LocalSDK
 }

@@ -1029,6 +1029,13 @@ export type ListTypeDefID = string & { __ListTypeDefID: never }
  */
 export type LocalModuleSourceID = string & { __LocalModuleSourceID: never }
 
+export type ModuleGenerateClientOpts = {
+  /**
+   * Use local SDK dependency
+   */
+  localSdk?: boolean
+}
+
 export type ModuleWithSourceOpts = {
   /**
    * The engine version to upgrade to.
@@ -5463,10 +5470,13 @@ export class Module_ extends BaseClient {
   /**
    * Generates a client for the module.
    * @param generator The generator to use
-   * @param localSdk Use local SDK dependency
+   * @param opts.localSdk Use local SDK dependency
    */
-  generateClient = (generator: string, localSdk: boolean): Directory => {
-    const ctx = this._ctx.select("generateClient", { generator, localSdk })
+  generateClient = (
+    generator: string,
+    opts?: ModuleGenerateClientOpts,
+  ): Directory => {
+    const ctx = this._ctx.select("generateClient", { generator, ...opts })
     return new Directory(ctx)
   }
 

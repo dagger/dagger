@@ -81,13 +81,13 @@ defmodule Dagger.Module do
   end
 
   @doc "Generates a client for the module."
-  @spec generate_client(t(), String.t(), boolean()) :: Dagger.Directory.t()
-  def generate_client(%__MODULE__{} = module, generator, local_sdk) do
+  @spec generate_client(t(), String.t(), [{:local_sdk, boolean() | nil}]) :: Dagger.Directory.t()
+  def generate_client(%__MODULE__{} = module, generator, optional_args \\ []) do
     query_builder =
       module.query_builder
       |> QB.select("generateClient")
       |> QB.put_arg("generator", generator)
-      |> QB.put_arg("localSdk", local_sdk)
+      |> QB.maybe_put_arg("localSdk", optional_args[:local_sdk])
 
     %Dagger.Directory{
       query_builder: query_builder,

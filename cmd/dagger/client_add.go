@@ -73,7 +73,9 @@ func (c *clientAddHandler) Run(ctx context.Context, args []string) (rerr error) 
 		return fmt.Errorf("failed to load client generator: %w", err)
 	}
 
-	_, err = mod.mod.GenerateClient(generator, localSDK).Export(ctx, ".")
+	_, err = mod.mod.GenerateClient(generator, dagger.ModuleGenerateClientOpts{
+		LocalSDK: localSDK,
+	}).Export(ctx, ".")
 	if err != nil {
 		return fmt.Errorf("failed to export client: %w", err)
 	}

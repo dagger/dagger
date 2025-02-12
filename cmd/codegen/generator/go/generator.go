@@ -48,7 +48,7 @@ type GoGenerator struct {
 	Config generator.Config
 }
 
-func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
+func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
 	generator.SetSchema(schema)
 
 	// 1. if no go.mod, generate go.mod
@@ -63,48 +63,6 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 	}
 
 	mfs := memfs.New()
-
-	if g.Config.ClientOnly {
-		layers := []fs.FS{mfs}
-
-		// Use the published package library for external dagger packages.
-		packageImport := "dagger.io/dagger"
-
-		// If localSDK is needed, we need to add local files to the overlay and change the package import
-		if g.Config.LocalSDK {
-			layers = append(
-				layers,
-				&MountedFS{FS: dagger.QueryBuilder, Name: "internal"},
-				&MountedFS{FS: dagger.Telemetry, Name: "internal"},
-			)
-
-			// Get the go package from the module
-			pkg, _, err := loadPackage(ctx, filepath.Join("/module"))
-			if err != nil {
-				return nil, fmt.Errorf("load package %q: %w", outDir, err)
-			}
-
-			// respect existing package import path
-			packageImport = pkg.Module.Path
-		}
-
-		genSt := &generator.GeneratedState{
-			Overlay: layerfs.New(layers...),
-			PostCommands: []*exec.Cmd{
-				exec.Command("go", "mod", "tidy"),
-			},
-		}
-
-		if err := generateCode(ctx, g.Config, schema, schemaVersion, mfs, &PackageInfo{
-			PackageName: "dagger",
-
-			PackageImport: packageImport,
-		}, nil, nil, 1); err != nil {
-			return nil, fmt.Errorf("generate code: %w", err)
-		}
-
-		return genSt, nil
-	}
 
 	var overlay fs.FS = mfs
 	if g.Config.ModuleName != "" {
@@ -174,6 +132,53 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 	pkgInfo.PackageName = pkg.Name
 
 	if err := generateCode(ctx, g.Config, schema, schemaVersion, mfs, pkgInfo, pkg, fset, 1); err != nil {
+		return nil, fmt.Errorf("generate code: %w", err)
+	}
+
+	return genSt, nil
+}
+
+func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
+	generator.SetSchema(schema)
+
+	outDir := "."
+	mfs := memfs.New()
+	
+	layers := []fs.FS{mfs}
+
+	// Use the published package library for external dagger packages.
+	packageImport := "dagger.io/dagger"
+
+	// If localSDK is needed, we need to add local files to the overlay and change the package import
+	if g.Config.LocalSDK {
+		layers = append(
+			layers,
+			&MountedFS{FS: dagger.QueryBuilder, Name: "internal"},
+			&MountedFS{FS: dagger.Telemetry, Name: "internal"},
+		)
+
+		// Get the go package from the module
+		pkg, _, err := loadPackage(ctx, filepath.Join("/module"))
+		if err != nil {
+			return nil, fmt.Errorf("load package %q: %w", outDir, err)
+		}
+
+		// respect existing package import path
+		packageImport = pkg.Module.Path
+	}
+
+	genSt := &generator.GeneratedState{
+		Overlay: layerfs.New(layers...),
+		PostCommands: []*exec.Cmd{
+			exec.Command("go", "mod", "tidy"),
+		},
+	}
+
+	if err := generateCode(ctx, g.Config, schema, schemaVersion, mfs, &PackageInfo{
+		PackageName: "dagger",
+
+		PackageImport: packageImport,
+	}, nil, nil, 1); err != nil {
 		return nil, fmt.Errorf("generate code: %w", err)
 	}
 
@@ -361,7 +366,7 @@ func generateCode(
 	fset *token.FileSet,
 	pass int,
 ) error {
-	funcs := templates.GoTemplateFuncs(ctx, schema, schemaVersion, cfg.ModuleName, cfg.ModuleParentPath, pkg, fset, pass, cfg.ClientOnly, cfg.LocalSDK)
+	funcs := templates.GoTemplateFuncs(ctx, schema, schemaVersion, cfg, pkg, fset, pass)
 	tmpls := templates.Templates(funcs)
 
 	for k, tmpl := range tmpls {

@@ -5736,7 +5736,12 @@ class Module(Type):
             for v in _ids
         ]
 
-    def generate_client(self, generator: str, local_sdk: bool) -> Directory:
+    def generate_client(
+        self,
+        generator: str,
+        *,
+        local_sdk: bool | None = None,
+    ) -> Directory:
         """Generates a client for the module.
 
         Parameters
@@ -5748,7 +5753,7 @@ class Module(Type):
         """
         _args = [
             Arg("generator", generator),
-            Arg("localSdk", local_sdk),
+            Arg("localSdk", local_sdk, None),
         ]
         _ctx = self._select("generateClient", _args)
         return Directory(_ctx)
