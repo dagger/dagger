@@ -490,6 +490,7 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 	var showedKey bool
 	// Blank line prior to keymap
 	for _, key := range []keyHelp{
+		{"input", []string{"tab", "i"}, fe.shell != nil},
 		{out.Hyperlink(fe.cloudURL, "web"), []string{"w"}, fe.cloudURL != ""},
 		{"move", []string{"←↑↓→", "up", "down", "left", "right", "h", "j", "k", "l"}, true},
 		{"first", []string{"home"}, true},
@@ -529,7 +530,7 @@ func (fe *frontendPretty) Render(out *termenv.Output) error {
 	progHeight := fe.window.Height
 
 	if fe.editline != nil {
-		progHeight -= lipgloss.Height(fe.editline.View())
+		progHeight -= lipgloss.Height(fe.editlineView())
 	}
 
 	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
@@ -544,12 +545,8 @@ func (fe *frontendPretty) Render(out *termenv.Output) error {
 	below := new(strings.Builder)
 	countOut := NewOutput(below, termenv.WithProfile(fe.profile))
 
-	fmt.Fprint(countOut, KeymapStyle.Render(strings.Repeat(HorizBar, 1)))
-	fmt.Fprint(countOut, KeymapStyle.Render(" "))
-	fe.renderKeymap(countOut, KeymapStyle)
-	fmt.Fprint(countOut, KeymapStyle.Render(" "))
-	if rest := fe.window.Width - lipgloss.Width(below.String()); rest > 0 {
-		fmt.Fprint(countOut, KeymapStyle.Render(strings.Repeat(HorizBar, rest)))
+	if fe.shell == nil {
+		fmt.Fprint(out, fe.viewKeymap())
 	}
 
 	if logs := fe.logs.Logs[fe.ZoomedSpan]; logs != nil && logs.UsedHeight() > 0 {
@@ -565,6 +562,21 @@ func (fe *frontendPretty) Render(out *termenv.Output) error {
 
 	fmt.Fprint(out, belowOut)
 	return nil
+}
+
+func (fe *frontendPretty) viewKeymap() string {
+	outBuf := new(strings.Builder)
+	out := NewOutput(outBuf, termenv.WithProfile(fe.profile))
+	if fe.shell == nil {
+		fmt.Fprint(out, KeymapStyle.Render(strings.Repeat(HorizBar, 1)))
+		fmt.Fprint(out, KeymapStyle.Render(" "))
+	}
+	fe.renderKeymap(out, KeymapStyle)
+	fmt.Fprint(out, KeymapStyle.Render(" "))
+	if rest := fe.window.Width - lipgloss.Width(outBuf.String()); rest > 0 {
+		fmt.Fprint(out, KeymapStyle.Render(strings.Repeat(HorizBar, rest)))
+	}
+	return outBuf.String()
 }
 
 func (fe *frontendPretty) recalculateViewLocked() {
@@ -754,9 +766,26 @@ func (fe *frontendPretty) View() string {
 		return ""
 	}
 	if fe.shell != nil {
-		return strings.TrimSpace(fe.view.String()) + "\n" + fe.editline.View()
+		prog := strings.TrimSpace(fe.view.String())
+		if prog != "" {
+			// keep an extra line above the prompt
+			prog += "\n"
+		}
+		return prog + "\n" + fe.editlineView()
 	}
 	return fe.view.String()
+}
+
+func (fe *frontendPretty) editlineView() string {
+	orig := fe.editline.View()
+	if fe.editlineFocused {
+		return orig
+	}
+	// cut off the last line of output, which is the keymap, by deleting everything after the last newline
+	if lastNewline := strings.LastIndex(orig, "\n"); lastNewline != -1 {
+		orig = orig[:lastNewline]
+	}
+	return orig + "\n" + fe.viewKeymap()
 }
 
 type doneMsg struct {
@@ -1015,7 +1044,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			fe.ZoomedSpan = fe.FocusedSpan
 			fe.recalculateViewLocked()
 			return fe, nil
-		case "tab":
+		case "tab", "i":
 			if fe.editline != nil {
 				fe.editline.Focus()
 				fe.editlineFocused = true
