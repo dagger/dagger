@@ -1,7 +1,9 @@
 {
   "name": "ci",
   "engineVersion": "v0.15.4",
-  "sdk": "go",
+  "sdk": {
+    "source": "go"
+  },
   "dependencies": [
     {
       "name": "dirdiff",
