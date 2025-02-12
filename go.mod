@@ -25,7 +25,6 @@ require (
 	github.com/charmbracelet/bubbletea v1.2.4
 	github.com/charmbracelet/glamour v0.8.0
 	github.com/charmbracelet/lipgloss v1.0.0
-	github.com/chzyer/readline v1.5.1
 	github.com/containerd/console v1.0.4
 	github.com/containerd/containerd v1.7.24
 	github.com/containerd/containerd/api v1.8.0

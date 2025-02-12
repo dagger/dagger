@@ -52,6 +52,7 @@ type frontendPretty struct {
 
 	// updated by Shell
 	shell           func(string) error
+	autocomplete    editline.AutoCompleteFn
 	editline        *editline.Model
 	editlineFocused bool
 
@@ -120,11 +121,19 @@ func NewWithDB(db *dagui.DB) *frontendPretty {
 }
 
 type startShellMsg struct {
-	handler func(input string) error
+	handler      func(input string) error
+	autocomplete editline.AutoCompleteFn
 }
 
-func (fe *frontendPretty) Shell(ctx context.Context, fn func(input string) error) {
-	fe.program.Send(startShellMsg{handler: fn})
+func (fe *frontendPretty) Shell(
+	ctx context.Context,
+	fn func(input string) error,
+	autocomplete editline.AutoCompleteFn,
+) {
+	fe.program.Send(startShellMsg{
+		handler:      fn,
+		autocomplete: autocomplete,
+	})
 	<-ctx.Done()
 }
 
@@ -805,9 +814,8 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		// put the bowtie on
 		fe.editline.Prompt = fe.viewOut.String(shellPrompt).Bold().Foreground(termenv.ANSIGreen).String() + " "
 
-		// TODO: implement auto-complete
-		// fe.editline.AutoComplete = func(entireInput [][]rune, line, col int) (msg string, comp editline.Completions) {
-		// }
+		// wire up auto completion
+		fe.editline.AutoComplete = msg.autocomplete
 
 		// restore history
 		fe.editline.MaxHistorySize = 1000
