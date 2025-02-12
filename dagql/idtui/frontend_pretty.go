@@ -1196,8 +1196,8 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, r *renderer, row *dagui
 				logDepth = -1
 			}
 			fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix)
-			fe.renderStepError(out, r, row.Span, 0, prefix)
 		}
+		fe.renderStepError(out, r, row.Span, 0, prefix)
 		return
 	}
 	if row.Previous != nil &&
