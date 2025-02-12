@@ -163,6 +163,9 @@ If --sdk is specified, the given SDK is installed in the module. You can do this
 				// This enables cases like initializing a new module in a subdirectory of
 				// another existing module.
 				DisableFindUp: true,
+				// It's okay if the source root/source dir don't exist yet since we'll
+				// create them when exporting the generated context directory.
+				AllowNotExists: true,
 			})
 
 			kind, err := modSrc.Kind(ctx)
