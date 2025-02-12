@@ -1164,6 +1164,21 @@ func (fe *frontendPretty) renderLocked() {
 }
 
 func (fe *frontendPretty) renderRow(out *termenv.Output, r *renderer, row *dagui.TraceRow, prefix string) {
+	if fe.shell != nil && row.Depth == 0 {
+		if row.Previous != nil {
+			fmt.Fprintln(out, prefix)
+		}
+		fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
+		if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
+			logDepth := 0
+			if fe.Verbosity < dagui.ExpandCompletedVerbosity {
+				logDepth = -1
+			}
+			fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix)
+			fe.renderStepError(out, r, row.Span, 0, prefix)
+		}
+		return
+	}
 	if row.Previous != nil &&
 		row.Previous.Depth >= row.Depth &&
 		!row.Chained &&
