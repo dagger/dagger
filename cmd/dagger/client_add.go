@@ -13,7 +13,7 @@ import (
 
 var (
 	generator string
-	localSDK bool
+	localSDK  bool
 )
 
 func init() {
@@ -48,12 +48,12 @@ var clientAddCmd = &cobra.Command{
 			}
 
 			handler := &clientAddHandler{
-				dag: engineClient.Dagger(),
-				cmd: cmd,
+				dag:        engineClient.Dagger(),
+				cmd:        cmd,
 				outputPath: outputPath,
 			}
 
-			return handler.Run(ctx, args)
+			return handler.Run(ctx)
 		})
 	},
 	Annotations: map[string]string{
@@ -67,7 +67,7 @@ type clientAddHandler struct {
 	outputPath string
 }
 
-func (c *clientAddHandler) Run(ctx context.Context, args []string) (rerr error) {
+func (c *clientAddHandler) Run(ctx context.Context) (rerr error) {
 	mod, err := initializeClientGeneratorModule(ctx, c.dag, ".", true)
 	if err != nil {
 		return fmt.Errorf("failed to load client generator: %w", err)

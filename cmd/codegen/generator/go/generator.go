@@ -143,7 +143,7 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 
 	outDir := "."
 	mfs := memfs.New()
-	
+
 	layers := []fs.FS{mfs}
 
 	// Use the published package library for external dagger packages.

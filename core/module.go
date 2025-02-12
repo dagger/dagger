@@ -154,7 +154,7 @@ func (mod *Module) Initialize(ctx context.Context, oldID *call.ID, newID *call.I
 	newMod := mod.Clone()
 	newMod.InstanceID = oldID // updated to newID once the call to initialize is done
 
-	// If no SDK is configured, that means the module is not implementing any 
+	// If no SDK is configured, that means the module is not implementing any
 	// code with custom functions so we can return it as it is.
 	if newMod.SDKConfig == nil {
 		return mod, nil

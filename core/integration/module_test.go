@@ -5310,7 +5310,7 @@ func daggerUnprivilegedExec(args ...string) dagger.WithContainerFunc {
 
 func daggerUnprivilegedRun(args ...string) dagger.WithContainerFunc {
 	args = append([]string{"run"}, args...)
-	
+
 	return daggerUnprivilegedExec(args...)
 
 }
@@ -5350,14 +5350,6 @@ func daggerCallAt(modPath string, args ...string) dagger.WithContainerFunc {
 		}
 		return c.WithExec(append(execArgs, args...), dagger.ContainerWithExecOpts{
 			UseEntrypoint:                 true,
-			ExperimentalPrivilegedNesting: true,
-		})
-	}
-}
-
-func daggerInit(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "init"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}

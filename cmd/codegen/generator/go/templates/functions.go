@@ -26,26 +26,26 @@ func GoTemplateFuncs(
 	pass int,
 ) template.FuncMap {
 	return goTemplateFuncs{
-		CommonFunctions:  generator.NewCommonFunctions(schemaVersion, &FormatTypeFunc{}),
-		ctx:              ctx,
-		cfg :             cfg,
-		modulePkg:        pkg,
-		moduleFset:       fset,
-		schema:           schema,
-		schemaVersion:    schemaVersion,
-		pass:             pass,
+		CommonFunctions: generator.NewCommonFunctions(schemaVersion, &FormatTypeFunc{}),
+		ctx:             ctx,
+		cfg:             cfg,
+		modulePkg:       pkg,
+		moduleFset:      fset,
+		schema:          schema,
+		schemaVersion:   schemaVersion,
+		pass:            pass,
 	}.FuncMap()
 }
 
 type goTemplateFuncs struct {
 	*generator.CommonFunctions
-	ctx              context.Context
-	cfg              generator.Config
-	modulePkg        *packages.Package
-	moduleFset       *token.FileSet
-	schema           *introspection.Schema
-	schemaVersion    string
-	pass             int
+	ctx           context.Context
+	cfg           generator.Config
+	modulePkg     *packages.Package
+	moduleFset    *token.FileSet
+	schema        *introspection.Schema
+	schemaVersion string
+	pass          int
 }
 
 func (funcs goTemplateFuncs) FuncMap() template.FuncMap {

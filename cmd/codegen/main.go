@@ -73,11 +73,11 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 	}
 
 	cfg := generator.Config{
-		Lang: generator.SDKLang(lang),
-		OutputDir: outputDir,
-		Merge: mergePtr,
+		Lang:       generator.SDKLang(lang),
+		OutputDir:  outputDir,
+		Merge:      mergePtr,
 		ClientOnly: clientOnly,
-		LocalSDK: localSDK,
+		LocalSDK:   localSDK,
 	}
 
 	if moduleName != "" {

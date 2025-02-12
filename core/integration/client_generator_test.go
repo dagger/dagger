@@ -91,7 +91,7 @@ main()
 					return ctr.
 						WithExec([]string{"npm", "install"})
 				},
-				callCmd:   []string{"tsx", "index.ts"},
+				callCmd: []string{"tsx", "index.ts"},
 			},
 		}
 
@@ -200,7 +200,7 @@ main()
 					return ctr.
 						WithExec([]string{"npm", "install"})
 				},
-				callCmd:   []string{"tsx", "index.ts"},
+				callCmd: []string{"tsx", "index.ts"},
 			},
 		}
 
@@ -213,7 +213,7 @@ main()
 				devEngine := devEngineContainerAsService(devEngineContainer(c))
 
 				moduleSrc := c.Container().From(tc.baseImage).
-					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).			
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work/dep").
 					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
 					With(sdkSource("go", `package main

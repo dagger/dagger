@@ -119,7 +119,7 @@ func initializeClientGeneratorConfig(
 	}
 
 	// There's a weird behaviour where if I use the same instance of the module after
-	// it has been initialzed, I'm not able to get its dependencies (cannot handle module.ID). 
+	// it has been initialzed, I'm not able to get its dependencies (cannot handle module.ID).
 	// So we need to reload the module from its source to avoid that.
 	dependencies, err := conf.Source.AsModule().Dependencies(ctx)
 	if err != nil {
