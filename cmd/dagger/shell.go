@@ -387,6 +387,7 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 	defer telemetry.End(shellSpan, func() error { return nil })
 	Frontend.SetPrimary(dagui.SpanID{SpanID: shellSpan.SpanContext().SpanID()})
 
+	complete := &shellAutoComplete{h}
 	Frontend.Shell(shellCtx, func(line string) (rerr error) {
 		if line == "exit" {
 			cancel()
@@ -403,12 +404,13 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 		// redirect stdio to the current span
 		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 		stdoutW := newTerminalWriter(stdio.Stdout.Write)
+		// handle shell state
 		stdoutW.SetProcessFunc(h.shellStateProcessor(ctx))
 		stderrW := newTerminalWriter(stdio.Stderr.Write)
 		interp.StdIO(nil, stdoutW, stderrW)(h.runner)
 
 		return h.run(ctx, strings.NewReader(line), "")
-	})
+	}, complete.Do)
 
 	return nil
 }
