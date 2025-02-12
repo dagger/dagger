@@ -112,7 +112,7 @@ func (s *moduleSchema) localModuleSource(
 			if err != nil {
 				return inst, fmt.Errorf("failed to read module config file: %w", err)
 			}
-			var modCfg modules.ModuleConfig
+			var modCfg modules.ModuleConfigWithUserFields
 			if err := json.Unmarshal(contents, &modCfg); err != nil {
 				return inst, fmt.Errorf("failed to decode module config: %w", err)
 			}
@@ -261,7 +261,7 @@ func (s *moduleSchema) localModuleSource(
 		if err != nil {
 			return inst, fmt.Errorf("failed to read module config file: %w", err)
 		}
-		modCfg := &modules.ModuleConfig{}
+		modCfg := &modules.ModuleConfigWithUserFields{}
 		if err := json.Unmarshal(contents, modCfg); err != nil {
 			return inst, fmt.Errorf("failed to decode module config: %w", err)
 		}
@@ -271,6 +271,7 @@ func (s *moduleSchema) localModuleSource(
 		localSrc.EngineVersion = modCfg.EngineVersion
 		localSrc.IncludePaths = modCfg.Include
 		localSrc.CodegenConfig = modCfg.Codegen
+		localSrc.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
 
 		if modCfg.SDK != nil {
 			localSrc.SDK = &core.SDKConfig{
@@ -599,7 +600,7 @@ func (s *moduleSchema) gitModuleSource(
 	}
 
 	// TODO: some of this logic is a bit dupe'd with local module source, could consolidate
-	modCfg := &modules.ModuleConfig{}
+	modCfg := &modules.ModuleConfigWithUserFields{}
 	if err := json.Unmarshal([]byte(configContents), modCfg); err != nil {
 		return inst, fmt.Errorf("failed to unmarshal module config: %w", err)
 	}
@@ -609,6 +610,7 @@ func (s *moduleSchema) gitModuleSource(
 	gitSrc.EngineVersion = modCfg.EngineVersion
 	gitSrc.IncludePaths = modCfg.Include
 	gitSrc.CodegenConfig = modCfg.Codegen
+	gitSrc.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
 
 	if modCfg.SDK != nil {
 		gitSrc.SDK = &core.SDKConfig{
@@ -1226,7 +1228,7 @@ func (s *moduleSchema) directoryAsModuleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to load dir module dagger config: %w", err)
 	}
-	modCfg := &modules.ModuleConfig{}
+	modCfg := &modules.ModuleConfigWithUserFields{}
 	if err := json.Unmarshal([]byte(configContents), modCfg); err != nil {
 		return inst, fmt.Errorf("failed to unmarshal module config: %w", err)
 	}
@@ -1236,6 +1238,7 @@ func (s *moduleSchema) directoryAsModuleSource(
 	dirSrc.EngineVersion = modCfg.EngineVersion
 	dirSrc.IncludePaths = modCfg.Include
 	dirSrc.CodegenConfig = modCfg.Codegen
+	dirSrc.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
 
 	if modCfg.SDK != nil {
 		dirSrc.SDK = &core.SDKConfig{
@@ -1927,11 +1930,14 @@ func (s *moduleSchema) moduleSourceGeneratedContextDirectory(
 	args struct{},
 ) (genDirInst dagql.Instance[*core.Directory], err error) {
 	src := srcInst.Self
-	modCfg := &modules.ModuleConfig{
-		Name:          src.ModuleName,
-		EngineVersion: src.EngineVersion,
-		Include:       src.IncludePaths,
-		Codegen:       src.CodegenConfig,
+	modCfg := &modules.ModuleConfigWithUserFields{
+		ModuleConfigUserFields: src.ModuleConfigUserFields,
+		ModuleConfig: modules.ModuleConfig{
+			Name:          src.ModuleName,
+			EngineVersion: src.EngineVersion,
+			Include:       src.IncludePaths,
+			Codegen:       src.CodegenConfig,
+		},
 	}
 
 	if src.SDK != nil {
