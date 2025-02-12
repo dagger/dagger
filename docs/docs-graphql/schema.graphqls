@@ -2250,7 +2250,7 @@ type Module {
     generator: String!
 
     """Use local SDK dependency"""
-    localSdk: Boolean!
+    localSdk: Boolean
   ): Directory!
 
   """
