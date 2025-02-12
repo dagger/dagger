@@ -388,34 +388,43 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 	Frontend.SetPrimary(dagui.SpanID{SpanID: shellSpan.SpanContext().SpanID()})
 
 	complete := &shellAutoComplete{h}
-	Frontend.Shell(shellCtx, func(line string) (rerr error) {
-		if line == "exit" {
-			cancel()
-			return nil
-		}
+	Frontend.Shell(shellCtx,
+		func(line string) (rerr error) {
+			if line == "exit" {
+				cancel()
+				return nil
+			}
 
-		if strings.TrimSpace(line) == "" {
-			return nil
-		}
+			if strings.TrimSpace(line) == "" {
+				return nil
+			}
 
-		ctx, span := Tracer().Start(shellCtx, line)
-		defer telemetry.End(span, func() error { return rerr })
+			ctx, span := Tracer().Start(shellCtx, line)
+			defer telemetry.End(span, func() error { return rerr })
 
-		// redirect stdio to the current span
-		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-		stdoutW := newTerminalWriter(stdio.Stdout.Write)
-		// handle shell state
-		stdoutW.SetProcessFunc(h.shellStateProcessor(ctx))
-		stderrW := newTerminalWriter(stdio.Stderr.Write)
-		interp.StdIO(nil, stdoutW, stderrW)(h.runner)
+			// redirect stdio to the current span
+			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+			stdoutW := newTerminalWriter(stdio.Stdout.Write)
+			// handle shell state
+			stdoutW.SetProcessFunc(h.shellStateProcessor(ctx))
+			stderrW := newTerminalWriter(stdio.Stderr.Write)
+			interp.StdIO(nil, stdoutW, stderrW)(h.runner)
 
-		return h.run(ctx, strings.NewReader(line), "")
-	}, complete.Do)
+			return h.run(ctx, strings.NewReader(line), "")
+		},
+		complete.Do,
+		h.Prompt,
+	)
 
 	return nil
 }
 
-func (h *shellCallHandler) Prompt(out *termenv.Output, fg termenv.Color) string {
+func (h *shellCallHandler) Prompt(out *termenv.Output, err error) string {
+	fg := termenv.ANSIGreen
+	if err != nil {
+		fg = termenv.ANSIRed
+	}
+
 	sb := new(strings.Builder)
 
 	if def, _ := h.GetModuleDef(nil); def != nil {
