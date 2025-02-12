@@ -6894,6 +6894,8 @@ type ModuleSourceOpts struct {
 	RefPin string
 	// TODO
 	DisableFindUp bool
+
+	AllowNotExists bool
 	// If true, enforce that the source is a stable version for source kinds that support versioning.
 	Stable bool
 }
@@ -6909,6 +6911,10 @@ func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *Modul
 		// `disableFindUp` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DisableFindUp) {
 			q = q.Arg("disableFindUp", opts[i].DisableFindUp)
+		}
+		// `allowNotExists` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AllowNotExists) {
+			q = q.Arg("allowNotExists", opts[i].AllowNotExists)
 		}
 		// `stable` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Stable) {

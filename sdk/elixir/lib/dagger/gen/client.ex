@@ -720,6 +720,7 @@ defmodule Dagger.Client do
   @spec module_source(t(), String.t(), [
           {:ref_pin, String.t() | nil},
           {:disable_find_up, boolean() | nil},
+          {:allow_not_exists, boolean() | nil},
           {:stable, boolean() | nil}
         ]) :: Dagger.ModuleSource.t()
   def module_source(%__MODULE__{} = client, ref_string, optional_args \\ []) do
@@ -729,6 +730,7 @@ defmodule Dagger.Client do
       |> QB.put_arg("refString", ref_string)
       |> QB.maybe_put_arg("refPin", optional_args[:ref_pin])
       |> QB.maybe_put_arg("disableFindUp", optional_args[:disable_find_up])
+      |> QB.maybe_put_arg("allowNotExists", optional_args[:allow_not_exists])
       |> QB.maybe_put_arg("stable", optional_args[:stable])
 
     %Dagger.ModuleSource{

@@ -596,6 +596,7 @@ class Client extends Client\AbstractClient
         string $refString,
         ?string $refPin = '',
         ?bool $disableFindUp = false,
+        ?bool $allowNotExists = false,
         ?bool $stable = false,
     ): ModuleSource {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleSource');
@@ -605,6 +606,9 @@ class Client extends Client\AbstractClient
         }
         if (null !== $disableFindUp) {
         $innerQueryBuilder->setArgument('disableFindUp', $disableFindUp);
+        }
+        if (null !== $allowNotExists) {
+        $innerQueryBuilder->setArgument('allowNotExists', $allowNotExists);
         }
         if (null !== $stable) {
         $innerQueryBuilder->setArgument('stable', $stable);

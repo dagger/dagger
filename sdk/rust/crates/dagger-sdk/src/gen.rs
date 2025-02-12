@@ -6465,6 +6465,8 @@ pub struct QueryLoadSecretFromNameOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryModuleSourceOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub allow_not_exists: Option<bool>,
     /// TODO
     #[builder(setter(into, strip_option), default)]
     pub disable_find_up: Option<bool>,
@@ -7457,6 +7459,9 @@ impl Query {
         }
         if let Some(disable_find_up) = opts.disable_find_up {
             query = query.arg("disableFindUp", disable_find_up);
+        }
+        if let Some(allow_not_exists) = opts.allow_not_exists {
+            query = query.arg("allowNotExists", allow_not_exists);
         }
         if let Some(stable) = opts.stable {
             query = query.arg("stable", stable);

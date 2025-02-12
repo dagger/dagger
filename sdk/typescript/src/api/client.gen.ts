@@ -1150,6 +1150,7 @@ export type ClientModuleSourceOpts = {
    * TODO
    */
   disableFindUp?: boolean
+  allowNotExists?: boolean
 
   /**
    * If true, enforce that the source is a stable version for source kinds that support versioning.

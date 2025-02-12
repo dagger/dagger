@@ -6938,6 +6938,7 @@ class Client(Root):
         *,
         ref_pin: str | None = "",
         disable_find_up: bool | None = False,
+        allow_not_exists: bool | None = False,
         stable: bool | None = False,
     ) -> ModuleSource:
         """TODO
@@ -6950,6 +6951,7 @@ class Client(Root):
             The pinned version of the module source
         disable_find_up:
             TODO
+        allow_not_exists:
         stable:
             If true, enforce that the source is a stable version for source
             kinds that support versioning.
@@ -6958,6 +6960,7 @@ class Client(Root):
             Arg("refString", ref_string),
             Arg("refPin", ref_pin, ""),
             Arg("disableFindUp", disable_find_up, False),
+            Arg("allowNotExists", allow_not_exists, False),
             Arg("stable", stable, False),
         ]
         _ctx = self._select("moduleSource", _args)

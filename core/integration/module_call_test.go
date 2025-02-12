@@ -2069,7 +2069,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 		// call main module at /work path
 		_, err := ctr.With(daggerCallAt("foo", "fn")).Stdout(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, `local module dep source path "../outside/mod-a" escapes context "/work"`)
+		requireErrOut(t, err, `local module dependency context directory "/outside/mod-a" is not in parent context directory "/work"`)
 	})
 
 	t.Run("local ref with @", func(ctx context.Context, t *testctx.T) {
@@ -2209,7 +2209,7 @@ func (CallSuite) TestFindup(ctx context.Context, t *testctx.T) {
 			Stdout(ctx)
 		require.Error(t, err)
 		require.NoError(t, c.Close())
-		require.Contains(t, logs.String(), "failed to lstat bad/subdir")
+		require.Contains(t, logs.String(), "lstat /work/bad/subdir: no such file or directory")
 	})
 }
 
