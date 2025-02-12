@@ -5,7 +5,8 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
+	"github.com/dagger/testctx/oteltest"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
@@ -15,14 +16,11 @@ import (
 type SequentialSuite struct{}
 
 func TestSequential(t *testing.T) {
-	testctx.Run(
-		testCtx,
-		t,
-		SequentialSuite{},
+	testctx.New(t,
 		// omitting testctx.WithParallel middleware to get the desired sequential behavior
-		testctx.WithOTelLogging[*testing.T](Logger()),
-		testctx.WithOTelTracing[*testing.T](Tracer()),
-	)
+		oteltest.WithTracing[*testing.T](),
+		oteltest.WithLogging[*testing.T](),
+	).RunTests(SequentialSuite{})
 }
 
 func (SequentialSuite) TestInsecureRootNetNSIsolation(ctx context.Context, t *testctx.T) {

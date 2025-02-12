@@ -33,13 +33,13 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/internal/testutil"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 )
 
 type ContainerSuite struct{}
 
 func TestContainer(t *testing.T) {
-	testctx.Run(testCtx, t, ContainerSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(ContainerSuite{})
 }
 
 func (ContainerSuite) TestScratch(ctx context.Context, t *testctx.T) {

@@ -37,6 +37,8 @@ require (
 	github.com/containernetworking/cni v1.2.3
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/creack/pty v1.1.24
+	github.com/dagger/testctx v0.0.4
+	github.com/dagger/testctx/oteltest v0.0.1
 	github.com/dave/jennifer v1.7.1
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/distribution/reference v0.6.0
@@ -98,16 +100,15 @@ require (
 	go.etcd.io/bbolt v1.3.11
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.57.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.57.0
-	go.opentelemetry.io/otel v1.32.0
+	go.opentelemetry.io/otel v1.34.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.8.0
-	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.32.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.32.0
 	go.opentelemetry.io/otel/log v0.8.0
-	go.opentelemetry.io/otel/metric v1.32.0
-	go.opentelemetry.io/otel/sdk v1.32.0
+	go.opentelemetry.io/otel/metric v1.34.0
+	go.opentelemetry.io/otel/sdk v1.34.0
 	go.opentelemetry.io/otel/sdk/log v0.8.0
 	go.opentelemetry.io/otel/sdk/metric v1.32.0
-	go.opentelemetry.io/otel/trace v1.32.0
+	go.opentelemetry.io/otel/trace v1.34.0
 	go.opentelemetry.io/proto/otlp v1.3.1
 	golang.org/x/crypto v0.31.0
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0
@@ -115,7 +116,7 @@ require (
 	golang.org/x/net v0.33.0
 	golang.org/x/oauth2 v0.24.0
 	golang.org/x/sync v0.10.0
-	golang.org/x/sys v0.28.0
+	golang.org/x/sys v0.29.0
 	golang.org/x/term v0.27.0
 	golang.org/x/text v0.21.0
 	golang.org/x/tools v0.28.0
@@ -127,6 +128,8 @@ require (
 	mvdan.cc/sh/v3 v3.10.1-0.20250103084315-5e4be7920b8b
 	resenje.org/singleflight v0.4.3
 )
+
+require go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 
 require (
 	dario.cat/mergo v1.0.0 // indirect
@@ -289,6 +292,7 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.57.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.8.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.32.0 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.32.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.32.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.32.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect

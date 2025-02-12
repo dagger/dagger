@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -15,7 +15,7 @@ import (
 type TypescriptSuite struct{}
 
 func TestTypescript(t *testing.T) {
-	testctx.Run(testCtx, t, TypescriptSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(TypescriptSuite{})
 }
 
 func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
