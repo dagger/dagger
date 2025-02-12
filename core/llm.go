@@ -468,6 +468,14 @@ func (llm *Llm) sendQuery(ctx context.Context, tools []bbi.Tool) (res *openai.Ch
 		}
 	}
 
+	if stream.Err() != nil {
+		return nil, stream.Err()
+	}
+
+	if len(acc.ChatCompletion.Choices) == 0 {
+		return nil, fmt.Errorf("no response from model")
+	}
+
 	return &acc.ChatCompletion, nil
 }
 
