@@ -938,8 +938,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		if fe.shell != nil && fe.editlineFocused {
 			switch msg.String() {
 			case "ctrl+d":
-				fe.quitting = true
-				return fe, tea.Quit
+				return fe.quit()
 			case "ctrl+c":
 				if fe.shellInterrupt != nil {
 					fe.shellInterrupt(errors.New("interrupted"))
@@ -969,27 +968,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		fe.pressedKeyAt = time.Now()
 		switch msg.String() {
 		case "q", "ctrl+c":
-			if fe.CustomExit != nil {
-				fe.CustomExit()
-				return fe, nil
-			}
-
-			if fe.done && fe.eof {
-				fe.quitting = true
-				// must have configured NoExit, and now they want
-				// to exit manually
-				return fe, tea.Quit
-			}
-			if fe.interrupted {
-				slog.Warn("exiting immediately")
-				fe.quitting = true
-				return fe, tea.Quit
-			} else {
-				slog.Warn("canceling... (press again to exit immediately)")
-			}
-			fe.interrupted = true
-			fe.interrupt(errors.New("interrupted"))
-			return fe, nil // tea.Quit is deferred until we receive doneMsg
+			return fe.quit()
 		case "ctrl+\\": // SIGQUIT
 			fe.program.ReleaseTerminal()
 			sigquit()
@@ -1090,6 +1069,30 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 	default:
 		return fe, nil
 	}
+}
+
+func (fe *frontendPretty) quit() (*frontendPretty, tea.Cmd) {
+	if fe.CustomExit != nil {
+		fe.CustomExit()
+		return fe, nil
+	}
+
+	if fe.done && fe.eof {
+		fe.quitting = true
+		// must have configured NoExit, and now they want
+		// to exit manually
+		return fe, tea.Quit
+	}
+	if fe.interrupted {
+		slog.Warn("exiting immediately")
+		fe.quitting = true
+		return fe, tea.Quit
+	} else {
+		slog.Warn("canceling... (press again to exit immediately)")
+	}
+	fe.interrupted = true
+	fe.interrupt(errors.New("interrupted"))
+	return fe, nil // tea.Quit is deferred until we receive doneMsg
 }
 
 func (fe *frontendPretty) goStart() {
