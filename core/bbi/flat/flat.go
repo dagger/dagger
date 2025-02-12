@@ -94,11 +94,16 @@ func (s *Session) call(ctx context.Context, fieldDef *ast.FieldDefinition, args 
 	target := s.self
 	if !toplevel {
 		slog.Debug("processing special argument 'id'", "field", fieldDef.Name)
-		obj, err := s.LookupObject(ctx, argsMap["id"].(string))
-		if err != nil {
-			return nil, nil, err
+		idVal := argsMap["id"]
+		if idArg, ok := idVal.(string); ok {
+			obj, err := s.LookupObject(ctx, idArg)
+			if err != nil {
+				return nil, nil, err
+			}
+			target = obj
+		} else {
+			return nil, nil, fmt.Errorf("tool call: %s: expected argument 'id' to be a string - got %#v", fieldDef.Name, idVal)
 		}
-		target = obj
 	}
 	targetType, ok := s.srv.ObjectType(target.Type().Name())
 	if !ok {
