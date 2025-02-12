@@ -310,6 +310,13 @@ func (s *moduleSchema) localModuleSource(
 		if localSrc.SourceSubpath != "" {
 			// load the source dir if set
 			includes = append(includes, localSrc.SourceSubpath+"/**/*")
+		} else {
+			// otherwise load the source root; this supports use cases like an sdk-less module w/ a pyproject.toml
+			// that's now going to be upgraded to using the python sdk and needs pyproject.toml to be loaded
+			// TODO: might be better to dynamically load more when WithSourceSubpath is called
+			// TODO: might be better to dynamically load more when WithSourceSubpath is called
+			// TODO: might be better to dynamically load more when WithSourceSubpath is called
+			includes = append(includes, localSrc.SourceRootSubpath+"/**/*")
 		}
 
 		// add the config file includes, rebasing them from being relative to the config file
