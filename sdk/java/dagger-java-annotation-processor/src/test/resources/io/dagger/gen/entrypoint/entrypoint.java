@@ -13,6 +13,7 @@ import io.dagger.client.JSON;
 import io.dagger.client.JsonConverter;
 import io.dagger.client.Module;
 import io.dagger.client.ModuleID;
+import io.dagger.client.Platform;
 import io.dagger.client.TypeDef;
 import io.dagger.client.TypeDefKind;
 import io.dagger.java.module.DaggerJava;
@@ -122,6 +123,10 @@ public class Entrypoint {
                         dag.typeDef().withKind(TypeDefKind.STRING_KIND))
                         .withDescription("Set a default value in case the user doesn't provide a value and allow for null value.")
                         .withArg("stringArg", dag.typeDef().withKind(TypeDefKind.STRING_KIND).withOptional(true), new Function.WithArgArguments().withDefaultValue(JSON.from("\"Foo\""))))
+                .withFunction(
+                    dag.function("defaultPlatform",
+                        dag.typeDef().withScalar("Platform"))
+                        .withDescription("return the default platform as a Scalar value"))
                 .withField("source", dag.typeDef().withObject("Directory"), new TypeDef.WithFieldArguments().withDescription("Project source directory"))
                 .withField("version", dag.typeDef().withKind(TypeDefKind.STRING_KIND)));
     return module.id();
@@ -220,6 +225,10 @@ public class Entrypoint {
           }
           Method fn = clazz.getMethod("nullableDefault", String.class);
           String res = (String) fn.invoke(obj, stringArg);
+          return JsonConverter.toJSON(res);
+        } else if (fnName.equals("defaultPlatform")) {
+          Method fn = clazz.getMethod("defaultPlatform");
+          Platform res = (Platform) fn.invoke(obj);
           return JsonConverter.toJSON(res);
         }
       }

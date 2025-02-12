@@ -3,6 +3,7 @@ package io.dagger.java.module;
 import io.dagger.client.Container;
 import io.dagger.client.DaggerQueryException;
 import io.dagger.client.Directory;
+import io.dagger.client.Platform;
 import io.dagger.module.AbstractModule;
 import io.dagger.module.annotation.Default;
 import io.dagger.module.annotation.Function;
@@ -112,5 +113,11 @@ public class DaggerJava extends AbstractModule {
       stringArg = "was a null value by default";
     }
     return stringArg;
+  }
+
+  /** return the default platform as a Scalar value */
+  @Function
+  public Platform defaultPlatform() throws InterruptedException, ExecutionException, DaggerQueryException {
+    return dag.defaultPlatform();
   }
 }
