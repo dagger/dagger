@@ -52,7 +52,7 @@ type frontendPretty struct {
 
 	// updated by Shell
 	shell           func(string) error
-	autocomplete    editline.AutoCompleteFn
+	prompt          func(out *termenv.Output, err error) string
 	editline        *editline.Model
 	editlineFocused bool
 
@@ -123,16 +123,19 @@ func NewWithDB(db *dagui.DB) *frontendPretty {
 type startShellMsg struct {
 	handler      func(input string) error
 	autocomplete editline.AutoCompleteFn
+	prompt       func(out *termenv.Output, err error) string
 }
 
 func (fe *frontendPretty) Shell(
 	ctx context.Context,
 	fn func(input string) error,
 	autocomplete editline.AutoCompleteFn,
+	prompt func(out *termenv.Output, err error) string,
 ) {
 	fe.program.Send(startShellMsg{
 		handler:      fn,
 		autocomplete: autocomplete,
+		prompt:       prompt,
 	})
 	<-ctx.Done()
 }
@@ -546,7 +549,7 @@ func (fe *frontendPretty) Render(out *termenv.Output) error {
 	countOut := NewOutput(below, termenv.WithProfile(fe.profile))
 
 	if fe.shell == nil {
-		fmt.Fprint(out, fe.viewKeymap())
+		fmt.Fprint(countOut, fe.viewKeymap())
 	}
 
 	if logs := fe.logs.Logs[fe.ZoomedSpan]; logs != nil && logs.UsedHeight() > 0 {
@@ -837,11 +840,12 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 
 	case startShellMsg:
 		fe.shell = msg.handler
+		fe.prompt = msg.prompt
 
 		fe.editline = editline.New(fe.window.Width, fe.window.Height)
 
 		// put the bowtie on
-		fe.editline.Prompt = fe.viewOut.String(shellPrompt).Bold().Foreground(termenv.ANSIGreen).String() + " "
+		fe.editline.Prompt = fe.prompt(fe.viewOut, nil)
 
 		// wire up auto completion
 		fe.editline.AutoComplete = msg.autocomplete
@@ -858,6 +862,11 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		}
 
 		fe.editlineFocused = true
+
+		// HACK: for some reason editline's first paint is broken (only shows
+		// first 2 chars of prompt, doesn't show cursor). Sending it a message
+		// - any message - fixes it.
+		fe.editline.Update(nil)
 
 		return fe, tea.Batch(
 			tea.Println(`Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`),
@@ -922,12 +931,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		return fe, nil
 
 	case shellDoneMsg:
-		fg := termenv.ANSIGreen
-		if msg.err != nil {
-			fg = termenv.ANSIRed
-		}
-		// TODO: refactor
-		fe.editline.Prompt = fe.viewOut.String(shellPrompt).Bold().Foreground(fg).String() + " "
+		fe.editline.Prompt = fe.prompt(fe.viewOut, msg.err)
 		return fe, nil
 
 	case tea.KeyMsg:
