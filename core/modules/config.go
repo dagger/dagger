@@ -21,7 +21,7 @@ type ModuleConfig struct {
 	EngineVersion string `json:"engineVersion"`
 
 	// The SDK this module uses
-	SDK string `json:"sdk,omitempty"`
+	SDK *SDK `json:"sdk,omitempty"`
 
 	// Paths to explicitly include from the module, relative to the configuration file.
 	Include []string `json:"include,omitempty"`
@@ -41,6 +41,41 @@ type ModuleConfig struct {
 
 	// Codegen configuration for this module.
 	Codegen *ModuleCodegenConfig `json:"codegen,omitempty"`
+}
+
+// SDK represents the sdk field in dagger.json
+// The source can be reference to a built-in sdk e.g. go, php, elixir or
+// can be a reference to a git path e.g. github.com/username/reponame/sdk-name
+type SDK struct {
+	Source string `json:"source"`
+}
+
+func (sdk *SDK) UnmarshalJSON(data []byte) error {
+	if sdk == nil {
+		return fmt.Errorf("cannot unmarshal into nil SDK")
+	}
+	if len(data) == 0 {
+		sdk.Source = ""
+		return nil
+	}
+
+	// check if this is a legacy config, where sdk was a string
+	if data[0] == '"' {
+		var sdkRefStr string
+		if err := json.Unmarshal(data, &sdkRefStr); err != nil {
+			return fmt.Errorf("unmarshal sdk as string: %w", err)
+		}
+		*sdk = SDK{Source: sdkRefStr}
+		return nil
+	}
+
+	type alias SDK // lets us use the default json unmashaler
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return fmt.Errorf("unmarshal sdk as struct: %w", err)
+	}
+	*sdk = SDK(tmp)
+	return nil
 }
 
 type ModuleConfigUserFields struct {
@@ -71,7 +106,7 @@ func (modCfg *ModuleConfig) UnmarshalJSON(data []byte) error {
 
 	// Detect the case where SDK is set but Source isn't, which should only happen when loading an older config.
 	// For those cases, the Source was implicitly ".", so set it to that.
-	if tmp.SDK != "" && tmp.Source == "" {
+	if tmp.SDK != nil && tmp.SDK.Source != "" && tmp.Source == "" {
 		tmp.Source = "."
 	}
 

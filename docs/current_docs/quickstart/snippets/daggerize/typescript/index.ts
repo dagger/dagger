@@ -9,7 +9,7 @@ class HelloDagger {
   async publish(source: Directory): Promise<string> {
     await this.test(source)
     return await this.build(source).publish(
-      "ttl.sh/myapp-" + Math.floor(Math.random() * 10000000),
+      "ttl.sh/hello-dagger-" + Math.floor(Math.random() * 10000000),
     )
   }
 

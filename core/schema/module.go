@@ -143,7 +143,7 @@ func (s *moduleSchema) Install() {
 
 		dagql.Func("withSDK", s.moduleSourceWithSDK).
 			Doc(`Update the module source with a new SDK.`).
-			ArgDoc("sdk", `The SDK to set.`),
+			ArgDoc("source", `The SDK source to set.`),
 
 		dagql.Func("withInit", s.moduleSourceWithInit).
 			Doc(`Sets module init arguments`).
@@ -217,6 +217,7 @@ func (s *moduleSchema) Install() {
 	}.Install(s.dag)
 
 	dagql.Fields[*core.ModuleDependency]{}.Install(s.dag)
+	dagql.Fields[*core.SDKConfig]{}.Install(s.dag)
 
 	dagql.Fields[*core.Module]{
 		dagql.Func("withSource", s.moduleWithSource).
@@ -835,7 +836,7 @@ func (s *moduleSchema) moduleInitialize(
 	inst dagql.Instance[*core.Module],
 	args struct{},
 ) (*core.Module, error) {
-	if inst.Self.NameField == "" || inst.Self.SDKConfig == "" {
+	if inst.Self.NameField == "" || inst.Self.SDKConfig == nil || inst.Self.SDKConfig.Source == "" {
 		return nil, fmt.Errorf("module name and SDK must be set")
 	}
 	mod, err := inst.Self.Initialize(ctx, inst.ID(), dagql.CurrentID(ctx), s.dag)
@@ -1038,6 +1039,7 @@ func (s *moduleSchema) updateDeps(
 	return nil
 }
 
+//nolint:gocyclo // adding a nil check for SDK Config is triggering this failure
 func (s *moduleSchema) updateCodegenAndRuntime(
 	ctx context.Context,
 	mod *core.Module,
@@ -1046,14 +1048,13 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 	ctx, span := core.Tracer(ctx).Start(ctx, "build module")
 	defer telemetry.End(span, func() error { return rerr })
 
-	if mod.NameField == "" || mod.SDKConfig == "" {
+	if mod.NameField == "" || mod.SDKConfig == nil || mod.SDKConfig.Source == "" {
 		// can't codegen yet
 		return nil
 	}
 
 	if src.Self.WithInitConfig != nil &&
-		src.Self.WithInitConfig.Merge &&
-		mod.SDKConfig != string(SDKGo) {
+		src.Self.WithInitConfig.Merge && mod.SDKConfig.Source != string(SDKGo) {
 		return fmt.Errorf("merge is only supported for Go SDKs")
 	}
 
@@ -1232,7 +1233,12 @@ func (s *moduleSchema) updateDaggerConfig(
 	modCfg := &modCfgWithUserFields.ModuleConfig
 
 	modCfg.Name = mod.OriginalName
-	modCfg.SDK = mod.SDKConfig
+	if mod.SDKConfig != nil {
+		modCfg.SDK = &modules.SDK{
+			Source: mod.SDKConfig.Source,
+		}
+	}
+
 	switch engineVersion {
 	case "":
 		if modCfg.EngineVersion == "" {

@@ -126,7 +126,9 @@ public class Entrypoint {
                 .withFunction(
                     dag.function("defaultPlatform",
                         dag.typeDef().withScalar("Platform"))
-                        .withDescription("return the default platform as a Scalar value")));
+                        .withDescription("return the default platform as a Scalar value"))
+                .withField("source", dag.typeDef().withObject("Directory"), new TypeDef.WithFieldArguments().withDescription("Project source directory"))
+                .withField("version", dag.typeDef().withKind(TypeDefKind.STRING_KIND)));
     return module.id();
   }
 

@@ -81,6 +81,7 @@ func New(
 				// The specific version is dictated by Dagger's own requirement
 				// FIXME: make this optional with overlay support
 				"protoc~3.21.12",
+				"ca-certificates",
 			}}).
 			WithEnvVariable("GOLANG_VERSION", version).
 			WithEnvVariable("GOPATH", "/go").

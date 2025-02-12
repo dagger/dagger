@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/opencontainers/go-digest"
 
 	"github.com/dagger/dagger/core"
@@ -48,10 +49,10 @@ var validInbuiltSDKs = []SDK{
 func (s *moduleSchema) sdkForModule(
 	ctx context.Context,
 	query *core.Query,
-	sdk string,
+	sdk *core.SDKConfig,
 	parentSrc dagql.Instance[*core.ModuleSource],
 ) (core.SDK, error) {
-	if sdk == "" {
+	if sdk == nil {
 		return nil, errors.New("sdk ref is required")
 	}
 
@@ -67,7 +68,7 @@ func (s *moduleSchema) sdkForModule(
 		dagql.Selector{
 			Field: "moduleSource",
 			Args: []dagql.NamedInput{
-				{Name: "refString", Value: dagql.String(sdk)},
+				{Name: "refString", Value: dagql.String(sdk.Source)},
 			},
 		},
 	)
@@ -161,8 +162,8 @@ The %q SDK does not exist. The available SDKs are:
 }
 
 // return a builtin SDK implementation with the given name
-func (s *moduleSchema) builtinSDK(ctx context.Context, root *core.Query, sdkName string) (core.SDK, error) {
-	sdkNameParsed, sdkSuffix, err := parseSDKName(sdkName)
+func (s *moduleSchema) builtinSDK(ctx context.Context, root *core.Query, sdk *core.SDKConfig) (core.SDK, error) {
+	sdkNameParsed, sdkSuffix, err := parseSDKName(sdk.Source)
 	if err != nil {
 		return nil, err
 	}
@@ -171,18 +172,18 @@ func (s *moduleSchema) builtinSDK(ctx context.Context, root *core.Query, sdkName
 	case SDKGo:
 		return &goSDK{root: root, dag: s.dag}, nil
 	case SDKPython:
-		return s.loadBuiltinSDK(ctx, root, sdkName, digest.Digest(os.Getenv(distconsts.PythonSDKManifestDigestEnvName)))
+		return s.loadBuiltinSDK(ctx, root, sdk.Source, digest.Digest(os.Getenv(distconsts.PythonSDKManifestDigestEnvName)))
 	case SDKTypescript:
-		return s.loadBuiltinSDK(ctx, root, sdkName, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
+		return s.loadBuiltinSDK(ctx, root, sdk.Source, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
 	case SDKJava:
-		return s.sdkForModule(ctx, root, "github.com/dagger/dagger/sdk/java"+sdkSuffix, dagql.Instance[*core.ModuleSource]{})
+		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/java" + sdkSuffix}, dagql.Instance[*core.ModuleSource]{})
 	case SDKPHP:
-		return s.sdkForModule(ctx, root, "github.com/dagger/dagger/sdk/php"+sdkSuffix, dagql.Instance[*core.ModuleSource]{})
+		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/php" + sdkSuffix}, dagql.Instance[*core.ModuleSource]{})
 	case SDKElixir:
-		return s.sdkForModule(ctx, root, "github.com/dagger/dagger/sdk/elixir"+sdkSuffix, dagql.Instance[*core.ModuleSource]{})
+		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/elixir" + sdkSuffix}, dagql.Instance[*core.ModuleSource]{})
 	}
 
-	return nil, getInvalidBuiltinSDKError(sdkName)
+	return nil, getInvalidBuiltinSDKError(sdk.Source)
 }
 
 // moduleSDK is an SDK implemented as module; i.e. every module besides the special case go sdk.
@@ -243,7 +244,9 @@ func (s *moduleSchema) newModuleSDK(
 }
 
 // Codegen calls the Codegen function on the SDK Module
-func (sdk *moduleSDK) Codegen(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (*core.GeneratedCode, error) {
+func (sdk *moduleSDK) Codegen(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (_ *core.GeneratedCode, rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: run codegen")
+	defer telemetry.End(span, func() error { return rerr })
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.Self.Name(), err)
@@ -270,7 +273,9 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, deps *core.ModDeps, source da
 }
 
 // Runtime calls the Runtime function on the SDK Module
-func (sdk *moduleSDK) Runtime(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (*core.Container, error) {
+func (sdk *moduleSDK) Runtime(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (_ *core.Container, rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load runtime")
+	defer telemetry.End(span, func() error { return rerr })
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.Self.Name(), err)
@@ -402,7 +407,9 @@ func (sdk *goSDK) Codegen(
 	ctx context.Context,
 	deps *core.ModDeps,
 	source dagql.Instance[*core.ModuleSource],
-) (*core.GeneratedCode, error) {
+) (_ *core.GeneratedCode, rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: run codegen")
+	defer telemetry.End(span, func() error { return rerr })
 	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
 	if err != nil {
 		return nil, err
@@ -442,7 +449,9 @@ func (sdk *goSDK) Runtime(
 	ctx context.Context,
 	deps *core.ModDeps,
 	source dagql.Instance[*core.ModuleSource],
-) (*core.Container, error) {
+) (_ *core.Container, rerr error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load runtime")
+	defer telemetry.End(span, func() error { return rerr })
 	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
 	if err != nil {
 		return nil, err
@@ -597,8 +606,8 @@ func (sdk *goSDK) baseWithCodegen(
 			dagql.String("--merge="+strconv.FormatBool(src.Self.WithInitConfig.Merge)))
 	}
 
-	if err := sdk.dag.Select(ctx, ctr, &ctr,
-		dagql.Selector{
+	selectors := []dagql.Selector{
+		{
 			Field: "withMountedFile",
 			Args: []dagql.NamedInput{
 				{
@@ -611,7 +620,7 @@ func (sdk *goSDK) baseWithCodegen(
 				},
 			},
 		},
-		dagql.Selector{
+		{
 			Field: "withMountedDirectory",
 			Args: []dagql.NamedInput{
 				{
@@ -624,7 +633,7 @@ func (sdk *goSDK) baseWithCodegen(
 				},
 			},
 		},
-		dagql.Selector{
+		{
 			Field: "withWorkdir",
 			Args: []dagql.NamedInput{
 				{
@@ -633,6 +642,9 @@ func (sdk *goSDK) baseWithCodegen(
 				},
 			},
 		},
+	}
+
+	selectors = append(selectors,
 		dagql.Selector{
 			Field: "withoutDefaultArgs",
 		},
@@ -647,7 +659,9 @@ func (sdk *goSDK) baseWithCodegen(
 				},
 			},
 		},
-	); err != nil {
+	)
+
+	if err = sdk.dag.Select(ctx, ctr, &ctr, selectors...); err != nil {
 		return ctr, fmt.Errorf("failed to mount introspection json file into go module sdk container codegen: %w", err)
 	}
 
