@@ -82,14 +82,15 @@ func (sdk SDKConfig) Clone() *SDKConfig {
 type ModuleSource struct {
 	Query *Query
 
-	ConfigExists       bool       `field:"true" name:"configExists" doc:"TODO"`
-	ModuleName         string     `field:"true" name:"moduleName" doc:"TODO"`
-	ModuleOriginalName string     `field:"true" name:"moduleOriginalName" doc:"TODO"`
-	EngineVersion      string     `field:"true" name:"engineVersion" doc:"TODO"`
-	SDK                *SDKConfig `field:"true" name:"sdk" doc:"TODO"`
-	IncludePaths       []string
-	CodegenConfig      *modules.ModuleCodegenConfig
-	InitConfig         *ModuleInitConfig
+	ConfigExists           bool       `field:"true" name:"configExists" doc:"TODO"`
+	ModuleName             string     `field:"true" name:"moduleName" doc:"TODO"`
+	ModuleOriginalName     string     `field:"true" name:"moduleOriginalName" doc:"TODO"`
+	EngineVersion          string     `field:"true" name:"engineVersion" doc:"TODO"`
+	SDK                    *SDKConfig `field:"true" name:"sdk" doc:"TODO"`
+	IncludePaths           []string
+	CodegenConfig          *modules.ModuleCodegenConfig
+	InitConfig             *ModuleInitConfig
+	ModuleConfigUserFields modules.ModuleConfigUserFields
 
 	Dependencies []dagql.Instance[*ModuleSource] `field:"true" name:"dependencies" doc:"TODO"`
 
