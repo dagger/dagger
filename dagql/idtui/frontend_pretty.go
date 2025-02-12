@@ -945,6 +945,14 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				fe.editlineFocused = false
 				fe.editline.Blur()
 				return fe, nil
+			case "alt++", "alt+=":
+				fe.Verbosity++
+				fe.recalculateViewLocked()
+				return fe, nil
+			case "alt+-":
+				fe.Verbosity--
+				fe.recalculateViewLocked()
+				return fe, nil
 			default:
 				el, cmd := fe.editline.Update(msg)
 				fe.editline = el.(*editline.Model)
