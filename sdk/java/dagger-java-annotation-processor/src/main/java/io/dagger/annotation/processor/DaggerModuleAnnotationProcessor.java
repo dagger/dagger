@@ -82,6 +82,11 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           if (name.isEmpty()) {
             name = typeElement.getSimpleName().toString();
           }
+          if (!element.getModifiers().contains(Modifier.PUBLIC)) {
+            throw new RuntimeException(
+                "The class %s must be public if annotated with @Object".formatted(qName));
+          }
+
           List<FieldInfo> fieldInfoInfos =
               typeElement.getEnclosedElements().stream()
                   .filter(elt -> elt.getKind() == ElementKind.FIELD)
@@ -113,6 +118,11 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                         String fqName = elt.getSimpleName().toString();
                         if (fName.isEmpty()) {
                           fName = fqName;
+                        }
+                        if (!elt.getModifiers().contains(Modifier.PUBLIC)) {
+                          throw new RuntimeException(
+                              "The method %s#%s must be public if annotated with @Function"
+                                  .formatted(qName, fqName));
                         }
 
                         List<ParameterInfo> parameterInfos =
