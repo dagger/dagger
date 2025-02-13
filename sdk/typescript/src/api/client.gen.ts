@@ -5621,11 +5621,11 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * Sets module init arguments
-   * @param merge Merge module dependencies into the current project's
+   * Update the module source with additional include patterns for files+directories from its context that are required for building it
+   * @param patterns The new additional include patterns.
    */
-  withInit = (merge: boolean): ModuleSource => {
-    const ctx = this._ctx.select("withInit", { merge })
+  withIncludes = (patterns: string[]): ModuleSource => {
+    const ctx = this._ctx.select("withIncludes", { patterns })
     return new ModuleSource(ctx)
   }
 
