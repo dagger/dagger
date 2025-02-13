@@ -6226,14 +6226,20 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Sets module init arguments
+    /// Update the module source with additional include patterns for files+directories from its context that are required for building it
     ///
     /// # Arguments
     ///
-    /// * `merge` - Merge module dependencies into the current project's
-    pub fn with_init(&self, merge: bool) -> ModuleSource {
-        let mut query = self.selection.select("withInit");
-        query = query.arg("merge", merge);
+    /// * `patterns` - The new additional include patterns.
+    pub fn with_includes(&self, patterns: Vec<impl Into<String>>) -> ModuleSource {
+        let mut query = self.selection.select("withIncludes");
+        query = query.arg(
+            "patterns",
+            patterns
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,

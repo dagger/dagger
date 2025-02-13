@@ -6007,18 +6007,19 @@ class ModuleSource(Type):
         _ctx = self._select("withEngineVersion", _args)
         return ModuleSource(_ctx)
 
-    def with_init(self, merge: bool) -> Self:
-        """Sets module init arguments
+    def with_includes(self, patterns: list[str]) -> Self:
+        """Update the module source with additional include patterns for
+        files+directories from its context that are required for building it
 
         Parameters
         ----------
-        merge:
-            Merge module dependencies into the current project's
+        patterns:
+            The new additional include patterns.
         """
         _args = [
-            Arg("merge", merge),
+            Arg("patterns", patterns),
         ]
-        _ctx = self._select("withInit", _args)
+        _ctx = self._select("withIncludes", _args)
         return ModuleSource(_ctx)
 
     def with_name(self, name: str) -> Self:

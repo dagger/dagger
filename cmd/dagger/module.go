@@ -38,6 +38,7 @@ var (
 
 	moduleName       string
 	moduleSourcePath string
+	moduleIncludes   []string
 
 	installName string
 
@@ -45,8 +46,6 @@ var (
 	developSourcePath string
 
 	force bool
-
-	mergeDeps bool
 )
 
 const (
@@ -103,8 +102,7 @@ func init() {
 	moduleInitCmd.Flags().StringVar(&moduleName, "name", "", "Name of the new module (defaults to parent directory name)")
 	moduleInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Source directory used by the installed SDK. Defaults to module root")
 	moduleInitCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
-	moduleInitCmd.Flags().BoolVar(&mergeDeps, "merge", false, "Merge module dependencies with existing project ones")
-	moduleInitCmd.Flags().MarkHidden("merge")
+	moduleInitCmd.Flags().StringSliceVar(&moduleIncludes, "include", nil, "Paths to include when loading the module. Only needed when extra paths are required to build the module. They are expected to be relative to the directory containing the module's dagger.json file (the module source root).")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
 	modFlag := *moduleFlags.Lookup("mod")
@@ -223,15 +221,15 @@ If --sdk is specified, the given SDK is installed in the module. You can do this
 				}
 			}
 
-			modSrc = modSrc.
-				WithName(moduleName)
+			modSrc = modSrc.WithName(moduleName)
 			if sdk != "" {
-				modSrc = modSrc.
-					WithSDK(sdk).
-					WithInit(mergeDeps)
+				modSrc = modSrc.WithSDK(sdk)
 			}
 			if moduleSourcePath != "" {
 				modSrc = modSrc.WithSourceSubpath(moduleSourcePath)
+			}
+			if len(moduleIncludes) > 0 {
+				modSrc = modSrc.WithIncludes(moduleIncludes)
 			}
 			_, err = modSrc.
 				WithEngineVersion(modules.EngineVersionLatest).

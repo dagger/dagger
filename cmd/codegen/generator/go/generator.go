@@ -170,18 +170,18 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS, genSt *ge
 			return nil, false, fmt.Errorf("parse go.mod: %w", err)
 		}
 
-		if g.Config.Merge != nil && !*g.Config.Merge && goMod.Module.Mod.Path != modname {
-			return nil, false, fmt.Errorf("existing go.mod does not match the module's path")
+		if g.Config.IsInit && goMod.Module.Mod.Path != modname {
+			return nil, false, fmt.Errorf("existing go.mod path %q does not match the module's name %q", goMod.Module.Mod.Path, modname)
 		}
 	}
 
-	// if no go.mod is available, check the root output directory instead
-	// and if no merge is set
+	// if no go.mod is available and we are merging with the projects parent when possible,
+	// check the root output directory instead
 	//
 	// this is a necessary part of bootstrapping: SDKs such as the Go SDK
 	// will want to have a runtime module that lives in the same Go module as
 	// the generated client, which typically lives in the parent directory.
-	if goMod == nil && g.Config.Merge != nil && *g.Config.Merge {
+	if goMod == nil && g.Config.Merge {
 		if content, err := os.ReadFile(filepath.Join(g.Config.OutputDir, "go.mod")); err == nil {
 			daggerModPath = "."
 			goMod, err = modfile.ParseLax("go.mod", content, nil)

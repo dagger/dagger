@@ -295,19 +295,6 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, deps *core.ModDeps, source da
 	return inst.Self, nil
 }
 
-func (sdk *moduleSDK) RequiredPaths(ctx context.Context) ([]string, error) {
-	var paths []string
-	err := sdk.dag.Select(ctx, sdk.sdk, &paths,
-		dagql.Selector{
-			Field: "requiredPaths",
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to call sdk module requiredPaths: %w", err)
-	}
-	return paths, nil
-}
-
 // loadBuiltinSDK loads an SDK implemented as a module that is "builtin" to engine, which means its pre-packaged
 // with the engine container in order to enable use w/out hard dependencies on the internet
 func (s *moduleSchema) loadBuiltinSDK(
@@ -493,21 +480,6 @@ func (sdk *goSDK) Runtime(
 	return ctr.Self, nil
 }
 
-func (sdk *goSDK) RequiredPaths(_ context.Context) ([]string, error) {
-	return []string{
-		"**/go.mod",
-		"**/go.sum",
-		"**/go.work",
-		"**/go.work.sum",
-		// TODO: the below could be optimized by scoping only to go modules that actually
-		// end up being needed for the dagger module.
-		// including vendor/ is potentially expensive, but required
-		"**/vendor/",
-		// needed in order to re-use go.mod from any parent dir (otherwise it's an invalid go module)
-		"**/*.go",
-	}, nil
-}
-
 func (sdk *goSDK) baseWithCodegen(
 	ctx context.Context,
 	deps *core.ModDeps,
@@ -553,9 +525,8 @@ func (sdk *goSDK) baseWithCodegen(
 		"--module-name", dagql.String(modName),
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
 	}
-
-	if src.Self.InitConfig != nil && src.Self.InitConfig.Merge {
-		codegenArgs = append(codegenArgs, "--merge=true")
+	if !src.Self.ConfigExists {
+		codegenArgs = append(codegenArgs, "--is-init")
 	}
 
 	selectors := []dagql.Selector{
