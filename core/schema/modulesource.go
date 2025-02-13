@@ -375,16 +375,6 @@ func (s *moduleSchema) gitModuleSource(
 		}
 	}
 
-	refPath := gitSrc.Git.CloneRef
-	refSubPath := filepath.Join("/", gitSrc.SourceRootSubpath)
-	if refSubPath != "/" {
-		refPath += refSubPath
-	}
-	if gitSrc.Git.Version != "" {
-		refPath += "@" + gitSrc.Git.Version
-	}
-	gitSrc.Git.AsString = refPath
-
 	// TODO:(sipsma) support sparse loading of git repos similar to how local dirs are loaded.
 	// Related: https://github.com/dagger/dagger/issues/6292
 	err = s.dag.Select(ctx, gitRef, &gitSrc.ContextDirectory,
@@ -408,7 +398,7 @@ func (s *moduleSchema) gitModuleSource(
 	)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return inst, fmt.Errorf("git module source %q does not contain a dagger config file", refPath)
+			return inst, fmt.Errorf("git module source %q does not contain a dagger config file", gitSrc.AsString())
 		}
 		return inst, fmt.Errorf("failed to load git module dagger config: %w", err)
 	}
@@ -757,14 +747,11 @@ func (s *moduleSchema) resolveDepToSource(
 
 		case core.ModuleSourceKindGit:
 			// parent=git, dep=local
-			refString := parentSrc.Git.CloneRef
-			subPath := filepath.Join("/", parentSrc.SourceRootSubpath, depSrcRef)
-			if subPath != "/" {
-				refString += "/" + strings.TrimPrefix(subPath, "/")
-			}
-			if parentSrc.Git.Version != "" {
-				refString += "@" + parentSrc.Git.Version
-			}
+			refString := core.GitRefString(
+				parentSrc.Git.CloneRef,
+				filepath.Join(parentSrc.SourceRootSubpath, depSrcRef),
+				parentSrc.Git.Version,
+			)
 			selectors := []dagql.Selector{{
 				Field: "moduleSource",
 				Args: []dagql.NamedInput{
@@ -1120,18 +1107,11 @@ func (s *moduleSchema) moduleSourceWithUpdateDependencies(
 			}
 
 			var updatedDep dagql.Instance[*core.ModuleSource]
-			depRef := existingDep.Self.Git.CloneRef
-			if existingDep.Self.SourceRootSubpath != "" {
-				depRef += "/" + strings.TrimPrefix(existingDep.Self.SourceRootSubpath, "/")
-			}
-			if existingDep.Self.Git.Version != "" {
-				depRef += "@" + existingDep.Self.Git.Version
-			}
 			err := s.dag.Select(ctx, s.dag.Root(), &updatedDep,
 				dagql.Selector{
 					Field: "moduleSource",
 					Args: []dagql.NamedInput{
-						{Name: "refString", Value: dagql.String(depRef)},
+						{Name: "refString", Value: dagql.String(existingDep.Self.AsString())},
 					},
 				},
 			)
@@ -1437,13 +1417,7 @@ func (s *moduleSchema) moduleSourceGeneratedContextDirectory(
 
 			case core.ModuleSourceKindGit:
 				// parent=local, dep=git
-				depCfg.Source = depSrc.Self.Git.CloneRef
-				if depSrc.Self.SourceRootSubpath != "" {
-					depCfg.Source += "/" + strings.TrimPrefix(depSrc.Self.SourceRootSubpath, "/")
-				}
-				if depSrc.Self.Git.Version != "" {
-					depCfg.Source += "@" + depSrc.Self.Git.Version
-				}
+				depCfg.Source = depSrc.Self.AsString()
 				depCfg.Pin = depSrc.Self.Git.Pin
 
 			default:
@@ -1468,13 +1442,7 @@ func (s *moduleSchema) moduleSourceGeneratedContextDirectory(
 					}
 					depCfg.Source = depSrcRoot
 				} else {
-					depCfg.Source = depSrc.Self.Git.CloneRef
-					if depSrc.Self.SourceRootSubpath != "" {
-						depCfg.Source += "/" + strings.TrimPrefix(depSrc.Self.SourceRootSubpath, "/")
-					}
-					if depSrc.Self.Git.Version != "" {
-						depCfg.Source += "@" + depSrc.Self.Git.Version
-					}
+					depCfg.Source = depSrc.Self.AsString()
 					depCfg.Pin = depSrc.Self.Git.Pin
 				}
 
