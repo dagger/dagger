@@ -315,7 +315,7 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 		if err != nil {
 			return nil, h.checkExecError(err)
 		}
-		if typeDef != nil && typeDef.Kind == dagger.TypeDefKindVoidKind {
+		if typeDef != nil && typeDef.Kind == dagger.TypeDefKindVoid {
 			return nil, nil
 		}
 		buf := new(bytes.Buffer)

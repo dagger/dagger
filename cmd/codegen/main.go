@@ -101,6 +101,7 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("read introspection json: %w", err)
 		}
 		cfg.IntrospectionJSON = string(introspectionJSON)
+		fmt.Println(cfg.IntrospectionJSON)
 	}
 
 	return Generate(ctx, cfg)
