@@ -10,6 +10,7 @@ import (
 
 	"java-sdk/internal/dagger"
 
+	"dagger.io/dagger/dag"
 	"github.com/iancoleman/strcase"
 )
 
@@ -25,9 +26,8 @@ const (
 )
 
 type JavaSdk struct {
-	SDKSourceDir  *dagger.Directory
-	RequiredPaths []string
-	moduleConfig  moduleConfig
+	SDKSourceDir *dagger.Directory
+	moduleConfig moduleConfig
 }
 
 type moduleConfig struct {
@@ -55,8 +55,7 @@ func New(
 		return nil, fmt.Errorf("sdk source directory not provided")
 	}
 	return &JavaSdk{
-		RequiredPaths: []string{},
-		SDKSourceDir:  sdkSourceDir,
+		SDKSourceDir: sdkSourceDir,
 	}, nil
 }
 
