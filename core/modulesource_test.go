@@ -35,12 +35,15 @@ func TestGitModuleSourceSymbolic(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			src := &GitModuleSource{
-				CloneRef:    tc.cloneRef,
-				RootSubpath: tc.rootSubpath,
+			src := &ModuleSource{
+				Kind: ModuleSourceKindGit,
+				Git: &GitModuleSource{
+					CloneRef: tc.cloneRef,
+				},
+				SourceRootSubpath: tc.rootSubpath,
 			}
-			result := src.Symbolic()
-			require.Equal(t, tc.expected, result, "Symbolic() returned unexpected result")
+			result := src.AsString()
+			require.Equal(t, tc.expected, result, "AsString() returned unexpected result")
 		})
 	}
 }

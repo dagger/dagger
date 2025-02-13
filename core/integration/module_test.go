@@ -1742,8 +1742,9 @@ func (ModuleSuite) TestLoops(ctx context.Context, t *testctx.T) {
 		With(daggerExec("install", "-m=depC", "./depB")).
 		With(daggerExec("install", "-m=depB", "./depA")).
 		With(daggerExec("install", "-m=depA", "./depC")).
+		With(daggerCallAt("depA", "--help")).
 		Sync(ctx)
-	requireErrOut(t, err, `local module at "/work/depA" has a circular dependency`)
+	requireErrOut(t, err, `module "depA" has a circular dependency on itself through dependency "depC"`)
 }
 
 //go:embed testdata/modules/go/id/arg/main.go
@@ -2126,17 +2127,6 @@ func (m *CoolSdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJso
 
 func (m *CoolSdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.GeneratedCode {
 	return dag.GeneratedCode(modSource.WithSDK("go").AsModule().GeneratedContextDirectory())
-}
-
-func (m *CoolSdk) RequiredPaths() []string {
-	return []string{
-		"**/go.mod",
-		"**/go.sum",
-		"**/go.work",
-		"**/go.work.sum",
-		"**/vendor/",
-		"**/*.go",
-	}
 }
 `,
 			).
@@ -4613,7 +4603,7 @@ func (m *Dep) GetSource(
 }
 
 func (m *Dep) GetRelSource(
-	// +defaultPath="./dep"
+	// +defaultPath="."
 	// +ignore=["**","!yo"]
 	source *dagger.Directory,
 ) *dagger.Directory {
@@ -4637,7 +4627,7 @@ import (
 type Test struct{}
 
 func (m *Test) GetDepSource(ctx context.Context, src *dagger.Directory) (*dagger.Directory, error) {
-	err := src.AsModule().Initialize().Serve(ctx)
+	err := src.AsModule(dagger.DirectoryAsModuleOpts{SourceRootPath: "dep"}).Serve(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -4666,7 +4656,7 @@ func (m *Test) GetDepSource(ctx context.Context, src *dagger.Directory) (*dagger
 }
 
 func (m *Test) GetRelDepSource(ctx context.Context, src *dagger.Directory) (*dagger.Directory, error) {
-  err := src.AsModule().Initialize().Serve(ctx)
+	err := src.AsModule(dagger.DirectoryAsModuleOpts{SourceRootPath: "dep"}).Serve(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -4696,11 +4686,11 @@ func (m *Test) GetRelDepSource(ctx context.Context, src *dagger.Directory) (*dag
 			`,
 			)
 
-		out, err := ctr.With(daggerCall("get-dep-source", "--src", "./dep", "entries")).Stdout(ctx)
+		out, err := ctr.With(daggerCall("get-dep-source", "--src", ".", "entries")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "yo\n", out)
 
-		out, err = ctr.With(daggerCall("get-rel-dep-source", "--src", "./dep", "entries")).Stdout(ctx)
+		out, err = ctr.With(daggerCall("get-rel-dep-source", "--src", ".", "entries")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "yo\n", out)
 	})
@@ -4863,7 +4853,7 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 		})
 	})
 
-	// We don't need to test all ignore pattenrs, just that it works with given directory instead of the context one and that
+	// We don't need to test all ignore patterns, just that it works with given directory instead of the context one and that
 	// ignore is correctly applied.
 	t.Run("ignore with argument directory", func(ctx context.Context, t *testctx.T) {
 		t.Run("ignore all", func(ctx context.Context, t *testctx.T) {
@@ -5028,7 +5018,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 		work := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.0.0"}`).
+			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "engineVersion": "v0.0.0"}`).
 			WithNewFile("main.go", moduleSrc)
 
 		work = work.With(daggerExec("develop"))
@@ -5036,7 +5026,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 			File("dagger.json").
 			Contents(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "source": ".", "engineVersion": "`+engine.Version+`"}`, daggerJSON)
+		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "engineVersion": "`+engine.Version+`"}`, daggerJSON)
 	})
 
 	t.Run("from high", func(ctx context.Context, t *testctx.T) {
@@ -5045,7 +5035,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 		work := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v100.0.0"}`).
+			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "engineVersion": "v100.0.0"}`).
 			WithNewFile("main.go", moduleSrc)
 
 		work = work.With(daggerExec("develop"))
@@ -5053,7 +5043,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 			File("dagger.json").
 			Contents(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "source": ".", "engineVersion": "`+engine.Version+`"}`, daggerJSON)
+		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "engineVersion": "`+engine.Version+`"}`, daggerJSON)
 	})
 
 	t.Run("from missing", func(ctx context.Context, t *testctx.T) {
@@ -5062,7 +5052,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 		work := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": "."}`).
+			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go"}`).
 			WithNewFile("main.go", moduleSrc)
 
 		work = work.With(daggerExec("develop"))
@@ -5070,7 +5060,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 			File("dagger.json").
 			Contents(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "source": ".", "engineVersion": "`+engine.Version+`"}`, daggerJSON)
+		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "engineVersion": "`+engine.Version+`"}`, daggerJSON)
 	})
 
 	t.Run("to specified", func(ctx context.Context, t *testctx.T) {
@@ -5079,14 +5069,14 @@ func schemaVersion(ctx context.Context) (string, error) {
 		work := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.0.0"}`)
+			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "engineVersion": "v0.0.0"}`)
 
 		work = work.With(daggerExec("develop", "--compat=v0.9.9"))
 		daggerJSON, err := work.
 			File("dagger.json").
 			Contents(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "source": ".", "engineVersion": "v0.9.9"}`, daggerJSON)
+		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "engineVersion": "v0.9.9"}`, daggerJSON)
 	})
 
 	t.Run("skipped", func(ctx context.Context, t *testctx.T) {
@@ -5095,14 +5085,14 @@ func schemaVersion(ctx context.Context) (string, error) {
 		work := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.9.9"}`)
+			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "engineVersion": "v0.9.9"}`)
 
 		work = work.With(daggerExec("develop", "--compat"))
 		daggerJSON, err := work.
 			File("dagger.json").
 			Contents(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "source": ".", "engineVersion": "v0.9.9"}`, daggerJSON)
+		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "engineVersion": "v0.9.9"}`, daggerJSON)
 	})
 }
 
@@ -5481,7 +5471,7 @@ func sdkCodegenFile(t *testctx.T, sdk string) string {
 
 func modInit(t *testctx.T, c *dagger.Client, sdk, contents string) *dagger.Container {
 	t.Helper()
-	return daggerCliBase(t, c).With(withModInit(sdk, contents))
+	return goGitBase(t, c).With(withModInit(sdk, contents))
 }
 
 func withModInit(sdk, contents string) dagger.WithContainerFunc {
@@ -5515,7 +5505,7 @@ func currentSchema(ctx context.Context, t *testctx.T, ctr *dagger.Container) *in
 }
 
 var moduleIntrospection = daggerQuery(`
-query { host { directory(path: ".") { asModule { initialize {
+query { host { directory(path: ".") { asModule {
     description
     objects {
         asObject {
@@ -5568,14 +5558,14 @@ query { host { directory(path: ".") { asModule { initialize {
 			}
         }
     }
-} } } } }
+} } } }
 `)
 
 func inspectModule(ctx context.Context, t *testctx.T, ctr *dagger.Container) gjson.Result {
 	t.Helper()
 	out, err := ctr.With(moduleIntrospection).Stdout(ctx)
 	require.NoError(t, err)
-	result := gjson.Get(out, "host.directory.asModule.initialize")
+	result := gjson.Get(out, "host.directory.asModule")
 	t.Logf("module introspection:\n%v", result.Raw)
 	return result
 }

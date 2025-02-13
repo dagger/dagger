@@ -82,9 +82,6 @@ type PythonSdk struct {
 	// Directory with the Python SDK source code
 	SdkSourceDir *dagger.Directory
 
-	// List of patterns to always include when loading Python modules
-	RequiredPaths []string
-
 	// Resulting container after each composing step
 	Container *dagger.Container
 

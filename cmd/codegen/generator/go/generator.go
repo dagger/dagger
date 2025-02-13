@@ -59,7 +59,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 
 	outDir := "."
 	if g.Config.ModuleName != "" {
-		outDir = filepath.Clean(g.Config.ModuleContextPath)
+		outDir = filepath.Clean(g.Config.ModuleSourcePath)
 	}
 
 	mfs := memfs.New()
@@ -162,26 +162,26 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS, genSt *ge
 
 	modname := fmt.Sprintf("dagger/%s", strcase.ToKebab(g.Config.ModuleName))
 	// check for a go.mod already for the dagger module
-	if content, err := os.ReadFile(filepath.Join(g.Config.OutputDir, g.Config.ModuleContextPath, "go.mod")); err == nil {
-		daggerModPath = g.Config.ModuleContextPath
+	if content, err := os.ReadFile(filepath.Join(g.Config.OutputDir, g.Config.ModuleSourcePath, "go.mod")); err == nil {
+		daggerModPath = g.Config.ModuleSourcePath
 
 		goMod, err = modfile.ParseLax("go.mod", content, nil)
 		if err != nil {
 			return nil, false, fmt.Errorf("parse go.mod: %w", err)
 		}
 
-		if g.Config.Merge != nil && !*g.Config.Merge && goMod.Module.Mod.Path != modname {
-			return nil, false, fmt.Errorf("existing go.mod does not match the module's path")
+		if g.Config.IsInit && goMod.Module.Mod.Path != modname {
+			return nil, false, fmt.Errorf("existing go.mod path %q does not match the module's name %q", goMod.Module.Mod.Path, modname)
 		}
 	}
 
-	// if no go.mod is available, check the root output directory instead
-	// and if no merge is set
+	// if no go.mod is available and we are merging with the projects parent when possible,
+	// check the root output directory instead
 	//
 	// this is a necessary part of bootstrapping: SDKs such as the Go SDK
 	// will want to have a runtime module that lives in the same Go module as
 	// the generated client, which typically lives in the parent directory.
-	if goMod == nil && (g.Config.Merge == nil || *g.Config.Merge) {
+	if goMod == nil && g.Config.Merge {
 		if content, err := os.ReadFile(filepath.Join(g.Config.OutputDir, "go.mod")); err == nil {
 			daggerModPath = "."
 			goMod, err = modfile.ParseLax("go.mod", content, nil)
@@ -192,7 +192,7 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS, genSt *ge
 	}
 	// could not find a go.mod, so we can init a basic one
 	if goMod == nil {
-		daggerModPath = g.Config.ModuleContextPath
+		daggerModPath = g.Config.ModuleSourcePath
 		goMod = new(modfile.File)
 
 		goMod.AddModuleStmt(modname)
@@ -239,7 +239,7 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS, genSt *ge
 		return nil, false, err
 	}
 
-	packageImport, err := filepath.Rel(daggerModPath, g.Config.ModuleContextPath)
+	packageImport, err := filepath.Rel(daggerModPath, g.Config.ModuleSourcePath)
 	if err != nil {
 		return nil, false, err
 	}
