@@ -189,18 +189,22 @@ func (src *ModuleSource) AsString() string {
 		return src.Local.OriginalRefString
 
 	case ModuleSourceKindGit:
-		refPath := src.Git.CloneRef
-		subPath := filepath.Join("/", src.SourceRootSubpath)
-		if subPath != "/" {
-			refPath += subPath
-		}
-		if src.Git.Version != "" {
-			refPath += "@" + src.Git.Version
-		}
-		return refPath
+		return GitRefString(src.Git.CloneRef, src.SourceRootSubpath, src.Git.Version)
 	default:
 		return ""
 	}
+}
+
+func GitRefString(cloneRef, sourceRootSubpath, version string) string {
+	refPath := cloneRef
+	subPath := filepath.Join("/", sourceRootSubpath)
+	if subPath != "/" {
+		refPath += subPath
+	}
+	if version != "" {
+		refPath += "@" + version
+	}
+	return refPath
 }
 
 func (src *ModuleSource) Pin() string {
@@ -391,8 +395,6 @@ type GitModuleSource struct {
 	// TODO: why do these both exist?
 	HTMLRepoURL string
 	HTMLURL     string
-
-	AsString string
 
 	Version string
 
