@@ -32,15 +32,10 @@ type moduleSourceArgs struct {
 	RefPin         string `default:""`
 	DisableFindUp  bool   `default:"false"`
 	AllowNotExists bool   `default:"false"`
-
-	// TODO: rm
-	// TODO: rm
-	// TODO: rm
-	Stable bool `default:"false"`
 }
 
 func (s *moduleSchema) moduleSourceCacheKey(ctx context.Context, query dagql.Instance[*core.Query], args moduleSourceArgs, origDgst digest.Digest) (digest.Digest, error) {
-	if fastModuleSourceKindCheck(args.RefString, args.RefPin, args.Stable) == core.ModuleSourceKindGit {
+	if fastModuleSourceKindCheck(args.RefString, args.RefPin) == core.ModuleSourceKindGit {
 		return origDgst, nil
 	}
 
@@ -56,7 +51,7 @@ func (s *moduleSchema) moduleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	parsedRef, err := parseRefString(ctx, callerDirExistsFS{bk}, args.RefString, args.RefPin, args.Stable)
+	parsedRef, err := parseRefString(ctx, callerDirExistsFS{bk}, args.RefString, args.RefPin)
 	if err != nil {
 		return inst, err
 	}
@@ -67,7 +62,7 @@ func (s *moduleSchema) moduleSource(
 			return inst, err
 		}
 	case core.ModuleSourceKindGit:
-		inst, err = s.gitModuleSource(ctx, query, parsedRef.git, args.RefPin, args.Stable)
+		inst, err = s.gitModuleSource(ctx, query, parsedRef.git, args.RefPin)
 		if err != nil {
 			return inst, err
 		}
@@ -124,7 +119,6 @@ func (s *moduleSchema) localModuleSource(
 					}),
 					namedDep.Source,
 					namedDep.Pin,
-					false,
 				)
 				if err != nil {
 					return inst, fmt.Errorf("failed to parse named dep ref string: %w", err)
@@ -134,7 +128,7 @@ func (s *moduleSchema) localModuleSource(
 					depModPath := filepath.Join(defaultFindUpSourceRootDir, namedDep.Source)
 					return s.localModuleSource(ctx, query, bk, depModPath, false, allowNotExists)
 				case core.ModuleSourceKindGit:
-					return s.gitModuleSource(ctx, query, parsedRef.git, namedDep.Pin, false)
+					return s.gitModuleSource(ctx, query, parsedRef.git, namedDep.Pin)
 				}
 			}
 		}
@@ -299,12 +293,7 @@ func (s *moduleSchema) gitModuleSource(
 	query dagql.Instance[*core.Query],
 	parsed *parsedGitRefString,
 	refPin string,
-	stable bool,
 ) (inst dagql.Instance[*core.ModuleSource], err error) {
-	if stable && !parsed.hasVersion {
-		return inst, fmt.Errorf("no version provided for stable remote ref: %s", parsed.cloneRef)
-	}
-
 	gitRef, modVersion, err := parsed.getGitRefAndModVersion(ctx, s.dag, refPin)
 	if err != nil {
 		return inst, fmt.Errorf("failed to resolve git src: %w", err)
@@ -700,7 +689,6 @@ func (s *moduleSchema) resolveDepToSource(
 		moduleSourceDirExistsFS{bk, parentSrc},
 		depSrcRef,
 		depPin,
-		false,
 	)
 	if err != nil {
 		return inst, fmt.Errorf("failed to parse dep ref string: %w", err)

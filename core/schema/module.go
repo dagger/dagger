@@ -29,8 +29,8 @@ func (s *moduleSchema) Install() {
 		dagql.NodeFuncWithCacheKey("moduleSource", s.moduleSource, s.moduleSourceCacheKey).
 			ArgDoc("refString", `The string ref representation of the module source`).
 			ArgDoc("refPin", `The pinned version of the module source`).
-			ArgDoc("stable", `If true, enforce that the source is a stable version for source kinds that support versioning.`).
 			ArgDoc("disableFindUp", `TODO`).
+			ArgDoc("allowNotExists", `TODO`).
 			Doc(`TODO`),
 
 		dagql.Func("function", s.function).

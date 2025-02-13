@@ -19,12 +19,9 @@ import (
 func fastModuleSourceKindCheck(
 	refString string,
 	refPin string,
-	stable bool,
 ) core.ModuleSourceKind {
 	switch {
 	case refPin != "":
-		return core.ModuleSourceKindGit
-	case stable:
 		return core.ModuleSourceKindGit
 	case len(refString) > 0 && (refString[0] == '/' || refString[0] == '.'):
 		return core.ModuleSourceKindLocal
@@ -57,12 +54,11 @@ func parseRefString(
 	checkDir dirExistsFS,
 	refString string,
 	refPin string,
-	stable bool,
 ) (*parsedRefString, error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("parseRefString: %s", refString), telemetry.Internal())
 	defer span.End()
 
-	kind := fastModuleSourceKindCheck(refString, refPin, stable)
+	kind := fastModuleSourceKindCheck(refString, refPin)
 	switch kind {
 	case core.ModuleSourceKindLocal:
 		return &parsedRefString{
