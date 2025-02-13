@@ -1252,9 +1252,6 @@ func (s *moduleSchema) moduleSourceWithUpdateDependencies(
 		return inst, fmt.Errorf("dependency %q was requested to be updated, but it is not found in the dependencies list", strings.Join(deps, ","))
 	}
 
-	// TODO: this might make telemetry look a little confusing, could retain current instance
-	// TODO: this might make telemetry look a little confusing, could retain current instance
-	// TODO: this might make telemetry look a little confusing, could retain current instance
 	err := s.dag.Select(ctx, parentSrc, &inst,
 		dagql.Selector{
 			Field: "withDependencies",
@@ -1278,66 +1275,39 @@ func (s *moduleSchema) moduleSourceWithoutDependencies(
 
 	var filteredDeps []dagql.Instance[*core.ModuleSource]
 	for _, existingDep := range parentSrc.Dependencies {
-		var existingName, existingSymbolic, existingVersion string
-		switch parentSrc.Kind {
+		existingName := existingDep.Self.ModuleName
+		var existingSymbolic, existingVersion string
+
+		switch existingDep.Self.Kind {
 		case core.ModuleSourceKindLocal:
-			switch existingDep.Self.Kind {
-			case core.ModuleSourceKindLocal:
-				// parent=local, dep=local
-				existingName = existingDep.Self.ModuleName
-				parentSrcRoot := filepath.Join(parentSrc.Local.ContextDirectoryPath, parentSrc.SourceRootSubpath)
-				depSrcRoot := filepath.Join(parentSrc.Local.ContextDirectoryPath, existingDep.Self.SourceRootSubpath)
-				var err error
-				existingSymbolic, err = pathutil.LexicalRelativePath(parentSrcRoot, depSrcRoot)
-				if err != nil {
-					return nil, fmt.Errorf("failed to get relative path: %w", err)
-				}
-
-			case core.ModuleSourceKindGit:
-				// parent=local, dep=git
-				existingName = existingDep.Self.ModuleName
-				existingSymbolic = existingDep.Self.Git.CloneRef
-				if existingDep.Self.SourceRootSubpath != "" {
-					existingSymbolic += "/" + strings.TrimPrefix(existingDep.Self.SourceRootSubpath, "/")
-				}
-				existingVersion = existingDep.Self.Git.Version
-
-			default:
-				return nil, fmt.Errorf("unknown module source kind: %s", parentSrc.Kind)
+			if parentSrc.Kind != core.ModuleSourceKindLocal {
+				return nil, fmt.Errorf("cannot remove local module source dependency from non-local module source kind %s", parentSrc.Kind)
+			}
+			parentSrcRoot := filepath.Join(parentSrc.Local.ContextDirectoryPath, parentSrc.SourceRootSubpath)
+			depSrcRoot := filepath.Join(parentSrc.Local.ContextDirectoryPath, existingDep.Self.SourceRootSubpath)
+			var err error
+			existingSymbolic, err = pathutil.LexicalRelativePath(parentSrcRoot, depSrcRoot)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get relative path: %w", err)
 			}
 
 		case core.ModuleSourceKindGit:
-			switch existingDep.Self.Kind {
-			case core.ModuleSourceKindLocal:
-				// parent=git, dep=local
-				return nil, fmt.Errorf("cannot remove local module source dependency from git module source")
-
-			case core.ModuleSourceKindGit:
-				// parent=git, dep=git
-				existingName = existingDep.Self.ModuleName
-				existingSymbolic = existingDep.Self.Git.CloneRef
-				if existingDep.Self.SourceRootSubpath != "" {
-					existingSymbolic += "/" + strings.TrimPrefix(existingDep.Self.SourceRootSubpath, "/")
-				}
-				existingVersion = existingDep.Self.Git.Version
-
-			default:
-				return nil, fmt.Errorf("unknown module source kind: %s", parentSrc.Kind)
+			existingSymbolic = existingDep.Self.Git.CloneRef
+			if existingDep.Self.SourceRootSubpath != "" {
+				existingSymbolic += "/" + strings.TrimPrefix(existingDep.Self.SourceRootSubpath, "/")
 			}
+			existingVersion = existingDep.Self.Git.Version
 
 		default:
-			return nil, fmt.Errorf("unknown module source kind: %s", parentSrc.Kind)
+			return nil, fmt.Errorf("unhandled module source dep kind: %s", parentSrc.Kind)
 		}
 
 		keep := true
 		for _, depArg := range args.Dependencies {
 			depSymbolic, depVersion, _ := strings.Cut(depArg, "@")
 
-			// dagger.json doesn't prefix relative paths with ./, so strip that here
-			// TODO: is this robust enough?
-			// TODO: is this robust enough?
-			// TODO: is this robust enough?
-			depSymbolic = strings.TrimPrefix(depSymbolic, "./")
+			// dagger.json doesn't prefix relative paths with ./, so strip that and similar here
+			depSymbolic = filepath.Clean(depSymbolic)
 
 			if depSymbolic != existingName && depSymbolic != existingSymbolic {
 				// not a match
@@ -1345,38 +1315,38 @@ func (s *moduleSchema) moduleSourceWithoutDependencies(
 			}
 			keep = false
 
-			if depVersion != "" {
-				// return error if the version number was specified to uninstall, but that version is not installed
-				// TODO(rajatjindal): we should possibly resolve commit from a version if current dep has no version specified and
-				// see if we can match Pin() with that commit. But that would mean resolving the commit here.
-				if existingVersion == "" {
-					return nil, fmt.Errorf(
-						"version %q was requested to be uninstalled but the dependency %q was originally installed without a specific version. Try re-running the uninstall command without specifying the version number",
-						depVersion,
-						existingSymbolic,
-					)
-				}
-
-				// TODO: don't rerun this every loop, could just use a map and delete once matched
-				// TODO: don't rerun this every loop, could just use a map and delete once matched
-				// TODO: don't rerun this every loop, could just use a map and delete once matched
-				parsedDepGitRef, err := parseGitRefString(ctx, depArg)
-				if err != nil {
-					return nil, fmt.Errorf("failed to parse git ref string %q: %w", depArg, err)
-				}
-
-				_, err = matchVersion([]string{existingVersion}, depVersion, parsedDepGitRef.repoRootSubdir)
-				if err != nil {
-					// if the requested version has prefix of repoRootSubDir, then send the error as it is
-					// but if it does not, remove the repoRootSubDir from depVersion to avoid confusion.
-					depReqModVersion := parsedDepGitRef.modVersion
-					if !strings.HasPrefix(depReqModVersion, parsedDepGitRef.repoRootSubdir) {
-						depReqModVersion, _ = strings.CutPrefix(depReqModVersion, parsedDepGitRef.repoRootSubdir+"/")
-						existingVersion, _ = strings.CutPrefix(existingVersion, existingDep.Self.SourceRootSubpath+"/")
-					}
-					return nil, fmt.Errorf("version %q was requested to be uninstalled but the installed version is %q", depReqModVersion, existingVersion)
-				}
+			if depVersion == "" {
+				break
 			}
+
+			// return error if the version number was specified to uninstall, but that version is not installed
+			// TODO(rajatjindal): we should possibly resolve commit from a version if current dep has no version specified and
+			// see if we can match Pin() with that commit. But that would mean resolving the commit here.
+			if existingVersion == "" {
+				return nil, fmt.Errorf(
+					"version %q was requested to be uninstalled but the dependency %q was originally installed without a specific version. Try re-running the uninstall command without specifying the version number",
+					depVersion,
+					existingSymbolic,
+				)
+			}
+
+			parsedDepGitRef, err := parseGitRefString(ctx, depArg)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse git ref string %q: %w", depArg, err)
+			}
+
+			_, err = matchVersion([]string{existingVersion}, depVersion, parsedDepGitRef.repoRootSubdir)
+			if err != nil {
+				// if the requested version has prefix of repoRootSubDir, then send the error as it is
+				// but if it does not, remove the repoRootSubDir from depVersion to avoid confusion.
+				depReqModVersion := parsedDepGitRef.modVersion
+				if !strings.HasPrefix(depReqModVersion, parsedDepGitRef.repoRootSubdir) {
+					depReqModVersion, _ = strings.CutPrefix(depReqModVersion, parsedDepGitRef.repoRootSubdir+"/")
+					existingVersion, _ = strings.CutPrefix(existingVersion, existingDep.Self.SourceRootSubpath+"/")
+				}
+				return nil, fmt.Errorf("version %q was requested to be uninstalled but the installed version is %q", depReqModVersion, existingVersion)
+			}
+
 			break
 		}
 		if keep {
@@ -1531,6 +1501,11 @@ func (s *moduleSchema) moduleSourceGeneratedContextDirectory(
 			}
 		}
 
+		// TODO: wrap up in nicer looking util/interface
+		// TODO: wrap up in nicer looking util/interface
+		// TODO: wrap up in nicer looking util/interface
+		// TODO: wrap up in nicer looking util/interface
+		// TODO: wrap up in nicer looking util/interface
 		// TODO: wrap up in nicer looking util/interface
 		_, _, err = s.dag.Cache.GetOrInitialize(ctx, digest.Digest(srcInst.Self.Digest), func(context.Context) (dagql.Typed, error) {
 			return srcInst, nil
@@ -1698,6 +1673,11 @@ func (s *moduleSchema) moduleSourceAsModule(
 	}
 
 	// TODO: wrap up in nicer looking util/interface
+	// TODO: wrap up in nicer looking util/interface
+	// TODO: wrap up in nicer looking util/interface
+	// TODO: wrap up in nicer looking util/interface
+	// TODO: wrap up in nicer looking util/interface
+	// TODO: wrap up in nicer looking util/interface
 	_, _, err = s.dag.Cache.GetOrInitialize(ctx, digest.Digest(src.Self.Digest), func(context.Context) (dagql.Typed, error) {
 		return src, nil
 	})
@@ -1821,13 +1801,6 @@ func (s *moduleSchema) moduleSourceAsModule(
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", modName, err)
 	}
-
-	// TODO: UPDATE DIGEST ON MODULESOURCE ANYWHERE TO INCLUDE GENERATED STUFF???
-	// TODO: UPDATE DIGEST ON MODULESOURCE ANYWHERE TO INCLUDE GENERATED STUFF???
-	// TODO: UPDATE DIGEST ON MODULESOURCE ANYWHERE TO INCLUDE GENERATED STUFF???
-	// TODO: UPDATE DIGEST ON MODULESOURCE ANYWHERE TO INCLUDE GENERATED STUFF???
-	// TODO: UPDATE DIGEST ON MODULESOURCE ANYWHERE TO INCLUDE GENERATED STUFF???
-	// TODO: UPDATE DIGEST ON MODULESOURCE ANYWHERE TO INCLUDE GENERATED STUFF???
 
 	return inst, nil
 }
