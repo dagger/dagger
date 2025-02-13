@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -67,7 +68,8 @@ type Module struct {
 }
 
 type SDKConfig struct {
-	Source string `field:"true" name:"source" doc:"Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
+	Source string          `field:"true" name:"source" doc:"Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
+	Config json.RawMessage `name:"config" doc:"sdk specific config"`
 }
 
 func (*SDKConfig) Type() *ast.Type {

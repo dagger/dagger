@@ -1236,6 +1236,7 @@ func (s *moduleSchema) updateDaggerConfig(
 	if mod.SDKConfig != nil {
 		modCfg.SDK = &modules.SDK{
 			Source: mod.SDKConfig.Source,
+			Config: mod.SDKConfig.Config,
 		}
 	}
 

@@ -184,9 +184,9 @@ require (
     google.golang.org/grpc v1.59.0
 )
 `).
-		// Mount gitcredential implementation as the session pkg
-		WithMountedFile("/app/session/gitcredential.pb.go", client.Host().File("./gitcredential.pb.go")).
-		WithMountedFile("/app/session/gitcredential.go", client.Host().File("./gitcredential.go")).
+		// Mount git implementation as the session pkg
+		WithMountedFile("/app/session/git.pb.go", client.Host().File("./git.pb.go")).
+		WithMountedFile("/app/session/git.go", client.Host().File("./git.go")).
 		WithNewFile("/app/session/package.go", `package session`).
 
 		// Create test harness that:
@@ -216,7 +216,7 @@ func main() {
         panic(err)
     }
 
-    s := session.NewGitCredentialAttachable(context.Background())
+    s := session.NewGitAttachable(context.Background())
     response, err := s.GetCredential(context.Background(), &request)
     if err != nil {
         panic(err)
@@ -272,6 +272,48 @@ func main() {
 			// Check error response
 			require.Equal(t, tt.expectedError, wrapper.Result.Error.Type)
 			require.Equal(t, tt.expectedReason, wrapper.Result.Error.Message)
+		})
+	}
+}
+
+func TestIsGitConfigKeyAllowed(t *testing.T) {
+	testcases := []struct {
+		gitconfig string
+		expected  *GitConfig
+	}{
+		{
+			gitconfig: `credential.helper=osxkeychain
+init.defaultbranch=main
+user.name=User Name
+user.email=user-name@gmail.com
+commit.gpgsign=true
+url.ssh://git@github.com/.insteadof=https://github.com/
+core.excludesfile=~/.config/git/.gitignore
+protocol.file.allow=always
+core.repositoryformatversion=0
+core.filemode=true
+core.bare=false
+core.logallrefupdates=true
+core.ignorecase=true
+core.precomposeunicode=true
+remote.origin.url=git@github.com:some-user/some-repo.git
+remote.origin.fetch=+refs/heads/*:refs/remotes/origin/*`,
+			expected: &GitConfig{
+				Entries: []*GitConfigEntry{
+					{
+						Key:   "url.ssh://git@github.com/.insteadof",
+						Value: "https://github.com/",
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.gitconfig, func(t *testing.T) {
+			parsed, err := parseGitConfigOutput([]byte(tc.gitconfig))
+			require.Nil(t, err)
+			require.Equal(t, tc.expected, parsed)
 		})
 	}
 }

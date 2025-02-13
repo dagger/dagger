@@ -287,7 +287,10 @@ func (src *ModuleSource) ModuleEngineVersion(ctx context.Context) (string, error
 
 func (src *ModuleSource) SDK(ctx context.Context) (*SDKConfig, error) {
 	if src.WithSDK.Source != "" {
-		return &SDKConfig{Source: src.WithSDK.Source}, nil
+		return &SDKConfig{
+			Source: src.WithSDK.Source,
+			Config: src.WithSDK.Config,
+		}, nil
 	}
 	modCfg, ok, err := src.ModuleConfig(ctx)
 	if err != nil {
@@ -298,6 +301,7 @@ func (src *ModuleSource) SDK(ctx context.Context) (*SDKConfig, error) {
 	}
 	return &SDKConfig{
 		Source: modCfg.SDK.Source,
+		Config: modCfg.SDK.Config,
 	}, nil
 }
 
