@@ -264,7 +264,7 @@ func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
 
 				out, err := modGen.With(daggerCall("fn", "--dir", "~", "entries")).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "foo.txt\nsubdir\n", out)
+				require.Equal(t, "foo.txt\nsubdir/\n", out)
 
 				out, err = modGen.With(daggerCall("fn", "--dir", "~/subdir", "entries")).Stdout(ctx)
 				require.NoError(t, err)
@@ -889,11 +889,11 @@ func (m *Test) Mod(ctx context.Context, module *dagger.Module) *dagger.Module {
 
 			out, err := modGen.With(daggerCall("mod-src", "--mod-src", ".", "directory", "--path", ".", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
+			require.Equal(t, ".gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
 
 			out, err = modGen.With(daggerCall("mod", "--module", ".", "source", "directory", "--path", ".", "entries")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
+			require.Equal(t, ".gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal/\nmain.go\n", out)
 
 			out, err = modGen.With(daggerCall("mod-src", "--mod-src", testGitModuleRef(tc, "top-level"), "as-string")).Stdout(ctx)
 			require.NoError(t, err)

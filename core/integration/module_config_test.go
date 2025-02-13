@@ -658,7 +658,7 @@ func (m *Coolsdk) RequiredPaths() []string {
 				With(daggerCall("fn", "directory", "--path", "subdir", "entries")).
 				Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "keepdir", strings.TrimSpace(out))
+			require.Equal(t, "keepdir/", strings.TrimSpace(out))
 
 			out, err = ctr.
 				With(daggerCall("fn", "directory", "--path", "subdir/keepdir", "entries")).
@@ -672,7 +672,7 @@ func (m *Coolsdk) RequiredPaths() []string {
 				With(daggerCallAt("../work", "fn", "directory", "--path", "subdir", "entries")).
 				Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "keepdir", strings.TrimSpace(out))
+			require.Equal(t, "keepdir/", strings.TrimSpace(out))
 
 			// call should still work after develop
 			ctr = ctr.With(daggerExec("develop"))
@@ -681,7 +681,7 @@ func (m *Coolsdk) RequiredPaths() []string {
 				With(daggerCall("fn", "directory", "--path", "subdir", "entries")).
 				Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "keepdir", strings.TrimSpace(out))
+			require.Equal(t, "keepdir/", strings.TrimSpace(out))
 			out, err = ctr.
 				With(daggerCall("fn", "directory", "--path", "subdir/keepdir", "entries")).
 				Stdout(ctx)
@@ -1151,7 +1151,7 @@ func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
 
 	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:nice-view", "entries")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "nice-file\nsubdir", strings.TrimSpace(out))
+	require.Equal(t, "nice-file\nsubdir/", strings.TrimSpace(out))
 
 	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:nice-view", "directory", "--path=subdir", "entries")).Stdout(ctx)
 	require.NoError(t, err)
@@ -1176,11 +1176,11 @@ func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
 
 	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:nice-view", "entries")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "nice-file\nsubdir", strings.TrimSpace(out))
+	require.Equal(t, "nice-file\nsubdir/", strings.TrimSpace(out))
 
 	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:mean-view", "entries")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "mean-file\nsubdir", strings.TrimSpace(out))
+	require.Equal(t, "mean-file\nsubdir/", strings.TrimSpace(out))
 
 	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:mean-view", "directory", "--path=subdir", "entries")).Stdout(ctx)
 	require.NoError(t, err)
@@ -1204,15 +1204,15 @@ func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
 
 	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:nice-view", "entries")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "nice-file\nsubdir", strings.TrimSpace(out))
+	require.Equal(t, "nice-file\nsubdir/", strings.TrimSpace(out))
 
 	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:mean-view", "entries")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "mean-file\nsubdir", strings.TrimSpace(out))
+	require.Equal(t, "mean-file\nsubdir/", strings.TrimSpace(out))
 
 	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:txt-view", "entries")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "foo.txt\nsubdir", strings.TrimSpace(out))
+	require.Equal(t, "foo.txt\nsubdir/", strings.TrimSpace(out))
 
 	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:txt-view", "directory", "--path=subdir", "entries")).Stdout(ctx)
 	require.NoError(t, err)
@@ -1243,15 +1243,15 @@ func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
 
 	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:nice-view", "entries")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "nice-file\nsubdir", strings.TrimSpace(out))
+	require.Equal(t, "nice-file\nsubdir/", strings.TrimSpace(out))
 
 	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:mean-view", "entries")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "mean-file\nsubdir", strings.TrimSpace(out))
+	require.Equal(t, "mean-file\nsubdir/", strings.TrimSpace(out))
 
 	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:txt-view", "entries")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "foo.txt\nsubdir", strings.TrimSpace(out))
+	require.Equal(t, "foo.txt\nsubdir/", strings.TrimSpace(out))
 
 	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:no-subdir-txt-view", "entries")).Stdout(ctx)
 	require.NoError(t, err)
@@ -1283,7 +1283,7 @@ func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
 
 	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:no-subdir-txt-view", "entries")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "foo.txt\nsubdir", strings.TrimSpace(out))
+	require.Equal(t, "foo.txt\nsubdir/", strings.TrimSpace(out))
 
 	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:no-subdir-txt-view", "directory", "--path=subdir", "entries")).Stdout(ctx)
 	require.NoError(t, err)
