@@ -24,8 +24,11 @@ func (b *Bench) All(
 	// run benchmarks once with metrics tagged "prewarm" before running for real
 	// +optional
 	prewarm bool,
+	// notify this discord webhook on failure
+	// +optional
+	discordWebhook *dagger.Secret,
 ) error {
-	return b.bench(
+	return b.notifyOnFailure(ctx, b.bench(
 		ctx,
 		&benchOpts{
 			runTestRegex:  "",
@@ -38,7 +41,7 @@ func (b *Bench) All(
 			testVerbose:   testVerbose,
 			prewarm:       prewarm,
 		},
-	)
+	), discordWebhook)
 }
 
 func (b *Bench) Specific(
@@ -69,8 +72,11 @@ func (b *Bench) Specific(
 	// run benchmarks once with metrics tagged "prewarm" before running for real
 	// +optional
 	prewarm bool,
+	// notify this discord webhook on failure
+	// +optional
+	discordWebhook *dagger.Secret,
 ) error {
-	return b.bench(
+	return b.notifyOnFailure(ctx, b.bench(
 		ctx,
 		&benchOpts{
 			runTestRegex:  run,
@@ -83,7 +89,7 @@ func (b *Bench) Specific(
 			testVerbose:   testVerbose,
 			prewarm:       prewarm,
 		},
-	)
+	), discordWebhook)
 }
 
 type benchOpts struct {
@@ -135,5 +141,37 @@ func (b *Bench) bench(
 	}
 
 	_, err = run(cmd).Sync(ctx)
+
+	return err
+}
+
+func (b *Bench) notifyOnFailure(ctx context.Context, err error, discordWebhook *dagger.Secret) error {
+	if err == nil {
+		return nil
+	}
+	if discordWebhook == nil {
+		return err
+	}
+
+	commit, err := b.Test.Dagger.Git.Head().Commit(ctx)
+	if err != nil {
+		commit = "failed to find commit SHA"
+	}
+
+	daggerCloudURL, err := dag.Notify().DaggerCloudTraceURL(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to fetch trace URL for failed benchmarks: %w", err)
+	}
+
+	message := fmt.Sprintf(
+		"[failed](%s) on SHA [%s](https://github.com/dagger/dagger/commit/%s)",
+		daggerCloudURL,
+		commit,
+		commit,
+	)
+	_, discordErr := dag.Notify().Discord(ctx, discordWebhook, message)
+	if discordErr != nil {
+		return fmt.Errorf("failed to notify discord that benchmarks failed: %w, discord error %s", err, discordErr)
+	}
 	return err
 }
