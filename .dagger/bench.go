@@ -24,21 +24,25 @@ func (b *Bench) All(
 	// run benchmarks once with metrics tagged "prewarm" before running for real
 	// +optional
 	prewarm bool,
+	// notify this discord webhook on failure
+	// +optional
+	discordWebhook *dagger.Secret,
 ) error {
-	return b.bench(
+	return b.notifyOnFailure(ctx, b.bench(
 		ctx,
 		&benchOpts{
-			runTestRegex:  "",
-			skipTestRegex: "",
-			pkg:           "./...",
-			failfast:      failfast,
-			timeout:       timeout,
-			race:          race,
-			count:         1,
-			testVerbose:   testVerbose,
-			prewarm:       prewarm,
+			runTestRegex:   "",
+			skipTestRegex:  "",
+			pkg:            "./...",
+			failfast:       failfast,
+			timeout:        timeout,
+			race:           race,
+			count:          1,
+			testVerbose:    testVerbose,
+			prewarm:        prewarm,
+			discordWebhook: discordWebhook,
 		},
-	)
+	), discordWebhook, "")
 }
 
 func (b *Bench) Specific(
@@ -69,33 +73,38 @@ func (b *Bench) Specific(
 	// run benchmarks once with metrics tagged "prewarm" before running for real
 	// +optional
 	prewarm bool,
+	// notify this discord webhook on failure
+	// +optional
+	discordWebhook *dagger.Secret,
 ) error {
-	return b.bench(
+	return b.notifyOnFailure(ctx, b.bench(
 		ctx,
 		&benchOpts{
-			runTestRegex:  run,
-			skipTestRegex: skip,
-			pkg:           pkg,
-			failfast:      failfast,
-			timeout:       timeout,
-			race:          race,
-			count:         count,
-			testVerbose:   testVerbose,
-			prewarm:       prewarm,
+			runTestRegex:   run,
+			skipTestRegex:  skip,
+			pkg:            pkg,
+			failfast:       failfast,
+			timeout:        timeout,
+			race:           race,
+			count:          count,
+			testVerbose:    testVerbose,
+			prewarm:        prewarm,
+			discordWebhook: discordWebhook,
 		},
-	)
+	), discordWebhook, run)
 }
 
 type benchOpts struct {
-	runTestRegex  string
-	skipTestRegex string
-	pkg           string
-	failfast      bool
-	timeout       string
-	race          bool
-	count         int
-	testVerbose   bool
-	prewarm       bool
+	runTestRegex   string
+	skipTestRegex  string
+	pkg            string
+	failfast       bool
+	timeout        string
+	race           bool
+	count          int
+	testVerbose    bool
+	prewarm        bool
+	discordWebhook *dagger.Secret
 }
 
 func (b *Bench) bench(
@@ -135,5 +144,25 @@ func (b *Bench) bench(
 	}
 
 	_, err = run(cmd).Sync(ctx)
+
+	return err
+}
+
+func (b *Bench) notifyOnFailure(ctx context.Context, err error, discordWebhook *dagger.Secret, runTestRegex string) error {
+	if err == nil {
+		return nil
+	}
+	if discordWebhook == nil {
+		return err
+	}
+	daggerCloudUrl, err := dag.Notify().DaggerCloudTraceURL(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to fetch trace URL for failed benchmarks: %w", err)
+	}
+	message := fmt.Sprintf("engine benchmarks failed: %s", daggerCloudUrl)
+	_, discordErr := dag.Notify().Discord(ctx, discordWebhook, message)
+	if discordErr != nil {
+		return fmt.Errorf("failed to notify discord that benchmarks failed: %w, underlying %w", discordErr, err)
+	}
 	return err
 }
