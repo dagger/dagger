@@ -33,6 +33,24 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc "TODO"
+  @spec clone_ref(t()) :: {:ok, String.t()} | {:error, term()}
+  def clone_ref(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("cloneRef")
+
+    Client.execute(module_source.client, query_builder)
+  end
+
+  @doc "TODO"
+  @spec commit(t()) :: {:ok, String.t()} | {:error, term()}
+  def commit(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("commit")
+
+    Client.execute(module_source.client, query_builder)
+  end
+
+  @doc "TODO"
   @spec config_exists(t()) :: {:ok, boolean()} | {:error, term()}
   def config_exists(%__MODULE__{} = module_source) do
     query_builder =
@@ -82,6 +100,18 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
+  @doc "The directory containing the module configuration and source code (source code may be in a subdir)."
+  @spec directory(t(), String.t()) :: Dagger.Directory.t()
+  def directory(%__MODULE__{} = module_source, path) do
+    query_builder =
+      module_source.query_builder |> QB.select("directory") |> QB.put_arg("path", path)
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
   @doc "TODO"
   @spec engine_version(t()) :: {:ok, String.t()} | {:error, term()}
   def engine_version(%__MODULE__{} = module_source) do
@@ -101,6 +131,24 @@ defmodule Dagger.ModuleSource do
       query_builder: query_builder,
       client: module_source.client
     }
+  end
+
+  @doc "TODO"
+  @spec html_repo_url(t()) :: {:ok, String.t()} | {:error, term()}
+  def html_repo_url(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("htmlRepoURL")
+
+    Client.execute(module_source.client, query_builder)
+  end
+
+  @doc "The URL to the source's git repo in a web browser"
+  @spec html_url(t()) :: {:ok, String.t()} | {:error, term()}
+  def html_url(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("htmlURL")
+
+    Client.execute(module_source.client, query_builder)
   end
 
   @doc "A unique identifier for this ModuleSource."
@@ -206,6 +254,15 @@ defmodule Dagger.ModuleSource do
          client: module_source.client
        }}
     end
+  end
+
+  @doc "TODO"
+  @spec version(t()) :: {:ok, String.t()} | {:error, term()}
+  def version(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("version")
+
+    Client.execute(module_source.client, query_builder)
   end
 
   @doc "Append the provided dependencies to the module source's dependency list."

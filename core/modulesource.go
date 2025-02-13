@@ -412,17 +412,18 @@ func (src LocalModuleSource) Clone() *LocalModuleSource {
 type GitModuleSource struct {
 	CloneRef string
 
-	// TODO: why do these both exist?
+	// Symbolic is the CloneRef plus the SourceRootSubpath (no version)
+	Symbolic string
+
 	HTMLRepoURL string
 	HTMLURL     string
 
 	Version string
 
-	// TODO: pretty sure these are always equal, maybe dedupe
 	Commit string
 	Pin    string
 
-	// TODO: doc, needed for contextual dir args
+	// TODO: doc, needed for contextual dir args and such
 	UnfilteredContextDir dagql.Instance[*Directory]
 }
 

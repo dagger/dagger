@@ -1150,12 +1150,11 @@ export type ClientModuleSourceOpts = {
    * TODO
    */
   disableFindUp?: boolean
-  allowNotExists?: boolean
 
   /**
-   * If true, enforce that the source is a stable version for source kinds that support versioning.
+   * TODO
    */
-  stable?: boolean
+  allowNotExists?: boolean
 }
 
 /**
@@ -5314,9 +5313,13 @@ export class Module_ extends BaseClient {
 export class ModuleSource extends BaseClient {
   private readonly _id?: ModuleSourceID = undefined
   private readonly _asString?: string = undefined
+  private readonly _cloneRef?: string = undefined
+  private readonly _commit?: string = undefined
   private readonly _configExists?: boolean = undefined
   private readonly _digest?: string = undefined
   private readonly _engineVersion?: string = undefined
+  private readonly _htmlRepoURL?: string = undefined
+  private readonly _htmlURL?: string = undefined
   private readonly _kind?: ModuleSourceKind = undefined
   private readonly _localContextDirectoryPath?: string = undefined
   private readonly _moduleName?: string = undefined
@@ -5325,6 +5328,7 @@ export class ModuleSource extends BaseClient {
   private readonly _sourceRootSubpath?: string = undefined
   private readonly _sourceSubpath?: string = undefined
   private readonly _sync?: ModuleSourceID = undefined
+  private readonly _version?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -5333,9 +5337,13 @@ export class ModuleSource extends BaseClient {
     ctx?: Context,
     _id?: ModuleSourceID,
     _asString?: string,
+    _cloneRef?: string,
+    _commit?: string,
     _configExists?: boolean,
     _digest?: string,
     _engineVersion?: string,
+    _htmlRepoURL?: string,
+    _htmlURL?: string,
     _kind?: ModuleSourceKind,
     _localContextDirectoryPath?: string,
     _moduleName?: string,
@@ -5344,14 +5352,19 @@ export class ModuleSource extends BaseClient {
     _sourceRootSubpath?: string,
     _sourceSubpath?: string,
     _sync?: ModuleSourceID,
+    _version?: string,
   ) {
     super(ctx)
 
     this._id = _id
     this._asString = _asString
+    this._cloneRef = _cloneRef
+    this._commit = _commit
     this._configExists = _configExists
     this._digest = _digest
     this._engineVersion = _engineVersion
+    this._htmlRepoURL = _htmlRepoURL
+    this._htmlURL = _htmlURL
     this._kind = _kind
     this._localContextDirectoryPath = _localContextDirectoryPath
     this._moduleName = _moduleName
@@ -5360,6 +5373,7 @@ export class ModuleSource extends BaseClient {
     this._sourceRootSubpath = _sourceRootSubpath
     this._sourceSubpath = _sourceSubpath
     this._sync = _sync
+    this._version = _version
   }
 
   /**
@@ -5394,6 +5408,36 @@ export class ModuleSource extends BaseClient {
     }
 
     const ctx = this._ctx.select("asString")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * TODO
+   */
+  cloneRef = async (): Promise<string> => {
+    if (this._cloneRef) {
+      return this._cloneRef
+    }
+
+    const ctx = this._ctx.select("cloneRef")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * TODO
+   */
+  commit = async (): Promise<string> => {
+    if (this._commit) {
+      return this._commit
+    }
+
+    const ctx = this._ctx.select("commit")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -5456,6 +5500,15 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * The directory containing the module configuration and source code (source code may be in a subdir).
+   * @param path The path from the source directory to select.
+   */
+  directory = (path: string): Directory => {
+    const ctx = this._ctx.select("directory", { path })
+    return new Directory(ctx)
+  }
+
+  /**
    * TODO
    */
   engineVersion = async (): Promise<string> => {
@@ -5476,6 +5529,36 @@ export class ModuleSource extends BaseClient {
   generatedContextDirectory = (): Directory => {
     const ctx = this._ctx.select("generatedContextDirectory")
     return new Directory(ctx)
+  }
+
+  /**
+   * TODO
+   */
+  htmlRepoURL = async (): Promise<string> => {
+    if (this._htmlRepoURL) {
+      return this._htmlRepoURL
+    }
+
+    const ctx = this._ctx.select("htmlRepoURL")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The URL to the source's git repo in a web browser
+   */
+  htmlURL = async (): Promise<string> => {
+    if (this._htmlURL) {
+      return this._htmlURL
+    }
+
+    const ctx = this._ctx.select("htmlURL")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -5600,6 +5683,21 @@ export class ModuleSource extends BaseClient {
     const response: Awaited<ModuleSourceID> = await ctx.execute()
 
     return new Client(ctx.copy()).loadModuleSourceFromID(response)
+  }
+
+  /**
+   * TODO
+   */
+  version = async (): Promise<string> => {
+    if (this._version) {
+      return this._version
+    }
+
+    const ctx = this._ctx.select("version")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -6433,7 +6531,7 @@ export class Client extends BaseClient {
    * @param refString The string ref representation of the module source
    * @param opts.refPin The pinned version of the module source
    * @param opts.disableFindUp TODO
-   * @param opts.stable If true, enforce that the source is a stable version for source kinds that support versioning.
+   * @param opts.allowNotExists TODO
    */
   moduleSource = (
     refString: string,
