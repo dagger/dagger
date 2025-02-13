@@ -729,8 +729,23 @@ type Mod interface {
 }
 
 // ClientGenerator is an interface that a module can implements to give client generation capabilities.
+//
+// The generated client is standalone and can be used in any project, even if no source code module is
+// available.
 type ClientGenerator interface {
 	// Generate client returns client binding for the module with the given dependencies.
+	// The generated client will be placed in the same directory as the module source root dir
+	// and contains bindings for all of the module's dependencies in addition to the
+	// core API and the module itself if it got source code.
+	//
+	// It's up to that function to update the source root directory with additional
+	// configurations if needed.
+	// For example (executing go mod tidy, updating tsconfig.json etc...)
+	//
+	// The generated client should use the published library version of the SDK.
+	// However, if the last parameter is set to true, a copy of the current SDK library
+	// should be copied to test the generated client with latest changes.
+	// NOTE: this should only be used for testing purposes.
 	GenerateClient(context.Context, dagql.Instance[*ModuleSource], *ModDeps, bool) (dagql.Instance[*Directory], error)
 }
 

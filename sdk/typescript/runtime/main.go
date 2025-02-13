@@ -201,7 +201,6 @@ func (t *TypescriptSdk) GenerateClient(
 		// Mount the introspection file.
 		WithMountedFile(schemaPath, introspectionJSON).
 		// Mount the current module directory.
-		WithDirectory("/ctx", modSource.ContextDirectory()).
 		WithDirectory(workdirPath, curentModuleDirectory).
 		WithWorkdir(workdirPath).
 		// Execute the code generator using the given introspection file.
