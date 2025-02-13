@@ -703,6 +703,12 @@ var skipLeaves = map[string][]string{
 		// Don't leak secrets.
 		"plaintext",
 	},
+	"Llm": {
+		// These are too noisy.
+		"history",
+		"tools",
+		"lastReply",
+	},
 }
 
 // GetLeafFunctions returns the leaf functions of an object or interface
