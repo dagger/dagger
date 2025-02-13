@@ -98,6 +98,8 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 				require.Contains(t, attrs, attribute.String("fizz", "buzz"))
 			},
 		},
+		{Function: "nested-spans"},
+		{Function: "nested-spans", Args: []string{"--fail"}, Fail: true},
 		{Function: "use-exec-service"},
 		{Function: "use-no-exec-service"},
 		{Function: "docker-build", Args: []string{
@@ -142,10 +144,14 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		// Python SDK tests
 		{Module: "./viztest/python", Function: "pending", Fail: true},
 		{Module: "./viztest/python", Function: "custom-span"},
+		{Module: "./viztest/python", Function: "nested-spans"},
+		{Module: "./viztest/python", Function: "nested-spans", Args: []string{"--fail"}, Fail: true},
 
 		// TypeScript SDK tests
 		{Module: "./viztest/typescript", Function: "pending", Fail: true},
 		{Module: "./viztest/typescript", Function: "custom-span"},
+		{Module: "./viztest/typescript", Function: "nested-spans"},
+		{Module: "./viztest/typescript", Function: "nested-spans", Args: []string{"--fail"}, Fail: true},
 	} {
 		t.Run(path.Join(ex.Module, ex.Function), func(ctx context.Context, t *testctx.T) {
 			out, db := ex.Run(ctx, t, s)

@@ -9,6 +9,8 @@ import (
 	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"github.com/vito/midterm"
@@ -23,6 +25,9 @@ type Vterm struct {
 
 	vt *midterm.Terminal
 
+	// Separate buffer for Markdown content
+	markdownBuf *bytes.Buffer
+	// Regular terminal buffer
 	viewBuf     *bytes.Buffer
 	needsRedraw bool
 
@@ -31,14 +36,28 @@ type Vterm struct {
 
 func NewVterm() *Vterm {
 	return &Vterm{
-		vt:      midterm.NewAutoResizingTerminal(),
-		viewBuf: new(bytes.Buffer),
-		mu:      new(sync.Mutex),
+		vt:          midterm.NewAutoResizingTerminal(),
+		viewBuf:     new(bytes.Buffer),
+		markdownBuf: new(bytes.Buffer),
+		mu:          new(sync.Mutex),
 	}
 }
 
 func (term *Vterm) Term() *midterm.Terminal {
 	return term.vt
+}
+
+func (term *Vterm) WriteMarkdown(p []byte) (int, error) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+
+	n, err := term.markdownBuf.Write(p)
+	if err != nil {
+		return n, err
+	}
+
+	term.needsRedraw = true
+	return n, nil
 }
 
 func (term *Vterm) Write(p []byte) (int, error) {
@@ -143,7 +162,7 @@ func (term *Vterm) ScrollPercent() float64 {
 const reset = termenv.CSI + termenv.ResetSeq + "m"
 
 // View returns the output for the current region of the terminal, with ANSI
-// formatting.
+// formatting or rendered Markdown if present.
 func (term *Vterm) View() string {
 	term.mu.Lock()
 	defer term.mu.Unlock()
@@ -154,8 +173,42 @@ func (term *Vterm) View() string {
 	return term.viewBuf.String()
 }
 
+var style = styles.LightStyleConfig
+
+func init() {
+	if isDark {
+		style = styles.DarkStyleConfig
+	}
+	style.Document.Margin = nil
+}
+
 func (term *Vterm) redraw() {
 	term.viewBuf.Reset()
+
+	// First render any Markdown content
+	if term.markdownBuf.Len() > 0 {
+		renderer, _ := glamour.NewTermRenderer(
+			glamour.WithWordWrap(term.Width-lipgloss.Width(term.Prefix)),
+			glamour.WithStyles(style),
+		)
+
+		rendered, err := renderer.Render(term.markdownBuf.String())
+		if err == nil {
+			// Remove leading and trailing newlines
+			rendered = strings.TrimSpace(rendered)
+			// Add prefix to each line of rendered Markdown
+			lines := strings.Split(rendered, "\n")
+			for i, line := range lines {
+				if i > 0 {
+					fmt.Fprint(term.viewBuf, term.Prefix)
+				}
+				fmt.Fprintln(term.viewBuf, line)
+			}
+			return
+		}
+	}
+
+	// Then render regular terminal content
 	term.Render(term.viewBuf, term.Offset, term.Height)
 }
 

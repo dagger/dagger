@@ -2,7 +2,6 @@ package call
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -24,6 +23,43 @@ type Literal interface {
 
 	pb() *callpbv1.Literal
 	gatherCalls(map[string]*callpbv1.Call)
+}
+
+func ToLiteral(val any) (Literal, error) {
+	switch v := val.(type) {
+	case Literal:
+		return v, nil
+	case string:
+		return NewLiteralString(v), nil
+	case float64:
+		return NewLiteralFloat(v), nil
+	case bool:
+		return NewLiteralBool(v), nil
+	case []any:
+		items := make([]Literal, len(v))
+		for i, item := range v {
+			itemLit, err := ToLiteral(item)
+			if err != nil {
+				return nil, err
+			}
+			items[i] = itemLit
+		}
+		return NewLiteralList(items...), nil
+	case map[string]any:
+		fields := make([]*Argument, 0, len(v))
+		for k, val := range v {
+			fieldLit, err := ToLiteral(val)
+			if err != nil {
+				return nil, err
+			}
+			fields = append(fields, NewArgument(k, fieldLit, false))
+		}
+		return NewLiteralObject(fields...), nil
+	case nil:
+		return NewLiteralNull(), nil
+	default:
+		return nil, fmt.Errorf("unknown literal value type %T", v)
+	}
 }
 
 type LiteralID struct {
@@ -345,11 +381,6 @@ func (lit *LiteralPrimitiveType[T, V]) Tainted() bool {
 }
 
 func (lit *LiteralPrimitiveType[T, V]) Display() string {
-	// kludge to special case truncation of strings
-	if lit.pbVal.ASTKind() == ast.StringValue {
-		var val any = lit.pbVal.Value()
-		return truncate(strconv.Quote(val.(string)), 100)
-	}
 	return fmt.Sprintf("%v", lit.pbVal.Value())
 }
 
@@ -441,20 +472,4 @@ func decodeLiteral(
 	default:
 		return nil, fmt.Errorf("unknown literal value type %T", v)
 	}
-}
-
-func truncate(s string, length int) string {
-	if len(s) <= length {
-		return s
-	}
-
-	if length < 5 {
-		return s[:length]
-	}
-
-	dig := digest.FromString(s)
-	prefixLength := (length - 3) / 2
-	suffixLength := length - 3 - prefixLength
-	abbrev := s[:prefixLength] + "..." + s[len(s)-suffixLength:]
-	return fmt.Sprintf("%s:%d:%s", dig, len(s), abbrev)
 }
