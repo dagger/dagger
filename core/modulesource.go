@@ -440,6 +440,8 @@ type GitModuleSource struct {
 	HTMLRepoURL string
 	HTMLURL     string
 
+	RepoRootPath string
+
 	Version string
 
 	Commit string

@@ -6209,6 +6209,11 @@ impl ModuleSource {
         query.execute(self.graphql_client.clone()).await
     }
     /// TODO
+    pub async fn repo_root_path(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("repoRootPath");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// TODO
     pub fn sdk(&self) -> SdkConfig {
         let query = self.selection.select("sdk");
         SdkConfig {
@@ -6519,6 +6524,9 @@ pub struct QueryModuleSourceOpts<'a> {
     /// The pinned version of the module source
     #[builder(setter(into, strip_option), default)]
     pub ref_pin: Option<&'a str>,
+    /// TODO
+    #[builder(setter(into, strip_option), default)]
+    pub require_kind: Option<ModuleSourceKind>,
 }
 impl Query {
     /// Retrieves a container builtin to the engine.
@@ -7505,6 +7513,9 @@ impl Query {
         }
         if let Some(allow_not_exists) = opts.allow_not_exists {
             query = query.arg("allowNotExists", allow_not_exists);
+        }
+        if let Some(require_kind) = opts.require_kind {
+            query = query.arg("requireKind", require_kind);
         }
         ModuleSource {
             proc: self.proc.clone(),

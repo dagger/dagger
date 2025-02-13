@@ -32,6 +32,7 @@ type moduleSourceArgs struct {
 	RefPin         string `default:""`
 	DisableFindUp  bool   `default:"false"`
 	AllowNotExists bool   `default:"false"`
+	RequireKind    dagql.Optional[core.ModuleSourceKind]
 }
 
 func (s *moduleSchema) moduleSourceCacheKey(ctx context.Context, query dagql.Instance[*core.Query], args moduleSourceArgs, origDgst digest.Digest) (digest.Digest, error) {
@@ -55,6 +56,11 @@ func (s *moduleSchema) moduleSource(
 	if err != nil {
 		return inst, err
 	}
+
+	if args.RequireKind.Valid && parsedRef.kind != args.RequireKind.Value {
+		return inst, fmt.Errorf("expected module source kind %q, got %q", args.RequireKind.Value, parsedRef.kind)
+	}
+
 	switch parsedRef.kind {
 	case core.ModuleSourceKindLocal:
 		inst, err = s.localModuleSource(ctx, query, bk, parsedRef.local.modPath, !args.DisableFindUp, args.AllowNotExists)
@@ -308,11 +314,12 @@ func (s *moduleSchema) gitModuleSource(
 		ConfigExists: true, // we can't load uninitialized git modules, we'll error out later if it's not there
 		Kind:         core.ModuleSourceKindGit,
 		Git: &core.GitModuleSource{
-			HTMLRepoURL: parsed.repoRoot.Repo,
-			Version:     modVersion,
-			Commit:      gitCommit,
-			Pin:         gitCommit,
-			CloneRef:    parsed.sourceCloneRef,
+			HTMLRepoURL:  parsed.repoRoot.Repo,
+			RepoRootPath: parsed.repoRoot.Root,
+			Version:      modVersion,
+			Commit:       gitCommit,
+			Pin:          gitCommit,
+			CloneRef:     parsed.sourceCloneRef,
 		},
 	}
 
@@ -1085,6 +1092,18 @@ func (s *moduleSchema) moduleSourceCommit(
 	}
 
 	return src.Git.Commit, nil
+}
+
+func (s *moduleSchema) moduleSourceRepoRootPath(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct{},
+) (string, error) {
+	if src.Kind != core.ModuleSourceKindGit {
+		return "", fmt.Errorf("module source is not a git module: %s", src.Kind)
+	}
+
+	return src.Git.RepoRootPath, nil
 }
 
 func (s *moduleSchema) moduleSourceWithEngineVersion(
