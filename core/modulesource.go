@@ -87,8 +87,8 @@ type ModuleSource struct {
 
 	// IncludePaths are the includes as read from the module's dagger.json
 	IncludePaths []string
-	// FullIncludePaths are the include paths with the source root subpath prepended and implicit loads of dagger.json + source dir inculded
-	FullIncludePaths []string
+	// RebasedIncludePaths are the include paths with the source root subpath prepended
+	RebasedIncludePaths []string
 
 	// ConfigDependencies are the dependencies as read from the module's dagger.json
 	// NOTE: this is currently not updated by withDependencies and related APIs, only Dependencies will be updated
@@ -138,9 +138,9 @@ func (src ModuleSource) Clone() *ModuleSource {
 	origIncludePaths := src.IncludePaths
 	src.IncludePaths = make([]string, len(origIncludePaths))
 	copy(src.IncludePaths, origIncludePaths)
-	origFullIncludePaths := src.FullIncludePaths
-	src.FullIncludePaths = make([]string, len(origFullIncludePaths))
-	copy(src.FullIncludePaths, origFullIncludePaths)
+	origFullIncludePaths := src.RebasedIncludePaths
+	src.RebasedIncludePaths = make([]string, len(origFullIncludePaths))
+	copy(src.RebasedIncludePaths, origFullIncludePaths)
 
 	origConfigDependencies := src.ConfigDependencies
 	src.ConfigDependencies = make([]*modules.ModuleConfigDependency, len(origConfigDependencies))
@@ -400,6 +400,7 @@ func (src *ModuleSource) LoadContext(
 
 type LocalModuleSource struct {
 	ContextDirectoryPath string
+
 	// the user-provided path given to moduleSource, used in AsString
 	OriginalRefString string
 }

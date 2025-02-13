@@ -250,6 +250,9 @@ func (f Filesyncer) fullRootPathAndBaseName(reqPath string, fullyResolvePath boo
 	if fullyResolvePath {
 		rootPath, err = filepath.EvalSymlinks(rootPath)
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return "", status.Errorf(codes.NotFound, "eval symlinks: %s", err)
+			}
 			return "", fmt.Errorf("eval symlinks: %w", err)
 		}
 	}

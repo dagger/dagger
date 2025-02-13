@@ -99,7 +99,7 @@ func (s *moduleSchema) Install() {
 		dagql.Func("sourceSubpath", s.moduleSourceSubpath).
 			Doc(`A human readable ref string representation of this module source.`),
 
-		dagql.Func("withSourceSubpath", s.moduleSourceWithSourceSubpath).
+		dagql.FuncWithCacheKey("withSourceSubpath", s.moduleSourceWithSourceSubpath, core.CachePerClient).
 			Doc(`Update the module source with a new source subpath.`).
 			ArgDoc("path", `The path to set as the source subpath.`),
 
@@ -107,7 +107,7 @@ func (s *moduleSchema) Install() {
 			Doc(`Update the module source with a new name.`).
 			ArgDoc("name", `The name to set.`),
 
-		dagql.Func("withIncludes", s.moduleSourceWithIncludes).
+		dagql.FuncWithCacheKey("withIncludes", s.moduleSourceWithIncludes, core.CachePerClient).
 			Doc(`Update the module source with additional include patterns for files+directories from its context that are required for building it`).
 			ArgDoc("patterns", `The new additional include patterns.`),
 

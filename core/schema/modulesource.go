@@ -20,7 +20,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/client/pathutil"
-	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
@@ -86,7 +85,8 @@ func (s *moduleSchema) localModuleSource(
 
 	// localPath is the path the user provided to load the module, it may be relative or absolute and
 	// may point to either the directory containing dagger.json or any subdirectory in the
-	// filetree under the directory containing dagger.json
+	// filetree under the directory containing dagger.json.
+	// When findUp is enabled, it can also be a name of a dependency in the default dagger.json found-up from the cwd.
 	localPath string,
 
 	// TODO: doc
@@ -178,17 +178,11 @@ func (s *moduleSchema) localModuleSource(
 		sourceRootPath = localAbsPath
 	case !doFindUp:
 		// we weren't trying to find-up the source root, so we always set the source root to the local path
-		daggerCfgFound = sourceRootPath == localAbsPath // config was found if-and-only-if it was in the localAbsPath
+		daggerCfgFound = sourceRootPath == localAbsPath // config was found if-and-only-if it was in the localAbsPath dir
 		sourceRootPath = localAbsPath
 	}
 	if !dotGitFound {
 		// in all cases, if there's no .git found, default the context dir to the source root
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		bklog.G(ctx).Debugf("no .git found, defaulting context dir to source root %q", sourceRootPath)
-
 		contextDirPath = sourceRootPath
 	}
 
@@ -607,48 +601,15 @@ func (s *moduleSchema) initFromModConfig(configBytes []byte, src *core.ModuleSou
 		src.SourceSubpath = filepath.Join(src.SourceRootSubpath, modCfg.Source)
 	}
 
-	src.FullIncludePaths = append(src.FullIncludePaths,
-		// always load the config file (currently mainly so it gets incorporated into the digest)
-		src.SourceRootSubpath+"/"+modules.Filename,
-	)
-	if src.SourceSubpath != "" {
-		// load the source dir if set
-		src.FullIncludePaths = append(src.FullIncludePaths, src.SourceSubpath+"/**/*")
-	} else {
-		// otherwise load the source root; this supports use cases like an sdk-less module w/ a pyproject.toml
-		// that's now going to be upgraded to using the python sdk and needs pyproject.toml to be loaded
-		// TODO: might be better to dynamically load more when WithSourceSubpath is called
-		// TODO: might be better to dynamically load more when WithSourceSubpath is called
-		// TODO: might be better to dynamically load more when WithSourceSubpath is called
-		src.FullIncludePaths = append(src.FullIncludePaths, src.SourceRootSubpath+"/**/*")
-	}
-
 	// add the config file includes, rebasing them from being relative to the config file
 	// to being relative to the context dir
 	rebasedIncludes, err := rebasePatterns(modCfg.Include, src.SourceRootSubpath)
 	if err != nil {
 		return err
 	}
-	src.FullIncludePaths = append(src.FullIncludePaths, rebasedIncludes...)
+	src.RebasedIncludePaths = append(src.RebasedIncludePaths, rebasedIncludes...)
 
 	return nil
-}
-
-func rebasePatterns(patterns []string, base string) ([]string, error) {
-	rebased := make([]string, 0, len(patterns))
-	for _, pattern := range patterns {
-		isNegation := strings.HasPrefix(pattern, "!")
-		pattern = strings.TrimPrefix(pattern, "!")
-		relPath := filepath.Join(base, pattern)
-		if !filepath.IsLocal(relPath) {
-			return nil, fmt.Errorf("include/exclude path %q escapes context", relPath)
-		}
-		if isNegation {
-			relPath = "!" + relPath
-		}
-		rebased = append(rebased, relPath)
-	}
-	return rebased, nil
 }
 
 func (s *moduleSchema) loadModuleSourceContext(
@@ -656,6 +617,24 @@ func (s *moduleSchema) loadModuleSourceContext(
 	bk *buildkit.Client,
 	src *core.ModuleSource,
 ) error {
+	// we load the includes specified by the user in dagger.json (if any) plus a few
+	// prepended paths that are always loaded
+	fullIncludePaths := []string{
+		// always load the config file
+		src.SourceRootSubpath + "/" + modules.Filename,
+	}
+
+	if src.SourceSubpath != "" {
+		// load the source dir if set
+		fullIncludePaths = append(fullIncludePaths, src.SourceSubpath+"/**/*")
+	} else {
+		// otherwise load the source root; this supports use cases like an sdk-less module w/ a pyproject.toml
+		// that's now going to be upgraded to using the python sdk and needs pyproject.toml to be loaded
+		fullIncludePaths = append(fullIncludePaths, src.SourceRootSubpath+"/**/*")
+	}
+
+	fullIncludePaths = append(fullIncludePaths, src.RebasedIncludePaths...)
+
 	switch src.Kind {
 	case core.ModuleSourceKindLocal:
 		err := s.dag.Select(ctx, s.dag.Root(), &src.ContextDirectory,
@@ -664,7 +643,7 @@ func (s *moduleSchema) loadModuleSourceContext(
 				Field: "directory",
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String(src.Local.ContextDirectoryPath)},
-					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(src.FullIncludePaths...))},
+					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(fullIncludePaths...))},
 				},
 			},
 		)
@@ -680,7 +659,7 @@ func (s *moduleSchema) loadModuleSourceContext(
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String("/")},
 					{Name: "directory", Value: dagql.NewID[*core.Directory](src.Git.UnfilteredContextDir.ID())},
-					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(src.FullIncludePaths...))},
+					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(fullIncludePaths...))},
 				},
 			},
 		)
@@ -688,7 +667,7 @@ func (s *moduleSchema) loadModuleSourceContext(
 			return err
 		}
 
-		// the directory is not necessarily content-hashed, make it such so we can use that as our digest
+		// the directory is not necessarily content-hashed, make it such so we can use that in our digest
 		src.ContextDirectory, err = core.MakeDirectoryContentHashed(ctx, bk, src.ContextDirectory)
 		if err != nil {
 			return fmt.Errorf("failed to hash git context directory: %w", err)
@@ -893,6 +872,23 @@ func (s *moduleSchema) moduleSourceWithSourceSubpath(
 		return nil, fmt.Errorf("local module source subpath %q escapes source root %q", relPath, src.SourceRootSubpath)
 	}
 
+	// reload context since the subpath impacts what we implicitly include in the load
+	bk, err := src.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	err = s.loadModuleSourceContext(ctx, bk, src)
+	switch {
+	case err == nil:
+	case codes.NotFound == status.Code(err) && src.Kind == core.ModuleSourceKindLocal:
+		// corner case: dagger init can be called on a context dir that doesn't exist yet
+		// (e.g. called outside a .git context and the source root dir doesn't exist because
+		// it's expected to be created when exporting the generated context dir)
+		// we tolerate a not found error in this case
+	default:
+		return nil, fmt.Errorf("failed to reload module source context: %w", err)
+	}
+
 	src.Digest = src.CalcDigest().String()
 	return src, nil
 }
@@ -947,14 +943,22 @@ func (s *moduleSchema) moduleSourceWithIncludes(
 	if err != nil {
 		return nil, fmt.Errorf("failed to rebase include paths: %w", err)
 	}
-	src.FullIncludePaths = append(src.FullIncludePaths, rebasedIncludes...)
+	src.RebasedIncludePaths = append(src.RebasedIncludePaths, rebasedIncludes...)
 
 	// reload context in case includes have changed it
 	bk, err := src.Query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	if err := s.loadModuleSourceContext(ctx, bk, src); err != nil {
+	err = s.loadModuleSourceContext(ctx, bk, src)
+	switch {
+	case err == nil:
+	case codes.NotFound == status.Code(err) && src.Kind == core.ModuleSourceKindLocal:
+		// corner case: dagger init can be called on a context dir that doesn't exist yet
+		// (e.g. called outside a .git context and the source root dir doesn't exist because
+		// it's expected to be created when exporting the generated context dir)
+		// we tolerate a not found error in this case
+	default:
 		return nil, fmt.Errorf("failed to reload module source context: %w", err)
 	}
 
@@ -1965,4 +1969,21 @@ func (fs moduleSourceDirExistsFS) dirExists(ctx context.Context, path string) (b
 	default:
 		return false, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
 	}
+}
+
+func rebasePatterns(patterns []string, base string) ([]string, error) {
+	rebased := make([]string, 0, len(patterns))
+	for _, pattern := range patterns {
+		isNegation := strings.HasPrefix(pattern, "!")
+		pattern = strings.TrimPrefix(pattern, "!")
+		relPath := filepath.Join(base, pattern)
+		if !filepath.IsLocal(relPath) {
+			return nil, fmt.Errorf("include/exclude path %q escapes context", relPath)
+		}
+		if isNegation {
+			relPath = "!" + relPath
+		}
+		rebased = append(rebased, relPath)
+	}
+	return rebased, nil
 }
