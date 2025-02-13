@@ -42,8 +42,8 @@ func (j *Job) installDaggerSteps() []api.JobStep {
 	}
 
 	// Interpret dagger version as a local source, and build it (dev engine)
-	engineCLI := "./bin/dev-${{ github.run_id }}-${{ github.job }}"
 	engineCtr := "dagger-engine.dev-${{ github.run_id }}-${{ github.job }}"
+	engineImage := "localhost/dagger-engine.dev:${{ github.run_id }}-${{ github.job }}"
 	return []api.JobStep{
 		// Install latest dagger to bootstrap dev dagger
 		// FIXME: let's daggerize this, using dagger in dagger :)
@@ -60,8 +60,8 @@ func (j *Job) installDaggerSteps() []api.JobStep {
 			"DAGGER_SOURCE": j.DaggerVersion,
 			// create separate outputs and containers for each job run (to prevent
 			// collisions with shared docker containers).
-			"_EXPERIMENTAL_DAGGER_DEV_OUTPUT":    engineCLI,
 			"_EXPERIMENTAL_DAGGER_DEV_CONTAINER": engineCtr,
+			"_EXPERIMENTAL_DAGGER_DEV_IMAGE":     engineImage,
 		}),
 	}
 }
