@@ -51,8 +51,8 @@
               <li><a href="#query-loadEngineCacheEntrySetFromID">loadEngineCacheEntrySetFromID</a></li>
               <li><a href="#query-loadEngineCacheFromID">loadEngineCacheFromID</a></li>
               <li><a href="#query-loadEngineFromID">loadEngineFromID</a></li>
+              <li><a href="#query-loadEnumMemberTypeDefFromID">loadEnumMemberTypeDefFromID</a></li>
               <li><a href="#query-loadEnumTypeDefFromID">loadEnumTypeDefFromID</a></li>
-              <li><a href="#query-loadEnumValueTypeDefFromID">loadEnumValueTypeDefFromID</a></li>
               <li><a href="#query-loadEnvVariableFromID">loadEnvVariableFromID</a></li>
               <li><a href="#query-loadErrorFromID">loadErrorFromID</a></li>
               <li><a href="#query-loadFieldTypeDefFromID">loadFieldTypeDefFromID</a></li>
@@ -118,10 +118,10 @@
               <li><a href="#definition-EngineCacheEntrySetID">EngineCacheEntrySetID</a></li>
               <li><a href="#definition-EngineCacheID">EngineCacheID</a></li>
               <li><a href="#definition-EngineID">EngineID</a></li>
+              <li><a href="#definition-EnumMemberTypeDef">EnumMemberTypeDef</a></li>
+              <li><a href="#definition-EnumMemberTypeDefID">EnumMemberTypeDefID</a></li>
               <li><a href="#definition-EnumTypeDef">EnumTypeDef</a></li>
               <li><a href="#definition-EnumTypeDefID">EnumTypeDefID</a></li>
-              <li><a href="#definition-EnumValueTypeDef">EnumValueTypeDef</a></li>
-              <li><a href="#definition-EnumValueTypeDefID">EnumValueTypeDefID</a></li>
               <li><a href="#definition-EnvVariable">EnvVariable</a></li>
               <li><a href="#definition-EnvVariableID">EnvVariableID</a></li>
               <li><a href="#definition-Error">Error</a></li>
@@ -149,7 +149,7 @@
               <li><a href="#definition-Host">Host</a></li>
               <li><a href="#definition-HostID">HostID</a></li>
               <li><a href="#definition-ImageLayerCompression">ImageLayerCompression</a></li>
-              <li><a href="#definition-ImageMediaTypes">ImageMediaTypes</a></li>
+              <li><a href="#definition-ImageMediaType">ImageMediaType</a></li>
               <li><a href="#definition-InputTypeDef">InputTypeDef</a></li>
               <li><a href="#definition-InputTypeDefID">InputTypeDefID</a></li>
               <li><a href="#definition-Int">Int</a></li>
@@ -1411,6 +1411,59 @@
               </div>
             </div>
           </section>
+          <section id="query-loadEnumMemberTypeDefFromID" class="operation operation-query" data-traverse-target="query-loadEnumMemberTypeDefFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadEnumMemberTypeDefFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a EnumMemberTypeDef from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-EnumMemberTypeDef"><code>EnumMemberTypeDef!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-EnumMemberTypeDefID"><code>EnumMemberTypeDefID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-loadEnumTypeDefFromID" class="operation operation-query" data-traverse-target="query-loadEnumTypeDefFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -1447,59 +1500,6 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-EnumTypeDefID"><code>EnumTypeDefID!</code></a></span>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="query-loadEnumValueTypeDefFromID" class="operation operation-query" data-traverse-target="query-loadEnumValueTypeDefFromID">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>loadEnumValueTypeDefFromID</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Load a EnumValueTypeDef from its ID.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-EnumValueTypeDef"><code>EnumValueTypeDef!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-EnumValueTypeDefID"><code>EnumValueTypeDefID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -3926,7 +3926,7 @@
                                 <p>If this is unset, then if a layer already has a compressed blob in the engine&#39;s cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine&#39;s cache, then it will be compressed using Gzip.</p>
                               </div>
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>mediaTypes</code></span> - <span class="property-type"><a href="#definition-ImageMediaTypes"><code>ImageMediaTypes</code></a></span></h6>
+                                <h6 class="field-argument-name"><span class="property-name"><code>mediaTypes</code></span> - <span class="property-type"><a href="#definition-ImageMediaType"><code>ImageMediaType</code></a></span></h6>
                                 <p>Use the specified media types for the image&#39;s layers.</p>
                                 <p>Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.</p>
                               </div>
@@ -4085,7 +4085,7 @@
                                 <p>If this is unset, then if a layer already has a compressed blob in the engine&#39;s cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine&#39;s cache, then it will be compressed using Gzip.</p>
                               </div>
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>mediaTypes</code></span> - <span class="property-type"><a href="#definition-ImageMediaTypes"><code>ImageMediaTypes</code></a></span></h6>
+                                <h6 class="field-argument-name"><span class="property-name"><code>mediaTypes</code></span> - <span class="property-type"><a href="#definition-ImageMediaType"><code>ImageMediaType</code></a></span></h6>
                                 <p>Use the specified media types for the exported image&#39;s layers.</p>
                                 <p>Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.</p>
                               </div>
@@ -4234,7 +4234,7 @@
                                 <p>If this is unset, then if a layer already has a compressed blob in the engine&#39;s cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine&#39;s cache, then it will be compressed using Gzip.</p>
                               </div>
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>mediaTypes</code></span> - <span class="property-type"><a href="#definition-ImageMediaTypes"><code>ImageMediaTypes</code></a></span></h6>
+                                <h6 class="field-argument-name"><span class="property-name"><code>mediaTypes</code></span> - <span class="property-type"><a href="#definition-ImageMediaType"><code>ImageMediaType</code></a></span></h6>
                                 <p>Use the specified media types for the published image&#39;s layers.</p>
                                 <p>Defaults to OCI, which is largely compatible with most recent registries, but Docker may be needed for older registries without OCI support.</p>
                               </div>
@@ -6107,6 +6107,67 @@
               </div>
             </div>
           </section>
+          <section id="definition-EnumMemberTypeDef" class="definition definition-object" data-traverse-target="definition-EnumMemberTypeDef">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">EnumMemberTypeDef</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A definition of a value in a custom enum defined in a Module.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumMemberTypeDef-description" href="#EnumMemberTypeDef-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> A doc string for the enum value, if any. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumMemberTypeDef-id" href="#EnumMemberTypeDef-id"><code>id</code></a> - <span class="property-type"><a href="#definition-EnumMemberTypeDefID"><code>EnumMemberTypeDefID!</code></a></span> </td>
+                        <td> A unique identifier for this EnumMemberTypeDef. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumMemberTypeDef-name" href="#EnumMemberTypeDef-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The name of the enum value. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumMemberTypeDef-sourceMap" href="#EnumMemberTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td> The location of this enum value declaration. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumMemberTypeDef-value" href="#EnumMemberTypeDef-value"><code>value</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The value of the enum value </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-EnumMemberTypeDefID" class="definition definition-scalar" data-traverse-target="definition-EnumMemberTypeDefID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">EnumMemberTypeDefID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>EnumMemberTypeDefID</code> scalar type represents an identifier for an object of type EnumMemberTypeDef.</p>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="definition-EnumTypeDef" class="definition definition-object" data-traverse-target="definition-EnumTypeDef">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -6137,6 +6198,10 @@
                         <td> A unique identifier for this EnumTypeDef. </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumTypeDef-members" href="#EnumTypeDef-members"><code>members</code></a> - <span class="property-type"><a href="#definition-EnumMemberTypeDef"><code>[EnumMemberTypeDef!]!</code></a></span> </td>
+                        <td> The members of the enum. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="EnumTypeDef-name" href="#EnumTypeDef-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The name of the enum. </td>
                       </tr>
@@ -6147,10 +6212,6 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="EnumTypeDef-sourceModuleName" href="#EnumTypeDef-sourceModuleName"><code>sourceModuleName</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="EnumTypeDef-values" href="#EnumTypeDef-values"><code>values</code></a> - <span class="property-type"><a href="#definition-EnumValueTypeDef"><code>[EnumValueTypeDef!]!</code></a></span> </td>
-                        <td> The values of the enum. </td>
                       </tr>
                     </tbody>
                   </table>
@@ -6168,63 +6229,6 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>EnumTypeDefID</code> scalar type represents an identifier for an object of type EnumTypeDef.</p>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-EnumValueTypeDef" class="definition definition-object" data-traverse-target="definition-EnumValueTypeDef">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">EnumValueTypeDef</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>A definition of a value in a custom enum defined in a Module.</p>
-                </div>
-                <div class="definition-properties doc-copy-section">
-                  <h5>Fields</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Field Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-description" href="#EnumValueTypeDef-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> A doc string for the enum value, if any. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-id" href="#EnumValueTypeDef-id"><code>id</code></a> - <span class="property-type"><a href="#definition-EnumValueTypeDefID"><code>EnumValueTypeDefID!</code></a></span> </td>
-                        <td> A unique identifier for this EnumValueTypeDef. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-name" href="#EnumValueTypeDef-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The name of the enum value. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-sourceMap" href="#EnumValueTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
-                        <td> The location of this enum value declaration. </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-EnumValueTypeDefID" class="definition definition-scalar" data-traverse-target="definition-EnumValueTypeDefID">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">EnumValueTypeDefID</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The <code>EnumValueTypeDefID</code> scalar type represents an identifier for an object of type EnumValueTypeDef.</p>
                 </div>
               </div>
             </div>
@@ -7488,28 +7492,28 @@
                     <tbody>
                       <tr>
                         <td>
-                          <p><code>Gzip</code></p>
+                          <p><code>GZIP</code></p>
                         </td>
                         <td>
                         </td>
                       </tr>
                       <tr>
                         <td>
-                          <p><code>Zstd</code></p>
+                          <p><code>ZSTD</code></p>
                         </td>
                         <td>
                         </td>
                       </tr>
                       <tr>
                         <td>
-                          <p><code>EStarGZ</code></p>
+                          <p><code>ESTARGZ</code></p>
                         </td>
                         <td>
                         </td>
                       </tr>
                       <tr>
                         <td>
-                          <p><code>Uncompressed</code></p>
+                          <p><code>UNCOMPRESSED</code></p>
                         </td>
                         <td>
                         </td>
@@ -7523,7 +7527,7 @@
                   <h5>Example</h5>
                   <html>
                     <head></head>
-                    <body><pre><code class="hljs language-gql"><span class="hljs-symbol">"Gzip"</span>
+                    <body><pre><code class="hljs language-gql"><span class="hljs-symbol">"GZIP"</span>
 </code></pre>
                     </body>
                   </html>
@@ -7531,11 +7535,11 @@
               </div>
             </div>
           </section>
-          <section id="definition-ImageMediaTypes" class="definition definition-enum" data-traverse-target="definition-ImageMediaTypes">
+          <section id="definition-ImageMediaType" class="definition definition-enum" data-traverse-target="definition-ImageMediaType">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
             </div>
-            <h2 class="definition-heading">ImageMediaTypes</h2>
+            <h2 class="definition-heading">ImageMediaType</h2>
             <div class="doc-row">
               <div class="doc-copy">
                 <div class="definition-description doc-copy-section">
@@ -7554,14 +7558,14 @@
                     <tbody>
                       <tr>
                         <td>
-                          <p><code>OCIMediaTypes</code></p>
+                          <p><code>OCI</code></p>
                         </td>
                         <td>
                         </td>
                       </tr>
                       <tr>
                         <td>
-                          <p><code>DockerMediaTypes</code></p>
+                          <p><code>DOCKER</code></p>
                         </td>
                         <td>
                         </td>
@@ -7575,7 +7579,7 @@
                   <h5>Example</h5>
                   <html>
                     <head></head>
-                    <body><pre><code class="hljs language-gql"><span class="hljs-symbol">"OCIMediaTypes"</span>
+                    <body><pre><code class="hljs language-gql"><span class="hljs-symbol">"OCI"</span>
 </code></pre>
                     </body>
                   </html>
@@ -8513,14 +8517,14 @@
                     <tbody>
                       <tr>
                         <td>
-                          <p><code>LOCAL_SOURCE</code></p>
+                          <p><code>LOCAL</code></p>
                         </td>
                         <td>
                         </td>
                       </tr>
                       <tr>
                         <td>
-                          <p><code>GIT_SOURCE</code></p>
+                          <p><code>GIT</code></p>
                         </td>
                         <td>
                         </td>
@@ -8534,7 +8538,7 @@
                   <h5>Example</h5>
                   <html>
                     <head></head>
-                    <body><pre><code class="hljs language-gql"><span class="hljs-symbol">"LOCAL_SOURCE"</span>
+                    <body><pre><code class="hljs language-gql"><span class="hljs-symbol">"LOCAL"</span>
 </code></pre>
                     </body>
                   </html>
@@ -9539,6 +9543,35 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="TypeDef-withEnumMember" href="#TypeDef-withEnumMember"><code>withEnumMember</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
+                        <td> Adds a static value for an Enum TypeDef, failing if the type is not an enum. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>A doc string for the value, if any</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the member in the enum</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>sourceMap</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID</code></a></span></h6>
+                                <p>The source map for the enum value definition.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The value of the member in the enum</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="TypeDef-withEnumValue" href="#TypeDef-withEnumValue"><code>withEnumValue</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
                         <td> Adds a static value for an Enum TypeDef, failing if the type is not an enum. </td>
                       </tr>
@@ -9765,15 +9798,21 @@
                     <tbody>
                       <tr>
                         <td>
+                          <p><code>STRING</code></p>
+                        </td>
+                        <td> A string value. </td>
+                      </tr>
+                      <tr>
+                        <td>
                           <p><code>STRING_KIND</code></p>
                         </td>
                         <td> A string value. </td>
                       </tr>
                       <tr>
                         <td>
-                          <p><code>FLOAT_KIND</code></p>
+                          <p><code>INTEGER</code></p>
                         </td>
-                        <td> A float value. </td>
+                        <td> An integer value. </td>
                       </tr>
                       <tr>
                         <td>
@@ -9783,9 +9822,33 @@
                       </tr>
                       <tr>
                         <td>
+                          <p><code>FLOAT</code></p>
+                        </td>
+                        <td> A float value. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>FLOAT_KIND</code></p>
+                        </td>
+                        <td> A float value. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>BOOLEAN</code></p>
+                        </td>
+                        <td> A boolean value. </td>
+                      </tr>
+                      <tr>
+                        <td>
                           <p><code>BOOLEAN_KIND</code></p>
                         </td>
                         <td> A boolean value. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>SCALAR</code></p>
+                        </td>
+                        <td> A scalar value of any basic kind. </td>
                       </tr>
                       <tr>
                         <td>
@@ -9795,11 +9858,29 @@
                       </tr>
                       <tr>
                         <td>
+                          <p><code>LIST</code></p>
+                        </td>
+                        <td>
+                          <p>A list of values all having the same type.</p>
+                          <p>Always paired with a ListTypeDef.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
                           <p><code>LIST_KIND</code></p>
                         </td>
                         <td>
                           <p>A list of values all having the same type.</p>
                           <p>Always paired with a ListTypeDef.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>OBJECT</code></p>
+                        </td>
+                        <td>
+                          <p>A named type defined in the GraphQL schema, with fields and functions.</p>
+                          <p>Always paired with an ObjectTypeDef.</p>
                         </td>
                       </tr>
                       <tr>
@@ -9813,6 +9894,15 @@
                       </tr>
                       <tr>
                         <td>
+                          <p><code>INTERFACE</code></p>
+                        </td>
+                        <td>
+                          <p>A named type of functions that can be matched+implemented by other objects+interfaces.</p>
+                          <p>Always paired with an InterfaceTypeDef.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
                           <p><code>INTERFACE_KIND</code></p>
                         </td>
                         <td>
@@ -9822,9 +9912,24 @@
                       </tr>
                       <tr>
                         <td>
+                          <p><code>INPUT</code></p>
+                        </td>
+                        <td> A graphql input type, used only when representing the core API via TypeDefs. </td>
+                      </tr>
+                      <tr>
+                        <td>
                           <p><code>INPUT_KIND</code></p>
                         </td>
                         <td> A graphql input type, used only when representing the core API via TypeDefs. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>VOID</code></p>
+                        </td>
+                        <td>
+                          <p>A special kind used to signify that no value is returned.</p>
+                          <p>This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.</p>
+                        </td>
                       </tr>
                       <tr>
                         <td>
@@ -9833,6 +9938,15 @@
                         <td>
                           <p>A special kind used to signify that no value is returned.</p>
                           <p>This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>ENUM</code></p>
+                        </td>
+                        <td>
+                          <p>A GraphQL enum type and its values</p>
+                          <p>Always paired with an EnumTypeDef.</p>
                         </td>
                       </tr>
                       <tr>
@@ -9853,7 +9967,7 @@
                   <h5>Example</h5>
                   <html>
                     <head></head>
-                    <body><pre><code class="hljs language-gql"><span class="hljs-symbol">"STRING_KIND"</span>
+                    <body><pre><code class="hljs language-gql"><span class="hljs-symbol">"STRING"</span>
 </code></pre>
                     </body>
                   </html>

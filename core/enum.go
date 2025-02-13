@@ -92,7 +92,7 @@ func (m *ModuleEnumType) getEnum(ctx context.Context) (*ModuleEnum, bool, error)
 	if ok {
 		enum, ok := scalar.(*ModuleEnum)
 		if !ok {
-			return nil, false, fmt.Errorf("%T.getDecoder: incorrect type %T for scalar", scalar)
+			return nil, false, fmt.Errorf("%T.getDecoder: incorrect type %T for scalar", m, scalar)
 		}
 		return enum, false, nil
 	}
@@ -187,7 +187,14 @@ func (e *ModuleEnum) Lookup(val string) (dagql.Input, error) {
 			}, nil
 		}
 	}
-
+	for _, possible := range e.TypeDef.Members {
+		if val == possible.Value {
+			return &ModuleEnum{
+				TypeDef: e.TypeDef,
+				Name:    possible.Name,
+			}, nil
+		}
+	}
 	return nil, fmt.Errorf("invalid enum value %q", val)
 }
 

@@ -1047,50 +1047,50 @@ func (k TypeDefKind) String() string {
 var TypeDefKinds = dagql.NewEnum[TypeDefKind]()
 
 var (
-	TypeDefKindString = TypeDefKinds.Register("STRING",
+	TypeDefKindString = TypeDefKinds.RegisterView("STRING", AfterVersion("v0.16.0"),
 		"A string value.")
-	_                  = TypeDefKinds.Alias("STRING_KIND", "STRING", BeforeVersion("v0.16.0"))
-	TypeDefKindInteger = TypeDefKinds.Register("INTEGER",
+	_                  = TypeDefKinds.Alias("STRING_KIND", "STRING")
+	TypeDefKindInteger = TypeDefKinds.RegisterView("INTEGER", AfterVersion("v0.16.0"),
 		"An integer value.")
-	_                = TypeDefKinds.Alias("INTEGER_KIND", "INTEGER", BeforeVersion("v0.16.0"))
-	TypeDefKindFloat = TypeDefKinds.Register("FLOAT",
+	_                = TypeDefKinds.Alias("INTEGER_KIND", "INTEGER")
+	TypeDefKindFloat = TypeDefKinds.RegisterView("FLOAT", AfterVersion("v0.16.0"),
 		"A float value.")
-	_                  = TypeDefKinds.Alias("FLOAT_KIND", "FLOAT", BeforeVersion("v0.16.0"))
-	TypeDefKindBoolean = TypeDefKinds.Register("BOOLEAN",
+	_                  = TypeDefKinds.Alias("FLOAT_KIND", "FLOAT")
+	TypeDefKindBoolean = TypeDefKinds.RegisterView("BOOLEAN", AfterVersion("v0.16.0"),
 		"A boolean value.")
-	_                 = TypeDefKinds.Alias("BOOLEAN_KIND", "BOOLEAN", BeforeVersion("v0.16.0"))
-	TypeDefKindScalar = TypeDefKinds.Register("SCALAR",
+	_                 = TypeDefKinds.Alias("BOOLEAN_KIND", "BOOLEAN")
+	TypeDefKindScalar = TypeDefKinds.RegisterView("SCALAR", AfterVersion("v0.16.0"),
 		"A scalar value of any basic kind.")
-	_               = TypeDefKinds.Alias("SCALAR_KIND", "SCALAR", BeforeVersion("v0.16.0"))
-	TypeDefKindList = TypeDefKinds.Register("LIST",
+	_               = TypeDefKinds.Alias("SCALAR_KIND", "SCALAR")
+	TypeDefKindList = TypeDefKinds.RegisterView("LIST", AfterVersion("v0.16.0"),
 		"A list of values all having the same type.",
 		"Always paired with a ListTypeDef.")
-	_                 = TypeDefKinds.Alias("LIST_KIND", "LIST", BeforeVersion("v0.16.0"))
-	TypeDefKindObject = TypeDefKinds.Register("OBJECT",
+	_                 = TypeDefKinds.Alias("LIST_KIND", "LIST")
+	TypeDefKindObject = TypeDefKinds.RegisterView("OBJECT", AfterVersion("v0.16.0"),
 		"A named type defined in the GraphQL schema, with fields and functions.",
 		"Always paired with an ObjectTypeDef.")
-	_                    = TypeDefKinds.Alias("OBJECT_KIND", "OBJECT", BeforeVersion("v0.16.0"))
-	TypeDefKindInterface = TypeDefKinds.Register("INTERFACE",
+	_                    = TypeDefKinds.Alias("OBJECT_KIND", "OBJECT")
+	TypeDefKindInterface = TypeDefKinds.RegisterView("INTERFACE", AfterVersion("v0.16.0"),
 		`A named type of functions that can be matched+implemented by other
 		objects+interfaces.`,
 		"Always paired with an InterfaceTypeDef.")
-	_                = TypeDefKinds.Alias("INTERFACE_KIND", "INTERFACE", BeforeVersion("v0.16.0"))
-	TypeDefKindInput = TypeDefKinds.Register("INPUT",
+	_                = TypeDefKinds.Alias("INTERFACE_KIND", "INTERFACE")
+	TypeDefKindInput = TypeDefKinds.RegisterView("INPUT", AfterVersion("v0.16.0"),
 		`A graphql input type, used only when representing the core API via TypeDefs.`,
 	)
-	_               = TypeDefKinds.Alias("INPUT_KIND", "INPUT", BeforeVersion("v0.16.0"))
-	TypeDefKindVoid = TypeDefKinds.Register("VOID",
+	_               = TypeDefKinds.Alias("INPUT_KIND", "INPUT")
+	TypeDefKindVoid = TypeDefKinds.RegisterView("VOID", AfterVersion("v0.16.0"),
 		"A special kind used to signify that no value is returned.",
 		`This is used for functions that have no return value. The outer TypeDef
 		specifying this Kind is always Optional, as the Void is never actually
 		represented.`,
 	)
-	_               = TypeDefKinds.Alias("VOID_KIND", "VOID", BeforeVersion("v0.16.0"))
-	TypeDefKindEnum = TypeDefKinds.Register("ENUM",
+	_               = TypeDefKinds.Alias("VOID_KIND", "VOID")
+	TypeDefKindEnum = TypeDefKinds.RegisterView("ENUM", AfterVersion("v0.16.0"),
 		"A GraphQL enum type and its values",
 		"Always paired with an EnumTypeDef.",
 	)
-	_ = TypeDefKinds.Alias("ENUM_KIND", "ENUM", BeforeVersion("v0.16.0"))
+	_ = TypeDefKinds.Alias("ENUM_KIND", "ENUM")
 )
 
 func (k TypeDefKind) Type() *ast.Type {

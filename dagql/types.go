@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -881,19 +882,9 @@ type enumValue interface {
 
 type EnumValue[T enumValue] struct {
 	Value       T
+	Target      T
 	Description string
-
-	Aliases     []T
-	AliasesView []View
-}
-
-func (val EnumValue[T]) nameForView(view string) string {
-	for i, alias := range val.Aliases {
-		if val.AliasesView[i].Contains(view) {
-			return string(alias)
-		}
-	}
-	return string(val.Value)
+	View        View
 }
 
 // EnumValues is a list of possible values for an Enum.
@@ -943,12 +934,16 @@ func (e *EnumValues[T]) DecodeInput(val any) (Input, error) {
 func (e *EnumValues[T]) PossibleValues(view string) ast.EnumValueList {
 	var values ast.EnumValueList
 	for _, val := range *e {
-		name := val.nameForView(view)
+		if val.View != nil && !val.View.Contains(view) {
+			continue
+		}
+
 		values = append(values, &ast.EnumValueDefinition{
-			Name:        name,
+			Name:        string(val.Value),
 			Description: val.Description,
 			Directives: []*ast.Directive{
-				enumValueDirective(name),
+				// NOTE: these need to have the same underlying value as their target
+				enumValueDirective(cmp.Or(val.Target, val.Value)),
 			},
 		})
 	}
@@ -956,7 +951,7 @@ func (e *EnumValues[T]) PossibleValues(view string) ast.EnumValueList {
 	return values
 }
 
-func enumValueDirective(name string) *ast.Directive {
+func enumValueDirective[T enumValue](value T) *ast.Directive {
 	return &ast.Directive{
 		Name: "enumValue",
 		Arguments: ast.ArgumentList{
@@ -964,7 +959,7 @@ func enumValueDirective(name string) *ast.Directive {
 				Name: "value",
 				Value: &ast.Value{
 					Kind: ast.StringValue,
-					Raw:  name,
+					Raw:  string(value),
 				},
 			},
 		},
@@ -976,18 +971,16 @@ func (e *EnumValues[T]) Literal(val T) call.Literal {
 }
 
 func (e *EnumValues[T]) Lookup(val string) (T, error) {
-	var enum T
+	var zero T
 	for _, possible := range *e {
 		if val == string(possible.Value) {
+			if possible.Target != zero {
+				return possible.Target, nil
+			}
 			return possible.Value, nil
 		}
-		for _, alias := range possible.Aliases {
-			if val == string(alias) {
-				return alias, nil
-			}
-		}
 	}
-	return enum, fmt.Errorf("invalid enum value %q", val)
+	return zero, fmt.Errorf("invalid enum value %q", val)
 }
 
 func (e *EnumValues[T]) Register(val T, desc ...string) T {
@@ -998,12 +991,23 @@ func (e *EnumValues[T]) Register(val T, desc ...string) T {
 	return val
 }
 
-func (e *EnumValues[T]) Alias(val T, target T, view View) T {
-	for i, v := range *e {
+func (e *EnumValues[T]) RegisterView(val T, view View, desc ...string) T {
+	*e = append(*e, EnumValue[T]{
+		Value:       val,
+		Description: FormatDescription(desc...),
+		View:        view,
+	})
+	return val
+}
+
+func (e *EnumValues[T]) Alias(val T, target T) T {
+	for _, v := range *e {
 		if v.Value == target {
-			v.Aliases = append(v.Aliases, val)
-			v.AliasesView = append(v.AliasesView, view)
-			(*e)[i] = v
+			*e = append(*e, EnumValue[T]{
+				Value:       val,
+				Target:      v.Value,
+				Description: v.Description,
+			})
 			return val
 		}
 	}

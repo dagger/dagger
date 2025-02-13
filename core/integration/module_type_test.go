@@ -1125,14 +1125,14 @@ type Status string
 
 const (
 	// Active status
-	Active Status = "ACTIVE"
+	Active Status = "ACTIVE a"
 
 	// Inactive status
-	Inactive Status = "INACTIVE"
+	Inactive Status = "INACTIVE b"
 )
 
 func New(
-	// +default="INACTIVE"
+	// +default="INACTIVE b"
 	status Status,
 ) *Test {
 	return &Test{Status: status}
@@ -1286,9 +1286,11 @@ export class Test {
 				mod := inspectModule(ctx, t, modGen)
 				statusEnum := mod.Get("enums.#.asEnum|#(name=TestStatus)")
 				require.Equal(t, "Enum for Status", statusEnum.Get("description").String())
-				require.Len(t, statusEnum.Get("values").Array(), 2)
+				require.Len(t, statusEnum.Get("members").Array(), 2)
 				require.Equal(t, "ACTIVE", statusEnum.Get("values.0.name").String())
 				require.Equal(t, "INACTIVE", statusEnum.Get("values.1.name").String())
+				require.Equal(t, "ACTIVE a", statusEnum.Get("values.0.value").String())
+				require.Equal(t, "INACTIVE b", statusEnum.Get("values.1.value").String())
 				require.Equal(t, "Active status", statusEnum.Get("values.0.description").String())
 				require.Equal(t, "Inactive status", statusEnum.Get("values.1.description").String())
 			})

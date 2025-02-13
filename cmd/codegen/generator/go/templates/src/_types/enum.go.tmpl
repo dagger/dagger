@@ -8,7 +8,8 @@ func ({{ $enumName }}) IsEnum() {}
 
 func (v {{ $enumName }}) Name() string {
 	switch v {
-	{{- range $index, $field := .EnumValues | SortEnumFields }}
+	{{- range $fields := .EnumValues | SortEnumFields | GroupEnumByValue }}
+	{{- $field := index $fields 0 }}
 	{{- $fieldName := ($field.Name | FormatEnum "") }}
 	{{- $fullFieldName := print ($field.Name | FormatEnum $enumName) }}
 	case {{ $fullFieldName }}:
@@ -33,7 +34,8 @@ func (v *{{ $enumName }}) UnmarshalJSON(dt []byte) error {
 		return err
 	}
 	switch s {
-	{{- range $index, $field := .EnumValues | SortEnumFields }}
+	{{/* XXX: for neatness, we should group here, and return only the "main" ones */}}
+	{{- range $field := .EnumValues | SortEnumFields }}
 	{{- $fieldName := ($field.Name | FormatEnum "") }}
 	{{- $fullFieldName := print ($field.Name | FormatEnum $enumName) }}
 	case "{{ $field.Name }}":
@@ -47,7 +49,9 @@ func (v *{{ $enumName }}) UnmarshalJSON(dt []byte) error {
 
 {{- $needsUnscopedEnums := CheckVersionCompatibility "v0.15.0" | not }}
 const (
-	{{- range $index, $field := .EnumValues | SortEnumFields }}
+	{{/* XXX: this is a little messy now */}}
+	{{- range $fields := .EnumValues | SortEnumFields | GroupEnumByValue }}
+	{{- $field := index $fields 0 }}
 	{{- $fieldName := ($field.Name | FormatEnum "") }}
 	{{- $fullFieldName := print ($field.Name | FormatEnum $enumName) }}
 	{{- $fieldValue := $field.Directives.EnumValue }}
@@ -56,12 +60,33 @@ const (
 	{{- end }}
 	{{ $field.Description | Comment }}
 	{{ $fullFieldName }} {{ $enumName }} = "{{ $fieldValue }}"
-	{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+	{{- with $field.Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 	{{- if $needsUnscopedEnums }}
 	{{ $field.Description | Comment }}
 	{{ print "use " $fullFieldName " instead" | FormatDeprecation }}
 	{{ $fieldName }} {{ $enumName }} = {{ $fullFieldName }}
-	{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+	{{- with $field.Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+	{{- end }}
+	{{- $mainFieldName := $fullFieldName }}
+
+	{{- range $field := (slice $fields 1) }}
+
+	{{- $fieldName := ($field.Name | FormatEnum "") }}
+	{{- $fullFieldName := print ($field.Name | FormatEnum $enumName) }}
+	{{- $fieldValue := $field.Directives.EnumValue }}
+	{{- if not $fieldValue }}
+		{{- $fieldValue = $field.Name }}
+	{{- end }}
+	{{ $field.Description | Comment }}
+	{{ $fullFieldName }} {{ $enumName }} = {{ $mainFieldName }}
+	{{- with $field.Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+	{{- if $needsUnscopedEnums }}
+	{{ $field.Description | Comment }}
+	{{ print "use " $fullFieldName " instead" | FormatDeprecation }}
+	{{ $fieldName }} {{ $enumName }} = {{ $mainFieldName }}
+	{{- with $field.Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+	{{- end }}
+	
 	{{- end }}
 	{{ end }}
 )
