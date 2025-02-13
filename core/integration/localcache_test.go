@@ -8,6 +8,7 @@ import (
 	"time"
 
 	bkconfig "github.com/moby/buildkit/cmd/buildkitd/config"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
@@ -15,6 +16,39 @@ import (
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/testctx"
 )
+
+func (EngineSuite) TestLocalCacheGCDisabled(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	f := false
+	engine := devEngineContainer(c, engineWithConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg config.Config) config.Config {
+		return config.Config{GC: config.GCConfig{Enabled: &f}}
+	}))
+	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { engineSvc.Stop(ctx) })
+
+	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+
+	c2, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+	require.NoError(t, err)
+	t.Cleanup(func() { c2.Close() })
+
+	cache := c2.Engine().LocalCache()
+
+	kb, err := cache.KeepBytes(ctx) //nolint:staticcheck
+	assert.NoError(t, err)
+	assert.Zero(t, kb)
+	mus, err := cache.MaxUsedSpace(ctx)
+	assert.NoError(t, err)
+	assert.Zero(t, mus)
+	mfs, err := cache.MinFreeSpace(ctx)
+	assert.NoError(t, err)
+	assert.Zero(t, mfs)
+	rs, err := cache.ReservedSpace(ctx)
+	assert.NoError(t, err)
+	assert.Zero(t, rs)
+}
 
 func (EngineSuite) TestLocalCacheGCKeepBytesConfig(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)

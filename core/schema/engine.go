@@ -52,6 +52,9 @@ func (s *engineSchema) localCache(ctx context.Context, parent *core.Engine, args
 		return nil, err
 	}
 	policy := parent.Query.Clone().EngineLocalCachePolicy()
+	if policy == nil {
+		return &core.EngineCache{Query: parent.Query}, nil
+	}
 	return &core.EngineCache{
 		Query:         parent.Query,
 		ReservedSpace: int(policy.ReservedSpace),

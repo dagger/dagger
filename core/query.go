@@ -90,7 +90,7 @@ type Server interface {
 	PruneEngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error)
 
 	// The default local cache policy to use for automatic local cache GC.
-	EngineLocalCachePolicy() bkclient.PruneInfo
+	EngineLocalCachePolicy() *bkclient.PruneInfo
 
 	// The nearest ancestor client that is not a module (either a caller from the host like the CLI
 	// or a nested exec). Useful for figuring out where local sources should be resolved from through
