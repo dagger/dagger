@@ -5686,6 +5686,48 @@ class ModuleSource(Type):
         _ctx = self._select("asString", _args)
         return await _ctx.execute(str)
 
+    async def clone_ref(self) -> str:
+        """TODO
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("cloneRef", _args)
+        return await _ctx.execute(str)
+
+    async def commit(self) -> str:
+        """TODO
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("commit", _args)
+        return await _ctx.execute(str)
+
     async def config_exists(self) -> bool:
         """TODO
 
@@ -5753,6 +5795,21 @@ class ModuleSource(Type):
         _ctx = self._select("digest", _args)
         return await _ctx.execute(str)
 
+    def directory(self, path: str) -> Directory:
+        """The directory containing the module configuration and source code
+        (source code may be in a subdir).
+
+        Parameters
+        ----------
+        path:
+            The path from the source directory to select.
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("directory", _args)
+        return Directory(_ctx)
+
     async def engine_version(self) -> str:
         """TODO
 
@@ -5781,6 +5838,48 @@ class ModuleSource(Type):
         _args: list[Arg] = []
         _ctx = self._select("generatedContextDirectory", _args)
         return Directory(_ctx)
+
+    async def html_repo_url(self) -> str:
+        """TODO
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("htmlRepoURL", _args)
+        return await _ctx.execute(str)
+
+    async def html_url(self) -> str:
+        """The URL to the source's git repo in a web browser
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("htmlURL", _args)
+        return await _ctx.execute(str)
 
     async def id(self) -> ModuleSourceID:
         """A unique identifier for this ModuleSource.
@@ -5977,6 +6076,27 @@ class ModuleSource(Type):
 
     def __await__(self):
         return self.sync().__await__()
+
+    async def version(self) -> str:
+        """TODO
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("version", _args)
+        return await _ctx.execute(str)
 
     def with_dependencies(self, dependencies: list["ModuleSource"]) -> Self:
         """Append the provided dependencies to the module source's dependency
@@ -6940,7 +7060,6 @@ class Client(Root):
         ref_pin: str | None = "",
         disable_find_up: bool | None = False,
         allow_not_exists: bool | None = False,
-        stable: bool | None = False,
     ) -> ModuleSource:
         """TODO
 
@@ -6953,16 +7072,13 @@ class Client(Root):
         disable_find_up:
             TODO
         allow_not_exists:
-        stable:
-            If true, enforce that the source is a stable version for source
-            kinds that support versioning.
+            TODO
         """
         _args = [
             Arg("refString", ref_string),
             Arg("refPin", ref_pin, ""),
             Arg("disableFindUp", disable_find_up, False),
             Arg("allowNotExists", allow_not_exists, False),
-            Arg("stable", stable, False),
         ]
         _ctx = self._select("moduleSource", _args)
         return ModuleSource(_ctx)

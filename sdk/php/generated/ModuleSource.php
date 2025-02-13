@@ -34,6 +34,24 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     /**
      * TODO
      */
+    public function cloneRef(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('cloneRef');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'cloneRef');
+    }
+
+    /**
+     * TODO
+     */
+    public function commit(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('commit');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'commit');
+    }
+
+    /**
+     * TODO
+     */
     public function configExists(): bool
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configExists');
@@ -68,6 +86,16 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The directory containing the module configuration and source code (source code may be in a subdir).
+     */
+    public function directory(string $path): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
+        $innerQueryBuilder->setArgument('path', $path);
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * TODO
      */
     public function engineVersion(): string
@@ -83,6 +111,24 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedContextDirectory');
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * TODO
+     */
+    public function htmlRepoURL(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('htmlRepoURL');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'htmlRepoURL');
+    }
+
+    /**
+     * The URL to the source's git repo in a web browser
+     */
+    public function htmlURL(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('htmlURL');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'htmlURL');
     }
 
     /**
@@ -173,6 +219,15 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
         return new \Dagger\ModuleSourceId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+    }
+
+    /**
+     * TODO
+     */
+    public function version(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('version');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'version');
     }
 
     /**

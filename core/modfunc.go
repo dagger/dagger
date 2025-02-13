@@ -485,8 +485,7 @@ func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 	case ModuleSourceKindGit:
 		git := source.Git
 		props[prefix+"source_kind"] = "git"
-		// TODO: readd
-		// props[prefix+"git_symbolic"] = git.Symbolic()
+		props[prefix+"git_symbolic"] = git.Symbolic
 		props[prefix+"git_clone_url"] = git.CloneRef // todo(guillaume): remove as deprecated
 		props[prefix+"git_clone_ref"] = git.CloneRef
 		props[prefix+"git_subpath"] = source.SourceRootSubpath

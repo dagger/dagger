@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -947,14 +948,13 @@ func testGitModuleRef(tc vcsTestCase, subpath string) string {
 }
 
 func (ConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
-	/* TODO: update
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		c := connect(ctx, t)
 
 		t.Run("root module", func(ctx context.Context, t *testctx.T) {
 			rootModSrc := c.ModuleSource(testGitModuleRef(tc, ""))
 
-			htmlURL, err := rootModSrc.AsGitSource().HTMLURL(ctx)
+			htmlURL, err := rootModSrc.HTMLURL(ctx)
 			require.NoError(t, err)
 			expectedURL := fmt.Sprintf("https://%s/%s/%s", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit)
 			require.Equal(t, expectedURL, htmlURL)
@@ -968,7 +968,7 @@ func (ConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 				require.Equal(t, fmt.Sprintf("https://%s/%s/%s", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit), htmlURL)
 			}
 
-			commit, err := rootModSrc.AsGitSource().Commit(ctx)
+			commit, err := rootModSrc.Commit(ctx)
 			require.NoError(t, err)
 			require.Equal(t, tc.gitTestRepoCommit, commit)
 
@@ -979,7 +979,7 @@ func (ConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 
 		t.Run("top-level module", func(ctx context.Context, t *testctx.T) {
 			topLevelModSrc := c.ModuleSource(testGitModuleRef(tc, "top-level"))
-			htmlURL, err := topLevelModSrc.AsGitSource().HTMLURL(ctx)
+			htmlURL, err := topLevelModSrc.HTMLURL(ctx)
 			require.NoError(t, err)
 			expectedURL := fmt.Sprintf("https://%s/%s/%s%s/top-level", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit, tc.expectedPathPrefix)
 			require.Equal(t, expectedURL, htmlURL)
@@ -993,7 +993,7 @@ func (ConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 				require.Equal(t, http.StatusOK, resp.StatusCode)
 			}
 
-			commit, err := topLevelModSrc.AsGitSource().Commit(ctx)
+			commit, err := topLevelModSrc.Commit(ctx)
 			require.NoError(t, err)
 			require.Equal(t, tc.gitTestRepoCommit, commit)
 
@@ -1004,7 +1004,7 @@ func (ConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 
 		t.Run("subdir dep2 module", func(ctx context.Context, t *testctx.T) {
 			subdirDepModSrc := c.ModuleSource(testGitModuleRef(tc, "subdir/dep2"))
-			htmlURL, err := subdirDepModSrc.AsGitSource().HTMLURL(ctx)
+			htmlURL, err := subdirDepModSrc.HTMLURL(ctx)
 			require.NoError(t, err)
 			expectedURL := fmt.Sprintf("https://%s/%s/%s%s/subdir/dep2", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit, tc.expectedPathPrefix)
 			require.Equal(t, expectedURL, htmlURL)
@@ -1018,7 +1018,7 @@ func (ConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 				require.Equal(t, http.StatusOK, resp.StatusCode)
 			}
 
-			commit, err := subdirDepModSrc.AsGitSource().Commit(ctx)
+			commit, err := subdirDepModSrc.Commit(ctx)
 			require.NoError(t, err)
 			require.Equal(t, tc.gitTestRepoCommit, commit)
 
@@ -1026,20 +1026,7 @@ func (ConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			require.Equal(t, testGitModuleRef(tc, "subdir/dep2"), refStr)
 		})
-
-		t.Run("stable arg", func(ctx context.Context, t *testctx.T) {
-			_, err := c.ModuleSource(tc.gitTestRepoRef, dagger.ModuleSourceOpts{
-				Stable: true,
-			}).AsString(ctx)
-			requireErrOut(t, err, fmt.Sprintf(`no version provided for stable remote ref: %s`, tc.gitTestRepoRef))
-
-			_, err = c.ModuleSource(testGitModuleRef(tc, "top-level"), dagger.ModuleSourceOpts{
-				Stable: true,
-			}).AsString(ctx)
-			require.NoError(t, err)
-		})
 	})
-	*/
 }
 
 func (ConfigSuite) TestDaggerGitWithSources(ctx context.Context, t *testctx.T) {

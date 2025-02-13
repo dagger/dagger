@@ -324,6 +324,11 @@ func (s *moduleSchema) gitModuleSource(
 		gitSrc.SourceRootSubpath = "."
 	}
 
+	gitSrc.Git.Symbolic = gitSrc.Git.CloneRef
+	if gitSrc.SourceRootSubpath != "." {
+		gitSrc.Git.Symbolic += "/" + gitSrc.SourceRootSubpath
+	}
+
 	parsedURL, err := url.Parse(gitSrc.Git.HTMLRepoURL)
 	if err != nil {
 		gitSrc.Git.HTMLURL = gitSrc.Git.HTMLRepoURL + path.Join("/src", gitSrc.Git.Commit, gitSrc.SourceRootSubpath)
@@ -332,10 +337,11 @@ func (s *moduleSchema) gitModuleSource(
 		case "github.com", "gitlab.com":
 			gitSrc.Git.HTMLURL = gitSrc.Git.HTMLRepoURL + path.Join("/tree", gitSrc.Git.Commit, gitSrc.SourceRootSubpath)
 		case "dev.azure.com":
-			if gitSrc.SourceRootSubpath != "" {
+			if gitSrc.SourceRootSubpath != "." {
 				gitSrc.Git.HTMLURL = fmt.Sprintf("%s/commit/%s?path=/%s", gitSrc.Git.HTMLRepoURL, gitSrc.Git.Commit, gitSrc.SourceRootSubpath)
+			} else {
+				gitSrc.Git.HTMLURL = gitSrc.Git.HTMLRepoURL + path.Join("/commit", gitSrc.Git.Commit)
 			}
-			gitSrc.Git.HTMLURL = gitSrc.Git.HTMLRepoURL + path.Join("/commit", gitSrc.Git.Commit)
 		default:
 			gitSrc.Git.HTMLURL = gitSrc.Git.HTMLRepoURL + path.Join("/src", gitSrc.Git.Commit, gitSrc.SourceRootSubpath)
 		}
@@ -983,6 +989,102 @@ func (s *moduleSchema) moduleSourceWithSDK(
 
 	src.Digest = src.CalcDigest().String()
 	return src, nil
+}
+
+func (s *moduleSchema) moduleSourceDirectory(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct {
+		Path string
+	},
+) (inst dagql.Instance[*core.Directory], err error) {
+	parentDirPath := src.SourceSubpath
+	if parentDirPath == "" {
+		parentDirPath = src.SourceRootSubpath
+	}
+	path := filepath.Join(parentDirPath, args.Path)
+
+	err = s.dag.Select(ctx, src.ContextDirectory, &inst,
+		dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(path)},
+			},
+		},
+	)
+	return inst, err
+}
+
+func (s *moduleSchema) moduleSourceCloneRef(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct{},
+) (string, error) {
+	if src.Kind != core.ModuleSourceKindGit {
+		return "", fmt.Errorf("module source is not a git module: %s", src.Kind)
+	}
+
+	return src.Git.CloneRef, nil
+}
+
+func (s *moduleSchema) moduleSourceCloneURL(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct{},
+) (string, error) {
+	if src.Kind != core.ModuleSourceKindGit {
+		return "", fmt.Errorf("module source is not a git module: %s", src.Kind)
+	}
+
+	return src.Git.CloneRef, nil
+}
+
+func (s *moduleSchema) moduleSourceHTMLURL(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct{},
+) (string, error) {
+	if src.Kind != core.ModuleSourceKindGit {
+		return "", fmt.Errorf("module source is not a git module: %s", src.Kind)
+	}
+
+	return src.Git.HTMLURL, nil
+}
+
+func (s *moduleSchema) moduleSourceHTMLRepoURL(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct{},
+) (string, error) {
+	if src.Kind != core.ModuleSourceKindGit {
+		return "", fmt.Errorf("module source is not a git module: %s", src.Kind)
+	}
+
+	return src.Git.HTMLRepoURL, nil
+}
+
+func (s *moduleSchema) moduleSourceVersion(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct{},
+) (string, error) {
+	if src.Kind != core.ModuleSourceKindGit {
+		return "", fmt.Errorf("module source is not a git module: %s", src.Kind)
+	}
+
+	return src.Git.Version, nil
+}
+
+func (s *moduleSchema) moduleSourceCommit(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct{},
+) (string, error) {
+	if src.Kind != core.ModuleSourceKindGit {
+		return "", fmt.Errorf("module source is not a git module: %s", src.Kind)
+	}
+
+	return src.Git.Commit, nil
 }
 
 func (s *moduleSchema) moduleSourceWithEngineVersion(

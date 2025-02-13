@@ -6103,6 +6103,16 @@ impl ModuleSource {
         query.execute(self.graphql_client.clone()).await
     }
     /// TODO
+    pub async fn clone_ref(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("cloneRef");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// TODO
+    pub async fn commit(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("commit");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// TODO
     pub async fn config_exists(&self) -> Result<bool, DaggerError> {
         let query = self.selection.select("configExists");
         query.execute(self.graphql_client.clone()).await
@@ -6130,6 +6140,20 @@ impl ModuleSource {
         let query = self.selection.select("digest");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The directory containing the module configuration and source code (source code may be in a subdir).
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path from the source directory to select.
+    pub fn directory(&self, path: impl Into<String>) -> Directory {
+        let mut query = self.selection.select("directory");
+        query = query.arg("path", path.into());
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// TODO
     pub async fn engine_version(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("engineVersion");
@@ -6143,6 +6167,16 @@ impl ModuleSource {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    /// TODO
+    pub async fn html_repo_url(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("htmlRepoURL");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The URL to the source's git repo in a web browser
+    pub async fn html_url(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("htmlURL");
+        query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this ModuleSource.
     pub async fn id(&self) -> Result<ModuleSourceId, DaggerError> {
@@ -6196,6 +6230,11 @@ impl ModuleSource {
     /// TODO
     pub async fn sync(&self) -> Result<ModuleSourceId, DaggerError> {
         let query = self.selection.select("sync");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// TODO
+    pub async fn version(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("version");
         query.execute(self.graphql_client.clone()).await
     }
     /// Append the provided dependencies to the module source's dependency list.
@@ -6471,6 +6510,7 @@ pub struct QueryLoadSecretFromNameOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryModuleSourceOpts<'a> {
+    /// TODO
     #[builder(setter(into, strip_option), default)]
     pub allow_not_exists: Option<bool>,
     /// TODO
@@ -6479,9 +6519,6 @@ pub struct QueryModuleSourceOpts<'a> {
     /// The pinned version of the module source
     #[builder(setter(into, strip_option), default)]
     pub ref_pin: Option<&'a str>,
-    /// If true, enforce that the source is a stable version for source kinds that support versioning.
-    #[builder(setter(into, strip_option), default)]
-    pub stable: Option<bool>,
 }
 impl Query {
     /// Retrieves a container builtin to the engine.
@@ -7468,9 +7505,6 @@ impl Query {
         }
         if let Some(allow_not_exists) = opts.allow_not_exists {
             query = query.arg("allowNotExists", allow_not_exists);
-        }
-        if let Some(stable) = opts.stable {
-            query = query.arg("stable", stable);
         }
         ModuleSource {
             proc: self.proc.clone(),

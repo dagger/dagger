@@ -147,22 +147,29 @@ func (s *moduleSchema) Install() {
 		dagql.NodeFunc("asModule", s.moduleSourceAsModule).
 			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`),
 
-		/* TODO: re-add if needed
 		dagql.Func("directory", s.moduleSourceDirectory).
 			Doc(`The directory containing the module configuration and source code (source code may be in a subdir).`).
 			ArgDoc(`path`, `The path from the source directory to select.`),
 
-		dagql.Func("htmlURL", s.gitModuleSourceHTMLURL).
+		dagql.Func("cloneRef", s.moduleSourceCloneRef).
+			Doc(`TODO`),
+
+		dagql.Func("htmlURL", s.moduleSourceHTMLURL).
 			Doc(`The URL to the source's git repo in a web browser`),
 
-		dagql.Func("cloneURL", s.gitModuleSourceCloneURL).
+		dagql.Func("htmlRepoURL", s.moduleSourceHTMLRepoURL).
+			Doc(`TODO`),
+
+		dagql.Func("version", s.moduleSourceVersion).
+			Doc(`TODO`),
+
+		dagql.Func("commit", s.moduleSourceCommit).
+			Doc(`TODO`),
+
+		dagql.Func("cloneURL", s.moduleSourceCloneURL).
 			View(BeforeVersion("v0.13.0")).
 			Doc(`The URL to clone the root of the git repo from`).
 			Deprecated("Use `cloneRef` instead. `cloneRef` supports both URL-style and SCP-like SSH references"),
-
-		dagql.Func("pin", s.moduleSourcePin).
-			Doc(`The pinned version of this module source.`),
-		*/
 	}.Install(s.dag)
 
 	dagql.Fields[*core.SDKConfig]{}.Install(s.dag)

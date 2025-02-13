@@ -5571,9 +5571,13 @@ type ModuleSource struct {
 	query *querybuilder.Selection
 
 	asString                  *string
+	cloneRef                  *string
+	commit                    *string
 	configExists              *bool
 	digest                    *string
 	engineVersion             *string
+	htmlRepoURL               *string
+	htmlURL                   *string
 	id                        *ModuleSourceID
 	kind                      *ModuleSourceKind
 	localContextDirectoryPath *string
@@ -5583,6 +5587,7 @@ type ModuleSource struct {
 	sourceRootSubpath         *string
 	sourceSubpath             *string
 	sync                      *ModuleSourceID
+	version                   *string
 }
 type WithModuleSourceFunc func(r *ModuleSource) *ModuleSource
 
@@ -5614,6 +5619,32 @@ func (r *ModuleSource) AsString(ctx context.Context) (string, error) {
 		return *r.asString, nil
 	}
 	q := r.query.Select("asString")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// TODO
+func (r *ModuleSource) CloneRef(ctx context.Context) (string, error) {
+	if r.cloneRef != nil {
+		return *r.cloneRef, nil
+	}
+	q := r.query.Select("cloneRef")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// TODO
+func (r *ModuleSource) Commit(ctx context.Context) (string, error) {
+	if r.commit != nil {
+		return *r.commit, nil
+	}
+	q := r.query.Select("commit")
 
 	var response string
 
@@ -5689,6 +5720,16 @@ func (r *ModuleSource) Digest(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// The directory containing the module configuration and source code (source code may be in a subdir).
+func (r *ModuleSource) Directory(path string) *Directory {
+	q := r.query.Select("directory")
+	q = q.Arg("path", path)
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // TODO
 func (r *ModuleSource) EngineVersion(ctx context.Context) (string, error) {
 	if r.engineVersion != nil {
@@ -5709,6 +5750,32 @@ func (r *ModuleSource) GeneratedContextDirectory() *Directory {
 	return &Directory{
 		query: q,
 	}
+}
+
+// TODO
+func (r *ModuleSource) HTMLRepoURL(ctx context.Context) (string, error) {
+	if r.htmlRepoURL != nil {
+		return *r.htmlRepoURL, nil
+	}
+	q := r.query.Select("htmlRepoURL")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The URL to the source's git repo in a web browser
+func (r *ModuleSource) HTMLURL(ctx context.Context) (string, error) {
+	if r.htmlURL != nil {
+		return *r.htmlURL, nil
+	}
+	q := r.query.Select("htmlURL")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A unique identifier for this ModuleSource.
@@ -5862,6 +5929,19 @@ func (r *ModuleSource) Sync(ctx context.Context) (*ModuleSource, error) {
 	return &ModuleSource{
 		query: q.Root().Select("loadModuleSourceFromID").Arg("id", id),
 	}, nil
+}
+
+// TODO
+func (r *ModuleSource) Version(ctx context.Context) (string, error) {
+	if r.version != nil {
+		return *r.version, nil
+	}
+	q := r.query.Select("version")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Append the provided dependencies to the module source's dependency list.
@@ -6894,10 +6974,8 @@ type ModuleSourceOpts struct {
 	RefPin string
 	// TODO
 	DisableFindUp bool
-
+	// TODO
 	AllowNotExists bool
-	// If true, enforce that the source is a stable version for source kinds that support versioning.
-	Stable bool
 }
 
 // TODO
@@ -6915,10 +6993,6 @@ func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *Modul
 		// `allowNotExists` optional argument
 		if !querybuilder.IsZeroValue(opts[i].AllowNotExists) {
 			q = q.Arg("allowNotExists", opts[i].AllowNotExists)
-		}
-		// `stable` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Stable) {
-			q = q.Arg("stable", opts[i].Stable)
 		}
 	}
 	q = q.Arg("refString", refString)
