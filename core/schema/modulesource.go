@@ -292,78 +292,12 @@ func (s *moduleSchema) localModuleSource(
 		localSrc.Dependencies = make([]dagql.Instance[*core.ModuleSource], len(localSrc.ConfigDependencies))
 		for i, depCfg := range localSrc.ConfigDependencies {
 			eg.Go(func() error {
-				parsedDepRef, err := parseRefString(
-					ctx,
-					moduleSourceDirExistsFS{bk, localSrc},
-					depCfg.Source,
-					depCfg.Pin,
-					false,
-				)
+				var err error
+				localSrc.Dependencies[i], err = s.resolveDepToSource(ctx, bk, localSrc, depCfg.Source, depCfg.Pin, depCfg.Name)
 				if err != nil {
-					return fmt.Errorf("failed to parse dep ref string: %w", err)
+					return fmt.Errorf("failed to resolve dep to source: %w", err)
 				}
-				switch parsedDepRef.kind {
-				case core.ModuleSourceKindLocal:
-					if filepath.IsAbs(depCfg.Source) {
-						return fmt.Errorf("local module dep source path %q is absolute", depCfg.Source)
-					}
-					depPath := filepath.Join(contextDirPath, localSrc.SourceRootSubpath, depCfg.Source)
-					depRelPath, err := pathutil.LexicalRelativePath(contextDirPath, depPath)
-					if err != nil {
-						return fmt.Errorf("failed to get relative path from context to dep: %w", err)
-					}
-					if !filepath.IsLocal(depRelPath) {
-						return fmt.Errorf("local module dep source path %q escapes context %q", depRelPath, contextDirPath)
-					}
-
-					selectors := []dagql.Selector{{
-						Field: "moduleSource",
-						Args: []dagql.NamedInput{
-							{Name: "refString", Value: dagql.String(depPath)},
-						},
-					}}
-					if depCfg.Name != "" {
-						selectors = append(selectors, dagql.Selector{
-							Field: "withName",
-							Args: []dagql.NamedInput{
-								{Name: "name", Value: dagql.String(depCfg.Name)},
-							},
-						})
-					}
-					err = s.dag.Select(ctx, s.dag.Root(), &localSrc.Dependencies[i], selectors...)
-					if err != nil {
-						if errors.Is(err, dagql.ErrCacheMapRecursiveCall) {
-							return fmt.Errorf("module %q has a circular dependency on itself through dependency %q", localSrc.ModuleName, depCfg.Name)
-						}
-						return fmt.Errorf("failed to load local dep: %w", err)
-					}
-					return nil
-
-				case core.ModuleSourceKindGit:
-					selectors := []dagql.Selector{{
-						Field: "moduleSource",
-						Args: []dagql.NamedInput{
-							{Name: "refString", Value: dagql.String(depCfg.Source)},
-							{Name: "refPin", Value: dagql.String(depCfg.Pin)},
-						},
-					}}
-					if depCfg.Name != "" {
-						selectors = append(selectors, dagql.Selector{
-							Field: "withName",
-							Args: []dagql.NamedInput{
-								{Name: "name", Value: dagql.String(depCfg.Name)},
-							},
-						})
-					}
-					err := s.dag.Select(ctx, s.dag.Root(), &localSrc.Dependencies[i], selectors...)
-					if err != nil {
-						return fmt.Errorf("failed to load git dep: %w", err)
-					}
-					return nil
-
-				default:
-					return fmt.Errorf("unsupported module source kind: %s", parsedDepRef.kind)
-				}
+				return nil
 			})
 		}
 		if err := eg.Wait(); err != nil {
@@ -519,76 +453,12 @@ func (s *moduleSchema) gitModuleSource(
 	gitSrc.Dependencies = make([]dagql.Instance[*core.ModuleSource], len(gitSrc.ConfigDependencies))
 	for i, depCfg := range gitSrc.ConfigDependencies {
 		eg.Go(func() error {
-			parsedDepRef, err := parseRefString(
-				ctx,
-				moduleSourceDirExistsFS{bk, gitSrc},
-				depCfg.Source,
-				depCfg.Pin,
-				false,
-			)
+			var err error
+			gitSrc.Dependencies[i], err = s.resolveDepToSource(ctx, bk, gitSrc, depCfg.Source, depCfg.Pin, depCfg.Name)
 			if err != nil {
-				return fmt.Errorf("failed to parse dep ref string: %w", err)
+				return fmt.Errorf("failed to resolve dep to source: %w", err)
 			}
-			switch parsedDepRef.kind {
-			case core.ModuleSourceKindLocal:
-				if filepath.IsAbs(depCfg.Source) {
-					return fmt.Errorf("local module dep source path %q is absolute", depCfg.Source)
-				}
-
-				refString := gitSrc.Git.CloneRef
-				subPath := filepath.Join("/", gitSrc.SourceRootSubpath, depCfg.Source)
-				if subPath != "/" {
-					refString += "/" + strings.TrimPrefix(subPath, "/")
-				}
-				if gitSrc.Git.Version != "" {
-					refString += "@" + gitSrc.Git.Version
-				}
-				selectors := []dagql.Selector{{
-					Field: "moduleSource",
-					Args: []dagql.NamedInput{
-						{Name: "refString", Value: dagql.String(refString)},
-						{Name: "refPin", Value: dagql.String(gitSrc.Git.Commit)},
-					},
-				}}
-				if depCfg.Name != "" {
-					selectors = append(selectors, dagql.Selector{
-						Field: "withName",
-						Args: []dagql.NamedInput{
-							{Name: "name", Value: dagql.String(depCfg.Name)},
-						},
-					})
-				}
-				err := s.dag.Select(ctx, s.dag.Root(), &gitSrc.Dependencies[i], selectors...)
-				if err != nil {
-					return fmt.Errorf("failed to load local dep: %w", err)
-				}
-				return nil
-
-			case core.ModuleSourceKindGit:
-				selectors := []dagql.Selector{{
-					Field: "moduleSource",
-					Args: []dagql.NamedInput{
-						{Name: "refString", Value: dagql.String(depCfg.Source)},
-						{Name: "refPin", Value: dagql.String(depCfg.Pin)},
-					},
-				}}
-				if depCfg.Name != "" {
-					selectors = append(selectors, dagql.Selector{
-						Field: "withName",
-						Args: []dagql.NamedInput{
-							{Name: "name", Value: dagql.String(depCfg.Name)},
-						},
-					})
-				}
-				err := s.dag.Select(ctx, s.dag.Root(), &gitSrc.Dependencies[i], selectors...)
-				if err != nil {
-					return fmt.Errorf("failed to load git dep: %w", err)
-				}
-				return nil
-
-			default:
-				return fmt.Errorf("unsupported module source kind: %s", parsedDepRef.kind)
-			}
+			return nil
 		})
 	}
 	if err := eg.Wait(); err != nil {
@@ -698,64 +568,12 @@ func (s *moduleSchema) directoryAsModuleSource(
 	dirSrc.Dependencies = make([]dagql.Instance[*core.ModuleSource], len(dirSrc.ConfigDependencies))
 	for i, depCfg := range dirSrc.ConfigDependencies {
 		eg.Go(func() error {
-			parsedDepRef, err := parseRefString(
-				ctx,
-				moduleSourceDirExistsFS{bk, dirSrc},
-				depCfg.Source,
-				depCfg.Pin,
-				false,
-			)
+			var err error
+			dirSrc.Dependencies[i], err = s.resolveDepToSource(ctx, bk, dirSrc, depCfg.Source, depCfg.Pin, depCfg.Name)
 			if err != nil {
-				return fmt.Errorf("failed to parse dep ref string: %w", err)
+				return fmt.Errorf("failed to resolve dep to source: %w", err)
 			}
-			switch parsedDepRef.kind {
-			case core.ModuleSourceKindLocal:
-				depPath := filepath.Join(dirSrc.SourceRootSubpath, depCfg.Source)
-				selectors := []dagql.Selector{{
-					Field: "asModuleSource",
-					Args: []dagql.NamedInput{
-						{Name: "sourceRootPath", Value: dagql.String(depPath)},
-					},
-				}}
-				if depCfg.Name != "" {
-					selectors = append(selectors, dagql.Selector{
-						Field: "withName",
-						Args: []dagql.NamedInput{
-							{Name: "name", Value: dagql.String(depCfg.Name)},
-						},
-					})
-				}
-				err := s.dag.Select(ctx, contextDir, &dirSrc.Dependencies[i], selectors...)
-				if err != nil {
-					return fmt.Errorf("failed to load local dep: %w", err)
-				}
-				return nil
-
-			case core.ModuleSourceKindGit:
-				selectors := []dagql.Selector{{
-					Field: "moduleSource",
-					Args: []dagql.NamedInput{
-						{Name: "refString", Value: dagql.String(depCfg.Source)},
-						{Name: "refPin", Value: dagql.String(depCfg.Pin)},
-					},
-				}}
-				if depCfg.Name != "" {
-					selectors = append(selectors, dagql.Selector{
-						Field: "withName",
-						Args: []dagql.NamedInput{
-							{Name: "name", Value: dagql.String(depCfg.Name)},
-						},
-					})
-				}
-				err := s.dag.Select(ctx, s.dag.Root(), &dirSrc.Dependencies[i], selectors...)
-				if err != nil {
-					return fmt.Errorf("failed to load git dep: %w", err)
-				}
-				return nil
-
-			default:
-				return fmt.Errorf("unsupported module source kind: %s", parsedDepRef.kind)
-			}
+			return nil
 		})
 	}
 	if err := eg.Wait(); err != nil {
@@ -860,6 +678,166 @@ func (s *moduleSchema) initFromModConfig(configBytes []byte, src *core.ModuleSou
 	}
 
 	return nil
+}
+
+func (s *moduleSchema) resolveDepToSource(
+	ctx context.Context,
+	bk *buildkit.Client,
+	parentSrc *core.ModuleSource,
+	depSrcRef string,
+	depPin string,
+	depName string,
+) (inst dagql.Instance[*core.ModuleSource], err error) {
+	// sanity checks
+	if parentSrc != nil {
+		if parentSrc.SourceRootSubpath == "" {
+			return inst, fmt.Errorf("source root path must be set")
+		}
+		if parentSrc.ModuleName == "" {
+			return inst, fmt.Errorf("module name must be set")
+		}
+	}
+
+	parsedDepRef, err := parseRefString(
+		ctx,
+		moduleSourceDirExistsFS{bk, parentSrc},
+		depSrcRef,
+		depPin,
+		false,
+	)
+	if err != nil {
+		return inst, fmt.Errorf("failed to parse dep ref string: %w", err)
+	}
+
+	switch parsedDepRef.kind {
+	case core.ModuleSourceKindLocal:
+		if parentSrc == nil {
+			return inst, fmt.Errorf("local module dep source path %q must be relative to a parent module", depSrcRef)
+		}
+
+		if filepath.IsAbs(depSrcRef) {
+			return inst, fmt.Errorf("local module dep source path %q is absolute", depSrcRef)
+		}
+
+		switch parentSrc.Kind {
+		case core.ModuleSourceKindLocal:
+			// parent=local, dep=local
+			depPath := filepath.Join(parentSrc.Local.ContextDirectoryPath, parentSrc.SourceRootSubpath, depSrcRef)
+			depRelPath, err := pathutil.LexicalRelativePath(parentSrc.Local.ContextDirectoryPath, depPath)
+			if err != nil {
+				return inst, fmt.Errorf("failed to get relative path from context to dep: %w", err)
+			}
+			if !filepath.IsLocal(depRelPath) {
+				return inst, fmt.Errorf("local module dep source path %q escapes context %q", depRelPath, parentSrc.Local.ContextDirectoryPath)
+			}
+
+			selectors := []dagql.Selector{{
+				Field: "moduleSource",
+				Args: []dagql.NamedInput{
+					{Name: "refString", Value: dagql.String(depPath)},
+					{Name: "disableFindUp", Value: dagql.Boolean(true)},
+				},
+			}}
+			if depName != "" {
+				selectors = append(selectors, dagql.Selector{
+					Field: "withName",
+					Args: []dagql.NamedInput{
+						{Name: "name", Value: dagql.String(depName)},
+					},
+				})
+			}
+			err = s.dag.Select(ctx, s.dag.Root(), &inst, selectors...)
+			if err != nil {
+				if errors.Is(err, dagql.ErrCacheMapRecursiveCall) {
+					return inst, fmt.Errorf("module %q has a circular dependency on itself through dependency %q", parentSrc.ModuleName, depName)
+				}
+				return inst, fmt.Errorf("failed to load local dep: %w", err)
+			}
+			return inst, nil
+
+		case core.ModuleSourceKindGit:
+			// parent=git, dep=local
+			refString := parentSrc.Git.CloneRef
+			subPath := filepath.Join("/", parentSrc.SourceRootSubpath, depSrcRef)
+			if subPath != "/" {
+				refString += "/" + strings.TrimPrefix(subPath, "/")
+			}
+			if parentSrc.Git.Version != "" {
+				refString += "@" + parentSrc.Git.Version
+			}
+			selectors := []dagql.Selector{{
+				Field: "moduleSource",
+				Args: []dagql.NamedInput{
+					{Name: "refString", Value: dagql.String(refString)},
+					{Name: "refPin", Value: dagql.String(parentSrc.Git.Commit)},
+				},
+			}}
+			if depName != "" {
+				selectors = append(selectors, dagql.Selector{
+					Field: "withName",
+					Args: []dagql.NamedInput{
+						{Name: "name", Value: dagql.String(depName)},
+					},
+				})
+			}
+			err := s.dag.Select(ctx, s.dag.Root(), &inst, selectors...)
+			if err != nil {
+				return inst, fmt.Errorf("failed to load local dep: %w", err)
+			}
+			return inst, nil
+
+		case core.ModuleSourceKindDir:
+			// parent=dir, dep=local
+			depPath := filepath.Join(parentSrc.SourceRootSubpath, depSrcRef)
+			selectors := []dagql.Selector{{
+				Field: "asModuleSource",
+				Args: []dagql.NamedInput{
+					{Name: "sourceRootPath", Value: dagql.String(depPath)},
+				},
+			}}
+			if depName != "" {
+				selectors = append(selectors, dagql.Selector{
+					Field: "withName",
+					Args: []dagql.NamedInput{
+						{Name: "name", Value: dagql.String(depName)},
+					},
+				})
+			}
+			err := s.dag.Select(ctx, parentSrc.ContextDirectory, &inst, selectors...)
+			if err != nil {
+				return inst, fmt.Errorf("failed to load local dep: %w", err)
+			}
+			return inst, nil
+
+		default:
+			return inst, fmt.Errorf("unsupported parent module source kind: %s", parentSrc.Kind)
+		}
+
+	case core.ModuleSourceKindGit:
+		selectors := []dagql.Selector{{
+			Field: "moduleSource",
+			Args: []dagql.NamedInput{
+				{Name: "refString", Value: dagql.String(depSrcRef)},
+				{Name: "refPin", Value: dagql.String(depPin)},
+			},
+		}}
+		if depName != "" {
+			selectors = append(selectors, dagql.Selector{
+				Field: "withName",
+				Args: []dagql.NamedInput{
+					{Name: "name", Value: dagql.String(depName)},
+				},
+			})
+		}
+		err := s.dag.Select(ctx, s.dag.Root(), &inst, selectors...)
+		if err != nil {
+			return inst, fmt.Errorf("failed to load git dep: %w", err)
+		}
+		return inst, nil
+
+	default:
+		return inst, fmt.Errorf("unsupported module source kind: %s", parsedDepRef.kind)
+	}
 }
 
 // TODO: DOC THAT THIS ARG IS RELATIVE TO THE SOURCE ROOT
