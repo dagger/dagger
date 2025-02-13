@@ -14,7 +14,7 @@ When calling a Dagger Function from the CLI, its arguments are exposed as comman
 Dagger Functions execute in containers and thus do not have default access to your host environment (host files, directories, environment variables, etc.). Access to these host resources can only be granted by explicitly passing them as argument values to the Dagger Function.
 - Files and directories: Dagger Functions can accept arguments of type `File` or `Directory`. Pass files and directories on your host by specifying their path as the value of the argument when using `dagger call`.
 - Environment variables: Pass environment variable values as argument values when invoking a function by just using the standard shell convention of using `$ENV_VAR_NAME` when using `dagger call`.
-- Local network services: Dagger Functions that accept an argument of type `Service` can be passed local network services in the form `tcp://<host>:<port>`.
+- Local network services: Dagger Functions that accept an argument of type `Service` can be passed local network services in the form `tcp://HOST:PORT`.
 :::
 
 ## String arguments
@@ -525,7 +525,7 @@ Host network services or sockets can be passed to Dagger Functions as arguments.
 
 ### TCP and UDP services
 
-To pass host TCP or UDP network services as arguments when invoking a Dagger Function, specify them in the form `tcp://<host>:<port>` or `udp://<host>:<port>`.
+To pass host TCP or UDP network services as arguments when invoking a Dagger Function, specify them in the form `tcp://HOST:PORT` or `udp://HOST:PORT`.
 
 Assume that you have a PostgresQL database running locally on port 5432, as with:
 
