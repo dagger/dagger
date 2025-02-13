@@ -1,5 +1,6 @@
 package io.dagger.java.module;
 
+import io.dagger.client.Client;
 import io.dagger.client.Container;
 import io.dagger.client.DaggerQueryException;
 import io.dagger.client.Directory;
@@ -24,6 +25,24 @@ public class DaggerJava extends AbstractModule {
 
   public DaggerJava() {
     super();
+  }
+
+  /**
+   * Initialize the DaggerJava module
+   *
+   * @param source Project source directory
+   * @param version Go version
+   */
+  public DaggerJava(
+      Client dag, @Nullable Directory source, @Nullable @Default("1.23.2") String version) {
+    super(dag);
+    if (source == null) {
+      this.source = dag.directory();
+    } else {
+      this.source = source;
+    }
+
+    this.version = version;
   }
 
   /**
