@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/core/modules"
@@ -90,6 +91,7 @@ type ModuleSource struct {
 	FullIncludePaths []string
 
 	// ConfigDependencies are the dependencies as read from the module's dagger.json
+	// NOTE: this is currently not updated by withDependencies and related APIs, only Dependencies will be updated
 	ConfigDependencies []*modules.ModuleConfigDependency
 	// Dependencies are the loaded sources for the module's dependencies
 	Dependencies []dagql.Instance[*ModuleSource] `field:"true" name:"dependencies" doc:"TODO"`
@@ -203,6 +205,36 @@ func (src *ModuleSource) Pin() string {
 	default:
 		return ""
 	}
+}
+
+// we mix this into digest hashes to ensure they don't accidentally collide
+// with any others
+const moduleSourceHashMix = "moduleSource"
+
+// TODO: doc, used for codegen
+func (src *ModuleSource) CalcDigest() digest.Digest {
+	inputs := []string{
+		moduleSourceHashMix,
+		src.ModuleOriginalName,
+		src.SourceRootSubpath,
+		src.SourceSubpath,
+		src.ContextDirectory.ID().Digest().String(),
+	}
+
+	if src.SDK != nil {
+		inputs = append(inputs, src.SDK.Source)
+	}
+
+	inputs = append(inputs, src.IncludePaths...)
+
+	for _, dep := range src.Dependencies {
+		if dep.Self == nil {
+			continue
+		}
+		inputs = append(inputs, dep.Self.Digest)
+	}
+
+	return HashFrom(inputs...)
 }
 
 func (src *ModuleSource) LoadContext(
