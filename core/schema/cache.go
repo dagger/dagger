@@ -47,7 +47,7 @@ func (s *cacheSchema) cacheVolumeCacheKey(ctx context.Context, parent dagql.Inst
 	if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
 		return "", err
 	}
-	namespaceKey, err := namespaceFromModule(ctx, m)
+	namespaceKey, err := namespaceFromModule(m)
 	if err != nil {
 		return "", err
 	}
@@ -66,7 +66,7 @@ func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.Instance[*co
 	if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
 		return inst, err
 	}
-	namespaceKey, err := namespaceFromModule(ctx, m)
+	namespaceKey, err := namespaceFromModule(m)
 	if err != nil {
 		return inst, err
 	}
@@ -91,20 +91,19 @@ func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.Instance[*co
 	return inst, nil
 }
 
-func namespaceFromModule(ctx context.Context, m *core.Module) (string, error) {
+func namespaceFromModule(m *core.Module) (string, error) {
 	if m == nil {
 		return "mainClient", nil
 	}
 
 	name := m.Source.Self.ModuleOriginalName
 
-	// TODO: cleanup
 	var symbolic string
 	switch m.Source.Self.Kind {
 	case core.ModuleSourceKindLocal:
 		symbolic = m.Source.Self.SourceRootSubpath
 	case core.ModuleSourceKindGit:
-		symbolic = m.Source.Self.Git.CloneRef
+		symbolic = m.Source.Self.Git.Symbolic
 	}
 
 	return "mod(" + name + symbolic + ")", nil
