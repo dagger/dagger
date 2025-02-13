@@ -196,12 +196,12 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Sets module init arguments
+     * Update the module source with additional include patterns for files+directories from its context that are required for building it
      */
-    public function withInit(bool $merge): ModuleSource
+    public function withIncludes(array $patterns): ModuleSource
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withInit');
-        $innerQueryBuilder->setArgument('merge', $merge);
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withIncludes');
+        $innerQueryBuilder->setArgument('patterns', $patterns);
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

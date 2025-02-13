@@ -265,18 +265,8 @@ func (s *moduleSchema) localModuleSource(
 		// load this module source's context directory, sdk and deps in parallel
 		var eg errgroup.Group
 		eg.Go(func() error {
-			err := s.dag.Select(ctx, s.dag.Root(), &localSrc.ContextDirectory,
-				dagql.Selector{Field: "host"},
-				dagql.Selector{
-					Field: "directory",
-					Args: []dagql.NamedInput{
-						{Name: "path", Value: dagql.String(contextDirPath)},
-						{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(localSrc.FullIncludePaths...))},
-					},
-				},
-			)
-			if err != nil {
-				return fmt.Errorf("failed to load local module source context directory: %w", err)
+			if err := s.loadModuleSourceContext(ctx, bk, localSrc); err != nil {
+				return fmt.Errorf("failed to load local module source context: %w", err)
 			}
 
 			if localSrc.SDK != nil {
@@ -304,15 +294,6 @@ func (s *moduleSchema) localModuleSource(
 			return inst, err
 		}
 	}
-
-	dgst := core.HashFrom(
-		// our id is tied to the context dir, so we use its digest
-		localSrc.ContextDirectory.ID().Digest().String(),
-		// to ensure we don't have the exact same digest as the context dir
-		// TODO: const
-		"moduleSource",
-	)
-	localSrc.Digest = dgst.String()
 
 	return dagql.NewInstanceForCurrentID(ctx, s.dag, query, localSrc)
 }
@@ -406,24 +387,16 @@ func (s *moduleSchema) gitModuleSource(
 		return inst, err
 	}
 
+	bk, err := query.Self.Buildkit(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
 	// load this module source's context directory and deps in parallel
 	var eg errgroup.Group
 	eg.Go(func() error {
-		err = s.dag.Select(ctx, s.dag.Root(), &gitSrc.ContextDirectory,
-			dagql.Selector{Field: "directory"},
-			dagql.Selector{
-				Field: "withDirectory",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String("/")},
-					{Name: "directory", Value: dagql.NewID[*core.Directory](gitSrc.ContextDirectory.ID())},
-					// update the context dir to apply the includes, this makes it consistent with
-					// local module source equivalents and ensures we use a correctly scoped digest
-					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(gitSrc.FullIncludePaths...))},
-				},
-			},
-		)
-		if err != nil {
-			return fmt.Errorf("failed to load git module source context directory: %w", err)
+		if err := s.loadModuleSourceContext(ctx, bk, gitSrc); err != nil {
+			return fmt.Errorf("failed to load git module source context: %w", err)
 		}
 
 		if gitSrc.SDK != nil {
@@ -436,10 +409,6 @@ func (s *moduleSchema) gitModuleSource(
 		return nil
 	})
 
-	bk, err := query.Self.Buildkit(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
 	gitSrc.Dependencies = make([]dagql.Instance[*core.ModuleSource], len(gitSrc.ConfigDependencies))
 	for i, depCfg := range gitSrc.ConfigDependencies {
 		eg.Go(func() error {
@@ -460,15 +429,6 @@ func (s *moduleSchema) gitModuleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to hash git context directory: %w", err)
 	}
-
-	dgst := core.HashFrom(
-		// our id is tied to the context dir, so we use its digest
-		gitSrc.ContextDirectory.ID().Digest().String(),
-		// to ensure we don't have the exact same digest as the context dir
-		// TODO: const
-		"moduleSource",
-	)
-	gitSrc.Digest = dgst.String()
 
 	return dagql.NewInstanceForCurrentID(ctx, s.dag, query, gitSrc)
 }
@@ -545,6 +505,10 @@ func (s *moduleSchema) directoryAsModuleSource(
 
 	if dirSrc.SDK != nil {
 		eg.Go(func() error {
+			if err := s.loadModuleSourceContext(ctx, bk, dirSrc); err != nil {
+				return err
+			}
+
 			var err error
 			dirSrc.SDKImpl, err = s.sdkForModule(ctx, contextDir.Self.Query, dirSrc.SDK, dirSrc)
 			if err != nil {
@@ -569,15 +533,6 @@ func (s *moduleSchema) directoryAsModuleSource(
 	if err := eg.Wait(); err != nil {
 		return inst, err
 	}
-
-	dgst := core.HashFrom(
-		// our id is tied to the context dir, so we use its digest
-		dirSrc.ContextDirectory.ID().Digest().String(),
-		// to ensure we don't have the exact same digest as the context dir
-		// TODO: const
-		"moduleSource",
-	)
-	dirSrc.Digest = dgst.String()
 
 	inst, err = dagql.NewInstanceForCurrentID(ctx, s.dag, contextDir, dirSrc)
 	if err != nil {
@@ -654,18 +609,84 @@ func (s *moduleSchema) initFromModConfig(configBytes []byte, src *core.ModuleSou
 
 	// add the config file includes, rebasing them from being relative to the config file
 	// to being relative to the context dir
-	for _, pattern := range modCfg.Include {
+	rebasedIncludes, err := rebasePatterns(modCfg.Include, src.SourceRootSubpath)
+	if err != nil {
+		return err
+	}
+	src.FullIncludePaths = append(src.FullIncludePaths, rebasedIncludes...)
+
+	return nil
+}
+
+func rebasePatterns(patterns []string, base string) ([]string, error) {
+	rebased := make([]string, 0, len(patterns))
+	for _, pattern := range patterns {
 		isNegation := strings.HasPrefix(pattern, "!")
 		pattern = strings.TrimPrefix(pattern, "!")
-		relPath := filepath.Join(src.SourceRootSubpath, pattern)
+		relPath := filepath.Join(base, pattern)
 		if !filepath.IsLocal(relPath) {
-			return fmt.Errorf("git module dep source include/exclude path %q escapes context", relPath)
+			return nil, fmt.Errorf("include/exclude path %q escapes context", relPath)
 		}
 		if isNegation {
 			relPath = "!" + relPath
 		}
-		src.FullIncludePaths = append(src.FullIncludePaths, relPath)
+		rebased = append(rebased, relPath)
 	}
+	return rebased, nil
+}
+
+func (s *moduleSchema) loadModuleSourceContext(
+	ctx context.Context,
+	bk *buildkit.Client,
+	src *core.ModuleSource,
+) error {
+	switch src.Kind {
+	case core.ModuleSourceKindLocal:
+		err := s.dag.Select(ctx, s.dag.Root(), &src.ContextDirectory,
+			dagql.Selector{Field: "host"},
+			dagql.Selector{
+				Field: "directory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(src.Local.ContextDirectoryPath)},
+					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(src.FullIncludePaths...))},
+				},
+			},
+		)
+		if err != nil {
+			return err
+		}
+
+	case core.ModuleSourceKindGit:
+		err := s.dag.Select(ctx, s.dag.Root(), &src.ContextDirectory,
+			dagql.Selector{Field: "directory"},
+			dagql.Selector{
+				Field: "withDirectory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String("/")},
+					{Name: "directory", Value: dagql.NewID[*core.Directory](src.Git.UnfilteredContextDir.ID())},
+					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(src.FullIncludePaths...))},
+				},
+			},
+		)
+		if err != nil {
+			return err
+		}
+
+		// the directory is not necessarily content-hashed, make it such so we can use that as our digest
+		src.ContextDirectory, err = core.MakeDirectoryContentHashed(ctx, bk, src.ContextDirectory)
+		if err != nil {
+			return fmt.Errorf("failed to hash git context directory: %w", err)
+		}
+	}
+
+	dgst := core.HashFrom(
+		// our id is tied to the context dir, so we use its digest
+		src.ContextDirectory.ID().Digest().String(),
+		// to ensure we don't have the exact same digest as the context dir
+		// TODO: const
+		"moduleSource",
+	)
+	src.Digest = dgst.String()
 
 	return nil
 }
@@ -898,6 +919,37 @@ func (s *moduleSchema) moduleSourceWithName(
 	return src, nil
 }
 
+func (s *moduleSchema) moduleSourceWithIncludes(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct {
+		Patterns []string
+	},
+) (*core.ModuleSource, error) {
+	if len(args.Patterns) == 0 {
+		return src, nil
+	}
+
+	src = src.Clone()
+	src.IncludePaths = append(src.IncludePaths, args.Patterns...)
+	rebasedIncludes, err := rebasePatterns(args.Patterns, src.SourceRootSubpath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to rebase include paths: %w", err)
+	}
+	src.FullIncludePaths = append(src.FullIncludePaths, rebasedIncludes...)
+
+	// reload context in case includes have changed it
+	bk, err := src.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	if err := s.loadModuleSourceContext(ctx, bk, src); err != nil {
+		return nil, fmt.Errorf("failed to reload module source context: %w", err)
+	}
+
+	return src, nil
+}
+
 func (s *moduleSchema) moduleSourceWithSDK(
 	ctx context.Context,
 	src *core.ModuleSource,
@@ -923,25 +975,6 @@ func (s *moduleSchema) moduleSourceWithSDK(
 		return nil, fmt.Errorf("failed to load sdk for module source: %w", err)
 	}
 
-	return src, nil
-}
-
-func (s *moduleSchema) moduleSourceWithInit(
-	ctx context.Context,
-	src *core.ModuleSource,
-	args struct {
-		Merge bool
-	},
-) (*core.ModuleSource, error) {
-	if !args.Merge {
-		return src, nil
-	}
-
-	src = src.Clone()
-	if src.InitConfig == nil {
-		src.InitConfig = &core.ModuleInitConfig{}
-	}
-	src.InitConfig.Merge = true
 	return src, nil
 }
 
@@ -1458,12 +1491,6 @@ func (s *moduleSchema) moduleSourceGeneratedContextDirectory(
 	// run codegen too if we have a name and SDK
 	genDirInst = src.ContextDirectory
 	if modCfg.Name != "" && modCfg.SDK != nil && modCfg.SDK.Source != "" {
-		if srcInst.Self.InitConfig != nil &&
-			srcInst.Self.InitConfig.Merge &&
-			srcInst.Self.SDK.Source != string(SDKGo) {
-			return genDirInst, fmt.Errorf("merge is only supported for Go SDKs")
-		}
-
 		var eg errgroup.Group
 		depMods := make([]dagql.Instance[*core.Module], len(src.Dependencies))
 		for i, depSrc := range srcInst.Self.Dependencies {

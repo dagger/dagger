@@ -46,14 +46,6 @@ func (proto ModuleSourceKind) ToLiteral() call.Literal {
 	return ModuleSourceKindEnum.Literal(proto)
 }
 
-type ModuleInitConfig struct {
-	Merge bool
-}
-
-func (cfg ModuleInitConfig) Clone() *ModuleInitConfig {
-	return &cfg
-}
-
 type SDKConfig struct {
 	Source string `field:"true" name:"source" doc:"Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
 }
@@ -87,7 +79,6 @@ type ModuleSource struct {
 	ModuleOriginalName     string `field:"true" name:"moduleOriginalName" doc:"TODO"`
 	EngineVersion          string `field:"true" name:"engineVersion" doc:"TODO"`
 	CodegenConfig          *modules.ModuleCodegenConfig
-	InitConfig             *ModuleInitConfig
 	ModuleConfigUserFields modules.ModuleConfigUserFields
 
 	SDK     *SDKConfig `field:"true" name:"sdk" doc:"TODO"`
@@ -136,10 +127,6 @@ func (src ModuleSource) Clone() *ModuleSource {
 
 	if src.CodegenConfig != nil {
 		src.CodegenConfig = src.CodegenConfig.Clone()
-	}
-
-	if src.InitConfig != nil {
-		src.InitConfig = src.InitConfig.Clone()
 	}
 
 	if src.SDK != nil {

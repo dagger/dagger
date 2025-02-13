@@ -236,11 +236,11 @@ defmodule Dagger.ModuleSource do
     }
   end
 
-  @doc "Sets module init arguments"
-  @spec with_init(t(), boolean()) :: Dagger.ModuleSource.t()
-  def with_init(%__MODULE__{} = module_source, merge) do
+  @doc "Update the module source with additional include patterns for files+directories from its context that are required for building it"
+  @spec with_includes(t(), [String.t()]) :: Dagger.ModuleSource.t()
+  def with_includes(%__MODULE__{} = module_source, patterns) do
     query_builder =
-      module_source.query_builder |> QB.select("withInit") |> QB.put_arg("merge", merge)
+      module_source.query_builder |> QB.select("withIncludes") |> QB.put_arg("patterns", patterns)
 
     %Dagger.ModuleSource{
       query_builder: query_builder,

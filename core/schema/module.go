@@ -107,13 +107,13 @@ func (s *moduleSchema) Install() {
 			Doc(`Update the module source with a new name.`).
 			ArgDoc("name", `The name to set.`),
 
+		dagql.Func("withIncludes", s.moduleSourceWithIncludes).
+			Doc(`Update the module source with additional include patterns for files+directories from its context that are required for building it`).
+			ArgDoc("patterns", `The new additional include patterns.`),
+
 		dagql.Func("withSDK", s.moduleSourceWithSDK).
 			Doc(`Update the module source with a new SDK.`).
 			ArgDoc("source", `The SDK source to set.`),
-
-		dagql.Func("withInit", s.moduleSourceWithInit).
-			Doc(`Sets module init arguments`).
-			ArgDoc("merge", `Merge module dependencies into the current project's`),
 
 		// TODO: doc
 		dagql.Func("withEngineVersion", s.moduleSourceWithEngineVersion).

@@ -5884,10 +5884,10 @@ func (r *ModuleSource) WithEngineVersion(version string) *ModuleSource {
 	}
 }
 
-// Sets module init arguments
-func (r *ModuleSource) WithInit(merge bool) *ModuleSource {
-	q := r.query.Select("withInit")
-	q = q.Arg("merge", merge)
+// Update the module source with additional include patterns for files+directories from its context that are required for building it
+func (r *ModuleSource) WithIncludes(patterns []string) *ModuleSource {
+	q := r.query.Select("withIncludes")
+	q = q.Arg("patterns", patterns)
 
 	return &ModuleSource{
 		query: q,

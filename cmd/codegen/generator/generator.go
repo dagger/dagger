@@ -42,8 +42,14 @@ type Config struct {
 	// IntrospectionJSON is an optional pre-computed introspection json string.
 	IntrospectionJSON string
 
-	// Merge indicates whether to merge the module deps with the existing project.
-	Merge *bool
+	// Merge indicates whether to merge the module deps with the existing project (i.e. a go.mod in a *parent* directory).
+	Merge bool
+
+	// Whether we are initializing a new module.
+	// Currently, this is only used in go codegen to enforce backwards-compatible behavior
+	// where a pre-existing go.mod file is checked during dagger init for whether its module
+	// name is the expected value.
+	IsInit bool
 }
 
 type Generator interface {

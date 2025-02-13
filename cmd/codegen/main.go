@@ -25,6 +25,7 @@ var (
 
 	outputSchema string
 	merge        bool
+	isInit       bool
 )
 
 var rootCmd = &cobra.Command{
@@ -49,7 +50,8 @@ func init() {
 
 	rootCmd.Flags().StringVar(&modulePath, "module-source-path", "", "path to source subpath of the module")
 	rootCmd.Flags().StringVar(&moduleName, "module-name", "", "name of module to generate code for")
-	rootCmd.Flags().BoolVar(&merge, "merge", false, "merge module deps with project's")
+	rootCmd.Flags().BoolVar(&merge, "merge", false, "merge module deps with project's existing go.mod in a parent directory")
+	rootCmd.Flags().BoolVar(&isInit, "is-init", false, "whether this command is initializing a new module")
 
 	introspectCmd.Flags().StringVarP(&outputSchema, "output", "o", "", "save introspection result to file")
 	rootCmd.AddCommand(introspectCmd)
@@ -59,19 +61,13 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	ctx = telemetry.InitEmbedded(ctx, nil)
 
-	// we're checking for the flag existence here as not setting the flag and
-	// setting it to false doesn't produce the same behavior.
-	var mergePtr *bool
-	if cmd.Flags().Changed("merge") {
-		mergePtr = &merge
-	}
-
 	cfg := generator.Config{
 		Lang: generator.SDKLang(lang),
 
 		OutputDir: outputDir,
 
-		Merge: mergePtr,
+		Merge:  merge,
+		IsInit: isInit,
 	}
 
 	if moduleName != "" {
