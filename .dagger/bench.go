@@ -31,18 +31,17 @@ func (b *Bench) All(
 	return b.notifyOnFailure(ctx, b.bench(
 		ctx,
 		&benchOpts{
-			runTestRegex:   "",
-			skipTestRegex:  "",
-			pkg:            "./...",
-			failfast:       failfast,
-			timeout:        timeout,
-			race:           race,
-			count:          1,
-			testVerbose:    testVerbose,
-			prewarm:        prewarm,
-			discordWebhook: discordWebhook,
+			runTestRegex:  "",
+			skipTestRegex: "",
+			pkg:           "./...",
+			failfast:      failfast,
+			timeout:       timeout,
+			race:          race,
+			count:         1,
+			testVerbose:   testVerbose,
+			prewarm:       prewarm,
 		},
-	), discordWebhook, "")
+	), discordWebhook)
 }
 
 func (b *Bench) Specific(
@@ -80,31 +79,29 @@ func (b *Bench) Specific(
 	return b.notifyOnFailure(ctx, b.bench(
 		ctx,
 		&benchOpts{
-			runTestRegex:   run,
-			skipTestRegex:  skip,
-			pkg:            pkg,
-			failfast:       failfast,
-			timeout:        timeout,
-			race:           race,
-			count:          count,
-			testVerbose:    testVerbose,
-			prewarm:        prewarm,
-			discordWebhook: discordWebhook,
+			runTestRegex:  run,
+			skipTestRegex: skip,
+			pkg:           pkg,
+			failfast:      failfast,
+			timeout:       timeout,
+			race:          race,
+			count:         count,
+			testVerbose:   testVerbose,
+			prewarm:       prewarm,
 		},
-	), discordWebhook, run)
+	), discordWebhook)
 }
 
 type benchOpts struct {
-	runTestRegex   string
-	skipTestRegex  string
-	pkg            string
-	failfast       bool
-	timeout        string
-	race           bool
-	count          int
-	testVerbose    bool
-	prewarm        bool
-	discordWebhook *dagger.Secret
+	runTestRegex  string
+	skipTestRegex string
+	pkg           string
+	failfast      bool
+	timeout       string
+	race          bool
+	count         int
+	testVerbose   bool
+	prewarm       bool
 }
 
 func (b *Bench) bench(
@@ -145,24 +142,37 @@ func (b *Bench) bench(
 
 	_, err = run(cmd).Sync(ctx)
 
-	return err
+	return fmt.Errorf("woopsie: %w", err)
 }
 
-func (b *Bench) notifyOnFailure(ctx context.Context, err error, discordWebhook *dagger.Secret, runTestRegex string) error {
+func (b *Bench) notifyOnFailure(ctx context.Context, err error, discordWebhook *dagger.Secret) error {
 	if err == nil {
 		return nil
 	}
 	if discordWebhook == nil {
 		return err
 	}
-	daggerCloudUrl, err := dag.Notify().DaggerCloudTraceURL(ctx)
+
+	commit, err := b.Test.Dagger.Git.Head().Commit(ctx)
+	if err != nil {
+		commit = "failed to find commit SHA"
+	}
+
+	daggerCloudURL, err := dag.Notify().DaggerCloudTraceURL(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to fetch trace URL for failed benchmarks: %w", err)
 	}
-	message := fmt.Sprintf("engine benchmarks failed: %s", daggerCloudUrl)
+
+	message := fmt.Sprintf(
+		"[failed](%s) on SHA [%s](https://github.com/dagger/dagger/commit/%s)",
+		daggerCloudURL,
+		commit,
+		commit,
+	)
 	_, discordErr := dag.Notify().Discord(ctx, discordWebhook, message)
 	if discordErr != nil {
-		return fmt.Errorf("failed to notify discord that benchmarks failed: %w, underlying %w", discordErr, err)
+
+		return fmt.Errorf("failed to notify discord that benchmarks failed: %v, underlying %w", discordErr, err)
 	}
 	return err
 }

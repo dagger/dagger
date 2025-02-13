@@ -24,7 +24,7 @@ jobs:
     if: ${{ github.repository == 'dagger/dagger' && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'benchmark')) }}
     runs-on:
         - 'dagger-g3-v0-15-3-16c-st-benchmark'
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -32,6 +32,8 @@ jobs:
         run: dagger core version
       - name: Benchmark Engine
         uses: ./.github/actions/call
+        # env:
+        #   OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         with:
           function: bench all --prewarm
           dev-engine: false
