@@ -5618,6 +5618,28 @@ func (r *Module) Enums(ctx context.Context) ([]TypeDef, error) {
 	return convert(response), nil
 }
 
+// ModuleGenerateClientOpts contains options for Module.GenerateClient
+type ModuleGenerateClientOpts struct {
+	// Use local SDK dependency
+	LocalSDK bool
+}
+
+// Generates a client for the module.
+func (r *Module) GenerateClient(generator string, opts ...ModuleGenerateClientOpts) *Directory {
+	q := r.query.Select("generateClient")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `localSdk` optional argument
+		if !querybuilder.IsZeroValue(opts[i].LocalSDK) {
+			q = q.Arg("localSdk", opts[i].LocalSDK)
+		}
+	}
+	q = q.Arg("generator", generator)
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // The generated files and directories made on top of the module source's context directory.
 func (r *Module) GeneratedContextDiff() *Directory {
 	q := r.query.Select("generatedContextDiff")

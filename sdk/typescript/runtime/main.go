@@ -52,8 +52,9 @@ func New(
 	sdkSourceDir *dagger.Directory,
 ) *TypescriptSdk {
 	return &TypescriptSdk{
-		SDKSourceDir: sdkSourceDir,
-		moduleConfig: &moduleConfig{},
+		SDKSourceDir:  sdkSourceDir,
+		RequiredPaths: []string{"**/package.json", "**/tsconfig.json"},
+		moduleConfig:  &moduleConfig{},
 	}
 }
 
@@ -168,6 +169,66 @@ func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *dagger.ModuleSou
 			"**/node_modules/**",
 			"**/.pnpm-store/**",
 		}), nil
+}
+
+func (t *TypescriptSdk) GenerateClient(
+	ctx context.Context,
+	modSource *dagger.ModuleSource,
+	introspectionJSON *dagger.File,
+	useLocalSdk bool,
+) (*dagger.Directory, error) {
+	workdirPath := "/module"
+
+	currentModuleDirectoryPath, err := modSource.SourceRootSubpath(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module source root subpath: %w", err)
+	}
+
+	curentModuleDirectory := modSource.ContextDirectory().Directory(currentModuleDirectoryPath)
+
+	ctr := dag.Container().
+		From(nodeImageRef).
+		WithoutEntrypoint().
+		// Add client config update file
+		WithMountedFile(
+			"/opt/__tsclientconfig.updator.ts",
+			dag.CurrentModule().Source().Directory("bin").File("__tsclientconfig.updator.ts"),
+		).
+		// Install tsx to execute it
+		WithExec([]string{"npm", "install", "-g", "tsx@4.15.6"}).
+		// Add dagger codegen binary.
+		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
+		// Mount the introspection file.
+		WithMountedFile(schemaPath, introspectionJSON).
+		// Mount the current module directory.
+		WithDirectory(workdirPath, curentModuleDirectory).
+		WithWorkdir(workdirPath).
+		// Execute the code generator using the given introspection file.
+		WithExec([]string{
+			codegenBinPath,
+			"--lang", "typescript",
+			"--output", fmt.Sprintf("%s/dagger", workdirPath),
+			"--introspection-json-path", schemaPath,
+			fmt.Sprintf("--local-sdk=%t", useLocalSdk),
+			"--client-only",
+		}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		})
+
+	if useLocalSdk {
+		ctr = ctr.WithDirectory("./sdk", t.SDKSourceDir.
+			WithoutDirectory("codegen").
+			WithoutDirectory("runtime"),
+		).
+			WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=./sdk"}).
+			WithExec([]string{"tsx", "/opt/__tsclientconfig.updator.ts", "--local-sdk=true"})
+	} else {
+		ctr = ctr.
+			WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=@dagger.io/dagger"}).
+			WithExec([]string{"tsx", "/opt/__tsclientconfig.updator.ts", "--local-sdk=false"})
+	}
+
+	return dag.Directory().WithDirectory("/", ctr.Directory(workdirPath)), nil
 }
 
 // CodegenBase returns a Container containing the SDK from the engine container

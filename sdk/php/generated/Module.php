@@ -50,6 +50,19 @@ class Module extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Generates a client for the module.
+     */
+    public function generateClient(string $generator, ?bool $localSdk = null): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generateClient');
+        $innerQueryBuilder->setArgument('generator', $generator);
+        if (null !== $localSdk) {
+        $innerQueryBuilder->setArgument('localSdk', $localSdk);
+        }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The generated files and directories made on top of the module source's context directory.
      */
     public function generatedContextDiff(): Directory

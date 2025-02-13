@@ -231,6 +231,11 @@ func (s *moduleSchema) Install() {
 		dagql.NodeFunc("initialize", s.moduleInitialize).
 			Doc(`Retrieves the module with the objects loaded via its SDK.`),
 
+		dagql.Func("generateClient", s.moduleGenerateClient).
+			Doc(`Generates a client for the module.`).
+			ArgDoc("generator", `The generator to use`).
+			ArgDoc("localSdk", `Use local SDK dependency`),
+
 		dagql.Func("withDescription", s.moduleWithDescription).
 			Doc(`Retrieves the module with the given description`).
 			ArgDoc("description", `The description to set`),
@@ -836,14 +841,46 @@ func (s *moduleSchema) moduleInitialize(
 	inst dagql.Instance[*core.Module],
 	args struct{},
 ) (*core.Module, error) {
-	if inst.Self.NameField == "" || inst.Self.SDKConfig == nil || inst.Self.SDKConfig.Source == "" {
+	// If SDK config is set, we expect the name and sdk source field to be set
+	if inst.Self.SDKConfig != nil && (inst.Self.NameField == "" || inst.Self.SDKConfig.Source == "") {
 		return nil, fmt.Errorf("module name and SDK must be set")
 	}
+
 	mod, err := inst.Self.Initialize(ctx, inst.ID(), dagql.CurrentID(ctx), s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize module: %w", err)
 	}
 	return mod, nil
+}
+
+func (s *moduleSchema) moduleGenerateClient(
+	ctx context.Context,
+	mod *core.Module,
+	args struct {
+		Generator dagql.String
+		LocalSdk  dagql.Optional[dagql.Boolean]
+	},
+) (*core.Directory, error) {
+	generator, err := s.sdkForModule(ctx, mod.Query, &core.SDKConfig{
+		Source: args.Generator.String(),
+	}, mod.Source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get generator: %w", err)
+	}
+
+	// Clone the module and add it to the deps so its binding are also generated
+	mod.Deps = mod.Deps.Append(mod.Clone())
+
+	// HACK: Is there actually a better
+	// Remove the definitions from the module so they does not conflict with its self dependency
+	mod = mod.CloneWithoutDefs()
+
+	generatedClientDir, err := generator.GenerateClient(ctx, mod.Source, mod.Deps, args.LocalSdk.GetOr(false).Bool())
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate clients: %w", err)
+	}
+
+	return generatedClientDir.Self, nil
 }
 
 func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, args struct {
@@ -885,9 +922,14 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 	if err := s.updateDeps(ctx, mod, modCfg, src); err != nil {
 		return nil, fmt.Errorf("failed to update module dependencies: %w", err)
 	}
-	if err := s.updateCodegenAndRuntime(ctx, mod, src); err != nil {
-		return nil, fmt.Errorf("failed to update codegen and runtime: %w", err)
+
+	// If SDK config is set, we can codegen and get the runtime of that module
+	if mod.SDKConfig != nil {
+		if err := s.updateCodegenAndRuntime(ctx, mod, src); err != nil {
+			return nil, fmt.Errorf("failed to update codegen and runtime: %w", err)
+		}
 	}
+
 	// write dagger.json last so SDKs can't intentionally or unintentionally
 	// modify it during codegen in ways that would be hard to deal with
 	if err := s.writeDaggerConfig(ctx, mod, modCfg, modCfgPath, src); err != nil {

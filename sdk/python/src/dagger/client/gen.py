@@ -5736,6 +5736,28 @@ class Module(Type):
             for v in _ids
         ]
 
+    def generate_client(
+        self,
+        generator: str,
+        *,
+        local_sdk: bool | None = None,
+    ) -> Directory:
+        """Generates a client for the module.
+
+        Parameters
+        ----------
+        generator:
+            The generator to use
+        local_sdk:
+            Use local SDK dependency
+        """
+        _args = [
+            Arg("generator", generator),
+            Arg("localSdk", local_sdk, None),
+        ]
+        _ctx = self._select("generateClient", _args)
+        return Directory(_ctx)
+
     def generated_context_diff(self) -> Directory:
         """The generated files and directories made on top of the module source's
         context directory.
