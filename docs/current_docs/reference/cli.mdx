@@ -319,8 +319,9 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
 ### Options
 
 ```
-  -m, --mod string    Path to the module directory. Either local path or a remote git repo
-  -n, --name string   Name to use for the dependency in the module. Defaults to the name of the module being installed.
+      --compat string   Engine API version to target (default "latest")
+  -m, --mod string      Path to the module directory. Either local path or a remote git repo
+  -n, --name string     Name to use for the dependency in the module. Defaults to the name of the module being installed.
 ```
 
 ### Options inherited from parent commands
@@ -532,6 +533,12 @@ dagger uninstall [options] <module>
 dagger uninstall hello
 ```
 
+### Options
+
+```
+      --compat string   Engine API version to target (default "latest")
+```
+
 ### Options inherited from parent commands
 
 ```
@@ -566,6 +573,12 @@ dagger update [options] <module>
 
 ```
 "dagger update github.com/shykes/daggerverse/hello@v0.3.0" or "dagger update hello"
+```
+
+### Options
+
+```
+      --compat string   Engine API version to target (default "latest")
 ```
 
 ### Options inherited from parent commands

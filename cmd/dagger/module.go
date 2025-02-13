@@ -83,6 +83,13 @@ func inferSourcePathDir(srcRootPath string) (string, error) {
 	return ".", nil
 }
 
+func getCompatVersion() string {
+	if compatVersion == "skip" {
+		return ""
+	}
+	return compatVersion
+}
+
 func init() {
 	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to the module directory. Either local path or a remote git repo")
 
@@ -110,7 +117,12 @@ func init() {
 	modulePublishCmd.Flags().AddFlag(&modFlag)
 
 	moduleInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
+	moduleInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
 	moduleInstallCmd.Flags().AddFlagSet(moduleFlags)
+
+	moduleUnInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
+
+	moduleUpdateCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
 
 	moduleDevelopCmd.Flags().StringVar(&developSDK, "sdk", "", "Install the given Dagger SDK. Can be builtin (go, python, typescript) or a module address")
 	moduleDevelopCmd.Flags().StringVar(&developSourcePath, "source", "", "Source directory used by the installed SDK. Defaults to module root")
@@ -293,8 +305,12 @@ var moduleInstallCmd = &cobra.Command{
 				depSrc = depSrc.WithName(installName)
 			}
 
+			modSrc = modSrc.WithDependencies([]*dagger.ModuleSource{depSrc})
+			if engineVersion := getCompatVersion(); engineVersion != "" {
+				modSrc = modSrc.WithEngineVersion(engineVersion)
+			}
+
 			_, err = modSrc.
-				WithDependencies([]*dagger.ModuleSource{depSrc}).
 				GeneratedContextDirectory().
 				Export(ctx, contextDirPath)
 			if err != nil {
@@ -385,8 +401,12 @@ var moduleUpdateCmd = &cobra.Command{
 				return fmt.Errorf("failed to get local context directory path: %w", err)
 			}
 
+			modSrc = modSrc.WithUpdateDependencies(extraArgs)
+			if engineVersion := getCompatVersion(); engineVersion != "" {
+				modSrc = modSrc.WithEngineVersion(engineVersion)
+			}
+
 			_, err = modSrc.
-				WithUpdateDependencies(extraArgs).
 				GeneratedContextDirectory().
 				Export(ctx, contextDirPath)
 			if err != nil {
@@ -427,8 +447,12 @@ var moduleUnInstallCmd = &cobra.Command{
 				return fmt.Errorf("failed to get local context directory path: %w", err)
 			}
 
+			modSrc = modSrc.WithoutDependencies(extraArgs)
+			if engineVersion := getCompatVersion(); engineVersion != "" {
+				modSrc = modSrc.WithEngineVersion(engineVersion)
+			}
+
 			_, err = modSrc.
-				WithoutDependencies(extraArgs).
 				GeneratedContextDirectory().
 				Export(ctx, contextDirPath)
 			if err != nil {
@@ -481,11 +505,7 @@ This command is idempotent: you can run it at any time, any number of times. It 
 			}
 			srcRootAbsPath := filepath.Join(contextDirPath, srcRootSubPath)
 
-			engineVersion := compatVersion
-			if engineVersion == "skip" {
-				engineVersion = ""
-			}
-			if engineVersion != "" {
+			if engineVersion := getCompatVersion(); engineVersion != "" {
 				modSrc = modSrc.WithEngineVersion(engineVersion)
 			}
 

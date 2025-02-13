@@ -447,7 +447,7 @@ func (m *Dep) Dummy() error {
 `,
 		)).
 		WithWorkdir("/work").
-		With(daggerExec("install", "./dep")).
+		With(daggerExec("install", "./dep", "--compat=skip")).
 		With(daggerQuery(`{test{test}}`)).
 		Stdout(ctx)
 
@@ -593,7 +593,7 @@ class Dep:
 `,
 		)).
 		WithWorkdir("/work").
-		With(daggerExec("install", "./dep")).
+		With(daggerExec("install", "./dep", "--compat=skip")).
 		With(daggerCall("greet")).
 		Stdout(ctx)
 
