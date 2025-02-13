@@ -33,11 +33,11 @@ type FormatTypeFuncs interface {
 // CommonFunctions formatting function with global shared template functions.
 type CommonFunctions struct {
 	schemaVersion   string
-	formatTypeFuncs FormatTypeFuncs
+	FormatTypeFuncs FormatTypeFuncs
 }
 
 func NewCommonFunctions(schemaVersion string, formatTypeFuncs FormatTypeFuncs) *CommonFunctions {
-	return &CommonFunctions{schemaVersion: schemaVersion, formatTypeFuncs: formatTypeFuncs}
+	return &CommonFunctions{schemaVersion: schemaVersion, FormatTypeFuncs: formatTypeFuncs}
 }
 
 // IsSelfChainable returns true if an object type has any fields that return that same type.
@@ -102,7 +102,7 @@ func (c *CommonFunctions) IsIDableObject(t *introspection.TypeRef) (bool, error)
 // unless it's an ID that will be converted which needs to be formatted
 // as an input (for chaining).
 func (c *CommonFunctions) FormatReturnType(f introspection.Field, scopes ...string) (string, error) {
-	return c.formatType(f.TypeRef, strings.Join(scopes, ""), c.ConvertID(f))
+	return c.FormatType(f.TypeRef, strings.Join(scopes, ""), c.ConvertID(f))
 }
 
 func (c *CommonFunctions) ToLowerCase(s string) string {
@@ -180,19 +180,19 @@ func (c *CommonFunctions) ConvertID(f introspection.Field) bool {
 //
 // Example: `String` -> `string`
 func (c *CommonFunctions) FormatInputType(r *introspection.TypeRef, scopes ...string) (string, error) {
-	return c.formatType(r, strings.Join(scopes, ""), true)
+	return c.FormatType(r, strings.Join(scopes, ""), true)
 }
 
 // FormatOutputType formats a GraphQL type into the SDK language output
 //
 // Example: `String` -> `string`
 func (c *CommonFunctions) FormatOutputType(r *introspection.TypeRef, scopes ...string) (string, error) {
-	return c.formatType(r, strings.Join(scopes, ""), false)
+	return c.FormatType(r, strings.Join(scopes, ""), false)
 }
 
-// formatType loops through the type reference to transform it into its SDK language.
-func (c *CommonFunctions) formatType(r *introspection.TypeRef, scope string, input bool) (representation string, err error) {
-	ff := c.formatTypeFuncs.WithScope(scope)
+// FormatType loops through the type reference to transform it into its SDK language.
+func (c *CommonFunctions) FormatType(r *introspection.TypeRef, scope string, input bool) (representation string, err error) {
+	ff := c.FormatTypeFuncs.WithScope(scope)
 
 	for ref := r; ref != nil; ref = ref.OfType {
 		switch ref.Kind {
