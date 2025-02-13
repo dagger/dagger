@@ -87,3 +87,9 @@ func (r Recorder) Gif(ctx context.Context) (*dagger.File, error) {
 	}
 	return r.R.Gif(), nil
 }
+
+/*
+func (r Recorder) GenerateFeatureRecordings() *dagger.Directory {
+
+}
+*/

@@ -1,0 +1,12 @@
+{
+  "name": "img",
+  "engineVersion": "v0.15.3",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "recorder",
+      "source": "../../recorder"
+    }
+  ],
+  "source": ".dagger"
+}

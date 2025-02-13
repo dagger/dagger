@@ -1,4 +1,4 @@
-module dagger/recorder
+module dagger/img
 
 go 1.23.2
 
