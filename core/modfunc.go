@@ -93,7 +93,7 @@ type CallOpts struct {
 	SkipSelfSchema bool
 	Server         *dagql.Server
 
-	// TODO: cleanup
+	// TODO: doc
 	SkipCallDigestCacheKey bool
 }
 
@@ -244,10 +244,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		CachePerSession: !opts.Cache,
 		Internal:        true,
 		ModuleName:      mod.NameField,
-
-		// TODO: cleanup
-		// CacheByCall:     true, // scope the cache key to the function arguments+receiver values
-		CacheByCall: !opts.SkipCallDigestCacheKey,
+		CacheByCall:     !opts.SkipCallDigestCacheKey,
 	}
 
 	if opts.ParentTyped != nil {

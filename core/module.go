@@ -90,9 +90,8 @@ func (mod *Module) IDModule() *call.Module {
 		pin = mod.Source.Self.Git.Commit
 
 	case ModuleSourceKindDir:
-		// TODO: not sure what to put here, does it matter?
-		// TODO: not sure what to put here, does it matter?
-		// TODO: not sure what to put here, does it matter?
+		// FIXME: this is better than nothing, but no other code handles refs that
+		// are an encoded ID right now
 		var err error
 		ref, err = mod.Source.Self.ContextDirectory.ID().Encode()
 		if err != nil {
@@ -106,7 +105,6 @@ func (mod *Module) IDModule() *call.Module {
 	return call.NewModule(mod.InstanceID, mod.Name(), ref, pin)
 }
 
-// TODO: looks weird, but works
 func (mod *Module) Evaluate(context.Context) (*buildkit.Result, error) {
 	return nil, nil
 }
@@ -661,13 +659,11 @@ var _ HasPBDefinitions = (*Module)(nil)
 func (mod *Module) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	var defs []*pb.Definition
 	if mod.Source.Self != nil {
-		/* TODO: ADD PBDEFS
 		dirDefs, err := mod.Source.Self.PBDefinitions(ctx)
 		if err != nil {
 			return nil, err
 		}
 		defs = append(defs, dirDefs...)
-		*/
 	}
 	if mod.Runtime != nil {
 		dirDefs, err := mod.Runtime.PBDefinitions(ctx)
@@ -690,8 +686,16 @@ func (mod Module) Clone() *Module {
 		cp.Source.Self = mod.Source.Self.Clone()
 	}
 
+	if mod.SDKConfig != nil {
+		cp.SDKConfig = mod.SDKConfig.Clone()
+	}
+
 	if mod.Deps != nil {
 		cp.Deps = mod.Deps.Clone()
+	}
+
+	if mod.Runtime != nil {
+		cp.Runtime = mod.Runtime.Clone()
 	}
 
 	cp.ObjectDefs = make([]*TypeDef, len(mod.ObjectDefs))

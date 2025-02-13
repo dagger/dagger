@@ -135,7 +135,7 @@ type parsedGitRefString struct {
 type gitEndpointError struct{ error }
 
 func parseGitRefString(ctx context.Context, refString string) (parsedGitRefString, error) {
-	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("parseGitRefString: %s", refString), telemetry.Internal())
+	_, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("parseGitRefString: %s", refString), telemetry.Internal())
 	defer span.End()
 
 	scheme, schemelessRef := parseScheme(refString)
@@ -241,7 +241,6 @@ func parseScheme(refString string) (core.SchemeType, string) {
 	return core.NoScheme, refString
 }
 
-// TODO: consider just doing this in parseGitRefString if it's always called after
 func (p *parsedGitRefString) getGitRefAndModVersion(
 	ctx context.Context,
 	dag *dagql.Server,

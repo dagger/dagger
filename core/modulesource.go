@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -167,7 +168,28 @@ func (src ModuleSource) Clone() *ModuleSource {
 	return &src
 }
 
-// TODO: looks weird, but works
+func (src *ModuleSource) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
+	var pbDefs []*pb.Definition
+	if src.ContextDirectory.Self != nil {
+		defs, err := src.ContextDirectory.Self.PBDefinitions(ctx)
+		if err != nil {
+			return nil, err
+		}
+		pbDefs = append(pbDefs, defs...)
+	}
+	for _, dep := range src.Dependencies {
+		if dep.Self == nil {
+			continue
+		}
+		defs, err := dep.Self.PBDefinitions(ctx)
+		if err != nil {
+			return nil, err
+		}
+		pbDefs = append(pbDefs, defs...)
+	}
+	return pbDefs, nil
+}
+
 func (src *ModuleSource) Evaluate(context.Context) (*buildkit.Result, error) {
 	return nil, nil
 }
@@ -428,7 +450,17 @@ type GitModuleSource struct {
 }
 
 func (src GitModuleSource) Clone() *GitModuleSource {
+	if src.UnfilteredContextDir.Self != nil {
+		src.UnfilteredContextDir.Self = src.UnfilteredContextDir.Self.Clone()
+	}
 	return &src
+}
+
+func (src *GitModuleSource) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
+	if src.UnfilteredContextDir.Self == nil {
+		return nil, nil
+	}
+	return src.UnfilteredContextDir.Self.PBDefinitions(ctx)
 }
 
 type SchemeType int

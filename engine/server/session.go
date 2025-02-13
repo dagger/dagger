@@ -577,13 +577,6 @@ func (srv *Server) initializeDaggerClient(
 
 		// this is needed to set the view of the core api as compatible
 		// with the module we're currently calling from
-		// TODO: cleanup
-		/*
-			engineVersion, err := client.mod.Source.Self.ModuleEngineVersion(ctx)
-			if err != nil {
-				return err
-			}
-		*/
 		engineVersion := client.mod.Source.Self.EngineVersion
 		coreMod.Dag.View = engine.BaseVersion(engine.NormalizeVersion(engineVersion))
 
