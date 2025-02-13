@@ -31,6 +31,7 @@ func (s *moduleSchema) Install() {
 			ArgDoc("refPin", `The pinned version of the module source`).
 			ArgDoc("disableFindUp", `TODO`).
 			ArgDoc("allowNotExists", `TODO`).
+			ArgDoc("requireKind", `TODO`).
 			Doc(`TODO`),
 
 		dagql.Func("function", s.function).
@@ -164,6 +165,9 @@ func (s *moduleSchema) Install() {
 			Doc(`TODO`),
 
 		dagql.Func("commit", s.moduleSourceCommit).
+			Doc(`TODO`),
+
+		dagql.Func("repoRootPath", s.moduleSourceRepoRootPath).
 			Doc(`TODO`),
 
 		dagql.Func("cloneURL", s.moduleSourceCloneURL).

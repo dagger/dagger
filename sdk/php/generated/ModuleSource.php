@@ -188,6 +188,15 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     /**
      * TODO
      */
+    public function repoRootPath(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('repoRootPath');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'repoRootPath');
+    }
+
+    /**
+     * TODO
+     */
     public function sdk(): SDKConfig
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sdk');

@@ -209,6 +209,15 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc "TODO"
+  @spec repo_root_path(t()) :: {:ok, String.t()} | {:error, term()}
+  def repo_root_path(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("repoRootPath")
+
+    Client.execute(module_source.client, query_builder)
+  end
+
+  @doc "TODO"
   @spec sdk(t()) :: Dagger.SDKConfig.t() | nil
   def sdk(%__MODULE__{} = module_source) do
     query_builder =

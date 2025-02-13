@@ -1155,6 +1155,11 @@ export type ClientModuleSourceOpts = {
    * TODO
    */
   allowNotExists?: boolean
+
+  /**
+   * TODO
+   */
+  requireKind?: ModuleSourceKind
 }
 
 /**
@@ -5325,6 +5330,7 @@ export class ModuleSource extends BaseClient {
   private readonly _moduleName?: string = undefined
   private readonly _moduleOriginalName?: string = undefined
   private readonly _pin?: string = undefined
+  private readonly _repoRootPath?: string = undefined
   private readonly _sourceRootSubpath?: string = undefined
   private readonly _sourceSubpath?: string = undefined
   private readonly _sync?: ModuleSourceID = undefined
@@ -5349,6 +5355,7 @@ export class ModuleSource extends BaseClient {
     _moduleName?: string,
     _moduleOriginalName?: string,
     _pin?: string,
+    _repoRootPath?: string,
     _sourceRootSubpath?: string,
     _sourceSubpath?: string,
     _sync?: ModuleSourceID,
@@ -5370,6 +5377,7 @@ export class ModuleSource extends BaseClient {
     this._moduleName = _moduleName
     this._moduleOriginalName = _moduleOriginalName
     this._pin = _pin
+    this._repoRootPath = _repoRootPath
     this._sourceRootSubpath = _sourceRootSubpath
     this._sourceSubpath = _sourceSubpath
     this._sync = _sync
@@ -5630,6 +5638,21 @@ export class ModuleSource extends BaseClient {
     }
 
     const ctx = this._ctx.select("pin")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * TODO
+   */
+  repoRootPath = async (): Promise<string> => {
+    if (this._repoRootPath) {
+      return this._repoRootPath
+    }
+
+    const ctx = this._ctx.select("repoRootPath")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -6532,12 +6555,21 @@ export class Client extends BaseClient {
    * @param opts.refPin The pinned version of the module source
    * @param opts.disableFindUp TODO
    * @param opts.allowNotExists TODO
+   * @param opts.requireKind TODO
    */
   moduleSource = (
     refString: string,
     opts?: ClientModuleSourceOpts,
   ): ModuleSource => {
-    const ctx = this._ctx.select("moduleSource", { refString, ...opts })
+    const metadata = {
+      requireKind: { is_enum: true },
+    }
+
+    const ctx = this._ctx.select("moduleSource", {
+      refString,
+      ...opts,
+      __metadata: metadata,
+    })
     return new ModuleSource(ctx)
   }
 

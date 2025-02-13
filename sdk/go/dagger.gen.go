@@ -5584,6 +5584,7 @@ type ModuleSource struct {
 	moduleName                *string
 	moduleOriginalName        *string
 	pin                       *string
+	repoRootPath              *string
 	sourceRootSubpath         *string
 	sourceSubpath             *string
 	sync                      *ModuleSourceID
@@ -5876,6 +5877,19 @@ func (r *ModuleSource) Pin(ctx context.Context) (string, error) {
 		return *r.pin, nil
 	}
 	q := r.query.Select("pin")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// TODO
+func (r *ModuleSource) RepoRootPath(ctx context.Context) (string, error) {
+	if r.repoRootPath != nil {
+		return *r.repoRootPath, nil
+	}
+	q := r.query.Select("repoRootPath")
 
 	var response string
 
@@ -6976,6 +6990,8 @@ type ModuleSourceOpts struct {
 	DisableFindUp bool
 	// TODO
 	AllowNotExists bool
+	// TODO
+	RequireKind ModuleSourceKind
 }
 
 // TODO
@@ -6993,6 +7009,10 @@ func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *Modul
 		// `allowNotExists` optional argument
 		if !querybuilder.IsZeroValue(opts[i].AllowNotExists) {
 			q = q.Arg("allowNotExists", opts[i].AllowNotExists)
+		}
+		// `requireKind` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RequireKind) {
+			q = q.Arg("requireKind", opts[i].RequireKind)
 		}
 	}
 	q = q.Arg("refString", refString)

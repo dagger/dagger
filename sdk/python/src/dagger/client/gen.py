@@ -6008,6 +6008,27 @@ class ModuleSource(Type):
         _ctx = self._select("pin", _args)
         return await _ctx.execute(str)
 
+    async def repo_root_path(self) -> str:
+        """TODO
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("repoRootPath", _args)
+        return await _ctx.execute(str)
+
     def sdk(self) -> "SDKConfig":
         """TODO"""
         _args: list[Arg] = []
@@ -7060,6 +7081,7 @@ class Client(Root):
         ref_pin: str | None = "",
         disable_find_up: bool | None = False,
         allow_not_exists: bool | None = False,
+        require_kind: ModuleSourceKind | None = None,
     ) -> ModuleSource:
         """TODO
 
@@ -7073,12 +7095,15 @@ class Client(Root):
             TODO
         allow_not_exists:
             TODO
+        require_kind:
+            TODO
         """
         _args = [
             Arg("refString", ref_string),
             Arg("refPin", ref_pin, ""),
             Arg("disableFindUp", disable_find_up, False),
             Arg("allowNotExists", allow_not_exists, False),
+            Arg("requireKind", require_kind, None),
         ]
         _ctx = self._select("moduleSource", _args)
         return ModuleSource(_ctx)
