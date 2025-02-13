@@ -6,8 +6,12 @@
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "paths": {
-      "@dagger.io/dagger": ["./sdk"],
-      "@dagger.io/dagger/telemetry": ["./sdk/telemetry"]
+      "@dagger.io/dagger": [
+        "./sdk/src"
+      ],
+      "@dagger.io/dagger/telemetry": [
+        "./sdk/src/telemetry"
+      ]
     }
   }
 }

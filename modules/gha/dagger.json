@@ -1,7 +1,9 @@
 {
   "name": "gha",
   "engineVersion": "v0.15.1",
-  "sdk": "go",
+  "sdk": {
+    "source": "go"
+  },
   "dependencies": [
     {
       "name": "wolfi",

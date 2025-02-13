@@ -1,7 +1,9 @@
 {
   "name": "examples",
   "engineVersion": "v0.13.6",
-  "sdk": "go",
+  "sdk": {
+    "source": "go"
+  },
   "dependencies": [
     {
       "name": "gha",
