@@ -3,6 +3,7 @@ package build
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"runtime"
 
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/dagger/dagger/.dagger/consts"
 	"github.com/dagger/dagger/.dagger/internal/dagger"
+	"github.com/dagger/dagger/sdk/typescript/runtime/tsdistconsts"
 )
 
 type sdkContent struct {
@@ -69,7 +71,14 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 	}, nil
 }
 
+const TypescriptSDKTSXVersion = "4.15.6"
+
 func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, error) {
+	tsxNodeModule := dag.Container().
+		From(tsdistconsts.DefaultNodeImageRef).
+		WithExec([]string{"npm", "install", "-g", fmt.Sprintf("tsx@%s", TypescriptSDKTSXVersion)}).
+		Directory("/usr/local/lib/node_modules/tsx")
+
 	rootfs := dag.Directory().WithDirectory("/", build.source.Directory("sdk/typescript"), dagger.DirectoryWithDirectoryOpts{
 		Include: []string{
 			"src/**/*.ts",
@@ -86,9 +95,22 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 		},
 	})
 
+	sdkNodeModules := dag.Container().
+		From(tsdistconsts.DefaultNodeImageRef).
+		WithWorkdir("/work").
+		WithDirectory("/work/sdk", rootfs).
+		WithoutEntrypoint().
+		WithMountedCache("/root/.npm", dag.CacheVolume(fmt.Sprintf("npm-cache-node-%s", tsdistconsts.DefaultNodeVersion))).
+		WithFile("/work/package.json", rootfs.File("./runtime/template/package.json")).
+		WithExec([]string{"npm", "install", "--package-lock-only"}).
+		WithExec([]string{"npm", "ci"}).
+		Directory("/work/node_modules")
+
 	sdkCtrTarball := dag.Container().
 		WithRootfs(rootfs).
 		WithFile("/codegen", build.CodegenBinary()).
+		WithDirectory("/tsx_module", tsxNodeModule).
+		WithDirectory("/sdk_node_modules", sdkNodeModules).
 		AsTarball(dagger.ContainerAsTarballOpts{
 			ForcedCompression: dagger.ImageLayerCompressionZstd,
 		})
