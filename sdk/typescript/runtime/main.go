@@ -84,8 +84,7 @@ type moduleConfig struct {
 }
 
 type TypescriptSdk struct {
-	SDKSourceDir  *dagger.Directory
-	RequiredPaths []string
+	SDKSourceDir *dagger.Directory
 
 	moduleConfig *moduleConfig
 }
