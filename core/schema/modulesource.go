@@ -561,11 +561,22 @@ func (s *moduleSchema) initFromModConfig(configBytes []byte, src *core.ModuleSou
 
 	src.ModuleName = modCfg.Name
 	src.ModuleOriginalName = modCfg.Name
-	src.EngineVersion = modCfg.EngineVersion
 	src.IncludePaths = modCfg.Include
 	src.CodegenConfig = modCfg.Codegen
 	src.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
 	src.ConfigDependencies = modCfg.Dependencies
+
+	engineVersion := modCfg.EngineVersion
+	switch engineVersion {
+	case "":
+		// older versions of dagger might not produce an engine version -
+		// so return the version that engineVersion was introduced in
+		engineVersion = engine.MinimumModuleVersion
+	case modules.EngineVersionLatest:
+		engineVersion = engine.Version
+	}
+	engineVersion = engine.NormalizeVersion(engineVersion)
+	src.EngineVersion = engineVersion
 
 	if modCfg.SDK != nil {
 		src.SDK = &core.SDKConfig{
@@ -989,11 +1000,17 @@ func (s *moduleSchema) moduleSourceWithEngineVersion(
 		Version string
 	},
 ) (*core.ModuleSource, error) {
-	// TODO: handle special strings like latest
-	// TODO: handle special strings like latest
-	// TODO: handle special strings like latest
 	src = src.Clone()
-	src.EngineVersion = args.Version
+
+	engineVersion := args.Version
+	switch engineVersion {
+	case "":
+		engineVersion = engine.MinimumModuleVersion
+	case modules.EngineVersionLatest:
+		engineVersion = engine.Version
+	}
+	engineVersion = engine.NormalizeVersion(engineVersion)
+	src.EngineVersion = engineVersion
 
 	src.Digest = src.CalcDigest().String()
 	return src, nil
@@ -1402,15 +1419,6 @@ func (s *moduleSchema) moduleSourceGeneratedContextDirectory(
 		}
 	}
 
-	switch modCfg.EngineVersion {
-	case "":
-		// older versions of dagger might not produce an engine version -
-		// so return the version that engineVersion was introduced in
-		modCfg.EngineVersion = engine.MinimumModuleVersion
-	case modules.EngineVersionLatest:
-		modCfg.EngineVersion = engine.Version
-	}
-	modCfg.EngineVersion = engine.NormalizeVersion(modCfg.EngineVersion)
 	if !engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion) {
 		return genDirInst, fmt.Errorf("module requires dagger %s, but support for that version has been removed", modCfg.EngineVersion)
 	}
@@ -1525,7 +1533,8 @@ func (s *moduleSchema) moduleSourceGeneratedContextDirectory(
 				// this is needed so that a module's dependency on the core
 				// uses the correct schema version
 				dag := *coreMod.Dag
-				dag.View = engine.BaseVersion(engine.NormalizeVersion(modCfg.EngineVersion))
+
+				dag.View = engine.BaseVersion(engine.NormalizeVersion(src.EngineVersion))
 				deps.Mods[i] = &CoreMod{Dag: &dag}
 			}
 		}
@@ -1677,6 +1686,14 @@ func (s *moduleSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("module name and SDK must be set")
 	}
 
+	engineVersion := src.Self.EngineVersion
+	if !engine.CheckVersionCompatibility(engineVersion, engine.MinimumModuleVersion) {
+		return inst, fmt.Errorf("module requires dagger %s, but support for that version has been removed", engineVersion)
+	}
+	if !engine.CheckMaxVersionCompatibility(engineVersion, engine.BaseVersion(engine.Version)) {
+		return inst, fmt.Errorf("module requires dagger %s, but you have %s", engineVersion, engine.Version)
+	}
+
 	mod := &core.Module{
 		Query: src.Self.Query,
 
@@ -1729,28 +1746,7 @@ func (s *moduleSchema) moduleSourceAsModule(
 			// this is needed so that a module's dependency on the core
 			// uses the correct schema version
 			dag := *coreMod.Dag
-
-			// TODO: dedupe, cleanup
-			// TODO: dedupe, cleanup
-			// TODO: dedupe, cleanup
-			engineVersion := src.Self.EngineVersion
-			switch engineVersion {
-			case "":
-				// older versions of dagger might not produce an engine version -
-				// so return the version that engineVersion was introduced in
-				engineVersion = engine.MinimumModuleVersion
-			case modules.EngineVersionLatest:
-				engineVersion = engine.Version
-			}
-			engineVersion = engine.NormalizeVersion(engineVersion)
-			if !engine.CheckVersionCompatibility(engineVersion, engine.MinimumModuleVersion) {
-				return inst, fmt.Errorf("module requires dagger %s, but support for that version has been removed", engineVersion)
-			}
-			if !engine.CheckMaxVersionCompatibility(engineVersion, engine.BaseVersion(engine.Version)) {
-				return inst, fmt.Errorf("module requires dagger %s, but you have %s", engineVersion, engine.Version)
-			}
-
-			dag.View = engine.BaseVersion(engine.NormalizeVersion(engineVersion))
+			dag.View = engine.BaseVersion(engine.NormalizeVersion(src.Self.EngineVersion))
 			deps.Mods[i] = &CoreMod{Dag: &dag}
 		}
 	}
