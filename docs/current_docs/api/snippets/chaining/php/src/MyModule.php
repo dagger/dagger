@@ -17,8 +17,8 @@ class MyModule
     {
         return dag()
             ->container()
-            ->from("alpine:latest")
-            ->withEntrypoint(["cat", "/etc/os-release"])
-            ->publish("ttl.sh/my-alpine");
+            ->from('alpine:latest')
+            ->withEntrypoint(['cat', '/etc/os-release'])
+            ->publish('ttl.sh/my-alpine');
     }
 }
