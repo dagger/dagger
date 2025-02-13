@@ -964,10 +964,31 @@ type containerGpuArgs struct {
 }
 
 func (s *containerSchema) withGPU(ctx context.Context, parent *core.Container, args containerGpuArgs) (*core.Container, error) {
+	container := parent.Clone()
+
+	// Check if Thunder support is enabled
+	if thunderEnabled := os.Getenv("_EXPERIMENTAL_DAGGER_THUNDER_SUPPORT"); thunderEnabled != "" {
+		container.EnableThunder = true
+		// Still set the GPU devices as they might be needed for proper device mapping
+		container.EnabledGPUs = args.Devices
+		return container, nil
+	}
+
+	// Fall back to regular GPU support
 	return parent.WithGPU(ctx, args.ContainerGPUOpts)
 }
 
 func (s *containerSchema) withAllGPUs(ctx context.Context, parent *core.Container, args struct{}) (*core.Container, error) {
+	container := parent.Clone()
+
+	// Check if Thunder support is enabled
+	if thunderEnabled := os.Getenv("_EXPERIMENTAL_DAGGER_THUNDER_SUPPORT"); thunderEnabled != "" {
+		container.EnableThunder = true
+		container.EnabledGPUs = []string{"all"}
+		return container, nil
+	}
+
+	// Fall back to regular GPU support
 	return parent.WithGPU(ctx, core.ContainerGPUOpts{Devices: []string{"all"}})
 }
 

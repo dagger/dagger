@@ -97,6 +97,8 @@ type ExecutionMetadata struct {
 
 	EnabledGPUs []string
 
+	EnableThunder bool
+
 	// Path to the SSH auth socket. Used for Dagger-in-Dagger support.
 	SSHAuthSocketPath string
 
@@ -170,6 +172,7 @@ func (w *Worker) Run(
 		w.setupSecretScrubbing,
 		w.setProxyEnvs,
 		w.enableGPU,
+		w.setupThunderMounts,
 		w.createCWD,
 		w.setupNestedClient,
 		w.installCACerts,
