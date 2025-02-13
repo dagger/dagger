@@ -113,7 +113,7 @@ type Server struct {
 	workerCacheMetaDB     *metadata.Store
 	workerCache           bkcache.Manager
 	workerSourceManager   *source.Manager
-	workerDefaultGCPolicy bkclient.PruneInfo
+	workerDefaultGCPolicy *bkclient.PruneInfo
 
 	bkSessionManager *bksession.Manager
 
