@@ -295,6 +295,8 @@ func (s *moduleSchema) localModuleSource(
 		}
 	}
 
+	localSrc.Digest = localSrc.CalcDigest().String()
+
 	return dagql.NewInstanceForCurrentID(ctx, s.dag, query, localSrc)
 }
 
@@ -430,6 +432,8 @@ func (s *moduleSchema) gitModuleSource(
 		return inst, fmt.Errorf("failed to hash git context directory: %w", err)
 	}
 
+	gitSrc.Digest = gitSrc.CalcDigest().String()
+
 	return dagql.NewInstanceForCurrentID(ctx, s.dag, query, gitSrc)
 }
 
@@ -539,6 +543,7 @@ func (s *moduleSchema) directoryAsModuleSource(
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
 
+	dirSrc.Digest = dirSrc.CalcDigest().String()
 	inst = inst.WithMetadata(digest.Digest(dirSrc.Digest), true)
 	return inst, nil
 }
@@ -679,15 +684,6 @@ func (s *moduleSchema) loadModuleSourceContext(
 		}
 	}
 
-	dgst := core.HashFrom(
-		// our id is tied to the context dir, so we use its digest
-		src.ContextDirectory.ID().Digest().String(),
-		// to ensure we don't have the exact same digest as the context dir
-		// TODO: const
-		"moduleSource",
-	)
-	src.Digest = dgst.String()
-
 	return nil
 }
 
@@ -822,6 +818,7 @@ func (s *moduleSchema) resolveDepToSource(
 		}
 
 	case core.ModuleSourceKindGit:
+		// parent=*, dep=git
 		selectors := []dagql.Selector{{
 			Field: "moduleSource",
 			Args: []dagql.NamedInput{
@@ -885,6 +882,7 @@ func (s *moduleSchema) moduleSourceWithSourceSubpath(
 		return nil, fmt.Errorf("local module source subpath %q escapes source root %q", relPath, src.SourceRootSubpath)
 	}
 
+	src.Digest = src.CalcDigest().String()
 	return src, nil
 }
 
@@ -916,6 +914,8 @@ func (s *moduleSchema) moduleSourceWithName(
 	if src.ModuleOriginalName == "" {
 		src.ModuleOriginalName = args.Name
 	}
+
+	src.Digest = src.CalcDigest().String()
 	return src, nil
 }
 
@@ -947,6 +947,7 @@ func (s *moduleSchema) moduleSourceWithIncludes(
 		return nil, fmt.Errorf("failed to reload module source context: %w", err)
 	}
 
+	src.Digest = src.CalcDigest().String()
 	return src, nil
 }
 
@@ -961,6 +962,8 @@ func (s *moduleSchema) moduleSourceWithSDK(
 	if args.Source == "" {
 		src.SDK = nil
 		src.SDKImpl = nil
+
+		src.Digest = src.CalcDigest().String()
 		return src, nil
 	}
 
@@ -975,6 +978,7 @@ func (s *moduleSchema) moduleSourceWithSDK(
 		return nil, fmt.Errorf("failed to load sdk for module source: %w", err)
 	}
 
+	src.Digest = src.CalcDigest().String()
 	return src, nil
 }
 
@@ -990,6 +994,8 @@ func (s *moduleSchema) moduleSourceWithEngineVersion(
 	// TODO: handle special strings like latest
 	src = src.Clone()
 	src.EngineVersion = args.Version
+
+	src.Digest = src.CalcDigest().String()
 	return src, nil
 }
 
@@ -1109,6 +1115,7 @@ func (s *moduleSchema) moduleSourceWithDependencies(
 	})
 	parentSrc.Dependencies = finalDeps
 
+	parentSrc.Digest = parentSrc.CalcDigest().String()
 	return parentSrc, nil
 }
 
@@ -1369,6 +1376,7 @@ func (s *moduleSchema) moduleSourceWithoutDependencies(
 	}
 
 	parentSrc.Dependencies = filteredDeps
+	parentSrc.Digest = parentSrc.CalcDigest().String()
 	return parentSrc, nil
 }
 
@@ -1523,15 +1531,13 @@ func (s *moduleSchema) moduleSourceGeneratedContextDirectory(
 		}
 
 		// TODO: wrap up in nicer looking util/interface
-		// TODO:
-		dgst := digest.Digest(srcInst.Self.Digest + modCfg.SDK.Source)
-		_, _, err = s.dag.Cache.GetOrInitialize(ctx, dgst, func(context.Context) (dagql.Typed, error) {
+		_, _, err = s.dag.Cache.GetOrInitialize(ctx, digest.Digest(srcInst.Self.Digest), func(context.Context) (dagql.Typed, error) {
 			return srcInst, nil
 		})
 		if err != nil {
 			return genDirInst, fmt.Errorf("failed to get or initialize instance: %w", err)
 		}
-		srcInstContentHashed := srcInst.WithMetadata(dgst, true)
+		srcInstContentHashed := srcInst.WithMetadata(digest.Digest(srcInst.Self.Digest), true)
 
 		generatedCode, err := srcInst.Self.SDKImpl.Codegen(ctx, deps, srcInstContentHashed)
 		if err != nil {
@@ -1683,14 +1689,13 @@ func (s *moduleSchema) moduleSourceAsModule(
 	}
 
 	// TODO: wrap up in nicer looking util/interface
-	dgst := digest.Digest(src.Self.Digest + mod.SDKConfig.Source)
-	_, _, err = s.dag.Cache.GetOrInitialize(ctx, dgst, func(context.Context) (dagql.Typed, error) {
+	_, _, err = s.dag.Cache.GetOrInitialize(ctx, digest.Digest(src.Self.Digest), func(context.Context) (dagql.Typed, error) {
 		return src, nil
 	})
 	if err != nil {
 		return inst, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
-	srcInstContentHashed := src.WithMetadata(dgst, true)
+	srcInstContentHashed := src.WithMetadata(digest.Digest(src.Self.Digest), true)
 
 	loadDepModsCtx, loadDepModsSpan := core.Tracer(ctx).Start(ctx, "asModule load deps + sdk", telemetry.Internal())
 
