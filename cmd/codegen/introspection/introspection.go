@@ -2,6 +2,7 @@ package introspection
 
 import (
 	_ "embed"
+	"encoding/json"
 	"fmt"
 )
 
@@ -290,12 +291,12 @@ func (t Directives) Directive(name string) *Directive {
 type SourceMap struct {
 	Module   string
 	Filename string
-	Line     string
-	Column   string
+	Line     int
+	Column   int
 }
 
 func (sourceMap *SourceMap) Filelink() string {
-	return fmt.Sprintf("%s:%s:%s", sourceMap.Filename, sourceMap.Line, sourceMap.Column)
+	return fmt.Sprintf("%s:%d:%d", sourceMap.Filename, sourceMap.Line, sourceMap.Column)
 }
 
 func (t *Directives) SourceMap() *SourceMap {
@@ -304,10 +305,10 @@ func (t *Directives) SourceMap() *SourceMap {
 		return nil
 	}
 	return &SourceMap{
-		Module:   *d.Arg("module").Value,
-		Filename: *d.Arg("filename").Value,
-		Line:     *d.Arg("line").Value,
-		Column:   *d.Arg("column").Value,
+		Module:   fromJSON[string](*d.Arg("module").Value),
+		Filename: fromJSON[string](*d.Arg("filename").Value),
+		Line:     fromJSON[int](*d.Arg("line").Value),
+		Column:   fromJSON[int](*d.Arg("column").Value),
 	}
 }
 
@@ -316,7 +317,7 @@ func (t *Directives) EnumValue() string {
 	if d == nil {
 		return ""
 	}
-	return *d.Arg("value").Value
+	return fromJSON[string](*d.Arg("value").Value)
 }
 
 type Directive struct {
@@ -336,4 +337,9 @@ func (t Directive) Arg(name string) *DirectiveArg {
 type DirectiveArg struct {
 	Name  string  `json:"name"`
 	Value *string `json:"value"`
+}
+
+func fromJSON[T any](raw string) (t T) {
+	_ = json.Unmarshal([]byte(raw), &t)
+	return t
 }

@@ -60,7 +60,7 @@ var Samples = map[TypeDefKind]*TypeDef{
 }
 
 func TestTypeDefConversions(t *testing.T) {
-	for _, val := range TypeDefKinds.PossibleValues() {
+	for _, val := range TypeDefKinds.PossibleValues("") {
 		val := val
 		sample, ok := Samples[TypeDefKind(val.Name)]
 		if !ok {

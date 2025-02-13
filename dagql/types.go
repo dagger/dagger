@@ -887,13 +887,13 @@ type EnumValue[T enumValue] struct {
 	AliasesView []View
 }
 
-func (val EnumValue[T]) aliasesForView(view string) (aliases []T) {
+func (val EnumValue[T]) nameForView(view string) string {
 	for i, alias := range val.Aliases {
 		if val.AliasesView[i].Contains(view) {
-			aliases = append(aliases, alias)
+			return string(alias)
 		}
 	}
-	return aliases
+	return string(val.Value)
 }
 
 // EnumValues is a list of possible values for an Enum.
@@ -943,13 +943,12 @@ func (e *EnumValues[T]) DecodeInput(val any) (Input, error) {
 func (e *EnumValues[T]) PossibleValues(view string) ast.EnumValueList {
 	var values ast.EnumValueList
 	for _, val := range *e {
+		name := val.nameForView(view)
 		values = append(values, &ast.EnumValueDefinition{
-			Name:        string(val.Value),
+			Name:        name,
 			Description: val.Description,
 			Directives: []*ast.Directive{
-				enumValueDirective(val.Value),
-				// XXX: use this to create actual aliases in the tmpl generation
-				aliasDirective(val.aliasesForView(view)),
+				enumValueDirective(name),
 			},
 		})
 	}
@@ -957,7 +956,7 @@ func (e *EnumValues[T]) PossibleValues(view string) ast.EnumValueList {
 	return values
 }
 
-func enumValueDirective[T enumValue](val T) *ast.Directive {
+func enumValueDirective(name string) *ast.Directive {
 	return &ast.Directive{
 		Name: "enumValue",
 		Arguments: ast.ArgumentList{
@@ -965,31 +964,7 @@ func enumValueDirective[T enumValue](val T) *ast.Directive {
 				Name: "value",
 				Value: &ast.Value{
 					Kind: ast.StringValue,
-					Raw:  string(val),
-				},
-			},
-		},
-	}
-}
-
-func aliasDirective[T enumValue](aliases []T) *ast.Directive {
-	var children ast.ChildValueList
-	for _, alias := range aliases {
-		children = append(children, &ast.ChildValue{
-			Value: &ast.Value{
-				Kind: ast.StringValue,
-				Raw:  string(alias),
-			},
-		})
-	}
-	return &ast.Directive{
-		Name: "alias",
-		Arguments: ast.ArgumentList{
-			{
-				Name: "names",
-				Value: &ast.Value{
-					Kind:     ast.ListValue,
-					Children: children,
+					Raw:  name,
 				},
 			},
 		},
@@ -1008,7 +983,7 @@ func (e *EnumValues[T]) Lookup(val string) (T, error) {
 		}
 		for _, alias := range possible.Aliases {
 			if val == string(alias) {
-				return possible.Value, nil
+				return alias, nil
 			}
 		}
 	}

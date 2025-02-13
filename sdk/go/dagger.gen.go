@@ -8744,6 +8744,28 @@ func (v CacheSharingMode) Value() string {
 	return string(v)
 }
 
+func (v *CacheSharingMode) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Name())
+}
+
+func (v *CacheSharingMode) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "LOCKED":
+		*v = CacheSharingModeLocked
+	case "PRIVATE":
+		*v = CacheSharingModePrivate
+	case "SHARED":
+		*v = CacheSharingModeShared
+	default:
+		return fmt.Errorf("unknown enum value %q", s)
+	}
+	return nil
+}
+
 const (
 	// Shares the cache volume amongst many build pipelines, but will serialize the writes
 	CacheSharingModeLocked CacheSharingMode = "LOCKED"
@@ -8779,6 +8801,30 @@ func (v ImageLayerCompression) Value() string {
 	return string(v)
 }
 
+func (v *ImageLayerCompression) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Name())
+}
+
+func (v *ImageLayerCompression) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "ESTARGZ":
+		*v = ImageLayerCompressionEstargz
+	case "GZIP":
+		*v = ImageLayerCompressionGzip
+	case "UNCOMPRESSED":
+		*v = ImageLayerCompressionUncompressed
+	case "ZSTD":
+		*v = ImageLayerCompressionZstd
+	default:
+		return fmt.Errorf("unknown enum value %q", s)
+	}
+	return nil
+}
+
 const (
 	ImageLayerCompressionEstargz ImageLayerCompression = "ESTARGZ"
 
@@ -8809,6 +8855,26 @@ func (v ImageMediaType) Value() string {
 	return string(v)
 }
 
+func (v *ImageMediaType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Name())
+}
+
+func (v *ImageMediaType) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "DOCKER":
+		*v = ImageMediaTypeDocker
+	case "OCI":
+		*v = ImageMediaTypeOci
+	default:
+		return fmt.Errorf("unknown enum value %q", s)
+	}
+	return nil
+}
+
 const (
 	ImageMediaTypeDocker ImageMediaType = "DOCKER"
 
@@ -8833,6 +8899,26 @@ func (v ModuleSourceKind) Name() string {
 
 func (v ModuleSourceKind) Value() string {
 	return string(v)
+}
+
+func (v *ModuleSourceKind) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Name())
+}
+
+func (v *ModuleSourceKind) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "GIT":
+		*v = ModuleSourceKindGit
+	case "LOCAL":
+		*v = ModuleSourceKindLocal
+	default:
+		return fmt.Errorf("unknown enum value %q", s)
+	}
+	return nil
 }
 
 const (
@@ -8861,6 +8947,26 @@ func (v NetworkProtocol) Value() string {
 	return string(v)
 }
 
+func (v *NetworkProtocol) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Name())
+}
+
+func (v *NetworkProtocol) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "TCP":
+		*v = NetworkProtocolTcp
+	case "UDP":
+		*v = NetworkProtocolUdp
+	default:
+		return fmt.Errorf("unknown enum value %q", s)
+	}
+	return nil
+}
+
 const (
 	NetworkProtocolTcp NetworkProtocol = "TCP"
 
@@ -8887,6 +8993,28 @@ func (v ReturnType) Name() string {
 
 func (v ReturnType) Value() string {
 	return string(v)
+}
+
+func (v *ReturnType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Name())
+}
+
+func (v *ReturnType) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "ANY":
+		*v = ReturnTypeAny
+	case "FAILURE":
+		*v = ReturnTypeFailure
+	case "SUCCESS":
+		*v = ReturnTypeSuccess
+	default:
+		return fmt.Errorf("unknown enum value %q", s)
+	}
+	return nil
 }
 
 const (
@@ -8936,6 +9064,44 @@ func (v TypeDefKind) Name() string {
 
 func (v TypeDefKind) Value() string {
 	return string(v)
+}
+
+func (v *TypeDefKind) MarshalJSON() ([]byte, error) {
+	return json.Marshal(v.Name())
+}
+
+func (v *TypeDefKind) UnmarshalJSON(dt []byte) error {
+	var s string
+	if err := json.Unmarshal(dt, &s); err != nil {
+		return err
+	}
+	switch s {
+	case "BOOLEAN":
+		*v = TypeDefKindBoolean
+	case "ENUM":
+		*v = TypeDefKindEnum
+	case "FLOAT":
+		*v = TypeDefKindFloat
+	case "INPUT":
+		*v = TypeDefKindInput
+	case "INTEGER":
+		*v = TypeDefKindInteger
+	case "INTERFACE":
+		*v = TypeDefKindInterface
+	case "LIST":
+		*v = TypeDefKindList
+	case "OBJECT":
+		*v = TypeDefKindObject
+	case "SCALAR":
+		*v = TypeDefKindScalar
+	case "STRING":
+		*v = TypeDefKindString
+	case "VOID":
+		*v = TypeDefKindVoid
+	default:
+		return fmt.Errorf("unknown enum value %q", s)
+	}
+	return nil
 }
 
 const (

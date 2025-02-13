@@ -11,7 +11,6 @@ import (
 
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
-	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -1093,18 +1092,6 @@ var (
 	)
 	_ = TypeDefKinds.Alias("ENUM_KIND", "ENUM", BeforeVersion("v0.16.0"))
 )
-
-// BeforeVersion is a view that checks if a target version is less than the
-// filtered version.
-// XXX: dedupe with schema pkg
-type BeforeVersion string
-
-func (maxVersion BeforeVersion) Contains(version string) bool {
-	if version == "" {
-		return false
-	}
-	return semver.Compare(version, string(maxVersion)) < 0
-}
 
 func (k TypeDefKind) Type() *ast.Type {
 	return &ast.Type{
