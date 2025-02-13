@@ -45,15 +45,15 @@ func (t Engine) Dev(ctx context.Context) error {
 	}
 
 	gpuSupport := os.Getenv(util.GPUSupportEnvName) != ""
-	trace := os.Getenv(util.TraceEnvName) != ""
 	race := os.Getenv(util.RaceEnvName) != ""
+	logLevel := os.Getenv(util.LogLevelEnvName)
 
 	args := []string{"dev-export", "--platform=" + platforms.DefaultString()}
 	if gpuSupport {
 		args = append(args, "--experimental-gpu-support=true")
 	}
-	if trace {
-		args = append(args, "--trace=true")
+	if logLevel != "" {
+		args = append(args, "--log-level="+logLevel)
 	}
 	if race {
 		args = append(args, "--race=true")
