@@ -345,7 +345,6 @@ func TestParseRefString(t *testing.T) {
 				dirNeverExistsFS{},
 				tc.urlStr,
 				"",
-				false,
 			)
 			if tc.wantErrContains != "" {
 				require.ErrorContains(t, err, tc.wantErrContains)
