@@ -1713,11 +1713,7 @@ func (s *moduleSchema) moduleSourceAsModule(
 
 	mod.InstanceID = dagql.CurrentID(ctx)
 
-	// TODO: srcInstContentHashed here???
-	// TODO: srcInstContentHashed here???
-	// TODO: srcInstContentHashed here???
-	// TODO: srcInstContentHashed here???
-	inst, err = dagql.NewInstanceForCurrentID(ctx, s.dag, src, mod)
+	inst, err = dagql.NewInstanceForCurrentID(ctx, s.dag, srcInstContentHashed, mod)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance for module %q: %w", modName, err)
 	}
