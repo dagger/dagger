@@ -508,7 +508,12 @@ Secrets can also be sourced from external secret managers. Currently, Dagger sup
 OP_SERVICE_ACCOUNT_TOKEN="mytoken" dagger call github-api --token=op://infra/github/credential
 ```
 
-Similarly, here is an example for Vault:
+Vault can be authenticated with either token or AppRole methods. The Vault host can be specified by setting the environment variable `VAULT_ADDR`. For token authentication, set the environment variable `VAULT_TOKEN`. For AppRole authentication, set the environment variables `VAULT_APPROLE_ROLE_ID` and `VAULT_APPROLE_SECRET_ID`. Additional client configuration can be specified by the default environment variables accepted by Vault.
+
+Vault KvV2 secrets are accessed with the scheme `vault://<path>/<to>/<secret>.<item>`. If your KvV2 is not mounted at `/secret`, specify the mount location with the environment variable `VAULT_PATH_PREFIX`. Here is an example:
+
+```shell
+VAULT_ADDR='https://example.com:8200' VAULT_TOKEN=abcd_1234 dagger call github-api --token=vault://infra/github.credential
 
 ```shell
 dagger call github-api --token=vault://credentials.github
