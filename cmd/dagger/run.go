@@ -24,7 +24,6 @@ import (
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/engine/client/pathutil"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
@@ -124,31 +123,6 @@ func run(cmd *cobra.Command, args []string) error {
 	return withEngine(ctx, client.Params{
 		SecretToken: sessionToken,
 	}, func(ctx context.Context, engineClient *client.Client) error {
-		cwd, err := pathutil.Getwd()
-		if err != nil {
-			return fmt.Errorf("failed to get current working directory: %w", err)
-		}
-
-		moduleSrcPath, configExist, err := findUp(cwd)
-		if err != nil {
-			w := cmd.OutOrStdout()
-			fmt.Fprintf(w, "failed to look for dagger.json file: %s\n", err.Error())
-		}
-
-		if configExist {
-			mod, err := initializeClientGeneratorModule(ctx, engineClient.Dagger(), moduleSrcPath, false)
-			if err != nil {
-				return fmt.Errorf("failed to initialize current module: %w", err)
-			}
-
-			for _, dep := range mod.Dependencies {
-				err := dep.Source.AsModule().Initialize().Serve(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to serve dependency %s: %w", dep.Name, err)
-				}
-			}
-		}
-
 		sessionL, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			return fmt.Errorf("session listen: %w", err)

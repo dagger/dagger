@@ -413,7 +413,8 @@ func (t *TypescriptSdk) configureModule(ctr *dagger.Container) *dagger.Container
 func (t *TypescriptSdk) addSDK() *dagger.Directory {
 	return t.SDKSourceDir.
 		WithoutDirectory("codegen").
-		WithoutDirectory("runtime")
+		WithoutDirectory("runtime").
+		WithoutDirectory("src/provisioning")
 }
 
 // generateClient uses the given container to generate the client code.

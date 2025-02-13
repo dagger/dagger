@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -115,11 +117,20 @@ main()
 					With(daggerClientAdd(tc.generator)).
 					With(tc.postSetup)
 
-				out, err := moduleSrc.With(daggerUnprivilegedRun(tc.callCmd...)).
-					Stdout(ctx)
+				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
+					out, err := moduleSrc.With(daggerUnprivilegedRun(tc.callCmd...)).
+						Stdout(ctx)
 
-				require.NoError(t, err)
-				require.Equal(t, "result: hello, world!\n", out)
+					require.NoError(t, err)
+					require.Equal(t, "result: hello, world!\n", out)
+				})
+
+				t.Run(strings.Join(tc.callCmd, " "), func(ctx context.Context, t *testctx.T) {
+					out, err := moduleSrc.WithExec(tc.callCmd).Stdout(ctx)
+
+					require.NoError(t, err)
+					require.Equal(t, "result: hello, world!\n", out)
+				})
 			})
 		}
 	})
@@ -233,11 +244,20 @@ main()
 					With(daggerClientAdd(tc.generator)).
 					With(tc.postSetup)
 
-				out, err := moduleSrc.With(daggerUnprivilegedRun(tc.callCmd...)).
-					Stdout(ctx)
+				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
+					out, err := moduleSrc.With(daggerUnprivilegedRun(tc.callCmd...)).
+						Stdout(ctx)
 
-				require.NoError(t, err)
-				require.Equal(t, "result: hello\n", out)
+					require.NoError(t, err)
+					require.Equal(t, "result: hello\n", out)
+				})
+
+				t.Run(strings.Join(tc.callCmd, " "), func(ctx context.Context, t *testctx.T) {
+					out, err := moduleSrc.WithExec(tc.callCmd).Stdout(ctx)
+
+					require.NoError(t, err)
+					require.Equal(t, "result: hello\n", out)
+				})
 			})
 		}
 	})
@@ -359,11 +379,20 @@ main()
 					With(daggerClientAdd(tc.generator)).
 					With(tc.postSetup)
 
-				out, err := moduleSrc.With(daggerUnprivilegedRun(tc.callCmd...)).
-					Stdout(ctx)
+				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
+					out, err := moduleSrc.With(daggerUnprivilegedRun(tc.callCmd...)).
+						Stdout(ctx)
 
-				require.NoError(t, err)
-				require.Equal(t, "result: hello\n", out)
+					require.NoError(t, err)
+					require.Equal(t, "result: hello\n", out)
+				})
+
+				t.Run(strings.Join(tc.callCmd, " "), func(ctx context.Context, t *testctx.T) {
+					out, err := moduleSrc.WithExec(tc.callCmd).Stdout(ctx)
+
+					require.NoError(t, err)
+					require.Equal(t, "result: hello\n", out)
+				})
 			})
 		}
 	})
