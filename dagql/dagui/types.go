@@ -204,7 +204,7 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 		}
 		rows.Order = append(rows.Order, row)
 		rows.BySpan[tree.Span.ID] = row
-		if tree.IsRunningOrChildRunning || tree.Span.IsFailedOrCausedFailure() || opts.Verbosity >= ExpandCompletedVerbosity {
+		if tree.RevealedChildren || tree.IsRunningOrChildRunning || tree.Span.IsFailedOrCausedFailure() || opts.Verbosity >= ExpandCompletedVerbosity {
 			for _, child := range tree.Children {
 				walk(child, row.Span, depth+1)
 			}
