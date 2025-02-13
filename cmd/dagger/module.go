@@ -333,32 +333,29 @@ var moduleInstallCmd = &cobra.Command{
 					"local_subpath": depRootSubpath,
 				})
 			case dagger.ModuleSourceKindGitSource:
-				/* TODO: fix
-				gitURL, err := git.CloneRef(ctx)
+				gitURL, err := depSrc.CloneRef(ctx)
 				if err != nil {
-					return err
+					return fmt.Errorf("failed to get git clone URL: %w", err)
 				}
-				gitVersion, err := git.Version(ctx)
+				gitVersion, err := depSrc.Version(ctx)
 				if err != nil {
-					return err
+					return fmt.Errorf("failed to get git version: %w", err)
 				}
-				gitCommit, err := git.Commit(ctx)
+				gitCommit, err := depSrc.Commit(ctx)
 				if err != nil {
-					return err
+					return fmt.Errorf("failed to get git commit: %w", err)
 				}
-				*/
 
 				analytics.Ctx(ctx).Capture(ctx, "module_install", map[string]string{
-					"module_name":  origDepName,
-					"install_name": installName,
-					"module_sdk":   sdk,
-					"source_kind":  "git",
-					"git_subpath":  depRootSubpath,
-					// TODO: fix
-					// "git_symbolic":  filepath.Join(gitURL, depRootSubpath),
-					// "git_clone_url": gitURL,
-					// "git_version":   gitVersion,
-					// "git_commit":    gitCommit,
+					"module_name":   origDepName,
+					"install_name":  installName,
+					"module_sdk":    sdk,
+					"source_kind":   "git",
+					"git_subpath":   depRootSubpath,
+					"git_symbolic":  filepath.Join(gitURL, depRootSubpath),
+					"git_clone_url": gitURL,
+					"git_version":   gitVersion,
+					"git_commit":    gitCommit,
 				})
 			}
 
