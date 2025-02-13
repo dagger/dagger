@@ -1469,47 +1469,12 @@ func (s *moduleSchema) moduleSourceGeneratedContextDirectory(
 	// run codegen too if we have a name and SDK
 	genDirInst = src.ContextDirectory
 	if modCfg.Name != "" && modCfg.SDK != nil && modCfg.SDK.Source != "" {
-		var eg errgroup.Group
-		depMods := make([]dagql.Instance[*core.Module], len(src.Dependencies))
-		for i, depSrc := range srcInst.Self.Dependencies {
-			eg.Go(func() error {
-				return s.dag.Select(ctx, depSrc, &depMods[i],
-					dagql.Selector{Field: "asModule"},
-				)
-			})
-		}
-		if err := eg.Wait(); err != nil {
-			return genDirInst, fmt.Errorf("failed to load module dependencies: %w", err)
-		}
-
-		defaultDeps, err := srcInst.Self.Query.DefaultDeps(ctx)
+		deps, err := s.loadDependencyModules(ctx, srcInst.Self)
 		if err != nil {
-			return genDirInst, fmt.Errorf("failed to get default dependencies: %w", err)
-		}
-		deps := core.NewModDeps(srcInst.Self.Query, defaultDeps.Mods)
-		for _, depMod := range depMods {
-			deps = deps.Append(depMod.Self)
-		}
-		for i, depMod := range deps.Mods {
-			if coreMod, ok := depMod.(*CoreMod); ok {
-				// this is needed so that a module's dependency on the core
-				// uses the correct schema version
-				dag := *coreMod.Dag
-
-				dag.View = engine.BaseVersion(engine.NormalizeVersion(src.EngineVersion))
-				deps.Mods[i] = &CoreMod{Dag: &dag}
-			}
+			return genDirInst, fmt.Errorf("failed to load dependencies as modules: %w", err)
 		}
 
-		// TODO: wrap up in nicer looking util/interface
-		// TODO: wrap up in nicer looking util/interface
-		// TODO: wrap up in nicer looking util/interface
-		// TODO: wrap up in nicer looking util/interface
-		// TODO: wrap up in nicer looking util/interface
-		// TODO: wrap up in nicer looking util/interface
-		_, _, err = s.dag.Cache.GetOrInitialize(ctx, digest.Digest(srcInst.Self.Digest), func(context.Context) (dagql.Typed, error) {
-			return srcInst, nil
-		})
+		_, _, err = s.dag.Cache.GetOrInitializeValue(ctx, digest.Digest(srcInst.Self.Digest), srcInst)
 		if err != nil {
 			return genDirInst, fmt.Errorf("failed to get or initialize instance: %w", err)
 		}
@@ -1672,69 +1637,24 @@ func (s *moduleSchema) moduleSourceAsModule(
 		SDKConfig: src.Self.SDK,
 	}
 
-	// TODO: wrap up in nicer looking util/interface
-	// TODO: wrap up in nicer looking util/interface
-	// TODO: wrap up in nicer looking util/interface
-	// TODO: wrap up in nicer looking util/interface
-	// TODO: wrap up in nicer looking util/interface
-	// TODO: wrap up in nicer looking util/interface
-	_, _, err = s.dag.Cache.GetOrInitialize(ctx, digest.Digest(src.Self.Digest), func(context.Context) (dagql.Typed, error) {
-		return src, nil
-	})
+	_, _, err = s.dag.Cache.GetOrInitializeValue(ctx, digest.Digest(src.Self.Digest), src)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
 	srcInstContentHashed := src.WithMetadata(digest.Digest(src.Self.Digest), true)
 
-	loadDepModsCtx, loadDepModsSpan := core.Tracer(ctx).Start(ctx, "asModule load deps + sdk", telemetry.Internal())
-
-	var eg errgroup.Group
-
-	depMods := make([]dagql.Instance[*core.Module], len(src.Self.Dependencies))
-	for i, depSrc := range src.Self.Dependencies {
-		eg.Go(func() error {
-			return s.dag.Select(loadDepModsCtx, depSrc, &depMods[i],
-				dagql.Selector{Field: "asModule"},
-			)
-		})
-	}
-
-	if err := eg.Wait(); err != nil {
-		loadDepModsSpan.End()
-		return inst, fmt.Errorf("failed to load module dependencies: %w", err)
-	}
-	loadDepModsSpan.End()
-
-	defaultDeps, err := src.Self.Query.DefaultDeps(ctx)
+	deps, err := s.loadDependencyModules(ctx, src.Self)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get default dependencies: %w", err)
-	}
-	deps := core.NewModDeps(src.Self.Query, defaultDeps.Mods)
-	for _, depMod := range depMods {
-		deps = deps.Append(depMod.Self)
-	}
-	for i, depMod := range deps.Mods {
-		if coreMod, ok := depMod.(*CoreMod); ok {
-			// this is needed so that a module's dependency on the core
-			// uses the correct schema version
-			dag := *coreMod.Dag
-			dag.View = engine.BaseVersion(engine.NormalizeVersion(src.Self.EngineVersion))
-			deps.Mods[i] = &CoreMod{Dag: &dag}
-		}
+		return inst, fmt.Errorf("failed to load dependencies as modules: %w", err)
 	}
 	mod.Deps = deps
 
-	runtimeCtx, runtimeSpan := core.Tracer(ctx).Start(ctx, "asModule runtime", telemetry.Internal())
-
-	mod.Runtime, err = src.Self.SDKImpl.Runtime(runtimeCtx, mod.Deps, srcInstContentHashed)
+	mod.Runtime, err = src.Self.SDKImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
 	if err != nil {
-		runtimeSpan.End()
 		return inst, fmt.Errorf("failed to get module runtime: %w", err)
 	}
-	runtimeSpan.End()
 
 	getModDefCtx, getModDefSpan := core.Tracer(ctx).Start(ctx, "asModule getModDef", telemetry.Internal())
-
 	// construct a special function with no object or function name, which tells
 	// the SDK to return the module's definition (in terms of objects, fields and
 	// functions)
@@ -1803,6 +1723,45 @@ func (s *moduleSchema) moduleSourceAsModule(
 	}
 
 	return inst, nil
+}
+
+func (s *moduleSchema) loadDependencyModules(ctx context.Context, src *core.ModuleSource) (*core.ModDeps, error) {
+	ctx, span := core.Tracer(ctx).Start(ctx, "load dep modules", telemetry.Internal())
+	defer span.End()
+
+	var eg errgroup.Group
+	depMods := make([]dagql.Instance[*core.Module], len(src.Dependencies))
+	for i, depSrc := range src.Dependencies {
+		eg.Go(func() error {
+			return s.dag.Select(ctx, depSrc, &depMods[i],
+				dagql.Selector{Field: "asModule"},
+			)
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, fmt.Errorf("failed to load module dependencies: %w", err)
+	}
+
+	defaultDeps, err := src.Query.DefaultDeps(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get default dependencies: %w", err)
+	}
+	deps := core.NewModDeps(src.Query, defaultDeps.Mods)
+	for _, depMod := range depMods {
+		deps = deps.Append(depMod.Self)
+	}
+	for i, depMod := range deps.Mods {
+		if coreMod, ok := depMod.(*CoreMod); ok {
+			// this is needed so that a module's dependency on the core
+			// uses the correct schema version
+			dag := *coreMod.Dag
+
+			dag.View = engine.BaseVersion(engine.NormalizeVersion(src.EngineVersion))
+			deps.Mods[i] = &CoreMod{Dag: &dag}
+		}
+	}
+
+	return deps, nil
 }
 
 func callerHostFindUp(
