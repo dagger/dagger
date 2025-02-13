@@ -1,7 +1,9 @@
 {
   "name": "typescript-sdk-dev",
   "engineVersion": "v0.12.7",
-  "sdk": "typescript",
+  "sdk": {
+    "source": "typescript"
+  },
   "dependencies": [
     {
       "name": "node",

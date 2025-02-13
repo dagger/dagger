@@ -1,6 +1,8 @@
 {
   "name": "graphql",
   "engineVersion": "v0.12.4",
-  "sdk": "go",
+  "sdk": {
+    "source": "go"
+  },
   "source": "."
 }

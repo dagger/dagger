@@ -397,7 +397,7 @@ func (p Go) Lint(
 	ctx context.Context,
 	packages []string, // +optional
 ) error {
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 	for _, pkg := range packages {
 		eg.Go(func() (rerr error) {
 			ctx, span := Tracer().Start(ctx, "lint "+path.Clean(pkg))
