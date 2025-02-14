@@ -57,6 +57,7 @@ func getTermcastWithQuickstart(wdir *dagger.Directory) *dagger.Termcast {
 	ctr := getTermcast(dag.Directory()).Container().
 		WithMountedDirectory("/src", repo).
 		WithMountedDirectory("/module", wdir).
+		WithExec([]string{"apk", "add", "curl"}).
 		WithExec([]string{"cp", "-R", "/module", "/src/dagger"}).
 		WithExec([]string{"mv", "/src/dagger/dagger.json", "/src/dagger.json"}).
 		WithExec([]string{"sh", "-c", `sed -i 's/"source": "."/"source": "dagger"/' /src/dagger.json`}).
@@ -188,12 +189,14 @@ func (r Recorder) GenerateQuickstartRecordings(
 			getTermcastWithQuickstart(base.Directory("daggerize/go")).
 				Exec("dagger call build --source=.", dagger.TermcastExecOpts{Fast: true}).
 				Gif()).
-		// for https://docs.dagger.io/quickstart/build
-		WithFile(
-			"build-service.gif",
-			getTermcastWithQuickstart(base.Directory("daggerize/go")).
-				Exec("dagger call build --source=. as-service up --ports=8080:80", dagger.TermcastExecOpts{Fast: true}).
-				Gif()).
+		/*
+			// for https://docs.dagger.io/quickstart/build
+			WithFile(
+				"build-service.gif",
+				getTermcastWithQuickstart(base.Directory("daggerize/go")).
+					Exec("dagger call build --source=. as-service up --ports=8080:80", dagger.TermcastExecOpts{Fast: true}).
+					Gif()).
+		*/
 		// for https://docs.dagger.io/quickstart/publish
 		WithFile(
 			"publish.gif",
