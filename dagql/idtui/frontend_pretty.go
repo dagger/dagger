@@ -1196,6 +1196,19 @@ func (fe *frontendPretty) renderLocked() {
 }
 
 func (fe *frontendPretty) renderRow(out *termenv.Output, r *renderer, row *dagui.TraceRow, prefix string) {
+	defer func() {
+		if row.Next == nil && !row.HasChildren {
+			for parent := row.Parent; parent != nil; parent = parent.Parent {
+				buf := new(strings.Builder)
+				noColor := termenv.NewOutput(buf, termenv.WithProfile(termenv.Ascii))
+				fe.renderStep(noColor, r, parent.Span, false, parent.Depth, prefix)
+				if parent.Span.IsFailedOrCausedFailure() {
+					fe.renderStepError(noColor, r, parent.Span, parent.Depth, prefix)
+				}
+				fmt.Fprint(out, out.String(buf.String()).Faint().Foreground(termenv.ANSIBrightBlack))
+			}
+		}
+	}()
 	if fe.shell != nil && row.Depth == 0 {
 		if row.Previous != nil {
 			fmt.Fprintln(out, prefix)
