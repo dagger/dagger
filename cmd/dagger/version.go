@@ -56,7 +56,7 @@ func versionCmd() *cobra.Command {
 }
 
 func short() string {
-	return fmt.Sprintf("dagger %s (%s:%s)", engine.Version, engine.EngineImageRepo, engine.Tag)
+	return fmt.Sprintf("dagger %s (%s)", engine.Version, RunnerHost)
 }
 
 func long() string {

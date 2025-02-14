@@ -12,19 +12,18 @@ if [ ! -d "$DAGGER_SOURCE" ]; then
 fi
 
 echo "::group::Starting dev engine"
+
 if ! [[ -x "$(command -v docker)" ]]; then
     echo "docker is not installed"
     exit 1
 fi
+if ! [[ -x "$(command -v dagger)" ]]; then
+    echo "dagger is not installed"
+    exit 1
+fi
 
-(
-    cd "$DAGGER_SOURCE"/.dagger/mage
-    go run main.go -w ../.. engine:dev
-) \
-| sed 's/^export //' \
-| while IFS= read -r line; do
-    eval echo "$line"
-done \
-| tee "${GITHUB_ENV}"
+$DAGGER_SOURCE/hack/build
+export PATH=$DAGGER_SOURCE/bin:$PATH
+echo "PATH=$PATH" >>"${GITHUB_ENV}"
 
 echo "::endgroup::"
