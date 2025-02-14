@@ -101,6 +101,21 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                 "The class %s must extend %s".formatted(qName, AbstractModule.class.getName()));
           }
 
+          boolean hasDefaultConstructor =
+              typeElement.getEnclosedElements().stream()
+                      .filter(elt -> elt.getKind() == ElementKind.CONSTRUCTOR)
+                      .map(ExecutableElement.class::cast)
+                      .filter(constructor -> constructor.getModifiers().contains(Modifier.PUBLIC))
+                      .anyMatch(constructor -> constructor.getParameters().isEmpty())
+                  || typeElement.getEnclosedElements().stream()
+                      .noneMatch(elt -> elt.getKind() == ElementKind.CONSTRUCTOR);
+
+          if (!hasDefaultConstructor) {
+            throw new RuntimeException(
+                "The class %s must have a public no-argument constructor that calls super()"
+                    .formatted(qName));
+          }
+
           List<FieldInfo> fieldInfoInfos =
               typeElement.getEnclosedElements().stream()
                   .filter(elt -> elt.getKind() == ElementKind.FIELD)
