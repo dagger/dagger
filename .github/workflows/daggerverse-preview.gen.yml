@@ -199,4 +199,4 @@ jobs:
                 DAGGER_MODULE: modules/daggerverse
                 RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
               shell: bash
-        timeout-minutes: 10
+        timeout-minutes: 20

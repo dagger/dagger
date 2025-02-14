@@ -199,7 +199,7 @@ jobs:
                 COMMAND: dagger call -q cli test-publish
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
-        timeout-minutes: 10
+        timeout-minutes: 20
     engine-lint:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-4-16c-st' || 'ubuntu-latest' }}
@@ -382,7 +382,7 @@ jobs:
                 COMMAND: dagger call -q engine lint
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
-        timeout-minutes: 10
+        timeout-minutes: 20
     engine-test-publish:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-4-4c' || 'ubuntu-latest' }}
@@ -565,7 +565,7 @@ jobs:
                 COMMAND: dagger call -q engine publish --image=dagger-engine.dev --tag=main --dry-run
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
-        timeout-minutes: 10
+        timeout-minutes: 20
     scan-engine:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-4-4c' || 'ubuntu-latest' }}
@@ -748,7 +748,7 @@ jobs:
                 COMMAND: dagger call -q engine scan
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
-        timeout-minutes: 10
+        timeout-minutes: 20
     scripts-lint:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-4-4c' || 'ubuntu-latest' }}
@@ -931,7 +931,7 @@ jobs:
                 COMMAND: dagger call -q scripts lint
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
-        timeout-minutes: 10
+        timeout-minutes: 20
     test-cgroupsv-2:
         runs-on:
             - ubuntu-latest

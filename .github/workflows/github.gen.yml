@@ -200,4 +200,4 @@ jobs:
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 DAGGER_MODULE: .github
               shell: bash
-        timeout-minutes: 10
+        timeout-minutes: 20

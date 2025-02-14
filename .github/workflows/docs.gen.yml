@@ -199,4 +199,4 @@ jobs:
                 COMMAND: dagger call -q --docker-cfg=file:$HOME/.docker/config.json docs lint
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
-        timeout-minutes: 10
+        timeout-minutes: 20
