@@ -1,7 +1,7 @@
 query ModuleConfig($source: ModuleSourceID!) {
   source: loadModuleSourceFromID(id: $source) {
-    asString
     kind
+    asString
     module: asModule {
       name
       description

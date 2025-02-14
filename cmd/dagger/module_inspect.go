@@ -211,7 +211,6 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 		Source struct {
 			Kind     dagger.ModuleSourceKind
 			AsString string
-			Kind     dagger.ModuleSourceKind
 			Module   struct {
 				Name         string
 				Description  string
