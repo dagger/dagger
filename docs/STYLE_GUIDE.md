@@ -84,11 +84,14 @@ Each recipe requires only:
 Some screen recordings can be auto-generated with the `docs/recorder` module.
 
 - Generate recordings for some feature pages:
-  ```
+
+  ```shell
   dagger call generate-feature-recordings --base=../current_docs/features/snippets --github-token=<plaintext-token> export --path=/tmp/out
   ```
+
 - Generate recordings for other feature pages:
-    ```
+
+    ```shell
     dagger logout
     export PS1="$ " >> ~/.bashrc
     # run each command once to warm the cache before recording
@@ -102,7 +105,9 @@ Some screen recordings can be auto-generated with the `docs/recorder` module.
     cd ~/images
     docker run --rm -it -u $(id -u):$(id -g) -v $PWD:/data agg <file>.asc <file>.gif
     ```
+
 - Generate recordings for some quickstart pages:
-  ```
+
+  ```shell
   dagger call generate-quickstart-recordings --base=../current_docs/quickstart/snippets --path=/tmp/out
   ```
