@@ -5036,7 +5036,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 			File("dagger.json").
 			Contents(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "source": ".", "engineVersion": "`+engine.Version+`"}`, daggerJSON)
+		require.Equal(t, engine.Version, gjson.Get(daggerJSON, "engineVersion").String())
 	})
 
 	t.Run("from high", func(ctx context.Context, t *testctx.T) {
@@ -5053,7 +5053,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 			File("dagger.json").
 			Contents(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "source": ".", "engineVersion": "`+engine.Version+`"}`, daggerJSON)
+		require.Equal(t, engine.Version, gjson.Get(daggerJSON, "engineVersion").String())
 	})
 
 	t.Run("from missing", func(ctx context.Context, t *testctx.T) {
@@ -5070,7 +5070,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 			File("dagger.json").
 			Contents(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "source": ".", "engineVersion": "`+engine.Version+`"}`, daggerJSON)
+		require.Equal(t, engine.Version, gjson.Get(daggerJSON, "engineVersion").String())
 	})
 
 	t.Run("to specified", func(ctx context.Context, t *testctx.T) {
@@ -5086,7 +5086,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 			File("dagger.json").
 			Contents(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "source": ".", "engineVersion": "v0.9.9"}`, daggerJSON)
+		require.Equal(t, "v0.9.9", gjson.Get(daggerJSON, "engineVersion").String())
 	})
 
 	t.Run("skipped", func(ctx context.Context, t *testctx.T) {
@@ -5102,7 +5102,58 @@ func schemaVersion(ctx context.Context) (string, error) {
 			File("dagger.json").
 			Contents(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"name": "foo", "sdk": {"source": "go"}, "source": ".", "engineVersion": "v0.9.9"}`, daggerJSON)
+		require.Equal(t, "v0.9.9", gjson.Get(daggerJSON, "engineVersion").String())
+	})
+
+	t.Run("in install", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		work := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.0.0"}`).
+			WithNewFile("main.go", moduleSrc)
+
+		work = work.With(daggerExec("install", "github.com/shykes/hello"))
+		daggerJSON, err := work.
+			File("dagger.json").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, engine.Version, gjson.Get(daggerJSON, "engineVersion").String())
+	})
+
+	t.Run("in uninstall", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		work := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "dependencies": [{ "name": "hello", "source": "github.com/shykes/hello", "pin": "2d789671a44c4d559be506a9bc4b71b0ba6e23c9" }], "source": ".", "engineVersion": "v0.0.0"}`).
+			WithNewFile("main.go", moduleSrc)
+
+		work = work.With(daggerExec("uninstall", "hello"))
+		daggerJSON, err := work.
+			File("dagger.json").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, engine.Version, gjson.Get(daggerJSON, "engineVersion").String())
+	})
+
+	t.Run("in update", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		work := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.0.0"}`).
+			WithNewFile("main.go", moduleSrc)
+
+		work = work.With(daggerExec("update"))
+		daggerJSON, err := work.
+			File("dagger.json").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, engine.Version, gjson.Get(daggerJSON, "engineVersion").String())
 	})
 }
 
