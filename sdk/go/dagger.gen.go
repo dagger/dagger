@@ -2190,8 +2190,6 @@ func (r *Directory) WithGraphQLQuery(q *querybuilder.Selection) *Directory {
 type DirectoryAsModuleOpts struct {
 	// An optional subpath of the directory which contains the module's configuration file.
 	//
-	// This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
-	//
 	// If not set, the module source code is loaded from the root of the directory.
 	SourceRootPath string
 }
@@ -2214,8 +2212,6 @@ func (r *Directory) AsModule(opts ...DirectoryAsModuleOpts) *Module {
 // DirectoryAsModuleSourceOpts contains options for Directory.AsModuleSource
 type DirectoryAsModuleSourceOpts struct {
 	// An optional subpath of the directory which contains the module's configuration file.
-	//
-	// This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
 	//
 	// If not set, the module source code is loaded from the root of the directory.
 	SourceRootPath string
@@ -5264,7 +5260,7 @@ func (r *Module) WithGraphQLQuery(q *querybuilder.Selection) *Module {
 	}
 }
 
-// TODO
+// The dependencies of the module.
 func (r *Module) Dependencies(ctx context.Context) ([]Module, error) {
 	q := r.query.Select("dependencies")
 
@@ -5510,7 +5506,7 @@ func (r *Module) Source() *ModuleSource {
 	}
 }
 
-// TODO
+// Forces evaluation of the module, including any loading into the engine and associated validation.
 func (r *Module) Sync(ctx context.Context) (*Module, error) {
 	q := r.query.Select("sync")
 
@@ -5627,7 +5623,7 @@ func (r *ModuleSource) AsString(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// TODO
+// The ref to clone the root of the git repo from. Only valid for git sources.
 func (r *ModuleSource) CloneRef(ctx context.Context) (string, error) {
 	if r.cloneRef != nil {
 		return *r.cloneRef, nil
@@ -5640,7 +5636,7 @@ func (r *ModuleSource) CloneRef(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// TODO
+// The resolved commit of the git repo this source points to. Only valid for git sources.
 func (r *ModuleSource) Commit(ctx context.Context) (string, error) {
 	if r.commit != nil {
 		return *r.commit, nil
@@ -5653,7 +5649,7 @@ func (r *ModuleSource) Commit(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// TODO
+// Whether an existing dagger.json for the module was found.
 func (r *ModuleSource) ConfigExists(ctx context.Context) (bool, error) {
 	if r.configExists != nil {
 		return *r.configExists, nil
@@ -5666,7 +5662,7 @@ func (r *ModuleSource) ConfigExists(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
-// TODO
+// The full directory loaded for the module source, including the source code as a subdirectory.
 func (r *ModuleSource) ContextDirectory() *Directory {
 	q := r.query.Select("contextDirectory")
 
@@ -5675,7 +5671,7 @@ func (r *ModuleSource) ContextDirectory() *Directory {
 	}
 }
 
-// TODO
+// The dependencies of the module source.
 func (r *ModuleSource) Dependencies(ctx context.Context) ([]ModuleSource, error) {
 	q := r.query.Select("dependencies")
 
@@ -5708,7 +5704,7 @@ func (r *ModuleSource) Dependencies(ctx context.Context) ([]ModuleSource, error)
 	return convert(response), nil
 }
 
-// TODO
+// A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance.
 func (r *ModuleSource) Digest(ctx context.Context) (string, error) {
 	if r.digest != nil {
 		return *r.digest, nil
@@ -5731,7 +5727,7 @@ func (r *ModuleSource) Directory(path string) *Directory {
 	}
 }
 
-// TODO
+// The engine version of the module.
 func (r *ModuleSource) EngineVersion(ctx context.Context) (string, error) {
 	if r.engineVersion != nil {
 		return *r.engineVersion, nil
@@ -5753,7 +5749,7 @@ func (r *ModuleSource) GeneratedContextDirectory() *Directory {
 	}
 }
 
-// TODO
+// The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources.
 func (r *ModuleSource) HTMLRepoURL(ctx context.Context) (string, error) {
 	if r.htmlRepoURL != nil {
 		return *r.htmlRepoURL, nil
@@ -5766,7 +5762,7 @@ func (r *ModuleSource) HTMLRepoURL(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The URL to the source's git repo in a web browser
+// The URL to the source's git repo in a web browser. Only valid for git sources.
 func (r *ModuleSource) HTMLURL(ctx context.Context) (string, error) {
 	if r.htmlURL != nil {
 		return *r.htmlURL, nil
@@ -5819,7 +5815,7 @@ func (r *ModuleSource) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// TODO
+// The kind of module source (currently local, git or dir).
 func (r *ModuleSource) Kind(ctx context.Context) (ModuleSourceKind, error) {
 	if r.kind != nil {
 		return *r.kind, nil
@@ -5832,7 +5828,7 @@ func (r *ModuleSource) Kind(ctx context.Context) (ModuleSourceKind, error) {
 	return response, q.Execute(ctx)
 }
 
-// TODO
+// The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.
 func (r *ModuleSource) LocalContextDirectoryPath(ctx context.Context) (string, error) {
 	if r.localContextDirectoryPath != nil {
 		return *r.localContextDirectoryPath, nil
@@ -5845,7 +5841,7 @@ func (r *ModuleSource) LocalContextDirectoryPath(ctx context.Context) (string, e
 	return response, q.Execute(ctx)
 }
 
-// TODO
+// The name of the module, including any setting via the withName API.
 func (r *ModuleSource) ModuleName(ctx context.Context) (string, error) {
 	if r.moduleName != nil {
 		return *r.moduleName, nil
@@ -5858,7 +5854,7 @@ func (r *ModuleSource) ModuleName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// TODO
+// The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).
 func (r *ModuleSource) ModuleOriginalName(ctx context.Context) (string, error) {
 	if r.moduleOriginalName != nil {
 		return *r.moduleOriginalName, nil
@@ -5884,7 +5880,7 @@ func (r *ModuleSource) Pin(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// TODO
+// The import path corresponding to the root of the git repo this source points to. Only valid for git sources.
 func (r *ModuleSource) RepoRootPath(ctx context.Context) (string, error) {
 	if r.repoRootPath != nil {
 		return *r.repoRootPath, nil
@@ -5897,7 +5893,7 @@ func (r *ModuleSource) RepoRootPath(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// TODO
+// The SDK configuration of the module.
 func (r *ModuleSource) SDK() *SDKConfig {
 	q := r.query.Select("sdk")
 
@@ -5906,7 +5902,7 @@ func (r *ModuleSource) SDK() *SDKConfig {
 	}
 }
 
-// TODO
+// The path, relative to the context directory, that contains the module's dagger.json.
 func (r *ModuleSource) SourceRootSubpath(ctx context.Context) (string, error) {
 	if r.sourceRootSubpath != nil {
 		return *r.sourceRootSubpath, nil
@@ -5919,7 +5915,7 @@ func (r *ModuleSource) SourceRootSubpath(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// A human readable ref string representation of this module source.
+// The path to the directory containing the module's source code, relative to the context directory.
 func (r *ModuleSource) SourceSubpath(ctx context.Context) (string, error) {
 	if r.sourceSubpath != nil {
 		return *r.sourceSubpath, nil
@@ -5932,7 +5928,7 @@ func (r *ModuleSource) SourceSubpath(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// TODO
+// Forces evaluation of the module source, including any loading into the engine and associated validation.
 func (r *ModuleSource) Sync(ctx context.Context) (*ModuleSource, error) {
 	q := r.query.Select("sync")
 
@@ -5945,7 +5941,7 @@ func (r *ModuleSource) Sync(ctx context.Context) (*ModuleSource, error) {
 	}, nil
 }
 
-// TODO
+// The specified version of the git repo this source points to. Only valid for git sources.
 func (r *ModuleSource) Version(ctx context.Context) (string, error) {
 	if r.version != nil {
 		return *r.version, nil
@@ -5968,7 +5964,7 @@ func (r *ModuleSource) WithDependencies(dependencies []*ModuleSource) *ModuleSou
 	}
 }
 
-// TODO
+// Upgrade the engine version of the module to the given value.
 func (r *ModuleSource) WithEngineVersion(version string) *ModuleSource {
 	q := r.query.Select("withEngineVersion")
 	q = q.Arg("version", version)
@@ -6986,15 +6982,15 @@ func (r *Client) Module() *Module {
 type ModuleSourceOpts struct {
 	// The pinned version of the module source
 	RefPin string
-	// TODO
+	// If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.
 	DisableFindUp bool
-	// TODO
+	// If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
 	AllowNotExists bool
-	// TODO
+	// If set, error out if the ref string is not of the provided requireKind.
 	RequireKind ModuleSourceKind
 }
 
-// TODO
+// Create a new module source instance from a source ref string
 func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *ModuleSource {
 	q := r.query.Select("moduleSource")
 	for i := len(opts) - 1; i >= 0; i-- {

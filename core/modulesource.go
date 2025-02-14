@@ -68,22 +68,19 @@ func (sdk SDKConfig) Clone() *SDKConfig {
 	return &cp
 }
 
-// TODO: fix all doc strings
-// TODO: fix all doc strings
-// TODO: fix all doc strings
-// TODO: fix all doc strings
-
 type ModuleSource struct {
 	Query *Query
 
-	ConfigExists           bool   `field:"true" name:"configExists" doc:"TODO"`
-	ModuleName             string `field:"true" name:"moduleName" doc:"TODO"`
-	ModuleOriginalName     string `field:"true" name:"moduleOriginalName" doc:"TODO"`
-	EngineVersion          string `field:"true" name:"engineVersion" doc:"TODO"`
+	ConfigExists           bool   `field:"true" name:"configExists" doc:"Whether an existing dagger.json for the module was found."`
+	ModuleName             string `field:"true" name:"moduleName" doc:"The name of the module, including any setting via the withName API."`
+	ModuleOriginalName     string `field:"true" name:"moduleOriginalName" doc:"The original name of the module as read from the module's dagger.json (or set for the first time with the withName API)."`
+	EngineVersion          string `field:"true" name:"engineVersion" doc:"The engine version of the module."`
 	CodegenConfig          *modules.ModuleCodegenConfig
 	ModuleConfigUserFields modules.ModuleConfigUserFields
 
-	SDK     *SDKConfig `field:"true" name:"sdk" doc:"TODO"`
+	// The SDK configuration of the module as read from the module's dagger.json or set by withSDK
+	SDK *SDKConfig `field:"true" name:"sdk" doc:"The SDK configuration of the module."`
+	// The implementation of the SDK with codegen and related operations. Reloaded when SDK changes.
 	SDKImpl SDK
 
 	// IncludePaths are the includes as read from the module's dagger.json
@@ -95,19 +92,18 @@ type ModuleSource struct {
 	// NOTE: this is currently not updated by withDependencies and related APIs, only Dependencies will be updated
 	ConfigDependencies []*modules.ModuleConfigDependency
 	// Dependencies are the loaded sources for the module's dependencies
-	Dependencies []dagql.Instance[*ModuleSource] `field:"true" name:"dependencies" doc:"TODO"`
+	Dependencies []dagql.Instance[*ModuleSource] `field:"true" name:"dependencies" doc:"The dependencies of the module source."`
 
 	// SourceRootSubpath is the relative path from the context dir to the dir containing the module's dagger.json
-	SourceRootSubpath string `field:"true" name:"sourceRootSubpath" doc:"TODO"`
+	SourceRootSubpath string `field:"true" name:"sourceRootSubpath" doc:"The path, relative to the context directory, that contains the module's dagger.json."`
 	// SourceSubpath is the relative path from the context dir to the dir containing the module's source code
 	SourceSubpath string
 
-	ContextDirectory dagql.Instance[*Directory] `field:"true" name:"contextDirectory" doc:"TODO"`
+	ContextDirectory dagql.Instance[*Directory] `field:"true" name:"contextDirectory" doc:"The full directory loaded for the module source, including the source code as a subdirectory."`
 
-	Digest string `field:"true" name:"digest" doc:"TODO"`
+	Digest string `field:"true" name:"digest" doc:"A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance."`
 
-	// TODO: doc why explicitly not public fields, internal-only
-	Kind  ModuleSourceKind `field:"true" name:"kind" doc:"TODO"`
+	Kind  ModuleSourceKind `field:"true" name:"kind" doc:"The kind of module source (currently local, git or dir)."`
 	Local *LocalModuleSource
 	Git   *GitModuleSource
 }
@@ -233,7 +229,8 @@ func (src *ModuleSource) Pin() string {
 // with any others
 const moduleSourceHashMix = "moduleSource"
 
-// TODO: doc, used for codegen
+// CalcDigest calculates a content-hash of the module source. It is used during codegen; two module
+// sources with the same digest will share cache for codegen-related calls.
 func (src *ModuleSource) CalcDigest() digest.Digest {
 	inputs := []string{
 		moduleSourceHashMix,
@@ -259,6 +256,8 @@ func (src *ModuleSource) CalcDigest() digest.Digest {
 	return HashFrom(inputs...)
 }
 
+// LoadContext loads addition files+directories from the module source's context, including those that
+// may have not been included in the original module source load.
 func (src *ModuleSource) LoadContext(
 	ctx context.Context,
 	dag *dagql.Server,
@@ -366,7 +365,6 @@ func (src *ModuleSource) LoadContext(
 		return MakeDirectoryContentHashed(ctx, bk, ctxDir)
 
 	case ModuleSourceKindDir:
-		// TODO: 99% duped with above
 		if !filepath.IsAbs(path) {
 			path = filepath.Join("/", src.SourceRootSubpath, path)
 		}
@@ -432,22 +430,29 @@ func (src LocalModuleSource) Clone() *LocalModuleSource {
 }
 
 type GitModuleSource struct {
+	// The ref to clone the root of the git repo from
 	CloneRef string
 
 	// Symbolic is the CloneRef plus the SourceRootSubpath (no version)
 	Symbolic string
 
+	// The URL to the source's git repo in a web browser, at the root of the repo
 	HTMLRepoURL string
-	HTMLURL     string
 
+	// The URL to the source's git repo in a web browser, including to the source root subpath
+	HTMLURL string
+
+	// The import path corresponding to the root of the git repo this source points to
 	RepoRootPath string
 
+	// The version of the source; may be a branch, tag, or commit hash
 	Version string
 
+	// The resolved commit hash of the source
 	Commit string
 	Pin    string
 
-	// TODO: doc, needed for contextual dir args and such
+	// The full git repo for the module source without any include filtering
 	UnfilteredContextDir dagql.Instance[*Directory]
 }
 

@@ -374,7 +374,7 @@ func Module() *dagger.Module {
 	return client.Module()
 }
 
-// TODO
+// Create a new module source instance from a source ref string
 func ModuleSource(refString string, opts ...dagger.ModuleSourceOpts) *dagger.ModuleSource {
 	client := initClient()
 	return client.ModuleSource(refString, opts...)

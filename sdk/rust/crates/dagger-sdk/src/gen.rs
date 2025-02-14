@@ -3906,7 +3906,6 @@ pub struct Directory {
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryAsModuleOpts<'a> {
     /// An optional subpath of the directory which contains the module's configuration file.
-    /// This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
     /// If not set, the module source code is loaded from the root of the directory.
     #[builder(setter(into, strip_option), default)]
     pub source_root_path: Option<&'a str>,
@@ -3914,7 +3913,6 @@ pub struct DirectoryAsModuleOpts<'a> {
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryAsModuleSourceOpts<'a> {
     /// An optional subpath of the directory which contains the module's configuration file.
-    /// This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
     /// If not set, the module source code is loaded from the root of the directory.
     #[builder(setter(into, strip_option), default)]
     pub source_root_path: Option<&'a str>,
@@ -5920,7 +5918,7 @@ pub struct Module {
     pub graphql_client: DynGraphQLClient,
 }
 impl Module {
-    /// TODO
+    /// The dependencies of the module.
     pub fn dependencies(&self) -> Vec<Module> {
         let query = self.selection.select("dependencies");
         vec![Module {
@@ -6013,7 +6011,7 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// TODO
+    /// Forces evaluation of the module, including any loading into the engine and associated validation.
     pub async fn sync(&self) -> Result<ModuleId, DaggerError> {
         let query = self.selection.select("sync");
         query.execute(self.graphql_client.clone()).await
@@ -6102,22 +6100,22 @@ impl ModuleSource {
         let query = self.selection.select("asString");
         query.execute(self.graphql_client.clone()).await
     }
-    /// TODO
+    /// The ref to clone the root of the git repo from. Only valid for git sources.
     pub async fn clone_ref(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("cloneRef");
         query.execute(self.graphql_client.clone()).await
     }
-    /// TODO
+    /// The resolved commit of the git repo this source points to. Only valid for git sources.
     pub async fn commit(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("commit");
         query.execute(self.graphql_client.clone()).await
     }
-    /// TODO
+    /// Whether an existing dagger.json for the module was found.
     pub async fn config_exists(&self) -> Result<bool, DaggerError> {
         let query = self.selection.select("configExists");
         query.execute(self.graphql_client.clone()).await
     }
-    /// TODO
+    /// The full directory loaded for the module source, including the source code as a subdirectory.
     pub fn context_directory(&self) -> Directory {
         let query = self.selection.select("contextDirectory");
         Directory {
@@ -6126,7 +6124,7 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// TODO
+    /// The dependencies of the module source.
     pub fn dependencies(&self) -> Vec<ModuleSource> {
         let query = self.selection.select("dependencies");
         vec![ModuleSource {
@@ -6135,7 +6133,7 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }]
     }
-    /// TODO
+    /// A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance.
     pub async fn digest(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("digest");
         query.execute(self.graphql_client.clone()).await
@@ -6144,7 +6142,7 @@ impl ModuleSource {
     ///
     /// # Arguments
     ///
-    /// * `path` - The path from the source directory to select.
+    /// * `path` - A subpath from the source directory to select.
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
         query = query.arg("path", path.into());
@@ -6154,7 +6152,7 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// TODO
+    /// The engine version of the module.
     pub async fn engine_version(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("engineVersion");
         query.execute(self.graphql_client.clone()).await
@@ -6168,12 +6166,12 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// TODO
+    /// The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources.
     pub async fn html_repo_url(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("htmlRepoURL");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The URL to the source's git repo in a web browser
+    /// The URL to the source's git repo in a web browser. Only valid for git sources.
     pub async fn html_url(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("htmlURL");
         query.execute(self.graphql_client.clone()).await
@@ -6183,22 +6181,22 @@ impl ModuleSource {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// TODO
+    /// The kind of module source (currently local, git or dir).
     pub async fn kind(&self) -> Result<ModuleSourceKind, DaggerError> {
         let query = self.selection.select("kind");
         query.execute(self.graphql_client.clone()).await
     }
-    /// TODO
+    /// The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.
     pub async fn local_context_directory_path(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("localContextDirectoryPath");
         query.execute(self.graphql_client.clone()).await
     }
-    /// TODO
+    /// The name of the module, including any setting via the withName API.
     pub async fn module_name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("moduleName");
         query.execute(self.graphql_client.clone()).await
     }
-    /// TODO
+    /// The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).
     pub async fn module_original_name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("moduleOriginalName");
         query.execute(self.graphql_client.clone()).await
@@ -6208,12 +6206,12 @@ impl ModuleSource {
         let query = self.selection.select("pin");
         query.execute(self.graphql_client.clone()).await
     }
-    /// TODO
+    /// The import path corresponding to the root of the git repo this source points to. Only valid for git sources.
     pub async fn repo_root_path(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("repoRootPath");
         query.execute(self.graphql_client.clone()).await
     }
-    /// TODO
+    /// The SDK configuration of the module.
     pub fn sdk(&self) -> SdkConfig {
         let query = self.selection.select("sdk");
         SdkConfig {
@@ -6222,22 +6220,22 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// TODO
+    /// The path, relative to the context directory, that contains the module's dagger.json.
     pub async fn source_root_subpath(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sourceRootSubpath");
         query.execute(self.graphql_client.clone()).await
     }
-    /// A human readable ref string representation of this module source.
+    /// The path to the directory containing the module's source code, relative to the context directory.
     pub async fn source_subpath(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sourceSubpath");
         query.execute(self.graphql_client.clone()).await
     }
-    /// TODO
+    /// Forces evaluation of the module source, including any loading into the engine and associated validation.
     pub async fn sync(&self) -> Result<ModuleSourceId, DaggerError> {
         let query = self.selection.select("sync");
         query.execute(self.graphql_client.clone()).await
     }
-    /// TODO
+    /// The specified version of the git repo this source points to. Only valid for git sources.
     pub async fn version(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("version");
         query.execute(self.graphql_client.clone()).await
@@ -6256,11 +6254,11 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// TODO
+    /// Upgrade the engine version of the module to the given value.
     ///
     /// # Arguments
     ///
-    /// * `version` - TODO
+    /// * `version` - The engine version to upgrade to.
     pub fn with_engine_version(&self, version: impl Into<String>) -> ModuleSource {
         let mut query = self.selection.select("withEngineVersion");
         query = query.arg("version", version.into());
@@ -6322,7 +6320,7 @@ impl ModuleSource {
     ///
     /// # Arguments
     ///
-    /// * `path` - The path to set as the source subpath.
+    /// * `path` - The path to set as the source subpath. Must be relative to the module source's source root directory.
     pub fn with_source_subpath(&self, path: impl Into<String>) -> ModuleSource {
         let mut query = self.selection.select("withSourceSubpath");
         query = query.arg("path", path.into());
@@ -6515,16 +6513,16 @@ pub struct QueryLoadSecretFromNameOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryModuleSourceOpts<'a> {
-    /// TODO
+    /// If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
     #[builder(setter(into, strip_option), default)]
     pub allow_not_exists: Option<bool>,
-    /// TODO
+    /// If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.
     #[builder(setter(into, strip_option), default)]
     pub disable_find_up: Option<bool>,
     /// The pinned version of the module source
     #[builder(setter(into, strip_option), default)]
     pub ref_pin: Option<&'a str>,
-    /// TODO
+    /// If set, error out if the ref string is not of the provided requireKind.
     #[builder(setter(into, strip_option), default)]
     pub require_kind: Option<ModuleSourceKind>,
 }
@@ -7477,7 +7475,7 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// TODO
+    /// Create a new module source instance from a source ref string
     ///
     /// # Arguments
     ///
@@ -7492,7 +7490,7 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// TODO
+    /// Create a new module source instance from a source ref string
     ///
     /// # Arguments
     ///

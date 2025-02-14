@@ -11,7 +11,7 @@ defmodule Dagger.Module do
 
   @type t() :: %__MODULE__{}
 
-  @doc "TODO"
+  @doc "The dependencies of the module."
   @spec dependencies(t()) :: {:ok, [Dagger.Module.t()]} | {:error, term()}
   def dependencies(%__MODULE__{} = module) do
     query_builder =
@@ -182,7 +182,7 @@ defmodule Dagger.Module do
     }
   end
 
-  @doc "TODO"
+  @doc "Forces evaluation of the module, including any loading into the engine and associated validation."
   @spec sync(t()) :: {:ok, Dagger.Module.t()} | {:error, term()}
   def sync(%__MODULE__{} = module) do
     query_builder =

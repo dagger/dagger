@@ -716,7 +716,7 @@ defmodule Dagger.Client do
     }
   end
 
-  @doc "TODO"
+  @doc "Create a new module source instance from a source ref string"
   @spec module_source(t(), String.t(), [
           {:ref_pin, String.t() | nil},
           {:disable_find_up, boolean() | nil},

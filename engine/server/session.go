@@ -129,7 +129,10 @@ type daggerClient struct {
 	dagqlRoot *core.Query
 
 	// if the client is coming from a module, this is that module
-	mod     *core.Module
+	mod *core.Module
+	// during module initialization, we don't have a full module yet but need to call
+	// a function to get the module typedefs. In this case mod is nil but modName
+	// will be set to allow SDKs to get the module name during that call if needed.
 	modName string
 
 	// the DAG of modules being served to this client
@@ -406,7 +409,9 @@ type ClientInitOpts struct {
 	// object.
 	ParentIDs map[digest.Digest]*resource.ID
 
-	// TODO: doc, somewhat silly workaround
+	// corner case: when initializing a module by calling it to get its typedefs, we don't actually
+	// have a full EncodedModuleID yet, but some SDKs still call CurrentModule.name then. For this
+	// case we just provide the ModuleName and use that to support CurrentModule.name.
 	ModuleName string
 }
 
