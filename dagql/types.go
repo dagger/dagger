@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -145,7 +146,7 @@ func (Int) TypeName() string {
 	return "Int"
 }
 
-func (i Int) TypeDefinition(views ...string) *ast.Definition {
+func (i Int) TypeDefinition(view string) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        i.TypeName(),
@@ -242,7 +243,7 @@ func (Float) TypeName() string {
 	return "Float"
 }
 
-func (f Float) TypeDefinition(views ...string) *ast.Definition {
+func (f Float) TypeDefinition(view string) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        f.TypeName(),
@@ -343,7 +344,7 @@ func (Boolean) TypeName() string {
 	return "Boolean"
 }
 
-func (b Boolean) TypeDefinition(views ...string) *ast.Definition {
+func (b Boolean) TypeDefinition(view string) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        b.TypeName(),
@@ -428,7 +429,7 @@ func (String) TypeName() string {
 	return "String"
 }
 
-func (s String) TypeDefinition(views ...string) *ast.Definition {
+func (s String) TypeDefinition(view string) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        s.TypeName(),
@@ -515,7 +516,7 @@ func (s Scalar[T]) TypeName() string {
 	return s.Name
 }
 
-func (s Scalar[T]) TypeDefinition(views ...string) *ast.Definition {
+func (s Scalar[T]) TypeDefinition(view string) *ast.Definition {
 	def := &ast.Definition{
 		Kind: ast.Scalar,
 		Name: s.TypeName(),
@@ -602,7 +603,7 @@ func (i ID[T]) ID() *call.ID {
 var _ ScalarType = ID[Typed]{}
 
 // TypeDefinition returns the GraphQL definition of the type.
-func (i ID[T]) TypeDefinition(views ...string) *ast.Definition {
+func (i ID[T]) TypeDefinition(view string) *ast.Definition {
 	return &ast.Definition{
 		Kind: ast.Scalar,
 		Name: i.TypeName(),
@@ -874,23 +875,30 @@ func (arr Array[T]) Nth(i int) (Typed, error) {
 	return arr[i-1], nil
 }
 
-type EnumValue interface {
+type enumValue interface {
 	Input
 	~string
 }
 
-// EnumValues is a list of possible values for an Enum.
-type EnumValues[T EnumValue] struct {
-	values       []T
-	descriptions []string
+type EnumValue[T enumValue] struct {
+	Value       T
+	Target      T
+	Description string
+	View        View
 }
 
+// EnumValues is a list of possible values for an Enum.
+type EnumValues[T enumValue] []EnumValue[T]
+
 // NewEnum creates a new EnumType with the given possible values.
-func NewEnum[T EnumValue](vals ...T) *EnumValues[T] {
-	return &EnumValues[T]{
-		values:       vals,
-		descriptions: make([]string, len(vals)),
+func NewEnum[T enumValue](vals ...T) *EnumValues[T] {
+	enum := make(EnumValues[T], len(vals))
+	for _, val := range vals {
+		enum = append(enum, EnumValue[T]{
+			Value: val,
+		})
 	}
+	return &enum
 }
 
 func (e *EnumValues[T]) Type() *ast.Type {
@@ -902,11 +910,11 @@ func (e *EnumValues[T]) TypeName() string {
 	return e.Type().Name()
 }
 
-func (e *EnumValues[T]) TypeDefinition(views ...string) *ast.Definition {
+func (e *EnumValues[T]) TypeDefinition(view string) *ast.Definition {
 	def := &ast.Definition{
 		Kind:       ast.Enum,
 		Name:       e.TypeName(),
-		EnumValues: e.PossibleValues(),
+		EnumValues: e.PossibleValues(view),
 	}
 	var val T
 	if isType, ok := any(val).(Descriptive); ok {
@@ -923,16 +931,39 @@ func (e *EnumValues[T]) DecodeInput(val any) (Input, error) {
 	return e.Lookup(v.(*EnumValueName).Value)
 }
 
-func (e *EnumValues[T]) PossibleValues() ast.EnumValueList {
+func (e *EnumValues[T]) PossibleValues(view string) ast.EnumValueList {
 	var values ast.EnumValueList
-	for i, val := range e.values {
+	for _, val := range *e {
+		if val.View != nil && !val.View.Contains(view) {
+			continue
+		}
+
 		values = append(values, &ast.EnumValueDefinition{
-			Name:        string(val),
-			Description: e.descriptions[i],
+			Name:        string(val.Value),
+			Description: val.Description,
+			Directives: []*ast.Directive{
+				// NOTE: these need to have the same underlying value as their target
+				enumValueDirective(cmp.Or(val.Target, val.Value)),
+			},
 		})
 	}
 
 	return values
+}
+
+func enumValueDirective[T enumValue](value T) *ast.Directive {
+	return &ast.Directive{
+		Name: "enumValue",
+		Arguments: ast.ArgumentList{
+			{
+				Name: "value",
+				Value: &ast.Value{
+					Kind: ast.StringValue,
+					Raw:  string(value),
+				},
+			},
+		},
+	}
 }
 
 func (e *EnumValues[T]) Literal(val T) call.Literal {
@@ -940,19 +971,47 @@ func (e *EnumValues[T]) Literal(val T) call.Literal {
 }
 
 func (e *EnumValues[T]) Lookup(val string) (T, error) {
-	var enum T
-	for _, possible := range e.values {
-		if val == string(possible) {
-			return possible, nil
+	var zero T
+	for _, possible := range *e {
+		if val == string(possible.Value) {
+			if possible.Target != zero {
+				return possible.Target, nil
+			}
+			return possible.Value, nil
 		}
 	}
-	return enum, fmt.Errorf("invalid enum value %q", val)
+	return zero, fmt.Errorf("invalid enum value %q", val)
 }
 
 func (e *EnumValues[T]) Register(val T, desc ...string) T {
-	e.values = append(e.values, val)
-	e.descriptions = append(e.descriptions, FormatDescription(desc...))
+	*e = append(*e, EnumValue[T]{
+		Value:       val,
+		Description: FormatDescription(desc...),
+	})
 	return val
+}
+
+func (e *EnumValues[T]) RegisterView(val T, view View, desc ...string) T {
+	*e = append(*e, EnumValue[T]{
+		Value:       val,
+		Description: FormatDescription(desc...),
+		View:        view,
+	})
+	return val
+}
+
+func (e *EnumValues[T]) Alias(val T, target T) T {
+	for _, v := range *e {
+		if v.Value == target {
+			*e = append(*e, EnumValue[T]{
+				Value:       val,
+				Target:      v.Value,
+				Description: v.Description,
+			})
+			return val
+		}
+	}
+	panic(fmt.Sprintf("cannot find enum %q", target))
 }
 
 func (e *EnumValues[T]) Install(srv *Server) {
@@ -978,7 +1037,7 @@ func (e *EnumValueName) Type() *ast.Type {
 	}
 }
 
-func (e *EnumValueName) TypeDefinition(views ...string) *ast.Definition {
+func (e *EnumValueName) TypeDefinition(view string) *ast.Definition {
 	return &ast.Definition{
 		Kind: ast.Enum,
 		Name: e.TypeName(),
@@ -1048,7 +1107,7 @@ func (spec InputObjectSpec) TypeName() string {
 	return spec.Name
 }
 
-func (spec InputObjectSpec) TypeDefinition(views ...string) *ast.Definition {
+func (spec InputObjectSpec) TypeDefinition(view string) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.InputObject,
 		Name:        spec.Name,
