@@ -47,14 +47,32 @@ const (
 	NpmDefaultVersion  = "10.7.0"
 )
 
+type Config struct {
+	Foo string `json:"foo"`
+}
+
 func New(
 	// +optional
 	sdkSourceDir *dagger.Directory,
-) *TypescriptSdk {
+	// +optional
+	rawConfig dagger.JSON,
+) (*TypescriptSdk, error) {
+	var c Config
+	if len(rawConfig) > 0 {
+		decoder := json.NewDecoder(strings.NewReader(string(rawConfig)))
+		decoder.DisallowUnknownFields()
+
+		err := decoder.Decode(&c)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal typescript config %s. error: %w", rawConfig, err)
+		}
+	}
+
 	return &TypescriptSdk{
 		SDKSourceDir: sdkSourceDir,
 		moduleConfig: &moduleConfig{},
-	}
+		config:       &c,
+	}, nil
 }
 
 type packageJSONConfig struct {
@@ -87,6 +105,7 @@ type TypescriptSdk struct {
 	SDKSourceDir  *dagger.Directory
 	RequiredPaths []string
 
+	config       *Config
 	moduleConfig *moduleConfig
 }
 

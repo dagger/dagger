@@ -120,7 +120,8 @@
       "properties": {
         "source": {
           "type": "string"
-        }
+        },
+        "config": true
       },
       "additionalProperties": false,
       "type": "object",

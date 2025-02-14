@@ -1382,6 +1382,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 			if src.WithSDK.Source != "" {
 				modCfg.SDK = &modules.SDK{
 					Source: src.WithSDK.Source,
+					Config: src.WithSDK.Config,
 				}
 			}
 			for _, dep := range src.WithDependencies {
@@ -1444,7 +1445,10 @@ func (s *moduleSchema) collectCallerLocalDeps(
 
 		localDep.sdkKey = modCfg.SDK.Source
 
-		localDep.sdk, err = s.builtinSDK(ctx, query, &core.SDKConfig{Source: modCfg.SDK.Source})
+		localDep.sdk, err = s.builtinSDK(ctx, query, &core.SDKConfig{
+			Source: modCfg.SDK.Source,
+			Config: modCfg.SDK.Config,
+		})
 		switch {
 		case err == nil:
 		case errors.Is(err, errUnknownBuiltinSDK):
@@ -1499,14 +1503,17 @@ func (s *moduleSchema) collectCallerLocalDeps(
 				if err != nil {
 					return nil, fmt.Errorf("failed to load local sdk module source: %w", err)
 				}
-				localDep.sdk, err = s.newModuleSDK(ctx, query, sdkMod, dagql.Instance[*core.Directory]{})
+				localDep.sdk, err = s.newModuleSDK(ctx, query, sdkMod, modCfg.SDK.Config, dagql.Instance[*core.Directory]{})
 				if err != nil {
 					return nil, fmt.Errorf("failed to get local sdk: %w", err)
 				}
 				localDep.sdkKey = sdkPath
 
 			case core.ModuleSourceKindGit:
-				localDep.sdk, err = s.sdkForModule(ctx, query, &core.SDKConfig{Source: modCfg.SDK.Source}, dagql.Instance[*core.ModuleSource]{})
+				localDep.sdk, err = s.sdkForModule(ctx, query, &core.SDKConfig{
+					Source: modCfg.SDK.Source,
+					Config: modCfg.SDK.Config,
+				}, dagql.Instance[*core.ModuleSource]{})
 				if err != nil {
 					return nil, fmt.Errorf("failed to get git module sdk: %w", err)
 				}
