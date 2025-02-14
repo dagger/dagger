@@ -83,4 +83,19 @@ Each recipe requires only:
 
 Some screen recordings can be auto-generated with the `docs/recorder` module.
 
-- Generate recordings for feature pages: `dagger call generate-feature-recordings --base=../current_docs/features/snippets --github-token=env:GITHUB_TOKEN export --path=/tmp/out`
+- Generate recordings for some feature pages: `dagger call generate-feature-recordings --base=../current_docs/features/snippets --github-token=env:GITHUB_TOKEN export --path=/tmp/out`
+- Generate recordings for other feature pages:
+    ```
+    dagger logout
+    export PS1="$ " >> ~/.bashrc
+    # run each command once to warm the cache before recording
+    asciinema rec --overwrite --cols=80 --rows=24  ~/images/debug-breakpoints.asc
+    asciinema rec --overwrite --cols=80 --rows=24  ~/images/debug-interactive.asc
+    asciinema rec --overwrite --cols=80 --rows=24  ~/images/service-container.asc
+    asciinema rec --append --cols=80 --rows=24  ~/images/service-container.asc # in separate console
+    asciinema rec --overwrite --cols=80 --rows=24  ~/images/service-host.asc
+    # manually edit all .asc files to remove closing `$ exit`
+    # manually edit `service-container.asc` file to insert line break `\n` between terminal outputs
+    cd ~/images
+    docker run --rm -it -u $(id -u):$(id -g) -v $PWD:/data agg <file>.asc <file>.gif
+    ```
