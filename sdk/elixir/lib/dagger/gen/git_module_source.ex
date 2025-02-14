@@ -95,3 +95,16 @@ defmodule Dagger.GitModuleSource do
     Client.execute(git_module_source.client, query_builder)
   end
 end
+
+defimpl Jason.Encoder, for: Dagger.GitModuleSource do
+  def encode(git_module_source, opts) do
+    {:ok, id} = Dagger.GitModuleSource.id(git_module_source)
+    Jason.Encode.string(id, opts)
+  end
+end
+
+defimpl Nestru.Decoder, for: Dagger.GitModuleSource do
+  def decode_fields_hint(_struct, _context, id) do
+    {:ok, Dagger.Client.load_git_module_source_from_id(Dagger.Global.dag(), id)}
+  end
+end
