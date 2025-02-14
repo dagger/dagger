@@ -150,6 +150,51 @@ The default user `ubuntu` does not have access to the Docker socket. Fix this wi
 :::
 
 </TabItem>
+<TabItem value="Thunder Compute">
+
+Use the following commands to deploy a GPU-enabled Dagger runner on Fly.io:
+
+```shell
+export TNR_API_TOKEN=TNR_API_TOKEN
+dagger -m github.com/jackowfish/thunder-dagger-module call deploy --token=$TNR_API_TOKEN --gpu=t4 | bash
+```
+
+:::note
+The Thunder Compute module exports commands to add the runner ssh keys to your local ssh agent - piping them to your shell will execute them, but you can also run them manually.
+:::
+
+The Dagger Function returns a message in your terminal, with an environment variable to export. For example:
+
+```shell
+export _EXPERIMENTAL_DAGGER_RUNNER_HOST=ssh://root@11.22.33.44:22
+```
+
+Copy and paste the previous command in your active terminal. From now on, Dagger will execute all function calls using the remote Dagger Engine running on Thunder Compute.
+
+To check if the runner is running, you can use the following command:
+
+```shell
+dagger -m github.com/jackowfish/thunder-dagger-module call status --token=$TNR_API_TOKEN
+# This returns a printout with the status of the runner
+Active Thunder instances:
+
+Instance ID: daggerw1234567890
+Status: running
+Host: 11.22.33.44
+```
+
+To stop using the remote Dagger Engine on Thunder Compute and return to using your local Dagger Engine, use the following commands:
+
+```shell
+unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
+dagger -m github.com/jackowfish/thunder-dagger-module call destroy --instance-id=instance-id --token=$TNR_API_TOKEN | bash
+```
+
+:::note
+The Thunder Compute module exports commands to remove the runner ssh keys from your local ssh agent - piping them to your shell will execute them, but you can also run them manually.
+:::
+
+</TabItem>
 </Tabs>
 
 Once your GPU-enabled Dagger runner is configured, use the following Dagger Function to test if Dagger has access to the GPU:
