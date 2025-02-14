@@ -68,8 +68,7 @@ func (JavaSuite) TestFields(_ context.Context, t *testctx.T) {
 	t.Run("can set and retrieve field", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		out, err := daggerCliBase(t, c).
-			With(javaModule(t, c, "fields")).
+		out, err := javaModule(t, c, "fields").
 			With(daggerShell("with-version a.b.c | get-version")).
 			Stdout(ctx)
 
@@ -78,11 +77,125 @@ func (JavaSuite) TestFields(_ context.Context, t *testctx.T) {
 	})
 }
 
-func javaModule(t *testctx.T, c *dagger.Client, moduleName string) dagger.WithContainerFunc {
+func (JavaSuite) TestDefaultValue(_ context.Context, t *testctx.T) {
+	t.Run("can set a value", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "defaults").
+			With(daggerCall("echo", "--value=hello")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "hello", out)
+	})
+
+	t.Run("can use a default value", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "defaults").
+			With(daggerCall("echo")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "default value", out)
+	})
+}
+
+func (JavaSuite) TestDefaultPath(_ context.Context, t *testctx.T) {
+	t.Run("can set a path for a file", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "defaults").
+			With(daggerCall("file-name", "--file=./pom.xml")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "pom.xml", out)
+	})
+
+	t.Run("can use a default path for a file", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "defaults").
+			With(daggerCall("file-name")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "dagger.json", out)
+	})
+
+	t.Run("can set a path for a dir", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "defaults").
+			With(daggerCall("file-names", "--dir", ".")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, out, "pom.xml")
+	})
+
+	t.Run("can use a default path for a dir", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "defaults").
+			With(daggerCall("file-names")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "Defaults.java", out)
+	})
+}
+
+func (JavaSuite) TestIgnore(_ context.Context, t *testctx.T) {
+	t.Run("without ignore", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "defaults").
+			With(daggerCall("files-no-ignore")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, out, "dagger.json")
+		require.Contains(t, out, "pom.xml")
+	})
+
+	t.Run("with ignore", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "defaults").
+			With(daggerCall("files-ignore")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, out, "dagger.json")
+		require.NotContains(t, out, "pom.xml")
+	})
+
+	t.Run("with negated ignore", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "defaults").
+			With(daggerCall("files-neg-ignore")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.NotContains(t, out, "dagger.json")
+		require.NotContains(t, out, "pom.xml")
+		require.Contains(t, out, "src")
+	})
+}
+
+func javaModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/java", moduleName))
 	require.NoError(t, err)
-	return func(ctr *dagger.Container) *dagger.Container {
-		return ctr.WithDirectory("", c.Host().Directory(modSrc))
-	}
+
+	sdkSrc, err := filepath.Abs("../../sdk/java")
+	require.NoError(t, err)
+
+	return goGitBase(t, c).
+		WithDirectory("modules/"+moduleName, c.Host().Directory(modSrc)).
+		WithDirectory("sdk/java", c.Host().Directory(sdkSrc)).
+		WithWorkdir("/work/modules/" + moduleName)
 }
