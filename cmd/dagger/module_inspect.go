@@ -77,6 +77,73 @@ func initializeModule(
 	return initializeModuleConfig(ctx, dag, conf)
 }
 
+func initializeClientGeneratorModule(
+	ctx context.Context,
+	dag *dagger.Client,
+	srcRef string,
+	doFindUp bool,
+	srcOpts ...dagger.ModuleSourceOpts,
+) (mod *clientGeneratorModuleDef, rerr error) {
+	ctx, span := Tracer().Start(ctx, "load client generator module")
+	defer telemetry.End(span, func() error { return rerr })
+
+	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
+	conf, err := getModuleConfigurationForSourceRef(findCtx, dag, srcRef, doFindUp, true, srcOpts...)
+	telemetry.End(findSpan, func() error { return err })
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get configured module: %w", err)
+	}
+
+	if !conf.FullyInitialized() {
+		return nil, fmt.Errorf("module must be fully initialized")
+	}
+
+	return initializeClientGeneratorConfig(ctx, conf)
+}
+
+func initializeClientGeneratorConfig(
+	ctx context.Context,
+	conf *configuredModule,
+) (gdef *clientGeneratorModuleDef, rerr error) {
+	_, serveSpan := Tracer().Start(ctx, "initializing client generator module", telemetry.Encapsulate())
+	defer telemetry.End(serveSpan, func() error { return rerr })
+
+	// We need to initialize the module to get its Typedef so we can generate self
+	// calls in the client.
+	module := conf.Source.AsModule().Initialize()
+
+	if err := module.Serve(ctx); err != nil {
+		return nil, fmt.Errorf("failed to serve module: %w", err)
+	}
+
+	// There's a weird behaviour where if I use the same instance of the module after
+	// it has been initialzed, I'm not able to get its dependencies (cannot handle module.ID).
+	// So we need to reload the module from its source to avoid that.
+	dependencies, err := conf.Source.AsModule().Dependencies(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dependencies: %w", err)
+	}
+
+	modDeps := make([]*moduleDependency, len(dependencies))
+	for i, dep := range dependencies {
+		name, err := dep.Name(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get dependency name: %w", err)
+		}
+
+		modDeps[i] = &moduleDependency{
+			Name:   name,
+			Source: dep.Source(),
+		}
+	}
+
+	return &clientGeneratorModuleDef{
+		mod:          module,
+		Dependencies: modDeps,
+	}, nil
+}
+
 // maybeInitializeModule optionally loads the module at the given source ref,
 // falling back to the core definitions if the module isn't found
 func maybeInitializeModule(ctx context.Context, dag *dagger.Client, srcRef string) (*moduleDef, string, error) {
@@ -142,6 +209,12 @@ type moduleDef struct {
 
 	// ModRef is the human readable module source reference as returned by the API
 	ModRef string
+
+	Dependencies []*moduleDependency
+}
+
+type clientGeneratorModuleDef struct {
+	mod *dagger.Module
 
 	Dependencies []*moduleDependency
 }

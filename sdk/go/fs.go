@@ -12,6 +12,9 @@ var QueryBuilder embed.FS
 //go:embed telemetry/*.go
 var Telemetry embed.FS
 
+//go:embed engineconn/*.go
+var EngineConn embed.FS
+
 //go:embed go.mod
 var GoMod []byte
 

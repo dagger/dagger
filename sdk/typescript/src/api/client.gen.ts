@@ -1029,6 +1029,13 @@ export type ListTypeDefID = string & { __ListTypeDefID: never }
  */
 export type LocalModuleSourceID = string & { __LocalModuleSourceID: never }
 
+export type ModuleGenerateClientOpts = {
+  /**
+   * Use local SDK dependency
+   */
+  localSdk?: boolean
+}
+
 export type ModuleWithSourceOpts = {
   /**
    * The engine version to upgrade to.
@@ -5458,6 +5465,19 @@ export class Module_ extends BaseClient {
     const response: Awaited<enums[]> = await ctx.execute()
 
     return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
+  }
+
+  /**
+   * Generates a client for the module.
+   * @param generator The generator to use
+   * @param opts.localSdk Use local SDK dependency
+   */
+  generateClient = (
+    generator: string,
+    opts?: ModuleGenerateClientOpts,
+  ): Directory => {
+    const ctx = this._ctx.select("generateClient", { generator, ...opts })
+    return new Directory(ctx)
   }
 
   /**

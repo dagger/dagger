@@ -20,8 +20,7 @@ func GoTemplateFuncs(
 	ctx context.Context,
 	schema *introspection.Schema,
 	schemaVersion string,
-	moduleName string,
-	moduleParent string,
+	cfg generator.Config,
 	pkg *packages.Package,
 	fset *token.FileSet,
 	pass int,
@@ -29,8 +28,7 @@ func GoTemplateFuncs(
 	return goTemplateFuncs{
 		CommonFunctions: generator.NewCommonFunctions(schemaVersion, &FormatTypeFunc{}),
 		ctx:             ctx,
-		moduleName:      moduleName,
-		moduleParent:    moduleParent,
+		cfg:             cfg,
 		modulePkg:       pkg,
 		moduleFset:      fset,
 		schema:          schema,
@@ -42,8 +40,7 @@ func GoTemplateFuncs(
 type goTemplateFuncs struct {
 	*generator.CommonFunctions
 	ctx           context.Context
-	moduleName    string
-	moduleParent  string
+	cfg           generator.Config
 	modulePkg     *packages.Package
 	moduleFset    *token.FileSet
 	schema        *introspection.Schema
@@ -84,6 +81,8 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"FormatArrayToSingleType": funcs.formatArrayToSingleType,
 		"IsPartial":               funcs.isPartial,
 		"IsModuleCode":            funcs.isModuleCode,
+		"IsStandaloneClient":      funcs.isStandaloneClient,
+		"IsLocalSDK":              funcs.isLocalSDK,
 		"ModuleMainSrc":           funcs.moduleMainSrc,
 		"ModuleRelPath":           funcs.moduleRelPath,
 	}
