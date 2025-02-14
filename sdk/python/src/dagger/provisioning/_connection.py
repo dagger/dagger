@@ -2,11 +2,11 @@ import contextlib
 import logging
 from typing import TYPE_CHECKING
 
-from dagger import Config, telemetry
+from dagger import telemetry
+from dagger._managers import ResourceManager
 
-from ._engine.conn import Engine, provision_engine
-from ._managers import ResourceManager
-from .client._session import SharedConnection
+from ._config import Config
+from ._engine import Engine, provision_engine
 
 if TYPE_CHECKING:
     from dagger import Client
@@ -118,8 +118,3 @@ async def connection(config: Config | None = None):
         await engine.setup_client(conn)
         yield conn
         logger.debug("Closing connection with shared client")
-
-
-_shared = SharedConnection()
-connect = _shared.connect
-close = _shared.close
