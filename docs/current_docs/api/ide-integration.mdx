@@ -215,4 +215,57 @@ The TypeScript SDK automatically attaches source-maps to the module code. These 
 
 Most popular IDEs support source-maps, either natively or with an external plugin, such as the [Open file plugin](https://marketplace.visualstudio.com/items?itemName=Fr43nk.seito-openfile) for Visual Studio Code.
 </TabItem>
+<TabItem value="PHP">
+To get your IDE to recognize a Dagger PHP module, ensure your `composer.json` has a path configured to the generated `dagger/dagger` package. This is located in the `sdk` directory of your module.
+
+For Dagger modules initialized using `dagger init`, the default template is already configured this way:
+
+```json
+"repositories": [
+  {
+    "type": "path",
+    "url": "./sdk"
+  }
+],
+"require": {
+  "dagger/dagger": "*@dev"
+},
+```
+
+To get autocompletions and IntelliSense, the setup will vary depending on your IDE.
+
+<Tabs>
+<TabItem value="PhpStorm">
+PhpStorm is a very popular IDE for PHP projects. The simplest way for PhpStorm to recognize the `dagger` package is to open the IDE in the directory containing your module's `composer.json` file. You may also open it from any parent directory, such as a project containing the dagger module.
+
+</TabItem>
+<TabItem value="Visual Studio Code">
+
+The simplest way to get autocompletions and IntelliSense working is to install the [Intelephense](https://marketplace.visualstudio.com/items?itemName=bmewburn.vscode-intelephense-client) or the [Phpactor](https://marketplace.visualstudio.com/items?itemName=phpactor.vscode-phpactor) extension.
+
+Then open Visual Studio Code in the directory containing your module's `composer.json` file. You may also open it from any parent directory, such as a project containing the dagger module.
+
+</TabItem>
+<TabItem value="Emacs">
+The simplest way to get to get autocompletions and IntelliSense working is to use the built-in LSP client [Eglot](https://github.com/joaotavora/eglot).
+
+A PHP LSP (Language Server Protocol) will need to be installed separately such as [Phpactor](https://github.com/phpactor/phpactor).
+
+You may also want to install [PHP Mode](https://github.com/emacs-php/php-mode) for syntax highlighting and indentation.
+
+Assuming you've installed the above, adding the following snippet to your `init.el` file will automatically enable autocompletion and Intellisense when opening PHP files.
+
+```lisp
+(require 'eglot)
+(with-eval-after-load 'eglot
+  (add-to-list 'eglot-server-programs
+               '(php-mode . "phpactor"))
+  (add-hook 'php-mode-hook 'eglot-ensure))
+```
+
+Then open Emacs in any file within the scope of your module's `composer.json` file.
+
+</TabItem>
+</Tabs>
+</TabItem>
 </Tabs>
