@@ -387,9 +387,13 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 	defer telemetry.End(shellSpan, func() error { return nil })
 	Frontend.SetPrimary(dagui.SpanID{SpanID: shellSpan.SpanContext().SpanID()})
 
+	mu := &sync.Mutex{}
 	complete := &shellAutoComplete{h}
 	Frontend.Shell(shellCtx,
 		func(ctx context.Context, line string) (rerr error) {
+			mu.Lock()
+			defer mu.Unlock()
+
 			if line == "exit" {
 				cancel()
 				return nil
