@@ -7,6 +7,7 @@ import com.github.javaparser.javadoc.JavadocBlockTag.Type;
 import com.google.auto.service.AutoService;
 import com.palantir.javapoet.*;
 import io.dagger.client.*;
+import io.dagger.module.AbstractModule;
 import io.dagger.module.annotation.*;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Module;
@@ -86,6 +87,18 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           if (!element.getModifiers().contains(Modifier.PUBLIC)) {
             throw new RuntimeException(
                 "The class %s must be public if annotated with @Object".formatted(qName));
+          }
+
+          if (!processingEnv
+              .getTypeUtils()
+              .isSubtype(
+                  typeElement.getSuperclass(),
+                  processingEnv
+                      .getElementUtils()
+                      .getTypeElement(AbstractModule.class.getName())
+                      .asType())) {
+            throw new RuntimeException(
+                "The class %s must extend %s".formatted(qName, AbstractModule.class.getName()));
           }
 
           List<FieldInfo> fieldInfoInfos =
