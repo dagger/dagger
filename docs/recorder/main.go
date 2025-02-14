@@ -39,7 +39,9 @@ func getTermcast(wdir *dagger.Directory) *dagger.Termcast {
 }
 
 func getTermcastWithEnvVar(wdir *dagger.Directory, name string, value string) *dagger.Termcast {
-	ctr := getTermcast(wdir).Container().WithEnvVariable("CACHEBUSTER", time.Now().String()).WithEnvVariable(name, value)
+	ctr := getTermcast(wdir).Container().
+		WithEnvVariable("CACHEBUSTER", time.Now().String()).
+		WithEnvVariable(name, value)
 	return dag.Termcast().WithContainer(ctr)
 }
 
