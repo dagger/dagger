@@ -91,7 +91,7 @@ type Frontend interface {
 		ctx context.Context,
 		fn func(ctx context.Context, input string) error,
 		autocomplete editline.AutoCompleteFn,
-		prompt func(out *termenv.Output, err error) string,
+		prompt func(out *termenv.Output, fg termenv.Color) string,
 	)
 }
 
