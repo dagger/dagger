@@ -169,22 +169,11 @@ func (llm *Llm) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error)
 	return result, nil
 }
 
-// A convenience function to ask the model a question directly, and get an answer
-// The state of the agent is not changed.
-func (llm *Llm) Ask(ctx context.Context, question string, srv *dagql.Server) (string, error) {
-	llm, err := llm.WithPrompt(ctx, question, false, srv)
-	if err != nil {
-		return "", err
-	}
-	return llm.LastReply()
-}
-
 // Append a user message (prompt) to the message history
-func (llm *Llm) WithPrompt(ctx context.Context,
+func (llm *Llm) WithPrompt(
+	ctx context.Context,
 	// The prompt message.
 	prompt string,
-	// Append the prompt to the context, but don't sync with the LLM endpoint
-	lazy bool,
 	srv *dagql.Server,
 ) (*Llm, error) {
 	vars := llm.promptVars
@@ -218,19 +207,16 @@ func (llm *Llm) WithPrompt(ctx context.Context,
 		fmt.Fprint(stdio.Stdout, prompt)
 	}()
 	llm.history = append(llm.history, openai.UserMessage(prompt))
-	if lazy {
-		return llm, nil
-	}
-	return llm.Sync(ctx, 0, srv)
+	return llm, nil
 }
 
 // WithPromptFile is like WithPrompt but reads the prompt from a file
-func (llm *Llm) WithPromptFile(ctx context.Context, file *File, lazy bool, srv *dagql.Server) (*Llm, error) {
+func (llm *Llm) WithPromptFile(ctx context.Context, file *File, srv *dagql.Server) (*Llm, error) {
 	contents, err := file.Contents(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return llm.WithPrompt(ctx, string(contents), lazy, srv)
+	return llm.WithPrompt(ctx, string(contents), srv)
 }
 
 func (llm *Llm) WithPromptVar(name, value string) *Llm {
@@ -279,8 +265,10 @@ func (llm *Llm) BBI(srv *dagql.Server) (bbi.Session, error) {
 	return bbi.NewSession("flat", target, srv)
 }
 
-func (llm *Llm) Sync(
+// send the context to the LLM endpoint, process replies and tool calls; continue in a loop
+func (llm *Llm) Loop(
 	ctx context.Context,
+	// the maximum number of loops to allow.
 	maxLoops int,
 	srv *dagql.Server,
 ) (*Llm, error) {
