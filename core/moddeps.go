@@ -75,10 +75,10 @@ func (d *ModDeps) SchemaIntrospectionJSONFile(ctx context.Context) (inst dagql.I
 }
 
 // All the TypeDefs exposed by this set of dependencies
-func (d *ModDeps) TypeDefs(ctx context.Context) ([]*TypeDef, error) {
+func (d *ModDeps) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, error) {
 	var typeDefs []*TypeDef
 	for _, mod := range d.Mods {
-		modTypeDefs, err := mod.TypeDefs(ctx)
+		modTypeDefs, err := mod.TypeDefs(ctx, dag)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get objects from mod %q: %w", mod.Name(), err)
 		}
@@ -135,7 +135,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 
 		// TODO support core interfaces types
 		if userMod, ok := mod.(*Module); ok {
-			defs, err := mod.TypeDefs(ctx)
+			defs, err := mod.TypeDefs(ctx, dag)
 			if err != nil {
 				return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get type defs for module %q: %w", mod.Name(), err)
 			}

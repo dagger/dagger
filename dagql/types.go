@@ -50,6 +50,8 @@ type ObjectType interface {
 	// Object interface.
 	// cacheKeyFun is optional, if not set the default dagql ID cache key will be used.
 	Extend(spec FieldSpec, fun FieldFunc, cacheKeyFun FieldCacheKeyFunc)
+	// FieldSpec looks up a field spec by name.
+	FieldSpec(name string, views ...string) (FieldSpec, bool)
 }
 
 type IDType interface {
@@ -77,6 +79,7 @@ type IDable interface {
 type Object interface {
 	Typed
 	IDable
+
 	// ObjectType returns the type of the object.
 	ObjectType() ObjectType
 

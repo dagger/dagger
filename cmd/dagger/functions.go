@@ -600,6 +600,9 @@ func handleObjectLeaf(ctx context.Context, q *querybuilder.Selection, typeDef *m
 	for _, f := range fns {
 		names = append(names, f.Name)
 	}
+	if len(names) == 0 {
+		names = append(names, "id")
+	}
 	if len(names) > 0 {
 		q = q.SelectMultiple(names...)
 	}

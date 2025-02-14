@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -35,7 +36,7 @@ func collectDefs(ctx context.Context, val dagql.Typed) []*pb.Definition {
 }
 
 func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Context, func(res dagql.Typed, cached bool, rerr error)) {
-	if isIntrospection(id) {
+	if isIntrospection(id) || isMeta(id) {
 		return ctx, dagql.NoopDone
 	}
 
@@ -79,8 +80,10 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 		attrs = append(attrs, attribute.Bool(telemetry.UIInternalAttr, true))
 	}
 
-	ctx, span := telemetry.Tracer(ctx, InstrumentationLibrary).
-		Start(ctx, spanName, trace.WithAttributes(attrs...))
+	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
+
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
 
 	return ctx, func(res dagql.Typed, cached bool, err error) {
 		defer telemetry.End(span, func() error {
@@ -111,12 +114,18 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 			slog.Warn("error resolving "+id.Display(), "error", err)
 		}
 
+		// Take care not to print any sensitive values.
+		sensitive := true
+		if spec, ok := self.ObjectType().FieldSpec(id.Field()); ok {
+			sensitive = spec.Sensitive
+		}
+		switch x := res.(type) {
 		// Record an object result as an output of this call.
 		//
 		// This allows the UI to "simplify" the returned object's ID back to the
 		// current call's ID, so we can show the user myMod().unit().stdout()
 		// instead of container().from().[...].stdout().
-		if obj, ok := res.(dagql.Object); ok {
+		case dagql.Object:
 			// Don't consider loadFooFromID to be a 'creator' as that would only
 			// obfuscate the real ID.
 			//
@@ -125,8 +134,35 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 			// consider it.
 			isLoader := strings.HasPrefix(id.Field(), "load") && strings.HasSuffix(id.Field(), "FromID")
 			if !isLoader {
-				objDigest := obj.ID().Digest()
+				objDigest := x.ID().Digest()
 				span.SetAttributes(attribute.String(telemetry.DagOutputAttr, objDigest.String()))
+			}
+		case dagql.Enumerable:
+			if sensitive {
+				break
+			}
+			items := x.Len()
+			for n := 1; n <= items; n++ {
+				item, err := x.Nth(n)
+				if err != nil {
+					break
+				}
+				if _, isObj := item.(dagql.Object); isObj {
+					fmt.Fprintf(stdio.Stdout, "%d %ss", items, item.Type().Name())
+				} else {
+					enc := json.NewEncoder(stdio.Stdout)
+					enc.SetIndent("", "  ")
+					enc.Encode(x)
+				}
+				break
+			}
+		case dagql.String:
+			if !sensitive {
+				fmt.Fprint(stdio.Stdout, x)
+			}
+		case call.Literate:
+			if !sensitive {
+				fmt.Fprint(stdio.Stdout, x.ToLiteral().Display())
 			}
 		}
 
@@ -186,6 +222,47 @@ func isIntrospection(id *call.ID) bool {
 		}
 	} else {
 		return isIntrospection(id.Receiver())
+	}
+}
+
+// isMeta returns true if any type in the ID is "too meta" to show to the user,
+// for example span and error APIs.
+func isMeta(id *call.ID) bool {
+	if anyReturns(id, "Span", "Error") {
+		return true
+	}
+	switch id.Field() {
+	case
+		// Seeing loadFooFromID is only really interesting if it actually
+		// resulted in evaluating the ID, so we don't need to give it its own
+		// span.
+		fmt.Sprintf("load%sFromID", id.Type().NamedType()),
+		// We also don't care about seeing the id field selection itself,
+		// since it's more noisy and confusing than helpful. We'll still show
+		// all the spans leading up to it, just not the ID selection.
+		"id",
+		// We don't care about seeing the sync span itself - all relevant
+		// info should show up somewhere more familiar.
+		"sync":
+		return true
+	default:
+		return false
+	}
+}
+
+// anyReturns returns true if the call or any of its ancestors return any of
+// the given types.
+func anyReturns(id *call.ID, types ...string) bool {
+	ret := id.Type().NamedType()
+	for _, t := range types {
+		if ret == t {
+			return true
+		}
+	}
+	if id.Receiver() != nil {
+		return anyReturns(id.Receiver(), types...)
+	} else {
+		return false
 	}
 }
 

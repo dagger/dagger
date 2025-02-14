@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
 	"slices"
 	"sort"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/spf13/cobra"
 	"mvdan.cc/sh/v3/interp"
 )
@@ -409,6 +411,41 @@ to the currently loaded module.
 			},
 		},
 		&ShellCommand{
+			Use:         ".refresh",
+			Description: `Refresh the schema and reload all module functions`,
+			GroupID:     moduleGroup.ID,
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, cmd *ShellCommand, args []string, st *ShellState) error {
+				// Get current module definition
+				def := h.modDef(st)
+
+				// Re-initialize the module to get fresh schema
+				var newDef *moduleDef
+				var err error
+				if def.ModRef == "" {
+					newDef, err = initializeCore(ctx, h.dag)
+				} else {
+					newDef, err = initializeModule(ctx, h.dag, def.ModRef, true)
+				}
+				if err != nil {
+					return fmt.Errorf("failed to reinitialize module: %w", err)
+				}
+
+				// Update handler state with new definition
+				h.mu.Lock()
+				h.modDefs.Store(def.ModRef, newDef)
+				h.mu.Unlock()
+
+				// Reload type definitions
+				if err := newDef.loadTypeDefs(ctx, h.dag); err != nil {
+					return fmt.Errorf("failed to reload type definitions: %w", err)
+				}
+
+				return nil
+			},
+		},
+		&ShellCommand{
 			Use:         shellDepsCmdName,
 			Description: "Dependencies from the module loaded in the current context",
 			GroupID:     moduleGroup.ID,
@@ -469,6 +506,7 @@ to the currently loaded module.
 	for _, fn := range def.GetCoreFunctions() {
 		// TODO: Don't hardcode this list.
 		promoted := []string{
+			"llm",
 			"cache-volume",
 			"container",
 			"directory",
@@ -538,8 +576,9 @@ func cobraToShellCommand(c *cobra.Command) *ShellCommand {
 			args = append([]string{c.Name()}, args...)
 			hctx := interp.HandlerCtx(ctx)
 			c := exec.CommandContext(ctx, "dagger", args...)
-			c.Stdout = hctx.Stdout
-			c.Stderr = hctx.Stderr
+			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+			c.Stdout = io.MultiWriter(hctx.Stdout, stdio.Stdout)
+			c.Stderr = io.MultiWriter(hctx.Stderr, stdio.Stderr)
 			c.Stdin = hctx.Stdin
 			return c.Run()
 		},
