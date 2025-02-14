@@ -24,7 +24,9 @@ body: |+
 
   These improvements in cache utilization are also setup for future improvements not only in `load module` times but function call times more generally.
 
-  This improvement comes with a few breaking changes that are not expected to impact most users. Impacted users are those who:
+  This improvement comes with a few breaking changes that are not expected to impact most users. However, the changes require that users upgrade their CLI to v0.16.0 in order to connect to v0.16.0 engines. Older CLIs will error when connecting to newer engines.
+
+  In terms of the breaking changes, impacted users are those who:
   - have function code that imports local libraries outside of the dagger module source directory
   - rely on a package manager configuration file (e.g. go.mod) that exists in a parent directory of the dagger module source directory
 
