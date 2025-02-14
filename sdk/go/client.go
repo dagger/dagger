@@ -81,6 +81,12 @@ func WithRunnerHost(runnerHost string) ClientOpt {
 	})
 }
 
+func WithServeCurrentModule(serveCurrentModule bool) ClientOpt {
+	return clientOptFunc(func(cfg *engineconn.Config) {
+		cfg.ServeCurrentModule = serveCurrentModule
+	})
+}
+
 // Connect to a Dagger Engine
 func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	cfg := &engineconn.Config{}

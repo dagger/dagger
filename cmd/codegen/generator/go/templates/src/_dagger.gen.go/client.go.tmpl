@@ -57,6 +57,12 @@ func WithVerbosity(level int) ClientOpt {
 	})
 }
 
+func WithServeCurrentModule(serveCurrentModule bool) ClientOpt {
+	return clientOptFunc(func(cfg *engineconn.Config) {
+		cfg.ServeCurrentModule = serveCurrentModule
+	})
+}
+
 // WithRunnerHost sets the runner host URL for provisioning and connecting to
 // an engine.
 //
@@ -71,6 +77,8 @@ func WithRunnerHost(runnerHost string) ClientOpt {
 // Connect to a Dagger Engine
 func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	cfg := &engineconn.Config{}
+
+	opts = append(opts, WithServeCurrentModule(true))
 
 	for _, o := range opts {
 		o.setClientOpt(cfg)

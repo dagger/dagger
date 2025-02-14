@@ -21,12 +21,13 @@ type EngineConn interface {
 }
 
 type Config struct {
-	Workdir         string
-	LogOutput       io.Writer
-	RunnerHost      string
-	Conn            EngineConn
-	VersionOverride string
-	Verbosity       int
+	Workdir            string
+	LogOutput          io.Writer
+	RunnerHost         string
+	Conn               EngineConn
+	VersionOverride    string
+	Verbosity          int
+	ServeCurrentModule bool
 }
 
 type ConnectParams struct {

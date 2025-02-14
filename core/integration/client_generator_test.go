@@ -75,8 +75,7 @@ func (ClientGeneratorTest) TestGenerateAndCallDependencies(ctx context.Context, 
 						WithExec([]string{"npm", "init", "-y"}).
 						WithExec([]string{"npm", "pkg", "set", "type=module"}).
 						WithExec([]string{"npm", "install", "-D", "typescript"}).
-						WithNewFile("index.ts", `import { connection } from "@dagger.io/dagger"
-import { dag } from "@dagger.io/client"
+						WithNewFile("index.ts", `import { connection, dag } from "@dagger.io/client"
 
 async function main() {
     await connection(async () => {
@@ -192,8 +191,7 @@ main()
 						WithExec([]string{"npm", "init", "-y"}).
 						WithExec([]string{"npm", "pkg", "set", "type=module"}).
 						WithExec([]string{"npm", "install", "-D", "typescript"}).
-						WithNewFile("index.ts", `import { connection } from "@dagger.io/dagger"
-import { dag } from "@dagger.io/client"
+						WithNewFile("index.ts", `import { connection, dag } from "@dagger.io/client"
 
 async function main() {
     await connection(async () => {
@@ -339,8 +337,7 @@ export class Test {
 						WithExec([]string{"npm", "init", "-y"}).
 						WithExec([]string{"npm", "pkg", "set", "type=module"}).
 						WithExec([]string{"npm", "install", "-D", "typescript"}).
-						WithNewFile("index.ts", `import { connection } from "@dagger.io/dagger"
-import { dag } from "@dagger.io/client"
+						WithNewFile("index.ts", `import { connection, dag } from "@dagger.io/client"
 
 async function main() {
     await connection(async () => {

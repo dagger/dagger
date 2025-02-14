@@ -87,7 +87,7 @@ type Params struct {
 
 	WithTerminal session.WithTerminalFunc
 
-	AutoInit bool
+	ServeModule bool
 }
 
 type Client struct {

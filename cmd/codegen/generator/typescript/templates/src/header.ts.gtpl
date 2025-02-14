@@ -10,9 +10,29 @@ inherited by futures objects and common types.
 {{- if (not IsClientOnly)}}
 import { Context } from "../common/context.js"
 {{- else if IsLocalSDK }}
-import { Context } from "../sdk/src/common/context.js" 
+import { Context, connect as _connect, connection as _connection, ConnectOpts, CallbackFct } from "../sdk/src/index.js" 
 {{- else }}
-import { Context } from "@dagger.io/dagger"
+import { Context, connect as _connect, connection as _connection, ConnectOpts, CallbackFct } from "@dagger.io/dagger"
+{{- end }}
+
+{{ if IsClientOnly }}
+export async function connection(
+  fct: () => Promise<void>,
+  cfg: ConnectOpts = {},
+) {
+  cfg.ServeCurrentModule = true
+
+  return await _connection(fct, cfg)
+}
+
+export async function connect(
+  fct: CallbackFct,
+  cfg: ConnectOpts = {},
+) {
+  cfg.ServeCurrentModule = true
+
+  return await _connect(fct, cfg)
+}
 {{- end }}
 
 /**

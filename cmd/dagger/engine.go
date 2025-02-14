@@ -62,7 +62,8 @@ func withEngine(
 		}
 		defer sess.Close()
 
-		if params.AutoInit {
+		// Automatically serve the module in the context directory if available.
+		if params.ServeModule {
 			cwd, err := pathutil.Getwd()
 			if err != nil {
 				return fmt.Errorf("failed to get current working directory: %w", err)

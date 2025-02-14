@@ -236,6 +236,8 @@ type Client struct {
 }
 
 func Connect(ctx context.Context, opts ...dagger.ClientOpt) (*Client, error) {
+	opts = append(opts, dagger.WithServeCurrentModule(true))
+
 	dag, err := dagger.Connect(ctx, opts...)
 	if err != nil {
 		return nil, err

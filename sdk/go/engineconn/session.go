@@ -94,6 +94,10 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		args = append(args, "-"+strings.Repeat("v", cfg.Verbosity))
 	}
 
+	if cfg.ServeCurrentModule {
+		args = append(args, "--serve-module")
+	}
+
 	env := os.Environ()
 
 	if cfg.RunnerHost != "" {
