@@ -67,18 +67,18 @@ func withEngine(
 			if err != nil {
 				return fmt.Errorf("failed to get current working directory: %w", err)
 			}
-	
+
 			moduleSrcPath, configExist, err := findUp(cwd)
 			if err != nil {
 				return fmt.Errorf("failed to look for dagger.json file: %w", err)
 			}
-	
+
 			if configExist {
 				mod, err := initializeClientGeneratorModule(ctx, sess.Dagger(), moduleSrcPath, false)
 				if err != nil {
 					return fmt.Errorf("failed to initialize current module: %w", err)
 				}
-	
+
 				for _, dep := range mod.Dependencies {
 					err := dep.Source.AsModule().Initialize().Serve(ctx)
 					if err != nil {
@@ -87,7 +87,6 @@ func withEngine(
 				}
 			}
 		}
-
 
 		return fn(ctx, sess)
 	})
