@@ -3,9 +3,7 @@ query ModuleConfig($source: ModuleSourceID!) {
     asString
     module: asModule {
       name
-      initialize {
-        description
-      }
+      description
       dependencies {
         name
         description

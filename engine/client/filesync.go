@@ -63,6 +63,10 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 	}
 
 	switch {
+	case opts.GetAbsPathOnly:
+		return stream.SendMsg(&fstypes.Stat{
+			Path: filepath.ToSlash(absPath),
+		})
 	case opts.StatPathOnly:
 		stat, err := fsutil.Stat(absPath)
 		if err != nil {
@@ -246,6 +250,9 @@ func (f Filesyncer) fullRootPathAndBaseName(reqPath string, fullyResolvePath boo
 	if fullyResolvePath {
 		rootPath, err = filepath.EvalSymlinks(rootPath)
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return "", status.Errorf(codes.NotFound, "eval symlinks: %s", err)
+			}
 			return "", fmt.Errorf("eval symlinks: %w", err)
 		}
 	}

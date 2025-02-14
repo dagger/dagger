@@ -678,11 +678,13 @@ func (h *shellCallHandler) GetDependency(ctx context.Context, name string) (*She
 		return nil, nil, fmt.Errorf("dependency %q not found", name)
 	}
 	st, err := h.getOrInitDefState(dep.ModRef, func() (*moduleDef, error) {
-		var opts []dagger.ModuleSourceOpts
-		if dep.RefPin != "" {
-			opts = append(opts, dagger.ModuleSourceOpts{RefPin: dep.RefPin})
+		opt := dagger.ModuleSourceOpts{
+			DisableFindUp: true,
 		}
-		return initializeModule(ctx, h.dag, dep.ModRef, false, opts...)
+		if dep.RefPin != "" {
+			opt.RefPin = dep.RefPin
+		}
+		return initializeModule(ctx, h.dag, dep.ModRef, opt)
 	})
 	if err != nil {
 		return nil, nil, err

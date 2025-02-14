@@ -273,10 +273,11 @@ dagger init --sdk=python
 ### Options
 
 ```
-      --license string   License identifier to generate. See https://spdx.org/licenses/ (default "Apache-2.0")
-      --name string      Name of the new module (defaults to parent directory name)
-      --sdk string       Optionally install a Dagger SDK
-      --source string    Source directory used by the installed SDK. Defaults to module root
+      --include strings   Paths to include when loading the module. Only needed when extra paths are required to build the module. They are expected to be relative to the directory containing the module's dagger.json file (the module source root).
+      --license string    License identifier to generate. See https://spdx.org/licenses/ (default "Apache-2.0")
+      --name string       Name of the new module (defaults to parent directory name)
+      --sdk string        Optionally install a Dagger SDK
+      --source string     Source directory used by the installed SDK. Defaults to module root
 ```
 
 ### Options inherited from parent commands

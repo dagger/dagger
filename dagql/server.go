@@ -77,6 +77,7 @@ type Cache interface {
 		digest.Digest,
 		func(context.Context) (Typed, error),
 	) (Typed, bool, error)
+	GetOrInitializeValue(context.Context, digest.Digest, Typed) (Typed, bool, error)
 }
 
 // TypeDef is a type whose sole practical purpose is to define a GraphQL type,

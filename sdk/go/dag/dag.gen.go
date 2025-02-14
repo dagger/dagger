@@ -248,12 +248,6 @@ func LoadGeneratedCodeFromID(id dagger.GeneratedCodeID) *dagger.GeneratedCode {
 	return client.LoadGeneratedCodeFromID(id)
 }
 
-// Load a GitModuleSource from its ID.
-func LoadGitModuleSourceFromID(id dagger.GitModuleSourceID) *dagger.GitModuleSource {
-	client := initClient()
-	return client.LoadGitModuleSourceFromID(id)
-}
-
 // Load a GitRef from its ID.
 func LoadGitRefFromID(id dagger.GitRefID) *dagger.GitRef {
 	client := initClient()
@@ -296,18 +290,6 @@ func LoadListTypeDefFromID(id dagger.ListTypeDefID) *dagger.ListTypeDef {
 	return client.LoadListTypeDefFromID(id)
 }
 
-// Load a LocalModuleSource from its ID.
-func LoadLocalModuleSourceFromID(id dagger.LocalModuleSourceID) *dagger.LocalModuleSource {
-	client := initClient()
-	return client.LoadLocalModuleSourceFromID(id)
-}
-
-// Load a ModuleDependency from its ID.
-func LoadModuleDependencyFromID(id dagger.ModuleDependencyID) *dagger.ModuleDependency {
-	client := initClient()
-	return client.LoadModuleDependencyFromID(id)
-}
-
 // Load a Module from its ID.
 func LoadModuleFromID(id dagger.ModuleID) *dagger.Module {
 	client := initClient()
@@ -318,12 +300,6 @@ func LoadModuleFromID(id dagger.ModuleID) *dagger.Module {
 func LoadModuleSourceFromID(id dagger.ModuleSourceID) *dagger.ModuleSource {
 	client := initClient()
 	return client.LoadModuleSourceFromID(id)
-}
-
-// Load a ModuleSourceView from its ID.
-func LoadModuleSourceViewFromID(id dagger.ModuleSourceViewID) *dagger.ModuleSourceView {
-	client := initClient()
-	return client.LoadModuleSourceViewFromID(id)
 }
 
 // Load a ObjectTypeDef from its ID.
@@ -398,13 +374,7 @@ func Module() *dagger.Module {
 	return client.Module()
 }
 
-// Create a new module dependency configuration from a module source and name
-func ModuleDependency(source *dagger.ModuleSource, opts ...dagger.ModuleDependencyOpts) *dagger.ModuleDependency {
-	client := initClient()
-	return client.ModuleDependency(source, opts...)
-}
-
-// Create a new module source instance from a source ref string.
+// Create a new module source instance from a source ref string
 func ModuleSource(refString string, opts ...dagger.ModuleSourceOpts) *dagger.ModuleSource {
 	client := initClient()
 	return client.ModuleSource(refString, opts...)

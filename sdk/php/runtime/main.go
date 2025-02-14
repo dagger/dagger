@@ -18,8 +18,7 @@ const (
 )
 
 type PhpSdk struct {
-	SourceDir     *dagger.Directory
-	RequiredPaths []string
+	SourceDir *dagger.Directory
 }
 
 func New(
@@ -33,8 +32,7 @@ func New(
 		return nil, fmt.Errorf("sdk source directory not provided")
 	}
 	return &PhpSdk{
-		RequiredPaths: []string{},
-		SourceDir:     sdkSourceDir,
+		SourceDir: sdkSourceDir,
 	}, nil
 }
 

@@ -61,6 +61,12 @@ func asArrayInput[T any, I dagql.Input](ts []T, conv func(T) I) dagql.ArrayInput
 	return ins
 }
 
+func asInputObjectArray[T dagql.Type](ts []T) dagql.ArrayInput[dagql.InputObject[T]] {
+	return asArrayInput(ts, func(v T) dagql.InputObject[T] {
+		return dagql.InputObject[T]{Value: v}
+	})
+}
+
 func SchemaIntrospectionJSON(ctx context.Context, dag *dagql.Server) (json.RawMessage, error) {
 	data, err := dag.Query(ctx, introspection.Query, nil)
 	if err != nil {
