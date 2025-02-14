@@ -207,7 +207,7 @@ func (t *TypescriptSdk) GenerateClient(
 		WithExec([]string{
 			codegenBinPath,
 			"--lang", "typescript",
-			"--output", fmt.Sprintf("%s/dagger", workdirPath),
+			"--output", "dagger", // TODO: config output path
 			"--introspection-json-path", schemaPath,
 			fmt.Sprintf("--local-sdk=%t", useLocalSdk),
 			"--client-only",

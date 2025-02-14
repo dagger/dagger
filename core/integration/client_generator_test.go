@@ -394,3 +394,70 @@ main()
 		}
 	})
 }
+
+func (ClientGeneratorTest) TestCustomClientGenerator(ctx context.Context, t *testctx.T) {
+	type testCase struct {
+		generatorSDK    string
+		generatorSource string
+	}
+
+	testCases := []testCase{
+		{
+			generatorSDK: "go",
+			generatorSource: `package main
+
+import (
+	"context"
+	"dagger/generator/internal/dagger"
+)
+
+type Generator struct{}
+
+func (g *Generator) GenerateClient(
+  ctx context.Context,
+  modSource *dagger.ModuleSource,
+  introspectionJSON *dagger.File,
+  useLocalSdk bool,
+) (*dagger.Directory, error) {
+  return dag.Directory().WithNewFile("hello.txt", "hello world"), nil
+}`,
+		},
+		{
+			generatorSDK: "typescript",
+			generatorSource: `import { dag, Directory, object, func, ModuleSource, File } from "@dagger.io/dagger"
+
+@object()
+export class Generator {
+  @func()
+  generateClient(
+    modSource: ModuleSource,
+    introspectionJSON: File,
+    useLocalSdk: boolean,
+  ): Directory {
+    return dag.directory().withNewFile("hello.txt", "hello world")
+  }
+}`,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.generatorSDK, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			moduleSrc := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work/generator").
+				With(daggerExec("init", "--name=generator", fmt.Sprintf("--sdk=%s", tc.generatorSDK), "--source=.")).
+				With(sdkSource(tc.generatorSDK, tc.generatorSource)).
+				WithWorkdir("/work").
+				With(daggerExec("init")).
+				With(daggerClientAdd("./generator"))
+
+			out, err := moduleSrc.File("hello.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hello world", out)
+		})
+	}
+}

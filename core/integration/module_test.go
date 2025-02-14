@@ -5314,9 +5314,8 @@ func daggerUnprivilegedRun(args ...string) dagger.WithContainerFunc {
 	return daggerUnprivilegedExec(args...)
 }
 
-// We need to also generate local SDK sources to test eventual SDK library changes.
 func daggerClientAdd(generator string) dagger.WithContainerFunc {
-	return daggerUnprivilegedExec("client", "add", "--generator="+generator, "--local-sdk")
+	return daggerExec("client", "add", "--generator="+generator, "--local-sdk")
 }
 
 func daggerQuery(query string, args ...any) dagger.WithContainerFunc {
