@@ -949,7 +949,9 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		if fe.shell != nil && fe.editlineFocused {
 			switch msg.String() {
 			case "ctrl+d":
-				return fe.quit()
+				if fe.editline.Value() == "" {
+					return fe.quit()
+				}
 			case "ctrl+c":
 				if fe.shellInterrupt != nil {
 					fe.shellInterrupt(errors.New("interrupted"))
@@ -968,11 +970,10 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				fe.Verbosity--
 				fe.recalculateViewLocked()
 				return fe, nil
-			default:
-				el, cmd := fe.editline.Update(msg)
-				fe.editline = el.(*editline.Model)
-				return fe, cmd
 			}
+			el, cmd := fe.editline.Update(msg)
+			fe.editline = el.(*editline.Model)
+			return fe, cmd
 		}
 
 		lastKey := fe.pressedKey
