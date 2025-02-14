@@ -33,18 +33,13 @@ type TraceTree struct {
 // it backwards and render only the parts that will fit on screen. Otherwise
 // large traces get giga slow.
 type TraceRow struct {
-	Index int
-
-	Span *Span
-
-	Parent   *TraceRow `json:"-"`
-	Previous *TraceRow `json:"-"`
-	Next     *TraceRow `json:"-"`
-
+	Index                   int
+	Span                    *Span
 	Chained                 bool
-	Final                   bool
 	Depth                   int
 	IsRunningOrChildRunning bool
+	Previous                *TraceRow
+	Parent                  *Span
 	HasChildren             bool
 }
 
@@ -193,18 +188,15 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 	rows := &Rows{
 		BySpan: make(map[SpanID]*TraceRow, len(lv.Body)),
 	}
-	var walk func(*TraceTree, *TraceRow, int) *TraceRow
-	walk = func(tree *TraceTree, parent *TraceRow, depth int) *TraceRow {
+	var walk func(*TraceTree, *Span, int)
+	walk = func(tree *TraceTree, parent *Span, depth int) {
 		row := &TraceRow{
-			Index: len(rows.Order),
-			Span:  tree.Span,
-
-			Parent: parent,
-
+			Index:                   len(rows.Order),
+			Span:                    tree.Span,
 			Chained:                 tree.Chained,
-			Final:                   tree.Final,
 			Depth:                   depth,
 			IsRunningOrChildRunning: tree.IsRunningOrChildRunning,
+			Parent:                  parent,
 			HasChildren:             len(tree.Children) > 0,
 		}
 		if len(rows.Order) > 0 {
@@ -216,20 +208,14 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 			tree.IsRunningOrChildRunning ||
 			tree.Span.IsFailedOrCausedFailure() ||
 			opts.Verbosity >= ExpandCompletedVerbosity {
-			var lastChild *TraceRow
 			for _, child := range tree.Children {
-				childRow := walk(child, row, depth+1)
-				if lastChild != nil {
-					childRow.Previous = lastChild
-					lastChild.Next = childRow
-				}
-				lastChild = childRow
+				walk(child, row.Span, depth+1)
 			}
 		}
-		return row
 	}
 	for _, row := range lv.Body {
-		walk(row, nil, 0)
+		// TODO: parent should be zoomed span?
+		walk(row, lv.Zoomed, 0)
 	}
 	return rows
 }
