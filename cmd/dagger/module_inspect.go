@@ -97,9 +97,7 @@ func tryInitializeModule(ctx context.Context, dag *dagger.Client, srcRef string)
 	defer telemetry.End(span, func() error { return rerr })
 
 	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
-	modSrc := dag.ModuleSource(srcRef, dagger.ModuleSourceOpts{
-		DisableFindUp: true,
-	})
+	modSrc := dag.ModuleSource(srcRef)
 	configExists, _ := modSrc.ConfigExists(findCtx)
 	findSpan.End()
 
