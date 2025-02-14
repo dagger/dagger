@@ -55,7 +55,8 @@ type frontendPretty struct {
 	shell           func(ctx context.Context, input string) error
 	shellCtx        context.Context
 	shellInterrupt  context.CancelCauseFunc
-	prompt          func(out *termenv.Output, err error) string
+	promptFg        termenv.Color
+	prompt          func(out *termenv.Output, fg termenv.Color) string
 	editline        *editline.Model
 	editlineFocused bool
 
@@ -127,14 +128,14 @@ type startShellMsg struct {
 	ctx          context.Context
 	handler      func(ctx context.Context, input string) error
 	autocomplete editline.AutoCompleteFn
-	prompt       func(out *termenv.Output, err error) string
+	prompt       func(out *termenv.Output, fg termenv.Color) string
 }
 
 func (fe *frontendPretty) Shell(
 	ctx context.Context,
 	fn func(ctx context.Context, input string) error,
 	autocomplete editline.AutoCompleteFn,
-	prompt func(out *termenv.Output, err error) string,
+	prompt func(out *termenv.Output, fg termenv.Color) string,
 ) {
 	fe.program.Send(startShellMsg{
 		ctx:          ctx,
@@ -839,11 +840,11 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		fe.shell = msg.handler
 		fe.shellCtx = msg.ctx
 		fe.prompt = msg.prompt
+		fe.promptFg = termenv.ANSIGreen
 
+		// create the editline
 		fe.editline = editline.New(fe.window.Width, fe.window.Height)
-
-		// put the bowtie on
-		fe.editline.Prompt = fe.prompt(fe.viewOut, nil)
+		fe.editlineFocused = true
 
 		// wire up auto completion
 		fe.editline.AutoComplete = msg.autocomplete
@@ -859,7 +860,8 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			return !strings.HasSuffix(string(entireInput[line][col:]), "|")
 		}
 
-		fe.editlineFocused = true
+		// put the bowtie on
+		fe.updatePrompt()
 
 		// HACK: for some reason editline's first paint is broken (only shows
 		// first 2 chars of prompt, doesn't show cursor). Sending it a message
@@ -921,9 +923,12 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		if fe.shell != nil && fe.editlineFocused {
 			value := fe.editline.Value()
 			fe.editline.AddHistoryEntry(value)
-			fe.editline.Reset()
+			fe.promptFg = termenv.ANSIYellow
+			fe.updatePrompt()
+
 			ctx, cancel := context.WithCancelCause(fe.shellCtx)
 			fe.shellInterrupt = cancel
+
 			return fe, func() tea.Msg {
 				return shellDoneMsg{fe.shell(ctx, value)}
 			}
@@ -931,8 +936,13 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		return fe, nil
 
 	case shellDoneMsg:
-		fe.editline.Prompt = fe.prompt(fe.viewOut, msg.err)
-		return fe, fe.editline.Focus()
+		if msg.err == nil {
+			fe.promptFg = termenv.ANSIGreen
+		} else {
+			fe.promptFg = termenv.ANSIRed
+		}
+		fe.updatePrompt()
+		return fe, nil
 
 	case tea.KeyMsg:
 		// send all input to editline if it's focused
@@ -947,6 +957,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				return fe, nil
 			case "esc":
 				fe.editlineFocused = false
+				fe.updatePrompt()
 				fe.editline.Blur()
 				return fe, nil
 			case "alt++", "alt+=":
@@ -1038,8 +1049,9 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			return fe, nil
 		case "tab", "i":
 			if fe.editline != nil {
-				fe.editline.Focus()
 				fe.editlineFocused = true
+				fe.updatePrompt()
+				return fe, fe.editline.Focus()
 			}
 			return fe, nil
 		}
@@ -1070,6 +1082,11 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 	default:
 		return fe, nil
 	}
+}
+
+func (fe *frontendPretty) updatePrompt() {
+	fe.editline.Prompt = fe.prompt(fe.viewOut, fe.promptFg)
+	fe.editline.Reset()
 }
 
 func (fe *frontendPretty) quit() (*frontendPretty, tea.Cmd) {
