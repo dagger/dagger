@@ -57,7 +57,7 @@ func (src localSource) Ref(path string) string {
 }
 
 func (src localSource) Source(dag *dagger.Client) *dagger.ModuleSource {
-	return dag.ModuleSource(src.Ref(src.Path)).ResolveFromCaller()
+	return dag.ModuleSource(src.Ref(src.Path))
 }
 
 func (src localSource) Subpath() string {
@@ -147,7 +147,7 @@ func (h *shellCallHandler) setContext(ctx context.Context, modSrc *dagger.Module
 		modRef := source.Ref("")
 
 		def, err := h.getOrInitDef(modRef, func() (*moduleDef, error) {
-			return initializeModuleConfig(ctx, h.dag, modSrc)
+			return initializeModule(ctx, h.dag, modRef)
 		})
 		if err != nil {
 			return err
@@ -186,10 +186,6 @@ func newShellSource(ctx context.Context, modSrc *dagger.ModuleSource, kind dagge
 	var root string
 	var path string
 
-	if kind == dagger.ModuleSourceKindLocalSource {
-		modSrc = modSrc.ResolveFromCaller()
-	}
-
 	cancelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -218,7 +214,7 @@ func newShellSource(ctx context.Context, modSrc *dagger.ModuleSource, kind dagge
 
 	if kind == dagger.ModuleSourceKindLocalSource {
 		eg.Go(func() error {
-			v, err := modSrc.ResolveContextPathFromCaller(gctx)
+			v, err := modSrc.LocalContextDirectoryPath(gctx)
 			if err != nil {
 				return err
 			}
@@ -239,13 +235,11 @@ func newShellSource(ctx context.Context, modSrc *dagger.ModuleSource, kind dagge
 		return
 	}
 
-	source := modSrc.AsGitSource()
-
 	var version string
 	var pin string
 
 	eg.Go(func() error {
-		v, err := source.CloneRef(gctx)
+		v, err := modSrc.CloneRef(gctx)
 		if err != nil {
 			return err
 		}
@@ -254,7 +248,7 @@ func newShellSource(ctx context.Context, modSrc *dagger.ModuleSource, kind dagge
 	})
 
 	eg.Go(func() error {
-		v, err := source.Version(gctx)
+		v, err := modSrc.Version(gctx)
 		if err != nil {
 			return err
 		}
@@ -263,7 +257,7 @@ func newShellSource(ctx context.Context, modSrc *dagger.ModuleSource, kind dagge
 	})
 
 	eg.Go(func() error {
-		v, err := source.Commit(gctx)
+		v, err := modSrc.Commit(gctx)
 		if err != nil {
 			return err
 		}
@@ -324,7 +318,7 @@ func (h *shellCallHandler) setPath(ctx context.Context, path string) error {
 
 	if modRef != "" {
 		def, err := h.getOrInitDef(modRef, func() (*moduleDef, error) {
-			return initializeModule(ctx, h.dag, modRef, false)
+			return initializeModule(ctx, h.dag, modRef)
 		})
 		if err != nil || def == nil {
 			return err
