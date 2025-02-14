@@ -62,29 +62,32 @@ func withEngine(
 		}
 		defer sess.Close()
 
-		cwd, err := pathutil.Getwd()
-		if err != nil {
-			return fmt.Errorf("failed to get current working directory: %w", err)
-		}
-
-		moduleSrcPath, configExist, err := findUp(cwd)
-		if err != nil {
-			return fmt.Errorf("failed to look for dagger.json file: %w", err)
-		}
-
-		if configExist {
-			mod, err := initializeClientGeneratorModule(ctx, sess.Dagger(), moduleSrcPath, false)
+		if params.AutoInit {
+			cwd, err := pathutil.Getwd()
 			if err != nil {
-				return fmt.Errorf("failed to initialize current module: %w", err)
+				return fmt.Errorf("failed to get current working directory: %w", err)
 			}
-
-			for _, dep := range mod.Dependencies {
-				err := dep.Source.AsModule().Initialize().Serve(ctx)
+	
+			moduleSrcPath, configExist, err := findUp(cwd)
+			if err != nil {
+				return fmt.Errorf("failed to look for dagger.json file: %w", err)
+			}
+	
+			if configExist {
+				mod, err := initializeClientGeneratorModule(ctx, sess.Dagger(), moduleSrcPath, false)
 				if err != nil {
-					return fmt.Errorf("failed to serve dependency %s: %w", dep.Name, err)
+					return fmt.Errorf("failed to initialize current module: %w", err)
+				}
+	
+				for _, dep := range mod.Dependencies {
+					err := dep.Source.AsModule().Initialize().Serve(ctx)
+					if err != nil {
+						return fmt.Errorf("failed to serve dependency %s: %w", dep.Name, err)
+					}
 				}
 			}
 		}
+
 
 		return fn(ctx, sess)
 	})

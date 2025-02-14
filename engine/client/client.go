@@ -86,6 +86,8 @@ type Params struct {
 	InteractiveCommand []string
 
 	WithTerminal session.WithTerminalFunc
+
+	AutoInit bool
 }
 
 type Client struct {
