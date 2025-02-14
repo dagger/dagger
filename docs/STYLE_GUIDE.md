@@ -78,3 +78,36 @@ Each recipe requires only:
   - Snippets created specifically for the cookbook (usually stored in `./cookbook/snippets/RECIPE/LANGUAGE/FILE`)
 - Code listings must be presented for each language SDK unless not relevant/not technically feasible for that language (e.g. a recipe for "using a magefile" would only be relevant for Go).
 - Code listings must be presented in a tabbed interface with the order of tabs set to `Go`, `Python` and `TypeScript`.
+
+### Screen recordings
+
+Some screen recordings can be auto-generated with the `docs/recorder` module.
+
+- Generate recordings for some feature pages:
+
+  ```shell
+  dagger call generate-feature-recordings --base=../current_docs/features/snippets --github-token=<plaintext-token> export --path=/tmp/out
+  ```
+
+- Generate recordings manually for other feature pages:
+
+    ```shell
+    dagger logout
+    export PS1="$ " >> ~/.bashrc
+    # run each command once to warm the cache before recording
+    asciinema rec --overwrite --cols=80 --rows=24  ~/images/debug-breakpoints.asc
+    asciinema rec --overwrite --cols=80 --rows=24  ~/images/debug-interactive.asc
+    asciinema rec --overwrite --cols=80 --rows=24  ~/images/service-container.asc
+    asciinema rec --append --cols=80 --rows=24  ~/images/service-container.asc # in separate console
+    asciinema rec --overwrite --cols=80 --rows=24  ~/images/service-host.asc
+    # manually edit all .asc files to remove closing `$ exit`
+    # manually edit `service-container.asc` file to insert line break `\n` between terminal outputs
+    cd ~/images
+    docker run --rm -it -u $(id -u):$(id -g) -v $PWD:/data agg <file>.asc <file>.gif
+    ```
+
+- Generate recordings for some quickstart pages:
+
+  ```shell
+  dagger call generate-quickstart-recordings --base=../current_docs/quickstart/snippets export --path=/tmp/out
+  ```
