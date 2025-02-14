@@ -89,7 +89,7 @@ Some screen recordings can be auto-generated with the `docs/recorder` module.
   dagger call generate-feature-recordings --base=../current_docs/features/snippets --github-token=<plaintext-token> export --path=/tmp/out
   ```
 
-- Generate recordings for other feature pages:
+- Generate recordings manually for other feature pages:
 
     ```shell
     dagger logout
@@ -109,5 +109,5 @@ Some screen recordings can be auto-generated with the `docs/recorder` module.
 - Generate recordings for some quickstart pages:
 
   ```shell
-  dagger call generate-quickstart-recordings --base=../current_docs/quickstart/snippets --path=/tmp/out
+  dagger call generate-quickstart-recordings --base=../current_docs/quickstart/snippets export --path=/tmp/out
   ```

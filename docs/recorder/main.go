@@ -170,10 +170,41 @@ func (r Recorder) GenerateQuickstartRecordings(
 	base *dagger.Directory,
 ) *dagger.Directory {
 	return dag.Directory().
+		// for https://docs.dagger.io/quickstart/env
+		WithFile(
+			"buildenv.gif",
+			getTermcastWithQuickstart(base.Directory("daggerize/go")).
+				Exec("dagger call build-env --source=.", dagger.TermcastExecOpts{Fast: true}).
+				Gif()).
+		// for https://docs.dagger.io/quickstart/test
+		WithFile(
+			"test.gif",
+			getTermcastWithQuickstart(base.Directory("daggerize/go")).
+				Exec("dagger call test --source=.", dagger.TermcastExecOpts{Fast: true}).
+				Gif()).
+		// for https://docs.dagger.io/quickstart/build
+		WithFile(
+			"build.gif",
+			getTermcastWithQuickstart(base.Directory("daggerize/go")).
+				Exec("dagger call build --source=.", dagger.TermcastExecOpts{Fast: true}).
+				Gif()).
+		// for https://docs.dagger.io/quickstart/build
+		WithFile(
+			"build-service.gif",
+			getTermcastWithQuickstart(base.Directory("daggerize/go")).
+				Exec("dagger call build --source=. as-service up --ports=8080:80", dagger.TermcastExecOpts{Fast: true}).
+				Gif()).
 		// for https://docs.dagger.io/quickstart/publish
 		WithFile(
 			"publish.gif",
 			getTermcastWithQuickstart(base.Directory("daggerize/go")).
 				Exec("dagger call publish --source=.", dagger.TermcastExecOpts{Fast: true}).
+				Gif()).
+		// for https://docs.dagger.io/quickstart/publish
+		WithFile(
+			"docker.gif",
+			getTermcastWithQuickstart(base.Directory("daggerize/go")).
+				Exec("docker run --rm --detach --publish 8080:80 ttl.sh/hello-dagger-4362349", dagger.TermcastExecOpts{Fast: true}).
+				Exec("curl localhost:8080", dagger.TermcastExecOpts{Fast: true}).
 				Gif())
 }
