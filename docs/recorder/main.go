@@ -4,6 +4,7 @@ import (
 	"context"
 	"dagger/recorder/internal/dagger"
 	"errors"
+	"time"
 )
 
 type Recorder struct {
@@ -15,35 +16,49 @@ type Recorder struct {
 func New(
 	// Working directory for the recording container
 	// +optional
-	werkdir *dagger.Directory,
+	wdir *dagger.Directory,
 ) Recorder {
-	if werkdir == nil {
-		werkdir = dag.Directory()
+	if wdir == nil {
+		wdir = dag.Directory()
 	}
 	return Recorder{
-		R: getTermcast(werkdir),
+		R: getTermcast(wdir),
 	}
 }
 
-func getTermcast(werkdir *dagger.Directory) *dagger.Termcast {
+func getTermcast(wdir *dagger.Directory) *dagger.Termcast {
 	return dag.Termcast(dagger.TermcastOpts{
 		Container: dag.Wolfi().
 			Container(dagger.WolfiContainerOpts{Packages: []string{"docker-cli"}}).
 			WithFile("/bin/dagger", dag.DaggerCli().Binary()).
 			WithWorkdir("/src").
-			WithMountedDirectory(".", werkdir).
+			WithMountedDirectory(".", wdir).
 			WithEnvVariable("DOCKER_HOST", "tcp://docker:2375").
 			WithServiceBinding("docker", dag.Docker().Engine(dagger.DockerEngineOpts{Persist: false})),
 	})
 }
 
-func getTermcastWithEnvVar(werkdir *dagger.Directory, name string, value string) *dagger.Termcast {
-	ctr := getTermcast(werkdir).Container().WithEnvVariable(name, value)
+func getTermcastWithEnvVar(wdir *dagger.Directory, name string, value string) *dagger.Termcast {
+	ctr := getTermcast(wdir).Container().WithEnvVariable("CACHEBUSTER", time.Now().String()).WithEnvVariable(name, value)
 	return dag.Termcast().WithContainer(ctr)
 }
 
-func getTermcastWithFile(werkdir *dagger.Directory, path string, contents string) *dagger.Termcast {
-	ctr := getTermcast(werkdir).Container().WithNewFile(path, contents)
+func getTermcastWithFile(wdir *dagger.Directory, path string, contents string) *dagger.Termcast {
+	ctr := getTermcast(wdir).Container().WithNewFile(path, contents)
+	return dag.Termcast().WithContainer(ctr)
+}
+
+func getTermcastWithQuickstart(wdir *dagger.Directory) *dagger.Termcast {
+	repo := dag.Git("https://github.com/dagger/hello-dagger").
+		Branch("main").Tree()
+
+	ctr := getTermcast(dag.Directory()).Container().
+		WithMountedDirectory("/src", repo).
+		WithMountedDirectory("/module", wdir).
+		WithExec([]string{"cp", "-R", "/module", "/src/dagger"}).
+		WithExec([]string{"mv", "/src/dagger/dagger.json", "/src/dagger.json"}).
+		WithExec([]string{"sh", "-c", `sed -i 's/"source": "."/"source": "dagger"/' /src/dagger.json`}).
+		WithWorkdir("/src")
 	return dag.Termcast().WithContainer(ctr)
 }
 
@@ -90,8 +105,8 @@ func (r Recorder) Debug(ctx context.Context) (Recorder, error) {
 	return r, err
 }
 
-func (r Recorder) Cd(werkdir string) Recorder {
-	r.R = r.R.WithContainer(r.R.Container().WithWorkdir(werkdir))
+func (r Recorder) Cd(wdir string) Recorder {
+	r.R = r.R.WithContainer(r.R.Container().WithWorkdir(wdir))
 	return r
 }
 
@@ -103,10 +118,12 @@ func (r Recorder) Gif(ctx context.Context) (*dagger.File, error) {
 }
 
 func (r Recorder) GenerateFeatureRecordings(
+	ctx context.Context,
 	// path to features/snippets dir
 	base *dagger.Directory,
-	githubToken string,
+	githubToken *dagger.Secret,
 ) *dagger.Directory {
+	pt, _ := githubToken.Plaintext(ctx)
 	return dag.Directory().
 		// for https://docs.dagger.io/features/programmable-pipelines
 		WithFile(
@@ -129,13 +146,13 @@ func (r Recorder) GenerateFeatureRecordings(
 		// https://docs.dagger.io/features/secrets
 		WithFile(
 			"secrets-env.gif",
-			getTermcastWithEnvVar(base.Directory("secrets/go"), "TOKEN", githubToken).
+			getTermcastWithEnvVar(base.Directory("secrets/go"), "TOKEN", pt).
 				Exec("dagger call github-api --token=env://TOKEN", dagger.TermcastExecOpts{Fast: true}).
 				Gif()).
 		// for https://docs.dagger.io/features/secrets
 		WithFile(
 			"secrets-file.gif",
-			getTermcastWithFile(base.Directory("secrets/go"), "/token.asc", githubToken).
+			getTermcastWithFile(base.Directory("secrets/go"), "/token.asc", pt).
 				Exec("dagger call github-api --token=file:///token.asc", dagger.TermcastExecOpts{Fast: true}).
 				Gif()).
 		// for https://docs.dagger.io/features/visualization
@@ -143,5 +160,18 @@ func (r Recorder) GenerateFeatureRecordings(
 			"tui.gif",
 			getTermcast(base.Directory(".")).
 				Exec("dagger -m github.com/jpadams/daggerverse/trivy@v0.5.0 call scan-container --ctr=index.docker.io/alpine:latest", dagger.TermcastExecOpts{Fast: true}).
+				Gif())
+}
+
+func (r Recorder) GenerateQuickstartRecordings(
+	// path to quickstart/snippets dir
+	base *dagger.Directory,
+) *dagger.Directory {
+	return dag.Directory().
+		// for https://docs.dagger.io/quickstart/publish
+		WithFile(
+			"publish.gif",
+			getTermcastWithQuickstart(base.Directory("daggerize/go")).
+				Exec("dagger call publish --source=.", dagger.TermcastExecOpts{Fast: true}).
 				Gif())
 }
