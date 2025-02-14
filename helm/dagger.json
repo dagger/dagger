@@ -1,7 +1,9 @@
 {
   "name": "helm",
   "engineVersion": "v0.15.1",
-  "sdk": "go",
+  "sdk": {
+    "source": "go"
+  },
   "dependencies": [
     {
       "name": "dagger-cli",
