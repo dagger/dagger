@@ -419,12 +419,7 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 	return nil
 }
 
-func (h *shellCallHandler) Prompt(out *termenv.Output, err error) string {
-	fg := termenv.ANSIGreen
-	if err != nil {
-		fg = termenv.ANSIRed
-	}
-
+func (h *shellCallHandler) Prompt(out *termenv.Output, fg termenv.Color) string {
 	sb := new(strings.Builder)
 
 	if def, _ := h.GetModuleDef(nil); def != nil {
