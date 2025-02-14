@@ -35,24 +35,6 @@
         "source"
       ]
     },
-    "ModuleConfigView": {
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "patterns": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "name"
-      ]
-    },
     "ModuleConfigWithUserFields": {
       "properties": {
         "$schema": {
@@ -78,13 +60,6 @@
           "type": "array",
           "description": "Paths to explicitly include from the module, relative to the configuration file."
         },
-        "exclude": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array",
-          "description": "Paths to explicitly exclude from the module, relative to the configuration file."
-        },
         "dependencies": {
           "items": {
             "$ref": "#/$defs/ModuleConfigDependency"
@@ -96,16 +71,16 @@
           "type": "string",
           "description": "The path, relative to this config file, to the subdir containing the module's implementation source code."
         },
-        "views": {
-          "items": {
-            "$ref": "#/$defs/ModuleConfigView"
-          },
-          "type": "array",
-          "description": "Named views defined for this module, which are sets of directory filters that can be applied to directory arguments provided to functions."
-        },
         "codegen": {
           "$ref": "#/$defs/ModuleCodegenConfig",
           "description": "Codegen configuration for this module."
+        },
+        "exclude": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Paths to explicitly exclude from the module, relative to the configuration file. Deprecated: Use !\u003cpattern\u003e in the include list instead."
         }
       },
       "additionalProperties": false,

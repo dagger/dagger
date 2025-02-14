@@ -590,7 +590,7 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * TODO
+     * Create a new module source instance from a source ref string
      */
     public function moduleSource(
         string $refString,

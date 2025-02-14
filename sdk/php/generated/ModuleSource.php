@@ -32,7 +32,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * The ref to clone the root of the git repo from. Only valid for git sources.
      */
     public function cloneRef(): string
     {
@@ -41,7 +41,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * The resolved commit of the git repo this source points to. Only valid for git sources.
      */
     public function commit(): string
     {
@@ -50,7 +50,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * Whether an existing dagger.json for the module was found.
      */
     public function configExists(): bool
     {
@@ -59,7 +59,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * The full directory loaded for the module source, including the source code as a subdirectory.
      */
     public function contextDirectory(): Directory
     {
@@ -68,7 +68,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * The dependencies of the module source.
      */
     public function dependencies(): array
     {
@@ -77,7 +77,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance.
      */
     public function digest(): string
     {
@@ -96,7 +96,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * The engine version of the module.
      */
     public function engineVersion(): string
     {
@@ -114,7 +114,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources.
      */
     public function htmlRepoURL(): string
     {
@@ -123,7 +123,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The URL to the source's git repo in a web browser
+     * The URL to the source's git repo in a web browser. Only valid for git sources.
      */
     public function htmlURL(): string
     {
@@ -141,7 +141,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * The kind of module source (currently local, git or dir).
      */
     public function kind(): ModuleSourceKind
     {
@@ -150,7 +150,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.
      */
     public function localContextDirectoryPath(): string
     {
@@ -159,7 +159,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * The name of the module, including any setting via the withName API.
      */
     public function moduleName(): string
     {
@@ -168,7 +168,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).
      */
     public function moduleOriginalName(): string
     {
@@ -186,7 +186,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * The import path corresponding to the root of the git repo this source points to. Only valid for git sources.
      */
     public function repoRootPath(): string
     {
@@ -195,7 +195,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * The SDK configuration of the module.
      */
     public function sdk(): SDKConfig
     {
@@ -204,7 +204,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * The path, relative to the context directory, that contains the module's dagger.json.
      */
     public function sourceRootSubpath(): string
     {
@@ -213,7 +213,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * A human readable ref string representation of this module source.
+     * The path to the directory containing the module's source code, relative to the context directory.
      */
     public function sourceSubpath(): string
     {
@@ -222,7 +222,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * Forces evaluation of the module source, including any loading into the engine and associated validation.
      */
     public function sync(): ModuleSourceId
     {
@@ -231,7 +231,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * The specified version of the git repo this source points to. Only valid for git sources.
      */
     public function version(): string
     {
@@ -250,7 +250,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * Upgrade the engine version of the module to the given value.
      */
     public function withEngineVersion(string $version): ModuleSource
     {

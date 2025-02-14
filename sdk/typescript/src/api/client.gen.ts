@@ -659,8 +659,6 @@ export type DirectoryAsModuleOpts = {
   /**
    * An optional subpath of the directory which contains the module's configuration file.
    *
-   * This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
-   *
    * If not set, the module source code is loaded from the root of the directory.
    */
   sourceRootPath?: string
@@ -669,8 +667,6 @@ export type DirectoryAsModuleOpts = {
 export type DirectoryAsModuleSourceOpts = {
   /**
    * An optional subpath of the directory which contains the module's configuration file.
-   *
-   * This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
    *
    * If not set, the module source code is loaded from the root of the directory.
    */
@@ -1147,17 +1143,17 @@ export type ClientModuleSourceOpts = {
   refPin?: string
 
   /**
-   * TODO
+   * If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.
    */
   disableFindUp?: boolean
 
   /**
-   * TODO
+   * If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
    */
   allowNotExists?: boolean
 
   /**
-   * TODO
+   * If set, error out if the ref string is not of the provided requireKind.
    */
   requireKind?: ModuleSourceKind
 }
@@ -2724,8 +2720,6 @@ export class Directory extends BaseClient {
    * Load the directory as a Dagger module source
    * @param opts.sourceRootPath An optional subpath of the directory which contains the module's configuration file.
    *
-   * This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
-   *
    * If not set, the module source code is loaded from the root of the directory.
    */
   asModule = (opts?: DirectoryAsModuleOpts): Module_ => {
@@ -2736,8 +2730,6 @@ export class Directory extends BaseClient {
   /**
    * Load the directory as a Dagger module source
    * @param opts.sourceRootPath An optional subpath of the directory which contains the module's configuration file.
-   *
-   * This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
    *
    * If not set, the module source code is loaded from the root of the directory.
    */
@@ -5120,7 +5112,7 @@ export class Module_ extends BaseClient {
   }
 
   /**
-   * TODO
+   * The dependencies of the module.
    */
   dependencies = async (): Promise<Module_[]> => {
     type dependencies = {
@@ -5257,7 +5249,7 @@ export class Module_ extends BaseClient {
   }
 
   /**
-   * TODO
+   * Forces evaluation of the module, including any loading into the engine and associated validation.
    */
   sync = async (): Promise<Module_> => {
     const ctx = this._ctx.select("sync")
@@ -5423,7 +5415,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * TODO
+   * The ref to clone the root of the git repo from. Only valid for git sources.
    */
   cloneRef = async (): Promise<string> => {
     if (this._cloneRef) {
@@ -5438,7 +5430,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * TODO
+   * The resolved commit of the git repo this source points to. Only valid for git sources.
    */
   commit = async (): Promise<string> => {
     if (this._commit) {
@@ -5453,7 +5445,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * TODO
+   * Whether an existing dagger.json for the module was found.
    */
   configExists = async (): Promise<boolean> => {
     if (this._configExists) {
@@ -5468,7 +5460,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * TODO
+   * The full directory loaded for the module source, including the source code as a subdirectory.
    */
   contextDirectory = (): Directory => {
     const ctx = this._ctx.select("contextDirectory")
@@ -5476,7 +5468,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * TODO
+   * The dependencies of the module source.
    */
   dependencies = async (): Promise<ModuleSource[]> => {
     type dependencies = {
@@ -5493,7 +5485,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * TODO
+   * A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance.
    */
   digest = async (): Promise<string> => {
     if (this._digest) {
@@ -5509,7 +5501,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * The directory containing the module configuration and source code (source code may be in a subdir).
-   * @param path The path from the source directory to select.
+   * @param path A subpath from the source directory to select.
    */
   directory = (path: string): Directory => {
     const ctx = this._ctx.select("directory", { path })
@@ -5517,7 +5509,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * TODO
+   * The engine version of the module.
    */
   engineVersion = async (): Promise<string> => {
     if (this._engineVersion) {
@@ -5540,7 +5532,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * TODO
+   * The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources.
    */
   htmlRepoURL = async (): Promise<string> => {
     if (this._htmlRepoURL) {
@@ -5555,7 +5547,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The URL to the source's git repo in a web browser
+   * The URL to the source's git repo in a web browser. Only valid for git sources.
    */
   htmlURL = async (): Promise<string> => {
     if (this._htmlURL) {
@@ -5570,7 +5562,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * TODO
+   * The kind of module source (currently local, git or dir).
    */
   kind = async (): Promise<ModuleSourceKind> => {
     if (this._kind) {
@@ -5585,7 +5577,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * TODO
+   * The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.
    */
   localContextDirectoryPath = async (): Promise<string> => {
     if (this._localContextDirectoryPath) {
@@ -5600,7 +5592,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * TODO
+   * The name of the module, including any setting via the withName API.
    */
   moduleName = async (): Promise<string> => {
     if (this._moduleName) {
@@ -5615,7 +5607,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * TODO
+   * The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).
    */
   moduleOriginalName = async (): Promise<string> => {
     if (this._moduleOriginalName) {
@@ -5645,7 +5637,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * TODO
+   * The import path corresponding to the root of the git repo this source points to. Only valid for git sources.
    */
   repoRootPath = async (): Promise<string> => {
     if (this._repoRootPath) {
@@ -5660,7 +5652,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * TODO
+   * The SDK configuration of the module.
    */
   sdk = (): SDKConfig => {
     const ctx = this._ctx.select("sdk")
@@ -5668,7 +5660,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * TODO
+   * The path, relative to the context directory, that contains the module's dagger.json.
    */
   sourceRootSubpath = async (): Promise<string> => {
     if (this._sourceRootSubpath) {
@@ -5683,7 +5675,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * A human readable ref string representation of this module source.
+   * The path to the directory containing the module's source code, relative to the context directory.
    */
   sourceSubpath = async (): Promise<string> => {
     if (this._sourceSubpath) {
@@ -5698,7 +5690,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * TODO
+   * Forces evaluation of the module source, including any loading into the engine and associated validation.
    */
   sync = async (): Promise<ModuleSource> => {
     const ctx = this._ctx.select("sync")
@@ -5709,7 +5701,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * TODO
+   * The specified version of the git repo this source points to. Only valid for git sources.
    */
   version = async (): Promise<string> => {
     if (this._version) {
@@ -5733,8 +5725,8 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * TODO
-   * @param version TODO
+   * Upgrade the engine version of the module to the given value.
+   * @param version The engine version to upgrade to.
    */
   withEngineVersion = (version: string): ModuleSource => {
     const ctx = this._ctx.select("withEngineVersion", { version })
@@ -5770,7 +5762,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * Update the module source with a new source subpath.
-   * @param path The path to set as the source subpath.
+   * @param path The path to set as the source subpath. Must be relative to the module source's source root directory.
    */
   withSourceSubpath = (path: string): ModuleSource => {
     const ctx = this._ctx.select("withSourceSubpath", { path })
@@ -6550,12 +6542,12 @@ export class Client extends BaseClient {
   }
 
   /**
-   * TODO
+   * Create a new module source instance from a source ref string
    * @param refString The string ref representation of the module source
    * @param opts.refPin The pinned version of the module source
-   * @param opts.disableFindUp TODO
-   * @param opts.allowNotExists TODO
-   * @param opts.requireKind TODO
+   * @param opts.disableFindUp If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.
+   * @param opts.allowNotExists If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
+   * @param opts.requireKind If set, error out if the ref string is not of the provided requireKind.
    */
   moduleSource = (
     refString: string,

@@ -14,7 +14,7 @@ namespace Dagger;
 class Module extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * TODO
+     * The dependencies of the module.
      */
     public function dependencies(): array
     {
@@ -124,7 +124,7 @@ class Module extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * Forces evaluation of the module, including any loading into the engine and associated validation.
      */
     public function sync(): ModuleId
     {

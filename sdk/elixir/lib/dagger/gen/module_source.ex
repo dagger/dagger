@@ -32,7 +32,7 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "TODO"
+  @doc "The ref to clone the root of the git repo from. Only valid for git sources."
   @spec clone_ref(t()) :: {:ok, String.t()} | {:error, term()}
   def clone_ref(%__MODULE__{} = module_source) do
     query_builder =
@@ -41,7 +41,7 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "TODO"
+  @doc "The resolved commit of the git repo this source points to. Only valid for git sources."
   @spec commit(t()) :: {:ok, String.t()} | {:error, term()}
   def commit(%__MODULE__{} = module_source) do
     query_builder =
@@ -50,7 +50,7 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "TODO"
+  @doc "Whether an existing dagger.json for the module was found."
   @spec config_exists(t()) :: {:ok, boolean()} | {:error, term()}
   def config_exists(%__MODULE__{} = module_source) do
     query_builder =
@@ -59,7 +59,7 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "TODO"
+  @doc "The full directory loaded for the module source, including the source code as a subdirectory."
   @spec context_directory(t()) :: Dagger.Directory.t()
   def context_directory(%__MODULE__{} = module_source) do
     query_builder =
@@ -71,7 +71,7 @@ defmodule Dagger.ModuleSource do
     }
   end
 
-  @doc "TODO"
+  @doc "The dependencies of the module source."
   @spec dependencies(t()) :: {:ok, [Dagger.ModuleSource.t()]} | {:error, term()}
   def dependencies(%__MODULE__{} = module_source) do
     query_builder =
@@ -91,7 +91,7 @@ defmodule Dagger.ModuleSource do
     end
   end
 
-  @doc "TODO"
+  @doc "A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance."
   @spec digest(t()) :: {:ok, String.t()} | {:error, term()}
   def digest(%__MODULE__{} = module_source) do
     query_builder =
@@ -112,7 +112,7 @@ defmodule Dagger.ModuleSource do
     }
   end
 
-  @doc "TODO"
+  @doc "The engine version of the module."
   @spec engine_version(t()) :: {:ok, String.t()} | {:error, term()}
   def engine_version(%__MODULE__{} = module_source) do
     query_builder =
@@ -133,7 +133,7 @@ defmodule Dagger.ModuleSource do
     }
   end
 
-  @doc "TODO"
+  @doc "The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources."
   @spec html_repo_url(t()) :: {:ok, String.t()} | {:error, term()}
   def html_repo_url(%__MODULE__{} = module_source) do
     query_builder =
@@ -142,7 +142,7 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "The URL to the source's git repo in a web browser"
+  @doc "The URL to the source's git repo in a web browser. Only valid for git sources."
   @spec html_url(t()) :: {:ok, String.t()} | {:error, term()}
   def html_url(%__MODULE__{} = module_source) do
     query_builder =
@@ -160,7 +160,7 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "TODO"
+  @doc "The kind of module source (currently local, git or dir)."
   @spec kind(t()) :: {:ok, Dagger.ModuleSourceKind.t()} | {:error, term()}
   def kind(%__MODULE__{} = module_source) do
     query_builder =
@@ -172,7 +172,7 @@ defmodule Dagger.ModuleSource do
     end
   end
 
-  @doc "TODO"
+  @doc "The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources."
   @spec local_context_directory_path(t()) :: {:ok, String.t()} | {:error, term()}
   def local_context_directory_path(%__MODULE__{} = module_source) do
     query_builder =
@@ -181,7 +181,7 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "TODO"
+  @doc "The name of the module, including any setting via the withName API."
   @spec module_name(t()) :: {:ok, String.t()} | {:error, term()}
   def module_name(%__MODULE__{} = module_source) do
     query_builder =
@@ -190,7 +190,7 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "TODO"
+  @doc "The original name of the module as read from the module's dagger.json (or set for the first time with the withName API)."
   @spec module_original_name(t()) :: {:ok, String.t()} | {:error, term()}
   def module_original_name(%__MODULE__{} = module_source) do
     query_builder =
@@ -208,7 +208,7 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "TODO"
+  @doc "The import path corresponding to the root of the git repo this source points to. Only valid for git sources."
   @spec repo_root_path(t()) :: {:ok, String.t()} | {:error, term()}
   def repo_root_path(%__MODULE__{} = module_source) do
     query_builder =
@@ -217,7 +217,7 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "TODO"
+  @doc "The SDK configuration of the module."
   @spec sdk(t()) :: Dagger.SDKConfig.t() | nil
   def sdk(%__MODULE__{} = module_source) do
     query_builder =
@@ -229,7 +229,7 @@ defmodule Dagger.ModuleSource do
     }
   end
 
-  @doc "TODO"
+  @doc "The path, relative to the context directory, that contains the module's dagger.json."
   @spec source_root_subpath(t()) :: {:ok, String.t()} | {:error, term()}
   def source_root_subpath(%__MODULE__{} = module_source) do
     query_builder =
@@ -238,7 +238,7 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "A human readable ref string representation of this module source."
+  @doc "The path to the directory containing the module's source code, relative to the context directory."
   @spec source_subpath(t()) :: {:ok, String.t()} | {:error, term()}
   def source_subpath(%__MODULE__{} = module_source) do
     query_builder =
@@ -247,7 +247,7 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "TODO"
+  @doc "Forces evaluation of the module source, including any loading into the engine and associated validation."
   @spec sync(t()) :: {:ok, Dagger.ModuleSource.t()} | {:error, term()}
   def sync(%__MODULE__{} = module_source) do
     query_builder =
@@ -265,7 +265,7 @@ defmodule Dagger.ModuleSource do
     end
   end
 
-  @doc "TODO"
+  @doc "The specified version of the git repo this source points to. Only valid for git sources."
   @spec version(t()) :: {:ok, String.t()} | {:error, term()}
   def version(%__MODULE__{} = module_source) do
     query_builder =
@@ -288,7 +288,7 @@ defmodule Dagger.ModuleSource do
     }
   end
 
-  @doc "TODO"
+  @doc "Upgrade the engine version of the module to the given value."
   @spec with_engine_version(t(), String.t()) :: Dagger.ModuleSource.t()
   def with_engine_version(%__MODULE__{} = module_source, version) do
     query_builder =

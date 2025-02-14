@@ -535,27 +535,23 @@ func (LegacySuite) TestModuleSourceCloneURL(ctx context.Context, t *testctx.T) {
 
 	res := struct {
 		ModuleSource struct {
-			AsGitSource struct {
-				CloneRef string
-				CloneURL string
-			}
+			CloneRef string
+			CloneURL string
 		}
 	}{}
 	err := testutil.Query(t,
 		`{
 			moduleSource(refString: "https://github.com/dagger/dagger.git@v0.12.6") {
-				asGitSource {
-					cloneRef
-					cloneURL
-				}
+				cloneRef
+				cloneURL
 			}
 		}`, &res, &testutil.QueryOptions{
 			Version: "v0.12.6",
 		})
 
 	require.NoError(t, err)
-	require.Equal(t, "https://github.com/dagger/dagger.git", res.ModuleSource.AsGitSource.CloneRef)
-	require.Equal(t, res.ModuleSource.AsGitSource.CloneRef, res.ModuleSource.AsGitSource.CloneURL)
+	require.Equal(t, "https://github.com/dagger/dagger.git", res.ModuleSource.CloneRef)
+	require.Equal(t, res.ModuleSource.CloneRef, res.ModuleSource.CloneURL)
 }
 
 func (LegacySuite) TestGoCodegenOptionals(ctx context.Context, t *testctx.T) {

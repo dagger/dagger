@@ -2457,10 +2457,6 @@ class Directory(Type):
         source_root_path:
             An optional subpath of the directory which contains the module's
             configuration file.
-            This is needed when the module code is in a subdirectory but
-            requires parent directories to be loaded in order to execute. For
-            example, the module source code may need a go.mod, project.toml,
-            package.json, etc. file from a parent directory.
             If not set, the module source code is loaded from the root of the
             directory.
         """
@@ -2482,10 +2478,6 @@ class Directory(Type):
         source_root_path:
             An optional subpath of the directory which contains the module's
             configuration file.
-            This is needed when the module code is in a subdirectory but
-            requires parent directories to be loaded in order to execute. For
-            example, the module source code may need a go.mod, project.toml,
-            package.json, etc. file from a parent directory.
             If not set, the module source code is loaded from the root of the
             directory.
         """
@@ -5387,7 +5379,7 @@ class Module(Type):
     """A Dagger module."""
 
     async def dependencies(self) -> list["Module"]:
-        """TODO"""
+        """The dependencies of the module."""
         _args: list[Arg] = []
         _ctx = self._select("dependencies", _args)
         _ctx = Module(_ctx)._select("id", [])
@@ -5588,7 +5580,8 @@ class Module(Type):
         return ModuleSource(_ctx)
 
     async def sync(self) -> Self:
-        """TODO
+        """Forces evaluation of the module, including any loading into the engine
+        and associated validation.
 
         Raises
         ------
@@ -5687,7 +5680,8 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     async def clone_ref(self) -> str:
-        """TODO
+        """The ref to clone the root of the git repo from. Only valid for git
+        sources.
 
         Returns
         -------
@@ -5708,7 +5702,8 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     async def commit(self) -> str:
-        """TODO
+        """The resolved commit of the git repo this source points to. Only valid
+        for git sources.
 
         Returns
         -------
@@ -5729,7 +5724,7 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     async def config_exists(self) -> bool:
-        """TODO
+        """Whether an existing dagger.json for the module was found.
 
         Returns
         -------
@@ -5748,13 +5743,15 @@ class ModuleSource(Type):
         return await _ctx.execute(bool)
 
     def context_directory(self) -> Directory:
-        """TODO"""
+        """The full directory loaded for the module source, including the source
+        code as a subdirectory.
+        """
         _args: list[Arg] = []
         _ctx = self._select("contextDirectory", _args)
         return Directory(_ctx)
 
     async def dependencies(self) -> list["ModuleSource"]:
-        """TODO"""
+        """The dependencies of the module source."""
         _args: list[Arg] = []
         _ctx = self._select("dependencies", _args)
         _ctx = ModuleSource(_ctx)._select("id", [])
@@ -5775,7 +5772,9 @@ class ModuleSource(Type):
         ]
 
     async def digest(self) -> str:
-        """TODO
+        """A content-hash of the module source. Module sources with the same
+        digest will output the same generated context and convert into the
+        same module instance.
 
         Returns
         -------
@@ -5802,7 +5801,7 @@ class ModuleSource(Type):
         Parameters
         ----------
         path:
-            The path from the source directory to select.
+            A subpath from the source directory to select.
         """
         _args = [
             Arg("path", path),
@@ -5811,7 +5810,7 @@ class ModuleSource(Type):
         return Directory(_ctx)
 
     async def engine_version(self) -> str:
-        """TODO
+        """The engine version of the module.
 
         Returns
         -------
@@ -5840,7 +5839,8 @@ class ModuleSource(Type):
         return Directory(_ctx)
 
     async def html_repo_url(self) -> str:
-        """TODO
+        """The URL to access the web view of the repository (e.g., GitHub,
+        GitLab, Bitbucket). Only valid for git sources.
 
         Returns
         -------
@@ -5861,7 +5861,8 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     async def html_url(self) -> str:
-        """The URL to the source's git repo in a web browser
+        """The URL to the source's git repo in a web browser. Only valid for git
+        sources.
 
         Returns
         -------
@@ -5906,7 +5907,7 @@ class ModuleSource(Type):
         return await _ctx.execute(ModuleSourceID)
 
     async def kind(self) -> ModuleSourceKind:
-        """TODO
+        """The kind of module source (currently local, git or dir).
 
         Returns
         -------
@@ -5925,7 +5926,9 @@ class ModuleSource(Type):
         return await _ctx.execute(ModuleSourceKind)
 
     async def local_context_directory_path(self) -> str:
-        """TODO
+        """The full absolute path to the context directory on the caller's host
+        filesystem that this module source is loaded from. Only valid for
+        local module sources.
 
         Returns
         -------
@@ -5946,7 +5949,7 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     async def module_name(self) -> str:
-        """TODO
+        """The name of the module, including any setting via the withName API.
 
         Returns
         -------
@@ -5967,7 +5970,8 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     async def module_original_name(self) -> str:
-        """TODO
+        """The original name of the module as read from the module's dagger.json
+        (or set for the first time with the withName API).
 
         Returns
         -------
@@ -6009,7 +6013,8 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     async def repo_root_path(self) -> str:
-        """TODO
+        """The import path corresponding to the root of the git repo this source
+        points to. Only valid for git sources.
 
         Returns
         -------
@@ -6030,13 +6035,14 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     def sdk(self) -> "SDKConfig":
-        """TODO"""
+        """The SDK configuration of the module."""
         _args: list[Arg] = []
         _ctx = self._select("sdk", _args)
         return SDKConfig(_ctx)
 
     async def source_root_subpath(self) -> str:
-        """TODO
+        """The path, relative to the context directory, that contains the
+        module's dagger.json.
 
         Returns
         -------
@@ -6057,7 +6063,8 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     async def source_subpath(self) -> str:
-        """A human readable ref string representation of this module source.
+        """The path to the directory containing the module's source code,
+        relative to the context directory.
 
         Returns
         -------
@@ -6078,7 +6085,8 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     async def sync(self) -> Self:
-        """TODO
+        """Forces evaluation of the module source, including any loading into the
+        engine and associated validation.
 
         Raises
         ------
@@ -6099,7 +6107,8 @@ class ModuleSource(Type):
         return self.sync().__await__()
 
     async def version(self) -> str:
-        """TODO
+        """The specified version of the git repo this source points to. Only
+        valid for git sources.
 
         Returns
         -------
@@ -6135,12 +6144,12 @@ class ModuleSource(Type):
         return ModuleSource(_ctx)
 
     def with_engine_version(self, version: str) -> Self:
-        """TODO
+        """Upgrade the engine version of the module to the given value.
 
         Parameters
         ----------
         version:
-            TODO
+            The engine version to upgrade to.
         """
         _args = [
             Arg("version", version),
@@ -6197,7 +6206,8 @@ class ModuleSource(Type):
         Parameters
         ----------
         path:
-            The path to set as the source subpath.
+            The path to set as the source subpath. Must be relative to the
+            module source's source root directory.
         """
         _args = [
             Arg("path", path),
@@ -7083,7 +7093,7 @@ class Client(Root):
         allow_not_exists: bool | None = False,
         require_kind: ModuleSourceKind | None = None,
     ) -> ModuleSource:
-        """TODO
+        """Create a new module source instance from a source ref string
 
         Parameters
         ----------
@@ -7092,11 +7102,15 @@ class Client(Root):
         ref_pin:
             The pinned version of the module source
         disable_find_up:
-            TODO
+            If true, do not attempt to find dagger.json in a parent directory
+            of the provided path. Only relevant for local module sources.
         allow_not_exists:
-            TODO
+            If true, do not error out if the provided ref string is a local
+            path and does not exist yet. Useful when initializing new modules
+            in directories that don't exist yet.
         require_kind:
-            TODO
+            If set, error out if the ref string is not of the provided
+            requireKind.
         """
         _args = [
             Arg("refString", ref_string),
