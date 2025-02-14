@@ -78,3 +78,9 @@ Each recipe requires only:
   - Snippets created specifically for the cookbook (usually stored in `./cookbook/snippets/RECIPE/LANGUAGE/FILE`)
 - Code listings must be presented for each language SDK unless not relevant/not technically feasible for that language (e.g. a recipe for "using a magefile" would only be relevant for Go).
 - Code listings must be presented in a tabbed interface with the order of tabs set to `Go`, `Python` and `TypeScript`.
+
+### Screen recordings
+
+Some screen recordings can be auto-generated with the `docs/recorder` module.
+
+- Generate recordings for feature pages: `dagger call generate-feature-recordings --base=../current_docs/features/snippets --github-token=env:GITHUB_TOKEN export --path=/tmp/out`

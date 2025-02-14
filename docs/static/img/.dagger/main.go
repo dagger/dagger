@@ -26,7 +26,6 @@ func (m *Img) Recordings() *dagger.Directory {
 				Exec("cat main.go").
 				Exec("dagger call build --src=https://github.com/golang/example#master:/hello --arch=amd64 --os=linux").
 				Gif())
-	/*
 		WithFile(
 			"build-publish.gif",
 			dag.Recorder(dagger.RecorderOpts{Werkdir: m.Snippets.Directory("programmable-pipelines-1/go")}).
