@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -186,6 +188,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 	var res struct {
 		Source struct {
 			AsString string
+			Kind     dagger.ModuleSourceKind
 			Module   struct {
 				Name         string
 				Description  string
@@ -234,6 +237,20 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 		Name:         res.Source.Module.Name,
 		Description:  res.Source.Module.Description,
 		Dependencies: deps,
+	}
+
+	// if this is a local module source, make the mod ref relative to the caller
+	// since that is usually a shorter+easier to work with path
+	if res.Source.Kind == dagger.ModuleSourceKindLocalSource {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+		relPath, err := filepath.Rel(cwd, def.ModRef)
+		if err != nil {
+			return nil, err
+		}
+		def.ModRef = relPath
 	}
 
 	return def, nil

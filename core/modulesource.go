@@ -193,10 +193,11 @@ func (src *ModuleSource) Evaluate(context.Context) (*buildkit.Result, error) {
 func (src *ModuleSource) AsString() string {
 	switch src.Kind {
 	case ModuleSourceKindLocal:
-		return src.Local.OriginalRefString
+		return filepath.Join(src.Local.ContextDirectoryPath, src.SourceRootSubpath)
 
 	case ModuleSourceKindGit:
 		return GitRefString(src.Git.CloneRef, src.SourceRootSubpath, src.Git.Version)
+
 	default:
 		return ""
 	}
@@ -420,9 +421,6 @@ func (src *ModuleSource) LoadContext(
 
 type LocalModuleSource struct {
 	ContextDirectoryPath string
-
-	// the user-provided path given to moduleSource, used in AsString
-	OriginalRefString string
 }
 
 func (src LocalModuleSource) Clone() *LocalModuleSource {

@@ -206,7 +206,6 @@ func (s *moduleSchema) localModuleSource(
 		Kind:              core.ModuleSourceKindLocal,
 		Local: &core.LocalModuleSource{
 			ContextDirectoryPath: contextDirPath,
-			OriginalRefString:    localPath,
 		},
 	}
 
