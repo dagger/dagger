@@ -51,7 +51,7 @@ type parsedRefString struct {
 
 func parseRefString(
 	ctx context.Context,
-	checkDir dirExistsFS,
+	statFS statFS,
 	refString string,
 	refPin string,
 ) (*parsedRefString, error) {
@@ -79,9 +79,9 @@ func parseRefString(
 	}
 
 	// First, we stat ref in case the mod path github.com/username is a local directory
-	if isDir, err := checkDir.dirExists(ctx, refString); err != nil {
+	if stat, err := statFS.stat(ctx, refString); err != nil {
 		slog.Debug("parseRefString stat error", "error", err)
-	} else if isDir {
+	} else if stat.IsDir() {
 		return &parsedRefString{
 			kind: core.ModuleSourceKindLocal,
 			local: &parsedLocalRefString{

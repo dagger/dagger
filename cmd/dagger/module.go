@@ -292,7 +292,9 @@ var moduleInstallCmd = &cobra.Command{
 			}
 
 			depRefStr := extraArgs[0]
-			depSrc := dag.ModuleSource(depRefStr)
+			depSrc := dag.ModuleSource(depRefStr, dagger.ModuleSourceOpts{
+				DisableFindUp: true,
+			})
 
 			origDepName, err := depSrc.ModuleName(ctx)
 			if err != nil {

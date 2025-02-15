@@ -2,11 +2,13 @@ package schema
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine/vcs"
 	"github.com/stretchr/testify/require"
+	fsutiltypes "github.com/tonistiigi/fsutil/types"
 )
 
 // Test ParseRefString using an interface to control Host side effect
@@ -342,7 +344,7 @@ func TestParseRefString(t *testing.T) {
 			t.Parallel()
 			parsed, err := parseRefString(
 				ctx,
-				dirNeverExistsFS{},
+				neverExistsFS{},
 				tc.urlStr,
 				"",
 			)
@@ -367,9 +369,9 @@ func TestParseRefString(t *testing.T) {
 	}
 }
 
-type dirNeverExistsFS struct {
+type neverExistsFS struct {
 }
 
-func (fs dirNeverExistsFS) dirExists(ctx context.Context, path string) (bool, error) {
-	return false, nil
+func (fs neverExistsFS) stat(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
+	return nil, os.ErrNotExist
 }

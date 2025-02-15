@@ -21,6 +21,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/opencontainers/go-digest"
+	fsutiltypes "github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -52,7 +53,7 @@ func (s *moduleSchema) moduleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	parsedRef, err := parseRefString(ctx, callerDirExistsFS{bk}, args.RefString, args.RefPin)
+	parsedRef, err := parseRefString(ctx, callerStatFS{bk}, args.RefString, args.RefPin)
 	if err != nil {
 		return inst, err
 	}
@@ -68,7 +69,7 @@ func (s *moduleSchema) moduleSource(
 			return inst, err
 		}
 	case core.ModuleSourceKindGit:
-		inst, err = s.gitModuleSource(ctx, query, parsedRef.git, args.RefPin)
+		inst, err = s.gitModuleSource(ctx, query, parsedRef.git, args.RefPin, !args.DisableFindUp)
 		if err != nil {
 			return inst, err
 		}
@@ -103,7 +104,7 @@ func (s *moduleSchema) localModuleSource(
 		if err != nil {
 			return inst, fmt.Errorf("failed to get cwd: %w", err)
 		}
-		defaultFindUpSourceRootDir, defaultFindUpExists, err := callerHostFindUp(ctx, bk, cwd, modules.Filename)
+		defaultFindUpSourceRootDir, defaultFindUpExists, err := findUp(ctx, callerStatFS{bk}, cwd, modules.Filename)
 		if err != nil {
 			return inst, fmt.Errorf("failed to find up root: %w", err)
 		}
@@ -123,9 +124,9 @@ func (s *moduleSchema) localModuleSource(
 				// found a dep in the default dagger.json with the name localPath, load it and return it
 				parsedRef, err := parseRefString(
 					ctx,
-					dirExistsFunc(func(ctx context.Context, path string) (bool, error) {
+					statFSFunc(func(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
 						path = filepath.Join(defaultFindUpSourceRootDir, path)
-						return callerDirExistsFS{bk}.dirExists(ctx, path)
+						return callerStatFS{bk}.stat(ctx, path)
 					}),
 					namedDep.Source,
 					namedDep.Pin,
@@ -138,7 +139,7 @@ func (s *moduleSchema) localModuleSource(
 					depModPath := filepath.Join(defaultFindUpSourceRootDir, namedDep.Source)
 					return s.localModuleSource(ctx, query, bk, depModPath, false, allowNotExists)
 				case core.ModuleSourceKindGit:
-					return s.gitModuleSource(ctx, query, parsedRef.git, namedDep.Pin)
+					return s.gitModuleSource(ctx, query, parsedRef.git, namedDep.Pin, false)
 				}
 			}
 		}
@@ -165,7 +166,7 @@ func (s *moduleSchema) localModuleSource(
 
 	// We always find-up the context dir. When doFindUp is true, we also try a find-up for the source root.
 	const dotGit = ".git"
-	foundPaths, err := callerHostFindUpAll(ctx, bk, localAbsPath, map[string]struct{}{
+	foundPaths, err := findUpAll(ctx, callerStatFS{bk}, localAbsPath, map[string]struct{}{
 		modules.Filename: {}, // dagger.json, the directory containing this is the source root
 		dotGit:           {}, // the context dir is the git repo root, if it exists
 	})
@@ -304,6 +305,8 @@ func (s *moduleSchema) gitModuleSource(
 	query dagql.Instance[*core.Query],
 	parsed *parsedGitRefString,
 	refPin string,
+	// whether to search up the directory tree for a dagger.json file
+	doFindUp bool,
 ) (inst dagql.Instance[*core.ModuleSource], err error) {
 	gitRef, modVersion, err := parsed.getGitRefAndModVersion(ctx, s.dag, refPin)
 	if err != nil {
@@ -328,9 +331,39 @@ func (s *moduleSchema) gitModuleSource(
 		},
 	}
 
-	gitSrc.SourceRootSubpath = parsed.repoRootSubdir
-	if filepath.IsAbs(gitSrc.SourceRootSubpath) {
-		gitSrc.SourceRootSubpath = strings.TrimPrefix(gitSrc.SourceRootSubpath, "/")
+	bk, err := query.Self.Buildkit(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	// TODO:(sipsma) support sparse loading of git repos similar to how local dirs are loaded.
+	// Related: https://github.com/dagger/dagger/issues/6292
+	err = s.dag.Select(ctx, gitRef, &gitSrc.ContextDirectory,
+		dagql.Selector{Field: "tree"},
+	)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load git dir: %w", err)
+	}
+	gitSrc.Git.UnfilteredContextDir = gitSrc.ContextDirectory
+
+	gitSrc.SourceRootSubpath = strings.TrimPrefix(parsed.repoRootSubdir, "/")
+	var configPath string
+	if !doFindUp {
+		configPath = filepath.Join(gitSrc.SourceRootSubpath, modules.Filename)
+	} else {
+		configDir, found, err := findUp(ctx,
+			coreDirStatFS{gitSrc.ContextDirectory.Self, bk},
+			filepath.Join("/", gitSrc.SourceRootSubpath),
+			modules.Filename,
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to find-up dagger.json: %w", err)
+		}
+		if !found {
+			return inst, fmt.Errorf("git module source %q does not contain a dagger config file", gitSrc.AsString())
+		}
+		configPath = filepath.Join(configDir, modules.Filename)
+		gitSrc.SourceRootSubpath = strings.TrimPrefix(configDir, "/")
 	}
 	if gitSrc.SourceRootSubpath == "" {
 		gitSrc.SourceRootSubpath = "."
@@ -359,17 +392,6 @@ func (s *moduleSchema) gitModuleSource(
 		}
 	}
 
-	// TODO:(sipsma) support sparse loading of git repos similar to how local dirs are loaded.
-	// Related: https://github.com/dagger/dagger/issues/6292
-	err = s.dag.Select(ctx, gitRef, &gitSrc.ContextDirectory,
-		dagql.Selector{Field: "tree"},
-	)
-	if err != nil {
-		return inst, fmt.Errorf("failed to load git dir: %w", err)
-	}
-	gitSrc.Git.UnfilteredContextDir = gitSrc.ContextDirectory
-
-	configPath := filepath.Join(gitSrc.SourceRootSubpath, modules.Filename)
 	var configContents string
 	err = s.dag.Select(ctx, gitSrc.ContextDirectory, &configContents,
 		dagql.Selector{
@@ -388,11 +410,6 @@ func (s *moduleSchema) gitModuleSource(
 	}
 	if err := s.initFromModConfig([]byte(configContents), gitSrc); err != nil {
 		return inst, err
-	}
-
-	bk, err := query.Self.Buildkit(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
 	// load this module source's context directory and deps in parallel
@@ -707,7 +724,7 @@ func (s *moduleSchema) resolveDepToSource(
 
 	parsedDepRef, err := parseRefString(
 		ctx,
-		moduleSourceDirExistsFS{bk, parentSrc},
+		moduleSourceStatFS{bk, parentSrc},
 		depSrcRef,
 		depPin,
 	)
@@ -777,6 +794,7 @@ func (s *moduleSchema) resolveDepToSource(
 				Args: []dagql.NamedInput{
 					{Name: "refString", Value: dagql.String(refString)},
 					{Name: "refPin", Value: dagql.String(parentSrc.Git.Commit)},
+					{Name: "disableFindUp", Value: dagql.Boolean(true)},
 				},
 			}}
 			if depName != "" {
@@ -800,6 +818,7 @@ func (s *moduleSchema) resolveDepToSource(
 				Field: "asModuleSource",
 				Args: []dagql.NamedInput{
 					{Name: "sourceRootPath", Value: dagql.String(depPath)},
+					{Name: "disableFindUp", Value: dagql.Boolean(true)},
 				},
 			}}
 			if depName != "" {
@@ -1916,15 +1935,15 @@ func (s *moduleSchema) loadDependencyModules(ctx context.Context, src *core.Modu
 	return deps, nil
 }
 
-// find-up a given soughtName in curDirPath and its parent directories, looking
-// at the caller's host filesystem
-func callerHostFindUp(
+// find-up a given soughtName in curDirPath and its parent directories, return the dir
+// it was found in, if any
+func findUp(
 	ctx context.Context,
-	bk *buildkit.Client,
+	statFS statFS,
 	curDirPath string,
 	soughtName string,
 ) (string, bool, error) {
-	found, err := callerHostFindUpAll(ctx, bk, curDirPath, map[string]struct{}{soughtName: {}})
+	found, err := findUpAll(ctx, statFS, curDirPath, map[string]struct{}{soughtName: {}})
 	if err != nil {
 		return "", false, err
 	}
@@ -1932,28 +1951,27 @@ func callerHostFindUp(
 	return p, ok, nil
 }
 
-// find-up a set of soughtNames in curDirPath and its parent directories, looking
-// at the caller's host filesystem, return what was found (name -> absolute path)
-func callerHostFindUpAll(
+// find-up a set of soughtNames in curDirPath and its parent directories return what
+// was found (name -> absolute path of dir containing it)
+func findUpAll(
 	ctx context.Context,
-	bk *buildkit.Client,
+	statFS statFS,
 	curDirPath string,
 	soughtNames map[string]struct{},
 ) (map[string]string, error) {
 	found := make(map[string]string, len(soughtNames))
 	for {
 		for soughtName := range soughtNames {
-			stat, err := bk.StatCallerHostPath(ctx, filepath.Join(curDirPath, soughtName), true)
+			stat, err := statFS.stat(ctx, filepath.Join(curDirPath, soughtName))
 			if err == nil {
 				delete(soughtNames, soughtName)
 				// NOTE: important that we use stat.Path here rather than curDirPath since the stat also
 				// does some normalization of paths when the client is using case-insensitive filesystems
+				// and we are stat'ing caller host filesystems
 				found[soughtName] = filepath.Dir(stat.Path)
 				continue
 			}
-			// TODO: remove the strings.Contains check here (which aren't cross-platform),
-			// since we now set NotFound (since v0.11.2)
-			if status.Code(err) != codes.NotFound && !strings.Contains(err.Error(), "no such file or directory") {
+			if !errors.Is(err, os.ErrNotExist) {
 				return nil, fmt.Errorf("failed to lstat %s: %w", soughtName, err)
 			}
 		}
@@ -1974,78 +1992,73 @@ func callerHostFindUpAll(
 	return found, nil
 }
 
-// interface for checking existence of a directory that allows ref parsing implementation+
-// unit tests to be generic over the underlying filesystem
-type dirExistsFS interface {
-	dirExists(ctx context.Context, path string) (bool, error)
+type statFS interface {
+	stat(ctx context.Context, path string) (*fsutiltypes.Stat, error)
 }
 
-type dirExistsFunc func(ctx context.Context, path string) (bool, error)
+type statFSFunc func(ctx context.Context, path string) (*fsutiltypes.Stat, error)
 
-func (f dirExistsFunc) dirExists(ctx context.Context, path string) (bool, error) {
+func (f statFSFunc) stat(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
 	return f(ctx, path)
 }
 
-type callerDirExistsFS struct {
+type callerStatFS struct {
 	bk *buildkit.Client
 }
 
-func (fs callerDirExistsFS) dirExists(ctx context.Context, path string) (bool, error) {
-	stat, err := fs.bk.StatCallerHostPath(ctx, path, false)
+func (fs callerStatFS) stat(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
+	stat, err := fs.bk.StatCallerHostPath(ctx, path, true)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
-			return false, nil
+			return nil, os.ErrNotExist
 		}
-		return false, err
+		return nil, err
 	}
-	return stat.IsDir(), nil
+	return stat, nil
 }
 
-type coreDirExistsFS struct {
+type coreDirStatFS struct {
 	dir *core.Directory
 	bk  *buildkit.Client
 }
 
-func (fs coreDirExistsFS) dirExists(ctx context.Context, path string) (bool, error) {
+func (fs coreDirStatFS) stat(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
 	stat, err := fs.dir.Stat(ctx, fs.bk, nil, path)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
-		}
-		return false, err
+		return nil, err
 	}
-	return stat.IsDir(), nil
+	stat.Path = path // otherwise stat.Path is just the basename
+	return stat, nil
 }
 
-type moduleSourceDirExistsFS struct {
+type moduleSourceStatFS struct {
 	bk  *buildkit.Client
 	src *core.ModuleSource
 }
 
-// path is assumed to be relative to source root
-func (fs moduleSourceDirExistsFS) dirExists(ctx context.Context, path string) (bool, error) {
+func (fs moduleSourceStatFS) stat(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
 	if fs.src == nil {
-		return false, nil
+		return nil, os.ErrNotExist
 	}
 
 	switch fs.src.Kind {
 	case core.ModuleSourceKindLocal:
 		path = filepath.Join(fs.src.Local.ContextDirectoryPath, fs.src.SourceRootSubpath, path)
-		return callerDirExistsFS{fs.bk}.dirExists(ctx, path)
+		return callerStatFS{fs.bk}.stat(ctx, path)
 	case core.ModuleSourceKindGit:
 		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
-		return coreDirExistsFS{
+		return coreDirStatFS{
 			dir: fs.src.Git.UnfilteredContextDir.Self,
 			bk:  fs.bk,
-		}.dirExists(ctx, path)
+		}.stat(ctx, path)
 	case core.ModuleSourceKindDir:
 		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
-		return coreDirExistsFS{
+		return coreDirStatFS{
 			dir: fs.src.ContextDirectory.Self,
 			bk:  fs.bk,
-		}.dirExists(ctx, path)
+		}.stat(ctx, path)
 	default:
-		return false, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
+		return nil, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
 	}
 }
 
