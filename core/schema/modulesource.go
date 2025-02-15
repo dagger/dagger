@@ -80,6 +80,7 @@ func (s *moduleSchema) moduleSource(
 	return inst, nil
 }
 
+//nolint:gocyclo
 func (s *moduleSchema) localModuleSource(
 	ctx context.Context,
 	query dagql.Instance[*core.Query],
@@ -1519,6 +1520,7 @@ func (s *moduleSchema) moduleSourceWithoutDependencies(
 	return parentSrc, nil
 }
 
+//nolint:gocyclo
 func (s *moduleSchema) moduleSourceGeneratedContextDirectory(
 	ctx context.Context,
 	srcInst dagql.Instance[*core.ModuleSource],

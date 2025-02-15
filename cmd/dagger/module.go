@@ -373,7 +373,7 @@ var moduleUpdateCmd = &cobra.Command{
 	Long:    "Update a dependency to the latest version (or the version specified). The target module must be local.",
 	Example: `"dagger update github.com/shykes/daggerverse/hello@v0.3.0" or "dagger update hello"`,
 	GroupID: moduleGroup.ID,
-	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) { //nolint:dupl
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
@@ -421,7 +421,7 @@ var moduleUnInstallCmd = &cobra.Command{
 	Example: "dagger uninstall hello",
 	GroupID: moduleGroup.ID,
 	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) { //nolint:dupl
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()

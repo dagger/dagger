@@ -72,7 +72,7 @@ func (s *moduleSchema) sdkForModule(
 
 	sdkModSrc, err := s.resolveDepToSource(ctx, bk, parentSrc, sdk.Source, "", "")
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", err, getInvalidBuiltinSDKError(sdk.Source))
+		return nil, fmt.Errorf("%s: %w", err.Error(), getInvalidBuiltinSDKError(sdk.Source))
 	}
 	if !sdkModSrc.Self.ConfigExists {
 		return nil, fmt.Errorf("sdk module source has no dagger.json: %w", getInvalidBuiltinSDKError(sdk.Source))

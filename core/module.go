@@ -591,8 +591,8 @@ func (mod *Module) namespaceSourceMap(modPath string, sourceMap *SourceMap) *Sou
 
 // modulePath gets the prefix for the file sourcemaps, so that the sourcemap is
 // relative to the context directory
-func (mod *Module) modulePath(ctx context.Context) (string, error) {
-	return mod.Source.Self.SourceSubpath, nil
+func (mod *Module) modulePath() string {
+	return mod.Source.Self.SourceSubpath
 }
 
 /*
@@ -742,10 +742,7 @@ func (mod *Module) WithObject(ctx context.Context, def *TypeDef) (*Module, error
 	}
 	if mod.NameField != "" {
 		def = def.Clone()
-		modPath, err := mod.modulePath(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get module path: %w", err)
-		}
+		modPath := mod.modulePath()
 		if err := mod.namespaceTypeDef(ctx, modPath, def); err != nil {
 			return nil, fmt.Errorf("failed to namespace type def: %w", err)
 		}
@@ -771,10 +768,7 @@ func (mod *Module) WithInterface(ctx context.Context, def *TypeDef) (*Module, er
 	}
 	if mod.NameField != "" {
 		def = def.Clone()
-		modPath, err := mod.modulePath(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get module path: %w", err)
-		}
+		modPath := mod.modulePath()
 		if err := mod.namespaceTypeDef(ctx, modPath, def); err != nil {
 			return nil, fmt.Errorf("failed to namespace type def: %w", err)
 		}
@@ -800,10 +794,7 @@ func (mod *Module) WithEnum(ctx context.Context, def *TypeDef) (*Module, error) 
 	}
 	if mod.NameField != "" {
 		def = def.Clone()
-		modPath, err := mod.modulePath(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get module path: %w", err)
-		}
+		modPath := mod.modulePath()
 		if err := mod.namespaceTypeDef(ctx, modPath, def); err != nil {
 			return nil, fmt.Errorf("failed to namespace type def: %w", err)
 		}
