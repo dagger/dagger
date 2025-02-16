@@ -87,6 +87,14 @@ func (class Class[T]) Field(name string, views ...string) (Field[T], bool) {
 	return class.fieldLocked(name, views...)
 }
 
+func (class Class[T]) FieldSpec(name string, views ...string) (FieldSpec, bool) {
+	field, ok := class.Field(name, views...)
+	if !ok {
+		return FieldSpec{}, false
+	}
+	return field.Spec, true
+}
+
 func (class Class[T]) fieldLocked(name string, views ...string) (Field[T], bool) {
 	fields, ok := class.fields[name]
 	if !ok {
