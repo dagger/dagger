@@ -7,7 +7,7 @@ require github.com/dagger/dagger/engine/distconsts v0.15.3
 replace github.com/dagger/dagger/engine/distconsts => ../engine/distconsts
 
 require (
-	github.com/99designs/gqlgen v0.17.57
+	github.com/99designs/gqlgen v0.17.63
 	github.com/BurntSushi/toml v0.3.1
 	github.com/Khan/genqlient v0.7.0
 	github.com/containerd/platforms v0.2.1
@@ -15,7 +15,8 @@ require (
 	github.com/moby/buildkit v0.14.0-rc1.0.20240603193914-3d789eb740a9
 	github.com/netlify/open-api/v2 v2.35.0
 	github.com/opencontainers/image-spec v1.1.0
-	github.com/vektah/gqlparser/v2 v2.5.20
+	github.com/vektah/gqlparser v1.1.2
+	github.com/vektah/gqlparser/v2 v2.5.21
 	go.opentelemetry.io/otel v1.32.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.8.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.8.0
@@ -76,7 +77,7 @@ require (
 	golang.org/x/text v0.21.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20241113202542-65e8d215514f // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241113202542-65e8d215514f // indirect
-	google.golang.org/protobuf v1.35.2 // indirect
+	google.golang.org/protobuf v1.36.1 // indirect
 )
 
 replace go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc => go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.8.0
