@@ -53,7 +53,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.15.3
+                DAGGER_VERSION: v0.15.4
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -199,4 +199,4 @@ jobs:
                 COMMAND: dagger call -q --docker-cfg=file:$HOME/.docker/config.json check --targets=helm
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
-        timeout-minutes: 10
+        timeout-minutes: 20

@@ -9,11 +9,11 @@ import (
 )
 
 const (
-	daggerVersion      = "v0.15.3"
+	daggerVersion      = "v0.15.4"
 	upstreamRepository = "dagger/dagger"
 	defaultRunner      = "ubuntu-latest"
 	publicToken        = "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
-	timeoutMinutes     = 10
+	timeoutMinutes     = 20
 )
 
 type CI struct {

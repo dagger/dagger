@@ -2,7 +2,7 @@ module github.com/dagger/dagger/.dagger
 
 go 1.23.2
 
-require github.com/dagger/dagger/engine/distconsts v0.15.3
+require github.com/dagger/dagger/engine/distconsts v0.15.4
 
 replace github.com/dagger/dagger/engine/distconsts => ../engine/distconsts
 
@@ -15,7 +15,6 @@ require (
 	github.com/moby/buildkit v0.14.0-rc1.0.20240603193914-3d789eb740a9
 	github.com/netlify/open-api/v2 v2.35.0
 	github.com/opencontainers/image-spec v1.1.0
-	github.com/vektah/gqlparser v1.1.2
 	github.com/vektah/gqlparser/v2 v2.5.21
 	go.opentelemetry.io/otel v1.32.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.8.0
