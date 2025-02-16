@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sync"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/containerd/containerd/content"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
@@ -14,6 +15,8 @@ import (
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/moby/locker"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/dagql"
@@ -30,59 +33,6 @@ type Query struct {
 
 	spans  map[string]*Span
 	spansL *sync.Mutex
-}
-
-func (q *Query) LookupSpan(spanID string) (*Span, bool) {
-	q.spansL.Lock()
-	span, found := q.spans[spanID]
-	q.spansL.Unlock()
-	return span, found
-}
-
-func (q *Query) StoreSpan(s *Span) {
-	q.spansL.Lock()
-	q.spans[s.InternalID()] = s
-	q.spansL.Unlock()
-}
-
-type Span struct {
-	Name string `field:"true"`
-
-	Query *Query
-
-	Span trace.Span
-}
-
-func (*Span) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "Span",
-		NonNull:   true,
-	}
-}
-
-func (*Span) TypeDescription() string {
-	// TODO: rename to Task and come up with a nice description
-	return "An OpenTelemetry span."
-}
-
-func (s Span) Clone() *Span {
-	cp := &s
-	cp.Query = cp.Query.Clone()
-	return cp
-}
-
-func (s *Span) Start(ctx context.Context) *Span {
-	started := s.Clone()
-	_, started.Span = Tracer(ctx).Start(ctx, s.Name)
-	started.Query.StoreSpan(started)
-	return started
-}
-
-func (s *Span) InternalID() string {
-	if s.Span == nil {
-		return ""
-	}
-	return s.Span.SpanContext().SpanID().String()
 }
 
 var ErrNoCurrentModule = fmt.Errorf("no current module")
@@ -217,6 +167,29 @@ func (q Query) Clone() *Query {
 
 func (q *Query) WithPipeline(name, desc string) *Query {
 	return q.Clone()
+}
+
+func (q *Query) StartSpan(ctx context.Context, s *Span) *Span {
+	started := s.Clone()
+	var opts []trace.SpanStartOption
+	if s.Actor != "" {
+		opts = append(opts, trace.WithAttributes(attribute.String("dagger.io/ui.actor", s.Actor)))
+	}
+	if s.Internal {
+		opts = append(opts, telemetry.Internal())
+	}
+	_, started.Span = Tracer(ctx).Start(ctx, s.Name, opts...)
+	q.spansL.Lock()
+	q.spans[started.InternalID()] = started
+	q.spansL.Unlock()
+	return started
+}
+
+func (q *Query) LookupSpan(spanID string) (*Span, bool) {
+	q.spansL.Lock()
+	span, found := q.spans[spanID]
+	q.spansL.Unlock()
+	return span, found
 }
 
 func (q *Query) NewContainer(platform Platform) *Container {
