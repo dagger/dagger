@@ -32,3 +32,16 @@ defmodule Dagger.ListTypeDef do
     Client.execute(list_type_def.client, query_builder)
   end
 end
+
+defimpl Jason.Encoder, for: Dagger.ListTypeDef do
+  def encode(list_type_def, opts) do
+    {:ok, id} = Dagger.ListTypeDef.id(list_type_def)
+    Jason.Encode.string(id, opts)
+  end
+end
+
+defimpl Nestru.Decoder, for: Dagger.ListTypeDef do
+  def decode_fields_hint(_struct, _context, id) do
+    {:ok, Dagger.Client.load_list_type_def_from_id(Dagger.Global.dag(), id)}
+  end
+end

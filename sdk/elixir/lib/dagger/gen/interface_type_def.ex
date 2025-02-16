@@ -79,3 +79,16 @@ defmodule Dagger.InterfaceTypeDef do
     Client.execute(interface_type_def.client, query_builder)
   end
 end
+
+defimpl Jason.Encoder, for: Dagger.InterfaceTypeDef do
+  def encode(interface_type_def, opts) do
+    {:ok, id} = Dagger.InterfaceTypeDef.id(interface_type_def)
+    Jason.Encode.string(id, opts)
+  end
+end
+
+defimpl Nestru.Decoder, for: Dagger.InterfaceTypeDef do
+  def decode_fields_hint(_struct, _context, id) do
+    {:ok, Dagger.Client.load_interface_type_def_from_id(Dagger.Global.dag(), id)}
+  end
+end

@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix function cannot serialize object return type.
+time: 2025-02-16T23:51:43.835960819+07:00
+custom:
+    Author: wingyplus
+    PR: "9596"
