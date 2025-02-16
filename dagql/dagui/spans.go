@@ -103,7 +103,6 @@ type SpanSnapshot struct {
 	Internal     bool   `json:",omitempty"`
 	Encapsulate  bool   `json:",omitempty"`
 	Encapsulated bool   `json:",omitempty"`
-	Mask         bool   `json:",omitempty"`
 	Passthrough  bool   `json:",omitempty"`
 	Ignore       bool   `json:",omitempty"`
 	Reveal       bool   `json:",omitempty"`
