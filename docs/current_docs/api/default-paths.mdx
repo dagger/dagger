@@ -36,6 +36,13 @@ The default path is set by adding an `@argument` decorator with a `defaultPath` 
 ```typescript file=./snippets/default-paths/typescript/index.ts
 ```
 </TabItem>
+<TabItem value="PHP">
+
+The default path is set by adding a `#[DefaultPath]` Attribute on the corresponding Dagger Function `source` argument.
+
+```php file=./snippets/default-paths/php/src/MyModule.php
+```
+</TabItem>
 </Tabs>
 
 When determining how to resolve a default path, Dagger first identifies a "context directory", and then resolves the path starting from the context directory.
