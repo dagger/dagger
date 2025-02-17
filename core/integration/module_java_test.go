@@ -101,6 +101,41 @@ func (JavaSuite) TestDefaultValue(_ context.Context, t *testctx.T) {
 	})
 }
 
+func (JavaSuite) TestOptionalValue(_ context.Context, t *testctx.T) {
+	t.Run("can run without a value", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "defaults").
+			With(daggerCall("echo-else")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "default value if null", out)
+	})
+
+	t.Run("can set a value", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "defaults").
+			With(daggerCall("echo-else", "--value", "foo")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "foo", out)
+	})
+
+	t.Run("ensure Optional and @Default work together", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "defaults").
+			With(daggerCall("echo-opt-default")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "default value", out)
+	})
+}
+
 func (JavaSuite) TestDefaultPath(_ context.Context, t *testctx.T) {
 	t.Run("can set a path for a file", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)

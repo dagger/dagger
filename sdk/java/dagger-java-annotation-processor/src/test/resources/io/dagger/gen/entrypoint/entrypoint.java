@@ -27,6 +27,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
 public class Entrypoint {
@@ -156,7 +157,8 @@ public class Entrypoint {
           if (inputArgs.get("pattern") != null) {
             pattern = (String) JsonConverter.fromJSON(dag, inputArgs.get("pattern"), String.class);
           }
-          String res = obj.grepDir(directoryArg, pattern);
+          var pattern_opt = Optional.ofNullable(pattern);
+          String res = obj.grepDir(directoryArg, pattern_opt);
           return JsonConverter.toJSON(res);
         } else if (fnName.equals("itself")) {
           DaggerJava res = obj.itself();
@@ -207,14 +209,16 @@ public class Entrypoint {
           if (inputArgs.get("stringArg") != null) {
             stringArg = (String) JsonConverter.fromJSON(dag, inputArgs.get("stringArg"), String.class);
           }
-          String res = obj.nullable(stringArg);
+          var stringArg_opt = Optional.ofNullable(stringArg);
+          String res = obj.nullable(stringArg_opt);
           return JsonConverter.toJSON(res);
         } else if (fnName.equals("nullableDefault")) {
           String stringArg = null;
           if (inputArgs.get("stringArg") != null) {
             stringArg = (String) JsonConverter.fromJSON(dag, inputArgs.get("stringArg"), String.class);
           }
-          String res = obj.nullableDefault(stringArg);
+          var stringArg_opt = Optional.ofNullable(stringArg);
+          String res = obj.nullableDefault(stringArg_opt);
           return JsonConverter.toJSON(res);
         } else if (fnName.equals("defaultPlatform")) {
           Platform res = obj.defaultPlatform();

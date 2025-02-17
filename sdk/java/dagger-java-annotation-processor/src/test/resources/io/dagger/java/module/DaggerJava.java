@@ -8,6 +8,7 @@ import io.dagger.module.AbstractModule;
 import io.dagger.module.annotation.*;
 import io.dagger.module.annotation.Object;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
 /** Dagger Java Module main object */
@@ -45,16 +46,14 @@ public class DaggerJava extends AbstractModule {
   @Function
   public String grepDir(
       @DefaultPath("sdk/java") @Ignore({"**", "!*.java"}) Directory directoryArg,
-      @Nullable String pattern)
+      Optional<String> pattern)
       throws InterruptedException, ExecutionException, DaggerQueryException {
-    if (pattern == null) {
-      pattern = "dagger";
-    }
+    String grepPattern = pattern.orElse("dagger");
     return dag.container()
         .from("alpine:latest")
         .withMountedDirectory("/mnt", directoryArg)
         .withWorkdir("/mnt")
-        .withExec(List.of("grep", "-R", pattern, "."))
+        .withExec(List.of("grep", "-R", grepPattern, "."))
         .stdout();
   }
 
@@ -99,25 +98,20 @@ public class DaggerJava extends AbstractModule {
    * set to null.
    */
   @Function
-  public String nullable(@Default("null") String stringArg) {
-    if (stringArg == null) {
-      stringArg = "was a null value";
-    }
-    return stringArg;
+  public String nullable(Optional<String> stringArg) {
+    return stringArg.orElse("was a null value");
   }
 
   /** Set a default value in case the user doesn't provide a value and allow for null value. */
   @Function
-  public String nullableDefault(@Nullable @Default("Foo") String stringArg) {
-    if (stringArg == null) {
-      stringArg = "was a null value by default";
-    }
-    return stringArg;
+  public String nullableDefault(@Default("Foo") Optional<String> stringArg) {
+    return stringArg.orElse("was a null value by default");
   }
 
   /** return the default platform as a Scalar value */
   @Function
-  public Platform defaultPlatform() throws InterruptedException, ExecutionException, DaggerQueryException {
+  public Platform defaultPlatform()
+      throws InterruptedException, ExecutionException, DaggerQueryException {
     return dag.defaultPlatform();
   }
 }

@@ -39,6 +39,7 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
@@ -191,12 +192,23 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
               TypeMirror tm = param.asType();
               TypeKind tk = tm.getKind();
 
-              Default defaultAnnotation =
-                  param.getAnnotation(io.dagger.module.annotation.Default.class);
+              boolean isOptional = false;
+              var optionalType =
+                  processingEnv.getElementUtils().getTypeElement(Optional.class.getName()).asType();
+              if (tm instanceof DeclaredType dt) {
+                if (processingEnv
+                    .getTypeUtils()
+                    .isSameType(dt.asElement().asType(), optionalType)) {
+                  isOptional = true;
+                  tm = dt.getTypeArguments().get(0);
+                  tk = tm.getKind();
+                }
+              }
+
+              Default defaultAnnotation = param.getAnnotation(Default.class);
               var hasDefaultAnnotation = defaultAnnotation != null;
 
-              DefaultPath defaultPathAnnotation =
-                  param.getAnnotation(io.dagger.module.annotation.DefaultPath.class);
+              DefaultPath defaultPathAnnotation = param.getAnnotation(DefaultPath.class);
               var hasDefaultPathAnnotation = defaultPathAnnotation != null;
 
               if (hasDefaultPathAnnotation
@@ -215,24 +227,12 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                         + " cannot have both @Default and @DefaultPath annotations");
               }
 
-              Nullable nullableAnnotation =
-                  param.getAnnotation(io.dagger.module.annotation.Nullable.class);
-
-              boolean isOptional = nullableAnnotation != null;
-
               String defaultValue =
                   hasDefaultAnnotation
                       ? quoteIfString(defaultAnnotation.value(), tm.toString())
                       : null;
 
               String defaultPath = hasDefaultPathAnnotation ? defaultPathAnnotation.value() : null;
-
-              // if @Default("null") we handle that as @Nullable only
-              if (defaultValue != null && defaultValue.equals("null")) {
-                isOptional = true;
-                defaultValue = null;
-                hasDefaultAnnotation = false;
-              }
 
               Ignore ignoreAnnotation = param.getAnnotation(Ignore.class);
               var hasIgnoreAnnotation = ignoreAnnotation != null;
@@ -479,6 +479,12 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
             Objects.class,
             parameterInfo.name(),
             parameterInfo.name());
+      } else if (parameterInfo.optional()) {
+        code.addStatement(
+            "var $L_opt = $T.ofNullable($L)",
+            parameterInfo.name(),
+            Optional.class,
+            parameterInfo.name());
       }
     }
 
@@ -487,7 +493,13 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
         .add(
             CodeBlock.join(
                 Arrays.stream(fnInfo.parameters())
-                    .map(p -> CodeBlock.of("$L", p.name()))
+                    .map(
+                        p ->
+                            CodeBlock.of(
+                                "$L",
+                                p.optional()
+                                    ? CodeBlock.of("$L_opt", p.name())
+                                    : CodeBlock.of("$L", p.name())))
                     .collect(Collectors.toList()),
                 ", "))
         .add(");\n");
@@ -582,6 +594,9 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
       // so we remove the [] to get the underlying type
       name = name.substring(0, name.length() - 2);
       return CodeBlock.of("dag.typeDef().withListOf($L)", typeDef(tiFromName(name)).toString());
+    } else if (name.startsWith("java.util.Optional<")) {
+      name = name.substring("java.util.Optional<".length(), name.length() - 1);
+      return typeName(tiFromName(name));
     }
 
     try {
@@ -643,6 +658,9 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     String name = ti.typeName();
     if (name.startsWith("java.util.List<")) {
       return CodeBlock.of("$T", List.class);
+    }
+    if (name.startsWith("java.util.Optional<")) {
+      return CodeBlock.of("$T", Optional.class);
     }
     try {
       Class<?> clazz = Class.forName(name);
