@@ -108,11 +108,6 @@ func loadGlobalLlmConfig(ctx context.Context, srv *dagql.Server) (*LlmConfig, er
 	if path, ok := env["LLM_PATH"]; ok {
 		cfg.Path = path
 	}
-	if model, ok := env["LLM_MODEL"]; ok {
-		cfg.Model = model
-	} else {
-		cfg.Model = "gpt-4o"
-	}
 	if cfg.Key == "" && cfg.Host == "" {
 		return nil, fmt.Errorf("error loading llm configuration: .env must set LLM_KEY or LLM_HOST")
 	}
@@ -120,12 +115,17 @@ func loadGlobalLlmConfig(ctx context.Context, srv *dagql.Server) (*LlmConfig, er
 	return cfg, nil
 }
 
-func NewLlm(ctx context.Context, query *Query, srv *dagql.Server) (*Llm, error) {
-	// FIXME: make the llm key/host/path/model configurable
+func NewLlm(ctx context.Context, query *Query, srv *dagql.Server, model string) (*Llm, error) {
+	// FIXME: finish dismantling the global llm config machinery
 	config, err := loadGlobalLlmConfig(ctx, srv)
 	if err != nil {
 		return nil, err
 	}
+	// FIXME: clean up default model selection
+	if model == "" {
+		model = "gpt-4o"
+	}
+	config.Model = model
 	return &Llm{
 		Query:  query,
 		Config: config,
