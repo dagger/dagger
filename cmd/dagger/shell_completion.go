@@ -113,9 +113,14 @@ func (h *shellAutoComplete) Do(entireInput [][]rune, row, col int) (msg string, 
 
 	completions := shctx.completions(inprogressPrefix)
 	var matches []string
+	suggested := map[string]struct{}{}
 	for _, c := range completions {
 		if strings.HasPrefix(c, inprogressPrefix) {
+			if _, ok := suggested[c]; ok {
+				continue
+			}
 			matches = append(matches, c)
+			suggested[c] = struct{}{}
 		}
 	}
 	return "", editline.SimpleWordsCompletion(
