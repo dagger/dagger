@@ -16,7 +16,8 @@ var _ SchemaResolvers = &llmSchema{}
 func (s llmSchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("llm", s.llm).
-			Doc(`Initialize a Large Language Model (LLM)`),
+			Doc(`Initialize a Large Language Model (LLM)`).
+			ArgDoc("model", "Model to use"),
 	}.Install(s.srv)
 	llmType := dagql.Fields[*core.Llm]{
 		dagql.Func("model", s.model).
@@ -86,8 +87,14 @@ func (s *llmSchema) loop(ctx context.Context, llm *core.Llm, args struct {
 	return llm.Loop(ctx, maxLoops, s.srv)
 }
 
-func (s *llmSchema) llm(ctx context.Context, parent *core.Query, _ struct{}) (*core.Llm, error) {
-	return core.NewLlm(ctx, parent, s.srv)
+func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
+	Model dagql.Optional[dagql.String]
+}) (*core.Llm, error) {
+	var model string
+	if args.Model.Valid {
+		model = args.Model.Value.String()
+	}
+	return core.NewLlm(ctx, parent, s.srv, model)
 }
 
 func (s *llmSchema) history(ctx context.Context, llm *core.Llm, _ struct{}) (dagql.Array[dagql.String], error) {
