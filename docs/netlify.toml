@@ -467,7 +467,7 @@
 
 [[redirects]]
   from = "/integrations/php"
-  to = "/api/sdk"
+  to = "/reference/php"
   status = 301
 
 [[redirects]]
