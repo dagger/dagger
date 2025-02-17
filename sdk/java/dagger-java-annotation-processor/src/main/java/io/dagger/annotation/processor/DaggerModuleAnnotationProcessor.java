@@ -296,46 +296,8 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
         rm.addCode(")"); // end of dag.TypeDef().withObject(
         for (var fnInfo : objectInfo.functions()) {
           rm.addCode("\n            .withFunction(")
-              .addCode("\n                dag.function($S,", fnInfo.name())
-              .addCode("\n                    ")
-              .addCode(typeDef(fnInfo.returnType()))
-              .addCode(")");
-          if (isNotBlank(fnInfo.description())) {
-            rm.addCode("\n                    .withDescription($S)", fnInfo.description());
-          }
-          for (var parameterInfo : fnInfo.parameters()) {
-            rm.addCode("\n                    .withArg($S, ", parameterInfo.name())
-                .addCode(typeDef(parameterInfo.type()));
-            if (parameterInfo.optional()) {
-              rm.addCode(".withOptional(true)");
-            }
-            boolean hasDescription = isNotBlank(parameterInfo.description());
-            boolean hasDefaultValue = parameterInfo.defaultValue().isPresent();
-            boolean hasDefaultPath = parameterInfo.defaultPath().isPresent();
-            boolean hasIgnore = parameterInfo.ignore().isPresent();
-            if (hasDescription || hasDefaultValue || hasDefaultPath || hasIgnore) {
-              rm.addCode(", new $T.WithArgArguments()", io.dagger.client.Function.class);
-              if (hasDescription) {
-                rm.addCode(".withDescription($S)", parameterInfo.description());
-              }
-              if (hasDefaultValue) {
-                rm.addCode(
-                    ".withDefaultValue($T.from($S))",
-                    JSON.class,
-                    parameterInfo.defaultValue().get());
-              }
-              if (hasDefaultPath) {
-                rm.addCode(".withDefaultPath($S)", parameterInfo.defaultPath().get());
-              }
-              if (hasIgnore) {
-                rm.addCode(".withIgnore(")
-                    .addCode(listOf(parameterInfo.ignore().get()))
-                    .addCode(")");
-              }
-            }
-            rm.addCode(")");
-          }
-          rm.addCode(")"); // end of .withFunction(
+              .addCode(withFunction(objectInfo, fnInfo))
+              .addCode(")"); // end of .withFunction(
         }
         for (var fieldInfo : objectInfo.fields()) {
           rm.addCode("\n            .withField(")
@@ -524,6 +486,48 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     } catch (ClassNotFoundException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  public static CodeBlock withFunction(ObjectInfo objectInfo, FunctionInfo fnInfo)
+      throws ClassNotFoundException {
+    CodeBlock.Builder code =
+        CodeBlock.builder()
+            .add("\n                dag.function($S,", fnInfo.name())
+            .add("\n                    ")
+            .add(typeDef(fnInfo.returnType()))
+            .add(")");
+    if (isNotBlank(fnInfo.description())) {
+      code.add("\n                    .withDescription($S)", fnInfo.description());
+    }
+    for (var parameterInfo : fnInfo.parameters()) {
+      code.add("\n                    .withArg($S, ", parameterInfo.name())
+          .add(typeDef(parameterInfo.type()));
+      if (parameterInfo.optional()) {
+        code.add(".withOptional(true)");
+      }
+      boolean hasDescription = isNotBlank(parameterInfo.description());
+      boolean hasDefaultValue = parameterInfo.defaultValue().isPresent();
+      boolean hasDefaultPath = parameterInfo.defaultPath().isPresent();
+      boolean hasIgnore = parameterInfo.ignore().isPresent();
+      if (hasDescription || hasDefaultValue || hasDefaultPath || hasIgnore) {
+        code.add(", new $T.WithArgArguments()", io.dagger.client.Function.class);
+        if (hasDescription) {
+          code.add(".withDescription($S)", parameterInfo.description());
+        }
+        if (hasDefaultValue) {
+          code.add(
+              ".withDefaultValue($T.from($S))", JSON.class, parameterInfo.defaultValue().get());
+        }
+        if (hasDefaultPath) {
+          code.add(".withDefaultPath($S)", parameterInfo.defaultPath().get());
+        }
+        if (hasIgnore) {
+          code.add(".withIgnore(").add(listOf(parameterInfo.ignore().get())).add(")");
+        }
+      }
+      code.add(")");
+    }
+    return code.build();
   }
 
   public static TypeKind getTypeKind(String name) {
