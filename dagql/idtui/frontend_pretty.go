@@ -869,7 +869,9 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		fe.editline.Update(nil)
 
 		return fe, tea.Batch(
-			tea.Println(`Experimental Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`+"\n"),
+			tea.Printf(
+				`Experimental Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`+
+					"\n\n"),
 			fe.editline.Focus(),
 		)
 
