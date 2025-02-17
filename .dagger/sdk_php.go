@@ -39,7 +39,7 @@ func (t PHPSDK) Lint(ctx context.Context) error {
 			span.End()
 		}()
 		src := t.Dagger.Source().Directory(phpSDKPath)
-		_, err := dag.PhpSDKDev().Lint(src).Sync(ctx)
+		_, err := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Source: src}).Lint().Sync(ctx)
 		return err
 	})
 
@@ -76,8 +76,8 @@ func (t PHPSDK) Test(ctx context.Context) error {
 		With(installer).
 		WithEnvVariable("PATH", "./vendor/bin:$PATH", dagger.ContainerWithEnvVariableOpts{Expand: true})
 
-	dev := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Container: base})
-	_, err = dev.Test(src).Sync(ctx)
+	dev := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Container: base, Source: src})
+	_, err = dev.Test().Sync(ctx)
 	return err
 }
 
