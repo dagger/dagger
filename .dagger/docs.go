@@ -25,6 +25,7 @@ const (
 	generatedAPIReferencePath     = "docs/static/api/reference/index.html"
 	generatedDaggerJSONSchemaPath = "docs/static/reference/dagger.schema.json"
 	generatedEngineJSONSchemaPath = "docs/static/reference/engine.schema.json"
+	generatedPhpReferencePath     = "docs/static/reference/php/"
 )
 
 const cliZenFrontmatter = `---
