@@ -24,6 +24,8 @@ jobs:
     runs-on:
         - 'dagger-g3-v0-16-2-16c-st-benchmark'
     timeout-minutes: 10
+    env:
+      DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
