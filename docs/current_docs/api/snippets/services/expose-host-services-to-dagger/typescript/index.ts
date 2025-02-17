@@ -3,7 +3,7 @@ import { dag, object, func, Service } from "@dagger.io/dagger"
 @object()
 class MyModule {
   /**
-   * Send a query to a MariaDB service and returns the response
+   * Send a query to a MariaDB service and return the response
    */
   @func()
   async userList(
