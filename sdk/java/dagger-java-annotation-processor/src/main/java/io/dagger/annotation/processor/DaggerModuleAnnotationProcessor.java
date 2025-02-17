@@ -155,90 +155,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                         }
 
                         List<ParameterInfo> parameterInfos =
-                            ((ExecutableElement) elt)
-                                .getParameters().stream()
-                                    .map(
-                                        param -> {
-                                          TypeMirror tm = param.asType();
-                                          TypeKind tk = tm.getKind();
-
-                                          Default defaultAnnotation =
-                                              param.getAnnotation(
-                                                  io.dagger.module.annotation.Default.class);
-                                          var hasDefaultAnnotation = defaultAnnotation != null;
-
-                                          DefaultPath defaultPathAnnotation =
-                                              param.getAnnotation(
-                                                  io.dagger.module.annotation.DefaultPath.class);
-                                          var hasDefaultPathAnnotation =
-                                              defaultPathAnnotation != null;
-
-                                          if (hasDefaultPathAnnotation
-                                              && !tm.toString().equals("io.dagger.client.Directory")
-                                              && !tm.toString().equals("io.dagger.client.File")) {
-                                            throw new IllegalArgumentException(
-                                                "Parameter "
-                                                    + param.getSimpleName()
-                                                    + " cannot have @DefaultPath annotation if it is not a Directory or File type");
-                                          }
-
-                                          if (hasDefaultAnnotation && hasDefaultPathAnnotation) {
-                                            throw new IllegalArgumentException(
-                                                "Parameter "
-                                                    + param.getSimpleName()
-                                                    + " cannot have both @Default and @DefaultPath annotations");
-                                          }
-
-                                          Nullable nullableAnnotation =
-                                              param.getAnnotation(
-                                                  io.dagger.module.annotation.Nullable.class);
-
-                                          boolean isOptional = nullableAnnotation != null;
-
-                                          String defaultValue =
-                                              hasDefaultAnnotation
-                                                  ? quoteIfString(
-                                                      defaultAnnotation.value(), tm.toString())
-                                                  : null;
-
-                                          String defaultPath =
-                                              hasDefaultPathAnnotation
-                                                  ? defaultPathAnnotation.value()
-                                                  : null;
-
-                                          // if @Default("null") we handle that as @Nullable only
-                                          if (defaultValue != null && defaultValue.equals("null")) {
-                                            isOptional = true;
-                                            defaultValue = null;
-                                            hasDefaultAnnotation = false;
-                                          }
-
-                                          Ignore ignoreAnnotation =
-                                              param.getAnnotation(Ignore.class);
-                                          var hasIgnoreAnnotation = ignoreAnnotation != null;
-                                          if (hasIgnoreAnnotation
-                                              && !tm.toString()
-                                                  .equals("io.dagger.client.Directory")) {
-                                            throw new IllegalArgumentException(
-                                                "Parameter "
-                                                    + param.getSimpleName()
-                                                    + " cannot have @Ignore annotation if it is not a Directory");
-                                          }
-
-                                          String[] ignoreValue =
-                                              hasIgnoreAnnotation ? ignoreAnnotation.value() : null;
-
-                                          String paramName = param.getSimpleName().toString();
-                                          return new ParameterInfo(
-                                              paramName,
-                                              parseParameterDescription(elt, paramName),
-                                              new TypeInfo(tm.toString(), tk.name()),
-                                              isOptional,
-                                              Optional.ofNullable(defaultValue),
-                                              Optional.ofNullable(defaultPath),
-                                              Optional.ofNullable(ignoreValue));
-                                        })
-                                    .toList();
+                            parseParameters((ExecutableElement) elt);
 
                         TypeMirror tm = ((ExecutableElement) elt).getReturnType();
                         TypeKind tk = tm.getKind();
@@ -265,6 +182,80 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
 
     return new ModuleInfo(
         moduleDescription, annotatedObjects.toArray(new ObjectInfo[annotatedObjects.size()]));
+  }
+
+  private List<ParameterInfo> parseParameters(ExecutableElement elt) {
+    return elt.getParameters().stream()
+        .map(
+            param -> {
+              TypeMirror tm = param.asType();
+              TypeKind tk = tm.getKind();
+
+              Default defaultAnnotation =
+                  param.getAnnotation(io.dagger.module.annotation.Default.class);
+              var hasDefaultAnnotation = defaultAnnotation != null;
+
+              DefaultPath defaultPathAnnotation =
+                  param.getAnnotation(io.dagger.module.annotation.DefaultPath.class);
+              var hasDefaultPathAnnotation = defaultPathAnnotation != null;
+
+              if (hasDefaultPathAnnotation
+                  && !tm.toString().equals("io.dagger.client.Directory")
+                  && !tm.toString().equals("io.dagger.client.File")) {
+                throw new IllegalArgumentException(
+                    "Parameter "
+                        + param.getSimpleName()
+                        + " cannot have @DefaultPath annotation if it is not a Directory or File type");
+              }
+
+              if (hasDefaultAnnotation && hasDefaultPathAnnotation) {
+                throw new IllegalArgumentException(
+                    "Parameter "
+                        + param.getSimpleName()
+                        + " cannot have both @Default and @DefaultPath annotations");
+              }
+
+              Nullable nullableAnnotation =
+                  param.getAnnotation(io.dagger.module.annotation.Nullable.class);
+
+              boolean isOptional = nullableAnnotation != null;
+
+              String defaultValue =
+                  hasDefaultAnnotation
+                      ? quoteIfString(defaultAnnotation.value(), tm.toString())
+                      : null;
+
+              String defaultPath = hasDefaultPathAnnotation ? defaultPathAnnotation.value() : null;
+
+              // if @Default("null") we handle that as @Nullable only
+              if (defaultValue != null && defaultValue.equals("null")) {
+                isOptional = true;
+                defaultValue = null;
+                hasDefaultAnnotation = false;
+              }
+
+              Ignore ignoreAnnotation = param.getAnnotation(Ignore.class);
+              var hasIgnoreAnnotation = ignoreAnnotation != null;
+              if (hasIgnoreAnnotation && !tm.toString().equals("io.dagger.client.Directory")) {
+                throw new IllegalArgumentException(
+                    "Parameter "
+                        + param.getSimpleName()
+                        + " cannot have @Ignore annotation if it is not a Directory");
+              }
+
+              String[] ignoreValue = hasIgnoreAnnotation ? ignoreAnnotation.value() : null;
+
+              String paramName = param.getSimpleName().toString();
+              return new ParameterInfo(
+                  paramName,
+                  parseParameterDescription(elt, paramName),
+                  new TypeInfo(tm.toString(), tk.name()),
+                  isOptional,
+                  Optional.ofNullable(defaultValue),
+                  Optional.ofNullable(defaultPath),
+                  Optional.ofNullable(ignoreValue));
+            })
+        .toList();
   }
 
   static String quoteIfString(String value, String type) {
