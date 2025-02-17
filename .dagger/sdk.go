@@ -99,6 +99,18 @@ func (dev *DaggerDev) introspection(ctx context.Context, installer func(*dagger.
 		File("/schema.json"), nil
 }
 
+func (dev *DaggerDev) Introspection(ctx context.Context) (*dagger.File, error) {
+	installer, err := dev.installer(ctx, "sdk")
+	if err != nil {
+		return nil, err
+	}
+	introspection, err := dev.introspection(ctx, installer)
+	if err != nil {
+		return nil, err
+	}
+	return introspection, nil
+}
+
 type gitPublishOpts struct {
 	sdk string
 
