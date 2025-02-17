@@ -23,7 +23,6 @@ import java.lang.Exception;
 import java.lang.InterruptedException;
 import java.lang.String;
 import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -137,7 +136,7 @@ public class Entrypoint {
     try (var jsonb = JsonbBuilder.create()) {
       if (parentName.equals("DaggerJava")) {
         Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
-        var obj = JsonConverter.fromJSON(dag, parentJson, clazz);
+        DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(dag, parentJson, clazz);
         clazz.getMethod("setClient", Client.class).invoke(obj, dag);
         if (fnName.equals("containerEcho")) {
           String stringArg = null;
@@ -145,8 +144,7 @@ public class Entrypoint {
             stringArg = (String) JsonConverter.fromJSON(dag, inputArgs.get("stringArg"), String.class);
           }
           Objects.requireNonNull(stringArg, "stringArg must not be null");
-          Method fn = clazz.getMethod("containerEcho", String.class);
-          Container res = (Container) fn.invoke(obj, stringArg);
+          Container res = obj.containerEcho(stringArg);
           return JsonConverter.toJSON(res);
         } else if (fnName.equals("grepDir")) {
           Directory directoryArg = null;
@@ -158,20 +156,17 @@ public class Entrypoint {
           if (inputArgs.get("pattern") != null) {
             pattern = (String) JsonConverter.fromJSON(dag, inputArgs.get("pattern"), String.class);
           }
-          Method fn = clazz.getMethod("grepDir", Directory.class, String.class);
-          String res = (String) fn.invoke(obj, directoryArg, pattern);
+          String res = obj.grepDir(directoryArg, pattern);
           return JsonConverter.toJSON(res);
         } else if (fnName.equals("itself")) {
-          Method fn = clazz.getMethod("itself");
-          DaggerJava res = (DaggerJava) fn.invoke(obj);
+          DaggerJava res = obj.itself();
           return JsonConverter.toJSON(res);
         } else if (fnName.equals("isZero")) {
           int value = 0;
           if (inputArgs.get("value") != null) {
             value = (int) JsonConverter.fromJSON(dag, inputArgs.get("value"), int.class);
           }
-          Method fn = clazz.getMethod("isZero", int.class);
-          boolean res = (boolean) fn.invoke(obj, value);
+          boolean res = obj.isZero(value);
           return JsonConverter.toJSON(res);
         } else if (fnName.equals("doThings")) {
           String[] stringArray = null;
@@ -189,8 +184,7 @@ public class Entrypoint {
             containers = (List) JsonConverter.fromJSON(dag, inputArgs.get("containers"), List.class);
           }
           Objects.requireNonNull(containers, "containers must not be null");
-          Method fn = clazz.getMethod("doThings", String[].class, List.class, List.class);
-          int[] res = (int[]) fn.invoke(obj, stringArray, ints, containers);
+          int[] res = obj.doThings(stringArray, ints, containers);
           return JsonConverter.toJSON(res);
         } else if (fnName.equals("nonNullableNoDefault")) {
           String stringArg = null;
@@ -198,8 +192,7 @@ public class Entrypoint {
             stringArg = (String) JsonConverter.fromJSON(dag, inputArgs.get("stringArg"), String.class);
           }
           Objects.requireNonNull(stringArg, "stringArg must not be null");
-          Method fn = clazz.getMethod("nonNullableNoDefault", String.class);
-          String res = (String) fn.invoke(obj, stringArg);
+          String res = obj.nonNullableNoDefault(stringArg);
           return JsonConverter.toJSON(res);
         } else if (fnName.equals("nonNullableDefault")) {
           String stringArg = null;
@@ -207,28 +200,24 @@ public class Entrypoint {
             stringArg = (String) JsonConverter.fromJSON(dag, inputArgs.get("stringArg"), String.class);
           }
           Objects.requireNonNull(stringArg, "stringArg must not be null");
-          Method fn = clazz.getMethod("nonNullableDefault", String.class);
-          String res = (String) fn.invoke(obj, stringArg);
+          String res = obj.nonNullableDefault(stringArg);
           return JsonConverter.toJSON(res);
         } else if (fnName.equals("nullable")) {
           String stringArg = null;
           if (inputArgs.get("stringArg") != null) {
             stringArg = (String) JsonConverter.fromJSON(dag, inputArgs.get("stringArg"), String.class);
           }
-          Method fn = clazz.getMethod("nullable", String.class);
-          String res = (String) fn.invoke(obj, stringArg);
+          String res = obj.nullable(stringArg);
           return JsonConverter.toJSON(res);
         } else if (fnName.equals("nullableDefault")) {
           String stringArg = null;
           if (inputArgs.get("stringArg") != null) {
             stringArg = (String) JsonConverter.fromJSON(dag, inputArgs.get("stringArg"), String.class);
           }
-          Method fn = clazz.getMethod("nullableDefault", String.class);
-          String res = (String) fn.invoke(obj, stringArg);
+          String res = obj.nullableDefault(stringArg);
           return JsonConverter.toJSON(res);
         } else if (fnName.equals("defaultPlatform")) {
-          Method fn = clazz.getMethod("defaultPlatform");
-          Platform res = (Platform) fn.invoke(obj);
+          Platform res = obj.defaultPlatform();
           return JsonConverter.toJSON(res);
         }
       }

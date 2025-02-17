@@ -20,13 +20,13 @@ import io.dagger.module.info.ParameterInfo;
 import jakarta.json.bind.JsonbBuilder;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.*;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.Processor;
@@ -333,73 +333,24 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
         } else {
           im.nextControlFlow("else if (parentName.equals($S))", objectInfo.name());
         }
+        ClassName objName = ClassName.bestGuess(objectInfo.qualifiedName());
         im.addStatement("$T clazz = Class.forName($S)", Class.class, objectInfo.qualifiedName())
-            .addStatement("var obj = $T.fromJSON(dag, parentJson, clazz)", JsonConverter.class)
+            .addStatement(
+                "$T obj = ($T) $T.fromJSON(dag, parentJson, clazz)",
+                objName,
+                objName,
+                JsonConverter.class)
             .addStatement(
                 "clazz.getMethod(\"setClient\", $T.class).invoke(obj, dag)", Client.class);
         var firstFn = true;
         for (var fnInfo : objectInfo.functions()) {
-          CodeBlock fnReturnType = typeName(fnInfo.returnType());
           if (firstFn) {
             firstFn = false;
             im.beginControlFlow("if (fnName.equals($S))", fnInfo.name());
           } else {
             im.nextControlFlow("else if (fnName.equals($S))", fnInfo.name());
           }
-          var fnBlock =
-              CodeBlock.builder().add("$T fn = clazz.getMethod($S", Method.class, fnInfo.qName());
-          var invokeBlock =
-              CodeBlock.builder()
-                  .add(fnReturnType)
-                  .add(" res = (")
-                  .add(fnReturnType)
-                  .add(") fn.invoke(obj");
-          for (var parameterInfo : fnInfo.parameters()) {
-            CodeBlock paramType = typeName(parameterInfo.type());
-            fnBlock.add(", ").add(paramType).add(".class");
-
-            invokeBlock.add(", $L", parameterInfo.name());
-
-            String defaultValue = "null";
-            TypeKind tk = getTypeKind(parameterInfo.type().kindName());
-            if (tk == TypeKind.INT
-                || tk == TypeKind.LONG
-                || tk == TypeKind.DOUBLE
-                || tk == TypeKind.FLOAT) {
-              defaultValue = "0";
-            } else if (tk == TypeKind.BOOLEAN) {
-              defaultValue = "false";
-            }
-            im.addStatement(
-                CodeBlock.builder()
-                    .add(paramType)
-                    .add(" $L = $L", parameterInfo.name(), defaultValue)
-                    .build());
-            im.beginControlFlow("if (inputArgs.get($S) != null)", parameterInfo.name());
-            im.addStatement(
-                CodeBlock.builder()
-                    .add("$L = (", parameterInfo.name())
-                    .add(paramType)
-                    .add(
-                        ") $T.fromJSON(dag, inputArgs.get($S), ",
-                        JsonConverter.class,
-                        parameterInfo.name())
-                    .add(paramType)
-                    .add(".class)")
-                    .build());
-            im.endControlFlow();
-            if (!parameterInfo.optional() && !tk.isPrimitive()) {
-              im.addStatement(
-                  "$T.requireNonNull($L, \"$L must not be null\")",
-                  Objects.class,
-                  parameterInfo.name(),
-                  parameterInfo.name());
-            }
-          }
-          fnBlock.add(")");
-          invokeBlock.add(")");
-          im.addStatement(fnBlock.build()).addStatement(invokeBlock.build());
-          im.addStatement("return $T.toJSON(res)", JsonConverter.class);
+          im.addCode(functionInvoke(objectInfo, fnInfo));
         }
         if (!firstFn) {
           im.endControlFlow(); // functions
@@ -486,6 +437,63 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     } catch (ClassNotFoundException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  private static CodeBlock functionInvoke(ObjectInfo objectInfo, FunctionInfo fnInfo) {
+    CodeBlock.Builder code = CodeBlock.builder();
+    CodeBlock fnReturnType = typeName(fnInfo.returnType());
+
+    for (var parameterInfo : fnInfo.parameters()) {
+      CodeBlock paramType = typeName(parameterInfo.type());
+
+      String defaultValue = "null";
+      TypeKind tk = getTypeKind(parameterInfo.type().kindName());
+      if (tk == TypeKind.INT
+          || tk == TypeKind.LONG
+          || tk == TypeKind.DOUBLE
+          || tk == TypeKind.FLOAT) {
+        defaultValue = "0";
+      } else if (tk == TypeKind.BOOLEAN) {
+        defaultValue = "false";
+      }
+      code.add(paramType)
+          .add(" $L = $L;\n", parameterInfo.name(), defaultValue)
+          .beginControlFlow("if (inputArgs.get($S) != null)", parameterInfo.name())
+          .addStatement(
+              CodeBlock.builder()
+                  .add("$L = (", parameterInfo.name())
+                  .add(paramType)
+                  .add(
+                      ") $T.fromJSON(dag, inputArgs.get($S), ",
+                      JsonConverter.class,
+                      parameterInfo.name())
+                  .add(paramType)
+                  .add(".class")
+                  .add(")")
+                  .build())
+          .endControlFlow();
+
+      if (!parameterInfo.optional() && !tk.isPrimitive()) {
+        code.addStatement(
+            "$T.requireNonNull($L, \"$L must not be null\")",
+            Objects.class,
+            parameterInfo.name(),
+            parameterInfo.name());
+      }
+    }
+
+    code.add(fnReturnType)
+        .add(" res = obj.$L(", fnInfo.qName())
+        .add(
+            CodeBlock.join(
+                Arrays.stream(fnInfo.parameters())
+                    .map(p -> CodeBlock.of("$L", p.name()))
+                    .collect(Collectors.toList()),
+                ", "))
+        .add(");\n");
+    code.addStatement("return $T.toJSON(res)", JsonConverter.class);
+
+    return code.build();
   }
 
   public static CodeBlock withFunction(ObjectInfo objectInfo, FunctionInfo fnInfo)
