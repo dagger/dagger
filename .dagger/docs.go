@@ -20,12 +20,13 @@ type Docs struct {
 }
 
 const (
+	generatedDaggerReferencePagePath = "docs/current_docs/api/dagger-schema-ref.mdx"
 	generatedSchemaPath              = "docs/docs-graphql/schema.graphqls"
 	generatedCliZenPath              = "docs/current_docs/reference/cli.mdx"
 	generatedAPIReferencePath        = "docs/static/api/reference/index.html"
 	generatedDaggerJSONSchemaPath    = "docs/static/reference/dagger.schema.json"
-	generatedDaggerReferencePagePath = "docs/current_docs/api/dagger-schema-ref.mdx"
 	generatedEngineJSONSchemaPath    = "docs/static/reference/engine.schema.json"
+	generatedPhpReferencePath        = "docs/static/reference/php/"
 )
 
 const cliZenFrontmatter = `---

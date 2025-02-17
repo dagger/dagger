@@ -138,6 +138,11 @@ module.exports = {
             },
             {
               type: "link",
+              label: "PHP SDK Reference",
+              href: "https://docs.dagger.io/reference/php",
+            },
+            {
+              type: "link",
               label: "Python SDK Reference",
               href: "https://dagger-io.readthedocs.org/",
             },

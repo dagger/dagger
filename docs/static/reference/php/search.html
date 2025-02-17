@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="robots" content="index, follow, all" />
+    <title>Search | API</title>
+
+            <link rel="stylesheet" type="text/css" href="css/bootstrap.min.css">
+        <link rel="stylesheet" type="text/css" href="css/bootstrap-theme.min.css">
+        <link rel="stylesheet" type="text/css" href="css/doctum.css">
+        <link rel="stylesheet" type="text/css" href="fonts/doctum-font.css">
+        <script src="js/jquery-3.5.1.slim.min.js"></script>
+        <script async defer src="doctum.js"></script>
+        <script async defer src="js/bootstrap.min.js"></script>
+        <script async defer src="js/autocomplete.min.js"></script>
+        <meta name="MobileOptimized" content="width">
+        <meta name="HandheldFriendly" content="true">
+        <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+
+    </head>
+
+    <body id="search-page" data-name="" data-root-path="" data-search-index-url="doctum-search.json">
+            <div id="content">
+        <div id="left-column">
+                <div id="control-panel">
+                <div class="search-bar hidden" id="search-progress-bar-container">
+            <div class="progress">
+                <div class="progress-bar" role="progressbar" id="search-progress-bar"
+                    aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%"></div>
+            </div>
+        </div>
+        <form id="search-form" action="search.html">
+            <span class="icon icon-search"></span>
+            <input name="search"
+                   id="doctum-search-auto-complete"
+                   class="typeahead form-control"
+                   type="search"
+                   placeholder="Search"
+                   spellcheck="false"
+                   autocorrect="off"
+                   autocomplete="off"
+                   autocapitalize="off">
+            <div class="auto-complete-results" id="auto-complete-results"></div>
+        </form>
+    </div>
+
+                <div id="api-tree"></div>
+
+        </div>
+        <div id="right-column">
+                <nav id="site-nav" class="navbar navbar-default" role="navigation">
+        <div class="container-fluid">
+            <div class="navbar-header">
+                <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#navbar-elements">
+                    <span class="sr-only">Toggle navigation</span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                </button>
+                <a class="navbar-brand" href="index.html">API</a>
+            </div>
+            <div class="collapse navbar-collapse" id="navbar-elements">
+                <ul class="nav navbar-nav">
+                    <li><a href="classes.html">Classes</a></li>
+                    <li><a href="namespaces.html">Namespaces</a></li>
+                    <li><a href="interfaces.html">Interfaces</a></li>
+                    <li><a href="traits.html">Traits</a></li>
+                    <li><a href="doc-index.html">Index</a></li>
+                    <li><a href="search.html">Search</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+                        <div id="page-content">
+    <div class="page-header">
+        <h1>Search</h1>
+    </div>
+
+    <p>This page allows you to search through the API documentation for
+    specific terms. Enter your search words into the box below and click
+    "submit". The search will be performed on namespaces, classes, interfaces,
+    traits, functions, and methods.</p>
+
+    <form class="form-inline" role="form" action="search.html">
+        <div class="form-group">
+            <label class="sr-only" for="search">Search</label>
+            <input type="search" class="form-control" name="search" id="search" placeholder="Search" spellcheck="false" autocorrect="off" autocomplete="off" autocapitalize="off">
+        </div>
+        <button type="submit" class="btn btn-default">submit</button>
+    </form>
+
+    <h2 id="search-results-header">Search Results</h2>
+    <div class="search-bar hidden" id="search-page-progress-bar-container">
+        <div class="progress">
+            <div class="progress-bar" role="progressbar" id="search-page-progress-bar"
+                aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%"></div>
+        </div>
+    </div>
+    <div class="container-fluid" id="search-results-container">
+    </div>
+
+        <script type="text/javascript">
+        var DoctumSearch = {
+            /** @var boolean */
+            pageFullyLoaded: false,
+            /** @var string|null */
+            searchTerm: null,
+            /** @var autoComplete|null */
+            autoCompleteJS: null,
+            /** @var HTMLElement|null */
+            doctumSearchPageAutoCompleteProgressBarContainer: null,
+            /** @var HTMLElement|null */
+            doctumSearchPageAutoCompleteProgressBar: null,
+            searchTypeClasses: {
+                'Namespace': 'label-default',
+                'Class': 'label-info',
+                'Trait': 'label-success',
+                'Interface': 'label-primary',
+                'Method': 'label-danger',
+                'Function': 'label-danger',
+                '_': 'label-warning'
+            },
+            longTypes: {
+                'N': 'Namespace',
+                'C': 'Class',
+                'T': 'Trait',
+                'I': 'Interface',
+                'M': 'Method',
+                'F': 'Function',
+                '_': 'label-warning'
+            },
+            /**
+             * Cleans the provided term. If no term is provided, then one is
+             * grabbed from the query string "search" parameter.
+             */
+            cleanSearchTerm: function(term) {
+                // Grab from the query string
+                if (typeof term === 'undefined') {
+                    var name = 'search';
+                    var regex = new RegExp("[\\?&]" + name + "=([^&#]*)");
+                    var results = regex.exec(location.search);
+                    if (results === null) {
+                        return null;
+                    }
+                    term = decodeURIComponent(results[1].replace(/\+/g, " "));
+                }
+
+                return term.replace(/<(?:.|\n)*?>/gm, '');
+            },
+            /**
+             * Get a search class for a specific type
+             */
+            getSearchClass: function(type) {
+                return DoctumSearch.searchTypeClasses[type] || DoctumSearch.searchTypeClasses['_'];
+            },
+            /**
+             * Get the long type name
+             */
+            getLongType: function(type) {
+                return DoctumSearch.longTypes[type] || DoctumSearch.longTypes['_'];
+            },
+            pageFullyLoaded: function (event) {// Will get fired by the main doctum.js script
+                DoctumSearch.searchTerm = DoctumSearch.cleanSearchTerm();
+                DoctumSearch.searchTermForEngine = Doctum.cleanSearchQuery(DoctumSearch.searchTerm);
+                DoctumSearch.doctumSearchPageAutoCompleteProgressBarContainer = document.getElementById('search-page-progress-bar-container');
+                DoctumSearch.doctumSearchPageAutoCompleteProgressBar = document.getElementById('search-page-progress-bar');
+                DoctumSearch.pageFullyLoaded = true;
+                DoctumSearch.launchSearch();
+            },
+            showNoResults: function() {
+                document.getElementById('search-results-container').innerText = 'No\u0020results\u0020were\u0020found';
+            },
+            launchSearch: function (event) {
+                if (
+                    DoctumSearch.searchTermForEngine === null
+                    || (typeof DoctumSearch.searchTermForEngine === 'string' && DoctumSearch.searchTermForEngine.length === 0)
+                    || typeof DoctumSearch.searchTermForEngine !== 'string'
+                ) {
+                    document.getElementById('search-results-header').className = 'hidden';
+                    // Stop the process here
+                    return;
+                }
+                // Set back backslashes to non escaped backslashes
+                document.getElementById('search').value = DoctumSearch.searchTermForEngine.replace(/\\\\/g, '\\');
+
+                // Check if the lib is loaded
+                if (typeof autoComplete === 'function') {
+                    DoctumSearch.bootAutoComplete();
+                }
+            },
+            bootAutoComplete: function () {
+                DoctumSearch.autoCompleteJS = new autoComplete(
+                    {
+                        selector: '#search',
+                        searchEngine: function (query, record) {
+                            return Doctum.searchEngine(query, record);
+                        },
+                        submit: true,
+                        data: {
+                            src: function (q) {
+                                return Doctum.loadAutoCompleteData(q);
+                            },
+                            keys: ['n'],// Data 'Object' key to be searched
+                            cache: false, // Is not compatible with async fetch of data
+                        },
+                        query: (input) => {
+                            return Doctum.cleanSearchQuery(input);
+                        },
+                        trigger: (query) => {
+                            return Doctum.cleanSearchQuery(query).length > 0;
+                        },
+                        resultsList: {
+                            tag: 'ul',
+                            class: 'search-results',
+                            destination: '#search-results-container',
+                            position: 'afterbegin',
+                            maxResults: 500,
+                            noResults: false,
+                        },
+                        resultItem: {
+                            tag: 'li',
+                            class: 'search-results-result',
+                            highlight: 'search-results-highlight',
+                            selected: 'search-results-selected',
+                            element: function (item, data) {
+                                item.innerHTML = '';// Clean up the content
+                                var elementH2 = document.createElement('h2');
+                                elementH2.className = 'clearfix';
+
+                                var elementLink = document.createElement('a');
+                                elementLink.innerText = data.value.n;
+                                elementLink.href = data.value.p;
+                                elementH2.appendChild(elementLink);
+
+                                var longType = DoctumSearch.getLongType(data.value.t);
+                                var className = DoctumSearch.getSearchClass(longType);
+
+                                var divElement = document.createElement('div');
+                                divElement.className = 'search-type type-' + longType;
+                                var divSpanElement = document.createElement('span');
+                                divSpanElement.className = 'pull-right label ' + className;
+                                divSpanElement.innerText = longType;
+                                divElement.appendChild(divSpanElement);
+                                elementH2.appendChild(divElement);
+
+                                item.appendChild(elementH2);
+
+                                if (typeof data.value.f === 'object') {
+                                    var fromElement = document.createElement('div');
+                                    fromElement.className = 'search-from';
+                                    fromElement.innerText = 'from\u0020';
+                                    var fromElementLink = document.createElement('a');
+                                    fromElementLink.href = data.value.f.p;
+                                    fromElementLink.innerText = data.value.f.n;
+                                    fromElement.appendChild(fromElementLink);
+                                    item.appendChild(fromElement);
+                                }
+
+                                var divSearchDescription = document.createElement('div');
+                                divSearchDescription.className = 'search-description';
+                                if (data.value.t === 'N') {// Is a namespace
+                                    data.value.d = 'Namespace\u0020\u0025s'.replace('%s', data.value.n);
+                                }
+                                if (typeof data.value.d === 'string') {
+                                    var paragraphElement = document.createElement('p');
+                                    paragraphElement.innerHTML = data.value.d;
+                                    divSearchDescription.appendChild(paragraphElement);
+                                }
+                                item.appendChild(divSearchDescription);
+                            },
+                        },
+                    }
+                );
+                Doctum.markInProgress();
+                DoctumSearch.autoCompleteJS.start(DoctumSearch.searchTerm);
+                DoctumSearch.autoCompleteJS.unInit();// Stop the work, wait for the user to hit submit
+                document.getElementById('search').addEventListener('results', function (event) {
+                    Doctum.markProgressFinished();
+                    if (event.detail.results.length === 0) {
+                        DoctumSearch.showNoResults();
+                    }
+                });
+            }
+        };
+    </script>
+
+
+</div><div id="footer">
+        Generated by <a href="https://github.com/code-lts/doctum">Doctum, a API Documentation generator and fork of Sami</a>.</div></div>
+    </div>
+    </body>
+
+</html>
