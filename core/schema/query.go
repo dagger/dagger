@@ -68,6 +68,9 @@ func (s *querySchema) Install() {
 	dagql.Fields[Label]{}.Install(s.srv)
 
 	dagql.Fields[*core.Query]{
+		dagql.Func("reveal", s.reveal).
+			Doc(`Returns a span that reveals its child spans and hides itself.`),
+
 		dagql.Func("pipeline", s.pipeline).
 			View(BeforeVersion("v0.13.0")).
 			Deprecated("Explicit pipeline creation is now a no-op").
@@ -90,7 +93,10 @@ func (s *querySchema) Install() {
 		dagql.Func("withInternal", s.spanWithInternal).
 			Doc(`Returns a new span with the internal attribute set to true.`),
 
-		dagql.Func("revealed", s.spanRevealed).
+		dagql.Func("withPassthrough", s.spanWithPassthrough).
+			Doc(`Returns a new span with the passthrough attribute set to true.`),
+
+		dagql.Func("withReveal", s.spanWithReveal).
 			Doc(`Returns a new span with the reveal attribute set to true.`),
 
 		dagql.Func("internalId", s.spanInternalID).
@@ -191,6 +197,15 @@ func (s *querySchema) span(ctx context.Context, parent *core.Query, args struct 
 	}, nil
 }
 
+func (s *querySchema) reveal(ctx context.Context, parent *core.Query, args struct{}) (*core.Span, error) {
+	return &core.Span{
+		Name:        "reveal",
+		Reveal:      true,
+		Passthrough: true,
+		Query:       parent,
+	}, nil
+}
+
 func (s *querySchema) spanStart(ctx context.Context, parent dagql.Instance[*core.Span], args struct{}) (dagql.ID[*core.Span], error) {
 	started := parent.Self.Start(ctx)
 	var inst dagql.Instance[*core.Span]
@@ -240,6 +255,10 @@ func (s *querySchema) spanWithInternal(ctx context.Context, parent *core.Span, a
 	return parent.WithInternal(), nil
 }
 
-func (s *querySchema) spanRevealed(ctx context.Context, parent *core.Span, args struct{}) (*core.Span, error) {
-	return parent.Revealed(), nil
+func (s *querySchema) spanWithReveal(ctx context.Context, parent *core.Span, args struct{}) (*core.Span, error) {
+	return parent.WithReveal(), nil
+}
+
+func (s *querySchema) spanWithPassthrough(ctx context.Context, parent *core.Span, args struct{}) (*core.Span, error) {
+	return parent.WithPassthrough(), nil
 }
