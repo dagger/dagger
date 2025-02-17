@@ -121,7 +121,10 @@ func (t PHPSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 			"$_EXPERIMENTAL_DAGGER_CLI_BIN run ./scripts/codegen.php",
 		)).
 		Directory(".")
-	return dag.Directory().WithDirectory(phpSDKPath, generated), nil
+
+	return dag.Directory().
+		WithDirectory(phpSDKPath, generated).
+		WithDirectory(generatedPhpReferencePath, t.GenerateSdkReference(ctx)), nil
 }
 
 // Generate the PHP SDK API reference documentation
