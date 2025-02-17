@@ -124,11 +124,11 @@ func (t PHPSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 
 	return dag.Directory().
 		WithDirectory(phpSDKPath, generated).
-		WithDirectory(generatedPhpReferencePath, t.GenerateSdkReference(ctx)), nil
+		WithDirectory(generatedPhpReferencePath, t.GenerateSdkReference()), nil
 }
 
 // Generate the PHP SDK API reference documentation
-func (t PHPSDK) GenerateSdkReference(ctx context.Context) *dagger.Directory {
+func (t PHPSDK) GenerateSdkReference() *dagger.Directory {
 	return t.phpBase().
 		WithExec([]string{"apk", "add", "--no-cache", "curl"}).
 		WithExec([]string{"curl", "-o", "/usr/bin/doctum", "-O", fmt.Sprintf("https://doctum.long-term.support/releases/%s/doctum.phar", phpDoctumVersion)}).
