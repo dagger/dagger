@@ -290,7 +290,7 @@ func (h *shellCallHandler) registerCommands() {
 						if err != nil {
 							return err
 						}
-						return h.Print(ctx, shellModuleDoc(depSt, depDef))
+						return h.Print(ctx, h.ModuleDoc(depSt, depDef))
 
 					case st.IsCore():
 						// Document core
@@ -303,7 +303,7 @@ func (h *shellCallHandler) registerCommands() {
 						if fn == nil {
 							return fmt.Errorf("core function %q not found", args[0])
 						}
-						return h.Print(ctx, shellFunctionDoc(def, fn))
+						return h.Print(ctx, h.FunctionDoc(def, fn))
 
 					case len(args) == 0:
 						if !def.HasModule() {
@@ -311,7 +311,7 @@ func (h *shellCallHandler) registerCommands() {
 						}
 						// Document module
 						// Example: `.help [module]`
-						return h.Print(ctx, shellModuleDoc(st, def))
+						return h.Print(ctx, h.ModuleDoc(st, def))
 					}
 				}
 
@@ -337,7 +337,7 @@ func (h *shellCallHandler) registerCommands() {
 				if err != nil {
 					return err
 				}
-				return h.Print(ctx, shellFunctionDoc(def, fn))
+				return h.Print(ctx, h.FunctionDoc(def, fn))
 			},
 		},
 		&ShellCommand{
@@ -357,13 +357,11 @@ Without arguments, the current working directory is replaced by the initial cont
 			Args:    MaximumArgs(1),
 			State:   NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-				if len(args) == 0 {
-					h.mu.Lock()
-					h.workdir = h.initContext
-					h.mu.Unlock()
-					return nil
+				var path string
+				if len(args) > 0 {
+					path = args[0]
 				}
-				return h.ChangeWorkdir(ctx, args[0])
+				return h.ChangeWorkdir(ctx, path)
 			},
 		},
 		&ShellCommand{
@@ -398,36 +396,6 @@ Without arguments, the current working directory is replaced by the initial cont
 				if err != nil {
 					return err
 				}
-				return h.Print(ctx, strings.Join(contents, "\n"))
-			},
-		},
-		&ShellCommand{
-			Use:         ".find [path] [pattern]",
-			Description: "List files in the current working directory",
-			GroupID:     moduleGroup.ID,
-			Args:        MaximumArgs(2),
-			State:       NoState,
-			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-				path := ""
-				pattern := "**"
-
-				if len(args) > 0 {
-					path = args[0]
-				}
-				if len(args) > 1 {
-					pattern = args[1]
-				}
-
-				dir, err := h.Directory(path)
-				if err != nil {
-					return err
-				}
-
-				contents, err := dir.Glob(ctx, pattern)
-				if err != nil {
-					return err
-				}
-
 				return h.Print(ctx, strings.Join(contents, "\n"))
 			},
 		},
@@ -509,11 +477,11 @@ Without arguments, the current working directory is replaced by the initial cont
 
 		stdlib = append(stdlib,
 			&ShellCommand{
-				Use:         shellFunctionUseLine(def, fn),
+				Use:         h.FunctionUseLine(def, fn),
 				Description: fn.Description,
 				State:       NoState,
 				HelpFunc: func(cmd *ShellCommand) string {
-					return shellFunctionDoc(def, fn)
+					return h.FunctionDoc(def, fn)
 				},
 				Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
 					st := h.newState()

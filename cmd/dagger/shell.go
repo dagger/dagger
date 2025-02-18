@@ -228,14 +228,16 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 	}
 
 	if def.Source != nil {
-		if err := h.setContext(ctx, def.Source, def.SourceKind); err != nil {
+		wd, err := h.newWorkdir(ctx, def, ref)
+		if err != nil {
 			return err
 		}
-		h.initContext = h.workdir
-		ref = h.workdir.ModuleRoot
+		h.initContext = wd
+		h.workdir = wd
 	}
 
-	h.modDefs.Store(ref, def)
+	h.modDefs.Store(h.ModuleRoot(), def)
+
 	h.registerCommands()
 
 	// Example: `dagger shell -c 'container | workdir'`

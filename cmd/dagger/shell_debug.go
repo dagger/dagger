@@ -89,8 +89,15 @@ func shellDebugFormat(data any) string {
 }
 
 func shellDebug(ctx context.Context, title string, data ...any) {
-	hctx := interp.HandlerCtx(ctx)
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	msg := shellDebugLine(title, data...)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprint(stdio.Stderr, msg)
+		}
+	}()
+
+	hctx := interp.HandlerCtx(ctx)
 	fmt.Fprint(io.MultiWriter(hctx.Stderr, stdio.Stderr), msg)
 }

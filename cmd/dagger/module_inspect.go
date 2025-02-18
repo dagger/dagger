@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -77,7 +76,7 @@ func initializeModule(
 		return nil, fmt.Errorf("failed to get configured module: %w", err)
 	}
 	if !configExists {
-		return nil, fmt.Errorf("module not found: %s", srcRef)
+		return nil, fmt.Errorf("module not found")
 	}
 
 	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())
@@ -154,11 +153,10 @@ type moduleDef struct {
 
 	// the ModuleSource definition for the module, needed by some arg types
 	// applying module-specific configs to the arg value.
-	Source     *dagger.ModuleSource
-	SourceKind dagger.ModuleSourceKind
-
-	// ModRef is the human readable module source reference as returned by the API
-	ModRef string
+	Source            *dagger.ModuleSource
+	SourceKind        dagger.ModuleSourceKind
+	SourceRoot        string
+	SourceRootSubpath string
 
 	Dependencies []*moduleDef
 }
@@ -195,9 +193,10 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 
 	var res struct {
 		Source struct {
-			Kind     dagger.ModuleSourceKind
-			AsString string
-			Module   struct {
+			Kind              dagger.ModuleSourceKind
+			AsString          string
+			SourceRootSubpath string
+			Module            struct {
 				Name         string
 				Description  string
 				Dependencies []struct {
@@ -234,32 +233,20 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 		deps = append(deps, &moduleDef{
 			Name:        dep.Name,
 			Description: dep.Description,
-			ModRef:      dep.Source.AsString,
-			Source:      dag.LoadModuleSourceFromID(dep.Source.ID),
+			SourceRoot:  dep.Source.AsString,
+			// Note: this should preserve the correct pin if it exists
+			Source: dag.LoadModuleSourceFromID(dep.Source.ID),
 		})
 	}
 
 	def := &moduleDef{
-		Source:       source,
-		SourceKind:   res.Source.Kind,
-		ModRef:       res.Source.AsString,
-		Name:         res.Source.Module.Name,
-		Description:  res.Source.Module.Description,
-		Dependencies: deps,
-	}
-
-	// if this is a local module source, make the mod ref relative to the caller
-	// since that is usually a shorter+easier to work with path
-	if res.Source.Kind == dagger.ModuleSourceKindLocalSource {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return nil, err
-		}
-		relPath, err := filepath.Rel(cwd, def.ModRef)
-		if err != nil {
-			return nil, err
-		}
-		def.ModRef = relPath
+		Source:            source,
+		SourceKind:        res.Source.Kind,
+		SourceRoot:        res.Source.AsString,
+		SourceRootSubpath: filepath.Join("/", res.Source.SourceRootSubpath),
+		Name:              res.Source.Module.Name,
+		Description:       res.Source.Module.Description,
+		Dependencies:      deps,
 	}
 
 	return def, nil
