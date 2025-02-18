@@ -1299,16 +1299,21 @@ func (srv *Server) MainClientCallerID(ctx context.Context) (string, error) {
 }
 
 // Return the DAGQL server for the main client
-func (srv *Server) MainServer(ctx context.Context) (*dagql.Server, error) {
+func (srv *Server) MainServer(ctx context.Context) (context.Context, *dagql.Server, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	mainClient, ok := client.daggerSession.clients[client.daggerSession.mainClientCallerID]
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	mainClient, ok := srv.clientFromIDs(clientMetadata.SessionID, client.daggerSession.mainClientCallerID)
 	if !ok {
-		return nil, fmt.Errorf("failed to retrieve session main client")
+		return nil, nil, fmt.Errorf("failed to retrieve session main client")
 	}
-	return mainClient.dag, nil
+	ctx = engine.ContextWithClientMetadata(ctx, mainClient.clientMetadata)
+	return ctx, mainClient.dag, nil
 }
 
 // The default deps of every user module (currently just core)

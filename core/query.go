@@ -98,7 +98,7 @@ type Server interface {
 	NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error)
 
 	// Retrieve the main client's DagQL server
-	MainServer(context.Context) (*dagql.Server, error)
+	MainServer(context.Context) (context.Context, *dagql.Server, error)
 }
 
 func NewRoot(srv Server) *Query {
