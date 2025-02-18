@@ -59,7 +59,7 @@ func (s *moduleSchema) moduleSource(
 	}
 
 	if args.RequireKind.Valid && parsedRef.kind != args.RequireKind.Value {
-		return inst, fmt.Errorf("expected module source kind %q, got %q", args.RequireKind.Value, parsedRef.kind)
+		return inst, fmt.Errorf("module source %q kind must be %q, got %q", args.RefString, args.RequireKind.Value.HumanString(), parsedRef.kind.HumanString())
 	}
 
 	switch parsedRef.kind {

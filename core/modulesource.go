@@ -48,6 +48,19 @@ func (proto ModuleSourceKind) ToLiteral() call.Literal {
 	return ModuleSourceKindEnum.Literal(proto)
 }
 
+func (proto ModuleSourceKind) HumanString() string {
+	switch proto {
+	case ModuleSourceKindLocal:
+		return "local"
+	case ModuleSourceKindGit:
+		return "git"
+	case ModuleSourceKindDir:
+		return "directory"
+	default:
+		return string(proto)
+	}
+}
+
 type SDKConfig struct {
 	Source string `field:"true" name:"source" doc:"Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
 }

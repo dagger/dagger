@@ -164,15 +164,9 @@ If --sdk is specified, the given SDK is installed in the module. You can do this
 				// It's okay if the source root/source dir don't exist yet since we'll
 				// create them when exporting the generated context directory.
 				AllowNotExists: true,
+				// We can only init local modules
+				RequireKind: dagger.ModuleSourceKindLocalSource,
 			})
-
-			kind, err := modSrc.Kind(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get module ref kind: %w", err)
-			}
-			if kind != dagger.ModuleSourceKindLocalSource {
-				return fmt.Errorf("module must be local, not %s", kind)
-			}
 
 			alreadyExists, err := modSrc.ConfigExists(ctx)
 			if err != nil {
@@ -268,15 +262,10 @@ var moduleInstallCmd = &cobra.Command{
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
-			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault())
-
-			kind, err := modSrc.Kind(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get module ref kind: %w", err)
-			}
-			if kind != dagger.ModuleSourceKindLocalSource {
-				return fmt.Errorf("module must be local")
-			}
+			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault(), dagger.ModuleSourceOpts{
+				// We can only install dependencies to a local module
+				RequireKind: dagger.ModuleSourceKindLocalSource,
+			})
 
 			alreadyExists, err := modSrc.ConfigExists(ctx)
 			if err != nil {
@@ -378,15 +367,10 @@ var moduleUpdateCmd = &cobra.Command{
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
-			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault())
-
-			kind, err := modSrc.Kind(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get module ref kind: %w", err)
-			}
-			if kind != dagger.ModuleSourceKindLocalSource {
-				return fmt.Errorf("module must be local")
-			}
+			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault(), dagger.ModuleSourceOpts{
+				// We can only update dependencies on a local module
+				RequireKind: dagger.ModuleSourceKindLocalSource,
+			})
 
 			alreadyExists, err := modSrc.ConfigExists(ctx)
 			if err != nil {
@@ -425,15 +409,10 @@ var moduleUnInstallCmd = &cobra.Command{
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
-			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault())
-
-			kind, err := modSrc.Kind(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get module ref kind: %w", err)
-			}
-			if kind != dagger.ModuleSourceKindLocalSource {
-				return fmt.Errorf("module must be local")
-			}
+			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault(), dagger.ModuleSourceOpts{
+				// We can only uninstall dependencies on a local module
+				RequireKind: dagger.ModuleSourceKindLocalSource,
+			})
 
 			alreadyExists, err := modSrc.ConfigExists(ctx)
 			if err != nil {
@@ -487,15 +466,10 @@ This command is idempotent: you can run it at any time, any number of times. It 
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
-			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault())
-
-			kind, err := modSrc.Kind(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get module ref kind: %w", err)
-			}
-			if kind != dagger.ModuleSourceKindLocalSource {
-				return fmt.Errorf("module must be local")
-			}
+			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault(), dagger.ModuleSourceOpts{
+				// We can only export updated generated files for a local modules
+				RequireKind: dagger.ModuleSourceKindLocalSource,
+			})
 
 			contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
 			if err != nil {
@@ -606,15 +580,10 @@ forced), to avoid mistakenly depending on uncommitted files.
 			slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 			dag := engineClient.Dagger()
 
-			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault())
-
-			kind, err := modSrc.Kind(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get module ref kind: %w", err)
-			}
-			if kind != dagger.ModuleSourceKindLocalSource {
-				return fmt.Errorf("module must be local")
-			}
+			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault(), dagger.ModuleSourceOpts{
+				// can only publish modules that also exist locally for now
+				RequireKind: dagger.ModuleSourceKindLocalSource,
+			})
 
 			alreadyExists, err := modSrc.ConfigExists(ctx)
 			if err != nil {

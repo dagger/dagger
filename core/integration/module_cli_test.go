@@ -515,7 +515,7 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 				With(mountedSocket).
 				With(daggerExec("develop", "-m", testGitModuleRef(tc, "top-level"))).
 				Sync(ctx)
-			requireErrOut(t, err, `module must be local`)
+			requireErrRegexp(t, err, `module source ".*" kind must be "local", got "git"`)
 		})
 	})
 
