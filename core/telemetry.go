@@ -40,15 +40,6 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 		return ctx, dagql.NoopDone
 	}
 
-	// Keep track of which effects were already installed prior to the call so we
-	// only see new ones.
-	seenEffects := make(map[digest.Digest]bool)
-	for _, def := range collectDefs(ctx, self) {
-		for _, op := range def.Def {
-			seenEffects[digest.FromBytes(op)] = true
-		}
-	}
-
 	var base string
 	if id.Receiver() == nil {
 		base = "Query"
@@ -80,11 +71,7 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 		attrs = append(attrs, attribute.Bool(telemetry.UIInternalAttr, true))
 	}
 
-	ctx, span := telemetry.Tracer(ctx, InstrumentationLibrary).
-		Start(ctx, spanName, trace.WithAttributes(attrs...))
-
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	defer stdio.Close()
+	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
 
 	return ctx, func(res dagql.Typed, cached bool, err error) {
 		defer telemetry.End(span, func() error {
@@ -93,115 +80,138 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 			}
 			return nil
 		})
+		recordStatus(ctx, span, cached, err, id)
+		logResult(ctx, res, span, self, id)
+		collectEffects(ctx, res, span, self)
+	}
+}
 
-		if cached {
-			// NOTE: this is never actually called on cache hits, but might be in the
-			// future.
-			span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
+// recordStatus records the status of a call on a span.
+func recordStatus(ctx context.Context, span trace.Span, cached bool, err error, id *call.ID) {
+	if cached {
+		// NOTE: this is never actually called on cache hits, but might be in the
+		// future.
+		span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
+	}
+
+	if ctx.Err() != nil {
+		// If the request was canceled, reflect it on the span.
+		span.SetAttributes(attribute.Bool(telemetry.CanceledAttr, true))
+	}
+
+	if err == nil {
+		// It is important to set an Ok status here so functions can encapsulate
+		// any internal errors.
+		span.SetStatus(codes.Ok, "")
+	} else {
+		// append id.Display() instead of setting it as a field to avoid double
+		// quoting
+		slog.Warn("error resolving "+id.Display(), "error", err)
+	}
+}
+
+// logResult prints the result of a call to the span's stdout.
+func logResult(ctx context.Context, res dagql.Typed, span trace.Span, self dagql.Object, id *call.ID) {
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
+
+	// Take care not to print any sensitive values.
+	sensitive := true
+	if spec, ok := self.ObjectType().FieldSpec(id.Field()); ok {
+		sensitive = spec.Sensitive
+	}
+	switch x := res.(type) {
+	// Record an object result as an output of this call.
+	//
+	// This allows the UI to "simplify" the returned object's ID back to the
+	// current call's ID, so we can show the user myMod().unit().stdout()
+	// instead of container().from().[...].stdout().
+	case dagql.Object:
+		// Don't consider loadFooFromID to be a 'creator' as that would only
+		// obfuscate the real ID.
+		//
+		// NB: so long as the simplifying process rejects larger IDs, this
+		// shouldn't be necessary, but it seems like a good idea to just never even
+		// consider it.
+		isLoader := strings.HasPrefix(id.Field(), "load") && strings.HasSuffix(id.Field(), "FromID")
+		if !isLoader {
+			objDigest := x.ID().Digest()
+			span.SetAttributes(attribute.String(telemetry.DagOutputAttr, objDigest.String()))
 		}
-
-		if ctx.Err() != nil {
-			// If the request was canceled, reflect it on the span.
-			span.SetAttributes(attribute.Bool(telemetry.CanceledAttr, true))
+	case dagql.Enumerable:
+		if sensitive {
+			break
 		}
-
-		if err == nil {
-			// It is important to set an Ok status here so functions can encapsulate
-			// any internal errors.
-			span.SetStatus(codes.Ok, "")
+		items := x.Len()
+		if items == 0 {
+			break
+		}
+		// peek at the first item to determine the type
+		peek, err := x.Nth(1)
+		if err != nil {
+			break
+		}
+		if _, isObj := peek.(dagql.Object); isObj {
+			fmt.Fprintf(stdio.Stdout, "%d %ss", items, peek.Type().Name())
 		} else {
-			// append id.Display() instead of setting it as a field to avoid double
-			// quoting
-			slog.Warn("error resolving "+id.Display(), "error", err)
+			enc := json.NewEncoder(stdio.Stdout)
+			enc.SetIndent("", "  ")
+			enc.Encode(x)
 		}
+	case dagql.String:
+		if !sensitive {
+			fmt.Fprint(stdio.Stdout, x)
+		}
+	case call.Literate:
+		if !sensitive {
+			fmt.Fprint(stdio.Stdout, x.ToLiteral().Display())
+		}
+	}
+}
 
-		// Take care not to print any sensitive values.
-		sensitive := true
-		if spec, ok := self.ObjectType().FieldSpec(id.Field()); ok {
-			sensitive = spec.Sensitive
+// collectEffects records LLB op digests installed by this call so that we can
+// know that it has pending work.
+//
+// Effects will become complete as spans appear from Buildkit with a
+// corresponding effect ID.
+func collectEffects(ctx context.Context, res dagql.Typed, span trace.Span, self dagql.Object) {
+	// Keep track of which effects were already installed prior to the call so we
+	// only see new ones.
+	seenEffects := make(map[digest.Digest]bool)
+	for _, def := range collectDefs(ctx, self) {
+		for _, op := range def.Def {
+			seenEffects[digest.FromBytes(op)] = true
 		}
-		switch x := res.(type) {
-		// Record an object result as an output of this call.
-		//
-		// This allows the UI to "simplify" the returned object's ID back to the
-		// current call's ID, so we can show the user myMod().unit().stdout()
-		// instead of container().from().[...].stdout().
-		case dagql.Object:
-			// Don't consider loadFooFromID to be a 'creator' as that would only
-			// obfuscate the real ID.
-			//
-			// NB: so long as the simplifying process rejects larger IDs, this
-			// shouldn't be necessary, but it seems like a good idea to just never even
-			// consider it.
-			isLoader := strings.HasPrefix(id.Field(), "load") && strings.HasSuffix(id.Field(), "FromID")
-			if !isLoader {
-				objDigest := x.ID().Digest()
-				span.SetAttributes(attribute.String(telemetry.DagOutputAttr, objDigest.String()))
+	}
+
+	var effectIDs []string
+	for _, def := range collectDefs(ctx, res) {
+		for _, opBytes := range def.Def {
+			dig := digest.FromBytes(opBytes)
+			if seenEffects[dig] {
+				continue
 			}
-		case dagql.Enumerable:
-			if sensitive {
-				break
-			}
-			items := x.Len()
-			if items == 0 {
-				break
-			}
-			// peek at the first item to determine the type
-			peek, err := x.Nth(1)
+			seenEffects[dig] = true
+
+			var pbOp pb.Op
+			err := pbOp.Unmarshal(opBytes)
 			if err != nil {
-				break
+				slog.Warn("failed to unmarshal LLB", "err", err)
+				continue
 			}
-			if _, isObj := peek.(dagql.Object); isObj {
-				fmt.Fprintf(stdio.Stdout, "%d %ss", items, peek.Type().Name())
-			} else {
-				enc := json.NewEncoder(stdio.Stdout)
-				enc.SetIndent("", "  ")
-				enc.Encode(x)
+			if pbOp.Op == nil {
+				// The last def should always be an empty op with the previous as
+				// an input. We never actually see a span for this, so skip it,
+				// otherwise the span will look like it still has pending
+				// effects.
+				continue
 			}
-		case dagql.String:
-			if !sensitive {
-				fmt.Fprint(stdio.Stdout, x)
-			}
-		case call.Literate:
-			if !sensitive {
-				fmt.Fprint(stdio.Stdout, x.ToLiteral().Display())
-			}
-		}
 
-		// Record LLB op digests installed by this call so that we can know that it
-		// has pending work.
-		//
-		// Effects will become complete as spans appear from Buildkit with a
-		// corresponding effect ID.
-		var effectIDs []string
-		for _, def := range collectDefs(ctx, res) {
-			for _, opBytes := range def.Def {
-				dig := digest.FromBytes(opBytes)
-				if seenEffects[dig] {
-					continue
-				}
-				seenEffects[dig] = true
-
-				var pbOp pb.Op
-				err := pbOp.Unmarshal(opBytes)
-				if err != nil {
-					slog.Warn("failed to unmarshal LLB", "err", err)
-					continue
-				}
-				if pbOp.Op == nil {
-					// The last def should always be an empty op with the previous as
-					// an input. We never actually see a span for this, so skip it,
-					// otherwise the span will look like it still has pending
-					// effects.
-					continue
-				}
-
-				effectIDs = append(effectIDs, dig.String())
-			}
+			effectIDs = append(effectIDs, dig.String())
 		}
-		if len(effectIDs) > 0 {
-			span.SetAttributes(attribute.StringSlice(telemetry.EffectIDsAttr, effectIDs))
-		}
+	}
+	if len(effectIDs) > 0 {
+		span.SetAttributes(attribute.StringSlice(telemetry.EffectIDsAttr, effectIDs))
 	}
 }
 
