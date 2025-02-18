@@ -28,7 +28,8 @@ import (
 type Llm struct {
 	Query *Query
 
-	Config *LlmConfig
+	Model    string
+	Endpoint *LlmEndpoint
 
 	// History of messages
 	// FIXME: rename to 'messages'
@@ -48,88 +49,229 @@ type Llm struct {
 	state dagql.Typed
 }
 
-type LlmConfig struct {
-	Model string
-	Key   string
-	Host  string
-	Path  string
+type LlmEndpoint struct {
+	Model    string
+	BaseURL  string
+	Key      string
+	Provider LlmProvider
+}
+
+type LlmProvider string
+
+const (
+	OpenAI    LlmProvider = "openai"
+	Anthropic LlmProvider = "anthropic"
+	Google    LlmProvider = "google"
+	Meta      LlmProvider = "meta"
+	Mistral   LlmProvider = "mistral"
+	DeepSeek  LlmProvider = "deepseek"
+	Other     LlmProvider = "other"
+)
+
+// A LLM routing configuration
+type LlmRouter struct {
+	ANTHROPIC_API_KEY  string
+	ANTHROPIC_BASE_URL string
+	ANTHROPIC_MODEL    string
+	OPENAI_API_KEY     string
+	OPENAI_BASE_URL    string
+	OPENAI_MODEL       string
+}
+
+func (r *LlmRouter) isAnthropicModel(model string) bool {
+	return strings.HasPrefix(model, "claude-") || strings.HasPrefix(model, "anthropic/")
+}
+
+func (r *LlmRouter) isOpenAIModel(model string) bool {
+	return strings.HasPrefix(model, "gpt-") || strings.HasPrefix(model, "openai/")
+}
+
+func (r *LlmRouter) isGoogleModel(model string) bool {
+	return strings.HasPrefix(model, "gemini-") || strings.HasPrefix(model, "google/")
+}
+
+func (r *LlmRouter) isMistralModel(model string) bool {
+	return strings.HasPrefix(model, "mistral-") || strings.HasPrefix(model, "mistral/")
+}
+
+func (r *LlmRouter) isLlamaModel(model string) bool {
+	return strings.HasPrefix(model, "llama-") || strings.HasPrefix(model, "meta/")
+}
+
+func (r *LlmRouter) routeAnthropicModel() *LlmEndpoint {
+	return &LlmEndpoint{
+		BaseURL:  r.ANTHROPIC_BASE_URL,
+		Key:      r.ANTHROPIC_API_KEY,
+		Provider: Anthropic,
+	}
+}
+
+func (r *LlmRouter) routeOpenAIModel() *LlmEndpoint {
+	return &LlmEndpoint{
+		BaseURL:  r.OPENAI_BASE_URL,
+		Key:      r.OPENAI_API_KEY,
+		Provider: OpenAI,
+	}
+}
+
+func (r *LlmRouter) routeOtherModel() *LlmEndpoint {
+	return &LlmEndpoint{
+		BaseURL:  r.OPENAI_BASE_URL,
+		Provider: Other,
+	}
+}
+
+// Return a default model, if configured
+func (r *LlmRouter) DefaultModel() string {
+	for _, model := range []string{r.OPENAI_MODEL, r.ANTHROPIC_MODEL} {
+		if model != "" {
+			return model
+		}
+	}
+	if r.OPENAI_API_KEY != "" {
+		return "gpt-4o"
+	}
+	if r.ANTHROPIC_API_KEY != "" {
+		return "claude-3-sonnet"
+	}
+	if r.OPENAI_BASE_URL != "" {
+		return "llama-3.2"
+	}
+	return ""
+}
+
+// Return an endpoint for the requested model
+// If the model name is not set, a default will be selected.
+func (r *LlmRouter) Route(model string) (*LlmEndpoint, error) {
+	if model == "" {
+		model = r.DefaultModel()
+	}
+	var endpoint *LlmEndpoint
+	if r.isAnthropicModel(model) {
+		endpoint = r.routeAnthropicModel()
+	} else if r.isOpenAIModel(model) {
+		endpoint = r.routeOpenAIModel()
+	} else if r.isGoogleModel(model) {
+		return nil, fmt.Errorf("Google models are not yet supported")
+	} else if r.isMistralModel(model) {
+		return nil, fmt.Errorf("Mistral models are not yet supported")
+	} else {
+		endpoint = r.routeOtherModel()
+	}
+	endpoint.Model = model
+	return endpoint, nil
+}
+
+func (cfg *LlmRouter) LoadConfig(ctx context.Context, getenv func(context.Context, string) (string, error)) error {
+	if getenv == nil {
+		getenv = func(ctx context.Context, key string) (string, error) {
+			return os.Getenv(key), nil
+		}
+	}
+	var err error
+	cfg.ANTHROPIC_API_KEY, err = getenv(ctx, "ANTHROPIC_API_KEY")
+	if err != nil {
+		return err
+	}
+	cfg.ANTHROPIC_BASE_URL, err = getenv(ctx, "ANTHROPIC_BASE_URL")
+	if err != nil {
+		return err
+	}
+	cfg.ANTHROPIC_MODEL, err = getenv(ctx, "ANTHROPIC_MODEL")
+	if err != nil {
+		return err
+	}
+	cfg.OPENAI_API_KEY, err = getenv(ctx, "OPENAI_API_KEY")
+	if err != nil {
+		return err
+	}
+	cfg.OPENAI_BASE_URL, err = getenv(ctx, "OPENAI_BASE_URL")
+	if err != nil {
+		return err
+	}
+	cfg.OPENAI_MODEL, err = getenv(ctx, "OPENAI_MODEL")
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // FIXME: engine-wide global config
 // this is a workaround to enable modules to "just work" without bringing their own config
-var globalLlmConfig *LlmConfig
+var globalLlmRouter *LlmRouter
 
-func loadGlobalLlmConfig(ctx context.Context, srv *dagql.Server) (*LlmConfig, error) {
-	loadSecret := func(uri string) (string, error) {
+func loadGlobalLlmRouter(ctx context.Context, srv *dagql.Server) (*LlmRouter, error) {
+	if globalLlmRouter != nil {
+		return globalLlmRouter, nil
+	}
+	// FIXME: mutex
+	globalLlmRouter = new(LlmRouter)
+	// Get the secret plaintext, from either a URI (provider lookup) or a plaintext (no-op)
+	loadSecret := func(ctx context.Context, uriOrPlaintext string) (string, error) {
 		var result string
-		if u, err := url.Parse(uri); err != nil || u.Scheme == "" {
-			result = uri
-		} else if err := srv.Select(ctx, srv.Root(), &result,
-			dagql.Selector{
-				Field: "secret",
-				Args: []dagql.NamedInput{
-					{
-						Name:  "uri",
-						Value: dagql.NewString(uri),
-					},
+		if u, err := url.Parse(uriOrPlaintext); err == nil && (u.Scheme == "op" || u.Scheme == "vault" || u.Scheme == "env" || u.Scheme == "file") {
+			// If it's a valid secret reference:
+			if err := srv.Select(ctx, srv.Root(), &result,
+				dagql.Selector{
+					Field: "secret",
+					Args:  []dagql.NamedInput{{Name: "uri", Value: dagql.NewString(uriOrPlaintext)}},
 				},
-			},
-			dagql.Selector{
-				Field: "plaintext",
-			},
-		); err != nil {
-			return "", err
+				dagql.Selector{
+					Field: "plaintext",
+				},
+			); err != nil {
+				return "", err
+			}
+			return result, nil
 		}
-		return result, nil
+		// If it's a regular plaintext:
+		return uriOrPlaintext, nil
 	}
-	if globalLlmConfig != nil {
-		return globalLlmConfig, nil
-	}
-	cfg := new(LlmConfig)
-	envFile, err := loadSecret("file://.env")
-	if err != nil {
-		return nil, err
-	}
-	env, err := godotenv.Unmarshal(string(envFile))
-	if err != nil {
-		return nil, err
-	}
-	// Configure API key
-	if keyConfig, ok := env["LLM_KEY"]; ok {
-		key, err := loadSecret(keyConfig)
-		if err != nil {
-			return nil, err
+	env := make(map[string]string)
+	// Load .env from current directory, if it exists
+	if envFile, err := loadSecret(ctx, "file://.env"); err == nil {
+		if e, err := godotenv.Unmarshal(string(envFile)); err == nil {
+			env = e
 		}
-		cfg.Key = key
 	}
-	if host, ok := env["LLM_HOST"]; ok {
-		cfg.Host = host
-	}
-	if path, ok := env["LLM_PATH"]; ok {
-		cfg.Path = path
-	}
-	if cfg.Key == "" && cfg.Host == "" {
-		return nil, fmt.Errorf("error loading llm configuration: .env must set LLM_KEY or LLM_HOST")
-	}
-	globalLlmConfig = cfg
-	return cfg, nil
+	err := globalLlmRouter.LoadConfig(ctx, func(ctx context.Context, k string) (string, error) {
+		// First lookup in the .env file
+		if v, ok := env[k]; ok {
+			return loadSecret(ctx, v)
+		}
+		// Second: lookup in client env directly
+		if v, err := loadSecret(ctx, "env://"+k); err == nil {
+			// Allow the env var itself to be a secret reference
+			return loadSecret(ctx, v)
+		}
+		return "", nil
+	})
+	return globalLlmRouter, err
 }
 
 func NewLlm(ctx context.Context, query *Query, srv *dagql.Server, model string) (*Llm, error) {
 	// FIXME: finish dismantling the global llm config machinery
-	config, err := loadGlobalLlmConfig(ctx, srv)
+	router, err := loadGlobalLlmRouter(ctx, srv)
 	if err != nil {
 		return nil, err
 	}
-	// FIXME: clean up default model selection
 	if model == "" {
-		model = "gpt-4o"
+		model = router.DefaultModel()
 	}
-	config.Model = model
+	endpoint, err := router.Route(model)
+	if err != nil {
+		return nil, err
+	}
+	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("model router: [%s]->[%#v]", model, endpoint))
+	if endpoint.Model == "" {
+		return nil, fmt.Errorf("No valid LLM endpoint configuration")
+	}
+	defer span.End()
 	return &Llm{
-		Query:  query,
-		Config: config,
-		calls:  make(map[string]string),
+		Query:    query,
+		Model:    model,
+		Endpoint: endpoint,
+		calls:    make(map[string]string),
 		// FIXME: support multiple variables in state
 		//state:  make(map[string]dagql.Typed),
 	}, nil
@@ -405,7 +547,7 @@ func (llm *Llm) State(ctx context.Context) (dagql.Typed, error) {
 func (llm *Llm) sendQuery(ctx context.Context, tools []bbi.Tool) (res *openai.ChatCompletion, rerr error) {
 	params := openai.ChatCompletionNewParams{
 		Seed:     openai.Int(0),
-		Model:    openai.F(openai.ChatModel(llm.Config.Model)),
+		Model:    openai.F(openai.ChatModel(llm.Model)),
 		Messages: openai.F(llm.history),
 	}
 	if len(tools) > 0 {
@@ -471,22 +613,18 @@ func (llm *Llm) sendQuery(ctx context.Context, tools []bbi.Tool) (res *openai.Ch
 func (llm *Llm) client() *openai.Client {
 	var opts []option.RequestOption
 	opts = append(opts, option.WithHeader("Content-Type", "application/json"))
-	if llm.Config.Key != "" {
-		opts = append(opts, option.WithAPIKey(llm.Config.Key))
+	if llm.Endpoint.Key != "" {
+		opts = append(opts, option.WithAPIKey(llm.Endpoint.Key))
 	}
-	if llm.Config.Host != "" || llm.Config.Path != "" {
-		var base url.URL
-		base.Scheme = "https"
-		base.Host = llm.Config.Host
-		base.Path = llm.Config.Path
-		opts = append(opts, option.WithBaseURL(base.String()))
+	if llm.Endpoint.BaseURL != "" {
+		opts = append(opts, option.WithBaseURL(llm.Endpoint.BaseURL))
 	}
 	return openai.NewClient(opts...)
 }
 
 type openAIMessage struct {
-	Role       string      `json:"role", required`
-	Content    interface{} `json:"content", required`
+	Role       string      `json:"role" required:"true"`
+	Content    interface{} `json:"content" required:"true"`
 	ToolCallID string      `json:"tool_call_id"`
 	ToolCalls  []struct {
 		// The ID of the tool call.
@@ -510,7 +648,7 @@ func (msg openAIMessage) Text() (string, error) {
 	switch msg.Role {
 	case "user", "tool":
 		var content []struct {
-			Text string `json:"text", required`
+			Text string `json:"text" required:"true"`
 		}
 		if err := json.Unmarshal(contentJson, &content); err != nil {
 			return "", fmt.Errorf("malformatted user or tool message: %s", err.Error())
