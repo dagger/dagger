@@ -239,6 +239,12 @@ func (f Filesyncer) fullRootPathAndBaseName(reqPath string, fullyResolvePath boo
 	// NOTE: filepath.Clean also handles calling FromSlash (relevant when this is a Windows client)
 	reqPath = filepath.Clean(reqPath)
 
+	if home, err := os.UserHomeDir(); err == nil {
+		if p, err := pathutil.ExpandHomeDir(home, reqPath); err == nil {
+			reqPath = p
+		}
+	}
+
 	rootPath, err := pathutil.Abs(reqPath)
 	if err != nil {
 		return "", fmt.Errorf("get abs path: %w", err)
