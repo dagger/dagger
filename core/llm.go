@@ -117,6 +117,7 @@ func (r *LlmRouter) routeOpenAIModel() *LlmEndpoint {
 func (r *LlmRouter) routeOtherModel() *LlmEndpoint {
 	return &LlmEndpoint{
 		BaseURL:  r.OPENAI_BASE_URL,
+		Key:      r.OPENAI_API_KEY,
 		Provider: Other,
 	}
 }
