@@ -12,21 +12,16 @@ import java.util.concurrent.ExecutionException;
 /** DaggerModule main object */
 @Object
 public class DaggerModule extends AbstractModule {
-  public DaggerModule() {
-    super();
-  }
-
   /** Returns a container that echoes whatever string argument is provided */
   @Function
   public Container containerEcho(String stringArg) {
-    return dag.container()
-        .from("alpine:latest")
-        .withExec(List.of("echo", stringArg));
+    return dag.container().from("alpine:latest").withExec(List.of("echo", stringArg));
   }
 
   /** Returns lines that match a pattern in the files of the provided Directory */
   @Function
-  public String grepDir(Directory directoryArg, String pattern) throws InterruptedException, ExecutionException, DaggerQueryException {
+  public String grepDir(Directory directoryArg, String pattern)
+      throws InterruptedException, ExecutionException, DaggerQueryException {
     return dag.container()
         .from("alpine:latest")
         .withMountedDirectory("/mnt", directoryArg)
