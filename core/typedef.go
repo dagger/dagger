@@ -72,7 +72,7 @@ func (fn Function) Clone() *Function {
 	return &cp
 }
 
-func (fn *Function) FieldSpec() (dagql.FieldSpec, error) {
+func (fn *Function) FieldSpec(ctx context.Context, modFun *ModuleFunction) (dagql.FieldSpec, error) {
 	spec := dagql.FieldSpec{
 		Name:        fn.Name,
 		Description: formatGqlDescription(fn.Description),
@@ -88,10 +88,17 @@ func (fn *Function) FieldSpec() (dagql.FieldSpec, error) {
 			if err := dec.Decode(&val); err != nil {
 				return spec, fmt.Errorf("failed to decode default value for arg %q: %w", arg.Name, err)
 			}
-			var err error
-			defaultVal, err = input.Decoder().DecodeInput(val)
+
+			modArg := modFun.args[arg.Name]
+			result, err := modArg.modType.ConvertFromSDKResult(ctx, val)
 			if err != nil {
 				return spec, fmt.Errorf("failed to decode default value for arg %q: %w", arg.Name, err)
+			}
+
+			var ok bool
+			defaultVal, ok = result.(dagql.Input)
+			if !ok {
+				return spec, fmt.Errorf("could not use decoded value as input for arg %q", arg.Name)
 			}
 		}
 		spec.Args = append(spec.Args, dagql.InputSpec{

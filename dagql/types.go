@@ -916,6 +916,10 @@ func (e *EnumValues[T]) TypeDefinition(views ...string) *ast.Definition {
 }
 
 func (e *EnumValues[T]) DecodeInput(val any) (Input, error) {
+	if enum, ok := val.(T); ok {
+		val = string(enum)
+	}
+
 	v, err := (&EnumValueName{Enum: e.TypeName()}).DecodeInput(val)
 	if err != nil {
 		return nil, err
