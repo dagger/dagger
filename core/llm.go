@@ -197,16 +197,8 @@ func (cfg *LlmRouter) LoadConfig(ctx context.Context, getenv func(context.Contex
 	return nil
 }
 
-// FIXME: engine-wide global config
-// this is a workaround to enable modules to "just work" without bringing their own config
-var globalLlmRouter *LlmRouter
-
-func loadGlobalLlmRouter(ctx context.Context, srv *dagql.Server) (*LlmRouter, error) {
-	if globalLlmRouter != nil {
-		return globalLlmRouter, nil
-	}
-	// FIXME: mutex
-	globalLlmRouter = new(LlmRouter)
+func NewLlmRouter(ctx context.Context, srv *dagql.Server) (*LlmRouter, error) {
+	router := new(LlmRouter)
 	// Get the secret plaintext, from either a URI (provider lookup) or a plaintext (no-op)
 	loadSecret := func(ctx context.Context, uriOrPlaintext string) (string, error) {
 		var result string
@@ -235,7 +227,7 @@ func loadGlobalLlmRouter(ctx context.Context, srv *dagql.Server) (*LlmRouter, er
 			env = e
 		}
 	}
-	err := globalLlmRouter.LoadConfig(ctx, func(ctx context.Context, k string) (string, error) {
+	err := router.LoadConfig(ctx, func(ctx context.Context, k string) (string, error) {
 		// First lookup in the .env file
 		if v, ok := env[k]; ok {
 			return loadSecret(ctx, v)
@@ -247,12 +239,16 @@ func loadGlobalLlmRouter(ctx context.Context, srv *dagql.Server) (*LlmRouter, er
 		}
 		return "", nil
 	})
-	return globalLlmRouter, err
+	return router, err
 }
 
 func NewLlm(ctx context.Context, query *Query, srv *dagql.Server, model string) (*Llm, error) {
-	// FIXME: finish dismantling the global llm config machinery
-	router, err := loadGlobalLlmRouter(ctx, srv)
+	root := srv.Root().(dagql.Instance[*Query]).Self
+	mainSrv, err := root.MainServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	router, err := NewLlmRouter(ctx, mainSrv)
 	if err != nil {
 		return nil, err
 	}
@@ -263,11 +259,10 @@ func NewLlm(ctx context.Context, query *Query, srv *dagql.Server, model string) 
 	if err != nil {
 		return nil, err
 	}
-	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("model router: [%s]->[%#v]", model, endpoint))
 	if endpoint.Model == "" {
 		return nil, fmt.Errorf("No valid LLM endpoint configuration")
 	}
-	defer span.End()
+	// FIXME: merge model into endpoint
 	return &Llm{
 		Query:    query,
 		Model:    model,
