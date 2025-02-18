@@ -191,6 +191,15 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The original subpath used when instantiating this module source, relative to the context directory.
+     */
+    public function originalSubpath(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('originalSubpath');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'originalSubpath');
+    }
+
+    /**
      * The pinned version of this module source.
      */
     public function pin(): string

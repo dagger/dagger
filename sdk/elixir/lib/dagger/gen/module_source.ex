@@ -216,6 +216,15 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
+  @doc "The original subpath used when instantiating this module source, relative to the context directory."
+  @spec original_subpath(t()) :: {:ok, String.t()} | {:error, term()}
+  def original_subpath(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("originalSubpath")
+
+    Client.execute(module_source.client, query_builder)
+  end
+
   @doc "The pinned version of this module source."
   @spec pin(t()) :: {:ok, String.t()} | {:error, term()}
   def pin(%__MODULE__{} = module_source) do

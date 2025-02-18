@@ -2336,6 +2336,11 @@ type ModuleSource {
   """
   moduleOriginalName: String!
 
+  """
+  The original subpath used when instantiating this module source, relative to the context directory.
+  """
+  originalSubpath: String!
+
   """The pinned version of this module source."""
   pin: String!
 
