@@ -22,7 +22,7 @@ func (h *shellAutoComplete) Do(entireInput [][]rune, row, col int) (msg string, 
 	line, pos := computil.Flatten(entireInput, row, col)
 	line = line[:pos]
 
-	file, err := parseShell(strings.NewReader(string(line)), "", syntax.RecoverErrors(5))
+	file, err := parseShell(strings.NewReader(line), "", syntax.RecoverErrors(5))
 	if err != nil {
 		return "", nil
 	}
