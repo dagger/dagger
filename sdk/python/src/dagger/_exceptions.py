@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+import dataclasses
 from typing import Any
 
 import cattrs
@@ -12,24 +12,6 @@ class VersionMismatch(Warning):
 
 class DaggerError(Exception):
     """Base exception for all Dagger exceptions."""
-
-
-class ProvisionError(DaggerError):
-    """Error while provisioning the Dagger engine."""
-
-
-class DownloadError(ProvisionError):
-    """Error while downloading the Dagger CLI."""
-
-    def __str__(self) -> str:
-        return f"Failed to download the Dagger CLI: {super().__str__()}"
-
-
-class SessionError(ProvisionError):
-    """Error while starting an engine session."""
-
-    def __str__(self) -> str:
-        return f"Failed to start Dagger engine session: {super().__str__()}"
 
 
 class ClientError(DaggerError):
@@ -58,7 +40,7 @@ class InvalidQueryError(ClientError):
     """Misuse of the query builder."""
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class QueryErrorLocation:
     """Error location returned by the API."""
 
@@ -66,14 +48,14 @@ class QueryErrorLocation:
     column: int
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class QueryErrorValue:
     """An error value returned by the API."""
 
     message: str
     locations: list[QueryErrorLocation] | None = None
     path: list[str] | None = None
-    extensions: dict[str, Any] = field(default_factory=dict)
+    extensions: dict[str, Any] = dataclasses.field(default_factory=dict)
 
     def __str__(self) -> str:
         return self.message
@@ -186,13 +168,10 @@ __all__ = [
     "ClientConnectionError",
     "ClientError",
     "DaggerError",
-    "DownloadError",
     "ExecError",
     "ExecuteTimeoutError",
     "InvalidQueryError",
-    "ProvisionError",
     "QueryError",
-    "SessionError",
     "TransportError",
     "VersionMismatch",
 ]
