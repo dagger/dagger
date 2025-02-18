@@ -1865,9 +1865,13 @@ func (s *moduleSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("failed to create module definition function for module %q: %w", modName, err)
 	}
 	result, err := getModDefFn.Call(getModDefCtx, &core.CallOpts{
-		Cache:                  true,
-		SkipSelfSchema:         true,
-		Server:                 s.dag,
+		Cache:          true,
+		SkipSelfSchema: true,
+		Server:         s.dag,
+		// Don't include the digest for the current call (which is a bunch of module source stuff, including
+		// APIs that are cached per-client when local sources are involved) in the cache key of this
+		// function call. That would needlessly invalidate the cache more than is needed, similar to how
+		// we want to scope the codegen cache keys by the content digested source instance above.
 		SkipCallDigestCacheKey: true,
 	})
 	if err != nil {

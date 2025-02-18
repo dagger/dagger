@@ -93,7 +93,14 @@ type CallOpts struct {
 	SkipSelfSchema bool
 	Server         *dagql.Server
 
-	// TODO: doc
+	// If true, don't mix in the digest for the current dagql call into the cache key for
+	// the exec-op underlying the function call.
+	//
+	// We want the function call to be cached by the dagql digest in almost every case
+	// since the current dagql call is typically the actual function call. However, in
+	// some corner cases we may calling a function internally within a separate dagql
+	// call and don't want the current call digest mixed in, e.g. during the special
+	// function call that retrieves the module typedefs.
 	SkipCallDigestCacheKey bool
 }
 
