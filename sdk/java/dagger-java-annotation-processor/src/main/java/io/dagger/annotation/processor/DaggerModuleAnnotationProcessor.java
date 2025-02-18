@@ -451,7 +451,10 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
       if (tk == TypeKind.INT
           || tk == TypeKind.LONG
           || tk == TypeKind.DOUBLE
-          || tk == TypeKind.FLOAT) {
+          || tk == TypeKind.FLOAT
+          || tk == TypeKind.SHORT
+          || tk == TypeKind.BYTE
+          || tk == TypeKind.CHAR) {
         defaultValue = "0";
       } else if (tk == TypeKind.BOOLEAN) {
         defaultValue = "false";
