@@ -221,6 +221,30 @@ func (JavaSuite) TestIgnore(_ context.Context, t *testctx.T) {
 	})
 }
 
+func (JavaSuite) TestConstructor(_ context.Context, t *testctx.T) {
+	t.Run("value set", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "construct").
+			With(daggerCall("--value", "from cli", "echo")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "from cli", out)
+	})
+
+	t.Run("default value from constructor", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "construct").
+			With(daggerCall("echo")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "from constructor", out)
+	})
+}
+
 func javaModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/java", moduleName))
