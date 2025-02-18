@@ -40,6 +40,7 @@ func (s *secretSchema) Install() {
 		dagql.Func("uri", s.uri).
 			Doc(`The URI of this secret.`),
 		dagql.Func("plaintext", s.plaintext).
+			Sensitive().
 			Impure("A secret's `plaintext` value in the internal secret store state can change.").
 			Doc(`The value of this secret.`),
 	}.Install(s.srv)
