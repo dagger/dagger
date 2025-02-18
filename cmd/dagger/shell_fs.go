@@ -147,7 +147,7 @@ func (h *shellCallHandler) setContext(ctx context.Context, modSrc *dagger.Module
 		modRef := source.Ref("")
 
 		def, err := h.getOrInitDef(modRef, func() (*moduleDef, error) {
-			return initializeModule(ctx, h.dag, modRef)
+			return initializeModule(ctx, h.dag, h.dag.ModuleSource(modRef))
 		})
 		if err != nil {
 			return err
@@ -318,7 +318,7 @@ func (h *shellCallHandler) setPath(ctx context.Context, path string) error {
 
 	if modRef != "" {
 		def, err := h.getOrInitDef(modRef, func() (*moduleDef, error) {
-			return initializeModule(ctx, h.dag, modRef)
+			return initializeModule(ctx, h.dag, h.dag.ModuleSource(modRef))
 		})
 		if err != nil || def == nil {
 			return err

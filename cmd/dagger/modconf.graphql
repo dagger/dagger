@@ -9,8 +9,8 @@ query ModuleConfig($source: ModuleSourceID!) {
         name
         description
         source {
+          id
           asString
-          pin
         }
       }
     }
