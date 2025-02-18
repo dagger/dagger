@@ -579,23 +579,25 @@ func (llm *Llm) sendQuery(ctx context.Context, tools []bbi.Tool) (res *openai.Ch
 		res := stream.Current()
 		acc.AddChunk(res)
 
-		if content := res.Choices[0].Delta.Content; content != "" {
-			if logsW == nil {
-				// only show a message if we actually get a text response back
-				// (as opposed to tool calls)
-				ctx, span := Tracer(ctx).Start(ctx, "LLM response", telemetry.Reveal(), trace.WithAttributes(
-					attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-					attribute.String(telemetry.UIMessageAttr, "received"),
-				))
-				defer telemetry.End(span, func() error { return rerr })
+		if res.Choices != nil && len(res.Choices) > 0 {
+			if content := res.Choices[0].Delta.Content; content != "" {
+				if logsW == nil {
+					// only show a message if we actually get a text response back
+					// (as opposed to tool calls)
+					ctx, span := Tracer(ctx).Start(ctx, "LLM response", telemetry.Reveal(), trace.WithAttributes(
+						attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+						attribute.String(telemetry.UIMessageAttr, "received"),
+					))
+					defer telemetry.End(span, func() error { return rerr })
 
-				stdio := telemetry.SpanStdio(ctx, "",
-					log.String(telemetry.ContentTypeAttr, "text/markdown"))
+					stdio := telemetry.SpanStdio(ctx, "",
+						log.String(telemetry.ContentTypeAttr, "text/markdown"))
 
-				logsW = stdio.Stdout
+					logsW = stdio.Stdout
+				}
+
+				fmt.Fprint(logsW, content)
 			}
-
-			fmt.Fprint(logsW, content)
 		}
 	}
 
