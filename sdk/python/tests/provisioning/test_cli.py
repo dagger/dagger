@@ -5,7 +5,7 @@ import pytest
 from pytest_subprocess.fake_process import FakeProcess
 
 import dagger
-from dagger._engine import session
+from dagger.provisioning import _session as session
 
 
 def test_getting_connect_params(fp: FakeProcess):

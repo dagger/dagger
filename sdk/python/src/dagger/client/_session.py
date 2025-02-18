@@ -18,8 +18,8 @@ from opentelemetry import propagate
 from typing_extensions import Self
 
 from dagger import ClientConnectionError, telemetry
-from dagger._config import ConnectConfig, Retry
 from dagger._managers import ResourceManager
+from dagger.client._config import ConnectConfig, Retry
 
 logger = logging.getLogger(__name__)
 
