@@ -29,6 +29,6 @@ class MyModule
         #[Doc('The greeting to display')]
         string $greeting
     ): string {
-        return "{$greeting} {$name}";
+        return strtoupper("{$greeting} {$name}");
     }
 }
