@@ -6,27 +6,17 @@ Expected stderr:
 │ ✔ starting session X.Xs
 
 ✘ load module X.Xs
-! failed to serve module: input: module.withSource.initialize failed to initialize module: failed to call module "broken" to get functions: call constructor: process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
+! failed to serve module: input: moduleSource.asModule failed to call module "broken" to get functions: call constructor: process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
 │ ✔ finding module configuration X.Xs
 │ ✘ initializing module X.Xs
-│ ! input: module.withSource.initialize failed to initialize module: failed to call module "broken" to get functions: call constructor: process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
-│ │ ✔ ModuleSource.resolveFromCaller: ModuleSource! X.Xs
-│ │ ✘ .asModule: Module! X.Xs
-│ │ ! process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
-│ │ │ ✘ Module.withSource(
-│ │ │ │ │ source: ✔ ModuleSource.resolveFromCaller: ModuleSource! X.Xs
-│ │ │ │ ): Module! X.Xs
-│ │ │ ! process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
-│ │ │ │ ✔ initialize dependencies X.Xs
-│ │ │ │ ✔ build module X.Xs
-│ │ │ │ │ ✔ go SDK: run codegen X.Xs
-│ │ │ │ │ ✔ go SDK: load runtime X.Xs
-│ │ │ │ │ │ ✘ Container.withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs
-│ │ │ │ │ │ ┃ # dagger/broken
-│ │ │ │ │ │ ┃ ./main.go:6:6: undefined: ctx
-│ │ │ │ │ │ ! process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
-│ │ ✘ .initialize: Module! X.Xs
-│ │ ! failed to initialize module: failed to call module "broken" to get functions: call constructor: process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
+│ ! input: moduleSource.asModule failed to call module "broken" to get functions: call constructor: process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
+│ │ ✘ ModuleSource.asModule: Module! X.Xs
+│ │ ! failed to call module "broken" to get functions: call constructor: process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
+│ │ │ ✔ go SDK: load runtime X.Xs
+│ │ │ │ ✘ Container.withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs
+│ │ │ │ ┃ # dagger/broken
+│ │ │ │ ┃ ./main.go:6:6: undefined: ctx
+│ │ │ │ ! process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
 
 Error logs:
 

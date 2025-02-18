@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -37,7 +39,7 @@ func initializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDe
 	if modRef == "" {
 		modRef = moduleURLDefault
 	}
-	return initializeModule(ctx, dag, modRef, true)
+	return initializeModule(ctx, dag, modRef)
 }
 
 // maybeInitializeDefaultModule optionally loads the module referenced by the -m,--mod flag,
@@ -47,7 +49,13 @@ func maybeInitializeDefaultModule(ctx context.Context, dag *dagger.Client) (*mod
 	if modRef == "" {
 		modRef = moduleURLDefault
 	}
-	return maybeInitializeModule(ctx, dag, modRef)
+
+	if def, err := initializeModule(ctx, dag, modRef); def != nil || err != nil {
+		return def, modRef, err
+	}
+
+	def, err := initializeCore(ctx, dag)
+	return def, "", err
 }
 
 // initializeModule loads the module at the given source ref
@@ -57,68 +65,31 @@ func initializeModule(
 	ctx context.Context,
 	dag *dagger.Client,
 	srcRef string,
-	doFindUp bool,
 	srcOpts ...dagger.ModuleSourceOpts,
 ) (rdef *moduleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "load module")
 	defer telemetry.End(span, func() error { return rerr })
 
 	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
-	conf, err := getModuleConfigurationForSourceRef(findCtx, dag, srcRef, doFindUp, true, srcOpts...)
+	modSrc := dag.ModuleSource(srcRef, srcOpts...)
+	configExists, err := modSrc.ConfigExists(findCtx)
 	telemetry.End(findSpan, func() error { return err })
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get configured module: %w", err)
 	}
-	if !conf.FullyInitialized() {
-		return nil, fmt.Errorf("module must be fully initialized")
-	}
-
-	return initializeModuleConfig(ctx, dag, conf)
-}
-
-// maybeInitializeModule optionally loads the module at the given source ref,
-// falling back to the core definitions if the module isn't found
-func maybeInitializeModule(ctx context.Context, dag *dagger.Client, srcRef string) (*moduleDef, string, error) {
-	if def, err := tryInitializeModule(ctx, dag, srcRef); def != nil || err != nil {
-		return def, srcRef, err
-	}
-
-	def, err := initializeCore(ctx, dag)
-	return def, "", err
-}
-
-// tryInitializeModule tries to load a module if it exists
-//
-// Returns an error if the module is invalid or couldn't be loaded, but not
-// if the module wasn't found.
-func tryInitializeModule(ctx context.Context, dag *dagger.Client, srcRef string) (rdef *moduleDef, rerr error) {
-	ctx, span := Tracer().Start(ctx, "looking for module")
-	defer telemetry.End(span, func() error { return rerr })
-
-	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
-	conf, _ := getModuleConfigurationForSourceRef(findCtx, dag, srcRef, true, true)
-	findSpan.End()
-
-	if conf == nil || !conf.FullyInitialized() {
+	if !configExists {
 		return nil, nil
 	}
 
-	span.SetName("load module " + srcRef)
-
-	return initializeModuleConfig(ctx, dag, conf)
-}
-
-// initializeModuleConfig loads a module using a detected module configuration
-func initializeModuleConfig(ctx context.Context, dag *dagger.Client, conf *configuredModule) (rdef *moduleDef, rerr error) {
 	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())
-	err := conf.Source.AsModule().Initialize().Serve(serveCtx)
+	err = modSrc.AsModule().Serve(serveCtx)
 	telemetry.End(serveSpan, func() error { return err })
 	if err != nil {
 		return nil, fmt.Errorf("failed to serve module: %w", err)
 	}
 
-	def, err := inspectModule(ctx, dag, conf.Source)
+	def, err := inspectModule(ctx, dag, modSrc)
 	if err != nil {
 		return nil, err
 	}
@@ -185,11 +156,10 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 	var res struct {
 		Source struct {
 			AsString string
+			Kind     dagger.ModuleSourceKind
 			Module   struct {
-				Name       string
-				Initialize struct {
-					Description string
-				}
+				Name         string
+				Description  string
 				Dependencies []struct {
 					Name        string
 					Description string
@@ -233,8 +203,22 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 		Source:       source,
 		ModRef:       res.Source.AsString,
 		Name:         res.Source.Module.Name,
-		Description:  res.Source.Module.Initialize.Description,
+		Description:  res.Source.Module.Description,
 		Dependencies: deps,
+	}
+
+	// if this is a local module source, make the mod ref relative to the caller
+	// since that is usually a shorter+easier to work with path
+	if res.Source.Kind == dagger.ModuleSourceKindLocalSource {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+		relPath, err := filepath.Rel(cwd, def.ModRef)
+		if err != nil {
+			return nil, err
+		}
+		def.ModRef = relPath
 	}
 
 	return def, nil
