@@ -61,6 +61,17 @@ async greeting(): Promise<string> {
 ```
 
 </TabItem>
+<TabItem value="PHP">
+
+```php
+#[DaggerFunction]
+public function greeting(): string
+{
+    return dag()->hello()->hello();
+}
+```
+
+</TabItem>
 </Tabs>
 
 Here is a more complex example. It is a Dagger Function that utilizes a module from the Daggerverse to build a Go project, then chains a Dagger API method to open an interactive terminal session in the build directory.
@@ -84,6 +95,10 @@ Next, create a new Dagger Function:
 </TabItem>
 <TabItem value="TypeScript">
 ```typescript file=./snippets/dependencies/chaining/typescript/index.ts
+```
+</TabItem>
+<TabItem value="PHP">
+```php file=./snippets/dependencies/chaining/php/src/MyModule.php
 ```
 </TabItem>
 </Tabs>
