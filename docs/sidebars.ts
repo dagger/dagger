@@ -191,7 +191,6 @@ module.exports = {
         "integrations/kubernetes",
         "integrations/nerdctl",
         "integrations/openshift",
-        "integrations/php",
         "integrations/podman",
       ],
     },
