@@ -701,7 +701,6 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 	}
 
 	dirSrc.Digest = dirSrc.CalcDigest().String()
-	inst = inst.WithMetadata(digest.Digest(dirSrc.Digest), true)
 	return inst, nil
 }
 
