@@ -45,7 +45,7 @@ var validInbuiltSDKs = []SDK{
 }
 
 // load the SDK implementation with the given name for the module at the given source dir + subpath.
-func (s *moduleSchema) sdkForModule(
+func (s *moduleSourceSchema) sdkForModule(
 	ctx context.Context,
 	query *core.Query,
 	sdk *core.SDKConfig,
@@ -145,7 +145,7 @@ The %q SDK does not exist. The available SDKs are:
 }
 
 // return a builtin SDK implementation with the given name
-func (s *moduleSchema) builtinSDK(ctx context.Context, root *core.Query, sdk *core.SDKConfig) (core.SDK, error) {
+func (s *moduleSourceSchema) builtinSDK(ctx context.Context, root *core.Query, sdk *core.SDKConfig) (core.SDK, error) {
 	sdkNameParsed, sdkSuffix, err := parseSDKName(sdk.Source)
 	if err != nil {
 		return nil, err
@@ -179,7 +179,7 @@ type moduleSDK struct {
 	sdk dagql.Object
 }
 
-func (s *moduleSchema) newModuleSDK(
+func (s *moduleSourceSchema) newModuleSDK(
 	ctx context.Context,
 	root *core.Query,
 	sdkModMeta dagql.Instance[*core.Module],
@@ -297,7 +297,7 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, deps *core.ModDeps, source da
 
 // loadBuiltinSDK loads an SDK implemented as a module that is "builtin" to engine, which means its pre-packaged
 // with the engine container in order to enable use w/out hard dependencies on the internet
-func (s *moduleSchema) loadBuiltinSDK(
+func (s *moduleSourceSchema) loadBuiltinSDK(
 	ctx context.Context,
 	root *core.Query,
 	name string,

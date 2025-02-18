@@ -27,6 +27,129 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+type moduleSourceSchema struct {
+	dag *dagql.Server
+}
+
+var _ SchemaResolvers = &moduleSourceSchema{}
+
+func (s *moduleSourceSchema) Install() {
+	dagql.Fields[*core.Query]{
+		dagql.NodeFuncWithCacheKey("moduleSource", s.moduleSource, s.moduleSourceCacheKey).
+			ArgDoc("refString", `The string ref representation of the module source`).
+			ArgDoc("refPin", `The pinned version of the module source`).
+			ArgDoc("disableFindUp", `If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.`).
+			ArgDoc("allowNotExists", `If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.`).
+			ArgDoc("requireKind", `If set, error out if the ref string is not of the provided requireKind.`).
+			Doc(`Create a new module source instance from a source ref string`),
+	}.Install(s.dag)
+
+	dagql.Fields[*core.Directory]{
+		dagql.NodeFunc("asModule", s.directoryAsModule).
+			Doc(`Load the directory as a Dagger module source`).
+			ArgDoc("sourceRootPath",
+				`An optional subpath of the directory which contains the module's configuration file.`,
+				`If not set, the module source code is loaded from the root of the directory.`),
+		dagql.NodeFunc("asModuleSource", s.directoryAsModuleSource).
+			Doc(`Load the directory as a Dagger module source`).
+			ArgDoc("sourceRootPath",
+				`An optional subpath of the directory which contains the module's configuration file.`,
+				`If not set, the module source code is loaded from the root of the directory.`),
+	}.Install(s.dag)
+
+	dagql.Fields[*core.ModuleSource]{
+		// sync is used by external dependencies like daggerverse
+		Syncer[*core.ModuleSource]().
+			Doc(`Forces evaluation of the module source, including any loading into the engine and associated validation.`),
+
+		dagql.Func("sourceSubpath", s.moduleSourceSubpath).
+			Doc(`The path to the directory containing the module's source code, relative to the context directory.`),
+
+		dagql.FuncWithCacheKey("withSourceSubpath", s.moduleSourceWithSourceSubpath, core.CachePerClient).
+			Doc(`Update the module source with a new source subpath.`).
+			ArgDoc("path", `The path to set as the source subpath. Must be relative to the module source's source root directory.`),
+
+		dagql.Func("withName", s.moduleSourceWithName).
+			Doc(`Update the module source with a new name.`).
+			ArgDoc("name", `The name to set.`),
+
+		dagql.FuncWithCacheKey("withIncludes", s.moduleSourceWithIncludes, core.CachePerClient).
+			Doc(`Update the module source with additional include patterns for files+directories from its context that are required for building it`).
+			ArgDoc("patterns", `The new additional include patterns.`),
+
+		dagql.Func("withSDK", s.moduleSourceWithSDK).
+			Doc(`Update the module source with a new SDK.`).
+			ArgDoc("source", `The SDK source to set.`),
+
+		dagql.Func("withEngineVersion", s.moduleSourceWithEngineVersion).
+			Doc(`Upgrade the engine version of the module to the given value.`).
+			ArgDoc("version", `The engine version to upgrade to.`),
+
+		dagql.Func("withDependencies", s.moduleSourceWithDependencies).
+			Doc(`Append the provided dependencies to the module source's dependency list.`).
+			ArgDoc("dependencies", `The dependencies to append.`),
+
+		dagql.NodeFunc("withUpdateDependencies", s.moduleSourceWithUpdateDependencies).
+			Doc(`Update one or more module dependencies.`).
+			ArgDoc("dependencies", `The dependencies to update.`),
+
+		dagql.Func("withoutDependencies", s.moduleSourceWithoutDependencies).
+			Doc(`Remove the provided dependencies from the module source's dependency list.`).
+			ArgDoc("dependencies", `The dependencies to remove.`),
+
+		dagql.NodeFunc("generatedContextDirectory", s.moduleSourceGeneratedContextDirectory).
+			Doc(`The generated files and directories made on top of the module source's context directory.`),
+
+		dagql.Func("asString", s.moduleSourceAsString).
+			Doc(`A human readable ref string representation of this module source.`),
+
+		dagql.Func("pin", s.moduleSourcePin).
+			Doc(`The pinned version of this module source.`),
+
+		dagql.Func("localContextDirectoryPath", s.moduleSourceLocalContextDirectoryPath).
+			Doc(`The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.`),
+
+		dagql.NodeFunc("asModule", s.moduleSourceAsModule).
+			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`),
+
+		dagql.Func("directory", s.moduleSourceDirectory).
+			Doc(`The directory containing the module configuration and source code (source code may be in a subdir).`).
+			ArgDoc(`path`, `A subpath from the source directory to select.`),
+
+		dagql.Func("cloneRef", s.moduleSourceCloneRef).
+			Doc(`The ref to clone the root of the git repo from. Only valid for git sources.`),
+
+		dagql.Func("htmlURL", s.moduleSourceHTMLURL).
+			Doc(`The URL to the source's git repo in a web browser. Only valid for git sources.`),
+
+		dagql.Func("htmlRepoURL", s.moduleSourceHTMLRepoURL).
+			Doc(`The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources.`),
+
+		dagql.Func("version", s.moduleSourceVersion).
+			Doc(`The specified version of the git repo this source points to. Only valid for git sources.`),
+
+		dagql.Func("commit", s.moduleSourceCommit).
+			Doc(`The resolved commit of the git repo this source points to. Only valid for git sources.`),
+
+		dagql.Func("repoRootPath", s.moduleSourceRepoRootPath).
+			Doc(`The import path corresponding to the root of the git repo this source points to. Only valid for git sources.`),
+
+		dagql.Func("cloneURL", s.moduleSourceCloneURL).
+			View(BeforeVersion("v0.13.0")).
+			Doc(`The URL to clone the root of the git repo from`).
+			Deprecated("Use `cloneRef` instead. `cloneRef` supports both URL-style and SCP-like SSH references"),
+	}.Install(s.dag)
+
+	dagql.Fields[*core.SDKConfig]{}.Install(s.dag)
+
+	dagql.Fields[*core.GeneratedCode]{
+		dagql.Func("withVCSGeneratedPaths", s.generatedCodeWithVCSGeneratedPaths).
+			Doc(`Set the list of paths to mark generated in version control.`),
+		dagql.Func("withVCSIgnoredPaths", s.generatedCodeWithVCSIgnoredPaths).
+			Doc(`Set the list of paths to ignore in version control.`),
+	}.Install(s.dag)
+}
+
 type moduleSourceArgs struct {
 	// avoiding name "ref" due to that being a reserved word in some SDKs (e.g. Rust)
 	RefString      string
@@ -36,7 +159,7 @@ type moduleSourceArgs struct {
 	RequireKind    dagql.Optional[core.ModuleSourceKind]
 }
 
-func (s *moduleSchema) moduleSourceCacheKey(ctx context.Context, query dagql.Instance[*core.Query], args moduleSourceArgs, origDgst digest.Digest) (digest.Digest, error) {
+func (s *moduleSourceSchema) moduleSourceCacheKey(ctx context.Context, query dagql.Instance[*core.Query], args moduleSourceArgs, origDgst digest.Digest) (digest.Digest, error) {
 	if fastModuleSourceKindCheck(args.RefString, args.RefPin) == core.ModuleSourceKindGit {
 		return origDgst, nil
 	}
@@ -44,7 +167,7 @@ func (s *moduleSchema) moduleSourceCacheKey(ctx context.Context, query dagql.Ins
 	return core.CachePerClient(ctx, query, args, origDgst)
 }
 
-func (s *moduleSchema) moduleSource(
+func (s *moduleSourceSchema) moduleSource(
 	ctx context.Context,
 	query dagql.Instance[*core.Query],
 	args moduleSourceArgs,
@@ -81,7 +204,7 @@ func (s *moduleSchema) moduleSource(
 }
 
 //nolint:gocyclo
-func (s *moduleSchema) localModuleSource(
+func (s *moduleSourceSchema) localModuleSource(
 	ctx context.Context,
 	query dagql.Instance[*core.Query],
 	bk *buildkit.Client,
@@ -305,7 +428,7 @@ func (s *moduleSchema) localModuleSource(
 	return dagql.NewInstanceForCurrentID(ctx, s.dag, query, localSrc)
 }
 
-func (s *moduleSchema) gitModuleSource(
+func (s *moduleSourceSchema) gitModuleSource(
 	ctx context.Context,
 	query dagql.Instance[*core.Query],
 	parsed *parsedGitRefString,
@@ -475,7 +598,7 @@ type directoryAsModuleArgs struct {
 	SourceRootPath string `default:"."`
 }
 
-func (s *moduleSchema) directoryAsModule(
+func (s *moduleSourceSchema) directoryAsModule(
 	ctx context.Context,
 	contextDir dagql.Instance[*core.Directory],
 	args directoryAsModuleArgs,
@@ -494,7 +617,7 @@ func (s *moduleSchema) directoryAsModule(
 	return inst, err
 }
 
-func (s *moduleSchema) directoryAsModuleSource(
+func (s *moduleSourceSchema) directoryAsModuleSource(
 	ctx context.Context,
 	contextDir dagql.Instance[*core.Directory],
 	args directoryAsModuleArgs,
@@ -583,7 +706,7 @@ func (s *moduleSchema) directoryAsModuleSource(
 }
 
 // set values in the given src using values read from the module config file provided as bytes
-func (s *moduleSchema) initFromModConfig(configBytes []byte, src *core.ModuleSource) error {
+func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.ModuleSource) error {
 	// sanity checks
 	if src.SourceRootSubpath == "" {
 		return fmt.Errorf("source root path must be set")
@@ -654,7 +777,7 @@ func (s *moduleSchema) initFromModConfig(configBytes []byte, src *core.ModuleSou
 }
 
 // load (or re-load) the context directory for the given module source
-func (s *moduleSchema) loadModuleSourceContext(
+func (s *moduleSourceSchema) loadModuleSourceContext(
 	ctx context.Context,
 	bk *buildkit.Client,
 	src *core.ModuleSource,
@@ -720,7 +843,7 @@ func (s *moduleSchema) loadModuleSourceContext(
 }
 
 // given a parent module source, load a dependency of it from the given depSrcRef, depPin and depName
-func (s *moduleSchema) resolveDepToSource(
+func (s *moduleSourceSchema) resolveDepToSource(
 	ctx context.Context,
 	bk *buildkit.Client,
 	parentSrc *core.ModuleSource,
@@ -883,7 +1006,7 @@ func (s *moduleSchema) resolveDepToSource(
 	}
 }
 
-func (s *moduleSchema) moduleSourceSubpath(
+func (s *moduleSourceSchema) moduleSourceSubpath(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct{},
@@ -891,7 +1014,7 @@ func (s *moduleSchema) moduleSourceSubpath(
 	return src.SourceSubpath, nil
 }
 
-func (s *moduleSchema) moduleSourceWithSourceSubpath(
+func (s *moduleSourceSchema) moduleSourceWithSourceSubpath(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct {
@@ -938,7 +1061,7 @@ func (s *moduleSchema) moduleSourceWithSourceSubpath(
 	return src, nil
 }
 
-func (s *moduleSchema) moduleSourceAsString(
+func (s *moduleSourceSchema) moduleSourceAsString(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct{},
@@ -946,7 +1069,7 @@ func (s *moduleSchema) moduleSourceAsString(
 	return src.AsString(), nil
 }
 
-func (s *moduleSchema) moduleSourcePin(
+func (s *moduleSourceSchema) moduleSourcePin(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct{},
@@ -954,7 +1077,7 @@ func (s *moduleSchema) moduleSourcePin(
 	return src.Pin(), nil
 }
 
-func (s *moduleSchema) moduleSourceWithName(
+func (s *moduleSourceSchema) moduleSourceWithName(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct {
@@ -971,7 +1094,7 @@ func (s *moduleSchema) moduleSourceWithName(
 	return src, nil
 }
 
-func (s *moduleSchema) moduleSourceWithIncludes(
+func (s *moduleSourceSchema) moduleSourceWithIncludes(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct {
@@ -1011,7 +1134,7 @@ func (s *moduleSchema) moduleSourceWithIncludes(
 	return src, nil
 }
 
-func (s *moduleSchema) moduleSourceWithSDK(
+func (s *moduleSourceSchema) moduleSourceWithSDK(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct {
@@ -1043,7 +1166,7 @@ func (s *moduleSchema) moduleSourceWithSDK(
 	return src, nil
 }
 
-func (s *moduleSchema) moduleSourceDirectory(
+func (s *moduleSourceSchema) moduleSourceDirectory(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct {
@@ -1067,7 +1190,7 @@ func (s *moduleSchema) moduleSourceDirectory(
 	return inst, err
 }
 
-func (s *moduleSchema) moduleSourceCloneRef(
+func (s *moduleSourceSchema) moduleSourceCloneRef(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct{},
@@ -1079,7 +1202,7 @@ func (s *moduleSchema) moduleSourceCloneRef(
 	return src.Git.CloneRef, nil
 }
 
-func (s *moduleSchema) moduleSourceCloneURL(
+func (s *moduleSourceSchema) moduleSourceCloneURL(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct{},
@@ -1091,7 +1214,7 @@ func (s *moduleSchema) moduleSourceCloneURL(
 	return src.Git.CloneRef, nil
 }
 
-func (s *moduleSchema) moduleSourceHTMLURL(
+func (s *moduleSourceSchema) moduleSourceHTMLURL(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct{},
@@ -1103,7 +1226,7 @@ func (s *moduleSchema) moduleSourceHTMLURL(
 	return src.Git.HTMLURL, nil
 }
 
-func (s *moduleSchema) moduleSourceHTMLRepoURL(
+func (s *moduleSourceSchema) moduleSourceHTMLRepoURL(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct{},
@@ -1115,7 +1238,7 @@ func (s *moduleSchema) moduleSourceHTMLRepoURL(
 	return src.Git.HTMLRepoURL, nil
 }
 
-func (s *moduleSchema) moduleSourceVersion(
+func (s *moduleSourceSchema) moduleSourceVersion(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct{},
@@ -1127,7 +1250,7 @@ func (s *moduleSchema) moduleSourceVersion(
 	return src.Git.Version, nil
 }
 
-func (s *moduleSchema) moduleSourceCommit(
+func (s *moduleSourceSchema) moduleSourceCommit(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct{},
@@ -1139,7 +1262,7 @@ func (s *moduleSchema) moduleSourceCommit(
 	return src.Git.Commit, nil
 }
 
-func (s *moduleSchema) moduleSourceRepoRootPath(
+func (s *moduleSourceSchema) moduleSourceRepoRootPath(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct{},
@@ -1151,7 +1274,7 @@ func (s *moduleSchema) moduleSourceRepoRootPath(
 	return src.Git.RepoRootPath, nil
 }
 
-func (s *moduleSchema) moduleSourceWithEngineVersion(
+func (s *moduleSourceSchema) moduleSourceWithEngineVersion(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct {
@@ -1174,7 +1297,7 @@ func (s *moduleSchema) moduleSourceWithEngineVersion(
 	return src, nil
 }
 
-func (s *moduleSchema) moduleSourceLocalContextDirectoryPath(
+func (s *moduleSourceSchema) moduleSourceLocalContextDirectoryPath(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct{},
@@ -1185,7 +1308,19 @@ func (s *moduleSchema) moduleSourceLocalContextDirectoryPath(
 	return src.Local.ContextDirectoryPath, nil
 }
 
-func (s *moduleSchema) moduleSourceWithDependencies(
+func (s *moduleSourceSchema) generatedCodeWithVCSGeneratedPaths(ctx context.Context, code *core.GeneratedCode, args struct {
+	Paths []string
+}) (*core.GeneratedCode, error) {
+	return code.WithVCSGeneratedPaths(args.Paths), nil
+}
+
+func (s *moduleSourceSchema) generatedCodeWithVCSIgnoredPaths(ctx context.Context, code *core.GeneratedCode, args struct {
+	Paths []string
+}) (*core.GeneratedCode, error) {
+	return code.WithVCSIgnoredPaths(args.Paths), nil
+}
+
+func (s *moduleSourceSchema) moduleSourceWithDependencies(
 	ctx context.Context,
 	parentSrc *core.ModuleSource,
 	args struct {
@@ -1299,7 +1434,7 @@ func (s *moduleSchema) moduleSourceWithDependencies(
 	return parentSrc, nil
 }
 
-func (s *moduleSchema) moduleSourceWithUpdateDependencies(
+func (s *moduleSourceSchema) moduleSourceWithUpdateDependencies(
 	ctx context.Context,
 	parentSrc dagql.Instance[*core.ModuleSource],
 	args struct {
@@ -1438,7 +1573,7 @@ func (s *moduleSchema) moduleSourceWithUpdateDependencies(
 	return inst, err
 }
 
-func (s *moduleSchema) moduleSourceWithoutDependencies(
+func (s *moduleSourceSchema) moduleSourceWithoutDependencies(
 	ctx context.Context,
 	parentSrc *core.ModuleSource,
 	args struct {
@@ -1536,7 +1671,7 @@ func (s *moduleSchema) moduleSourceWithoutDependencies(
 }
 
 //nolint:gocyclo
-func (s *moduleSchema) moduleSourceGeneratedContextDirectory(
+func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 	ctx context.Context,
 	srcInst dagql.Instance[*core.ModuleSource],
 	args struct{},
@@ -1795,7 +1930,7 @@ func (s *moduleSchema) moduleSourceGeneratedContextDirectory(
 	return genDirInst, nil
 }
 
-func (s *moduleSchema) moduleSourceAsModule(
+func (s *moduleSourceSchema) moduleSourceAsModule(
 	ctx context.Context,
 	src dagql.Instance[*core.ModuleSource],
 	args struct{},
@@ -1917,7 +2052,7 @@ func (s *moduleSchema) moduleSourceAsModule(
 }
 
 // load the given module source's dependencies as modules
-func (s *moduleSchema) loadDependencyModules(ctx context.Context, src *core.ModuleSource) (*core.ModDeps, error) {
+func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src *core.ModuleSource) (*core.ModDeps, error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "load dep modules", telemetry.Internal())
 	defer span.End()
 
