@@ -437,18 +437,6 @@ func (h *shellCallHandler) Prompt(out *termenv.Output, fg termenv.Color) string 
 	return sb.String()
 }
 
-// withTerminal handles using stdin, stdout, and stderr when the TUI is running
-func (h *shellCallHandler) withTerminal(fn func(stdin io.Reader, stdout, stderr io.Writer) error) error {
-	if h.repl && h.tty {
-		return Frontend.Background(&terminalSession{
-			fn: func(stdin io.Reader, stdout, stderr io.Writer) error {
-				return fn(stdin, stdout, stderr)
-			},
-		}, false)
-	}
-	return fn(h.stdin, h.stdout, h.stderr)
-}
-
 func (*shellCallHandler) Print(ctx context.Context, args ...any) error {
 	hctx := interp.HandlerCtx(ctx)
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
