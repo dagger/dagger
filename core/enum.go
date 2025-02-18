@@ -156,6 +156,10 @@ func (e *ModuleEnum) Decoder() dagql.InputDecoder {
 }
 
 func (e *ModuleEnum) DecodeInput(val any) (dagql.Input, error) {
+	if enum, ok := val.(*ModuleEnum); ok {
+		val = enum.Name
+	}
+
 	v, err := (&dagql.EnumValueName{Enum: e.TypeName()}).DecodeInput(val)
 	if err != nil {
 		return nil, err
