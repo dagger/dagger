@@ -47,7 +47,11 @@ func (s llmSchema) Install() {
 }
 
 func (s *llmSchema) model(ctx context.Context, llm *core.Llm, args struct{}) (dagql.String, error) {
-	return dagql.NewString(llm.Config.Model), nil
+	var provider string
+	if llm.Endpoint != nil {
+		provider = string(llm.Endpoint.Provider)
+	}
+	return dagql.NewString(llm.Model + "(" + provider + ")"), nil
 }
 
 func (s *llmSchema) lastReply(ctx context.Context, llm *core.Llm, args struct{}) (dagql.String, error) {
