@@ -243,14 +243,18 @@ func NewLlmRouter(ctx context.Context, srv *dagql.Server) (*LlmRouter, error) {
 }
 
 func NewLlm(ctx context.Context, query *Query, srv *dagql.Server, model string) (*Llm, error) {
-	root := srv.Root().(dagql.Instance[*Query]).Self
-	mainSrv, err := root.MainServer(ctx)
-	if err != nil {
-		return nil, err
-	}
-	router, err := NewLlmRouter(ctx, mainSrv)
-	if err != nil {
-		return nil, err
+	var router *LlmRouter
+	{
+		// Don't leak this context, it's specific to querying the parent client for llm config secrets
+		// FIXME: clean up this function
+		ctx, mainSrv, err := query.MainServer(ctx)
+		if err != nil {
+			return nil, err
+		}
+		router, err = NewLlmRouter(ctx, mainSrv)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if model == "" {
 		model = router.DefaultModel()

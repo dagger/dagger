@@ -108,7 +108,7 @@ type Server interface {
 	OpenClientDB(clientID string) (*sql.DB, error)
 
 	// Retrieve the main client's DagQL server
-	MainServer(context.Context) (*dagql.Server, error)
+	MainServer(context.Context) (context.Context, *dagql.Server, error)
 }
 
 func NewRoot(srv Server) *Query {
