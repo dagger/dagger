@@ -197,6 +197,18 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Initialize a Large Language Model (LLM)
+     */
+    public function llm(?string $model = null): Llm
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('llm');
+        if (null !== $model) {
+        $innerQueryBuilder->setArgument('model', $model);
+        }
+        return new \Dagger\Llm($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a CacheVolume from its ID.
      */
     public function loadCacheVolumeFromID(CacheVolumeId|CacheVolume $id): CacheVolume
@@ -465,6 +477,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadListTypeDefFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\ListTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Llm from its ID.
+     */
+    public function loadLlmFromID(LlmId|Llm $id): Llm
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadLlmFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Llm($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

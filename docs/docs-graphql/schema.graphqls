@@ -2202,6 +2202,363 @@ The `ListTypeDefID` scalar type represents an identifier for an object of type L
 """
 scalar ListTypeDefID
 
+type Llm {
+  """Retrieve the llm state as a CacheVolume"""
+  CacheVolume: CacheVolume!
+
+  """Retrieve the llm state as a Container"""
+  Container: Container!
+
+  """Retrieve the llm state as a CurrentModule"""
+  CurrentModule: CurrentModule!
+
+  """Retrieve the llm state as a Directory"""
+  Directory: Directory!
+
+  """Retrieve the llm state as a EnumTypeDef"""
+  EnumTypeDef: EnumTypeDef!
+
+  """Retrieve the llm state as a EnumValueTypeDef"""
+  EnumValueTypeDef: EnumValueTypeDef!
+
+  """Retrieve the llm state as a Error"""
+  Error: Error!
+
+  """Retrieve the llm state as a FieldTypeDef"""
+  FieldTypeDef: FieldTypeDef!
+
+  """Retrieve the llm state as a File"""
+  File: File!
+
+  """Retrieve the llm state as a Function"""
+  Function: Function!
+
+  """Retrieve the llm state as a FunctionArg"""
+  FunctionArg: FunctionArg!
+
+  """Retrieve the llm state as a FunctionCall"""
+  FunctionCall: FunctionCall!
+
+  """Retrieve the llm state as a FunctionCallArgValue"""
+  FunctionCallArgValue: FunctionCallArgValue!
+
+  """Retrieve the llm state as a GeneratedCode"""
+  GeneratedCode: GeneratedCode!
+
+  """Retrieve the llm state as a GitModuleSource"""
+  GitModuleSource: GitModuleSource!
+
+  """Retrieve the llm state as a GitRef"""
+  GitRef: GitRef!
+
+  """Retrieve the llm state as a GitRepository"""
+  GitRepository: GitRepository!
+
+  """return the llm message history"""
+  history: [String!]!
+
+  """A unique identifier for this Llm."""
+  id: LlmID!
+
+  """Retrieve the llm state as a InputTypeDef"""
+  InputTypeDef: InputTypeDef!
+
+  """Retrieve the llm state as a InterfaceTypeDef"""
+  InterfaceTypeDef: InterfaceTypeDef!
+
+  """return the last llm reply from the history"""
+  lastReply: String!
+
+  """Retrieve the llm state as a ListTypeDef"""
+  ListTypeDef: ListTypeDef!
+
+  """Retrieve the llm state as a LocalModuleSource"""
+  LocalModuleSource: LocalModuleSource!
+
+  """
+  send the context to the LLM endpoint, process replies and tool calls; continue in a loop
+  """
+  loop(
+    """The maximum number of loops to allow."""
+    maxLoops: Int
+  ): Llm!
+
+  """return the model used by the llm"""
+  model: String!
+
+  """Retrieve the llm state as a Module"""
+  Module: Module!
+
+  """Retrieve the llm state as a ModuleDependency"""
+  ModuleDependency: ModuleDependency!
+
+  """Retrieve the llm state as a ModuleSource"""
+  ModuleSource: ModuleSource!
+
+  """Retrieve the llm state as a ModuleSourceView"""
+  ModuleSourceView: ModuleSourceView!
+
+  """Retrieve the llm state as a ObjectTypeDef"""
+  ObjectTypeDef: ObjectTypeDef!
+
+  """Retrieve the llm state as a ScalarTypeDef"""
+  ScalarTypeDef: ScalarTypeDef!
+
+  """Retrieve the llm state as a SDKConfig"""
+  SDKConfig: SDKConfig
+
+  """Retrieve the llm state as a Secret"""
+  Secret: Secret!
+
+  """Retrieve the llm state as a Service"""
+  Service: Service!
+
+  """Retrieve the llm state as a Socket"""
+  Socket: Socket!
+
+  """Retrieve the llm state as a SourceMap"""
+  SourceMap: SourceMap!
+
+  """Retrieve the llm state as a Terminal"""
+  Terminal: Terminal!
+
+  """print documentation for available tools"""
+  tools: String!
+
+  """Retrieve the llm state as a TypeDef"""
+  TypeDef: TypeDef!
+
+  """Set the llm state to a CacheVolume"""
+  withCacheVolume(
+    """The value of the CacheVolume to save"""
+    value: CacheVolumeID!
+  ): Llm!
+
+  """Set the llm state to a Container"""
+  withContainer(
+    """The value of the Container to save"""
+    value: ContainerID!
+  ): Llm!
+
+  """Set the llm state to a CurrentModule"""
+  withCurrentModule(
+    """The value of the CurrentModule to save"""
+    value: CurrentModuleID!
+  ): Llm!
+
+  """Set the llm state to a Directory"""
+  withDirectory(
+    """The value of the Directory to save"""
+    value: DirectoryID!
+  ): Llm!
+
+  """Set the llm state to a EnumTypeDef"""
+  withEnumTypeDef(
+    """The value of the EnumTypeDef to save"""
+    value: EnumTypeDefID!
+  ): Llm!
+
+  """Set the llm state to a EnumValueTypeDef"""
+  withEnumValueTypeDef(
+    """The value of the EnumValueTypeDef to save"""
+    value: EnumValueTypeDefID!
+  ): Llm!
+
+  """Set the llm state to a Error"""
+  withError(
+    """The value of the Error to save"""
+    value: ErrorID!
+  ): Llm!
+
+  """Set the llm state to a FieldTypeDef"""
+  withFieldTypeDef(
+    """The value of the FieldTypeDef to save"""
+    value: FieldTypeDefID!
+  ): Llm!
+
+  """Set the llm state to a File"""
+  withFile(
+    """The value of the File to save"""
+    value: FileID!
+  ): Llm!
+
+  """Set the llm state to a Function"""
+  withFunction(
+    """The value of the Function to save"""
+    value: FunctionID!
+  ): Llm!
+
+  """Set the llm state to a FunctionArg"""
+  withFunctionArg(
+    """The value of the FunctionArg to save"""
+    value: FunctionArgID!
+  ): Llm!
+
+  """Set the llm state to a FunctionCall"""
+  withFunctionCall(
+    """The value of the FunctionCall to save"""
+    value: FunctionCallID!
+  ): Llm!
+
+  """Set the llm state to a FunctionCallArgValue"""
+  withFunctionCallArgValue(
+    """The value of the FunctionCallArgValue to save"""
+    value: FunctionCallArgValueID!
+  ): Llm!
+
+  """Set the llm state to a GeneratedCode"""
+  withGeneratedCode(
+    """The value of the GeneratedCode to save"""
+    value: GeneratedCodeID!
+  ): Llm!
+
+  """Set the llm state to a GitModuleSource"""
+  withGitModuleSource(
+    """The value of the GitModuleSource to save"""
+    value: GitModuleSourceID!
+  ): Llm!
+
+  """Set the llm state to a GitRef"""
+  withGitRef(
+    """The value of the GitRef to save"""
+    value: GitRefID!
+  ): Llm!
+
+  """Set the llm state to a GitRepository"""
+  withGitRepository(
+    """The value of the GitRepository to save"""
+    value: GitRepositoryID!
+  ): Llm!
+
+  """Set the llm state to a InputTypeDef"""
+  withInputTypeDef(
+    """The value of the InputTypeDef to save"""
+    value: InputTypeDefID!
+  ): Llm!
+
+  """Set the llm state to a InterfaceTypeDef"""
+  withInterfaceTypeDef(
+    """The value of the InterfaceTypeDef to save"""
+    value: InterfaceTypeDefID!
+  ): Llm!
+
+  """Set the llm state to a ListTypeDef"""
+  withListTypeDef(
+    """The value of the ListTypeDef to save"""
+    value: ListTypeDefID!
+  ): Llm!
+
+  """Set the llm state to a LocalModuleSource"""
+  withLocalModuleSource(
+    """The value of the LocalModuleSource to save"""
+    value: LocalModuleSourceID!
+  ): Llm!
+
+  """Set the llm state to a Module"""
+  withModule(
+    """The value of the Module to save"""
+    value: ModuleID!
+  ): Llm!
+
+  """Set the llm state to a ModuleDependency"""
+  withModuleDependency(
+    """The value of the ModuleDependency to save"""
+    value: ModuleDependencyID!
+  ): Llm!
+
+  """Set the llm state to a ModuleSource"""
+  withModuleSource(
+    """The value of the ModuleSource to save"""
+    value: ModuleSourceID!
+  ): Llm!
+
+  """Set the llm state to a ModuleSourceView"""
+  withModuleSourceView(
+    """The value of the ModuleSourceView to save"""
+    value: ModuleSourceViewID!
+  ): Llm!
+
+  """Set the llm state to a ObjectTypeDef"""
+  withObjectTypeDef(
+    """The value of the ObjectTypeDef to save"""
+    value: ObjectTypeDefID!
+  ): Llm!
+
+  """append a prompt to the llm context"""
+  withPrompt(
+    """The prompt to send"""
+    prompt: String!
+  ): Llm!
+
+  """append the contents of a file to the llm context"""
+  withPromptFile(
+    """The file to read the prompt from"""
+    file: FileID!
+  ): Llm!
+
+  """set a variable for expansion in the prompt"""
+  withPromptVar(
+    """The name of the variable"""
+    name: String!
+
+    """The value of the variable"""
+    value: String!
+  ): Llm!
+
+  """Set the llm state to a ScalarTypeDef"""
+  withScalarTypeDef(
+    """The value of the ScalarTypeDef to save"""
+    value: ScalarTypeDefID!
+  ): Llm!
+
+  """Set the llm state to a SDKConfig"""
+  withSDKConfig(
+    """The value of the SDKConfig to save"""
+    value: SDKConfigID!
+  ): Llm!
+
+  """Set the llm state to a Secret"""
+  withSecret(
+    """The value of the Secret to save"""
+    value: SecretID!
+  ): Llm!
+
+  """Set the llm state to a Service"""
+  withService(
+    """The value of the Service to save"""
+    value: ServiceID!
+  ): Llm!
+
+  """Set the llm state to a Socket"""
+  withSocket(
+    """The value of the Socket to save"""
+    value: SocketID!
+  ): Llm!
+
+  """Set the llm state to a SourceMap"""
+  withSourceMap(
+    """The value of the SourceMap to save"""
+    value: SourceMapID!
+  ): Llm!
+
+  """Set the llm state to a Terminal"""
+  withTerminal(
+    """The value of the Terminal to save"""
+    value: TerminalID!
+  ): Llm!
+
+  """Set the llm state to a TypeDef"""
+  withTypeDef(
+    """The value of the TypeDef to save"""
+    value: TypeDefID!
+  ): Llm!
+}
+
+"""
+The `LlmID` scalar type represents an identifier for an object of type Llm.
+"""
+scalar LlmID
+
 """
 Module source that that originates from a path locally relative to an arbitrary directory.
 """
@@ -2751,6 +3108,12 @@ type Query {
     url: String!
   ): File!
 
+  """Initialize a Large Language Model (LLM)"""
+  llm(
+    """Model to use"""
+    model: String
+  ): Llm!
+
   """Load a CacheVolume from its ID."""
   loadCacheVolumeFromID(id: CacheVolumeID!): CacheVolume!
 
@@ -2831,6 +3194,9 @@ type Query {
 
   """Load a ListTypeDef from its ID."""
   loadListTypeDefFromID(id: ListTypeDefID!): ListTypeDef!
+
+  """Load a Llm from its ID."""
+  loadLlmFromID(id: LlmID!): Llm!
 
   """Load a LocalModuleSource from its ID."""
   loadLocalModuleSourceFromID(id: LocalModuleSourceID!): LocalModuleSource!

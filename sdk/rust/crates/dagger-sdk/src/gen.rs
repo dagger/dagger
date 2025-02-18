@@ -958,6 +958,39 @@ impl ListTypeDefId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct LlmId(pub String);
+impl From<&str> for LlmId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for LlmId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<LlmId> for Llm {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<LlmId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<LlmId> for LlmId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<LlmId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<LlmId, DaggerError>(self) })
+    }
+}
+impl LlmId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct LocalModuleSourceId(pub String);
 impl From<&str> for LocalModuleSourceId {
     fn from(value: &str) -> Self {
@@ -6113,6 +6146,1110 @@ impl ListTypeDef {
     }
 }
 #[derive(Clone)]
+pub struct Llm {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct LlmLoopOpts {
+    /// The maximum number of loops to allow.
+    #[builder(setter(into, strip_option), default)]
+    pub max_loops: Option<isize>,
+}
+impl Llm {
+    /// Retrieve the llm state as a CacheVolume
+    pub fn cache_volume(&self) -> CacheVolume {
+        let query = self.selection.select("CacheVolume");
+        CacheVolume {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a Container
+    pub fn container(&self) -> Container {
+        let query = self.selection.select("Container");
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a CurrentModule
+    pub fn current_module(&self) -> CurrentModule {
+        let query = self.selection.select("CurrentModule");
+        CurrentModule {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a Directory
+    pub fn directory(&self) -> Directory {
+        let query = self.selection.select("Directory");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a EnumTypeDef
+    pub fn enum_type_def(&self) -> EnumTypeDef {
+        let query = self.selection.select("EnumTypeDef");
+        EnumTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a EnumValueTypeDef
+    pub fn enum_value_type_def(&self) -> EnumValueTypeDef {
+        let query = self.selection.select("EnumValueTypeDef");
+        EnumValueTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a Error
+    pub fn error(&self) -> Error {
+        let query = self.selection.select("Error");
+        Error {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a FieldTypeDef
+    pub fn field_type_def(&self) -> FieldTypeDef {
+        let query = self.selection.select("FieldTypeDef");
+        FieldTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a File
+    pub fn file(&self) -> File {
+        let query = self.selection.select("File");
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a Function
+    pub fn function(&self) -> Function {
+        let query = self.selection.select("Function");
+        Function {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a FunctionArg
+    pub fn function_arg(&self) -> FunctionArg {
+        let query = self.selection.select("FunctionArg");
+        FunctionArg {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a FunctionCall
+    pub fn function_call(&self) -> FunctionCall {
+        let query = self.selection.select("FunctionCall");
+        FunctionCall {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a FunctionCallArgValue
+    pub fn function_call_arg_value(&self) -> FunctionCallArgValue {
+        let query = self.selection.select("FunctionCallArgValue");
+        FunctionCallArgValue {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a GeneratedCode
+    pub fn generated_code(&self) -> GeneratedCode {
+        let query = self.selection.select("GeneratedCode");
+        GeneratedCode {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a GitModuleSource
+    pub fn git_module_source(&self) -> GitModuleSource {
+        let query = self.selection.select("GitModuleSource");
+        GitModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a GitRef
+    pub fn git_ref(&self) -> GitRef {
+        let query = self.selection.select("GitRef");
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a GitRepository
+    pub fn git_repository(&self) -> GitRepository {
+        let query = self.selection.select("GitRepository");
+        GitRepository {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a InputTypeDef
+    pub fn input_type_def(&self) -> InputTypeDef {
+        let query = self.selection.select("InputTypeDef");
+        InputTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a InterfaceTypeDef
+    pub fn interface_type_def(&self) -> InterfaceTypeDef {
+        let query = self.selection.select("InterfaceTypeDef");
+        InterfaceTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a ListTypeDef
+    pub fn list_type_def(&self) -> ListTypeDef {
+        let query = self.selection.select("ListTypeDef");
+        ListTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a LocalModuleSource
+    pub fn local_module_source(&self) -> LocalModuleSource {
+        let query = self.selection.select("LocalModuleSource");
+        LocalModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a Module
+    pub fn module(&self) -> Module {
+        let query = self.selection.select("Module");
+        Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a ModuleDependency
+    pub fn module_dependency(&self) -> ModuleDependency {
+        let query = self.selection.select("ModuleDependency");
+        ModuleDependency {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a ModuleSource
+    pub fn module_source(&self) -> ModuleSource {
+        let query = self.selection.select("ModuleSource");
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a ModuleSourceView
+    pub fn module_source_view(&self) -> ModuleSourceView {
+        let query = self.selection.select("ModuleSourceView");
+        ModuleSourceView {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a ObjectTypeDef
+    pub fn object_type_def(&self) -> ObjectTypeDef {
+        let query = self.selection.select("ObjectTypeDef");
+        ObjectTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a SDKConfig
+    pub fn sdk_config(&self) -> SdkConfig {
+        let query = self.selection.select("SDKConfig");
+        SdkConfig {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a ScalarTypeDef
+    pub fn scalar_type_def(&self) -> ScalarTypeDef {
+        let query = self.selection.select("ScalarTypeDef");
+        ScalarTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a Secret
+    pub fn secret(&self) -> Secret {
+        let query = self.selection.select("Secret");
+        Secret {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a Service
+    pub fn service(&self) -> Service {
+        let query = self.selection.select("Service");
+        Service {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a Socket
+    pub fn socket(&self) -> Socket {
+        let query = self.selection.select("Socket");
+        Socket {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a SourceMap
+    pub fn source_map(&self) -> SourceMap {
+        let query = self.selection.select("SourceMap");
+        SourceMap {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a Terminal
+    pub fn terminal(&self) -> Terminal {
+        let query = self.selection.select("Terminal");
+        Terminal {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the llm state as a TypeDef
+    pub fn type_def(&self) -> TypeDef {
+        let query = self.selection.select("TypeDef");
+        TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// return the llm message history
+    pub async fn history(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("history");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this Llm.
+    pub async fn id(&self) -> Result<LlmId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// return the last llm reply from the history
+    pub async fn last_reply(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("lastReply");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// send the context to the LLM endpoint, process replies and tool calls; continue in a loop
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn r#loop(&self) -> Llm {
+        let query = self.selection.select("loop");
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// send the context to the LLM endpoint, process replies and tool calls; continue in a loop
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn r#loop_opts(&self, opts: LlmLoopOpts) -> Llm {
+        let mut query = self.selection.select("loop");
+        if let Some(max_loops) = opts.max_loops {
+            query = query.arg("maxLoops", max_loops);
+        }
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// return the model used by the llm
+    pub async fn model(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("model");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// print documentation for available tools
+    pub async fn tools(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("tools");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Set the llm state to a CacheVolume
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the CacheVolume to save
+    pub fn with_cache_volume(&self, value: impl IntoID<CacheVolumeId>) -> Llm {
+        let mut query = self.selection.select("withCacheVolume");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a Container
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the Container to save
+    pub fn with_container(&self, value: impl IntoID<ContainerId>) -> Llm {
+        let mut query = self.selection.select("withContainer");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a CurrentModule
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the CurrentModule to save
+    pub fn with_current_module(&self, value: impl IntoID<CurrentModuleId>) -> Llm {
+        let mut query = self.selection.select("withCurrentModule");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a Directory
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the Directory to save
+    pub fn with_directory(&self, value: impl IntoID<DirectoryId>) -> Llm {
+        let mut query = self.selection.select("withDirectory");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a EnumTypeDef
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the EnumTypeDef to save
+    pub fn with_enum_type_def(&self, value: impl IntoID<EnumTypeDefId>) -> Llm {
+        let mut query = self.selection.select("withEnumTypeDef");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a EnumValueTypeDef
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the EnumValueTypeDef to save
+    pub fn with_enum_value_type_def(&self, value: impl IntoID<EnumValueTypeDefId>) -> Llm {
+        let mut query = self.selection.select("withEnumValueTypeDef");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a Error
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the Error to save
+    pub fn with_error(&self, value: impl IntoID<ErrorId>) -> Llm {
+        let mut query = self.selection.select("withError");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a FieldTypeDef
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the FieldTypeDef to save
+    pub fn with_field_type_def(&self, value: impl IntoID<FieldTypeDefId>) -> Llm {
+        let mut query = self.selection.select("withFieldTypeDef");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a File
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the File to save
+    pub fn with_file(&self, value: impl IntoID<FileId>) -> Llm {
+        let mut query = self.selection.select("withFile");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a Function
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the Function to save
+    pub fn with_function(&self, value: impl IntoID<FunctionId>) -> Llm {
+        let mut query = self.selection.select("withFunction");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a FunctionArg
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the FunctionArg to save
+    pub fn with_function_arg(&self, value: impl IntoID<FunctionArgId>) -> Llm {
+        let mut query = self.selection.select("withFunctionArg");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a FunctionCall
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the FunctionCall to save
+    pub fn with_function_call(&self, value: impl IntoID<FunctionCallId>) -> Llm {
+        let mut query = self.selection.select("withFunctionCall");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a FunctionCallArgValue
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the FunctionCallArgValue to save
+    pub fn with_function_call_arg_value(&self, value: impl IntoID<FunctionCallArgValueId>) -> Llm {
+        let mut query = self.selection.select("withFunctionCallArgValue");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a GeneratedCode
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the GeneratedCode to save
+    pub fn with_generated_code(&self, value: impl IntoID<GeneratedCodeId>) -> Llm {
+        let mut query = self.selection.select("withGeneratedCode");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a GitModuleSource
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the GitModuleSource to save
+    pub fn with_git_module_source(&self, value: impl IntoID<GitModuleSourceId>) -> Llm {
+        let mut query = self.selection.select("withGitModuleSource");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a GitRef
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the GitRef to save
+    pub fn with_git_ref(&self, value: impl IntoID<GitRefId>) -> Llm {
+        let mut query = self.selection.select("withGitRef");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a GitRepository
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the GitRepository to save
+    pub fn with_git_repository(&self, value: impl IntoID<GitRepositoryId>) -> Llm {
+        let mut query = self.selection.select("withGitRepository");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a InputTypeDef
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the InputTypeDef to save
+    pub fn with_input_type_def(&self, value: impl IntoID<InputTypeDefId>) -> Llm {
+        let mut query = self.selection.select("withInputTypeDef");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a InterfaceTypeDef
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the InterfaceTypeDef to save
+    pub fn with_interface_type_def(&self, value: impl IntoID<InterfaceTypeDefId>) -> Llm {
+        let mut query = self.selection.select("withInterfaceTypeDef");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a ListTypeDef
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the ListTypeDef to save
+    pub fn with_list_type_def(&self, value: impl IntoID<ListTypeDefId>) -> Llm {
+        let mut query = self.selection.select("withListTypeDef");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a LocalModuleSource
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the LocalModuleSource to save
+    pub fn with_local_module_source(&self, value: impl IntoID<LocalModuleSourceId>) -> Llm {
+        let mut query = self.selection.select("withLocalModuleSource");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a Module
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the Module to save
+    pub fn with_module(&self, value: impl IntoID<ModuleId>) -> Llm {
+        let mut query = self.selection.select("withModule");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a ModuleDependency
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the ModuleDependency to save
+    pub fn with_module_dependency(&self, value: impl IntoID<ModuleDependencyId>) -> Llm {
+        let mut query = self.selection.select("withModuleDependency");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a ModuleSource
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the ModuleSource to save
+    pub fn with_module_source(&self, value: impl IntoID<ModuleSourceId>) -> Llm {
+        let mut query = self.selection.select("withModuleSource");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a ModuleSourceView
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the ModuleSourceView to save
+    pub fn with_module_source_view(&self, value: impl IntoID<ModuleSourceViewId>) -> Llm {
+        let mut query = self.selection.select("withModuleSourceView");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a ObjectTypeDef
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the ObjectTypeDef to save
+    pub fn with_object_type_def(&self, value: impl IntoID<ObjectTypeDefId>) -> Llm {
+        let mut query = self.selection.select("withObjectTypeDef");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// append a prompt to the llm context
+    ///
+    /// # Arguments
+    ///
+    /// * `prompt` - The prompt to send
+    pub fn with_prompt(&self, prompt: impl Into<String>) -> Llm {
+        let mut query = self.selection.select("withPrompt");
+        query = query.arg("prompt", prompt.into());
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// append the contents of a file to the llm context
+    ///
+    /// # Arguments
+    ///
+    /// * `file` - The file to read the prompt from
+    pub fn with_prompt_file(&self, file: impl IntoID<FileId>) -> Llm {
+        let mut query = self.selection.select("withPromptFile");
+        query = query.arg_lazy(
+            "file",
+            Box::new(move || {
+                let file = file.clone();
+                Box::pin(async move { file.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// set a variable for expansion in the prompt
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the variable
+    /// * `value` - The value of the variable
+    pub fn with_prompt_var(&self, name: impl Into<String>, value: impl Into<String>) -> Llm {
+        let mut query = self.selection.select("withPromptVar");
+        query = query.arg("name", name.into());
+        query = query.arg("value", value.into());
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a SDKConfig
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the SDKConfig to save
+    pub fn with_sdk_config(&self, value: impl IntoID<SdkConfigId>) -> Llm {
+        let mut query = self.selection.select("withSDKConfig");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a ScalarTypeDef
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the ScalarTypeDef to save
+    pub fn with_scalar_type_def(&self, value: impl IntoID<ScalarTypeDefId>) -> Llm {
+        let mut query = self.selection.select("withScalarTypeDef");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a Secret
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the Secret to save
+    pub fn with_secret(&self, value: impl IntoID<SecretId>) -> Llm {
+        let mut query = self.selection.select("withSecret");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a Service
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the Service to save
+    pub fn with_service(&self, value: impl IntoID<ServiceId>) -> Llm {
+        let mut query = self.selection.select("withService");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a Socket
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the Socket to save
+    pub fn with_socket(&self, value: impl IntoID<SocketId>) -> Llm {
+        let mut query = self.selection.select("withSocket");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a SourceMap
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the SourceMap to save
+    pub fn with_source_map(&self, value: impl IntoID<SourceMapId>) -> Llm {
+        let mut query = self.selection.select("withSourceMap");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a Terminal
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the Terminal to save
+    pub fn with_terminal(&self, value: impl IntoID<TerminalId>) -> Llm {
+        let mut query = self.selection.select("withTerminal");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a TypeDef
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the TypeDef to save
+    pub fn with_type_def(&self, value: impl IntoID<TypeDefId>) -> Llm {
+        let mut query = self.selection.select("withTypeDef");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+#[derive(Clone)]
 pub struct LocalModuleSource {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -7006,6 +8143,12 @@ pub struct QueryHttpOpts {
     pub experimental_service_host: Option<ServiceId>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct QueryLlmOpts<'a> {
+    /// Model to use
+    #[builder(setter(into, strip_option), default)]
+    pub model: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct QueryLoadSecretFromNameOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub accessor: Option<&'a str>,
@@ -7343,6 +8486,35 @@ impl Query {
             query = query.arg("experimentalServiceHost", experimental_service_host);
         }
         File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Initialize a Large Language Model (LLM)
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn llm(&self) -> Llm {
+        let query = self.selection.select("llm");
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Initialize a Large Language Model (LLM)
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn llm_opts<'a>(&self, opts: QueryLlmOpts<'a>) -> Llm {
+        let mut query = self.selection.select("llm");
+        if let Some(model) = opts.model {
+            query = query.arg("model", model);
+        }
+        Llm {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -7793,6 +8965,22 @@ impl Query {
             }),
         );
         ListTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a Llm from its ID.
+    pub fn load_llm_from_id(&self, id: impl IntoID<LlmId>) -> Llm {
+        let mut query = self.selection.select("loadLlmFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
