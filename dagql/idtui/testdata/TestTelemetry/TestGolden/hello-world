@@ -19,6 +19,7 @@ Expected stderr:
 
 ✔ viztest: Viztest! X.Xs
 ✔ .helloWorld: String! X.Xs
+┃ Hello, world!
 
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
