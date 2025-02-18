@@ -52,6 +52,18 @@ The following code snippet shows how to add documentation for:
 ```
 
 </TabItem>
+<TabItem value="PHP">
+
+The following code snippet shows how to add documentation for:
+
+- The whole module
+- Function methods
+- Function arguments
+
+```php file=./snippets/documentation/php/main/src/MyModule.php
+```
+
+</TabItem>
 </Tabs>
 
 Here is an example of the result from `dagger functions`:
@@ -97,12 +109,18 @@ The following code snippet shows how to add documentation for an object and its 
 ```
 
 </TabItem>
+<TabItem value="PHP">
+
+```php file=./snippets/documentation/php/object/src/MyModule.php
+```
+
+</TabItem>
 </Tabs>
 
 Here is an example of the result from `dagger call --help`:
 
 ```
 ARGUMENTS
-      --age string    The age of the user. [required]
+      --age int       The age of the user. [required]
       --name string   The name of the user. [required]
 ```
