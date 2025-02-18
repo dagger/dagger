@@ -49,7 +49,13 @@ func maybeInitializeDefaultModule(ctx context.Context, dag *dagger.Client) (*mod
 	if modRef == "" {
 		modRef = moduleURLDefault
 	}
-	return maybeInitializeModule(ctx, dag, modRef)
+
+	if def, err := initializeModule(ctx, dag, modRef); def != nil || err != nil {
+		return def, modRef, err
+	}
+
+	def, err := initializeCore(ctx, dag)
+	return def, "", err
 }
 
 // initializeModule loads the module at the given source ref
@@ -73,49 +79,11 @@ func initializeModule(
 		return nil, fmt.Errorf("failed to get configured module: %w", err)
 	}
 	if !configExists {
-		return nil, fmt.Errorf("module must be fully initialized")
-	}
-
-	return initializeModuleConfig(ctx, dag, modSrc)
-}
-
-// maybeInitializeModule optionally loads the module at the given source ref,
-// falling back to the core definitions if the module isn't found
-func maybeInitializeModule(ctx context.Context, dag *dagger.Client, srcRef string) (*moduleDef, string, error) {
-	if def, err := tryInitializeModule(ctx, dag, srcRef); def != nil || err != nil {
-		return def, srcRef, err
-	}
-
-	def, err := initializeCore(ctx, dag)
-	return def, "", err
-}
-
-// tryInitializeModule tries to load a module if it exists
-//
-// Returns an error if the module is invalid or couldn't be loaded, but not
-// if the module wasn't found.
-func tryInitializeModule(ctx context.Context, dag *dagger.Client, srcRef string) (rdef *moduleDef, rerr error) {
-	ctx, span := Tracer().Start(ctx, "looking for module")
-	defer telemetry.End(span, func() error { return rerr })
-
-	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
-	modSrc := dag.ModuleSource(srcRef)
-	configExists, _ := modSrc.ConfigExists(findCtx)
-	findSpan.End()
-
-	if !configExists {
 		return nil, nil
 	}
 
-	span.SetName("load module " + srcRef)
-
-	return initializeModuleConfig(ctx, dag, modSrc)
-}
-
-// initializeModuleConfig loads a module using a detected module configuration
-func initializeModuleConfig(ctx context.Context, dag *dagger.Client, modSrc *dagger.ModuleSource) (rdef *moduleDef, rerr error) {
 	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())
-	err := modSrc.AsModule().Serve(serveCtx)
+	err = modSrc.AsModule().Serve(serveCtx)
 	telemetry.End(serveSpan, func() error { return err })
 	if err != nil {
 		return nil, fmt.Errorf("failed to serve module: %w", err)

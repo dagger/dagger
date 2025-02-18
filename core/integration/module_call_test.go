@@ -2209,7 +2209,7 @@ func (CallSuite) TestFindup(ctx context.Context, t *testctx.T) {
 			Stdout(ctx)
 		require.Error(t, err)
 		require.NoError(t, c.Close())
-		require.Contains(t, logs.String(), "lstat /work/bad/subdir: no such file or directory")
+		require.Contains(t, logs.String(), `"bad/subdir" does not exist`)
 	})
 }
 

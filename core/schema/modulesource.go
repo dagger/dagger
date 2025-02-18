@@ -160,6 +160,9 @@ func (s *moduleSchema) localModuleSource(
 	} else {
 		stat, err := bk.StatCallerHostPath(ctx, localPath, true)
 		if err != nil {
+			if status.Code(err) == codes.NotFound {
+				return inst, fmt.Errorf("local path %q does not exist", localPath)
+			}
 			return inst, fmt.Errorf("failed to stat local path: %w", err)
 		}
 		localAbsPath = stat.Path
