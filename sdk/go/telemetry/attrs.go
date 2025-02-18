@@ -38,7 +38,7 @@ const (
 	// An emoji representing the conceptual source of the span.
 	//
 	// Example: 🧑, 🤖
-	UIActorAttr = "dagger.io/ui.actor"
+	UIActorEmojiAttr = "dagger.io/ui.actor.emoji"
 
 	// Indicates that the span represents a message, and that its logs should be displayed
 	// immediately without requiring them to be expanded.

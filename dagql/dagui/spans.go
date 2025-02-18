@@ -141,7 +141,7 @@ type SpanSnapshot struct {
 	Passthrough  bool   `json:",omitempty"`
 	Ignore       bool   `json:",omitempty"`
 	Reveal       bool   `json:",omitempty"`
-	Actor        string `json:",omitempty"`
+	ActorEmoji   string `json:",omitempty"`
 	Message      string `json:",omitempty"`
 
 	Inputs []string `json:",omitempty"`
@@ -196,8 +196,8 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 	case telemetry.UIPassthroughAttr:
 		snapshot.Passthrough = val.(bool)
 
-	case telemetry.UIActorAttr:
-		snapshot.Actor = val.(string)
+	case telemetry.UIActorEmojiAttr:
+		snapshot.ActorEmoji = val.(string)
 
 	case telemetry.UIMessageAttr:
 		snapshot.Message = val.(string)
