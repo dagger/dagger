@@ -352,12 +352,23 @@ func (s *moduleSchema) gitModuleSource(
 	gitSrc.Git.UnfilteredContextDir = gitSrc.ContextDirectory
 
 	gitSrc.SourceRootSubpath = strings.TrimPrefix(parsed.repoRootSubdir, "/")
+
 	var configPath string
 	if !doFindUp {
 		configPath = filepath.Join(gitSrc.SourceRootSubpath, modules.Filename)
 	} else {
-		configDir, found, err := findUp(ctx,
-			coreDirStatFS{gitSrc.ContextDirectory.Self, bk},
+		// first validate the given path exists at all, otherwise weird things like
+		// `dagger -m github.com/dagger/dagger/not/a/real/dir` can succeed because
+		// they find-up to a real dagger.json
+		statFS := coreDirStatFS{gitSrc.ContextDirectory.Self, bk}
+		if _, err := statFS.stat(ctx, gitSrc.SourceRootSubpath); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return inst, fmt.Errorf("path %q does not exist in git repo", gitSrc.SourceRootSubpath)
+			}
+			return inst, fmt.Errorf("failed to stat git module source: %w", err)
+		}
+
+		configDir, found, err := findUp(ctx, statFS,
 			filepath.Join("/", gitSrc.SourceRootSubpath),
 			modules.Filename,
 		)
