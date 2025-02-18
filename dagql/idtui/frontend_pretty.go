@@ -22,6 +22,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -1176,7 +1177,7 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		// Check for Markdown content type
 		contentType := ""
 		for attr := range log.WalkAttributes {
-			if attr.Key == "dagger.io/content.type" {
+			if attr.Key == telemetry.ContentTypeAttr {
 				contentType = attr.Value.AsString()
 				break
 			}
