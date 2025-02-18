@@ -98,6 +98,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	execMD.RedirectStderrPath = opts.RedirectStderr
 	execMD.SystemEnvNames = container.SystemEnvNames
 	execMD.EnabledGPUs = container.EnabledGPUs
+	execMD.EnableThunder = container.EnableThunder
 
 	if opts.NoInit {
 		execMD.NoInit = true
@@ -118,6 +119,12 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	if len(execMD.EnabledGPUs) > 0 {
 		if gpuSupportEnabled := os.Getenv("_EXPERIMENTAL_DAGGER_GPU_SUPPORT"); gpuSupportEnabled == "" {
 			return nil, fmt.Errorf("GPU support is not enabled, set _EXPERIMENTAL_DAGGER_GPU_SUPPORT")
+		}
+	}
+
+	if execMD.EnableThunder {
+		if thunderSupportEnabled := os.Getenv("_EXPERIMENTAL_DAGGER_THUNDER_SUPPORT"); thunderSupportEnabled == "" {
+			return nil, fmt.Errorf("Thunder support is not enabled, set _EXPERIMENTAL_DAGGER_THUNDER_SUPPORT")
 		}
 	}
 

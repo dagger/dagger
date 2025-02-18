@@ -150,6 +150,10 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", EnvGPUSupport, opts.GPUSupport))
 		cmd.Args = append(cmd.Args, "-e", EnvGPUSupport, "--gpus", "all")
 	}
+	if opts.ThunderSupport != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", EnvThunderSupport, opts.ThunderSupport))
+		cmd.Args = append(cmd.Args, "-e", EnvThunderSupport)
+	}
 
 	cmd.Args = append(cmd.Args, imageRef, "--debug")
 
