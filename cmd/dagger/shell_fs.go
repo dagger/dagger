@@ -8,75 +8,68 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/core"
 	"golang.org/x/sync/errgroup"
 )
 
-// returnToInitialContextPath allows returning to the initial path when the
-// current context was changed.
+// returnToModuleRoot is an argument for `.cd` to return to the current module's root directory
 //
-// Not to be confused with empty `.cd` which changes the context to the initial one.
+// Not to be confused with empty `.cd` which changes to the initial context.
 // TODO: bikeshed
-const returnToInitialContextPath = "-"
+const returnToModuleRoot = "-"
 
 type shellWorkdir struct {
-	// Source is an in-memory  representation of ModuleSource to produce paths
-	Source shellModSource
-
-	// ContextModules is a list of paths to modules found in the context
-	ContextModules []string
-
-	// ModuleRoot is an absolute reference to currently loaded (default) module
-	ModuleRoot string
+	// PathResolver is an in-memory representation of ModuleSource, used to produce paths
+	PathResolver shellModuleSource
 
 	// Path is an absolute file path, rooted at the context
 	Path string
 }
 
-// shellModSource is a representation of ModelSource, used to produce paths
-//
-// TODO: add API field to return something like asString but with any subpath.
-// This is more necessary with git sources as you need to add the version after
-// joining cloneRef with rootSubpath.
-type shellModSource interface {
-	Ref(path string) string
+type shellModuleSource interface {
+	Ref(subpath string) string
 	Subpath() string
-	Source(dag *dagger.Client) *dagger.ModuleSource
+	Directory(subpath string, dag *dagger.Client) *dagger.Directory
+	File(subpath string, dag *dagger.Client) *dagger.File
 }
 
-type localSource struct {
+type localSourceResolver struct {
 	Root string
 	Path string
 }
 
-func (src localSource) Ref(path string) string {
-	if path == "" {
-		path = src.Path
+func (src localSourceResolver) Ref(subpath string) string {
+	if subpath == "" {
+		subpath = src.Path
 	}
-	return filepath.Join(src.Root, path)
+	return filepath.Join(src.Root, subpath)
 }
 
-func (src localSource) Source(dag *dagger.Client) *dagger.ModuleSource {
-	return dag.ModuleSource(src.Ref(src.Path))
-}
-
-func (src localSource) Subpath() string {
+func (src localSourceResolver) Subpath() string {
 	return src.Path
 }
 
-type gitSource struct {
-	Root    string
-	Version string
-	Pin     string
-	Path    string
+func (src localSourceResolver) Directory(path string, dag *dagger.Client) *dagger.Directory {
+	return dag.Host().Directory(filepath.Join(src.Root, path))
 }
 
-func (src gitSource) Ref(path string) string {
-	if path == "" {
-		path = src.Path
+func (src localSourceResolver) File(path string, dag *dagger.Client) *dagger.File {
+	return dag.Host().File(filepath.Join(src.Root, path))
+}
+
+type gitSourceResolver struct {
+	Root    string
+	Path    string
+	Version string
+	Pin     string
+}
+
+func (src gitSourceResolver) Ref(subpath string) string {
+	if subpath == "" {
+		subpath = src.Path
 	}
 	refPath := src.Root
-	subPath := filepath.Join("/", path)
+	subPath := filepath.Join("/", subpath)
 	if subPath != "/" {
 		refPath += subPath
 	}
@@ -86,160 +79,240 @@ func (src gitSource) Ref(path string) string {
 	return refPath
 }
 
-func (src gitSource) Source(dag *dagger.Client) *dagger.ModuleSource {
-	return dag.ModuleSource(src.Ref(src.Path), dagger.ModuleSourceOpts{
-		RefPin: src.Pin,
-	})
-}
-
-func (src gitSource) Subpath() string {
+func (src gitSourceResolver) Subpath() string {
 	return src.Path
 }
 
-func (wd shellWorkdir) modulePathFindUp(path string) string {
-	if path == "" || path == "." {
-		return ""
+func (src gitSourceResolver) context(dag *dagger.Client) *dagger.Directory {
+	gitOpts := dagger.GitOpts{
+		KeepGitDir: true,
 	}
-	for _, modRoot := range wd.ContextModules {
-		if path == modRoot {
-			return path
+	if authSock, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
+		gitOpts.SSHAuthSocket = dag.Host().UnixSocket(authSock)
+	}
+	git := dag.Git(src.Root, gitOpts)
+	var gitRef *dagger.GitRef
+	if src.Pin != "" {
+		gitRef = git.Commit(src.Pin)
+	} else if src.Version != "" {
+		gitRef = git.Ref(src.Version)
+	} else {
+		gitRef = git.Head()
+	}
+	return gitRef.Tree()
+}
+
+func (src gitSourceResolver) Directory(subpath string, dag *dagger.Client) *dagger.Directory {
+	return src.context(dag).Directory(subpath)
+}
+
+func (src gitSourceResolver) File(subpath string, dag *dagger.Client) *dagger.File {
+	return src.context(dag).File(subpath)
+}
+
+// parseModRef transforms user input into a full module reference that can be used with
+// dag.ModuleSource().
+func (h *shellCallHandler) parseModRef(ctx context.Context, path string) (rpath string, rerr error) {
+	if h.debug {
+		shellDebug(ctx, "parseModRef (before)", path)
+
+		defer func() {
+			shellDebug(ctx, "parseModRef (after)", rpath)
+		}()
+	}
+
+	h.mu.RLock()
+	resolver := h.workdir.PathResolver
+	h.mu.RUnlock()
+
+	if resolver == nil {
+		return path, nil
+	}
+
+	fastKind := fastModuleSourceKindCheck(path, "")
+	if fastKind == dagger.ModuleSourceKindGitSource {
+		return path, nil
+	}
+
+	// Could be an absolute path, so remove until context root
+	if _, ok := resolver.(localSourceResolver); ok {
+		path = strings.TrimPrefix(path, resolver.Ref("/"))
+	}
+
+	apath, err := h.contextAbsPath(path)
+	if err != nil {
+		return apath, err
+	}
+
+	ref := resolver.Ref(apath)
+
+	// If a local path and it doesn't exist, use original path and let the API handle it.
+	// For example, it could be the name of a dependency.
+	if _, ok := resolver.(localSourceResolver); ok {
+		if h.debug {
+			shellDebug(ctx, "parseModRef (pre-stat)", ref)
+		}
+		if _, err := os.Stat(ref); os.IsNotExist(err) {
+			if h.debug {
+				shellDebug(ctx, "parseModRef (stat)", err)
+			}
+			return path, nil
 		}
 	}
-	if path == "/" {
-		return ""
-	}
-	return wd.modulePathFindUp(filepath.Dir(path))
+
+	return ref, nil
 }
 
 func (h *shellCallHandler) ChangeWorkdir(ctx context.Context, path string) error {
-	if path == returnToInitialContextPath {
-		return h.setPath(ctx, path)
-	}
-
-	modSrc := h.dag.ModuleSource(path)
-	kind, err := modSrc.Kind(ctx)
-	if err != nil {
-		return err
-	}
-
-	if !h.HasContext() || kind == dagger.ModuleSourceKindGitSource {
-		return h.setContext(ctx, modSrc, kind)
-	}
-
-	return h.setPath(ctx, path)
-}
-
-func (h *shellCallHandler) setContext(ctx context.Context, modSrc *dagger.ModuleSource, kind dagger.ModuleSourceKind) error {
-	source, configExists, err := newShellSource(ctx, modSrc, kind)
-	if err != nil {
-		return err
-	}
-
 	if h.debug {
-		shellDebug(ctx, "setContext", "resolved source", source)
+		shellDebug(ctx, "ChangeWorkdir (before)", path, h.workdir, h.LoadedModulesList())
+
+		defer func() {
+			shellDebug(ctx, "ChangeWorkdir (after)", path, h.workdir, h.LoadedModulesList())
+		}()
 	}
 
-	var moduleRoot string
+	var ref string
+	var def *moduleDef
+	var err error
 
-	modSrc = source.Source(h.dag)
-
-	if configExists {
-		modRef := source.Ref("")
-
-		def, err := h.getOrInitDef(modRef, func() (*moduleDef, error) {
-			return initializeModule(ctx, h.dag, h.dag.ModuleSource(modRef))
-		})
+	switch path {
+	case "":
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		h.workdir = h.initContext
+		return nil
+	case returnToModuleRoot:
+		// TODO: bikeshed
+		def, err = h.GetModuleDef(nil)
 		if err != nil {
 			return err
 		}
-		if def != nil {
-			moduleRoot = modRef
+	default:
+		ref, err = h.parseModRef(ctx, path)
+		if err != nil {
+			return err
+		}
+		def, err = h.loadModule(ctx, ref)
+		if err != nil {
+			return fmt.Errorf("load module: %w", err)
 		}
 	}
 
-	entries, err := modSrc.ContextDirectory().Glob(ctx, "**/"+modules.Filename)
+	wd, err := h.newWorkdir(ctx, def, ref)
 	if err != nil {
-		return err
-	}
-
-	modulePaths := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		modulePaths = append(modulePaths, filepath.Join("/", filepath.Dir(entry)))
+		return fmt.Errorf("set workdir: %w", err)
 	}
 
 	h.mu.Lock()
-	h.workdir = shellWorkdir{
-		Source:         source,
-		ModuleRoot:     moduleRoot,
-		ContextModules: modulePaths,
-		Path:           filepath.Join("/", source.Subpath()),
-	}
-	if h.debug {
-		shellDebug(ctx, "setContext", "saved workdir", h.workdir)
-	}
+	h.workdir = wd
 	h.mu.Unlock()
 
 	return nil
 }
 
-func newShellSource(ctx context.Context, modSrc *dagger.ModuleSource, kind dagger.ModuleSourceKind) (src shellModSource, exists bool, rerr error) {
-	var root string
-	var path string
+func (h *shellCallHandler) loadModule(ctx context.Context, ref string) (rdef *moduleDef, rerr error) {
+	if h.debug {
+		shellDebug(ctx, "loadModule (before)", ref)
+
+		defer func() {
+			var r string
+			if rdef != nil {
+				r = rdef.SourceRoot
+			}
+			shellDebug(ctx, "loadModule (after)", r)
+		}()
+	}
+
+	modSrc := h.dag.ModuleSource(ref)
+
+	// could be a git repo without a dagger.json in a parent directory
+	exists, err := modSrc.ConfigExists(ctx)
+	if err != nil || !exists {
+		return nil, err
+	}
+
+	// ref could be a subpath so we get the right module root ref
+	srcRef, err := modSrc.AsString(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if h.debug {
+		shellDebug(ctx, "loadModule (asString)", srcRef)
+	}
+
+	// ref could be a dependency name
+	srcPin, err := modSrc.Pin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return h.getOrInitDef(srcRef, func() (*moduleDef, error) {
+		return initializeModule(ctx, h.dag, h.dag.ModuleSource(srcRef, dagger.ModuleSourceOpts{
+			RefPin: srcPin,
+		}))
+	})
+}
+
+func (h *shellCallHandler) newWorkdir(ctx context.Context, def *moduleDef, ref string) (shellWorkdir, error) {
+	wd := shellWorkdir{}
+
+	if def != nil && def.SourceRoot != h.ModuleRoot() {
+		r, err := newShellModuleSource(ctx, def)
+		if err != nil {
+			return wd, err
+		}
+		wd.PathResolver = r
+	} else {
+		h.mu.RLock()
+		wd.PathResolver = h.workdir.PathResolver
+		h.mu.RUnlock()
+	}
+
+	var subpath string
+
+	if ref != "" {
+		path, err := h.dag.ModuleSource(ref).OriginalSubpath(ctx)
+		if err != nil {
+			return wd, err
+		}
+		subpath = path
+	}
+
+	if subpath == "" {
+		subpath = wd.PathResolver.Subpath()
+	}
+
+	wd.Path = filepath.Join("/", subpath)
+
+	return wd, nil
+}
+
+func newShellModuleSource(ctx context.Context, def *moduleDef) (shellModuleSource, error) {
+	if def.SourceKind == dagger.ModuleSourceKindLocalSource {
+		root, err := def.Source.LocalContextDirectoryPath(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		return localSourceResolver{
+			Root: root,
+			Path: def.SourceRootSubpath,
+		}, nil
+	}
 
 	cancelCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	eg, gctx := errgroup.WithContext(cancelCtx)
 
-	eg.Go(func() error {
-		v, err := modSrc.SourceRootSubpath(gctx)
-		if err != nil {
-			return err
-		}
-		path = v
-
-		// Check if the path is valid
-		_, err = modSrc.ContextDirectory().Directory(path).Sync(gctx)
-		return err
-	})
-
-	eg.Go(func() error {
-		v, err := modSrc.ConfigExists(gctx)
-		if err != nil {
-			return err
-		}
-		exists = v
-		return nil
-	})
-
-	if kind == dagger.ModuleSourceKindLocalSource {
-		eg.Go(func() error {
-			v, err := modSrc.LocalContextDirectoryPath(gctx)
-			if err != nil {
-				return err
-			}
-			root = v
-			return nil
-		})
-
-		if err := eg.Wait(); err != nil {
-			rerr = err
-			return
-		}
-
-		src = localSource{
-			Root: root,
-			Path: path,
-		}
-
-		return
-	}
-
+	var root string
 	var version string
 	var pin string
 
 	eg.Go(func() error {
-		v, err := modSrc.CloneRef(gctx)
+		v, err := def.Source.CloneRef(gctx)
 		if err != nil {
 			return err
 		}
@@ -248,7 +321,7 @@ func newShellSource(ctx context.Context, modSrc *dagger.ModuleSource, kind dagge
 	})
 
 	eg.Go(func() error {
-		v, err := modSrc.Version(gctx)
+		v, err := def.Source.Version(gctx)
 		if err != nil {
 			return err
 		}
@@ -257,7 +330,7 @@ func newShellSource(ctx context.Context, modSrc *dagger.ModuleSource, kind dagge
 	})
 
 	eg.Go(func() error {
-		v, err := modSrc.Commit(gctx)
+		v, err := def.Source.Commit(gctx)
 		if err != nil {
 			return err
 		}
@@ -266,87 +339,18 @@ func newShellSource(ctx context.Context, modSrc *dagger.ModuleSource, kind dagge
 	})
 
 	if err := eg.Wait(); err != nil {
-		rerr = err
-		return
+		return nil, err
 	}
 
-	src = gitSource{
+	return gitSourceResolver{
 		Root:    root,
 		Version: version,
 		Pin:     pin,
-		Path:    path,
-	}
-
-	return
+		Path:    def.SourceRootSubpath,
+	}, nil
 }
 
-func (h *shellCallHandler) setPath(ctx context.Context, path string) error {
-	if h.debug {
-		shellDebug(ctx, "setPath", path)
-	}
-
-	path, err := h.absPath(path)
-	if err != nil {
-		return err
-	}
-	dir, err := h.Directory(path)
-	if err != nil {
-		return err
-	}
-	// TODO: replace with dir.Exists() when it's implemented
-	// See https://github.com/dagger/dagger/issues/6713
-	_, err = dir.Sync(ctx)
-	if err != nil {
-		return err
-	}
-
-	var modRef string
-
-	h.mu.RLock()
-	if modPath := h.workdir.modulePathFindUp(path); modPath != "" {
-		ref := h.workdir.Source.Ref(modPath)
-
-		if h.workdir.ModuleRoot != ref {
-			modRef = ref
-		}
-	}
-	h.mu.RUnlock()
-
-	if h.debug {
-		shellDebug(ctx, "modRef", modRef)
-	}
-
-	if modRef != "" {
-		def, err := h.getOrInitDef(modRef, func() (*moduleDef, error) {
-			return initializeModule(ctx, h.dag, h.dag.ModuleSource(modRef))
-		})
-		if err != nil || def == nil {
-			return err
-		}
-	}
-
-	h.mu.Lock()
-	// Stay on the same module even outside of it, until we enter a different one
-	if modRef != "" {
-		h.workdir.ModuleRoot = modRef
-	}
-	h.workdir.Path = path
-	if h.debug {
-		shellDebug(ctx, "workdir", h.workdir)
-	}
-	h.mu.Unlock()
-
-	return nil
-}
-
-func (h *shellCallHandler) absPath(path string) (string, error) {
-	// TODO: bikeshed
-	if path == returnToInitialContextPath {
-		if _, err := h.GetModuleDef(nil); err != nil {
-			return "", err
-		}
-		path = h.InitialPath()
-	}
+func (h *shellCallHandler) contextAbsPath(path string) (string, error) {
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(h.WorkdirPath(), path)
 
@@ -369,25 +373,69 @@ func (h *shellCallHandler) Workdir() shellWorkdir {
 func (h *shellCallHandler) HasContext() bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.workdir.Source != nil
+	return h.workdir.PathResolver != nil
 }
 
 func (h *shellCallHandler) ContextRoot() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	if h.workdir.Source == nil {
+	if h.workdir.PathResolver == nil {
 		return ""
 	}
-	return h.workdir.Source.Ref("/")
+	return h.workdir.PathResolver.Ref("/")
+}
+
+func (h *shellCallHandler) Directory(subpath string) (*dagger.Directory, error) {
+	apath, err := h.contextAbsPath(subpath)
+	if err != nil {
+		return nil, err
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if h.workdir.PathResolver == nil {
+		return nil, fmt.Errorf("no context")
+	}
+	return h.workdir.PathResolver.Directory(apath, h.dag), nil
+}
+
+func (h *shellCallHandler) File(subpath string) (*dagger.File, error) {
+	apath, err := h.contextAbsPath(subpath)
+	if err != nil {
+		return nil, err
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if h.workdir.PathResolver == nil {
+		return nil, fmt.Errorf("no context")
+	}
+	return h.workdir.PathResolver.File(apath, h.dag), nil
+}
+
+func (h *shellCallHandler) ContextPath(path string) string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if h.workdir.PathResolver == nil {
+		return ""
+	}
+	return h.workdir.PathResolver.Ref(path)
+}
+
+func (h *shellCallHandler) ModuleRoot() string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if h.workdir.PathResolver == nil {
+		return ""
+	}
+	return h.workdir.PathResolver.Ref("")
 }
 
 func (h *shellCallHandler) InitialPath() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	if h.workdir.Source == nil {
+	if h.workdir.PathResolver == nil {
 		return ""
 	}
-	return filepath.Join("/", h.workdir.Source.Subpath())
+	return filepath.Join("/", h.workdir.PathResolver.Subpath())
 }
 
 func (h *shellCallHandler) WorkdirPath() string {
@@ -407,37 +455,58 @@ func (h *shellCallHandler) Pwd() string {
 	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.workdir.Source.Ref(h.workdir.Path)
+	return h.workdir.PathResolver.Ref(h.workdir.Path)
 }
 
-func (h *shellCallHandler) ContextDirectory() (*dagger.Directory, error) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	if h.workdir.Source == nil {
-		return nil, fmt.Errorf("no context set")
+// ModRel returns the relative path to a module's root dir from workdir, if
+// target module is the one currently loaded
+func (h *shellCallHandler) ModRel(def *moduleDef) string {
+	if def != nil && def.SourceRoot == h.ModuleRoot() {
+		path, err := filepath.Rel(h.WorkdirAbsPath(), def.SourceRootSubpath)
+		if err == nil {
+			if len(path) > len(def.SourceRootSubpath) {
+				path = def.SourceRootSubpath
+			}
+			return path
+		}
 	}
-	return h.workdir.Source.Source(h.dag).ContextDirectory(), nil
-}
-
-func (h *shellCallHandler) Directory(path string) (*dagger.Directory, error) {
-	dir, err := h.ContextDirectory()
-	if err != nil {
-		return nil, err
-	}
-	apath, err := h.absPath(path)
-	if err != nil {
-		return nil, err
-	}
-	return dir.Directory(apath), nil
-}
-
-func (h *shellCallHandler) DefaultModRef() string {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return h.workdir.ModuleRoot
+	return def.SourceRoot
 }
 
 // IsDefaultModule returns true if the given module reference is the default loaded module
 func (h *shellCallHandler) IsDefaultModule(ref string) bool {
-	return ref == "" || ref == h.DefaultModRef()
+	return ref == "" || ref == h.ModuleRoot()
+}
+
+// fastModuleSourceKindCheck does a simple lexographical analysis on a path
+// to cehck if it's a local path or a git URL.
+//
+// TODO: This is duplicated from core/schema/modulerefs.go. Ideally we could reuse it.
+func fastModuleSourceKindCheck(
+	refString string,
+	refPin string,
+) dagger.ModuleSourceKind {
+	switch {
+	case refPin != "":
+		return dagger.ModuleSourceKindGitSource
+	case len(refString) > 0 && (refString[0] == '/' || refString[0] == '.'):
+		return dagger.ModuleSourceKindLocalSource
+	case len(refString) > 1 && refString[0:2] == "..":
+		return dagger.ModuleSourceKindLocalSource
+	case strings.HasPrefix(refString, core.SchemeHTTP.Prefix()):
+		return dagger.ModuleSourceKindGitSource
+	case strings.HasPrefix(refString, core.SchemeHTTPS.Prefix()):
+		return dagger.ModuleSourceKindGitSource
+	case strings.HasPrefix(refString, core.SchemeSSH.Prefix()):
+		return dagger.ModuleSourceKindGitSource
+	case strings.HasPrefix(refString, "github.com"):
+		return dagger.ModuleSourceKindGitSource
+	case !strings.Contains(refString, "."):
+		// technically host names can not have any dot, but we can save a lot of work
+		// by assuming a dot-free ref string is a local path. Users can prefix
+		// args with a scheme:// to disambiguate these obscure corner cases.
+		return dagger.ModuleSourceKindLocalSource
+	default:
+		return ""
+	}
 }

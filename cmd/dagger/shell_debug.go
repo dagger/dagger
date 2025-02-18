@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/muesli/reflow/indent"
@@ -87,7 +88,12 @@ func shellDebugFormat(data any) string {
 }
 
 func shellDebug(ctx context.Context, title string, data ...any) {
-	hctx := interp.HandlerCtx(ctx)
 	msg := shellDebugLine(title, data...)
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprint(os.Stderr, msg)
+		}
+	}()
+	hctx := interp.HandlerCtx(ctx)
 	fmt.Fprint(hctx.Stderr, msg)
 }

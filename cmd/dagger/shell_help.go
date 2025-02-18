@@ -241,11 +241,11 @@ func (d ShellDoc) String() string {
 }
 
 // shellFunctionUseLine returns the usage line fine for a function
-func shellFunctionUseLine(md *moduleDef, fn *modFunction) string {
+func (h *shellCallHandler) FunctionUseLine(md *moduleDef, fn *modFunction) string {
 	sb := new(strings.Builder)
 
 	if fn == md.MainObject.AsObject.Constructor {
-		sb.WriteString(md.ModRef)
+		sb.WriteString(h.ModRel(md))
 	} else {
 		sb.WriteString(fn.CmdName())
 	}
@@ -263,7 +263,7 @@ func shellFunctionUseLine(md *moduleDef, fn *modFunction) string {
 	return sb.String()
 }
 
-func shellModuleDoc(st *ShellState, m *moduleDef) string {
+func (h *shellCallHandler) ModuleDoc(st *ShellState, m *moduleDef) string {
 	var doc ShellDoc
 
 	meta := new(strings.Builder)
@@ -280,7 +280,7 @@ func shellModuleDoc(st *ShellState, m *moduleDef) string {
 	if len(fn.Args) > 0 {
 		constructor := new(strings.Builder)
 		constructor.WriteString("Usage: ")
-		constructor.WriteString(shellFunctionUseLine(m, fn))
+		constructor.WriteString(h.FunctionUseLine(m, fn))
 
 		if fn.Description != "" {
 			constructor.WriteString("\n\n")
@@ -352,14 +352,14 @@ func shellTypeDoc(t *modTypeDef) string {
 	return doc.String()
 }
 
-func shellFunctionDoc(md *moduleDef, fn *modFunction) string {
+func (h *shellCallHandler) FunctionDoc(md *moduleDef, fn *modFunction) string {
 	var doc ShellDoc
 
 	if fn.Description != "" {
 		doc.Add("", fn.Description)
 	}
 
-	usage := shellFunctionUseLine(md, fn)
+	usage := h.FunctionUseLine(md, fn)
 	if usage != "" {
 		doc.Add("Usage", usage)
 	}

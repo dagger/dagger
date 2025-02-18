@@ -2,6 +2,7 @@ query ModuleConfig($source: ModuleSourceID!) {
   source: loadModuleSourceFromID(id: $source) {
     kind
     asString
+    sourceRootSubpath
     module: asModule {
       name
       description
