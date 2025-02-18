@@ -96,6 +96,9 @@ type Server interface {
 	// or a nested exec). Useful for figuring out where local sources should be resolved from through
 	// chains of dependency modules.
 	NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error)
+
+	// Retrieve the main client's DagQL server
+	MainServer(context.Context) (*dagql.Server, error)
 }
 
 func NewRoot(srv Server) *Query {
