@@ -393,6 +393,45 @@ This is an example of [pre-call filtering](../api/fs-filters.mdx#pre-call-filter
     dagger call copy-directory-with-exclusions --source=https://github.com/dagger/dagger#main directory --path=/src entries
     ```
 
+### Set a module-wide default path
+
+The following Dagger module uses a constructor to set a module-wide `Directory` argument and point it to a default path on the host. This eliminates the need to pass a common `Directory` argument individually to each Dagger Function in the module. If required, the default path can be overridden by specifying a different `Directory` value at call time.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/set-common-default-path/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/set-common-default-path/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/set-common-default-path/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Examples
+
+- Call the Dagger Function without arguments. The default path (the current directory `.`) is used:
+
+    ```shell
+    dagger call foo
+    ```
+
+- Call the Dagger Function with a constructor argument. The specified directory (`/src/myapp`) is used:
+
+    ```shell
+    dagger call --source=/src/myapp foo
+    ```
+
 ## Builds
 
 ### Perform a multi-stage build
