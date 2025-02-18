@@ -1745,7 +1745,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 				depCfg.Pin = depSrc.Self.Git.Pin
 
 			default:
-				return genDirInst, fmt.Errorf("unhandled module source kind: %s", srcInst.Self.Kind)
+				return genDirInst, fmt.Errorf("unhandled module source kind: %s", srcInst.Self.Kind.HumanString())
 			}
 
 		case core.ModuleSourceKindGit:
@@ -1771,11 +1771,41 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 				}
 
 			default:
-				return genDirInst, fmt.Errorf("unhandled module source kind: %s", srcInst.Self.Kind)
+				return genDirInst, fmt.Errorf("unhandled module source kind: %s", srcInst.Self.Kind.HumanString())
+			}
+
+		case core.ModuleSourceKindDir:
+			switch depSrc.Self.Kind {
+			case core.ModuleSourceKindDir:
+				// parent=dir, dep=dir
+				// This is a bit subtle, but we can assume that any dependencies of kind dir were sourced from the same
+				// context directory as the parent. This is because module sources of type dir only load dependencies
+				// from a pre-existing dagger.json; they cannot *currently* have more deps added via the withDependencies
+				// API.
+				parentSrcRoot := filepath.Join("/", src.SourceRootSubpath)
+				depSrcRoot := filepath.Join("/", depSrc.Self.SourceRootSubpath)
+				depSrcRoot, err := pathutil.LexicalRelativePath(parentSrcRoot, depSrcRoot)
+				if err != nil {
+					return genDirInst, fmt.Errorf("failed to get relative path: %w", err)
+				}
+				depCfg.Source = depSrcRoot
+
+			case core.ModuleSourceKindGit:
+				// parent=dir, dep=git
+				depCfg.Source = depSrc.Self.AsString()
+				depCfg.Pin = depSrc.Self.Git.Pin
+
+			default:
+				// Local not supported since there's nothing we could plausibly put in the dagger.json for
+				// a Dir-kind module source to depend on a Local-kind module source
+				return genDirInst, fmt.Errorf("parent module source kind %s cannot have dependency of kind %s",
+					srcInst.Self.Kind.HumanString(),
+					depSrc.Self.Kind.HumanString(),
+				)
 			}
 
 		default:
-			return genDirInst, fmt.Errorf("unhandled module source kind: %s", srcInst.Self.Kind)
+			return genDirInst, fmt.Errorf("unhandled module source kind: %s", srcInst.Self.Kind.HumanString())
 		}
 	}
 

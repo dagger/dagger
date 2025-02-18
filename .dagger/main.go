@@ -68,6 +68,9 @@ func New(
 		if strings.HasPrefix(module, "core/integration/") {
 			continue
 		}
+		if strings.HasPrefix(module, "dagql/idtui/viztest/broken/") {
+			continue
+		}
 		dev.ModCodegenTargets = append(dev.ModCodegenTargets, module)
 	}
 
