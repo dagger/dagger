@@ -1018,8 +1018,8 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, r *renderer, row *dagui
 		fmt.Fprint(out, out.String(VertBar).
 			Foreground(termenv.ANSIBrightBlack).
 			Faint())
-		if span.Actor != "" {
-			fmt.Fprint(out, span.Actor+" ")
+		if span.ActorEmoji != "" {
+			fmt.Fprint(out, span.ActorEmoji+" ")
 		} else {
 			fmt.Fprint(out, "💬 ")
 		}
