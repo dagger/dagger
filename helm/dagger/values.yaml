@@ -43,6 +43,12 @@ engine:
     # ref: registry.dagger.io/engine:main
     pullPolicy: IfNotPresent
 
+  ### Image pull secret to use for registry authentication.
+  imagePullSecrets: []
+  # imagePullSecrets:
+  #   - name: image-pull-secret
+
+
   ### Set taints & tolerations for this workload
   #
   # tolerations:
