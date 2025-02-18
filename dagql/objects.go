@@ -514,9 +514,7 @@ func (r Instance[T]) call(
 
 		if isPure && digestChanged && matchesType {
 			newID = valID
-			_, _, err := s.Cache.GetOrInitialize(ctx, valID.Digest(), func(context.Context) (Typed, error) {
-				return val, nil
-			})
+			_, _, err := s.Cache.GetOrInitializeValue(ctx, valID.Digest(), val)
 			if err != nil {
 				return nil, nil, err
 			}

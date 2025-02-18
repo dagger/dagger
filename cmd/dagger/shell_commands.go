@@ -393,7 +393,7 @@ to the currently loaded module.
 			State:   NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
 				st, err := h.getOrInitDefState(args[0], func() (*moduleDef, error) {
-					return initializeModule(ctx, h.dag, args[0], true)
+					return initializeModule(ctx, h.dag, args[0])
 				})
 				if err != nil {
 					return err

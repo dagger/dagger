@@ -1,11 +1,11 @@
 {
   "name": "php-sdk",
   "engineVersion": "v0.15.3",
-  "sdk": {
-    "source": "go"
-  },
   "exclude": [
     "vendor/"
   ],
+  "sdk": {
+    "source": "go"
+  },
   "source": "runtime"
 }

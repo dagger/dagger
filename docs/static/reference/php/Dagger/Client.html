@@ -505,16 +505,6 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/GitModuleSource.html"><abbr title="Dagger\GitModuleSource">GitModuleSource</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_loadGitModuleSourceFromID">loadGitModuleSourceFromID</a>(<abbr title="Dagger\GitModuleSourceId|Dagger\GitModuleSource">GitModuleSource</abbr> $id)
-        
-                                            <p><p>Load a GitModuleSource from its ID.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
                     <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -585,26 +575,6 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/LocalModuleSource.html"><abbr title="Dagger\LocalModuleSource">LocalModuleSource</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_loadLocalModuleSourceFromID">loadLocalModuleSourceFromID</a>(<abbr title="Dagger\LocalModuleSourceId|Dagger\LocalModuleSource">LocalModuleSource</abbr> $id)
-        
-                                            <p><p>Load a LocalModuleSource from its ID.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/ModuleDependency.html"><abbr title="Dagger\ModuleDependency">ModuleDependency</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_loadModuleDependencyFromID">loadModuleDependencyFromID</a>(<abbr title="Dagger\ModuleDependencyId|Dagger\ModuleDependency">ModuleDependency</abbr> $id)
-        
-                                            <p><p>Load a ModuleDependency from its ID.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
                     <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -621,16 +591,6 @@
                     <a href="#method_loadModuleSourceFromID">loadModuleSourceFromID</a>(<abbr title="Dagger\ModuleSourceId|Dagger\ModuleSource">ModuleSource</abbr> $id)
         
                                             <p><p>Load a ModuleSource from its ID.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/ModuleSourceView.html"><abbr title="Dagger\ModuleSourceView">ModuleSourceView</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_loadModuleSourceViewFromID">loadModuleSourceViewFromID</a>(<abbr title="Dagger\ModuleSourceViewId|Dagger\ModuleSourceView">ModuleSourceView</abbr> $id)
-        
-                                            <p><p>Load a ModuleSourceView from its ID.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -755,22 +715,12 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/ModuleDependency.html"><abbr title="Dagger\ModuleDependency">ModuleDependency</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_moduleDependency">moduleDependency</a>(<abbr title="Dagger\ModuleSourceId|Dagger\ModuleSource">ModuleSource</abbr> $source, string|null $name = &#039;&#039;)
-        
-                                            <p><p>Create a new module dependency configuration from a module source and name</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
                     <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_moduleSource">moduleSource</a>(string $refString, string|null $refPin = &#039;&#039;, bool|null $stable = false, string|null $relHostPath = &#039;&#039;)
+                    <a href="#method_moduleSource">moduleSource</a>(string $refString, string|null $refPin = &#039;&#039;, bool|null $disableFindUp = false, bool|null $allowNotExists = false, <abbr title="Dagger\Dagger\ModuleSourceKind">ModuleSourceKind</abbr>|null $requireKind = null)
         
-                                            <p><p>Create a new module source instance from a source ref string.</p></p>                </div>
+                                            <p><p>Create a new module source instance from a source ref string</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -2356,50 +2306,8 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_loadGitModuleSourceFromID">
-        <div class="location">at line 383</div>
-        <code>                    <a href="../Dagger/GitModuleSource.html"><abbr title="Dagger\GitModuleSource">GitModuleSource</abbr></a>
-    <strong>loadGitModuleSourceFromID</strong>(<abbr title="Dagger\GitModuleSourceId|Dagger\GitModuleSource">GitModuleSource</abbr> $id)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Load a GitModuleSource from its ID.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td><abbr title="Dagger\GitModuleSourceId|Dagger\GitModuleSource">GitModuleSource</abbr></td>
-                <td>$id</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/GitModuleSource.html"><abbr title="Dagger\GitModuleSource">GitModuleSource</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_loadGitRefFromID">
-        <div class="location">at line 393</div>
+        <div class="location">at line 383</div>
         <code>                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
     <strong>loadGitRefFromID</strong>(<abbr title="Dagger\GitRefId|Dagger\GitRef">GitRef</abbr> $id)
         </code>
@@ -2441,7 +2349,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadGitRepositoryFromID">
-        <div class="location">at line 403</div>
+        <div class="location">at line 393</div>
         <code>                    <a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a>
     <strong>loadGitRepositoryFromID</strong>(<abbr title="Dagger\GitRepositoryId|Dagger\GitRepository">GitRepository</abbr> $id)
         </code>
@@ -2483,7 +2391,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadHostFromID">
-        <div class="location">at line 413</div>
+        <div class="location">at line 403</div>
         <code>                    <a href="../Dagger/Host.html"><abbr title="Dagger\Host">Host</abbr></a>
     <strong>loadHostFromID</strong>(<abbr title="Dagger\HostId|Dagger\Host">Host</abbr> $id)
         </code>
@@ -2525,7 +2433,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadInputTypeDefFromID">
-        <div class="location">at line 423</div>
+        <div class="location">at line 413</div>
         <code>                    <a href="../Dagger/InputTypeDef.html"><abbr title="Dagger\InputTypeDef">InputTypeDef</abbr></a>
     <strong>loadInputTypeDefFromID</strong>(<abbr title="Dagger\InputTypeDefId|Dagger\InputTypeDef">InputTypeDef</abbr> $id)
         </code>
@@ -2567,7 +2475,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadInterfaceTypeDefFromID">
-        <div class="location">at line 433</div>
+        <div class="location">at line 423</div>
         <code>                    <a href="../Dagger/InterfaceTypeDef.html"><abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr></a>
     <strong>loadInterfaceTypeDefFromID</strong>(<abbr title="Dagger\InterfaceTypeDefId|Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr> $id)
         </code>
@@ -2609,7 +2517,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadLabelFromID">
-        <div class="location">at line 443</div>
+        <div class="location">at line 433</div>
         <code>                    <a href="../Dagger/Label.html"><abbr title="Dagger\Label">Label</abbr></a>
     <strong>loadLabelFromID</strong>(<abbr title="Dagger\LabelId|Dagger\Label">Label</abbr> $id)
         </code>
@@ -2651,7 +2559,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadListTypeDefFromID">
-        <div class="location">at line 453</div>
+        <div class="location">at line 443</div>
         <code>                    <a href="../Dagger/ListTypeDef.html"><abbr title="Dagger\ListTypeDef">ListTypeDef</abbr></a>
     <strong>loadListTypeDefFromID</strong>(<abbr title="Dagger\ListTypeDefId|Dagger\ListTypeDef">ListTypeDef</abbr> $id)
         </code>
@@ -2692,92 +2600,8 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_loadLocalModuleSourceFromID">
-        <div class="location">at line 463</div>
-        <code>                    <a href="../Dagger/LocalModuleSource.html"><abbr title="Dagger\LocalModuleSource">LocalModuleSource</abbr></a>
-    <strong>loadLocalModuleSourceFromID</strong>(<abbr title="Dagger\LocalModuleSourceId|Dagger\LocalModuleSource">LocalModuleSource</abbr> $id)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Load a LocalModuleSource from its ID.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td><abbr title="Dagger\LocalModuleSourceId|Dagger\LocalModuleSource">LocalModuleSource</abbr></td>
-                <td>$id</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/LocalModuleSource.html"><abbr title="Dagger\LocalModuleSource">LocalModuleSource</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_loadModuleDependencyFromID">
-        <div class="location">at line 473</div>
-        <code>                    <a href="../Dagger/ModuleDependency.html"><abbr title="Dagger\ModuleDependency">ModuleDependency</abbr></a>
-    <strong>loadModuleDependencyFromID</strong>(<abbr title="Dagger\ModuleDependencyId|Dagger\ModuleDependency">ModuleDependency</abbr> $id)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Load a ModuleDependency from its ID.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td><abbr title="Dagger\ModuleDependencyId|Dagger\ModuleDependency">ModuleDependency</abbr></td>
-                <td>$id</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/ModuleDependency.html"><abbr title="Dagger\ModuleDependency">ModuleDependency</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_loadModuleFromID">
-        <div class="location">at line 483</div>
+        <div class="location">at line 453</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>loadModuleFromID</strong>(<abbr title="Dagger\ModuleId|Dagger\Module">Module</abbr> $id)
         </code>
@@ -2819,7 +2643,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadModuleSourceFromID">
-        <div class="location">at line 493</div>
+        <div class="location">at line 463</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>loadModuleSourceFromID</strong>(<abbr title="Dagger\ModuleSourceId|Dagger\ModuleSource">ModuleSource</abbr> $id)
         </code>
@@ -2860,50 +2684,8 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_loadModuleSourceViewFromID">
-        <div class="location">at line 503</div>
-        <code>                    <a href="../Dagger/ModuleSourceView.html"><abbr title="Dagger\ModuleSourceView">ModuleSourceView</abbr></a>
-    <strong>loadModuleSourceViewFromID</strong>(<abbr title="Dagger\ModuleSourceViewId|Dagger\ModuleSourceView">ModuleSourceView</abbr> $id)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Load a ModuleSourceView from its ID.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td><abbr title="Dagger\ModuleSourceViewId|Dagger\ModuleSourceView">ModuleSourceView</abbr></td>
-                <td>$id</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/ModuleSourceView.html"><abbr title="Dagger\ModuleSourceView">ModuleSourceView</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_loadObjectTypeDefFromID">
-        <div class="location">at line 513</div>
+        <div class="location">at line 473</div>
         <code>                    <a href="../Dagger/ObjectTypeDef.html"><abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr></a>
     <strong>loadObjectTypeDefFromID</strong>(<abbr title="Dagger\ObjectTypeDefId|Dagger\ObjectTypeDef">ObjectTypeDef</abbr> $id)
         </code>
@@ -2945,7 +2727,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadPortFromID">
-        <div class="location">at line 523</div>
+        <div class="location">at line 483</div>
         <code>                    <a href="../Dagger/Port.html"><abbr title="Dagger\Port">Port</abbr></a>
     <strong>loadPortFromID</strong>(<abbr title="Dagger\PortId|Dagger\Port">Port</abbr> $id)
         </code>
@@ -2987,7 +2769,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadSDKConfigFromID">
-        <div class="location">at line 533</div>
+        <div class="location">at line 493</div>
         <code>                    <a href="../Dagger/SDKConfig.html"><abbr title="Dagger\SDKConfig">SDKConfig</abbr></a>
     <strong>loadSDKConfigFromID</strong>(<abbr title="Dagger\SDKConfigId|Dagger\SDKConfig">SDKConfig</abbr> $id)
         </code>
@@ -3029,7 +2811,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadScalarTypeDefFromID">
-        <div class="location">at line 543</div>
+        <div class="location">at line 503</div>
         <code>                    <a href="../Dagger/ScalarTypeDef.html"><abbr title="Dagger\ScalarTypeDef">ScalarTypeDef</abbr></a>
     <strong>loadScalarTypeDefFromID</strong>(<abbr title="Dagger\ScalarTypeDefId|Dagger\ScalarTypeDef">ScalarTypeDef</abbr> $id)
         </code>
@@ -3071,7 +2853,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadSecretFromID">
-        <div class="location">at line 553</div>
+        <div class="location">at line 513</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>loadSecretFromID</strong>(<abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr> $id)
         </code>
@@ -3113,7 +2895,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadSecretFromName">
-        <div class="location">at line 563</div>
+        <div class="location">at line 523</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>loadSecretFromName</strong>(string $name, string|null $accessor = null)
         </code>
@@ -3160,7 +2942,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadServiceFromID">
-        <div class="location">at line 576</div>
+        <div class="location">at line 536</div>
         <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
     <strong>loadServiceFromID</strong>(<abbr title="Dagger\ServiceId|Dagger\Service">Service</abbr> $id)
         </code>
@@ -3202,7 +2984,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadSocketFromID">
-        <div class="location">at line 586</div>
+        <div class="location">at line 546</div>
         <code>                    <a href="../Dagger/Socket.html"><abbr title="Dagger\Socket">Socket</abbr></a>
     <strong>loadSocketFromID</strong>(<abbr title="Dagger\SocketId|Dagger\Socket">Socket</abbr> $id)
         </code>
@@ -3244,7 +3026,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadSourceMapFromID">
-        <div class="location">at line 596</div>
+        <div class="location">at line 556</div>
         <code>                    <a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a>
     <strong>loadSourceMapFromID</strong>(<abbr title="Dagger\SourceMapId|Dagger\SourceMap">SourceMap</abbr> $id)
         </code>
@@ -3286,7 +3068,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadTerminalFromID">
-        <div class="location">at line 606</div>
+        <div class="location">at line 566</div>
         <code>                    <a href="../Dagger/Terminal.html"><abbr title="Dagger\Terminal">Terminal</abbr></a>
     <strong>loadTerminalFromID</strong>(<abbr title="Dagger\TerminalId|Dagger\Terminal">Terminal</abbr> $id)
         </code>
@@ -3328,7 +3110,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadTypeDefFromID">
-        <div class="location">at line 616</div>
+        <div class="location">at line 576</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>loadTypeDefFromID</strong>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $id)
         </code>
@@ -3370,7 +3152,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_module">
-        <div class="location">at line 626</div>
+        <div class="location">at line 586</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>module</strong>()
         </code>
@@ -3401,57 +3183,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_moduleDependency">
-        <div class="location">at line 635</div>
-        <code>                    <a href="../Dagger/ModuleDependency.html"><abbr title="Dagger\ModuleDependency">ModuleDependency</abbr></a>
-    <strong>moduleDependency</strong>(<abbr title="Dagger\ModuleSourceId|Dagger\ModuleSource">ModuleSource</abbr> $source, string|null $name = &#039;&#039;)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Create a new module dependency configuration from a module source and name</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td><abbr title="Dagger\ModuleSourceId|Dagger\ModuleSource">ModuleSource</abbr></td>
-                <td>$source</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>string|null</td>
-                <td>$name</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/ModuleDependency.html"><abbr title="Dagger\ModuleDependency">ModuleDependency</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_moduleSource">
-        <div class="location">at line 648</div>
+        <div class="location">at line 595</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
-    <strong>moduleSource</strong>(string $refString, string|null $refPin = &#039;&#039;, bool|null $stable = false, string|null $relHostPath = &#039;&#039;)
+    <strong>moduleSource</strong>(string $refString, string|null $refPin = &#039;&#039;, bool|null $disableFindUp = false, bool|null $allowNotExists = false, <abbr title="Dagger\Dagger\ModuleSourceKind">ModuleSourceKind</abbr>|null $requireKind = null)
         </code>
     </h3>
     <div class="details">    
@@ -3459,7 +3194,7 @@
             
 
         <div class="method-description">
-                            <p><p>Create a new module source instance from a source ref string.</p></p>                        
+                            <p><p>Create a new module source instance from a source ref string</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -3477,12 +3212,17 @@
             </tr>
                     <tr>
                 <td>bool|null</td>
-                <td>$stable</td>
+                <td>$disableFindUp</td>
                 <td></td>
             </tr>
                     <tr>
-                <td>string|null</td>
-                <td>$relHostPath</td>
+                <td>bool|null</td>
+                <td>$allowNotExists</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\Dagger\ModuleSourceKind">ModuleSourceKind</abbr>|null</td>
+                <td>$requireKind</td>
                 <td></td>
             </tr>
             </table>
@@ -3506,7 +3246,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_secret">
-        <div class="location">at line 671</div>
+        <div class="location">at line 622</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>secret</strong>(string $uri)
         </code>
@@ -3548,7 +3288,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_setSecret">
-        <div class="location">at line 683</div>
+        <div class="location">at line 634</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>setSecret</strong>(string $name, string $plaintext)
         </code>
@@ -3595,7 +3335,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sourceMap">
-        <div class="location">at line 694</div>
+        <div class="location">at line 645</div>
         <code>                    <a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a>
     <strong>sourceMap</strong>(string $filename, int $line, int $column)
         </code>
@@ -3647,7 +3387,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_typeDef">
-        <div class="location">at line 706</div>
+        <div class="location">at line 657</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>typeDef</strong>()
         </code>
@@ -3679,7 +3419,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_version">
-        <div class="location">at line 715</div>
+        <div class="location">at line 666</div>
         <code>                    string
     <strong>version</strong>()
         </code>

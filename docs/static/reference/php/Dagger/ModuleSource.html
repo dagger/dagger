@@ -143,30 +143,10 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/GitModuleSource.html"><abbr title="Dagger\GitModuleSource">GitModuleSource</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_asGitSource">asGitSource</a>()
-        
-                                            <p><p>If the source is a of kind git, the git source representation of it.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/LocalModuleSource.html"><abbr title="Dagger\LocalModuleSource">LocalModuleSource</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_asLocalSource">asLocalSource</a>()
-        
-                                            <p><p>If the source is of kind local, the local source representation of it.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
                     <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_asModule">asModule</a>(string|null $engineVersion = null)
+                    <a href="#method_asModule">asModule</a>()
         
                                             <p><p>Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -183,12 +163,32 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_cloneRef">cloneRef</a>()
+        
+                                            <p><p>The ref to clone the root of the git repo from. Only valid for git sources.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_commit">commit</a>()
+        
+                                            <p><p>The resolved commit of the git repo this source points to. Only valid for git sources.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     bool
                 </div>
                 <div class="col-md-8">
                     <a href="#method_configExists">configExists</a>()
         
-                                            <p><p>Returns whether the module source has a configuration file.</p></p>                </div>
+                                            <p><p>Whether an existing dagger.json for the module was found.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -198,7 +198,7 @@
                 <div class="col-md-8">
                     <a href="#method_contextDirectory">contextDirectory</a>()
         
-                                            <p><p>The directory containing everything needed to load and use the module.</p></p>                </div>
+                                            <p><p>The full directory loaded for the module source, including the source code as a subdirectory.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -208,7 +208,7 @@
                 <div class="col-md-8">
                     <a href="#method_dependencies">dependencies</a>()
         
-                                            <p><p>The effective module source dependencies from the configuration, and calls to withDependencies and withoutDependencies.</p></p>                </div>
+                                            <p><p>The dependencies of the module source.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -218,7 +218,7 @@
                 <div class="col-md-8">
                     <a href="#method_digest">digest</a>()
         
-                                            <p><p>Return the module source's content digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.</p></p>                </div>
+                                            <p><p>A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -229,6 +229,46 @@
                     <a href="#method_directory">directory</a>(string $path)
         
                                             <p><p>The directory containing the module configuration and source code (source code may be in a subdir).</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_engineVersion">engineVersion</a>()
+        
+                                            <p><p>The engine version of the module.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_generatedContextDirectory">generatedContextDirectory</a>()
+        
+                                            <p><p>The generated files and directories made on top of the module source's context directory.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_htmlRepoURL">htmlRepoURL</a>()
+        
+                                            <p><p>The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_htmlURL">htmlURL</a>()
+        
+                                            <p><p>The URL to the source's git repo in a web browser. Only valid for git sources.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -248,7 +288,17 @@
                 <div class="col-md-8">
                     <a href="#method_kind">kind</a>()
         
-                                            <p><p>The kind of source (e.g. local, git, etc.)</p></p>                </div>
+                                            <p><p>The kind of module source (currently local, git or dir).</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_localContextDirectoryPath">localContextDirectoryPath</a>()
+        
+                                            <p><p>The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -258,7 +308,7 @@
                 <div class="col-md-8">
                     <a href="#method_moduleName">moduleName</a>()
         
-                                            <p><p>If set, the name of the module this source references, including any overrides at runtime by callers.</p></p>                </div>
+                                            <p><p>The name of the module, including any setting via the withName API.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -268,7 +318,7 @@
                 <div class="col-md-8">
                     <a href="#method_moduleOriginalName">moduleOriginalName</a>()
         
-                                            <p><p>The original name of the module this source references, as defined in the module configuration.</p></p>                </div>
+                                            <p><p>The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -286,39 +336,19 @@
                     string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_resolveContextPathFromCaller">resolveContextPathFromCaller</a>()
+                    <a href="#method_repoRootPath">repoRootPath</a>()
         
-                                            <p><p>The path to the module source's context directory on the caller's filesystem. Only valid for local sources.</p></p>                </div>
+                                            <p><p>The import path corresponding to the root of the git repo this source points to. Only valid for git sources.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
+                    <a href="../Dagger/SDKConfig.html"><abbr title="Dagger\SDKConfig">SDKConfig</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_resolveDependency">resolveDependency</a>(<abbr title="Dagger\ModuleSourceId|Dagger\ModuleSource">ModuleSource</abbr> $dep)
+                    <a href="#method_sdk">sdk</a>()
         
-                                            <p><p>Resolve the provided module source arg as a dependency relative to this module source.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_resolveDirectoryFromCaller">resolveDirectoryFromCaller</a>(string $path, string|null $viewName = null, array|null $ignore = null)
-        
-                                            <p><p>Load a directory from the caller optionally with a given view applied.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_resolveFromCaller">resolveFromCaller</a>()
-        
-                                            <p><p>Load the source from its path on the caller's filesystem, including only needed+configured files and directories. Only valid for local sources.</p></p>                </div>
+                                            <p><p>The SDK configuration of the module.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -328,7 +358,7 @@
                 <div class="col-md-8">
                     <a href="#method_sourceRootSubpath">sourceRootSubpath</a>()
         
-                                            <p><p>The path relative to context of the root of the module source, which contains dagger.json. It also contains the module implementation source code, but that may or may not being a subdir of this root.</p></p>                </div>
+                                            <p><p>The path, relative to the context directory, that contains the module's dagger.json.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -338,37 +368,27 @@
                 <div class="col-md-8">
                     <a href="#method_sourceSubpath">sourceSubpath</a>()
         
-                                            <p><p>The path relative to context of the module implementation source code.</p></p>                </div>
+                                            <p><p>The path to the directory containing the module's source code, relative to the context directory.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/ModuleSourceView.html"><abbr title="Dagger\ModuleSourceView">ModuleSourceView</abbr></a>
+                    <a href="../Dagger/ModuleSourceId.html"><abbr title="Dagger\ModuleSourceId">ModuleSourceId</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_view">view</a>(string $name)
+                    <a href="#method_sync">sync</a>()
         
-                                            <p><p>Retrieve a named view defined for this module source.</p></p>                </div>
+                                            <p><p>Forces evaluation of the module source, including any loading into the engine and associated validation.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    array
+                    string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_views">views</a>()
+                    <a href="#method_version">version</a>()
         
-                                            <p><p>The named views defined for this module source, which are sets of directory filters that can be applied to directory arguments provided to functions.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withContextDirectory">withContextDirectory</a>(<abbr title="Dagger\DirectoryId|Dagger\Directory">Directory</abbr> $dir)
-        
-                                            <p><p>Update the module source with a new context directory. Only valid for local sources.</p></p>                </div>
+                                            <p><p>The specified version of the git repo this source points to. Only valid for git sources.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -386,9 +406,19 @@
                     <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withInit">withInit</a>(bool|null $merge = false)
+                    <a href="#method_withEngineVersion">withEngineVersion</a>(string $version)
         
-                                            <p><p>Sets module init arguments</p></p>                </div>
+                                            <p><p>Upgrade the engine version of the module to the given value.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withIncludes">withIncludes</a>(array $patterns)
+        
+                                            <p><p>Update the module source with additional include patterns for files+directories from its context that are required for building it</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -429,16 +459,6 @@
                     <a href="#method_withUpdateDependencies">withUpdateDependencies</a>(array $dependencies)
         
                                             <p><p>Update one or more module dependencies.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withView">withView</a>(string $name, array $patterns)
-        
-                                            <p><p>Update the module source with a new named view.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -547,74 +567,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_asGitSource">
-        <div class="location">at line 19</div>
-        <code>                    <a href="../Dagger/GitModuleSource.html"><abbr title="Dagger\GitModuleSource">GitModuleSource</abbr></a>
-    <strong>asGitSource</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>If the source is a of kind git, the git source representation of it.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/GitModuleSource.html"><abbr title="Dagger\GitModuleSource">GitModuleSource</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_asLocalSource">
-        <div class="location">at line 28</div>
-        <code>                    <a href="../Dagger/LocalModuleSource.html"><abbr title="Dagger\LocalModuleSource">LocalModuleSource</abbr></a>
-    <strong>asLocalSource</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>If the source is of kind local, the local source representation of it.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/LocalModuleSource.html"><abbr title="Dagger\LocalModuleSource">LocalModuleSource</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_asModule">
-        <div class="location">at line 37</div>
+        <div class="location">at line 19</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
-    <strong>asModule</strong>(string|null $engineVersion = null)
+    <strong>asModule</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -625,16 +581,6 @@
                             <p><p>Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation</p></p>                        
         </div>
         <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string|null</td>
-                <td>$engineVersion</td>
-                <td></td>
-            </tr>
-            </table>
-
             
                             <h4>Return Value</h4>
 
@@ -654,7 +600,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_asString">
-        <div class="location">at line 49</div>
+        <div class="location">at line 28</div>
         <code>                    string
     <strong>asString</strong>()
         </code>
@@ -685,8 +631,72 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_cloneRef">
+        <div class="location">at line 37</div>
+        <code>                    string
+    <strong>cloneRef</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The ref to clone the root of the git repo from. Only valid for git sources.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_commit">
+        <div class="location">at line 46</div>
+        <code>                    string
+    <strong>commit</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The resolved commit of the git repo this source points to. Only valid for git sources.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_configExists">
-        <div class="location">at line 58</div>
+        <div class="location">at line 55</div>
         <code>                    bool
     <strong>configExists</strong>()
         </code>
@@ -696,7 +706,7 @@
             
 
         <div class="method-description">
-                            <p><p>Returns whether the module source has a configuration file.</p></p>                        
+                            <p><p>Whether an existing dagger.json for the module was found.</p></p>                        
         </div>
         <div class="tags">
             
@@ -718,7 +728,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_contextDirectory">
-        <div class="location">at line 67</div>
+        <div class="location">at line 64</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>contextDirectory</strong>()
         </code>
@@ -728,7 +738,7 @@
             
 
         <div class="method-description">
-                            <p><p>The directory containing everything needed to load and use the module.</p></p>                        
+                            <p><p>The full directory loaded for the module source, including the source code as a subdirectory.</p></p>                        
         </div>
         <div class="tags">
             
@@ -750,7 +760,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_dependencies">
-        <div class="location">at line 76</div>
+        <div class="location">at line 73</div>
         <code>                    array
     <strong>dependencies</strong>()
         </code>
@@ -760,7 +770,7 @@
             
 
         <div class="method-description">
-                            <p><p>The effective module source dependencies from the configuration, and calls to withDependencies and withoutDependencies.</p></p>                        
+                            <p><p>The dependencies of the module source.</p></p>                        
         </div>
         <div class="tags">
             
@@ -782,7 +792,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_digest">
-        <div class="location">at line 85</div>
+        <div class="location">at line 82</div>
         <code>                    string
     <strong>digest</strong>()
         </code>
@@ -792,7 +802,7 @@
             
 
         <div class="method-description">
-                            <p><p>Return the module source's content digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.</p></p>                        
+                            <p><p>A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance.</p></p>                        
         </div>
         <div class="tags">
             
@@ -814,7 +824,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_directory">
-        <div class="location">at line 94</div>
+        <div class="location">at line 91</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>directory</strong>(string $path)
         </code>
@@ -855,8 +865,136 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_engineVersion">
+        <div class="location">at line 101</div>
+        <code>                    string
+    <strong>engineVersion</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The engine version of the module.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_generatedContextDirectory">
+        <div class="location">at line 110</div>
+        <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
+    <strong>generatedContextDirectory</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The generated files and directories made on top of the module source's context directory.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_htmlRepoURL">
+        <div class="location">at line 119</div>
+        <code>                    string
+    <strong>htmlRepoURL</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_htmlURL">
+        <div class="location">at line 128</div>
+        <code>                    string
+    <strong>htmlURL</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The URL to the source's git repo in a web browser. Only valid for git sources.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 104</div>
+        <div class="location">at line 137</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
     <strong>id</strong>()
         </code>
@@ -888,7 +1026,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_kind">
-        <div class="location">at line 113</div>
+        <div class="location">at line 146</div>
         <code>                    <abbr title="Dagger\ModuleSourceKind">ModuleSourceKind</abbr>
     <strong>kind</strong>()
         </code>
@@ -898,7 +1036,7 @@
             
 
         <div class="method-description">
-                            <p><p>The kind of source (e.g. local, git, etc.)</p></p>                        
+                            <p><p>The kind of module source (currently local, git or dir).</p></p>                        
         </div>
         <div class="tags">
             
@@ -919,8 +1057,40 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_localContextDirectoryPath">
+        <div class="location">at line 155</div>
+        <code>                    string
+    <strong>localContextDirectoryPath</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_moduleName">
-        <div class="location">at line 122</div>
+        <div class="location">at line 164</div>
         <code>                    string
     <strong>moduleName</strong>()
         </code>
@@ -930,7 +1100,7 @@
             
 
         <div class="method-description">
-                            <p><p>If set, the name of the module this source references, including any overrides at runtime by callers.</p></p>                        
+                            <p><p>The name of the module, including any setting via the withName API.</p></p>                        
         </div>
         <div class="tags">
             
@@ -952,7 +1122,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_moduleOriginalName">
-        <div class="location">at line 131</div>
+        <div class="location">at line 173</div>
         <code>                    string
     <strong>moduleOriginalName</strong>()
         </code>
@@ -962,7 +1132,7 @@
             
 
         <div class="method-description">
-                            <p><p>The original name of the module this source references, as defined in the module configuration.</p></p>                        
+                            <p><p>The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).</p></p>                        
         </div>
         <div class="tags">
             
@@ -984,7 +1154,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_pin">
-        <div class="location">at line 140</div>
+        <div class="location">at line 182</div>
         <code>                    string
     <strong>pin</strong>()
         </code>
@@ -1015,10 +1185,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_resolveContextPathFromCaller">
-        <div class="location">at line 149</div>
+                    <h3 id="method_repoRootPath">
+        <div class="location">at line 191</div>
         <code>                    string
-    <strong>resolveContextPathFromCaller</strong>()
+    <strong>repoRootPath</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -1026,7 +1196,7 @@
             
 
         <div class="method-description">
-                            <p><p>The path to the module source's context directory on the caller's filesystem. Only valid for local sources.</p></p>                        
+                            <p><p>The import path corresponding to the root of the git repo this source points to. Only valid for git sources.</p></p>                        
         </div>
         <div class="tags">
             
@@ -1047,10 +1217,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_resolveDependency">
-        <div class="location">at line 158</div>
-        <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
-    <strong>resolveDependency</strong>(<abbr title="Dagger\ModuleSourceId|Dagger\ModuleSource">ModuleSource</abbr> $dep)
+                    <h3 id="method_sdk">
+        <div class="location">at line 200</div>
+        <code>                    <a href="../Dagger/SDKConfig.html"><abbr title="Dagger\SDKConfig">SDKConfig</abbr></a>
+    <strong>sdk</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -1058,101 +1228,7 @@
             
 
         <div class="method-description">
-                            <p><p>Resolve the provided module source arg as a dependency relative to this module source.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td><abbr title="Dagger\ModuleSourceId|Dagger\ModuleSource">ModuleSource</abbr></td>
-                <td>$dep</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_resolveDirectoryFromCaller">
-        <div class="location">at line 168</div>
-        <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
-    <strong>resolveDirectoryFromCaller</strong>(string $path, string|null $viewName = null, array|null $ignore = null)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Load a directory from the caller optionally with a given view applied.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$path</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>string|null</td>
-                <td>$viewName</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>array|null</td>
-                <td>$ignore</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_resolveFromCaller">
-        <div class="location">at line 187</div>
-        <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
-    <strong>resolveFromCaller</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Load the source from its path on the caller's filesystem, including only needed+configured files and directories. Only valid for local sources.</p></p>                        
+                            <p><p>The SDK configuration of the module.</p></p>                        
         </div>
         <div class="tags">
             
@@ -1160,7 +1236,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></td>
+            <td><a href="../Dagger/SDKConfig.html"><abbr title="Dagger\SDKConfig">SDKConfig</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -1174,7 +1250,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sourceRootSubpath">
-        <div class="location">at line 196</div>
+        <div class="location">at line 209</div>
         <code>                    string
     <strong>sourceRootSubpath</strong>()
         </code>
@@ -1184,7 +1260,7 @@
             
 
         <div class="method-description">
-                            <p><p>The path relative to context of the root of the module source, which contains dagger.json. It also contains the module implementation source code, but that may or may not being a subdir of this root.</p></p>                        
+                            <p><p>The path, relative to the context directory, that contains the module's dagger.json.</p></p>                        
         </div>
         <div class="tags">
             
@@ -1206,7 +1282,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sourceSubpath">
-        <div class="location">at line 205</div>
+        <div class="location">at line 218</div>
         <code>                    string
     <strong>sourceSubpath</strong>()
         </code>
@@ -1216,7 +1292,7 @@
             
 
         <div class="method-description">
-                            <p><p>The path relative to context of the module implementation source code.</p></p>                        
+                            <p><p>The path to the directory containing the module's source code, relative to the context directory.</p></p>                        
         </div>
         <div class="tags">
             
@@ -1237,10 +1313,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_view">
-        <div class="location">at line 214</div>
-        <code>                    <a href="../Dagger/ModuleSourceView.html"><abbr title="Dagger\ModuleSourceView">ModuleSourceView</abbr></a>
-    <strong>view</strong>(string $name)
+                    <h3 id="method_sync">
+        <div class="location">at line 227</div>
+        <code>                    <a href="../Dagger/ModuleSourceId.html"><abbr title="Dagger\ModuleSourceId">ModuleSourceId</abbr></a>
+    <strong>sync</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -1248,25 +1324,15 @@
             
 
         <div class="method-description">
-                            <p><p>Retrieve a named view defined for this module source.</p></p>                        
+                            <p><p>Forces evaluation of the module source, including any loading into the engine and associated validation.</p></p>                        
         </div>
         <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$name</td>
-                <td></td>
-            </tr>
-            </table>
-
             
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/ModuleSourceView.html"><abbr title="Dagger\ModuleSourceView">ModuleSourceView</abbr></a></td>
+            <td><a href="../Dagger/ModuleSourceId.html"><abbr title="Dagger\ModuleSourceId">ModuleSourceId</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -1279,10 +1345,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_views">
-        <div class="location">at line 224</div>
-        <code>                    array
-    <strong>views</strong>()
+                    <h3 id="method_version">
+        <div class="location">at line 236</div>
+        <code>                    string
+    <strong>version</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -1290,7 +1356,7 @@
             
 
         <div class="method-description">
-                            <p><p>The named views defined for this module source, which are sets of directory filters that can be applied to directory arguments provided to functions.</p></p>                        
+                            <p><p>The specified version of the git repo this source points to. Only valid for git sources.</p></p>                        
         </div>
         <div class="tags">
             
@@ -1298,49 +1364,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td>array</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_withContextDirectory">
-        <div class="location">at line 233</div>
-        <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
-    <strong>withContextDirectory</strong>(<abbr title="Dagger\DirectoryId|Dagger\Directory">Directory</abbr> $dir)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Update the module source with a new context directory. Only valid for local sources.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td><abbr title="Dagger\DirectoryId|Dagger\Directory">Directory</abbr></td>
-                <td>$dir</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></td>
+            <td>string</td>
             <td></td>
         </tr>
     </table>
@@ -1354,7 +1378,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withDependencies">
-        <div class="location">at line 243</div>
+        <div class="location">at line 245</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withDependencies</strong>(array $dependencies)
         </code>
@@ -1395,10 +1419,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_withInit">
-        <div class="location">at line 253</div>
+                    <h3 id="method_withEngineVersion">
+        <div class="location">at line 255</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
-    <strong>withInit</strong>(bool|null $merge = false)
+    <strong>withEngineVersion</strong>(string $version)
         </code>
     </h3>
     <div class="details">    
@@ -1406,15 +1430,57 @@
             
 
         <div class="method-description">
-                            <p><p>Sets module init arguments</p></p>                        
+                            <p><p>Upgrade the engine version of the module to the given value.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
 
                     <table class="table table-condensed">
                     <tr>
-                <td>bool|null</td>
-                <td>$merge</td>
+                <td>string</td>
+                <td>$version</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withIncludes">
+        <div class="location">at line 265</div>
+        <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
+    <strong>withIncludes</strong>(array $patterns)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Update the module source with additional include patterns for files+directories from its context that are required for building it</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>array</td>
+                <td>$patterns</td>
                 <td></td>
             </tr>
             </table>
@@ -1438,7 +1504,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withName">
-        <div class="location">at line 265</div>
+        <div class="location">at line 275</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withName</strong>(string $name)
         </code>
@@ -1480,7 +1546,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withSDK">
-        <div class="location">at line 275</div>
+        <div class="location">at line 285</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withSDK</strong>(string $source)
         </code>
@@ -1522,7 +1588,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withSourceSubpath">
-        <div class="location">at line 285</div>
+        <div class="location">at line 295</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withSourceSubpath</strong>(string $path)
         </code>
@@ -1564,7 +1630,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withUpdateDependencies">
-        <div class="location">at line 295</div>
+        <div class="location">at line 305</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withUpdateDependencies</strong>(array $dependencies)
         </code>
@@ -1605,55 +1671,8 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_withView">
-        <div class="location">at line 305</div>
-        <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
-    <strong>withView</strong>(string $name, array $patterns)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Update the module source with a new named view.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$name</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>array</td>
-                <td>$patterns</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_withoutDependencies">
-        <div class="location">at line 316</div>
+        <div class="location">at line 315</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>withoutDependencies</strong>(array $dependencies)
         </code>

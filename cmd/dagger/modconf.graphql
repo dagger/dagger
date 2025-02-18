@@ -1,11 +1,10 @@
 query ModuleConfig($source: ModuleSourceID!) {
   source: loadModuleSourceFromID(id: $source) {
     asString
+    kind
     module: asModule {
       name
-      initialize {
-        description
-      }
+      description
       dependencies {
         name
         description

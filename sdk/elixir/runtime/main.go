@@ -29,15 +29,13 @@ func New(
 		return nil, fmt.Errorf("sdk source directory not provided")
 	}
 	return &ElixirSdk{
-		SdkSourceDir:  sdkSourceDir,
-		RequiredPaths: []string{},
-		Container:     dag.Container(),
+		SdkSourceDir: sdkSourceDir,
+		Container:    dag.Container(),
 	}, nil
 }
 
 type ElixirSdk struct {
-	SdkSourceDir  *dagger.Directory
-	RequiredPaths []string
+	SdkSourceDir *dagger.Directory
 
 	Container *dagger.Container
 	// An error during processing.

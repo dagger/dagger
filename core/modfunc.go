@@ -43,7 +43,7 @@ type UserModFunctionArg struct {
 	modType  ModType
 }
 
-func newModFunction(
+func NewModFunction(
 	ctx context.Context,
 	root *Query,
 	mod *Module,
@@ -92,6 +92,16 @@ type CallOpts struct {
 	Cache          bool
 	SkipSelfSchema bool
 	Server         *dagql.Server
+
+	// If true, don't mix in the digest for the current dagql call into the cache key for
+	// the exec-op underlying the function call.
+	//
+	// We want the function call to be cached by the dagql digest in almost every case
+	// since the current dagql call is typically the actual function call. However, in
+	// some corner cases we may calling a function internally within a separate dagql
+	// call and don't want the current call digest mixed in, e.g. during the special
+	// function call that retrieves the module typedefs.
+	SkipCallDigestCacheKey bool
 }
 
 type CallInput struct {
@@ -239,8 +249,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		CallID:          dagql.CurrentID(ctx),
 		ExecID:          identity.NewID(),
 		CachePerSession: !opts.Cache,
-		CacheByCall:     true, // scope the cache key to the function arguments+receiver values
 		Internal:        true,
+		ModuleName:      mod.NameField,
+		CacheByCall:     !opts.SkipCallDigestCacheKey,
 	}
 
 	if opts.ParentTyped != nil {
@@ -262,9 +273,11 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		}
 	}
 
-	execMD.EncodedModuleID, err = mod.InstanceID.Encode()
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode module ID: %w", err)
+	if mod.InstanceID != nil {
+		execMD.EncodedModuleID, err = mod.InstanceID.Encode()
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode module ID: %w", err)
+		}
 	}
 
 	fnCall := &FunctionCall{
@@ -471,16 +484,15 @@ func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 	source := mod.Source.Self
 	switch source.Kind {
 	case ModuleSourceKindLocal:
-		local := source.AsLocalSource.Value
 		props[prefix+"source_kind"] = "local"
-		props[prefix+"local_subpath"] = local.RootSubpath
+		props[prefix+"local_subpath"] = source.SourceRootSubpath
 	case ModuleSourceKindGit:
-		git := source.AsGitSource.Value
+		git := source.Git
 		props[prefix+"source_kind"] = "git"
-		props[prefix+"git_symbolic"] = git.Symbolic()
+		props[prefix+"git_symbolic"] = git.Symbolic
 		props[prefix+"git_clone_url"] = git.CloneRef // todo(guillaume): remove as deprecated
 		props[prefix+"git_clone_ref"] = git.CloneRef
-		props[prefix+"git_subpath"] = git.RootSubpath
+		props[prefix+"git_subpath"] = source.SourceRootSubpath
 		props[prefix+"git_version"] = git.Version
 		props[prefix+"git_commit"] = git.Commit
 		props[prefix+"git_html_repo_url"] = git.HTMLRepoURL

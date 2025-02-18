@@ -94,6 +94,12 @@ func (m *cacheMap[K, T]) GetOrInitializeOnHit(ctx context.Context, key K, fn fun
 	return c.val, false, c.err
 }
 
+func (m *cacheMap[K, T]) GetOrInitializeValue(ctx context.Context, key K, v T) (T, bool, error) {
+	return m.GetOrInitialize(ctx, key, func(context.Context) (T, error) {
+		return v, nil
+	})
+}
+
 func (m *cacheMap[K, T]) Get(ctx context.Context, key K) (T, error) {
 	if v := ctx.Value(cacheMapContextKey[K, T]{key: key, m: m}); v != nil {
 		var zero T

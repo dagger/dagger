@@ -148,17 +148,7 @@
                 <div class="col-md-8">
                     <a href="#method_dependencies">dependencies</a>()
         
-                                            <p><p>Modules used by this module.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    array
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_dependencyConfig">dependencyConfig</a>()
-        
-                                            <p><p>The dependencies as configured by the module.</p></p>                </div>
+                                            <p><p>The dependencies of the module.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -186,19 +176,9 @@
                     <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_generatedContextDiff">generatedContextDiff</a>()
-        
-                                            <p><p>The generated files and directories made on top of the module source's context directory.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
-                </div>
-                <div class="col-md-8">
                     <a href="#method_generatedContextDirectory">generatedContextDirectory</a>()
         
-                                            <p><p>The module source's context plus any configuration and source files created by codegen.</p></p>                </div>
+                                            <p><p>The generated files and directories made on top of the module source's context directory.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -209,16 +189,6 @@
                     <a href="#method_id">id</a>()
         
                                             <p><p>A unique identifier for this Module.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_initialize">initialize</a>()
-        
-                                            <p><p>Retrieves the module with the objects loaded via its SDK.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -293,6 +263,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleId.html"><abbr title="Dagger\ModuleId">ModuleId</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_sync">sync</a>()
+        
+                                            <p><p>Forces evaluation of the module, including any loading into the engine and associated validation.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -329,16 +309,6 @@
                     <a href="#method_withObject">withObject</a>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $object)
         
                                             <p><p>This module plus the given Object type and associated functions.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withSource">withSource</a>(<abbr title="Dagger\ModuleSourceId|Dagger\ModuleSource">ModuleSource</abbr> $source, string|null $engineVersion = null)
-        
-                                            <p><p>Retrieves the module with basic configuration loaded if present.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -448,39 +418,7 @@
             
 
         <div class="method-description">
-                            <p><p>Modules used by this module.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>array</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_dependencyConfig">
-        <div class="location">at line 28</div>
-        <code>                    array
-    <strong>dependencyConfig</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>The dependencies as configured by the module.</p></p>                        
+                            <p><p>The dependencies of the module.</p></p>                        
         </div>
         <div class="tags">
             
@@ -502,7 +440,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_description">
-        <div class="location">at line 37</div>
+        <div class="location">at line 28</div>
         <code>                    string
     <strong>description</strong>()
         </code>
@@ -534,7 +472,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_enums">
-        <div class="location">at line 46</div>
+        <div class="location">at line 37</div>
         <code>                    array
     <strong>enums</strong>()
         </code>
@@ -565,10 +503,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_generatedContextDiff">
-        <div class="location">at line 55</div>
+                    <h3 id="method_generatedContextDirectory">
+        <div class="location">at line 46</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
-    <strong>generatedContextDiff</strong>()
+    <strong>generatedContextDirectory</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -597,40 +535,8 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_generatedContextDirectory">
-        <div class="location">at line 64</div>
-        <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
-    <strong>generatedContextDirectory</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>The module source's context plus any configuration and source files created by codegen.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 73</div>
+        <div class="location">at line 55</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
     <strong>id</strong>()
         </code>
@@ -661,40 +567,8 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_initialize">
-        <div class="location">at line 82</div>
-        <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
-    <strong>initialize</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Retrieves the module with the objects loaded via its SDK.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_interfaces">
-        <div class="location">at line 91</div>
+        <div class="location">at line 64</div>
         <code>                    array
     <strong>interfaces</strong>()
         </code>
@@ -726,7 +600,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_name">
-        <div class="location">at line 100</div>
+        <div class="location">at line 73</div>
         <code>                    string
     <strong>name</strong>()
         </code>
@@ -758,7 +632,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_objects">
-        <div class="location">at line 109</div>
+        <div class="location">at line 82</div>
         <code>                    array
     <strong>objects</strong>()
         </code>
@@ -790,7 +664,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_runtime">
-        <div class="location">at line 118</div>
+        <div class="location">at line 91</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>runtime</strong>()
         </code>
@@ -822,7 +696,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sdk">
-        <div class="location">at line 127</div>
+        <div class="location">at line 100</div>
         <code>                    <a href="../Dagger/SDKConfig.html"><abbr title="Dagger\SDKConfig">SDKConfig</abbr></a>
     <strong>sdk</strong>()
         </code>
@@ -854,7 +728,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_serve">
-        <div class="location">at line 138</div>
+        <div class="location">at line 111</div>
         <code>                    void
     <strong>serve</strong>()
         </code>
@@ -886,7 +760,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_source">
-        <div class="location">at line 147</div>
+        <div class="location">at line 120</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>source</strong>()
         </code>
@@ -917,8 +791,40 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_sync">
+        <div class="location">at line 129</div>
+        <code>                    <a href="../Dagger/ModuleId.html"><abbr title="Dagger\ModuleId">ModuleId</abbr></a>
+    <strong>sync</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Forces evaluation of the module, including any loading into the engine and associated validation.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleId.html"><abbr title="Dagger\ModuleId">ModuleId</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_withDescription">
-        <div class="location">at line 156</div>
+        <div class="location">at line 138</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>withDescription</strong>(string $description)
         </code>
@@ -960,7 +866,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withEnum">
-        <div class="location">at line 166</div>
+        <div class="location">at line 148</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>withEnum</strong>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $enum)
         </code>
@@ -1002,7 +908,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withInterface">
-        <div class="location">at line 176</div>
+        <div class="location">at line 158</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>withInterface</strong>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $iface)
         </code>
@@ -1044,7 +950,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withObject">
-        <div class="location">at line 186</div>
+        <div class="location">at line 168</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>withObject</strong>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $object)
         </code>
@@ -1063,53 +969,6 @@
                     <tr>
                 <td><abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr></td>
                 <td>$object</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_withSource">
-        <div class="location">at line 196</div>
-        <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
-    <strong>withSource</strong>(<abbr title="Dagger\ModuleSourceId|Dagger\ModuleSource">ModuleSource</abbr> $source, string|null $engineVersion = null)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Retrieves the module with basic configuration loaded if present.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td><abbr title="Dagger\ModuleSourceId|Dagger\ModuleSource">ModuleSource</abbr></td>
-                <td>$source</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>string|null</td>
-                <td>$engineVersion</td>
                 <td></td>
             </tr>
             </table>

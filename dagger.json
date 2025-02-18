@@ -67,5 +67,6 @@
       "source": "modules/wolfi"
     }
   ],
-  "source": ".dagger"
+  "source": ".dagger",
+  "include": ["engine/distconsts/**/*"]
 }

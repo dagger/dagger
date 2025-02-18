@@ -357,6 +357,9 @@ func preventCacheMountPrune(ctx context.Context, t *testctx.T, c *dagger.Client,
 // TODO: A better alternative might be to record the log output and assert
 // against what the user sees there, but that's a bigger lift.
 func requireErrOut(t *testctx.T, err error, out string) {
+	if err == nil {
+		require.Fail(t, "expected error, got nil")
+	}
 	var execErr *dagger.ExecError
 	if errors.As(err, &execErr) {
 		require.Contains(
@@ -376,6 +379,9 @@ func requireErrOut(t *testctx.T, err error, out string) {
 // TODO: A better alternative might be to record the log output and assert
 // against what the user sees there, but that's a bigger lift.
 func requireErrRegexp(t *testctx.T, err error, re string) {
+	if err == nil {
+		require.Fail(t, "expected error, got nil")
+	}
 	var execErr *dagger.ExecError
 	if errors.As(err, &execErr) {
 		require.Regexp(

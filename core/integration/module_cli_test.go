@@ -150,7 +150,7 @@ func (CLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 
 		_, err := ctr.Stdout(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "source subdir path \"../..\" escapes context")
+		requireErrOut(t, err, "source subpath \"../..\" escapes source root")
 	})
 }
 
@@ -515,7 +515,7 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 				With(mountedSocket).
 				With(daggerExec("develop", "-m", testGitModuleRef(tc, "top-level"))).
 				Sync(ctx)
-			requireErrOut(t, err, `module must be local`)
+			requireErrRegexp(t, err, `module source ".*" kind must be "local", got "git"`)
 		})
 	})
 
@@ -699,7 +699,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 			With(daggerExec("install", "./dep2", "--name=dep")).
 			Sync(ctx)
 
-		requireErrOut(t, err, "two or more dependencies are trying to use the same name")
+		requireErrOut(t, err, fmt.Sprintf("duplicate dependency name %q", "dep"))
 	})
 
 	t.Run("installing a dependency with implicit duplicate name is not allowed", func(ctx context.Context, t *testctx.T) {
@@ -724,7 +724,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 			With(daggerExec("install", "./dep2")).
 			Sync(ctx)
 
-		requireErrOut(t, err, "two or more dependencies are trying to use the same name")
+		requireErrOut(t, err, fmt.Sprintf("duplicate dependency name %q", "dep"))
 	})
 
 	t.Run("install dep from various places", func(ctx context.Context, t *testctx.T) {
@@ -857,7 +857,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/work/test").
 				With(daggerExec("install", "../../play/dep")).
 				Sync(ctx)
-			requireErrOut(t, err, `local module dep source path "../play/dep" escapes context "/work"`)
+			requireErrOut(t, err, `local module dependency context directory "/play/dep" is not in parent context directory "/work"`)
 		})
 
 		t.Run("from src dir with absolute path", func(ctx context.Context, t *testctx.T) {
@@ -865,7 +865,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/work/test").
 				With(daggerExec("install", "/play/dep")).
 				Sync(ctx)
-			requireErrOut(t, err, `local module dep source path "../play/dep" escapes context "/work"`)
+			requireErrOut(t, err, `local module dependency context directory "/play/dep" is not in parent context directory "/work"`)
 		})
 
 		t.Run("from dep dir", func(ctx context.Context, t *testctx.T) {
@@ -873,7 +873,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/play/dep").
 				With(daggerExec("install", "-m=../../work/test", ".")).
 				Sync(ctx)
-			requireErrOut(t, err, `module dep source path "../play/dep" escapes context "/work"`)
+			requireErrOut(t, err, `local module dependency context directory "/play/dep" is not in parent context directory "/work"`)
 		})
 
 		t.Run("from dep dir with absolute path", func(ctx context.Context, t *testctx.T) {
@@ -881,7 +881,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/play/dep").
 				With(daggerExec("install", "-m=/work/test", ".")).
 				Sync(ctx)
-			requireErrOut(t, err, `module dep source path "../play/dep" escapes context "/work"`)
+			requireErrOut(t, err, `local module dependency context directory "/play/dep" is not in parent context directory "/work"`)
 		})
 
 		t.Run("from root", func(ctx context.Context, t *testctx.T) {
@@ -889,7 +889,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/").
 				With(daggerExec("install", "-m=work/test", "play/dep")).
 				Sync(ctx)
-			requireErrOut(t, err, `module dep source path "../play/dep" escapes context "/work"`)
+			requireErrOut(t, err, `local module dependency context directory "/play/dep" is not in parent context directory "/work"`)
 		})
 
 		t.Run("from root with absolute path", func(ctx context.Context, t *testctx.T) {
@@ -897,7 +897,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/").
 				With(daggerExec("install", "-m=/work/test", "play/dep")).
 				Sync(ctx)
-			requireErrOut(t, err, `module dep source path "../play/dep" escapes context "/work"`)
+			requireErrOut(t, err, `local module dependency context directory "/play/dep" is not in parent context directory "/work"`)
 		})
 	})
 
@@ -949,7 +949,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
 					With(daggerExec("install", testGitModuleRef(tc, "this/just/does/not/exist"))).
 					Sync(ctx)
-				requireErrOut(t, err, `module "test" dependency "" with source root path "this/just/does/not/exist" does not exist or does not have a configuration file`)
+				requireErrRegexp(t, err, `git module source .* does not contain a dagger config file`)
 			})
 
 			t.Run("unpinned gets pinned", func(ctx context.Context, t *testctx.T) {
