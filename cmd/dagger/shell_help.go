@@ -104,7 +104,7 @@ func (h *shellCallHandler) MainHelp() string {
 	if deps := h.getCurrentDependencies(); len(deps) > 0 {
 		doc.Add(
 			"Available Module Dependencies",
-			nameShortWrapped(deps, func(dep *moduleDependency) (string, string) {
+			nameShortWrapped(deps, func(dep *moduleDef) (string, string) {
 				return dep.Name, dep.Short()
 			}),
 		)
@@ -135,7 +135,7 @@ func (h *shellCallHandler) getDefaultFunctions() []*modFunction {
 	return fns
 }
 
-func (h *shellCallHandler) getCurrentDependencies() []*moduleDependency {
+func (h *shellCallHandler) getCurrentDependencies() []*moduleDef {
 	def, _ := h.GetModuleDef(nil)
 	if def == nil {
 		return nil
@@ -183,7 +183,7 @@ func (h *shellCallHandler) DepsHelp() string {
 
 	doc.Add(
 		"Module Dependencies",
-		nameShortWrapped(def.Dependencies, func(dep *moduleDependency) (string, string) {
+		nameShortWrapped(def.Dependencies, func(dep *moduleDef) (string, string) {
 			return dep.Name, dep.Short()
 		}),
 	)

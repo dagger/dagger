@@ -39,7 +39,7 @@ func initializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDe
 	if modRef == "" {
 		modRef = moduleURLDefault
 	}
-	return initializeModule(ctx, dag, modRef)
+	return initializeModule(ctx, dag, dag.ModuleSource(modRef))
 }
 
 // maybeInitializeDefaultModule optionally loads the module referenced by the -m,--mod flag,
@@ -50,7 +50,7 @@ func maybeInitializeDefaultModule(ctx context.Context, dag *dagger.Client) (*mod
 		modRef = moduleURLDefault
 	}
 
-	if def, err := initializeModule(ctx, dag, modRef); def != nil {
+	if def, err := initializeModule(ctx, dag, dag.ModuleSource(modRef)); def != nil || err != nil {
 		return def, modRef, err
 	}
 
@@ -64,14 +64,12 @@ func maybeInitializeDefaultModule(ctx context.Context, dag *dagger.Client) (*mod
 func initializeModule(
 	ctx context.Context,
 	dag *dagger.Client,
-	srcRef string,
-	srcOpts ...dagger.ModuleSourceOpts,
+	modSrc *dagger.ModuleSource,
 ) (rdef *moduleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "load module")
 	defer telemetry.End(span, func() error { return rerr })
 
 	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
-	modSrc := dag.ModuleSource(srcRef, srcOpts...)
 	configExists, err := modSrc.ConfigExists(findCtx)
 	telemetry.End(findSpan, func() error { return err })
 
@@ -162,7 +160,7 @@ type moduleDef struct {
 	// ModRef is the human readable module source reference as returned by the API
 	ModRef string
 
-	Dependencies []*moduleDependency
+	Dependencies []*moduleDef
 }
 
 type clientGeneratorModuleDef struct {
@@ -171,19 +169,7 @@ type clientGeneratorModuleDef struct {
 	Dependencies []dagger.ModuleSource
 }
 
-type moduleDependency struct {
-	Name        string
-	Description string
-	Source      *dagger.ModuleSource
-
-	// ModRef is the human readable module source reference as returned by the API
-	ModRef string
-
-	// RefPin is the module source pin for this dependency, if any
-	RefPin string
-}
-
-func (m *moduleDependency) Short() string {
+func (m *moduleDef) Short() string {
 	s := m.Description
 	if s == "" {
 		s = "-"
@@ -218,8 +204,8 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 					Name        string
 					Description string
 					Source      struct {
+						ID       dagger.ModuleSourceID
 						AsString string
-						Pin      string
 					}
 				}
 			}
@@ -243,13 +229,13 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 		return nil, fmt.Errorf("query module metadata: %w", err)
 	}
 
-	deps := make([]*moduleDependency, 0, len(res.Source.Module.Dependencies))
+	deps := make([]*moduleDef, 0, len(res.Source.Module.Dependencies))
 	for _, dep := range res.Source.Module.Dependencies {
-		deps = append(deps, &moduleDependency{
+		deps = append(deps, &moduleDef{
 			Name:        dep.Name,
 			Description: dep.Description,
 			ModRef:      dep.Source.AsString,
-			RefPin:      dep.Source.Pin,
+			Source:      dag.LoadModuleSourceFromID(dep.Source.ID),
 		})
 	}
 
@@ -488,7 +474,7 @@ func (m *moduleDef) GetInput(name string) *modInput {
 	return nil
 }
 
-func (m *moduleDef) GetDependency(name string) *moduleDependency {
+func (m *moduleDef) GetDependency(name string) *moduleDef {
 	for _, dep := range m.Dependencies {
 		if dep.Name == name {
 			return dep

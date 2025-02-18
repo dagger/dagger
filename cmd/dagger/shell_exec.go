@@ -211,24 +211,16 @@ func (h *shellCallHandler) stateLookup(ctx context.Context, name string) (*Shell
 
 	// 4. Path to local or remote module source
 	// (local paths are relative to the current working directory, not the loaded module)
-	st, err := h.getOrInitDefState(name, func() (*moduleDef, error) {
-		return initializeModule(ctx, h.dag, name)
+	def, err := h.getOrInitDef(name, func() (*moduleDef, error) {
+		return initializeModule(ctx, h.dag, h.dag.ModuleSource(name))
 	})
-	if st == nil || (err != nil && strings.Contains(err.Error(), "does not exist")) {
+	if def == nil || (err != nil && strings.Contains(err.Error(), "does not exist")) {
 		return nil, fmt.Errorf("function or module %q not found", name)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return st, nil
-}
-
-func (h *shellCallHandler) getOrInitDefState(ref string, fn func() (*moduleDef, error)) (*ShellState, error) {
-	def, err := h.getOrInitDef(ref, fn)
-	if err != nil || def == nil {
-		return nil, err
-	}
-	return h.newModState(ref), nil
+	return h.newModState(name), nil
 }
 
 func (h *shellCallHandler) constructorCall(ctx context.Context, md *moduleDef, st *ShellState, args []string) (*ShellState, error) {
@@ -683,19 +675,13 @@ func (h *shellCallHandler) GetDependency(ctx context.Context, name string) (*She
 	if dep == nil {
 		return nil, nil, fmt.Errorf("dependency %q not found", name)
 	}
-	st, err := h.getOrInitDefState(dep.ModRef, func() (*moduleDef, error) {
-		return initializeModule(ctx, h.dag, dep.ModRef, dagger.ModuleSourceOpts{
-			DisableFindUp: true,
-		})
+	def, err := h.getOrInitDef(dep.SourceRoot, func() (*moduleDef, error) {
+		return initializeModule(ctx, h.dag, dep.Source)
 	})
 	if err != nil {
 		return nil, nil, err
 	}
-	def, err := h.GetModuleDef(st)
-	if err != nil {
-		return nil, nil, err
-	}
-	return st, def, nil
+	return h.newModState(dep.SourceRoot), def, nil
 }
 
 // LoadedModulesList returns a sorted list of module references that are loaded and cached
