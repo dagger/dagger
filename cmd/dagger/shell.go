@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -278,7 +277,7 @@ func (h *shellCallHandler) shellStateProcessor(ctx context.Context) func([]byte)
 	return func(b []byte) ([]byte, error) {
 		resp, typeDef, err := h.Result(ctx, bytes.NewReader(b), handleObjectLeaf)
 		if err != nil {
-			return nil, h.checkExecError(err)
+			return nil, err
 		}
 		if typeDef != nil && typeDef.Kind == dagger.TypeDefKindVoidKind {
 			return nil, nil
@@ -307,35 +306,6 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 		err = nil
 	}
 	return err
-}
-
-func (h *shellCallHandler) checkExecError(err error) error {
-	exitCode := 1
-	var ex *dagger.ExecError
-	if errors.As(err, &ex) {
-		if h.repl || !h.tty {
-			return wrapExecError(ex)
-		}
-		exitCode = ex.ExitCode
-	}
-	if !h.repl && h.tty {
-		err = ExitError{Code: exitCode}
-	}
-	return err
-}
-
-func wrapExecError(e *dagger.ExecError) error {
-	out := make([]string, 0, 2)
-	if e.Stdout != "" {
-		out = append(out, "Stdout:\n"+e.Stdout)
-	}
-	if e.Stderr != "" {
-		out = append(out, "Stderr:\n"+e.Stderr)
-	}
-	if len(out) > 0 {
-		return fmt.Errorf("%w\n%s", e, strings.Join(out, "\n"))
-	}
-	return e
 }
 
 func parseShell(reader io.Reader, name string, opts ...syntax.ParserOption) (*syntax.File, error) {
