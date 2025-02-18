@@ -15,7 +15,7 @@ public class EnumVisitor extends AbstractVisitor {
   TypeSpec generateType(Type type) {
     TypeSpec.Builder classBuilder =
         TypeSpec.enumBuilder(Helpers.formatName(type))
-            .addJavadoc(type.getDescription())
+            .addJavadoc(type.getDescription() != null ? type.getDescription() : "")
             .addModifiers(Modifier.PUBLIC);
 
     for (EnumValue enumValue : type.getEnumValues()) {

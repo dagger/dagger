@@ -783,19 +783,26 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
 
   private String parseTypeDescription(Element element) {
     String javadocString = elementUtils.getDocComment(element);
-    if (javadocString == null) {
-      return element.getAnnotation(Object.class).description();
+    if (javadocString != null) {
+      return StaticJavaParser.parseJavadoc(javadocString).getDescription().toText().trim();
     }
-    return StaticJavaParser.parseJavadoc(javadocString).getDescription().toText().trim();
+    Object annotation = element.getAnnotation(Object.class);
+    if (annotation != null) {
+      return annotation.description();
+    }
+    return "";
   }
 
   private String parseFunctionDescription(Element element) {
     String javadocString = elementUtils.getDocComment(element);
-    if (javadocString == null) {
-      return element.getAnnotation(Function.class).description();
+    if (javadocString != null) {
+      return StaticJavaParser.parseJavadoc(javadocString).getDescription().toText().trim();
     }
-    Javadoc javadoc = StaticJavaParser.parseJavadoc(javadocString);
-    return javadoc.getDescription().toText().trim();
+    Function annotation = element.getAnnotation(Function.class);
+    if (annotation != null) {
+      return annotation.description();
+    }
+    return "";
   }
 
   private String parseParameterDescription(Element element, String paramName) {
