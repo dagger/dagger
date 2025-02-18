@@ -106,6 +106,9 @@ type Server interface {
 
 	// Open a client's SQLite database. Be sure to close it!
 	OpenClientDB(clientID string) (*sql.DB, error)
+
+	// Retrieve the main client's DagQL server
+	MainServer(context.Context) (*dagql.Server, error)
 }
 
 func NewRoot(srv Server) *Query {
