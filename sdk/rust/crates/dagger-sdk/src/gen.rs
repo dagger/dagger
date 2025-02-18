@@ -4218,6 +4218,11 @@ impl Directory {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Returns the name of the directory.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Force evaluation in the engine.
     pub async fn sync(&self) -> Result<DirectoryId, DaggerError> {
         let query = self.selection.select("sync");
