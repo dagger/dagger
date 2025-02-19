@@ -1224,6 +1224,11 @@ func (DirectorySuite) TestDirectoryName(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "/", name)
 	})
 
+	t.Run("not found directory", func(ctx context.Context, t *testctx.T) {
+		_, err := c.Directory().Directory("foo").Name(ctx)
+		requireErrOut(t, err, "no such file or directory")
+	})
+
 	t.Run("structured directory", func(ctx context.Context, t *testctx.T) {
 		dir := c.Directory().WithDirectory("nested", c.Directory()).WithDirectory("very/nested", c.Directory())
 
