@@ -20,9 +20,10 @@ type cacheMap[K comparable, T any] struct {
 }
 
 type cache[T any] struct {
-	wg  sync.WaitGroup
-	val T
-	err error
+	wg       sync.WaitGroup
+	val      T
+	err      error
+	postCall func(context.Context) error
 }
 
 // NewCache creates a new cache map suitable for assigning on a Server or
@@ -56,24 +57,33 @@ func (m *cacheMap[K, T]) Set(key K, val T) {
 	m.l.Unlock()
 }
 
-func (m *cacheMap[K, T]) GetOrInitialize(ctx context.Context, key K, fn func(ctx context.Context) (T, error)) (T, bool, error) {
-	return m.GetOrInitializeOnHit(ctx, key, fn, func(T, error) {})
+func (m *cacheMap[K, T]) GetOrInitialize(
+	ctx context.Context,
+	key K,
+	fn func(ctx context.Context) (T, error),
+) (T, bool, error) {
+	val, hit, _, err := m.GetOrInitializeWithPostCall(ctx, key, func(ctx context.Context) (T, func(context.Context) error, error) {
+		val, err := fn(ctx)
+		return val, nil, err
+	})
+	return val, hit, err
 }
 
-func (m *cacheMap[K, T]) GetOrInitializeOnHit(ctx context.Context, key K, fn func(ctx context.Context) (T, error), onHit func(T, error)) (T, bool, error) {
+func (m *cacheMap[K, T]) GetOrInitializeWithPostCall(
+	ctx context.Context,
+	key K,
+	fn func(ctx context.Context) (T, func(context.Context) error, error),
+) (T, bool, func(context.Context) error, error) {
 	if v := ctx.Value(cacheMapContextKey[K, T]{key: key, m: m}); v != nil {
 		var zero T
-		return zero, false, ErrCacheMapRecursiveCall
+		return zero, false, nil, ErrCacheMapRecursiveCall
 	}
 
 	m.l.Lock()
 	if c, ok := m.calls[key]; ok {
 		m.l.Unlock()
 		c.wg.Wait()
-		if onHit != nil {
-			onHit(c.val, c.err)
-		}
-		return c.val, true, c.err
+		return c.val, true, c.postCall, c.err
 	}
 
 	c := &cache[T]{}
@@ -82,7 +92,7 @@ func (m *cacheMap[K, T]) GetOrInitializeOnHit(ctx context.Context, key K, fn fun
 	m.l.Unlock()
 
 	ctx = context.WithValue(ctx, cacheMapContextKey[K, T]{key: key, m: m}, struct{}{})
-	c.val, c.err = fn(ctx)
+	c.val, c.postCall, c.err = fn(ctx)
 	c.wg.Done()
 
 	if c.err != nil {
@@ -91,7 +101,7 @@ func (m *cacheMap[K, T]) GetOrInitializeOnHit(ctx context.Context, key K, fn fun
 		m.l.Unlock()
 	}
 
-	return c.val, false, c.err
+	return c.val, false, c.postCall, c.err
 }
 
 func (m *cacheMap[K, T]) GetOrInitializeValue(ctx context.Context, key K, v T) (T, bool, error) {
