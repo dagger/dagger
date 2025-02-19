@@ -95,22 +95,10 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 		},
 	})
 
-	sdkNodeModules := dag.Container().
-		From(tsdistconsts.DefaultNodeImageRef).
-		WithWorkdir("/work").
-		WithDirectory("/work/sdk", rootfs).
-		WithoutEntrypoint().
-		WithMountedCache("/root/.npm", dag.CacheVolume(fmt.Sprintf("npm-cache-node-%s", tsdistconsts.DefaultNodeVersion))).
-		WithFile("/work/package.json", rootfs.File("./runtime/template/package.json")).
-		WithExec([]string{"npm", "install", "--package-lock-only"}).
-		WithExec([]string{"npm", "ci"}).
-		Directory("/work/node_modules")
-
 	sdkCtrTarball := dag.Container().
 		WithRootfs(rootfs).
 		WithFile("/codegen", build.CodegenBinary()).
 		WithDirectory("/tsx_module", tsxNodeModule).
-		WithDirectory("/sdk_node_modules", sdkNodeModules).
 		AsTarball(dagger.ContainerAsTarballOpts{
 			ForcedCompression: dagger.ImageLayerCompressionZstd,
 		})

@@ -183,8 +183,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.Modul
 				Include: t.moduleConfigFiles(t.moduleConfig.subPath),
 			})).
 		WithDirectory(filepath.Join(t.moduleConfig.modulePath(), GenDir), sdk).
-		WithWorkdir(t.moduleConfig.modulePath()).
-		WithMountedDirectory(filepath.Join(t.moduleConfig.modulePath(), NodeModulesDir), t.SDKSourceDir.Directory("/sdk_node_modules"))
+		WithWorkdir(t.moduleConfig.modulePath())
 
 	base = t.configureModule(base)
 
@@ -347,8 +346,7 @@ func (t *TypescriptSdk) addSDK() *dagger.Directory {
 	return t.SDKSourceDir.
 		WithoutDirectory("codegen").
 		WithoutDirectory("runtime").
-		WithoutDirectory("tsx_module").
-		WithoutDirectory("sdk_node_modules")
+		WithoutDirectory("tsx_module")
 }
 
 // generateClient uses the given container to generate the client code.
