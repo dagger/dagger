@@ -79,7 +79,7 @@ func (cli *CLI) Publish(
 	}
 
 	args := []string{"release", "--clean", "--skip=validate", "--verbose"}
-	if tag != "" {
+	if tag != "" && semver.Prerelease(tag) == "" {
 		args = append(args, "--release-notes", fmt.Sprintf(".changes/%s.md", tag))
 	} else {
 		args = append(args,
