@@ -33,6 +33,8 @@ type Llm struct {
 	Model       string
 	Endpoint    *LlmEndpoint
 
+	// If true: has un-synced state
+	dirty bool
 	// History of messages
 	// FIXME: rename to 'messages'
 	history []openai.ChatCompletionMessageParamUnion
@@ -352,6 +354,7 @@ func (llm *Llm) WithPrompt(
 		fmt.Fprint(stdio.Stdout, prompt)
 	}()
 	llm.history = append(llm.history, openai.UserMessage(prompt))
+	llm.dirty = true
 	return llm, nil
 }
 
@@ -374,11 +377,16 @@ func (llm *Llm) WithPromptVar(name, value string) *Llm {
 func (llm *Llm) WithSystemPrompt(prompt string) *Llm {
 	llm = llm.Clone()
 	llm.history = append(llm.history, openai.SystemMessage(prompt))
+	llm.dirty = true
 	return llm
 }
 
 // Return the last message sent by the agent
-func (llm *Llm) LastReply() (string, error) {
+func (llm *Llm) LastReply(ctx context.Context) (string, error) {
+	llm, err := llm.Sync(ctx)
+	if err != nil {
+		return "", err
+	}
 	messages, err := llm.messages()
 	if err != nil {
 		return "", err
@@ -411,10 +419,21 @@ func (llm *Llm) BBI(srv *dagql.Server) (bbi.Session, error) {
 }
 
 // send the context to the LLM endpoint, process replies and tool calls; continue in a loop
-func (llm *Llm) Loop(ctx context.Context, srv *dagql.Server) (*Llm, error) {
+// Synchronize LLM state:
+// 1. Send context to LLM endpoint
+// 2. Process replies and tool calls
+// 3. Continue in a loop until no tool calls, or caps are reached
+func (llm *Llm) Sync(ctx context.Context) (*Llm, error) {
+	if !llm.dirty {
+		return llm, nil
+	}
 	llm = llm.Clone()
 	// Start a new BBI session
-	session, err := llm.BBI(srv)
+	dag, err := llm.Query.Server.DagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	session, err := llm.BBI(dag)
 	if err != nil {
 		return nil, err
 	}
@@ -484,10 +503,15 @@ func (llm *Llm) Loop(ctx context.Context, srv *dagql.Server) (*Llm, error) {
 		}
 	}
 	llm.state = session.Self()
+	llm.dirty = false
 	return llm, nil
 }
 
-func (llm *Llm) History() ([]string, error) {
+func (llm *Llm) History(ctx context.Context) ([]string, error) {
+	llm, err := llm.Sync(ctx)
+	if err != nil {
+		return nil, err
+	}
 	messages, err := llm.messages()
 	if err != nil {
 		return nil, err
@@ -540,10 +564,15 @@ func (llm *Llm) WithState(ctx context.Context, objId dagql.IDType, srv *dagql.Se
 	}
 	llm = llm.Clone()
 	llm.state = obj
+	llm.dirty = true
 	return llm, nil
 }
 
 func (llm *Llm) State(ctx context.Context) (dagql.Typed, error) {
+	llm, err := llm.Sync(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return llm.state, nil
 }
 
