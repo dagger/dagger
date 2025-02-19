@@ -10,6 +10,10 @@ import (
 
 	"dagger/viztest/internal/dagger"
 	"dagger/viztest/internal/telemetry"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Viztest struct {
@@ -69,6 +73,34 @@ func (*Viztest) ManyLines(n int) {
 func (v *Viztest) CustomSpan(ctx context.Context) (res string, rerr error) {
 	ctx, span := Tracer().Start(ctx, "custom span")
 	defer telemetry.End(span, func() error { return rerr })
+	return v.Echo(ctx, "hello from Go! it is currently "+time.Now().String())
+}
+
+func (v *Viztest) RevealedSpans(ctx context.Context) (res string, rerr error) {
+	func() {
+		_, span := Tracer().Start(ctx, "custom span")
+		span.End()
+	}()
+	func() {
+		_, span := Tracer().Start(ctx, "revealed span",
+			trace.WithAttributes(attribute.Bool(telemetry.UIRevealAttr, true)))
+		span.End()
+	}()
+	func() {
+		ctx, span := Tracer().Start(ctx, "revealed message",
+			trace.WithAttributes(attribute.Bool(telemetry.UIRevealAttr, true)),
+			trace.WithAttributes(attribute.String(telemetry.UIActorEmojiAttr, "😊")),
+			trace.WithAttributes(attribute.String(telemetry.UIMessageAttr, "received")),
+		)
+		span.End()
+		stdio := telemetry.SpanStdio(ctx, "doesnt matter", log.String(telemetry.ContentTypeAttr, "text/markdown"))
+		defer stdio.Close()
+		fmt.Fprintln(stdio.Stdout, "sometimes you gotta be **bold**")
+	}()
+	func() {
+		_, span := Tracer().Start(ctx, "revealed span")
+		span.End()
+	}()
 	return v.Echo(ctx, "hello from Go! it is currently "+time.Now().String())
 }
 
