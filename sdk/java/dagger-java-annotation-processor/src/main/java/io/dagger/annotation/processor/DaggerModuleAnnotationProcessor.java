@@ -211,6 +211,10 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
       }
     }
 
+    if (annotatedObjects.stream().filter(o -> o.constructor().isPresent()).count() > 1) {
+      throw new RuntimeException("Only one constructor is allowed per module");
+    }
+
     return new ModuleInfo(
         moduleDescription, annotatedObjects.toArray(new ObjectInfo[annotatedObjects.size()]));
   }
