@@ -790,7 +790,7 @@ The following Dagger Function accepts a GitHub personal access token as a `Secre
   [Vault AppRole authentication](https://developer.hashicorp.com/vault/docs/auth/approle) is also supported:
 
     ```shell
-    VAULT_ADDR="https://127.0.0.1:8200" VAULT_APPROLE_ROLE_ID="900589d0-5570-46cf-b0f3-ecfbd7d51336" VAULT_APPROLE_SECRET_ID="3bf095ca-0eb9-4a35-bdfb-f550afe4ba40" dagger call github-api --token=vault://credentials.github
+    VAULT_ADDR="https://127.0.0.1:8200" VAULT_APPROLE_ROLE_ID="xx-role-id" VAULT_APPROLE_SECRET_ID="yy-secret-id" dagger call github-api --token=vault://credentials.github
     ```
 
 ### Mount files as secrets
