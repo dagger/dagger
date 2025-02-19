@@ -657,9 +657,13 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 }
 
 func (c *Client) GetGitConfig(ctx context.Context) ([]*session.GitConfigEntry, error) {
-	caller, err := c.GetMainClientCaller()
+	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get main client caller: %w", err)
+		return nil, err
+	}
+	caller, err := c.GetClientCaller(md.ClientID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
 	}
 
 	response, err := session.NewGitClient(caller.Conn()).GetConfig(ctx, &session.GitConfigRequest{})
