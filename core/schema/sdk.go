@@ -850,7 +850,7 @@ func gitConfigSelectors(ctx context.Context, bk *buildkit.Client) ([]dagql.Selec
 				},
 				{
 					Name:  "value",
-					Value: dagql.NewString("ssh -o StrictHostKeyChecking=no"),
+					Value: dagql.NewString("GIT_CONFIG_GLOBAL=/src/.dagger_gitconfig ssh -o StrictHostKeyChecking=no "),
 				},
 			},
 		},
@@ -878,7 +878,7 @@ func gitConfigSelectors(ctx context.Context, bk *buildkit.Client) ([]dagql.Selec
 		dagql.Selector{
 			Field: "withNewFile",
 			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String("${HOME}/.gitconfig")},
+				{Name: "path", Value: dagql.String("/src/.dagger_gitconfig")},
 				{Name: "contents", Value: dagql.String(sb.String())},
 				{Name: "permissions", Value: dagql.Int(0o600)},
 				{Name: "expand", Value: dagql.NewBoolean(true)},
