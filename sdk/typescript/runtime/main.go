@@ -44,7 +44,6 @@ func New(
 ) *TypescriptSdk {
 	return &TypescriptSdk{
 		SDKSourceDir:  sdkSourceDir,
-		RequiredPaths: []string{"**/package.json", "**/tsconfig.json"},
 		moduleConfig:  &moduleConfig{},
 	}
 }

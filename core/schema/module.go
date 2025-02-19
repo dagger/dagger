@@ -666,12 +666,23 @@ func (s *moduleSchema) moduleGenerateClient(
 		LocalSdk  dagql.Optional[dagql.Boolean]
 	},
 ) (*core.Directory, error) {
-	generator, err := s.sdkForModule(ctx, mod.Query, &core.SDKConfig{
-		Source: args.Generator.String(),
-	}, mod.Source)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get generator: %w", err)
-	}
+	// Load the generator module from its ref
+	// BROKEN: we need a way to load a standalone SDK or
+	// dends on the configured one.
+	var generatorModule dagql.Instance[*core.ModuleSource]
+	err := s.dag.Select(ctx, s.dag.Root(), &generatorModule,
+		dagql.Selector{
+			Field: "moduleSource",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "refString",
+					Value: args.Generator,
+				},
+			},
+		},
+	)
+
+	generator := generatorModule.Self.SDKImpl
 
 	// Clone the module and add it to the deps so its binding are also generated
 	mod.Deps = mod.Deps.Append(mod.Clone())

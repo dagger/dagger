@@ -70,7 +70,7 @@ type clientAddHandler struct {
 }
 
 func (c *clientAddHandler) Run(ctx context.Context) (rerr error) {
-	mod, err := initializeClientGeneratorModule(ctx, c.dag, ".", true)
+	mod, _, err := initializeClientGeneratorModule(ctx, c.dag, ".")
 	if err != nil {
 		return fmt.Errorf("failed to initialize client generator module: %w", err)
 	}

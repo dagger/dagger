@@ -11,7 +11,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -100,26 +99,18 @@ func withEngine(
 
 		// Automatically serve the module in the context directory if available.
 		if params.ServeModule {
-			cwd, err := pathutil.Getwd()
+			mod, exist, err := initializeClientGeneratorModule(ctx, sess.Dagger(), ".", dagger.ModuleSourceOpts{
+				AllowNotExists: true,
+			})
 			if err != nil {
-				return fmt.Errorf("failed to get current working directory: %w", err)
+				return fmt.Errorf("failed to initialize current module: %w", err)
 			}
 
-			moduleSrcPath, configExist, err := findUp(cwd)
-			if err != nil {
-				return fmt.Errorf("failed to look for dagger.json file: %w", err)
-			}
-
-			if configExist {
-				mod, err := initializeClientGeneratorModule(ctx, sess.Dagger(), moduleSrcPath, false)
-				if err != nil {
-					return fmt.Errorf("failed to initialize current module: %w", err)
-				}
-
+			if exist {
 				for _, dep := range mod.Dependencies {
-					err := dep.Source.AsModule().Initialize().Serve(ctx)
+					err := dep.AsModule().Serve(ctx)
 					if err != nil {
-						return fmt.Errorf("failed to serve dependency %s: %w", dep.Name, err)
+						return fmt.Errorf("failed to serve dependency %w", err)
 					}
 				}
 			}
