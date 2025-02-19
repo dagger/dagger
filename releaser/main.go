@@ -158,6 +158,7 @@ func (r *Releaser) Publish(
 	if semver.IsValid(tag) {
 		version = tag
 	}
+
 	report := ReleaseReport{
 		Date:    time.Now().UTC().Format(time.RFC822),
 		Ref:     tag,
@@ -170,7 +171,13 @@ func (r *Releaser) Publish(
 		Tag:    tag,
 		Notify: true,
 	}
-	err := r.Dagger.Engine().Publish(ctx, []string{tag, commit}, dagger.DaggerDevDaggerEnginePublishOpts{
+
+	tags := []string{tag, commit}
+	if semver.IsValid(version) && semver.Prerelease(version) == "" {
+		// this is a full semver release
+		tags = append(tags, "latest")
+	}
+	err := r.Dagger.Engine().Publish(ctx, tags, dagger.DaggerDevDaggerEnginePublishOpts{
 		Image:            registryImage,
 		RegistryUsername: registryUsername,
 		RegistryPassword: registryPassword,
@@ -203,7 +210,13 @@ func (r *Releaser) Publish(
 	report.Artifacts = append(report.Artifacts, artifact)
 
 	if report.hasErrors() {
-		// early-exit if engine or cli could not publish
+		// early-exit if engine / cli could not Publish
+		return &report, nil
+	}
+
+	isPrerelease := semver.IsValid(version) && semver.Prerelease(version) != ""
+	if isPrerelease {
+		// early-exit if this is a pre-release
 		return &report, nil
 	}
 
