@@ -76,16 +76,6 @@ mounted to `/etc/dagger/engine.toml`. For example:
 {`    registry.dagger.io/engine:${daggerVersion}`}
 </CodeBlock>
 
-:::note
-The `registry.dagger.io/engine` container itself contains a default
-`engine.toml` configuration. When mounting `engine.toml`, you may
-want to extend the default configuration:
-
-<CodeBlock language="shell">
-{`docker run --rm --entrypoint sh registry.dagger.io/engine:${daggerVersion} cat /etc/dagger/engine.toml`}
-</CodeBlock>
-:::
-
 </TabItem>
 </Tabs>
 
