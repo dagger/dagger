@@ -112,7 +112,9 @@ func runDaggerQuery(ctx context.Context, engineName string, engineKind string, k
 		return err
 	}
 
-	stdout, err := kubectl.WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", fmt.Sprintf("kube-pod://%s?namespace=dagger", podName)).
+	stdout, err := kubectl.
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", fmt.Sprintf("kube-pod://%s?namespace=dagger", podName)).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v0.16.0-000000000000").
 		WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{
 			Stdin: `{
 				container {
