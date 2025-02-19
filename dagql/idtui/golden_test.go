@@ -92,6 +92,7 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 			"with-exec", "--args", "echo,hey",
 			"stdout",
 		}, Fail: true},
+		{Function: "revealed-spans"},
 
 		// tests intended to trigger consistent tui exec metrics output
 		{Function: "disk-metrics", Verbosity: 3, FuzzyTest: func(t *testctx.T, out string) {
