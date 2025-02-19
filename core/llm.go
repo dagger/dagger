@@ -28,8 +28,10 @@ import (
 type Llm struct {
 	Query *Query
 
-	Model    string
-	Endpoint *LlmEndpoint
+	maxApiCalls int
+	apiCalls    int
+	Model       string
+	Endpoint    *LlmEndpoint
 
 	// History of messages
 	// FIXME: rename to 'messages'
@@ -242,7 +244,7 @@ func NewLlmRouter(ctx context.Context, srv *dagql.Server) (*LlmRouter, error) {
 	return router, err
 }
 
-func NewLlm(ctx context.Context, query *Query, srv *dagql.Server, model string) (*Llm, error) {
+func NewLlm(ctx context.Context, query *Query, srv *dagql.Server, model string, maxApiCalls int) (*Llm, error) {
 	var router *LlmRouter
 	{
 		// Don't leak this context, it's specific to querying the parent client for llm config secrets
@@ -268,10 +270,11 @@ func NewLlm(ctx context.Context, query *Query, srv *dagql.Server, model string) 
 	}
 	// FIXME: merge model into endpoint
 	return &Llm{
-		Query:    query,
-		Model:    model,
-		Endpoint: endpoint,
-		calls:    make(map[string]string),
+		Query:       query,
+		Model:       model,
+		Endpoint:    endpoint,
+		maxApiCalls: maxApiCalls,
+		calls:       make(map[string]string),
 		// FIXME: support multiple variables in state
 		//state:  make(map[string]dagql.Typed),
 	}, nil
@@ -408,19 +411,19 @@ func (llm *Llm) BBI(srv *dagql.Server) (bbi.Session, error) {
 }
 
 // send the context to the LLM endpoint, process replies and tool calls; continue in a loop
-func (llm *Llm) Loop(
-	ctx context.Context,
-	// the maximum number of loops to allow.
-	maxLoops int,
-	srv *dagql.Server,
-) (*Llm, error) {
+func (llm *Llm) Loop(ctx context.Context, srv *dagql.Server) (*Llm, error) {
 	llm = llm.Clone()
 	// Start a new BBI session
 	session, err := llm.BBI(srv)
 	if err != nil {
 		return nil, err
 	}
-	for i := 0; maxLoops == 0 || i < maxLoops; i++ {
+	for {
+		if llm.maxApiCalls > 0 && llm.apiCalls >= llm.maxApiCalls {
+			return nil, fmt.Errorf("reached API call limit: %d", llm.apiCalls)
+		}
+		llm.apiCalls++
+
 		tools := session.Tools()
 		res, err := llm.sendQuery(ctx, tools)
 		if err != nil {
