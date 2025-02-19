@@ -1298,6 +1298,15 @@ func (srv *Server) MainClientCallerID(ctx context.Context) (string, error) {
 	return client.daggerSession.mainClientCallerID, nil
 }
 
+// Retrieve the dagql server for the current client
+func (srv *Server) DagqlServer(ctx context.Context) (*dagql.Server, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.dag, nil
+}
+
 // Return the DAGQL server for the main client
 func (srv *Server) MainServer(ctx context.Context) (context.Context, *dagql.Server, error) {
 	client, err := srv.clientFromContext(ctx)

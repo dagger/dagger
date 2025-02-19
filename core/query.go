@@ -99,6 +99,9 @@ type Server interface {
 
 	// Retrieve the main client's DagQL server
 	MainServer(context.Context) (context.Context, *dagql.Server, error)
+
+	// Retrieve the dagql server for the current client
+	DagqlServer(context.Context) (*dagql.Server, error)
 }
 
 func NewRoot(srv Server) *Query {

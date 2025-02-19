@@ -37,8 +37,11 @@ func (s llmSchema) Install() {
 			Doc("set a variable for expansion in the prompt").
 			ArgDoc("name", "The name of the variable").
 			ArgDoc("value", "The value of the variable"),
-		dagql.Func("loop", s.loop).
-			Doc("send the context to the LLM endpoint, process replies and tool calls; continue in a loop"),
+		dagql.Func("sync", s.sync).
+			Doc("synchronize LLM state"),
+		dagql.Func("loop", s.sync).
+			Deprecated("use sync").
+			Doc("synchronize LLM state"),
 		dagql.Func("tools", s.tools).
 			Doc("print documentation for available tools"),
 	}
@@ -55,7 +58,7 @@ func (s *llmSchema) model(ctx context.Context, llm *core.Llm, args struct{}) (da
 }
 
 func (s *llmSchema) lastReply(ctx context.Context, llm *core.Llm, args struct{}) (dagql.String, error) {
-	reply, err := llm.LastReply()
+	reply, err := llm.LastReply(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -84,8 +87,8 @@ func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.Llm, args stru
 	return llm.WithPromptFile(ctx, file.Self, s.srv)
 }
 
-func (s *llmSchema) loop(ctx context.Context, llm *core.Llm, args struct{}) (*core.Llm, error) {
-	return llm.Loop(ctx, s.srv)
+func (s *llmSchema) sync(ctx context.Context, llm *core.Llm, args struct{}) (*core.Llm, error) {
+	return llm.Sync(ctx)
 }
 
 func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
@@ -104,7 +107,7 @@ func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
 }
 
 func (s *llmSchema) history(ctx context.Context, llm *core.Llm, _ struct{}) (dagql.Array[dagql.String], error) {
-	history, err := llm.History()
+	history, err := llm.History(ctx)
 	if err != nil {
 		return nil, err
 	}
