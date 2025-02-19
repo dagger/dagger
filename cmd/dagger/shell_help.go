@@ -109,6 +109,17 @@ func (h *shellCallHandler) MainHelp() string {
 		return c.Name(), c.Short()
 	}))
 
+	if mods := h.LoadedModulesList(); len(mods) > 0 {
+		sb := new(strings.Builder)
+		for _, mod := range mods {
+			sb.WriteString("  ")
+			sb.WriteString(mod)
+			sb.WriteString("\n")
+		}
+		doc.Add("Loaded modules", sb.String())
+		types = append(types, "<module>")
+	}
+
 	doc.Add("", fmt.Sprintf(`Use ".help %s" for more information.`, strings.Join(types, " | ")))
 
 	return doc.String()
