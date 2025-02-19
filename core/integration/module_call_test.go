@@ -1370,7 +1370,7 @@ func (m *Minimal) Fn() []*Foo {
 		t.Run("default", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("fn")).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, expectedJSON, gjson.Get(out, "#.{bar}").Raw)
+			require.Regexp(t, strings.Repeat(`- MinimalFoo@xxh3:[a-f0-9]{16}\n`, 3), out)
 		})
 
 		t.Run("print", func(ctx context.Context, t *testctx.T) {
@@ -1432,10 +1432,7 @@ func (m *Test) Fail() *dagger.Container {
 		t.Run("default", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ctr")).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t,
-				`["echo", "hello"]`,
-				gjson.Get(out, "[@this].#(_type==Container).defaultArgs").Raw,
-			)
+			require.Regexp(t, `Container@xxh3:[a-f0-9]{16}`, out)
 		})
 
 		t.Run("exec", func(ctx context.Context, t *testctx.T) {
@@ -1486,10 +1483,7 @@ type Test struct {
 		t.Run("default", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("dir")).Stdout(ctx)
 			require.NoError(t, err)
-			actual := gjson.Get(out, "[@this].#(_type==Directory).entries").Array()
-			require.Len(t, actual, 2)
-			require.Equal(t, "bar.txt", actual[0].String())
-			require.Equal(t, "foo.txt", actual[1].String())
+			require.Regexp(t, `Directory@xxh3:[a-f0-9]{16}`, out)
 		})
 
 		t.Run("output", func(ctx context.Context, t *testctx.T) {
@@ -1540,8 +1534,7 @@ type Test struct {
 		t.Run("default", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("file")).Stdout(ctx)
 			require.NoError(t, err)
-			actual := gjson.Get(out, "[@this].#(_type==File).name").String()
-			require.Equal(t, "foo.txt", actual)
+			require.Regexp(t, `File@xxh3:[a-f0-9]{16}`, out)
 		})
 
 		t.Run("output", func(ctx context.Context, t *testctx.T) {
@@ -1569,9 +1562,14 @@ func (*Test) Secret() *dagger.Secret {
     return dag.SetSecret("foo", "bar")
 }
 
+func (*Test) Secret2() *dagger.Secret {
+    return dag.SetSecret("fizz", "buzz")
+}
+
 func (m *Test) Secrets() []*dagger.Secret {
     return []*dagger.Secret{
         m.Secret(),
+        m.Secret2(),
     }
 }
 `,
@@ -1583,8 +1581,7 @@ func (m *Test) Secrets() []*dagger.Secret {
 				Stdout(ctx)
 
 			require.NoError(t, err)
-			require.Contains(t, out, "foo")
-			require.NotContains(t, out, "bar")
+			require.Regexp(t, `Secret@xxh3:[a-f0-9]{16}`, out)
 		})
 
 		t.Run("multiple", func(context.Context, *testctx.T) {
@@ -1593,8 +1590,7 @@ func (m *Test) Secrets() []*dagger.Secret {
 				Stdout(ctx)
 
 			require.NoError(t, err)
-			require.Contains(t, out, "foo")
-			require.NotContains(t, out, "bar")
+			require.Regexp(t, strings.Repeat(`- Secret@xxh3:[a-f0-9]{16}\n`, 2), out)
 		})
 	})
 
