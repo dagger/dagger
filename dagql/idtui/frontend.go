@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
+	"github.com/knz/bubbline/editline"
 	"github.com/muesli/termenv"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -84,6 +85,14 @@ type Frontend interface {
 	ConnectedToEngine(ctx context.Context, name string, version string, clientID string)
 	// SetCloudURL is called after the CLI checks auth and sets the cloud URL.
 	SetCloudURL(ctx context.Context, url string, msg string, logged bool)
+
+	// Shell is called when the CLI enters interactive mode.
+	Shell(
+		ctx context.Context,
+		fn func(ctx context.Context, input string) error,
+		autocomplete editline.AutoCompleteFn,
+		prompt func(out *termenv.Output, fg termenv.Color) string,
+	)
 }
 
 type Dump struct {

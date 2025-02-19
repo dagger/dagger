@@ -117,21 +117,24 @@ func TestShellAutocomplete(t *testing.T) {
 			if start == -1 || end == -1 || !(start < end) {
 				require.FailNow(t, "invalid cmdline: could not find <expr>")
 			}
-			inprogress, expected, ok := strings.Cut(cmdline[start+1:end], "$")
+			inprogress, rest, ok := strings.Cut(cmdline[start+1:end], "$")
 			if !ok {
 				require.FailNow(t, "invalid cmdline: no token '$' in <expr>")
 			}
+			expected := strings.TrimSpace(inprogress + rest)
 
 			cmdline := cmdline[:start] + inprogress + cmdline[end+1:]
 			cursor := start + len(inprogress)
 
-			results, length := autoComplete.Do([]rune(cmdline), cursor)
-			sresults := make([]string, 0, len(results))
-			for _, result := range results {
-				sresults = append(sresults, string(result))
+			_, comp := autoComplete.Do([][]rune{[]rune(cmdline)}, 0, cursor)
+			require.Equal(t, 1, comp.NumCategories())
+			candidates := make([]string, 0, comp.NumEntries(0))
+			for i := 0; i < comp.NumEntries(0); i++ {
+				entry := comp.Entry(0, i)
+				t.Logf("entry %d: %s (%q)", i, entry.Title(), entry.Description())
+				candidates = append(candidates, entry.Title())
 			}
-			require.Contains(t, sresults, expected)
-			require.Equal(t, len(inprogress), length)
+			require.Contains(t, candidates, expected)
 		})
 	}
 }
