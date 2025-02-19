@@ -50,10 +50,10 @@ var (
 	shellNoLoadModule bool
 )
 
-func init() {
-	shellCmd.Flags().StringVarP(&shellCode, "code", "c", "", "Command to be executed")
-	shellCmd.Flags().BoolVar(&shellNoLoadModule, "no-mod", false, "Don't load module during shell startup (mutually exclusive with --mod)")
-	shellCmd.MarkFlagsMutuallyExclusive("mod", "no-mod")
+func shellAddFlags(cmd *cobra.Command) {
+	cmd.Flags().StringVarP(&shellCode, "code", "c", "", "Command to be executed")
+	cmd.Flags().BoolVar(&shellNoLoadModule, "no-mod", false, "Don't load module during shell startup (mutually exclusive with --mod)")
+	cmd.MarkFlagsMutuallyExclusive("mod", "no-mod")
 }
 
 var shellCmd = &cobra.Command{
@@ -406,7 +406,7 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 	h.repl = true
 
 	h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
-		fmt.Fprintln(stderr, `Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`)
+		fmt.Fprintln(stderr, `Experimental Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`)
 		return nil
 	})
 
