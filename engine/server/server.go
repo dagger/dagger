@@ -248,20 +248,23 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// setup config derived from engine config
 	//
 
-	for _, entStr := range bkcfg.Entitlements {
-		ent, err := entitlements.Parse(entStr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse entitlement %s: %w", entStr, err)
-		}
-		srv.entitlements[ent] = struct{}{}
-	}
-	if cfg.Security.InsecureRootCapabilities != nil {
-		// override from engine.toml if we set it in *our* config
-		if *cfg.Security.InsecureRootCapabilities {
+	if cfg.Security != nil {
+		// prioritize out config first if it's set
+		if cfg.Security.InsecureRootCapabilities == nil || *cfg.Security.InsecureRootCapabilities {
 			srv.entitlements[entitlements.EntitlementSecurityInsecure] = struct{}{}
-		} else {
-			delete(srv.entitlements, entitlements.EntitlementSecurityInsecure)
 		}
+	} else if bkcfg.Entitlements != nil {
+		// fallback to the dagger config
+		for _, entStr := range bkcfg.Entitlements {
+			ent, err := entitlements.Parse(entStr)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse entitlement %s: %w", entStr, err)
+			}
+			srv.entitlements[ent] = struct{}{}
+		}
+	} else {
+		// no config? apply dagger-specific defaults
+		srv.entitlements[entitlements.EntitlementSecurityInsecure] = struct{}{}
 	}
 
 	srv.defaultPlatform = platforms.Normalize(platforms.DefaultSpec())

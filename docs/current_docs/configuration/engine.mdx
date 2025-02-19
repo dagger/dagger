@@ -175,13 +175,13 @@ To disable the use of `insecureRootCapabilities`:
 
 </TabItem>
 <TabItem value="engine.toml">
-To explicitly enable the use of `insecureRootCapabilities`:
+To explicitly enable the use of `insecureRootCapabilities` (the default):
 
 ```toml
 insecure-entitlements = ["security.insecure"]
 ```
 
-To disable the use of `insecureRootCapabilities`:
+To disable the use of `insecureRootCapabilities`, explicitly set `insecure-entitlements` to the empty array:
 
 ```toml
 insecure-entitlements = []
