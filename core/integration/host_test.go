@@ -184,6 +184,37 @@ func (HostSuite) TestDirectoryRelative(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (HostSuite) TestDirectoryAbsolute(ctx context.Context, t *testctx.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "some-file"), []byte("hello"), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "some-dir"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "some-dir", "sub-file"), []byte("goodbye"), 0o600))
+
+	c := connect(ctx, t, dagger.WithWorkdir(dir))
+
+	entries, err := c.Host().Directory(filepath.Join(dir, "some-dir")).Entries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"sub-file"}, entries)
+}
+
+func (HostSuite) TestDirectoryHome(ctx context.Context, t *testctx.T) {
+	home, err := os.UserHomeDir()
+	require.NoError(t, err)
+
+	subdir := filepath.Join(".cache", "dagger-test-"+identity.NewID())
+
+	require.NoError(t, os.MkdirAll(filepath.Join(home, subdir), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(home, subdir, "some-file"), []byte("hello"), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Join(home, subdir, "some-dir"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(home, subdir, "some-dir", "sub-file"), []byte("goodbye"), 0o600))
+
+	c := connect(ctx, t, dagger.WithWorkdir("/tmp"))
+
+	entries, err := c.Host().Directory(filepath.Join("~", subdir, "some-dir")).Entries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"sub-file"}, entries)
+}
+
 func (HostSuite) TestSetSecretFile(ctx context.Context, t *testctx.T) {
 	// Generate 512000 random bytes (non UTF-8)
 	// This is our current limit: secrets break at 512001 bytes
@@ -218,19 +249,6 @@ func (HostSuite) TestSetSecretFile(ctx context.Context, t *testctx.T) {
 
 		require.Equal(t, hashStr, hashStrCmd)
 	})
-}
-
-func (HostSuite) TestDirectoryAbsolute(ctx context.Context, t *testctx.T) {
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "some-file"), []byte("hello"), 0o600))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "some-dir"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "some-dir", "sub-file"), []byte("goodbye"), 0o600))
-
-	c := connect(ctx, t, dagger.WithWorkdir(dir))
-
-	entries, err := c.Host().Directory(filepath.Join(dir, "some-dir")).Entries(ctx)
-	require.NoError(t, err)
-	require.Equal(t, []string{"sub-file"}, entries)
 }
 
 func (HostSuite) TestDirectoryExcludeInclude(ctx context.Context, t *testctx.T) {
