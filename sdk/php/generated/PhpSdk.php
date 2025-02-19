@@ -43,12 +43,6 @@ class PhpSdk extends Client\AbstractObject implements Client\IdAble
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
-    public function requiredPaths(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('requiredPaths');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'requiredPaths');
-    }
-
     public function sourceDir(): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sourceDir');

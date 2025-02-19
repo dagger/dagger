@@ -1021,6 +1021,13 @@ export type LabelID = string & { __LabelID: never }
  */
 export type ListTypeDefID = string & { __ListTypeDefID: never }
 
+export type ModuleGenerateClientOpts = {
+  /**
+   * Use local SDK dependency
+   */
+  localSdk?: boolean
+}
+
 /**
  * The `ModuleID` scalar type represents an identifier for an object of type Module.
  */
@@ -5190,6 +5197,14 @@ export class Module_ extends BaseClient {
       outputDir,
       ...opts,
     })
+    return new Directory(ctx)
+  }
+
+  /**
+   * The generated files and directories made on top of the module source's context directory.
+   */
+  generatedContextDirectory = (): Directory => {
+    const ctx = this._ctx.select("generatedContextDirectory")
     return new Directory(ctx)
   }
 

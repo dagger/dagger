@@ -1972,7 +1972,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	src dagql.Instance[*core.ModuleSource],
 	args struct{},
 ) (inst dagql.Instance[*core.Module], err error) {
-	if src.Self.ModuleName == "" || src.Self.SDK == nil || src.Self.SDK.Source == "" {
+	if src.Self.SDK != nil && (src.Self.ModuleName == "" || src.Self.SDK.Source == "") {
 		return inst, fmt.Errorf("module name and SDK must be set")
 	}
 
@@ -2010,6 +2010,11 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
 	srcInstContentHashed := src.WithMetadata(digest.Digest(src.Self.Digest), true)
+
+	// If no SDK is set, then we don't need to get the module runtime nor codegen
+	if src.Self.SDK == nil {
+		return inst, nil
+	}
 
 	// get the runtime container, which is what is exec'd when calling functions in the module
 	mod.Runtime, err = src.Self.SDKImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)

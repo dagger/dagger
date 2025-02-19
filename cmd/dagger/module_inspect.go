@@ -97,6 +97,53 @@ func initializeModule(
 	return def, def.loadTypeDefs(ctx, dag)
 }
 
+func initializeClientGeneratorModule(
+	ctx context.Context,
+	dag *dagger.Client,
+	srcRef string,
+	srcOpts ...dagger.ModuleSourceOpts,
+) (gdef *clientGeneratorModuleDef, exist bool, rerr error) {
+	ctx, span := Tracer().Start(ctx, "load module")
+	defer telemetry.End(span, func() error { return rerr })
+
+	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
+	modSrc := dag.ModuleSource(srcRef, srcOpts...)
+	configExists, err := modSrc.ConfigExists(findCtx)
+	telemetry.End(findSpan, func() error { return err })
+
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to get configured module: %w", err)
+	}
+
+	if !configExists {
+		for _, opt := range srcOpts {
+			if opt.AllowNotExists == true {
+				return nil, false, nil
+			}
+		}
+
+		return nil, false, errors.New("dagger.json not found")
+	}
+
+	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())
+
+	err = modSrc.AsModule().Serve(serveCtx)
+	telemetry.End(serveSpan, func() error { return err })
+	if err != nil {
+		return nil, true, fmt.Errorf("failed to serve module: %w", err)
+	}
+
+	dependencies, err := modSrc.Dependencies(ctx)
+	if err != nil {
+		return nil, true, fmt.Errorf("failed to get module dependencies: %w", err)
+	}
+
+	return &clientGeneratorModuleDef{
+		mod:          modSrc.AsModule(),
+		Dependencies: dependencies,
+	}, true, nil
+}
+
 // moduleDef is a representation of a dagger module.
 type moduleDef struct {
 	Name        string
@@ -120,7 +167,7 @@ type moduleDef struct {
 type clientGeneratorModuleDef struct {
 	mod *dagger.Module
 
-	Dependencies []*moduleDependency
+	Dependencies []dagger.ModuleSource
 }
 
 type moduleDependency struct {

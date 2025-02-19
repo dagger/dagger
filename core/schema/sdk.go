@@ -439,11 +439,6 @@ func (sdk *goSDK) GenerateClient(
 		"--client-only",
 	}
 
-	currentModuleDirectoryPath, err := modSource.Self.SourceRootSubpath()
-	if err != nil {
-		return inst, fmt.Errorf("failed to get module source root subpath: %w", err)
-	}
-
 	var currentModuleDirectory dagql.Instance[*core.Directory]
 	err = sdk.dag.Select(ctx, modSource, &currentModuleDirectory,
 		dagql.Selector{
@@ -454,7 +449,7 @@ func (sdk *goSDK) GenerateClient(
 			Args: []dagql.NamedInput{
 				{
 					Name:  "path",
-					Value: dagql.String(currentModuleDirectoryPath),
+					Value: dagql.String(modSource.Self.SourceRootSubpath),
 				},
 			},
 		})

@@ -5922,6 +5922,12 @@ pub struct Module {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleGenerateClientOpts {
+    /// Use local SDK dependency
+    #[builder(setter(into, strip_option), default)]
+    pub local_sdk: Option<bool>,
+}
 impl Module {
     /// The dependencies of the module.
     pub fn dependencies(&self) -> Vec<Module> {
