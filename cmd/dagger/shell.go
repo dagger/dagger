@@ -283,8 +283,7 @@ func (h *shellCallHandler) shellStateProcessor(ctx context.Context) func([]byte)
 			return nil, nil
 		}
 		buf := new(bytes.Buffer)
-		frmt := outputFormat(typeDef)
-		err = printResponse(buf, resp, frmt)
+		err = printResponse(buf, resp, typeDef)
 		return buf.Bytes(), err
 	}
 }
