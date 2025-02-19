@@ -29,6 +29,7 @@ jobs:
           function: |-
             publish \
             --tag="${{ github.ref_name }}" --commit="${{ github.sha }}" \
+            --pre-release=true \
             --registry-image="$DAGGER_ENGINE_IMAGE" \
             --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
             --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD \

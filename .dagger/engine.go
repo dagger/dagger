@@ -285,12 +285,15 @@ func (e *DaggerEngine) Publish(
 	dryRun bool,
 
 	// +optional
+	preRelease bool,
+
+	// +optional
 	registryUsername *string,
 	// +optional
 	registryPassword *dagger.Secret,
 ) error {
 	for _, t := range tag {
-		if semver.IsValid(t) {
+		if !preRelease && semver.IsValid(t) {
 			tag = append(tag, "latest")
 			break
 		}

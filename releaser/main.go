@@ -128,6 +128,7 @@ func (r *Releaser) Publish(
 	commit string,
 
 	dryRun bool, // +optional
+	preRelease bool, // +optional
 
 	registryImage string, // +optional
 	registryUsername string, // +optional
@@ -175,6 +176,7 @@ func (r *Releaser) Publish(
 		RegistryUsername: registryUsername,
 		RegistryPassword: registryPassword,
 		DryRun:           dryRun,
+		PreRelease:       preRelease,
 	})
 	if err != nil {
 		artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
@@ -202,8 +204,9 @@ func (r *Releaser) Publish(
 	}
 	report.Artifacts = append(report.Artifacts, artifact)
 
-	if report.hasErrors() {
-		// early-exit if engine or cli could not publish
+	if preRelease || report.hasErrors() {
+		// early-exit if this is a pre-release
+		// OR engine / cli could not Publish
 		return &report, nil
 	}
 
