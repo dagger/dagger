@@ -77,6 +77,11 @@ type Cache interface {
 		digest.Digest,
 		func(context.Context) (Typed, error),
 	) (Typed, bool, error)
+	GetOrInitializeWithPostCall(
+		context.Context,
+		digest.Digest,
+		func(context.Context) (Typed, func(context.Context) error, error),
+	) (Typed, bool, func(context.Context) error, error)
 	GetOrInitializeValue(context.Context, digest.Digest, Typed) (Typed, bool, error)
 }
 
