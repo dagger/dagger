@@ -124,6 +124,9 @@
       "properties": {
         "source": {
           "type": "string"
+        },
+        "config": {
+          "type": "object"
         }
       },
       "additionalProperties": false,

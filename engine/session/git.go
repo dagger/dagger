@@ -202,12 +202,12 @@ func (s GitAttachable) GetConfig(ctx context.Context, req *GitConfigRequest) (*G
 		if ctx.Err() == context.DeadlineExceeded {
 			return newGitConfigErrorResponse(TIMEOUT, "Git config command timed out"), nil
 		}
-		return newGitConfigErrorResponse(CONFIG_RETRIEVAL_FAILED, fmt.Sprintf("Failed to retrieve config: %v", err)), nil
+		return newGitConfigErrorResponse(CONFIG_RETRIEVAL_FAILED, fmt.Sprintf("Failed to retrieve config: %v. stdout: %q, stderr: %q", err, stdout.String(), stderr.String())), nil
 	}
 
 	list, err := parseGitConfigOutput(stdout.Bytes())
 	if err != nil {
-		return newGitConfigErrorResponse(CONFIG_RETRIEVAL_FAILED, fmt.Sprintf("Failed to retrieve config: %v", err)), nil
+		return newGitConfigErrorResponse(CONFIG_RETRIEVAL_FAILED, fmt.Sprintf("Failed to parse config (%q): %v", stdout.String, err)), nil
 	}
 
 	return &GitConfigResponse{
@@ -234,7 +234,7 @@ func parseGitConfigOutput(output []byte) (*GitConfig, error) {
 		}
 		parts := strings.SplitN(line, "=", 2)
 		if len(parts) != 2 {
-			return nil, fmt.Errorf("invalid format: line doesn't match key=value pattern")
+			return nil, fmt.Errorf("invalid format: line %q doesn't match key=value pattern", line)
 		}
 
 		if isGitConfigKeyAllowed(strings.ToLower(parts[0])) {
