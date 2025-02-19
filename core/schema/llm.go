@@ -17,7 +17,8 @@ func (s llmSchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("llm", s.llm).
 			Doc(`Initialize a Large Language Model (LLM)`).
-			ArgDoc("model", "Model to use"),
+			ArgDoc("model", "Model to use").
+			ArgDoc("maxApiCalls", "Cap the number of API calls for this LLM"),
 	}.Install(s.srv)
 	llmType := dagql.Fields[*core.Llm]{
 		dagql.Func("model", s.model).
@@ -37,8 +38,7 @@ func (s llmSchema) Install() {
 			ArgDoc("name", "The name of the variable").
 			ArgDoc("value", "The value of the variable"),
 		dagql.Func("loop", s.loop).
-			Doc("send the context to the LLM endpoint, process replies and tool calls; continue in a loop").
-			ArgDoc("maxLoops", "The maximum number of loops to allow."),
+			Doc("send the context to the LLM endpoint, process replies and tool calls; continue in a loop"),
 		dagql.Func("tools", s.tools).
 			Doc("print documentation for available tools"),
 	}
@@ -84,21 +84,23 @@ func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.Llm, args stru
 	return llm.WithPromptFile(ctx, file.Self, s.srv)
 }
 
-func (s *llmSchema) loop(ctx context.Context, llm *core.Llm, args struct {
-	MaxLoops dagql.Optional[dagql.Int]
-}) (*core.Llm, error) {
-	maxLoops := args.MaxLoops.GetOr(0).Int()
-	return llm.Loop(ctx, maxLoops, s.srv)
+func (s *llmSchema) loop(ctx context.Context, llm *core.Llm, args struct{}) (*core.Llm, error) {
+	return llm.Loop(ctx, s.srv)
 }
 
 func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
-	Model dagql.Optional[dagql.String]
+	Model       dagql.Optional[dagql.String]
+	MaxApiCalls dagql.Optional[dagql.Int]
 }) (*core.Llm, error) {
 	var model string
 	if args.Model.Valid {
 		model = args.Model.Value.String()
 	}
-	return core.NewLlm(ctx, parent, s.srv, model)
+	var maxApiCalls int
+	if args.MaxApiCalls.Valid {
+		maxApiCalls = args.MaxApiCalls.Value.Int()
+	}
+	return core.NewLlm(ctx, parent, s.srv, model, maxApiCalls)
 }
 
 func (s *llmSchema) history(ctx context.Context, llm *core.Llm, _ struct{}) (dagql.Array[dagql.String], error) {
