@@ -96,7 +96,7 @@ func (s *sdkLoader) sdkForModule(
 	}
 
 	// TODO: include sdk source dir from module config dagger.json once we support default-args/scripts
-	return s.newModuleSDK(ctx, query, sdkMod, dagql.Instance[*core.Directory]{})
+	return s.newModuleSDK(ctx, query, sdkMod, dagql.Instance[*core.Directory]{}, sdk.Config)
 }
 
 // parse and validate the name and version from sdkName
@@ -164,15 +164,15 @@ func (s *sdkLoader) builtinSDK(ctx context.Context, root *core.Query, sdk *core.
 	case SDKGo:
 		return &goSDK{root: root, dag: s.dag}, nil
 	case SDKPython:
-		return s.loadBuiltinSDK(ctx, root, sdk.Source, digest.Digest(os.Getenv(distconsts.PythonSDKManifestDigestEnvName)))
+		return s.loadBuiltinSDK(ctx, root, sdk, digest.Digest(os.Getenv(distconsts.PythonSDKManifestDigestEnvName)))
 	case SDKTypescript:
-		return s.loadBuiltinSDK(ctx, root, sdk.Source, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
+		return s.loadBuiltinSDK(ctx, root, sdk, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
 	case SDKJava:
-		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/java" + sdkSuffix}, nil)
+		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/java" + sdkSuffix, Config: sdk.Config}, nil)
 	case SDKPHP:
-		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/php" + sdkSuffix}, nil)
+		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/php" + sdkSuffix, Config: sdk.Config}, nil)
 	case SDKElixir:
-		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/elixir" + sdkSuffix}, nil)
+		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/elixir" + sdkSuffix, Config: sdk.Config}, nil)
 	}
 
 	return nil, getInvalidBuiltinSDKError(sdk.Source)
@@ -193,6 +193,7 @@ func (s *sdkLoader) newModuleSDK(
 	root *core.Query,
 	sdkModMeta dagql.Instance[*core.Module],
 	optionalFullSDKSourceDir dagql.Instance[*core.Directory],
+	rawConfig map[string]interface{},
 ) (*moduleSDK, error) {
 	dag := dagql.NewServer(root)
 
@@ -232,7 +233,80 @@ func (s *sdkLoader) newModuleSDK(
 		return nil, fmt.Errorf("failed to get sdk object for sdk module %s: %w", sdkModMeta.Self.Name(), err)
 	}
 
-	return &moduleSDK{mod: sdkModMeta, dag: dag, sdk: sdk}, nil
+	return (&moduleSDK{mod: sdkModMeta, dag: dag, sdk: sdk}).withConfig(ctx, rawConfig)
+}
+
+// withConfig function checks if the moduleSDK exposes a function with name `WithConfig`.
+//
+// If the function with that name exists, it calls that function with arguments as read
+// from dagger.json -> sdk.config object.
+//
+// Further, if the value for a specific arg for that function is not specified in dagger.json -> sdk.config object,
+// the default value as specified in the moduleSource is used for that argument.
+func (sdk *moduleSDK) withConfig(ctx context.Context, rawConfig map[string]interface{}) (*moduleSDK, error) {
+	for _, def := range sdk.mod.Self.ObjectDefs {
+		if !def.AsObject.Valid {
+			continue
+		}
+
+		obj := def.AsObject.Value
+		if gqlFieldName(obj.Name) != gqlFieldName(sdk.mod.Self.OriginalName) {
+			continue
+		}
+
+		var withConfigFn *core.Function
+		for _, fn := range obj.Functions {
+			if fn.Name == "withConfig" {
+				withConfigFn = fn
+				break
+			}
+		}
+
+		// the sdk do not expose WithConfig function
+		// return the moduleSDK as is
+		// TODO(rajatjindal): should we error out here if the user specifies sdk.config in dagger.json
+		// but no withConfig function exist in the sdk module source.
+		if withConfigFn == nil {
+			return sdk, nil
+		}
+
+		args := []dagql.NamedInput{}
+		// TODO(rajatjindal): should we error out here if the user specifies a config in sdk.config object, but
+		// withConfig function does not support that argument.
+		for _, arg := range withConfigFn.Args {
+			// check if the argument with same name exists in dagger.json -> sdk.config
+			val, ok := rawConfig[arg.Name]
+			if !ok {
+				val = arg.DefaultValue
+			}
+
+			input, err := arg.TypeDef.ToInput().Decoder().DecodeInput(val)
+			if err != nil {
+				return nil, err
+			}
+
+			args = append(args, dagql.NamedInput{
+				Name:  arg.Name,
+				Value: input,
+			})
+		}
+
+		var sdkwithconfig dagql.Object
+		err := sdk.dag.Select(ctx, sdk.sdk, &sdkwithconfig, []dagql.Selector{
+			{
+				Field: "withConfig",
+				Args:  args,
+			},
+		}...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to call withConfig on the sdk module: %w", err)
+		}
+
+		sdk.sdk = sdkwithconfig
+		break
+	}
+
+	return sdk, nil
 }
 
 // Codegen calls the Codegen function on the SDK Module
@@ -309,7 +383,7 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, deps *core.ModDeps, source da
 func (s *sdkLoader) loadBuiltinSDK(
 	ctx context.Context,
 	root *core.Query,
-	name string,
+	sdk *core.SDKConfig,
 	manifestDigest digest.Digest,
 ) (*moduleSDK, error) {
 	// TODO: currently hardcoding assumption that builtin sdks put *module* source code at
@@ -330,7 +404,7 @@ func (s *sdkLoader) loadBuiltinSDK(
 			Field: "rootfs",
 		},
 	); err != nil {
-		return nil, fmt.Errorf("failed to import full sdk source for sdk %s from engine container filesystem: %w", name, err)
+		return nil, fmt.Errorf("failed to import full sdk source for sdk %s from engine container filesystem: %w", sdk.Source, err)
 	}
 
 	var sdkMod dagql.Instance[*core.Module]
@@ -349,10 +423,10 @@ func (s *sdkLoader) loadBuiltinSDK(
 		},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to import module sdk %s: %w", name, err)
+		return nil, fmt.Errorf("failed to import module sdk %s: %w", sdk.Source, err)
 	}
 
-	return s.newModuleSDK(ctx, root, sdkMod, fullSDKDir)
+	return s.newModuleSDK(ctx, root, sdkMod, fullSDKDir, sdk.Config)
 }
 
 const (
