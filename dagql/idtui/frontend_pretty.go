@@ -22,9 +22,12 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
 )
+
+var isDark = termenv.HasDarkBackground()
 
 type frontendPretty struct {
 	dagui.FrontendOpts
@@ -268,19 +271,19 @@ func (fe *frontendPretty) renderErrorLogs(out *termenv.Output, r *renderer) bool
 	})
 	errTree := fe.db.CollectErrors(rowsView)
 	var anyHasLogs bool
-	dagui.WalkTree(errTree, func(row *dagui.TraceTree, _ int) bool {
+	dagui.WalkTree(errTree, func(row *dagui.TraceTree, _ int) dagui.WalkDecision {
 		logs := fe.logs.Logs[row.Span.ID]
 		if logs != nil && logs.UsedHeight() > 0 {
 			anyHasLogs = true
-			return true
+			return dagui.WalkStop
 		}
-		return false
+		return dagui.WalkContinue
 	})
 	if anyHasLogs {
 		fmt.Fprintln(out)
 		fmt.Fprintln(out, out.String("Error logs:").Bold())
 	}
-	dagui.WalkTree(errTree, func(tree *dagui.TraceTree, _ int) bool {
+	dagui.WalkTree(errTree, func(tree *dagui.TraceTree, _ int) dagui.WalkDecision {
 		logs := fe.logs.Logs[tree.Span.ID]
 		if logs != nil && logs.UsedHeight() > 0 {
 			fmt.Fprintln(out)
@@ -288,7 +291,7 @@ func (fe *frontendPretty) renderErrorLogs(out *termenv.Output, r *renderer) bool
 			fe.renderLogs(out, r, logs, -1, logs.UsedHeight(), "")
 			fe.renderStepError(out, r, tree.Span, 0, "")
 		}
-		return false
+		return dagui.WalkContinue
 	})
 	return len(errTree) > 0
 }
@@ -1002,27 +1005,42 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, r *renderer, row *dagui
 	if row.Previous != nil &&
 		row.Previous.Depth >= row.Depth &&
 		!row.Chained &&
-		(row.Previous.Depth > row.Depth || row.Span.Call != nil ||
-			(row.Previous.Span.Call != nil && row.Span.Call == nil)) {
+		(row.Previous.Depth > row.Depth || row.Span.Call() != nil ||
+			(row.Previous.Span.Call() != nil && row.Span.Call() == nil) ||
+			row.Previous.Span.Message != "") {
 		fmt.Fprint(out, prefix)
 		r.indent(out, row.Depth)
 		fmt.Fprintln(out)
 	}
-	fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
-	fe.renderStepLogs(out, r, row, prefix)
+	span := row.Span
+	if span.Message != "" {
+		r.indent(out, row.Depth-1)
+		fmt.Fprint(out, out.String(VertBar).
+			Foreground(termenv.ANSIBrightBlack).
+			Faint())
+		if span.ActorEmoji != "" {
+			fmt.Fprint(out, span.ActorEmoji+" ")
+		} else {
+			fmt.Fprint(out, "💬 ")
+		}
+		fe.renderStepLogs(out, r, row, prefix)
+	} else {
+		fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
+		if row.IsRunningOrChildRunning || row.Span.IsFailedOrCausedFailure() || fe.Verbosity >= dagui.ExpandCompletedVerbosity {
+			fe.renderStepLogs(out, r, row, prefix)
+		}
+	}
 	fe.renderStepError(out, r, row.Span, row.Depth, prefix)
 }
 
 func (fe *frontendPretty) renderStepLogs(out *termenv.Output, r *renderer, row *dagui.TraceRow, prefix string) {
-	if row.IsRunningOrChildRunning || row.Span.IsFailedOrCausedFailure() || fe.Verbosity >= dagui.ExpandCompletedVerbosity {
-		if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
-			fe.renderLogs(out, r,
-				logs,
-				row.Depth,
-				fe.window.Height/3,
-				prefix,
-			)
-		}
+	if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
+		fe.renderLogs(out, r,
+			logs,
+			row.Depth,
+			fe.window.Height/3,
+			prefix,
+		)
 	}
 }
 
@@ -1047,9 +1065,8 @@ func (fe *frontendPretty) renderStepError(out *termenv.Output, r *renderer, span
 func (fe *frontendPretty) renderStep(out *termenv.Output, r *renderer, span *dagui.Span, chained bool, depth int, prefix string) error {
 	isFocused := span.ID == fe.FocusedSpan
 
-	id := span.Call
-	if id != nil {
-		if err := r.renderCall(out, span, id, prefix, chained, depth, false, span.Internal, isFocused); err != nil {
+	if call := span.Call(); call != nil {
+		if err := r.renderCall(out, span, call, prefix, chained, depth, false, span.Internal, isFocused); err != nil {
 			return err
 		}
 	} else if span != nil {
@@ -1155,8 +1172,22 @@ func newPrettyLogs() *prettyLogs {
 
 func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 	for _, log := range logs {
-		// render vterm for TUI
-		_, _ = fmt.Fprint(l.spanLogs(log.SpanID()), log.Body().AsString())
+		vterm := l.spanLogs(log.SpanID())
+
+		// Check for Markdown content type
+		contentType := ""
+		for attr := range log.WalkAttributes {
+			if attr.Key == telemetry.ContentTypeAttr {
+				contentType = attr.Value.AsString()
+				break
+			}
+		}
+
+		if contentType == "text/markdown" {
+			_, _ = vterm.WriteMarkdown([]byte(log.Body().AsString()))
+		} else {
+			_, _ = fmt.Fprint(vterm, log.Body().AsString())
+		}
 	}
 	return nil
 }

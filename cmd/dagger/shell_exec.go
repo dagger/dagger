@@ -11,6 +11,7 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
+	"dagger.io/dagger/telemetry"
 	"github.com/spf13/pflag"
 	"mvdan.cc/sh/v3/interp"
 )
@@ -275,7 +276,10 @@ func (h *shellCallHandler) functionCall(ctx context.Context, st *ShellState, nam
 // all positional arguments are used as elements of that list.
 func shellPreprocessArgs(ctx context.Context, fn *modFunction, args []string) ([]string, error) {
 	flags := pflag.NewFlagSet(fn.CmdName(), pflag.ContinueOnError)
-	flags.SetOutput(interp.HandlerCtx(ctx).Stderr)
+	flags.SetOutput(io.MultiWriter(
+		interp.HandlerCtx(ctx).Stderr,
+		telemetry.SpanStdio(ctx, InstrumentationLibrary).Stderr,
+	))
 
 	opts := fn.OptionalArgs()
 
@@ -393,7 +397,10 @@ func (h *shellCallHandler) parseArgumentValues(ctx context.Context, md *moduleDe
 	}
 
 	flags := pflag.NewFlagSet(fn.CmdName(), pflag.ContinueOnError)
-	flags.SetOutput(interp.HandlerCtx(ctx).Stderr)
+	flags.SetOutput(io.MultiWriter(
+		interp.HandlerCtx(ctx).Stderr,
+		telemetry.SpanStdio(ctx, InstrumentationLibrary).Stderr,
+	))
 
 	// Add flags for each argument, including unsupported ones, which we
 	// assume it's being supported through some other means, so we just

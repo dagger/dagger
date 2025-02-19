@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
 	"slices"
 	"sort"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/spf13/cobra"
 	"mvdan.cc/sh/v3/interp"
 )
@@ -574,8 +576,9 @@ func cobraToShellCommand(c *cobra.Command) *ShellCommand {
 			args = append([]string{c.Name()}, args...)
 			hctx := interp.HandlerCtx(ctx)
 			c := exec.CommandContext(ctx, "dagger", args...)
-			c.Stdout = hctx.Stdout
-			c.Stderr = hctx.Stderr
+			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+			c.Stdout = io.MultiWriter(hctx.Stdout, stdio.Stdout)
+			c.Stderr = io.MultiWriter(hctx.Stderr, stdio.Stderr)
 			c.Stdin = hctx.Stdin
 			return c.Run()
 		},

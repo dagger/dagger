@@ -32,6 +32,22 @@ const (
 	// Internal spans may typically be revealed with a toggle.
 	UIInternalAttr = "dagger.io/ui.internal"
 
+	// Reveal the span all the way up to the top-level parent.
+	UIRevealAttr = "dagger.io/ui.reveal"
+
+	// An emoji representing the conceptual source of the span.
+	//
+	// Example: 🧑, 🤖
+	UIActorEmojiAttr = "dagger.io/ui.actor.emoji"
+
+	// Indicates that the span represents a message, and that its logs should be displayed
+	// immediately without requiring them to be expanded.
+	//
+	// The value indicates whether the message is being sent or received.
+	//
+	// Example: "sent", "received"
+	UIMessageAttr = "dagger.io/ui.message"
+
 	// Hide child spans by default.
 	//
 	// Encapsulated child spans may typically be revealed if the parent span errors.
@@ -83,6 +99,11 @@ const (
 
 	// Indicates whether the log stream has ended.
 	StdioEOFAttr = "stdio.eof"
+
+	// The MIME type of the associated content (i.e. log message).
+	//
+	// Example: text/plain, text/markdown, text/html
+	ContentTypeAttr = "dagger.io/content.type"
 
 	// Indicates whether the log should be shown globally.
 	LogsGlobalAttr = "dagger.io/logs.global"

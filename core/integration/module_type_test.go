@@ -846,7 +846,7 @@ export class Test {
 			var idp call.ID
 			err = idp.Decode(id)
 			require.NoError(t, err)
-			require.Equal(t, idp.Display(), `test.sayHello(name: "world"): TestMessage!`)
+			require.Equal(t, `test.sayHello(name: "world"): TestMessage!`, idp.Display())
 
 			out, err = modGen.With(daggerQuery(`{test{upper(msg:"%s"){content}}}`, id)).Stdout(ctx)
 			require.NoError(t, err)

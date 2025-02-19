@@ -135,6 +135,27 @@ type InputDecoder interface {
 	DecodeInput(any) (Input, error)
 }
 
+// Wrapper is an interface for types that wrap another type.
+type Wrapper interface {
+	Unwrap() Typed
+}
+
+// UnwrapAs attempts casting val to T, unwrapping as necessary.
+//
+// NOTE: the order of operations is important here - it's important to first
+// check compatibility with T before unwrapping, since sometimes T also
+// implements Wrapper.
+func UnwrapAs[T any](val any) (T, bool) {
+	t, ok := val.(T)
+	if ok {
+		return t, true
+	}
+	if wrapper, ok := val.(Wrapper); ok {
+		return UnwrapAs[T](wrapper.Unwrap())
+	}
+	return t, false
+}
+
 // Int is a GraphQL Int scalar.
 type Int int64
 
