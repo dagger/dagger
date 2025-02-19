@@ -116,7 +116,14 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 		// This allows the UI to "simplify" the returned object's ID back to the
 		// current call's ID, so we can show the user myMod().unit().stdout()
 		// instead of container().from().[...].stdout().
-		if obj, ok := res.(dagql.Object); ok {
+		obj, isObj := res.(dagql.Object)
+		if !isObj {
+			// try again unwrapping it
+			if wrapper, isWrapper := res.(dagql.Wrapper); isWrapper {
+				obj, isObj = wrapper.Unwrap().(dagql.Object)
+			}
+		}
+		if isObj {
 			// Don't consider loadFooFromID to be a 'creator' as that would only
 			// obfuscate the real ID.
 			//
