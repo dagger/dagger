@@ -524,6 +524,240 @@ func (ConfigSuite) TestDaggerConfig(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (ConfigSuite) TestSDKConfig(ctx context.Context, t *testctx.T) {
+	t.Run("go sdk", func(ctx context.Context, t *testctx.T) {
+		testcases := []struct {
+			name          string
+			daggerjson    string
+			expectedValue string
+			expectedError string
+		}{
+			{
+				name: "goprivate is configured",
+				daggerjson: `{
+  "name": "foo",
+  "engineVersion": "v0.16.2",
+  "sdk": {
+    "source": "go",
+    "config": {
+      "goprivate": "github.com/foobar"
+    }
+  }
+}`,
+				expectedValue: "github.com/foobar",
+			},
+			{
+				name: "invalid type for goprivate is configured",
+				daggerjson: `{
+  "name": "foo",
+  "engineVersion": "v0.16.2",
+  "sdk": {
+    "source": "go",
+    "config": {
+      "goprivate": 1234
+    }
+  }
+}`,
+				expectedError: "'GoPrivate' expected type 'string', got unconvertible type 'float64', value: '1234'",
+			},
+		}
+
+		for _, tc := range testcases {
+			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+				ctr := c.Container().From(golangImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					With(daggerExec("init", "--sdk=go", "--name=foo", "--source=.")).
+					WithNewFile("dagger.json", tc.daggerjson).
+					WithNewFile("main.go", `package main
+
+import (
+	"os"
+)
+
+type Foo struct{}
+
+func (m *Foo) CheckEnv() string {
+	return os.Getenv("GOPRIVATE")
+}
+`)
+
+				output, err := ctr.With(daggerCall("check-env")).Stdout(ctx)
+				if tc.expectedError != "" {
+					require.NotNil(t, err)
+					execerror := err.(*dagger.ExecError)
+					require.Contains(t, execerror.Stderr, tc.expectedError)
+				} else {
+					require.Nil(t, err)
+					require.Equal(t, tc.expectedValue, output)
+				}
+			})
+		}
+	})
+
+	t.Run("module sdk", func(ctx context.Context, t *testctx.T) {
+		var withoutCustomConfigSupport = `package main
+
+import (
+	"dagger/coolsdk/internal/dagger"
+)
+
+type Coolsdk struct {
+	BarConfig string
+}
+
+func New(
+	// +default="class-default"
+	barConfig string,
+) *Coolsdk {
+	return &Coolsdk{
+		BarConfig: barConfig,
+	}
+}
+
+func (m *Coolsdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.Container {
+	return modSource.WithSDK("go").AsModule().Runtime().WithEnvVariable("COOL", m.BarConfig)
+}
+
+func (m *Coolsdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.GeneratedCode {
+	modSource = modSource.WithSDK("go")
+	return dag.GeneratedCode(
+		// apply generated diff over context directory
+		modSource.ContextDirectory().WithDirectory("/", modSource.GeneratedContextDirectory()),
+	)
+}
+`
+
+		var withCustomConfigSupport = withoutCustomConfigSupport + `
+		
+func (m *Coolsdk) WithConfig(
+	// +default="func-default"
+	barConfig string,
+) *Coolsdk {
+	m.BarConfig = barConfig
+	return m
+}
+		`
+
+		daggerjson := `{
+	"name": "foo",
+	"engineVersion": "v0.16.3-250304150120-33f537f11a03",
+	"sdk": {
+		"source": "coolsdk"
+	}
+}
+		`
+
+		daggerjsonWithConfig := `{
+	"name": "foo",
+	"engineVersion": "v0.16.3-250304150120-33f537f11a03",
+	"sdk": {
+		"source": "coolsdk",
+		"config": {
+			"barConfig": "override-value"
+		}
+	}
+}`
+
+		daggerjsonWithInvalidFormat := `{
+	"name": "foo",
+	"engineVersion": "v0.16.3-250304150120-33f537f11a03",
+	"sdk": {
+		"source": "coolsdk",
+		"config": {
+			"barConfig": 1234
+		}
+	}
+}`
+
+		for _, tc := range []struct {
+			name                   string
+			customSDKUnderlyingSDK string
+			customSDKSource        string
+			sdk                    string
+			expectedCoolName       string
+			daggerjson             string
+			expectedError          string
+		}{
+			{
+				name:                   "withConfig function is optional",
+				sdk:                    "coolsdk",
+				customSDKUnderlyingSDK: "go",
+				customSDKSource:        withoutCustomConfigSupport,
+				expectedCoolName:       "class-default",
+				daggerjson:             daggerjson,
+			},
+			{
+				name:                   "withConfig function is called if it exists with sdk config from dagger json",
+				sdk:                    "coolsdk",
+				customSDKUnderlyingSDK: "go",
+				customSDKSource:        withCustomConfigSupport,
+				expectedCoolName:       "override-value",
+				daggerjson:             daggerjsonWithConfig,
+			},
+			{
+				name:                   "if sdk config not provided, use the default arg value in withConfig function",
+				sdk:                    "coolsdk",
+				customSDKUnderlyingSDK: "go",
+				customSDKSource:        withCustomConfigSupport,
+				expectedCoolName:       "func-default",
+				daggerjson:             daggerjson,
+			},
+			{
+				name:                   "invalid format for custom sdk config in dagger json",
+				sdk:                    "coolsdk",
+				customSDKUnderlyingSDK: "go",
+				customSDKSource:        withCustomConfigSupport,
+				daggerjson:             daggerjsonWithInvalidFormat,
+				expectedError:          `parsing value for arg "barConfig": cannot create String from float64`,
+			},
+		} {
+			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+				ctr := c.Container().From(golangImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work")
+
+				// special case custom sdk
+				if tc.customSDKSource != "" {
+					ctr = ctr.
+						WithWorkdir("/work/"+tc.sdk).
+						With(daggerExec("init", "--name="+tc.sdk, "--sdk="+tc.customSDKUnderlyingSDK)).
+						WithNewFile("main.go", tc.customSDKSource)
+				}
+
+				// create a module that use the custom sdk
+				ctr = ctr.
+					WithWorkdir("/work").
+					With(daggerExec("init", "--name=foo", "--sdk="+tc.sdk)).
+					WithNewFile("dagger.json", tc.daggerjson).
+					WithNewFile("main.go", `package main
+		
+import "os"
+		
+type Foo struct{}
+		
+// Returns a container that echoes whatever string argument is provided
+func (m *Foo) GetCoolName() string {
+	return os.Getenv("COOL")
+}
+`)
+
+				output, err := ctr.With(daggerCall("get-cool-name")).Stdout(ctx)
+				if tc.expectedError != "" {
+					require.NotNil(t, err)
+					execerror := err.(*dagger.ExecError)
+					require.Contains(t, execerror.Stderr, tc.expectedError)
+				} else {
+					require.Nil(t, err)
+					require.Equal(t, tc.expectedCoolName, output)
+				}
+			})
+		}
+	})
+}
+
 func (ConfigSuite) TestIncludeExclude(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct {
 		sdk                    string
