@@ -65,6 +65,8 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
   }
 
   ModuleInfo generateModuleInfo(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
+    String moduleName = System.getenv("_DAGGER_JAVA_SDK_MODULE_NAME");
+
     String moduleDescription = null;
     Set<ObjectInfo> annotatedObjects = new HashSet<>();
     boolean hasModuleAnnotation = false;
@@ -89,6 +91,9 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           if (name.isEmpty()) {
             name = typeElement.getSimpleName().toString();
           }
+
+          boolean mainObject = areSimilar(name, moduleName);
+
           if (!element.getModifiers().contains(Modifier.PUBLIC)) {
             throw new RuntimeException(
                 "The class %s must be public if annotated with @Object".formatted(qName));
@@ -121,30 +126,33 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                     .formatted(qName));
           }
 
-          Optional<? extends Element> constructorDef =
-              typeElement.getEnclosedElements().stream()
-                  .filter(elt -> elt.getKind() == ElementKind.CONSTRUCTOR)
-                  .filter(elt -> !((ExecutableElement) elt).getParameters().isEmpty())
-                  .findFirst();
-          Optional<ConstructorInfo> constructorInfo =
-              constructorDef.map(
-                  elt ->
-                      new ConstructorInfo(
-                          ((ExecutableElement) elt)
-                              .getParameters()
-                              .get(0)
-                              .asType()
-                              .toString()
-                              .equals("io.dagger.client.Client"),
-                          new FunctionInfo(
-                              "<init>",
-                              "New",
-                              parseFunctionDescription(elt),
-                              new TypeInfo(
-                                  ((ExecutableElement) elt).getReturnType().toString(),
-                                  ((ExecutableElement) elt).getReturnType().getKind().name()),
-                              parseParameters((ExecutableElement) elt)
-                                  .toArray(new ParameterInfo[0]))));
+          Optional<ConstructorInfo> constructorInfo = Optional.empty();
+          if (mainObject) {
+            Optional<? extends Element> constructorDef =
+                typeElement.getEnclosedElements().stream()
+                    .filter(elt -> elt.getKind() == ElementKind.CONSTRUCTOR)
+                    .filter(elt -> !((ExecutableElement) elt).getParameters().isEmpty())
+                    .findFirst();
+            constructorInfo =
+                constructorDef.map(
+                    elt ->
+                        new ConstructorInfo(
+                            ((ExecutableElement) elt)
+                                .getParameters()
+                                .get(0)
+                                .asType()
+                                .toString()
+                                .equals("io.dagger.client.Client"),
+                            new FunctionInfo(
+                                "<init>",
+                                "New",
+                                parseFunctionDescription(elt),
+                                new TypeInfo(
+                                    ((ExecutableElement) elt).getReturnType().toString(),
+                                    ((ExecutableElement) elt).getReturnType().getKind().name()),
+                                parseParameters((ExecutableElement) elt)
+                                    .toArray(new ParameterInfo[0]))));
+          }
 
           List<FieldInfo> fieldInfoInfos =
               typeElement.getEnclosedElements().stream()
@@ -209,10 +217,6 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                   constructorInfo));
         }
       }
-    }
-
-    if (annotatedObjects.stream().filter(o -> o.constructor().isPresent()).count() > 1) {
-      throw new RuntimeException("Only one constructor is allowed per module");
     }
 
     return new ModuleInfo(
@@ -833,5 +837,19 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
         .add(CodeBlock.join(Arrays.stream(array).map(s -> CodeBlock.of("$S", s)).toList(), ", "))
         .add(")")
         .build();
+  }
+
+  private static boolean areSimilar(String str1, String str2) {
+    return normalize(str1).equals(normalize(str2));
+  }
+
+  private static String normalize(String str) {
+    if (str == null) {
+      return "";
+    }
+    return str.replaceAll("[-_]", " ") // Replace kebab and snake case delimiters with spaces
+        .replaceAll("([a-z])([A-Z])", "$1 $2") // Split camel case words
+        .toLowerCase(Locale.ROOT) // Convert to lowercase
+        .replaceAll("\\s+", ""); // Remove all spaces
   }
 }
