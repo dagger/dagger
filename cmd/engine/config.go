@@ -43,9 +43,8 @@ func setDefaultBuildkitConfig(cfg *bkconfig.Config, netConf *networkConfig) {
 		cfg.Root = distconsts.EngineDefaultStateDir
 	}
 
-	if len(cfg.GRPC.Address) == 0 {
-		cfg.GRPC.Address = []string{appdefaults.Address}
-	}
+	// always include default address
+	cfg.GRPC.Address = append([]string{appdefaults.Address}, cfg.GRPC.Address...)
 
 	isTrue := true
 	cfg.Workers.OCI.Enabled = &isTrue

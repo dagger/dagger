@@ -296,13 +296,9 @@ func (t *Test) goTest(
 
 func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 	engine := t.Dagger.Engine().
-		WithConfig(`registry."registry:5000"`, `http = true`).
-		WithConfig(`registry."privateregistry:5000"`, `http = true`).
-		WithConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`).
-		WithConfig(`grpc`, `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`).
-		WithArg(`network-name`, `dagger-dev`).
-		WithArg(`network-cidr`, `10.88.0.0/16`).
-		WithArg(`debugaddr`, `0.0.0.0:6060`)
+		WithBuildkitConfig(`registry."registry:5000"`, `http = true`).
+		WithBuildkitConfig(`registry."privateregistry:5000"`, `http = true`).
+		WithBuildkitConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`)
 	devEngine, err := engine.Container(ctx, "", nil, false)
 	if err != nil {
 		return nil, err
@@ -334,6 +330,12 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-dev-engine-test-state"+identity.NewID())).
 		AsService(dagger.ContainerAsServiceOpts{
+			Args: []string{
+				"--addr", "tcp://0.0.0.0:1234",
+				"--network-name", "dagger-dev",
+				"--network-cidr", "10.88.0.0/16",
+				"--debugaddr", "0.0.0.0:6060",
+			},
 			UseEntrypoint:            true,
 			InsecureRootCapabilities: true,
 		})
