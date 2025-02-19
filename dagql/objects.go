@@ -289,11 +289,6 @@ func (r Instance[T]) ID() *call.ID {
 	return r.Constructor
 }
 
-// Wrapper is an interface for types that wrap another type.
-type Wrapper interface {
-	Unwrap() Typed
-}
-
 var _ Wrapper = Instance[Typed]{}
 
 // Unwrap returns the inner value of the instance.

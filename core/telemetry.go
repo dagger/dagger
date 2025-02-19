@@ -21,10 +21,7 @@ import (
 )
 
 func collectDefs(ctx context.Context, val dagql.Typed) []*pb.Definition {
-	if val, ok := val.(dagql.Wrapper); ok {
-		return collectDefs(ctx, val.Unwrap())
-	}
-	if hasPBs, ok := val.(HasPBDefinitions); ok {
+	if hasPBs, ok := dagql.UnwrapAs[HasPBDefinitions](val); ok {
 		if defs, err := hasPBs.PBDefinitions(ctx); err != nil {
 			slog.Warn("failed to get LLB definitions", "err", err)
 			return nil
@@ -120,13 +117,12 @@ func logResult(ctx context.Context, res dagql.Typed, span trace.Span, self dagql
 	if spec, ok := self.ObjectType().FieldSpec(id.Field()); ok {
 		sensitive = spec.Sensitive
 	}
-	switch x := res.(type) {
 	// Record an object result as an output of this call.
 	//
 	// This allows the UI to "simplify" the returned object's ID back to the
 	// current call's ID, so we can show the user myMod().unit().stdout()
 	// instead of container().from().[...].stdout().
-	case dagql.Object:
+	if obj, ok := dagql.UnwrapAs[dagql.Object](res); ok {
 		// Don't consider loadFooFromID to be a 'creator' as that would only
 		// obfuscate the real ID.
 		//
@@ -135,36 +131,36 @@ func logResult(ctx context.Context, res dagql.Typed, span trace.Span, self dagql
 		// consider it.
 		isLoader := strings.HasPrefix(id.Field(), "load") && strings.HasSuffix(id.Field(), "FromID")
 		if !isLoader {
-			objDigest := x.ID().Digest()
+			objDigest := obj.ID().Digest()
 			span.SetAttributes(attribute.String(telemetry.DagOutputAttr, objDigest.String()))
 		}
-	case dagql.Enumerable:
+	} else if enum, ok := dagql.UnwrapAs[dagql.Enumerable](res); ok {
 		if sensitive {
-			break
+			return
 		}
-		items := x.Len()
+		items := enum.Len()
 		if items == 0 {
-			break
+			return
 		}
 		// peek at the first item to determine the type
-		peek, err := x.Nth(1)
+		peek, err := enum.Nth(1)
 		if err != nil {
-			break
+			return
 		}
-		if _, isObj := peek.(dagql.Object); isObj {
+		if _, isObj := dagql.UnwrapAs[dagql.Object](peek); isObj {
 			fmt.Fprintf(stdio.Stdout, "%d %ss", items, peek.Type().Name())
 		} else {
 			enc := json.NewEncoder(stdio.Stdout)
 			enc.SetIndent("", "  ")
-			enc.Encode(x)
+			enc.Encode(enum)
 		}
-	case dagql.String:
+	} else if str, ok := dagql.UnwrapAs[dagql.String](res); ok {
 		if !sensitive {
-			fmt.Fprint(stdio.Stdout, x)
+			fmt.Fprint(stdio.Stdout, str)
 		}
-	case call.Literate:
+	} else if lit, ok := dagql.UnwrapAs[call.Literate](res); ok {
 		if !sensitive {
-			fmt.Fprint(stdio.Stdout, x.ToLiteral().Display())
+			fmt.Fprint(stdio.Stdout, lit.ToLiteral().Display())
 		}
 	}
 }
