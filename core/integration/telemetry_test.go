@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
@@ -15,7 +15,7 @@ import (
 type TelemetrySuite struct{}
 
 func TestTelemetry(t *testing.T) {
-	testctx.Run(testCtx, t, TelemetrySuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(TelemetrySuite{})
 }
 
 func (TelemetrySuite) TestInternalVertexes(ctx context.Context, t *testctx.T) {

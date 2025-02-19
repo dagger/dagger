@@ -10,7 +10,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/modules"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -18,7 +18,7 @@ import (
 type CLISuite struct{}
 
 func TestCLI(t *testing.T) {
-	testctx.Run(testCtx, t, CLISuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(CLISuite{})
 }
 
 func (CLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {

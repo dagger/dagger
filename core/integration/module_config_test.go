@@ -12,13 +12,13 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/modules"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 )
 
 type ConfigSuite struct{}
 
 func TestConfig(t *testing.T) {
-	testctx.Run(testCtx, t, ConfigSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(ConfigSuite{})
 }
 
 func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {

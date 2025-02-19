@@ -8,13 +8,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
 
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 )
 
 type JavaSuite struct{}
 
 func TestJava(t *testing.T) {
-	testctx.Run(testCtx, t, JavaSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(JavaSuite{})
 }
 
 func (JavaSuite) TestInit(_ context.Context, t *testctx.T) {

@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
@@ -16,7 +16,7 @@ import (
 type TypeSuite struct{}
 
 func TestType(t *testing.T) {
-	testctx.Run(testCtx, t, TypeSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(TypeSuite{})
 }
 
 func (TypeSuite) TestCustomTypes(ctx context.Context, t *testctx.T) {

@@ -31,13 +31,13 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/internal/testutil"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 )
 
 type ModuleSuite struct{}
 
 func TestModule(t *testing.T) {
-	testctx.Run(testCtx, t, ModuleSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(ModuleSuite{})
 }
 
 func (ModuleSuite) TestInvalidSDK(ctx context.Context, t *testctx.T) {
