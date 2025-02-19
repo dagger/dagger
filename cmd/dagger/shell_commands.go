@@ -339,65 +339,6 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 			},
 		},
 		&ShellCommand{
-			Use: ".cd [path | url]",
-			Description: `Change the current working directory 
-
-Absolute and relative paths are resolved in relation to the same context directory.
-Using a git URL changes the context. Only the initial context can target local 
-modules in different contexts.
-
-If the target path is in a different module within the same context, it will be
-loaded as the default automatically, making its functions available at the top level.
-
-Without arguments, the current working directory is replaced by the initial context.
-`,
-			GroupID: moduleGroup.ID,
-			Args:    MaximumArgs(1),
-			State:   NoState,
-			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-				var path string
-				if len(args) > 0 {
-					path = args[0]
-				}
-				return h.ChangeWorkdir(ctx, path)
-			},
-		},
-		&ShellCommand{
-			Use:         ".pwd",
-			Description: "Print the current working directory's absolute path",
-			GroupID:     moduleGroup.ID,
-			Args:        NoArgs,
-			State:       NoState,
-			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
-				if h.debug {
-					shellDebug(ctx, "Workdir", h.Workdir())
-				}
-				return h.Print(ctx, h.Pwd())
-			},
-		},
-		&ShellCommand{
-			Use:         ".ls [path]",
-			Description: "List files in the current working directory",
-			GroupID:     moduleGroup.ID,
-			Args:        MaximumArgs(1),
-			State:       NoState,
-			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-				var path string
-				if len(args) > 0 {
-					path = args[0]
-				}
-				dir, err := h.Directory(path)
-				if err != nil {
-					return err
-				}
-				contents, err := dir.Entries(ctx)
-				if err != nil {
-					return err
-				}
-				return h.Print(ctx, strings.Join(contents, "\n"))
-			},
-		},
-		&ShellCommand{
 			Use:         shellDepsCmdName,
 			Description: "Dependencies from the module loaded in the current context",
 			GroupID:     moduleGroup.ID,
@@ -454,6 +395,68 @@ Without arguments, the current working directory is replaced by the initial cont
 	)
 
 	def := h.modDef(nil)
+
+	stdlib = append(stdlib,
+		&ShellCommand{
+			Use: "cd [path | url]",
+			Description: `Change the current working directory 
+
+Absolute and relative paths are resolved in relation to the same context directory.
+Using a git URL changes the context. Only the initial context can target local 
+modules in different contexts.
+
+If the target path is in a different module within the same context, it will be
+loaded as the default automatically, making its functions available at the top level.
+
+Without arguments, the current working directory is replaced by the initial context.
+`,
+			GroupID: moduleGroup.ID,
+			Args:    MaximumArgs(1),
+			State:   NoState,
+			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
+				var path string
+				if len(args) > 0 {
+					path = args[0]
+				}
+				return h.ChangeWorkdir(ctx, path)
+			},
+		},
+		&ShellCommand{
+			Use:         "pwd",
+			Description: "Print the current working directory's absolute path",
+			GroupID:     moduleGroup.ID,
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
+				if h.debug {
+					shellDebug(ctx, "Workdir", h.Workdir())
+				}
+				return h.Print(ctx, h.Pwd())
+			},
+		},
+		&ShellCommand{
+			Use:         "ls [path]",
+			Description: "List files in the current working directory",
+			GroupID:     moduleGroup.ID,
+			Args:        MaximumArgs(1),
+			State:       NoState,
+			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
+				var path string
+				if len(args) > 0 {
+					path = args[0]
+				}
+				dir, err := h.Directory(path)
+				if err != nil {
+					return err
+				}
+				contents, err := dir.Entries(ctx)
+				if err != nil {
+					return err
+				}
+				return h.Print(ctx, strings.Join(contents, "\n"))
+			},
+		},
+	)
 
 	for _, fn := range def.GetCoreFunctions() {
 		// TODO: Don't hardcode this list.
