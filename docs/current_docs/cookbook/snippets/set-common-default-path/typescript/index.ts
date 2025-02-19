@@ -13,11 +13,11 @@ class MyModule {
 
   @func()
   async foo(): Promise<string[]> {
-    return await dag.
-      container().
-      from("alpine:latest").
-      withMountedDirectory("/app", this.source).
-      directory("/app").
-      entries()
+    return await dag
+      .container()
+      .from("alpine:latest")
+      .withMountedDirectory("/app", this.source)
+      .directory("/app")
+      .entries()
   }
 }

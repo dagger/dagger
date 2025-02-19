@@ -1,7 +1,7 @@
 from typing import Annotated
 
 import dagger
-from dagger import dag, function, object_type, DefaultPath
+from dagger import DefaultPath, dag, function, object_type
 
 
 @object_type
