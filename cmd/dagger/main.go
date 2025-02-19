@@ -184,6 +184,10 @@ var rootCmd = &cobra.Command{
 
 		return nil
 	},
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cmd.SetArgs(append([]string{"shell"}, args...))
+		return cmd.Execute()
+	},
 }
 
 func checkForUpdates(ctx context.Context, w io.Writer) {
