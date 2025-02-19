@@ -382,8 +382,8 @@ func (llm *Llm) WithSystemPrompt(prompt string) *Llm {
 }
 
 // Return the last message sent by the agent
-func (llm *Llm) LastReply(ctx context.Context) (string, error) {
-	llm, err := llm.Sync(ctx)
+func (llm *Llm) LastReply(ctx context.Context, dag *dagql.Server) (string, error) {
+	llm, err := llm.Sync(ctx, dag)
 	if err != nil {
 		return "", err
 	}
@@ -423,16 +423,12 @@ func (llm *Llm) BBI(srv *dagql.Server) (bbi.Session, error) {
 // 1. Send context to LLM endpoint
 // 2. Process replies and tool calls
 // 3. Continue in a loop until no tool calls, or caps are reached
-func (llm *Llm) Sync(ctx context.Context) (*Llm, error) {
+func (llm *Llm) Sync(ctx context.Context, dag *dagql.Server) (*Llm, error) {
 	if !llm.dirty {
 		return llm, nil
 	}
 	llm = llm.Clone()
 	// Start a new BBI session
-	dag, err := llm.Query.Server.DagqlServer(ctx)
-	if err != nil {
-		return nil, err
-	}
 	session, err := llm.BBI(dag)
 	if err != nil {
 		return nil, err
@@ -507,8 +503,8 @@ func (llm *Llm) Sync(ctx context.Context) (*Llm, error) {
 	return llm, nil
 }
 
-func (llm *Llm) History(ctx context.Context) ([]string, error) {
-	llm, err := llm.Sync(ctx)
+func (llm *Llm) History(ctx context.Context, dag *dagql.Server) ([]string, error) {
+	llm, err := llm.Sync(ctx, dag)
 	if err != nil {
 		return nil, err
 	}
@@ -568,8 +564,8 @@ func (llm *Llm) WithState(ctx context.Context, objId dagql.IDType, srv *dagql.Se
 	return llm, nil
 }
 
-func (llm *Llm) State(ctx context.Context) (dagql.Typed, error) {
-	llm, err := llm.Sync(ctx)
+func (llm *Llm) State(ctx context.Context, dag *dagql.Server) (dagql.Typed, error) {
+	llm, err := llm.Sync(ctx, dag)
 	if err != nil {
 		return nil, err
 	}
@@ -758,7 +754,7 @@ func (s LlmMiddleware) extendLlmType(targetType dagql.ObjectType) error {
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			llm := self.(dagql.Instance[*Llm]).Self
-			return llm.State(ctx)
+			return llm.State(ctx, s.Server)
 		},
 		nil,
 	)
