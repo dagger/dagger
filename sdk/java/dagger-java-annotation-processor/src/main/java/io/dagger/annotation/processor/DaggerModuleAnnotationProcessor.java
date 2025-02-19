@@ -50,8 +50,7 @@ import javax.lang.model.util.Elements;
   "io.dagger.module.annotation.Function",
   "io.dagger.module.annotation.Optional",
   "io.dagger.module.annotation.Default",
-  "io.dagger.module.annotation.DefaultPath",
-  "io.dagger.module.annotation.Nullable"
+  "io.dagger.module.annotation.DefaultPath"
 })
 @SupportedSourceVersion(SourceVersion.RELEASE_17)
 @AutoService(Processor.class)
@@ -68,10 +67,15 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
   ModuleInfo generateModuleInfo(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
     String moduleDescription = null;
     Set<ObjectInfo> annotatedObjects = new HashSet<>();
+    boolean hasModuleAnnotation = false;
 
     for (TypeElement annotation : annotations) {
       for (Element element : roundEnv.getElementsAnnotatedWith(annotation)) {
         if (element.getKind() == ElementKind.PACKAGE) {
+          if (hasModuleAnnotation) {
+            throw new IllegalStateException("Only one @Module annotation is allowed");
+          }
+          hasModuleAnnotation = true;
           Module module = element.getAnnotation(Module.class);
           moduleDescription = module.description();
           if (moduleDescription.isEmpty()) {
