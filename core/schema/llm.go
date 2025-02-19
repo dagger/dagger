@@ -58,7 +58,7 @@ func (s *llmSchema) model(ctx context.Context, llm *core.Llm, args struct{}) (da
 }
 
 func (s *llmSchema) lastReply(ctx context.Context, llm *core.Llm, args struct{}) (dagql.String, error) {
-	reply, err := llm.LastReply(ctx)
+	reply, err := llm.LastReply(ctx, s.srv)
 	if err != nil {
 		return "", err
 	}
@@ -88,7 +88,7 @@ func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.Llm, args stru
 }
 
 func (s *llmSchema) sync(ctx context.Context, llm *core.Llm, args struct{}) (*core.Llm, error) {
-	return llm.Sync(ctx)
+	return llm.Sync(ctx, s.srv)
 }
 
 func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
@@ -107,7 +107,7 @@ func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
 }
 
 func (s *llmSchema) history(ctx context.Context, llm *core.Llm, _ struct{}) (dagql.Array[dagql.String], error) {
-	history, err := llm.History(ctx)
+	history, err := llm.History(ctx, s.srv)
 	if err != nil {
 		return nil, err
 	}
