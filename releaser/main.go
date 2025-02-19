@@ -174,7 +174,7 @@ func (r *Releaser) Publish(
 
 	tags := []string{tag, commit}
 	if semver.IsValid(version) && semver.Prerelease(version) == "" {
-		// this is a full semver release
+		// this is a public release
 		tags = append(tags, "latest")
 	}
 	err := r.Dagger.Engine().Publish(ctx, tags, dagger.DaggerDevDaggerEnginePublishOpts{
