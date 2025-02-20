@@ -1575,7 +1575,7 @@ func (m *Test) Secrets() []*dagger.Secret {
 `,
 		)
 
-		t.Run("single", func(context.Context, *testctx.T) {
+		t.Run("single", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.
 				With(daggerCall("secret")).
 				Stdout(ctx)
@@ -1584,7 +1584,7 @@ func (m *Test) Secrets() []*dagger.Secret {
 			require.Regexp(t, `Secret@xxh3:[a-f0-9]{16}`, out)
 		})
 
-		t.Run("multiple", func(context.Context, *testctx.T) {
+		t.Run("multiple", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.
 				With(daggerCall("secrets")).
 				Stdout(ctx)
