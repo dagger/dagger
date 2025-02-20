@@ -210,8 +210,8 @@ github.com/dagger/buildkit v0.0.0-20250128235329-9c8ee9e867a5 h1:kHrNkDPdy52wlZx
 github.com/dagger/buildkit v0.0.0-20250128235329-9c8ee9e867a5/go.mod h1:QLaQ4vyvIrzCaeg/4saPBcEibMXiGvIe+HaP5Ji0LCY=
 github.com/dagger/testctx v0.0.4 h1:In6AOkH1Q6LHWHAnMByViz9SFiXbYjKttGlO6GciE9s=
 github.com/dagger/testctx v0.0.4/go.mod h1:vfRtiq0HrtSux/H60iD1x7zYfrBgEtoDR1P3hJ523Oo=
-github.com/dagger/testctx/oteltest v0.0.1 h1:pIJCY6Tjf+RfRSJI2VFLJA8RXc30J9S2MINhEK99cyM=
-github.com/dagger/testctx/oteltest v0.0.1/go.mod h1:HOA6RdE7lWaawXCzI0jB0hJ+RhoXIgDoX6IB1dZGgtg=
+github.com/dagger/testctx/oteltest v0.0.2 h1:bSLkDNPzku32o1+d1UUeSWhL1F7Z6ObB9ern/HJqaCc=
+github.com/dagger/testctx/oteltest v0.0.2/go.mod h1:HOA6RdE7lWaawXCzI0jB0hJ+RhoXIgDoX6IB1dZGgtg=
 github.com/danielgatis/go-ansicode v1.0.6 h1:OO8DcQVS0QxcCrG8NjdJDwvjBnDvgDF9Gp3VgADpDW4=
 github.com/danielgatis/go-ansicode v1.0.6/go.mod h1:xft3lPCsvHAC9KEGRcEzX+Jm8bTyUbya4rk7zD/nWvk=
 github.com/danielgatis/go-iterator v0.0.1 h1:pTptWDVAKzR0EUdtfmFMP3v+hSetqB091V9um1DTO8I=
