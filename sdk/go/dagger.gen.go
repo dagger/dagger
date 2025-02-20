@@ -8349,9 +8349,9 @@ func (v *ImageMediaType) UnmarshalJSON(dt []byte) error {
 }
 
 const (
-	ImageMediaTypeOci ImageMediaType = "OCI"
-
 	ImageMediaTypeDocker ImageMediaType = "DOCKER"
+
+	ImageMediaTypeOci ImageMediaType = "OCI"
 )
 
 // The kind of module source.
@@ -8518,28 +8518,28 @@ func (TypeDefKind) IsEnum() {}
 
 func (v TypeDefKind) Name() string {
 	switch v {
+	case TypeDefKindBoolean:
+		return "BOOLEAN"
+	case TypeDefKindEnum:
+		return "ENUM"
 	case TypeDefKindFloat:
 		return "FLOAT"
 	case TypeDefKindInput:
 		return "INPUT"
+	case TypeDefKindInteger:
+		return "INTEGER"
 	case TypeDefKindInterface:
 		return "INTERFACE"
+	case TypeDefKindList:
+		return "LIST"
 	case TypeDefKindObject:
 		return "OBJECT"
+	case TypeDefKindScalar:
+		return "SCALAR"
 	case TypeDefKindString:
 		return "STRING"
 	case TypeDefKindVoid:
 		return "VOID"
-	case TypeDefKindEnum:
-		return "ENUM"
-	case TypeDefKindInteger:
-		return "INTEGER"
-	case TypeDefKindList:
-		return "LIST"
-	case TypeDefKindScalar:
-		return "SCALAR"
-	case TypeDefKindBoolean:
-		return "BOOLEAN"
 	default:
 		return ""
 	}
@@ -8612,34 +8612,45 @@ func (v *TypeDefKind) UnmarshalJSON(dt []byte) error {
 
 const (
 
-	// A scalar value of any basic kind.
-	TypeDefKindScalar TypeDefKind = "SCALAR"
-	// A scalar value of any basic kind.
-	TypeDefKindScalarKind TypeDefKind = TypeDefKindScalar
+	// A boolean value.
+	TypeDefKindBoolean TypeDefKind = "BOOLEAN"
 
-	// A string value.
-	TypeDefKindString TypeDefKind = "STRING"
-	// A string value.
-	TypeDefKindStringKind TypeDefKind = TypeDefKindString
+	// A boolean value.
+	TypeDefKindBooleanKind TypeDefKind = TypeDefKindBoolean
 
 	// A GraphQL enum type and its values
 	//
 	// Always paired with an EnumTypeDef.
 	TypeDefKindEnum TypeDefKind = "ENUM"
+
 	// A GraphQL enum type and its values
 	//
 	// Always paired with an EnumTypeDef.
 	TypeDefKindEnumKind TypeDefKind = TypeDefKindEnum
 
+	// A float value.
+	TypeDefKindFloat TypeDefKind = "FLOAT"
+
+	// A float value.
+	TypeDefKindFloatKind TypeDefKind = TypeDefKindFloat
+
 	// A graphql input type, used only when representing the core API via TypeDefs.
 	TypeDefKindInput TypeDefKind = "INPUT"
+
 	// A graphql input type, used only when representing the core API via TypeDefs.
 	TypeDefKindInputKind TypeDefKind = TypeDefKindInput
+
+	// An integer value.
+	TypeDefKindInteger TypeDefKind = "INTEGER"
+
+	// An integer value.
+	TypeDefKindIntegerKind TypeDefKind = TypeDefKindInteger
 
 	// A named type of functions that can be matched+implemented by other objects+interfaces.
 	//
 	// Always paired with an InterfaceTypeDef.
 	TypeDefKindInterface TypeDefKind = "INTERFACE"
+
 	// A named type of functions that can be matched+implemented by other objects+interfaces.
 	//
 	// Always paired with an InterfaceTypeDef.
@@ -8649,6 +8660,7 @@ const (
 	//
 	// Always paired with a ListTypeDef.
 	TypeDefKindList TypeDefKind = "LIST"
+
 	// A list of values all having the same type.
 	//
 	// Always paired with a ListTypeDef.
@@ -8658,30 +8670,29 @@ const (
 	//
 	// Always paired with an ObjectTypeDef.
 	TypeDefKindObject TypeDefKind = "OBJECT"
+
 	// A named type defined in the GraphQL schema, with fields and functions.
 	//
 	// Always paired with an ObjectTypeDef.
 	TypeDefKindObjectKind TypeDefKind = TypeDefKindObject
 
-	// A boolean value.
-	TypeDefKindBoolean TypeDefKind = "BOOLEAN"
-	// A boolean value.
-	TypeDefKindBooleanKind TypeDefKind = TypeDefKindBoolean
+	// A scalar value of any basic kind.
+	TypeDefKindScalar TypeDefKind = "SCALAR"
 
-	// A float value.
-	TypeDefKindFloat TypeDefKind = "FLOAT"
-	// A float value.
-	TypeDefKindFloatKind TypeDefKind = TypeDefKindFloat
+	// A scalar value of any basic kind.
+	TypeDefKindScalarKind TypeDefKind = TypeDefKindScalar
 
-	// An integer value.
-	TypeDefKindInteger TypeDefKind = "INTEGER"
-	// An integer value.
-	TypeDefKindIntegerKind TypeDefKind = TypeDefKindInteger
+	// A string value.
+	TypeDefKindString TypeDefKind = "STRING"
+
+	// A string value.
+	TypeDefKindStringKind TypeDefKind = TypeDefKindString
 
 	// A special kind used to signify that no value is returned.
 	//
 	// This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
 	TypeDefKindVoid TypeDefKind = "VOID"
+
 	// A special kind used to signify that no value is returned.
 	//
 	// This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.

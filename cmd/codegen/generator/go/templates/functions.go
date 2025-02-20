@@ -174,8 +174,11 @@ func (funcs goTemplateFuncs) groupEnumByValue(s []introspection.EnumValue) [][]i
 		m[value] = append(m[value], v)
 	}
 	var result [][]introspection.EnumValue
-	for _, v := range m {
-		result = append(result, v)
+	for _, v := range s {
+		if res, ok := m[v.Name]; ok {
+			result = append(result, res)
+			delete(m, v.Name)
+		}
 	}
 	return result
 }

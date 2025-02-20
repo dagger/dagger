@@ -55,6 +55,7 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"ArgsHaveDescription":       funcs.argsHaveDescription,
 		"SortInputFields":           funcs.sortInputFields,
 		"SortEnumFields":            funcs.sortEnumFields,
+		"GroupEnumByValue":          funcs.groupEnumByValue,
 		"Solve":                     funcs.solve,
 		"Subtract":                  funcs.subtract,
 		"ConvertID":                 commonFunc.ConvertID,
@@ -292,6 +293,22 @@ func (funcs typescriptTemplateFuncs) sortEnumFields(s []introspection.EnumValue)
 		return s[i].Name < s[j].Name
 	})
 	return s
+}
+
+func (funcs typescriptTemplateFuncs) groupEnumByValue(s []introspection.EnumValue) [][]introspection.EnumValue {
+	m := map[string][]introspection.EnumValue{}
+	for _, v := range s {
+		value := v.Directives.EnumValue()
+		m[value] = append(m[value], v)
+	}
+	var result [][]introspection.EnumValue
+	for _, v := range s {
+		if res, ok := m[v.Name]; ok {
+			result = append(result, res)
+			delete(m, v.Name)
+		}
+	}
+	return result
 }
 
 func (funcs typescriptTemplateFuncs) argsHaveDescription(values introspection.InputValues) bool {
