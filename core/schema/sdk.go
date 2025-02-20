@@ -913,6 +913,24 @@ func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, 
 		return nil, fmt.Errorf("failed to get client metadata from context: %w", err)
 	}
 
+	// mainClientCallerID, err := sdk.root.MainClientCallerID(ctx)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to retrieve mainClientCallerID: %w", err)
+	// }
+
+	// the socket won't be available for non-main clients?
+	// TODO(rajatjindal): validate this with someone.
+	// TODO(rajatjindal): in that case, how will this work for a module with
+	// private dependencies, but that module itself is a dependency for
+	// some other module???
+	// if clientMetadata.ClientID != mainClientCallerID {
+	// 	return nil, fmt.Errorf("socket cannot be mounted like this for non-main clients")
+	// }
+
+	if true {
+		return nil, fmt.Errorf("SSH AUTH SOCK PATH : %s", clientMetadata.SSHAuthSocketPath)
+	}
+
 	accessor, err := core.GetClientResourceAccessor(ctx, sdk.root, clientMetadata.SSHAuthSocketPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client resource name: %w", err)
