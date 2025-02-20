@@ -98,12 +98,12 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 				// Lazily initialize telemetry/logging on first text response.
 				if logsW == nil {
 					ctx, span := Tracer(ctx).Start(ctx, "LLM response", telemetry.Reveal(), trace.WithAttributes(
-						attribute.String("dagger.io/ui.actor", "🤖"),
-						attribute.String("dagger.io/ui.message", "received"),
+						attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+						attribute.String(telemetry.UIMessageAttr, "received"),
 					))
 					defer telemetry.End(span, func() error { return nil })
 
-					stdio := telemetry.SpanStdio(ctx, "", log.String("dagger.io/content.type", "text/markdown"))
+					stdio := telemetry.SpanStdio(ctx, "", log.String(telemetry.ContentTypeAttr, "text/markdown"))
 					logsW = stdio.Stdout
 				}
 				fmt.Fprint(logsW, delta.Text)
