@@ -6,15 +6,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dagger/testctx"
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
 type ClientGeneratorTest struct{}
 
 func TestClientGenerator(t *testing.T) {
-	testctx.Run(testCtx, t, ClientGeneratorTest{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(ClientGeneratorTest{})
 }
 
 func (ClientGeneratorTest) TestGenerateAndCallDependencies(ctx context.Context, t *testctx.T) {
