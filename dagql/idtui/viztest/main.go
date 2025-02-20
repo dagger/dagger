@@ -83,17 +83,17 @@ func (v *Viztest) RevealedSpans(ctx context.Context) (res string, rerr error) {
 	}()
 	func() {
 		_, span := Tracer().Start(ctx, "revealed span",
-			trace.WithAttributes(attribute.Bool(telemetry.UIRevealAttr, true)))
+			trace.WithAttributes(attribute.Bool("dagger.io/ui.reveal", true)))
 		span.End()
 	}()
 	func() {
 		ctx, span := Tracer().Start(ctx, "revealed message",
-			trace.WithAttributes(attribute.Bool(telemetry.UIRevealAttr, true)),
-			trace.WithAttributes(attribute.String(telemetry.UIActorEmojiAttr, "😊")),
-			trace.WithAttributes(attribute.String(telemetry.UIMessageAttr, "received")),
+			trace.WithAttributes(attribute.Bool("dagger.io/ui.reveal", true)),
+			trace.WithAttributes(attribute.String("dagger.io/ui.actor.emoji", "😊")),
+			trace.WithAttributes(attribute.String("dagger.io/ui.message", "received")),
 		)
 		span.End()
-		stdio := telemetry.SpanStdio(ctx, "doesnt matter", log.String(telemetry.ContentTypeAttr, "text/markdown"))
+		stdio := telemetry.SpanStdio(ctx, "doesnt matter", log.String("dagger.io/content.type", "text/markdown"))
 		defer stdio.Close()
 		fmt.Fprintln(stdio.Stdout, "sometimes you gotta be **bold**")
 	}()
