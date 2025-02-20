@@ -2028,7 +2028,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		getModDefSpan.End()
 		return inst, fmt.Errorf("failed to create module definition function for module %q: %w", modName, err)
 	}
-	postCallRes, err := getModDefFn.Call(getModDefCtx, &core.CallOpts{
+	result, err := getModDefFn.Call(getModDefCtx, &core.CallOpts{
 		Cache:          true,
 		SkipSelfSchema: true,
 		Server:         s.dag,
@@ -2041,13 +2041,6 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	if err != nil {
 		getModDefSpan.End()
 		return inst, fmt.Errorf("failed to call module %q to get functions: %w", modName, err)
-	}
-	result := postCallRes.Typed
-	if postCallRes.PostCall != nil {
-		if err := postCallRes.PostCall(ctx); err != nil {
-			getModDefSpan.End()
-			return inst, fmt.Errorf("failed to run post-call for module %q: %w", modName, err)
-		}
 	}
 	resultInst, ok := result.(dagql.Instance[*core.Module])
 	if !ok {
