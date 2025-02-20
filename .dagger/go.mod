@@ -2,13 +2,9 @@ module github.com/dagger/dagger/.dagger
 
 go 1.23.2
 
-require github.com/dagger/dagger/engine/distconsts v0.15.4
+require github.com/dagger/dagger/engine/distconsts v0.16.1
 
 replace github.com/dagger/dagger/engine/distconsts => ../engine/distconsts
-
-require github.com/dagger/dagger/sdk/typescript/runtime v0.15.3
-
-replace github.com/dagger/dagger/sdk/typescript/runtime => ../sdk/typescript/runtime
 
 require (
 	github.com/99designs/gqlgen v0.17.63

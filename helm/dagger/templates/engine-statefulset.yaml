@@ -16,7 +16,7 @@ spec:
       name: {{ include "dagger.fullname" . }}-engine
   template:
     metadata:
-      {{- if (or .Values.engine.config .Values.magicache.enabled) }}
+      {{- if (or .Values.engine.config .Values.magicache.enabled .Values.engine.annotations) }}
       annotations:
         {{- if .Values.engine.config }}
         checksum/config: {{ include (print $.Template.BasePath "/engine-config.yaml") . | sha256sum }}
@@ -24,6 +24,9 @@ spec:
         {{- if .Values.magicache.enabled }}
         checksum/secret: {{ include (print $.Template.BasePath "/magicache-secret.yaml") . | sha256sum }}
         {{- end }}
+      {{- with .Values.engine.annotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- end }}
       labels:
         name: {{ include "dagger.fullname" . }}-engine
@@ -45,6 +48,10 @@ spec:
       serviceAccountName: {{ include "dagger.serviceAccountName" . }}
       {{- if .Values.engine.priorityClassName }}
       priorityClassName: {{ .Values.engine.priorityClassName }}
+      {{- end }}
+      {{- with .Values.engine.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
         - name: dagger-engine

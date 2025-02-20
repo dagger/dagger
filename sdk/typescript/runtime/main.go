@@ -4,16 +4,25 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"main/internal/dagger"
 	"path"
 	"path/filepath"
 	"slices"
 	"strings"
 
-	"typescript-sdk/internal/dagger"
-	"typescript-sdk/tsdistconsts"
-
 	"github.com/iancoleman/strcase"
 	"golang.org/x/mod/semver"
+)
+
+const (
+	bunVersion  = "1.1.38"
+	nodeVersion = "22.11.0" // LTS version, JOD (https://nodejs.org/en/about/previous-releases)
+
+	nodeImageDigest = "sha256:b64ced2e7cd0a4816699fe308ce6e8a08ccba463c757c00c14cd372e3d2c763e"
+	bunImageDigest  = "sha256:5148f6742ac31fac28e6eab391ab1f11f6dfc0c8512c7a3679b374ec470f5982"
+
+	nodeImageRef = "node:" + nodeVersion + "-alpine@" + nodeImageDigest
+	bunImageRef  = "oven/bun:" + bunVersion + "-alpine@" + bunImageDigest
 )
 
 type SupportedTSRuntime string
@@ -84,9 +93,8 @@ const (
 	ModSourceDirPath         = "/src"
 	EntrypointExecutableFile = "__dagger.entrypoint.ts"
 
-	SrcDir         = "src"
-	GenDir         = "sdk"
-	NodeModulesDir = "node_modules"
+	SrcDir = "src"
+	GenDir = "sdk"
 
 	schemaPath     = "/schema.json"
 	codegenBinPath = "/codegen"
@@ -252,8 +260,8 @@ func (t *TypescriptSdk) Base() (*dagger.Container, error) {
 	case Bun:
 		return ctr.
 			WithoutEntrypoint().
-			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", tsdistconsts.DefaultBunVersion)), dagger.ContainerWithMountedCacheOpts{
-				Sharing: dagger.CacheSharingModePrivate,
+			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", bunVersion)), dagger.ContainerWithMountedCacheOpts{
+				Sharing: dagger.Private,
 			}), nil
 	case Node:
 		return ctr.
@@ -266,10 +274,8 @@ func (t *TypescriptSdk) Base() (*dagger.Container, error) {
 			WithMountedCache("/root/.npm", dag.CacheVolume(fmt.Sprintf("npm-cache-%s-%s", runtime, version))).
 			WithMountedCache("/root/.cache/yarn", dag.CacheVolume(fmt.Sprintf("yarn-cache-%s-%s", runtime, version))).
 			WithMountedCache("/root/.pnpm-store", dag.CacheVolume(fmt.Sprintf("pnpm-cache-%s-%s", runtime, version))).
-			// install tsx from its bundled location in the engine image
-			WithMountedDirectory("/usr/local/lib/node_modules/tsx", t.SDKSourceDir.Directory("/tsx_module")).
-			WithExec([]string{"ln", "-s", "/usr/local/lib/node_modules/tsx/dist/cli.mjs", "/usr/local/bin/tsx"}), nil
-
+			// Install tsx
+			WithExec([]string{"npm", "install", "-g", "tsx@4.15.6"}), nil
 	default:
 		return nil, fmt.Errorf("unknown runtime: %s", runtime)
 	}
@@ -345,8 +351,7 @@ func (t *TypescriptSdk) configureModule(ctr *dagger.Container) *dagger.Container
 func (t *TypescriptSdk) addSDK() *dagger.Directory {
 	return t.SDKSourceDir.
 		WithoutDirectory("codegen").
-		WithoutDirectory("runtime").
-		WithoutDirectory("tsx_module")
+		WithoutDirectory("runtime")
 }
 
 // generateClient uses the given container to generate the client code.
@@ -397,13 +402,13 @@ func (t *TypescriptSdk) detectBaseImageRef() (string, error) {
 			return fmt.Sprintf("oven/%s:%s-alpine", Bun, version), nil
 		}
 
-		return tsdistconsts.DefaultBunImageRef, nil
+		return bunImageRef, nil
 	case Node:
 		if version != "" {
 			return fmt.Sprintf("%s:%s-alpine", Node, version), nil
 		}
 
-		return tsdistconsts.DefaultNodeImageRef, nil
+		return nodeImageRef, nil
 	default:
 		return "", fmt.Errorf("unknown runtime: %q", runtime)
 	}
@@ -518,7 +523,6 @@ func (t *TypescriptSdk) generateLockFile(ctr *dagger.Container) (*dagger.Contain
 	switch packageManager {
 	case Yarn:
 		// Enable corepack
-		// NOTE: this incidentally fetches and installs node modules, maybe we could install yarn some other way?
 		ctr = ctr.
 			WithExec([]string{"corepack", "enable"}).
 			WithExec([]string{"corepack", "use", fmt.Sprintf("yarn@%s", version)})

@@ -609,10 +609,22 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
   }
 
   static TypeInfo tiFromName(String name) {
-    if (name.equals("int")) {
-      return new TypeInfo(name, TypeKind.INT.name());
-    } else if (name.equals("boolean")) {
+    if (name.equals("boolean")) {
       return new TypeInfo(name, TypeKind.BOOLEAN.name());
+    } else if (name.equals("byte")) {
+      return new TypeInfo(name, TypeKind.BYTE.name());
+    } else if (name.equals("short")) {
+      return new TypeInfo(name, TypeKind.SHORT.name());
+    } else if (name.equals("int")) {
+      return new TypeInfo(name, TypeKind.INT.name());
+    } else if (name.equals("long")) {
+      return new TypeInfo(name, TypeKind.LONG.name());
+    } else if (name.equals("char")) {
+      return new TypeInfo(name, TypeKind.CHAR.name());
+    } else if (name.equals("float")) {
+      return new TypeInfo(name, TypeKind.FLOAT.name());
+    } else if (name.equals("double")) {
+      return new TypeInfo(name, TypeKind.DOUBLE.name());
     } else if (name.equals("void")) {
       return new TypeInfo(name, TypeKind.VOID.name());
     } else {
@@ -623,10 +635,22 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
   static CodeBlock typeName(TypeInfo ti) {
     try {
       TypeKind tk = TypeKind.valueOf(ti.kindName());
-      if (tk == TypeKind.INT) {
-        return CodeBlock.of("$T", int.class);
-      } else if (tk == TypeKind.BOOLEAN) {
+      if (tk == TypeKind.BOOLEAN) {
         return CodeBlock.of("$T", boolean.class);
+      } else if (tk == TypeKind.BYTE) {
+        return CodeBlock.of("$T", byte.class);
+      } else if (tk == TypeKind.SHORT) {
+        return CodeBlock.of("$T", short.class);
+      } else if (tk == TypeKind.INT) {
+        return CodeBlock.of("$T", int.class);
+      } else if (tk == TypeKind.LONG) {
+        return CodeBlock.of("$T", long.class);
+      } else if (tk == TypeKind.CHAR) {
+        return CodeBlock.of("$T", char.class);
+      } else if (tk == TypeKind.FLOAT) {
+        return CodeBlock.of("$T", float.class);
+      } else if (tk == TypeKind.DOUBLE) {
+        return CodeBlock.of("$T", double.class);
       } else if (tk == TypeKind.VOID) {
         return CodeBlock.of("$T", void.class);
       } else if (tk == TypeKind.ARRAY) {
