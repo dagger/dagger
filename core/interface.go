@@ -278,7 +278,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 					})
 				}
 
-				postCallRes, err := callable.Call(ctx, &CallOpts{
+				res, err := callable.Call(ctx, &CallOpts{
 					Inputs:       callInputs,
 					ParentTyped:  runtimeVal,
 					ParentFields: runtimeVal.Fields,
@@ -286,12 +286,6 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				})
 				if err != nil {
 					return nil, fmt.Errorf("failed to call interface function %s.%s: %w", ifaceName, fieldDef.Name, err)
-				}
-				res := postCallRes.Typed
-				if postCallRes.PostCall != nil {
-					if err := postCallRes.PostCall(ctx); err != nil {
-						return nil, fmt.Errorf("failed to run post-call for %s.%s: %w", ifaceName, fieldDef.Name, err)
-					}
 				}
 
 				if fnTypeDef.ReturnType.Underlying().Kind != TypeDefKindInterface {
