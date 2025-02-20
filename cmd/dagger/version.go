@@ -64,7 +64,7 @@ func long() string {
 }
 
 func updateAvailable(ctx context.Context) (string, error) {
-	if engine.IsDevVersion(engine.Version) {
+	if !engine.IsFinalRelease(engine.Version) {
 		return "", nil
 	}
 
