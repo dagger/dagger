@@ -680,12 +680,10 @@ func (sdk *goSDK) baseWithCodegen(
 	}
 	selectors = append(selectors, gitConfigSelectors...)
 
-	// SHOULD NOT ERROR OUT IF SSH AUTH SOCK IS NOT AVAILABLE?
 	sshAuthSelectors, err := sdk.getUnixSocketSelector(ctx)
-	if err != nil {
-		return ctr, err
+	if err == nil && len(sshAuthSelectors) > 0 {
+		selectors = append(selectors, sshAuthSelectors...)
 	}
-	selectors = append(selectors, sshAuthSelectors...)
 
 	// now that we are done with gitconfig and injecting env
 	// variables, we can run the codegen command.
@@ -905,8 +903,6 @@ func gitConfigSelectors(ctx context.Context, bk *buildkit.Client) ([]dagql.Selec
 }
 
 func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, error) {
-	// RJ IS THERE A BETTER WAY FOR THIS? WHY DOES IT NOT MOUNT AUTOMAGICALLY LIKE IT WAS EARLIER
-	// WHAT IF SOCKET IS NOT AVAILABLE. ERROR OUT
 	socketStore, err := sdk.root.Sockets(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get socket store: %w", err)
