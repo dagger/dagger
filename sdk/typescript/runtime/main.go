@@ -43,8 +43,8 @@ func New(
 	sdkSourceDir *dagger.Directory,
 ) *TypescriptSdk {
 	return &TypescriptSdk{
-		SDKSourceDir:  sdkSourceDir,
-		moduleConfig:  &moduleConfig{},
+		SDKSourceDir: sdkSourceDir,
+		moduleConfig: &moduleConfig{},
 	}
 }
 
