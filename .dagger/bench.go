@@ -171,8 +171,7 @@ func (b *Bench) notifyOnFailure(ctx context.Context, err error, discordWebhook *
 	)
 	_, discordErr := dag.Notify().Discord(ctx, discordWebhook, message)
 	if discordErr != nil {
-
-		return fmt.Errorf("failed to notify discord that benchmarks failed: %v, underlying %w", discordErr, err)
+		return fmt.Errorf("failed to notify discord that benchmarks failed: %w, discord error %s", err, discordErr)
 	}
 	return err
 }
