@@ -927,14 +927,11 @@ func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, 
 	// 	return nil, fmt.Errorf("socket cannot be mounted like this for non-main clients")
 	// }
 
-	if true {
-		return nil, fmt.Errorf("SSH AUTH SOCK PATH : %s", clientMetadata.SSHAuthSocketPath)
-	}
-
-	accessor, err := core.GetClientResourceAccessor(ctx, sdk.root, clientMetadata.SSHAuthSocketPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get client resource name: %w", err)
-	}
+	// MAYBE WE SHOULD CALL THIS ONLY FOR MAIN CLIENT?
+	// accessor, err := core.GetClientResourceAccessor(ctx, sdk.root, clientMetadata.SSHAuthSocketPath)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to get client resource name: %w", err)
+	// }
 
 	var sockInst dagql.Instance[*core.Socket]
 	if err := sdk.dag.Select(ctx, sdk.dag.Root(), &sockInst,
@@ -942,16 +939,16 @@ func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, 
 			Field: "host",
 		},
 		dagql.Selector{
-			Field: "__internalSocket",
+			Field: "unixSocket",
 			Args: []dagql.NamedInput{
 				{
-					Name:  "accessor",
-					Value: dagql.NewString(accessor),
+					Name:  "path",
+					Value: dagql.NewString(clientMetadata.SSHAuthSocketPath),
 				},
 			},
 		},
 	); err != nil {
-		return nil, fmt.Errorf("failed to select internal socket: %w", err)
+		return nil, fmt.Errorf("failed to select unix socket: %w", err)
 	}
 
 	if sockInst.Self == nil {
