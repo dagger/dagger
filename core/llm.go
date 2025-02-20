@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/dagger/dagger/core/bbi"
 	_ "github.com/dagger/dagger/core/bbi/empty"
 	_ "github.com/dagger/dagger/core/bbi/flat"
@@ -130,11 +131,15 @@ func (r *LlmRouter) isLlamaModel(model string) bool {
 }
 
 func (r *LlmRouter) routeAnthropicModel() *LlmEndpoint {
-	return &LlmEndpoint{
+	defaultSystemPrompt := "You are a helpful AI assistant. You can use tools to accomplish the user's requests"
+	endpoint := &LlmEndpoint{
 		BaseURL:  r.ANTHROPIC_BASE_URL,
 		Key:      r.ANTHROPIC_API_KEY,
 		Provider: Anthropic,
 	}
+	endpoint.Client = newAnthropicClient(endpoint, defaultSystemPrompt)
+
+	return endpoint
 }
 
 func (r *LlmRouter) routeOpenAIModel() *LlmEndpoint {
@@ -149,11 +154,15 @@ func (r *LlmRouter) routeOpenAIModel() *LlmEndpoint {
 }
 
 func (r *LlmRouter) routeOtherModel() *LlmEndpoint {
-	return &LlmEndpoint{
+	// default to openAI compat from other providers
+	endpoint := &LlmEndpoint{
 		BaseURL:  r.OPENAI_BASE_URL,
 		Key:      r.OPENAI_API_KEY,
 		Provider: Other,
 	}
+	endpoint.Client = newOpenAIClient(endpoint)
+
+	return endpoint
 }
 
 // Return a default model, if configured
@@ -167,7 +176,7 @@ func (r *LlmRouter) DefaultModel() string {
 		return "gpt-4o"
 	}
 	if r.ANTHROPIC_API_KEY != "" {
-		return "claude-3-sonnet"
+		return anthropic.ModelClaude3_5SonnetLatest
 	}
 	if r.OPENAI_BASE_URL != "" {
 		return "llama-3.2"
