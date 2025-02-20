@@ -193,7 +193,16 @@ func (r *Releaser) Publish(
 		Tag:  tag,
 	}
 	if !dryRun {
-		err = r.Dagger.Cli().Publish(ctx, tag, githubOrgName, githubToken, goreleaserKey, awsAccessKeyID, awsSecretAccessKey, awsRegion, awsBucket, artefactsFQDN)
+		_, err := r.Dagger.Cli().
+			Publish(tag, goreleaserKey, githubOrgName, dagger.DaggerDevCliPublishOpts{
+				GithubToken:        githubToken,
+				AwsAccessKeyID:     awsAccessKeyID,
+				AwsSecretAccessKey: awsSecretAccessKey,
+				AwsRegion:          awsRegion,
+				AwsBucket:          awsBucket,
+				ArtefactsFqdn:      artefactsFQDN,
+			}).
+			Sync(ctx)
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
