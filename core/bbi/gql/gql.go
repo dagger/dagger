@@ -4,7 +4,7 @@ import (
 	"github.com/dagger/dagger/core/bbi"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/vektah/gqlparser/ast"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 func init() {
