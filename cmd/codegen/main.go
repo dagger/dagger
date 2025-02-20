@@ -29,7 +29,7 @@ var (
 	clientOnly bool
 
 	localSDK bool
-	isInit       bool
+	isInit   bool
 )
 
 var rootCmd = &cobra.Command{
@@ -70,8 +70,8 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 	cfg := generator.Config{
 		Lang:       generator.SDKLang(lang),
 		OutputDir:  outputDir,
-		Merge:       merge,
-		IsInit: isInit,
+		Merge:      merge,
+		IsInit:     isInit,
 		ClientOnly: clientOnly,
 		LocalSDK:   localSDK,
 	}

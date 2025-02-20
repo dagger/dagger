@@ -117,7 +117,7 @@ func initializeClientGeneratorModule(
 
 	if !configExists {
 		for _, opt := range srcOpts {
-			if opt.AllowNotExists == true {
+			if opt.AllowNotExists {
 				return nil, false, nil
 			}
 		}
