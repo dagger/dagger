@@ -4,19 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"strings"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/dagger/dagger/core/bbi"
 	_ "github.com/dagger/dagger/core/bbi/empty"
 	_ "github.com/dagger/dagger/core/bbi/flat"
 	"github.com/dagger/dagger/dagql"
 	"github.com/joho/godotenv"
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -37,7 +35,7 @@ type Llm struct {
 	dirty bool
 	// History of messages
 	// FIXME: rename to 'messages'
-	history []openai.ChatCompletionMessageParamUnion
+	history []ModelMessage
 	// History of tool calls and their result
 	calls      map[string]string
 	promptVars []string
@@ -58,9 +56,39 @@ type LlmEndpoint struct {
 	BaseURL  string
 	Key      string
 	Provider LlmProvider
+	Client   LLMClient
 }
 
 type LlmProvider string
+
+// LLMClient interface defines the methods that each provider must implement
+type LLMClient interface {
+	SendQuery(ctx context.Context, history []ModelMessage, tools []bbi.Tool) (*LLMResponse, error)
+}
+
+type LLMResponse struct {
+	Content   string
+	ToolCalls []ToolCall
+}
+
+// ModelMessage represents a generic message in the LLM conversation
+type ModelMessage struct {
+	Role       string      `json:"role"`
+	Content    interface{} `json:"content"`
+	ToolCallID string      `json:"tool_call_id,omitempty"`
+	ToolCalls  []ToolCall  `json:"tool_calls,omitempty"`
+}
+
+type ToolCall struct {
+	ID       string   `json:"id"`
+	Function FuncCall `json:"function"`
+	Type     string   `json:"type"`
+}
+
+type FuncCall struct {
+	Arguments string `json:"arguments"`
+	Name      string `json:"name"`
+}
 
 const (
 	OpenAI    LlmProvider = "openai"
@@ -103,27 +131,38 @@ func (r *LlmRouter) isLlamaModel(model string) bool {
 }
 
 func (r *LlmRouter) routeAnthropicModel() *LlmEndpoint {
-	return &LlmEndpoint{
+	defaultSystemPrompt := "You are a helpful AI assistant. You can use tools to accomplish the user's requests"
+	endpoint := &LlmEndpoint{
 		BaseURL:  r.ANTHROPIC_BASE_URL,
 		Key:      r.ANTHROPIC_API_KEY,
 		Provider: Anthropic,
 	}
+	endpoint.Client = newAnthropicClient(endpoint, defaultSystemPrompt)
+
+	return endpoint
 }
 
 func (r *LlmRouter) routeOpenAIModel() *LlmEndpoint {
-	return &LlmEndpoint{
+	endpoint := &LlmEndpoint{
 		BaseURL:  r.OPENAI_BASE_URL,
 		Key:      r.OPENAI_API_KEY,
 		Provider: OpenAI,
 	}
+	endpoint.Client = newOpenAIClient(endpoint)
+
+	return endpoint
 }
 
 func (r *LlmRouter) routeOtherModel() *LlmEndpoint {
-	return &LlmEndpoint{
+	// default to openAI compat from other providers
+	endpoint := &LlmEndpoint{
 		BaseURL:  r.OPENAI_BASE_URL,
 		Key:      r.OPENAI_API_KEY,
 		Provider: Other,
 	}
+	endpoint.Client = newOpenAIClient(endpoint)
+
+	return endpoint
 }
 
 // Return a default model, if configured
@@ -137,7 +176,7 @@ func (r *LlmRouter) DefaultModel() string {
 		return "gpt-4o"
 	}
 	if r.ANTHROPIC_API_KEY != "" {
-		return "claude-3-sonnet"
+		return anthropic.ModelClaude3_5SonnetLatest
 	}
 	if r.OPENAI_BASE_URL != "" {
 		return "llama-3.2"
@@ -353,7 +392,10 @@ func (llm *Llm) WithPrompt(
 		defer stdio.Close()
 		fmt.Fprint(stdio.Stdout, prompt)
 	}()
-	llm.history = append(llm.history, openai.UserMessage(prompt))
+	llm.history = append(llm.history, ModelMessage{
+		Role:    "user",
+		Content: prompt,
+	})
 	llm.dirty = true
 	return llm, nil
 }
@@ -376,7 +418,10 @@ func (llm *Llm) WithPromptVar(name, value string) *Llm {
 // Append a system prompt message to the history
 func (llm *Llm) WithSystemPrompt(prompt string) *Llm {
 	llm = llm.Clone()
-	llm.history = append(llm.history, openai.SystemMessage(prompt))
+	llm.history = append(llm.history, ModelMessage{
+		Role:    "system",
+		Content: prompt,
+	})
 	llm.dirty = true
 	return llm
 }
@@ -440,19 +485,23 @@ func (llm *Llm) Sync(ctx context.Context, dag *dagql.Server) (*Llm, error) {
 		llm.apiCalls++
 
 		tools := session.Tools()
-		res, err := llm.sendQuery(ctx, tools)
+		res, err := llm.Endpoint.Client.SendQuery(ctx, llm.history, tools)
 		if err != nil {
 			return nil, err
 		}
-		reply := res.Choices[0].Message
+
 		// Add the model reply to the history
-		llm.history = append(llm.history, reply)
+		llm.history = append(llm.history, ModelMessage{
+			Role:      "assistant",
+			Content:   res.Content,
+			ToolCalls: res.ToolCalls,
+		})
 		// Handle tool calls
-		calls := res.Choices[0].Message.ToolCalls
-		if len(calls) == 0 {
+		// calls := res.Choices[0].Message.ToolCalls
+		if len(res.ToolCalls) == 0 {
 			break
 		}
-		for _, toolCall := range calls {
+		for _, toolCall := range res.ToolCalls {
 			for _, tool := range tools {
 				if tool.Name == toolCall.Function.Name {
 					var args map[string]any
@@ -492,7 +541,10 @@ func (llm *Llm) Sync(ctx context.Context, dag *dagql.Server) (*Llm, error) {
 					}()
 					func() {
 						llm.calls[toolCall.ID] = result
-						llm.history = append(llm.history, openai.ToolMessage(toolCall.ID, result))
+						llm.history = append(llm.history, ModelMessage{
+							Role:    "assistant",
+							Content: result,
+						})
 					}()
 				}
 			}
@@ -540,13 +592,13 @@ func (llm *Llm) History(ctx context.Context, dag *dagql.Server) ([]string, error
 	return history, nil
 }
 
-func (llm *Llm) messages() ([]openAIMessage, error) {
+func (llm *Llm) messages() ([]ModelMessage, error) {
 	// FIXME: ugly hack
 	data, err := json.Marshal(llm.history)
 	if err != nil {
 		return nil, err
 	}
-	var messages []openAIMessage
+	var messages []ModelMessage
 	if err := json.Unmarshal(data, &messages); err != nil {
 		return nil, err
 	}
@@ -572,129 +624,20 @@ func (llm *Llm) State(ctx context.Context, dag *dagql.Server) (dagql.Typed, erro
 	return llm.state, nil
 }
 
-func (llm *Llm) sendQuery(ctx context.Context, tools []bbi.Tool) (res *openai.ChatCompletion, rerr error) {
-	params := openai.ChatCompletionNewParams{
-		Seed:     openai.Int(0),
-		Model:    openai.F(openai.ChatModel(llm.Model)),
-		Messages: openai.F(llm.history),
-	}
-	if len(tools) > 0 {
-		var toolParams []openai.ChatCompletionToolParam
-		for _, tool := range tools {
-			toolParams = append(toolParams, openai.ChatCompletionToolParam{
-				Type: openai.F(openai.ChatCompletionToolTypeFunction),
-				Function: openai.F(openai.FunctionDefinitionParam{
-					Name:        openai.String(tool.Name),
-					Description: openai.String(tool.Description),
-					Parameters:  openai.F(openai.FunctionParameters(tool.Schema)),
-				}),
-			})
-		}
-		params.Tools = openai.F(toolParams)
-	}
-
-	stream := llm.client().Chat.Completions.NewStreaming(ctx, params)
-	defer stream.Close()
-
-	var logsW io.Writer
-	acc := new(openai.ChatCompletionAccumulator)
-	for stream.Next() {
-		if stream.Err() != nil {
-			return nil, stream.Err()
-		}
-
-		res := stream.Current()
-		acc.AddChunk(res)
-
-		if res.Choices != nil && len(res.Choices) > 0 {
-			if content := res.Choices[0].Delta.Content; content != "" {
-				if logsW == nil {
-					// only show a message if we actually get a text response back
-					// (as opposed to tool calls)
-					ctx, span := Tracer(ctx).Start(ctx, "LLM response", telemetry.Reveal(), trace.WithAttributes(
-						attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-						attribute.String(telemetry.UIMessageAttr, "received"),
-					))
-					defer telemetry.End(span, func() error { return rerr })
-
-					stdio := telemetry.SpanStdio(ctx, "",
-						log.String(telemetry.ContentTypeAttr, "text/markdown"))
-
-					logsW = stdio.Stdout
-				}
-
-				fmt.Fprint(logsW, content)
+// Add this method to the Message type
+// TODO: shall this be provider specific ?
+func (msg ModelMessage) Text() (string, error) {
+	switch v := msg.Content.(type) {
+	case string:
+		return v, nil
+	case []interface{}:
+		if len(v) > 0 {
+			if text, ok := v[0].(map[string]interface{})["text"].(string); ok {
+				return text, nil
 			}
 		}
 	}
-
-	if stream.Err() != nil {
-		return nil, stream.Err()
-	}
-
-	if len(acc.ChatCompletion.Choices) == 0 {
-		return nil, fmt.Errorf("no response from model")
-	}
-
-	return &acc.ChatCompletion, nil
-}
-
-// Create a new openai client
-func (llm *Llm) client() *openai.Client {
-	var opts []option.RequestOption
-	opts = append(opts, option.WithHeader("Content-Type", "application/json"))
-	if llm.Endpoint.Key != "" {
-		opts = append(opts, option.WithAPIKey(llm.Endpoint.Key))
-	}
-	if llm.Endpoint.BaseURL != "" {
-		opts = append(opts, option.WithBaseURL(llm.Endpoint.BaseURL))
-	}
-	return openai.NewClient(opts...)
-}
-
-type openAIMessage struct {
-	Role       string      `json:"role" required:"true"`
-	Content    interface{} `json:"content" required:"true"`
-	ToolCallID string      `json:"tool_call_id"`
-	ToolCalls  []struct {
-		// The ID of the tool call.
-		ID string `json:"id"`
-		// The function that the model called.
-		Function struct {
-			Arguments string `json:"arguments"`
-			// The name of the function to call.
-			Name string `json:"name"`
-		} `json:"function"`
-		// The type of the tool. Currently, only `function` is supported.
-		Type openai.ChatCompletionMessageToolCallType `json:"type"`
-	} `json:"tool_calls"`
-}
-
-func (msg openAIMessage) Text() (string, error) {
-	contentJson, err := json.Marshal(msg.Content)
-	if err != nil {
-		return "", err
-	}
-	switch msg.Role {
-	case "user", "tool":
-		var content []struct {
-			Text string `json:"text" required:"true"`
-		}
-		if err := json.Unmarshal(contentJson, &content); err != nil {
-			return "", fmt.Errorf("malformatted user or tool message: %s", err.Error())
-		}
-		if len(content) == 0 {
-			return "", nil
-		}
-		return content[0].Text, nil
-	case "assistant":
-		var content string
-		if err := json.Unmarshal(contentJson, &content); err != nil {
-			return "", fmt.Errorf("malformatted assistant message: %#v", content)
-		}
-		return content, nil
-	}
-	return "", fmt.Errorf("unsupported message role: %s", msg.Role)
+	return "", fmt.Errorf("unable to extract text from message content: %v", msg.Content)
 }
 
 type LlmMiddleware struct {
