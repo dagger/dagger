@@ -86,13 +86,13 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 					// only show a message if we actually get a text response back
 					// (as opposed to tool calls)
 					ctx, span := Tracer(ctx).Start(ctx, "LLM response", telemetry.Reveal(), trace.WithAttributes(
-						attribute.String("dagger.io/ui.actor", "🤖"),
-						attribute.String("dagger.io/ui.message", "received"),
+						attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+						attribute.String(telemetry.UIMessageAttr, "received"),
 					))
 					defer telemetry.End(span, func() error { return rerr })
 
 					stdio := telemetry.SpanStdio(ctx, "",
-						log.String("dagger.io/content.type", "text/markdown"))
+						log.String(telemetry.ContentTypeAttr, "text/markdown"))
 
 					logsW = stdio.Stdout
 				}
