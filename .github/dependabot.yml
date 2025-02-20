@@ -20,6 +20,8 @@ updates:
       - dependency-name: "github.com/moby/buildkit"
       - dependency-name: "github.com/tonistiigi/fsutil"
       - dependency-name: "github.com/vito/midterm"
+      # stargz-snapshotter requires containerd/v2, we're not using that
+      - dependency-name: "github.com/containerd/stargz-snapshotter"
     groups:
       engine:
         applies-to: version-updates
