@@ -117,7 +117,13 @@ public class DaggerJava extends AbstractModule {
 
   /** return the default platform as a Scalar value */
   @Function
-  public Platform defaultPlatform() throws InterruptedException, ExecutionException, DaggerQueryException {
+  public Platform defaultPlatform()
+      throws InterruptedException, ExecutionException, DaggerQueryException {
     return dag.defaultPlatform();
+  }
+
+  @Function
+  public float addFloat(float a, float b) {
+    return a + b;
   }
 }

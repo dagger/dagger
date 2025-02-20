@@ -127,6 +127,11 @@ public class Entrypoint {
                     dag.function("defaultPlatform",
                         dag.typeDef().withScalar("Platform"))
                         .withDescription("return the default platform as a Scalar value"))
+                .withFunction(
+                    dag.function("addFloat",
+                        dag.typeDef().withKind(TypeDefKind.FLOAT_KIND))
+                        .withArg("a", dag.typeDef().withKind(TypeDefKind.FLOAT_KIND))
+                        .withArg("b", dag.typeDef().withKind(TypeDefKind.FLOAT_KIND)))
                 .withField("source", dag.typeDef().withObject("Directory"), new TypeDef.WithFieldArguments().withDescription("Project source directory"))
                 .withField("version", dag.typeDef().withKind(TypeDefKind.STRING_KIND)));
     return module.id();
@@ -229,6 +234,18 @@ public class Entrypoint {
         } else if (fnName.equals("defaultPlatform")) {
           Method fn = clazz.getMethod("defaultPlatform");
           Platform res = (Platform) fn.invoke(obj);
+          return JsonConverter.toJSON(res);
+        } else if (fnName.equals("addFloat")) {
+          float a = 0;
+          if (inputArgs.get("a") != null) {
+            a = (float) JsonConverter.fromJSON(dag, inputArgs.get("a"), float.class);
+          }
+          float b = 0;
+          if (inputArgs.get("b") != null) {
+            b = (float) JsonConverter.fromJSON(dag, inputArgs.get("b"), float.class);
+          }
+          Method fn = clazz.getMethod("addFloat", float.class, float.class);
+          float res = (float) fn.invoke(obj, a, b);
           return JsonConverter.toJSON(res);
         }
       }
