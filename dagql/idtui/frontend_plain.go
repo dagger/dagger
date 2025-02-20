@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/knz/bubbline/editline"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -116,6 +117,15 @@ func NewPlain() Frontend {
 		done:   make(chan struct{}),
 		ticker: time.NewTicker(50 * time.Millisecond),
 	}
+}
+
+func (fe *frontendPlain) Shell(
+	ctx context.Context,
+	fn func(ctx context.Context, input string) error,
+	autocomplete editline.AutoCompleteFn,
+	prompt func(out *termenv.Output, fg termenv.Color) string,
+) {
+	fmt.Fprintln(os.Stderr, "Shell not supported in plain mode")
 }
 
 func (fe *frontendPlain) ConnectedToEngine(ctx context.Context, name string, version string, clientID string) {
