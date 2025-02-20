@@ -4,11 +4,6 @@ includes:
   - from_file:
       path: ./.goreleaser.common.yml
 
-nightly:
-  # version_template will override .Version for nightly builds:
-  # https://goreleaser.com/customization/nightlies/#how-it-works
-  version_template: "{{ .Tag }}"
-
 archives:
   - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
     id: sha
