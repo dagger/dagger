@@ -7,7 +7,7 @@ import io.dagger.module.annotation.Object;
 @Object
 public class MyModule extends AbstractModule {
   @Function
-  public int addInteger(int a, int b) {
+  public Integer addInteger(int a, int b) {
     return a + b;
   }
 }
