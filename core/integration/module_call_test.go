@@ -2592,3 +2592,14 @@ func (CallSuite) TestExecStderr(ctx context.Context, t *testctx.T) {
 		requireErrOut(t, err, "ls: wat: No such file or directory")
 	})
 }
+
+func (CallSuite) TestErrNoModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	_, err := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerCall()).
+		Stdout(ctx)
+	requireErrOut(t, err, "module not found")
+}

@@ -1186,6 +1186,14 @@ func (m *OtherObj) FnE() *dagger.Container {
 		require.Contains(t, lines, "other-field-d   doc for OtherFieldD")
 		require.Contains(t, lines, "fn-e            doc for FnE")
 	})
+
+	t.Run("no module present errors nicely", func(ctx context.Context, t *testctx.T) {
+		_, err := ctr.
+			WithWorkdir("/empty").
+			With(daggerFunctions()).
+			Stdout(ctx)
+		requireErrOut(t, err, `module not found`)
+	})
 }
 
 func (CLISuite) TestDaggerUnInstall(ctx context.Context, t *testctx.T) {

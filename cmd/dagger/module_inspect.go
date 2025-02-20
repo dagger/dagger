@@ -50,7 +50,7 @@ func maybeInitializeDefaultModule(ctx context.Context, dag *dagger.Client) (*mod
 		modRef = moduleURLDefault
 	}
 
-	if def, err := initializeModule(ctx, dag, modRef); def != nil || err != nil {
+	if def, err := initializeModule(ctx, dag, modRef); def != nil {
 		return def, modRef, err
 	}
 
@@ -79,7 +79,7 @@ func initializeModule(
 		return nil, fmt.Errorf("failed to get configured module: %w", err)
 	}
 	if !configExists {
-		return nil, nil
+		return nil, fmt.Errorf("module not found: %s", srcRef)
 	}
 
 	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())
