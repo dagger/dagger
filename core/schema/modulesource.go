@@ -2013,6 +2013,13 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 	// If no SDK is set, then we don't need to get the module runtime nor codegen
 	if src.Self.SDK == nil {
+		mod.InstanceID = dagql.CurrentID(ctx)
+
+		inst, err = dagql.NewInstanceForCurrentID(ctx, s.dag, srcInstContentHashed, mod)
+		if err != nil {
+			return inst, fmt.Errorf("failed to create instance for module: %w", err)
+		}
+
 		return inst, nil
 	}
 
