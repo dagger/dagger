@@ -428,7 +428,7 @@ type goSDK struct {
 }
 
 func (sdk *goSDK) RequiredClientGenerationFiles(_ context.Context) (dagql.Array[dagql.String], error) {
-	return dagql.NewStringArray("./go.mod", "./go.sum"), nil
+	return dagql.NewStringArray("./go.mod", "./go.sum", "main.go"), nil
 }
 
 func (sdk *goSDK) GenerateClient(
