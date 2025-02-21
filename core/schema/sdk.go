@@ -462,7 +462,7 @@ func (sdk *goSDK) Codegen(
 ) (_ *core.GeneratedCode, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: run codegen")
 	defer telemetry.End(span, func() error { return rerr })
-	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
+	ctr, err := sdk.baseWithCodegen(ctx, deps, source, true)
 	if err != nil {
 		return nil, err
 	}
@@ -504,11 +504,22 @@ func (sdk *goSDK) Runtime(
 ) (_ *core.Container, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load runtime")
 	defer telemetry.End(span, func() error { return rerr })
-	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
+	ctr, err := sdk.baseWithCodegen(ctx, deps, source, false)
 	if err != nil {
 		return nil, err
 	}
 	if err := sdk.dag.Select(ctx, ctr, &ctr,
+		// Remove the socket mount first as otherwise it
+		// triggers socket not found error when running go build
+		dagql.Selector{
+			Field: "withoutUnixSocket",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.String("/tmp/dagger-ssh-sock"),
+				},
+			},
+		},
 		dagql.Selector{
 			Field: "withExec",
 			Args: []dagql.NamedInput{
@@ -573,6 +584,7 @@ func (sdk *goSDK) baseWithCodegen(
 	ctx context.Context,
 	deps *core.ModDeps,
 	src dagql.Instance[*core.ModuleSource],
+	mountSocket bool,
 ) (dagql.Instance[*core.Container], error) {
 	var ctr dagql.Instance[*core.Container]
 
@@ -680,9 +692,15 @@ func (sdk *goSDK) baseWithCodegen(
 	}
 	selectors = append(selectors, gitConfigSelectors...)
 
-	sshAuthSelectors, err := sdk.getUnixSocketSelector(ctx)
-	if err == nil && len(sshAuthSelectors) > 0 {
-		selectors = append(selectors, sshAuthSelectors...)
+	// TODO(rajatjindal): verify with Erik as to why this
+	// cause failures if we also mount this in Runtime.
+	// Issue we run into is that when we try to run sdk checks
+	// using .dagger, it fails trying to find the socket
+	if mountSocket {
+		sshAuthSelectors, err := sdk.getUnixSocketSelector(ctx)
+		if err == nil && len(sshAuthSelectors) > 0 {
+			selectors = append(selectors, sshAuthSelectors...)
+		}
 	}
 
 	// now that we are done with gitconfig and injecting env
