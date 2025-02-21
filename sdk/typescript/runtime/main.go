@@ -169,6 +169,13 @@ func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *dagger.ModuleSou
 		}), nil
 }
 
+func (t *TypescriptSdk) RequiredClientGenerationFiles() []string {
+	return []string{
+		"./package.json",
+		"./tsconfig.json",
+	}
+}
+
 func (t *TypescriptSdk) GenerateClient(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
@@ -197,6 +204,7 @@ func (t *TypescriptSdk) GenerateClient(
 		WithExec([]string{"npm", "install", "-g", "tsx@4.15.6"}).
 		// Add dagger codegen binary.
 		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
+		WithDirectory("/ctx", modSource.ContextDirectory()).
 		// Mount the introspection file.
 		WithMountedFile(schemaPath, introspectionJSON).
 		// Mount the current module directory.
