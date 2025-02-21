@@ -1907,27 +1907,27 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 				}
 			}
 		}
+	}
 
-		// write dagger.json to the generated context directory
-		modCfgBytes, err := json.MarshalIndent(modCfg, "", "  ")
-		if err != nil {
-			return genDirInst, fmt.Errorf("failed to encode module config: %w", err)
-		}
-		modCfgBytes = append(modCfgBytes, '\n')
-		modCfgPath := filepath.Join(src.SourceRootSubpath, modules.Filename)
-		err = s.dag.Select(ctx, genDirInst, &genDirInst,
-			dagql.Selector{
-				Field: "withNewFile",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(modCfgPath)},
-					{Name: "contents", Value: dagql.String(modCfgBytes)},
-					{Name: "permissions", Value: dagql.Int(0o644)},
-				},
+	// write dagger.json to the generated context directory
+	modCfgBytes, err := json.MarshalIndent(modCfg, "", "  ")
+	if err != nil {
+		return genDirInst, fmt.Errorf("failed to encode module config: %w", err)
+	}
+	modCfgBytes = append(modCfgBytes, '\n')
+	modCfgPath := filepath.Join(src.SourceRootSubpath, modules.Filename)
+	err = s.dag.Select(ctx, genDirInst, &genDirInst,
+		dagql.Selector{
+			Field: "withNewFile",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(modCfgPath)},
+				{Name: "contents", Value: dagql.String(modCfgBytes)},
+				{Name: "permissions", Value: dagql.Int(0o644)},
 			},
-		)
-		if err != nil {
-			return genDirInst, fmt.Errorf("failed to add updated dagger.json to context dir: %w", err)
-		}
+		},
+	)
+	if err != nil {
+		return genDirInst, fmt.Errorf("failed to add updated dagger.json to context dir: %w", err)
 	}
 
 	// return just the diff of what we generated relative to the original context directory
