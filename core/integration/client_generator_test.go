@@ -668,6 +668,10 @@ import (
 
 type Generator struct{}
 
+func (g *Generator) RequiredClientGenerationFiles() []string{
+  return []string{}
+}
+
 func (g *Generator) GenerateClient(
   ctx context.Context,
   modSource *dagger.ModuleSource,
@@ -683,6 +687,11 @@ func (g *Generator) GenerateClient(
 
 @object()
 export class Generator {
+  @func()
+  requiredClientGenerationFiles(): string[] {
+    return []
+  }
+
   @func()
   generateClient(
     modSource: ModuleSource,
