@@ -32,3 +32,16 @@ defmodule Dagger.Engine do
     }
   end
 end
+
+defimpl Jason.Encoder, for: Dagger.Engine do
+  def encode(engine, opts) do
+    {:ok, id} = Dagger.Engine.id(engine)
+    Jason.Encode.string(id, opts)
+  end
+end
+
+defimpl Nestru.Decoder, for: Dagger.Engine do
+  def decode_fields_hint(_struct, _context, id) do
+    {:ok, Dagger.Client.load_engine_from_id(Dagger.Global.dag(), id)}
+  end
+end

@@ -111,3 +111,16 @@ defmodule Dagger.ObjectTypeDef do
     Client.execute(object_type_def.client, query_builder)
   end
 end
+
+defimpl Jason.Encoder, for: Dagger.ObjectTypeDef do
+  def encode(object_type_def, opts) do
+    {:ok, id} = Dagger.ObjectTypeDef.id(object_type_def)
+    Jason.Encode.string(id, opts)
+  end
+end
+
+defimpl Nestru.Decoder, for: Dagger.ObjectTypeDef do
+  def decode_fields_hint(_struct, _context, id) do
+    {:ok, Dagger.Client.load_object_type_def_from_id(Dagger.Global.dag(), id)}
+  end
+end
