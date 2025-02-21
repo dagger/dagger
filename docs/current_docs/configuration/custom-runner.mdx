@@ -26,7 +26,7 @@ The consolidated steps to use a custom runner are:
 - If changes to the base image are needed, make those and push them to a
   registry. If no changes are needed, just use it as is.
 - Start the runner image in your target of choice, [requirements](#execution-requirements) and [configuration](#configuration) in mind.
-- Export the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable with a [a value pointing to your target](#connection-interface).
+- Export the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable with a [value pointing to your target](#connection-interface).
 - Call `dagger call` or execute SDK code directly with that environment variable set.
 
 :::important
