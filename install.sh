@@ -255,8 +255,10 @@ Install specified dev build <commit sha>:
 EOF
 }
 
-latest_version() {
-  curl -sfL "${base}/${name}/latest_version"
+fetch_version() {
+  # attempt to interpret the DAGGER_VERSION as a a build pointer, otherwise
+  # just use it's value directly
+  curl -sfL "${base}/${name}/versions/${DAGGER_VERSION}" || echo "${DAGGER_VERSION}"
 }
 
 base_url() {
@@ -265,9 +267,10 @@ base_url() {
   if [ -n "$DAGGER_COMMIT" ]; then
     path="main/${DAGGER_COMMIT}"
   elif [ -n "$DAGGER_VERSION" ] && [ "$DAGGER_VERSION" != "latest" ]; then
-    path="releases/${DAGGER_VERSION}"
+    path="releases/$(fetch_version)"
   else
-    path="releases/$(latest_version)"
+    DAGGER_VERSION="latest"
+    path="releases/$(fetch_version)"
   fi
   url="${base}/${name}/${path}"
   echo "$url"
@@ -279,9 +282,10 @@ tarball() {
   if [ -n "$DAGGER_COMMIT" ]; then
     version="${DAGGER_COMMIT}"
   elif [ -n "$DAGGER_VERSION" ] && [ "$DAGGER_VERSION" != "latest" ]; then
-    version="v${DAGGER_VERSION}"
+    version="v$(fetch_version)"
   else
-    version="v$(latest_version)"
+    DAGGER_VERSION="latest"
+    version="v$(fetch_version)"
   fi
   name="${name}_${version}_${os}_${arch}"
   if [ "$os" = "windows" ]; then
@@ -374,4 +378,3 @@ if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
 else
   execute
 fi
-
