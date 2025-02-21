@@ -27,18 +27,16 @@ func generateSchema(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		commentMap := make(map[string]string)
-		if err := jsonschema.ExtractGoComments("github.com/dagger/dagger", target.path, commentMap); err != nil {
+		r := new(jsonschema.Reflector)
+		err := r.AddGoComments("github.com/dagger/dagger", target.path)
+		if err != nil {
 			return err
 		}
-		for k, v := range commentMap {
+		for k, v := range r.CommentMap {
 			// remove all standalone newlines
 			re := regexp.MustCompile(`([^\n])\n([^\n])`)
-			commentMap[k] = re.ReplaceAllString(v, `$1 $2`)
+			r.CommentMap[k] = re.ReplaceAllString(v, `$1 $2`)
 		}
-
-		r := new(jsonschema.Reflector)
-		r.CommentMap = commentMap
 
 		s := r.Reflect(target.value)
 		enc := json.NewEncoder(os.Stdout)
