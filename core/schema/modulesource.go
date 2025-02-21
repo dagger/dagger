@@ -227,70 +227,78 @@ func (s *moduleSourceSchema) localModuleSource(
 		localPath = "."
 	}
 
-	// make localPath absolute
+	// figure out the absolute path to the local module source
 	var localAbsPath string
-	if allowNotExists {
+
+	// first, check if the local path exists outright
+	stat, err := bk.StatCallerHostPath(ctx, localPath, true)
+	switch {
+	case err == nil:
+		localAbsPath = stat.Path
+	case status.Code(err) == codes.NotFound:
+		// tolerate for now, we may not be enforcing it's existence and/or may find it as named dep in a find-up
+	default:
+		return inst, fmt.Errorf("failed to stat local path: %w", err)
+	}
+
+	// if localPath doesn't exist and find-up is enabled, check if it's a named dep in the default dagger.json
+	if localAbsPath == "" && doFindUp {
+		cwd, err := bk.AbsPath(ctx, ".")
+		if err != nil {
+			return inst, fmt.Errorf("failed to get cwd: %w", err)
+		}
+		defaultFindUpSourceRootDir, defaultFindUpExists, err := findUp(ctx, callerStatFS{bk}, cwd, modules.Filename)
+		if err != nil {
+			return inst, fmt.Errorf("failed to find up root: %w", err)
+		}
+		if defaultFindUpExists {
+			configPath := filepath.Join(defaultFindUpSourceRootDir, modules.Filename)
+			contents, err := bk.ReadCallerHostFile(ctx, configPath)
+			if err != nil {
+				return inst, fmt.Errorf("failed to read module config file: %w", err)
+			}
+			modCfg, err := modules.ParseModuleConfig(contents)
+			if err != nil {
+				return inst, fmt.Errorf("failed to parse module config: %w", err)
+			}
+
+			namedDep, ok := modCfg.DependencyByName(localPath)
+			if ok {
+				// found a dep in the default dagger.json with the name localPath, load it and return it
+				parsedRef, err := parseRefString(
+					ctx,
+					statFSFunc(func(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
+						path = filepath.Join(defaultFindUpSourceRootDir, path)
+						return callerStatFS{bk}.stat(ctx, path)
+					}),
+					namedDep.Source,
+					namedDep.Pin,
+				)
+				if err != nil {
+					return inst, fmt.Errorf("failed to parse named dep ref string: %w", err)
+				}
+				switch parsedRef.kind {
+				case core.ModuleSourceKindLocal:
+					depModPath := filepath.Join(defaultFindUpSourceRootDir, namedDep.Source)
+					return s.localModuleSource(ctx, query, bk, depModPath, false, allowNotExists)
+				case core.ModuleSourceKindGit:
+					return s.gitModuleSource(ctx, query, parsedRef.git, namedDep.Pin, false)
+				}
+			}
+		}
+	}
+
+	switch {
+	case localAbsPath != "":
+		// we found it
+	case allowNotExists:
+		// we never found it, but we're told to tolerate that, just resolve the abs path
 		localAbsPath, err = bk.AbsPath(ctx, localPath)
 		if err != nil {
 			return inst, fmt.Errorf("failed to get absolute path: %w", err)
 		}
-	} else {
-		stat, err := bk.StatCallerHostPath(ctx, localPath, true)
-		switch {
-		case err == nil:
-			localAbsPath = stat.Path
-		case codes.NotFound == status.Code(err) && doFindUp:
-			// we didn't find the given path, but find-up is enabled, so check if
-			// localPath is a named module from the *default* dagger.json found-up from the cwd
-			cwd, err := bk.AbsPath(ctx, ".")
-			if err != nil {
-				return inst, fmt.Errorf("failed to get cwd: %w", err)
-			}
-			defaultFindUpSourceRootDir, defaultFindUpExists, err := findUp(ctx, callerStatFS{bk}, cwd, modules.Filename)
-			if err != nil {
-				return inst, fmt.Errorf("failed to find up root: %w", err)
-			}
-			if defaultFindUpExists {
-				configPath := filepath.Join(defaultFindUpSourceRootDir, modules.Filename)
-				contents, err := bk.ReadCallerHostFile(ctx, configPath)
-				if err != nil {
-					return inst, fmt.Errorf("failed to read module config file: %w", err)
-				}
-				modCfg, err := modules.ParseModuleConfig(contents)
-				if err != nil {
-					return inst, err
-				}
-
-				namedDep, ok := modCfg.DependencyByName(localPath)
-				if ok {
-					// found a dep in the default dagger.json with the name localPath, load it and return it
-					parsedRef, err := parseRefString(
-						ctx,
-						statFSFunc(func(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
-							path = filepath.Join(defaultFindUpSourceRootDir, path)
-							return callerStatFS{bk}.stat(ctx, path)
-						}),
-						namedDep.Source,
-						namedDep.Pin,
-					)
-					if err != nil {
-						return inst, fmt.Errorf("failed to parse named dep ref string: %w", err)
-					}
-					switch parsedRef.kind {
-					case core.ModuleSourceKindLocal:
-						depModPath := filepath.Join(defaultFindUpSourceRootDir, namedDep.Source)
-						return s.localModuleSource(ctx, query, bk, depModPath, false, allowNotExists)
-					case core.ModuleSourceKindGit:
-						return s.gitModuleSource(ctx, query, parsedRef.git, namedDep.Pin, false)
-					}
-				}
-			}
-			fallthrough
-		case codes.NotFound == status.Code(err):
-			return inst, fmt.Errorf("local path %q does not exist", localPath)
-		default:
-			return inst, fmt.Errorf("failed to stat local path: %w", err)
-		}
+	default:
+		return inst, fmt.Errorf("local path %q does not exist", localPath)
 	}
 
 	// We always find-up the context dir. When doFindUp is true, we also try a find-up for the source root.
@@ -308,14 +316,17 @@ func (s *moduleSourceSchema) localModuleSource(
 	switch {
 	case doFindUp && daggerCfgFound:
 		// we found-up the dagger config, nothing to do
+
 	case doFindUp && !daggerCfgFound:
-		// default the local path as the source root if not found-up
+		// default the local path as the source root if nothing found-up
 		sourceRootPath = localAbsPath
-	case !doFindUp:
+
+	default:
 		// we weren't trying to find-up the source root, so we always set the source root to the local path
 		daggerCfgFound = sourceRootPath == localAbsPath // config was found if-and-only-if it was in the localAbsPath dir
 		sourceRootPath = localAbsPath
 	}
+
 	if !dotGitFound {
 		// in all cases, if there's no .git found, default the context dir to the source root
 		contextDirPath = sourceRootPath
