@@ -96,6 +96,7 @@ public class Entrypoint {
                 .withFunction(
                     dag.function("isZero",
                         dag.typeDef().withKind(TypeDefKind.BOOLEAN_KIND))
+                        .withDescription("but this description should be exposed")
                         .withArg("value", dag.typeDef().withKind(TypeDefKind.INTEGER_KIND)))
                 .withFunction(
                     dag.function("doThings",
