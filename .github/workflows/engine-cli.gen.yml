@@ -1988,11 +1988,6 @@ jobs:
               env:
                 DAGGER_VERSION_FILE: dagger.json
               shell: bash
-            - name: Install go
-              uses: actions/setup-go@v5
-              with:
-                cache-dependency-path: .dagger/go.sum
-                go-version: "1.23"
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
               run: |
@@ -2238,11 +2233,6 @@ jobs:
               env:
                 DAGGER_VERSION_FILE: dagger.json
               shell: bash
-            - name: Install go
-              uses: actions/setup-go@v5
-              with:
-                cache-dependency-path: .dagger/go.sum
-                go-version: "1.23"
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
               run: |
@@ -2488,11 +2478,6 @@ jobs:
               env:
                 DAGGER_VERSION_FILE: dagger.json
               shell: bash
-            - name: Install go
-              uses: actions/setup-go@v5
-              with:
-                cache-dependency-path: .dagger/go.sum
-                go-version: "1.23"
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
               run: |
