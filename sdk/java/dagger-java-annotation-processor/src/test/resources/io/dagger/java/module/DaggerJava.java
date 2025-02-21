@@ -72,7 +72,12 @@ public class DaggerJava extends AbstractModule {
     return this;
   }
 
-  @Function
+  /**
+   * Return true if the value is 0.
+   *
+   * <p>This description should not be exposed to dagger.
+   */
+  @Function(description = "but this description should be exposed")
   public boolean isZero(int value) {
     return value == 0;
   }

@@ -78,11 +78,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
             throw new IllegalStateException("Only one @Module annotation is allowed");
           }
           hasModuleAnnotation = true;
-          Module module = element.getAnnotation(Module.class);
-          moduleDescription = module.description();
-          if (moduleDescription.isEmpty()) {
-            moduleDescription = trimDoc(processingEnv.getElementUtils().getDocComment(element));
-          }
+          moduleDescription = parseModuleDescription(element);
         } else if (element.getKind() == ElementKind.CLASS
             || element.getKind() == ElementKind.RECORD) {
           TypeElement typeElement = (TypeElement) element;
@@ -211,7 +207,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
               new ObjectInfo(
                   name,
                   qName,
-                  parseTypeDescription(typeElement),
+                  parseObjectDescription(typeElement),
                   fieldInfoInfos.toArray(new FieldInfo[fieldInfoInfos.size()]),
                   functionInfos.toArray(new FunctionInfo[functionInfos.size()]),
                   constructorInfo));
@@ -817,26 +813,34 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     return StaticJavaParser.parseJavadoc(javadocString).getDescription().toText().trim();
   }
 
-  private String parseTypeDescription(Element element) {
-    String javadocString = elementUtils.getDocComment(element);
-    if (javadocString != null) {
-      return StaticJavaParser.parseJavadoc(javadocString).getDescription().toText().trim();
-    }
-    Object annotation = element.getAnnotation(Object.class);
-    if (annotation != null) {
+  private String parseModuleDescription(Element element) {
+    Module annotation = element.getAnnotation(Module.class);
+    if (annotation != null && !annotation.description().isEmpty()) {
       return annotation.description();
     }
-    return "";
+    return parseJavaDocDescription(element);
+  }
+
+  private String parseObjectDescription(Element element) {
+    Object annotation = element.getAnnotation(Object.class);
+    if (annotation != null && !annotation.description().isEmpty()) {
+      return annotation.description();
+    }
+    return parseJavaDocDescription(element);
   }
 
   private String parseFunctionDescription(Element element) {
+    Function annotation = element.getAnnotation(Function.class);
+    if (annotation != null && !annotation.description().isEmpty()) {
+      return annotation.description();
+    }
+    return parseJavaDocDescription(element);
+  }
+
+  private String parseJavaDocDescription(Element element) {
     String javadocString = elementUtils.getDocComment(element);
     if (javadocString != null) {
       return StaticJavaParser.parseJavadoc(javadocString).getDescription().toText().trim();
-    }
-    Function annotation = element.getAnnotation(Function.class);
-    if (annotation != null) {
-      return annotation.description();
     }
     return "";
   }
