@@ -1,6 +1,6 @@
 module github.com/dagger/dagger
 
-go 1.23.2
+go 1.24.0
 
 require (
 	dagger.io/dagger v0.16.1
