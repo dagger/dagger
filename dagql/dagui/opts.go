@@ -45,6 +45,12 @@ type FrontendOpts struct {
 
 	// FocusedSpan is the currently selected span, i.e. the cursor position.
 	FocusedSpan SpanID
+
+	// SpanVerbosity tracks per-span verbosity.
+	SpanVerbosity map[SpanID]int
+
+	// Filter is applied while constructing the tree.
+	Filter func(*Span) WalkDecision
 }
 
 const (
@@ -59,6 +65,10 @@ const (
 )
 
 func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
+	verbosity := opts.Verbosity
+	if v, ok := opts.SpanVerbosity[span.ID]; ok {
+		verbosity = v
+	}
 	if opts.Debug {
 		// debug reveals all
 		return true
@@ -78,14 +88,14 @@ func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
 		// prioritize showing failed things, even if they're internal
 		return true
 	}
-	if span.Call != nil {
-		if span.Call.ReceiverDigest == "" {
-			if ShouldSkipFunction("Query", span.Call.Field) {
+	if span.Call() != nil {
+		if span.Call().ReceiverDigest == "" {
+			if ShouldSkipFunction("Query", span.Call().Field) {
 				return false
 			}
 		} else {
-			rcvr := db.MustCall(span.Call.ReceiverDigest)
-			if ShouldSkipFunction(rcvr.Type.NamedType, span.Call.Field) {
+			rcvr := db.MustCall(span.Call().ReceiverDigest)
+			if ShouldSkipFunction(rcvr.Type.NamedType, span.Call().Field) {
 				return false
 			}
 		}
@@ -110,7 +120,7 @@ func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
 	// }
 	if opts.GCThreshold > 0 &&
 		time.Since(span.EndTime) > opts.GCThreshold &&
-		opts.Verbosity < ShowCompletedVerbosity {
+		verbosity < ShowCompletedVerbosity {
 		// stop showing steps that ended after a given threshold
 		return false
 	}

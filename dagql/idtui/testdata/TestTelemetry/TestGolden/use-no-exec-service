@@ -20,6 +20,7 @@ Expected stderr:
 
 ✔ viztest: Viztest! X.Xs
 ✔ .useNoExecService: String! X.Xs
+┃ PONG
 │ ✔ container: Container! X.Xs
 │ $ .from(address: "redis"): Container! X.Xs CACHED
 │ ✔ .withExposedPort(port: 6379): Container! X.Xs
