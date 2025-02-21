@@ -19,14 +19,10 @@ Expected stderr:
 ✔ parsing command line arguments X.Xs
 
 ✔ viztest: Viztest! X.Xs
-✔ .customSpan: String! X.Xs
+✔ .revealedSpans: String! X.Xs
 ┃ hello from Go! it is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
-│ ✔ custom span X.Xs
-│ │ ✔ container: Container! X.Xs
-│ │ $ .from(address: "alpine"): Container! X.Xs CACHED
-│ │ ✔ .withExec(args: ["echo", "hello from Go! it is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
-│ │ ┃ hello from Go! it is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
-│ │ ✔ .stdout: String! X.Xs
+│ ✔ revealed span X.Xs
+│😊 [38;5;252m[38;5;252m[38;5;252msometimes you gotta be[38;5;252;1mbold
 
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

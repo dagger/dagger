@@ -345,10 +345,9 @@ func (lit *LiteralPrimitiveType[T, V]) Tainted() bool {
 }
 
 func (lit *LiteralPrimitiveType[T, V]) Display() string {
-	// kludge to special case truncation of strings
 	if lit.pbVal.ASTKind() == ast.StringValue {
 		var val any = lit.pbVal.Value()
-		return truncate(strconv.Quote(val.(string)), 100)
+		return strconv.Quote(val.(string))
 	}
 	return fmt.Sprintf("%v", lit.pbVal.Value())
 }
@@ -441,20 +440,4 @@ func decodeLiteral(
 	default:
 		return nil, fmt.Errorf("unknown literal value type %T", v)
 	}
-}
-
-func truncate(s string, length int) string {
-	if len(s) <= length {
-		return s
-	}
-
-	if length < 5 {
-		return s[:length]
-	}
-
-	dig := digest.FromString(s)
-	prefixLength := (length - 3) / 2
-	suffixLength := length - 3 - prefixLength
-	abbrev := s[:prefixLength] + "..." + s[len(s)-suffixLength:]
-	return fmt.Sprintf("%s:%d:%s", dig, len(s), abbrev)
 }

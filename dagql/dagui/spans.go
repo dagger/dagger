@@ -18,19 +18,21 @@ type SpanSet = *OrderedSet[SpanID, *Span]
 type Span struct {
 	SpanSnapshot
 
-	ParentSpan   *Span          `json:"-"`
-	ChildSpans   SpanSet        `json:"-"`
-	RunningSpans SpanSet        `json:"-"`
-	FailedLinks  SpanSet        `json:"-"`
-	Call         *callpbv1.Call `json:"-"`
-	Base         *callpbv1.Call `json:"-"`
+	ParentSpan    *Span   `json:"-"`
+	ChildSpans    SpanSet `json:"-"`
+	RunningSpans  SpanSet `json:"-"`
+	FailedLinks   SpanSet `json:"-"`
+	RevealedSpans SpanSet `json:"-"`
+
+	callCache *callpbv1.Call
+	baseCache *callpbv1.Call
 
 	// v0.15+
-	causesViaLinks  SpanSet `json:"-"`
-	effectsViaLinks SpanSet `json:"-"`
+	causesViaLinks  SpanSet
+	effectsViaLinks SpanSet
 	// v0.14 and below
-	causesViaAttrs  SpanSet            `json:"-"`
-	effectsViaAttrs map[string]SpanSet `json:"-"`
+	causesViaAttrs  SpanSet
+	effectsViaAttrs map[string]SpanSet
 
 	// Indicates that this span was actually exported to the database, and not
 	// just allocated due to a span parent or other relationship.
@@ -49,6 +51,40 @@ func (span *Span) Snapshot() SpanSnapshot {
 	snapshot := span.SpanSnapshot
 	snapshot.Final = true // NOTE: applied to copy
 	return snapshot
+}
+
+func (span *Span) Call() *callpbv1.Call {
+	if span.callCache != nil {
+		return span.callCache
+	}
+	if span.CallDigest == "" {
+		return nil
+	}
+	span.callCache = span.db.Call(span.CallDigest)
+	return span.callCache
+}
+
+func (span *Span) Base() *callpbv1.Call {
+	if span.baseCache != nil {
+		return span.baseCache
+	}
+
+	call := span.Call()
+	if call == nil {
+		return nil
+	}
+
+	// TODO: respect an already-set base value computed server-side, and client
+	// subsequently requests necessary DAG
+	if call.ReceiverDigest != "" {
+		parentCall := span.db.MustCall(call.ReceiverDigest)
+		if parentCall != nil {
+			span.baseCache = span.db.Simplify(parentCall, span.Internal)
+			return span.baseCache
+		}
+	}
+
+	return nil
 }
 
 func countChildren(set SpanSet) int {
@@ -99,12 +135,14 @@ type SpanSnapshot struct {
 	Cached   bool `json:",omitempty"`
 
 	// UI preferences reported by the span, or applied to it (sync=>passthrough)
-	Internal     bool `json:",omitempty"`
-	Encapsulate  bool `json:",omitempty"`
-	Encapsulated bool `json:",omitempty"`
-	Mask         bool `json:",omitempty"`
-	Passthrough  bool `json:",omitempty"`
-	Ignore       bool `json:",omitempty"`
+	Internal     bool   `json:",omitempty"`
+	Encapsulate  bool   `json:",omitempty"`
+	Encapsulated bool   `json:",omitempty"`
+	Passthrough  bool   `json:",omitempty"`
+	Ignore       bool   `json:",omitempty"`
+	Reveal       bool   `json:",omitempty"`
+	ActorEmoji   string `json:",omitempty"`
+	Message      string `json:",omitempty"`
 
 	Inputs []string `json:",omitempty"`
 	Output string   `json:",omitempty"`
@@ -149,11 +187,20 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 	case telemetry.UIEncapsulatedAttr:
 		snapshot.Encapsulated = val.(bool)
 
+	case telemetry.UIRevealAttr:
+		snapshot.Reveal = val.(bool)
+
 	case telemetry.UIInternalAttr:
 		snapshot.Internal = val.(bool)
 
 	case telemetry.UIPassthroughAttr:
 		snapshot.Passthrough = val.(bool)
+
+	case telemetry.UIActorEmojiAttr:
+		snapshot.ActorEmoji = val.(string)
+
+	case telemetry.UIMessageAttr:
+		snapshot.Message = val.(string)
 
 	case telemetry.DagInputsAttr:
 		snapshot.Inputs = sliceOf[string](val)
@@ -195,49 +242,43 @@ func sliceOf[T any](val any) []T {
 // NOTE: failed state only propagates to spans that installed the current
 // span's effect - it does _not_ propagate through the parent span.
 func (span *Span) PropagateStatusToParentsAndLinks() {
-	for parent := range span.Parents {
+	propagate := func(parent *Span, failure, activity bool) bool {
 		var changed bool
 		if span.IsRunningOrEffectsRunning() {
 			changed = parent.RunningSpans.Add(span)
 		} else {
 			changed = parent.RunningSpans.Remove(span)
 		}
-		if changed {
+		if span.Reveal {
+			changed = parent.RevealedSpans.Add(span) || changed
+		}
+		if failure && span.IsFailed() {
+			changed = parent.FailedLinks.Add(span) || changed
+		}
+		if activity && parent.Activity.Add(span) {
+			changed = true
+		}
+		return changed
+	}
+
+	for parent := range span.Parents {
+		// don't propagate failure, to respect encapsulation
+		// don't propagate activity, since these are direct parents
+		if propagate(parent, false, false) {
 			span.db.update(parent)
 		}
 	}
 
 	for causal := range span.CausalSpans {
-		var changed bool
-		if span.IsRunning() {
-			changed = causal.RunningSpans.Add(span)
-		} else {
-			changed = causal.RunningSpans.Remove(span)
-		}
-
-		if span.IsFailed() {
-			causal.FailedLinks.Add(span)
-		}
-
-		if causal.Activity.Add(span) {
-			changed = true
-		}
-
-		if changed {
+		// propagate activity and failure, since causal spans inherit both
+		if propagate(causal, true, true) {
 			span.db.update(causal)
 		}
 
 		for parent := range causal.Parents {
-			var changed bool
-			if span.IsRunning() {
-				changed = parent.RunningSpans.Add(span)
-			} else {
-				changed = parent.RunningSpans.Remove(span)
-			}
-			if parent.Activity.Add(span) {
-				changed = true
-			}
-			if changed {
+			// don't propagate failure, to respect encapsulation
+			// do propagate activity, since these are indirect parents
+			if propagate(parent, false, true) {
 				span.db.update(parent)
 			}
 		}
@@ -322,20 +363,14 @@ func (span *Span) FailedReason() (bool, []string) {
 }
 
 func (span *Span) Parents(f func(*Span) bool) {
-	var keepGoing bool
-	// if the loop breaks while recursing we need to stop recursing, so we track
-	// that by man-in-the-middling the return value.
-	recurse := func(s *Span) bool {
-		keepGoing = f(s)
-		return keepGoing
-	}
 	if span.ParentSpan != nil {
 		if !f(span.ParentSpan) {
 			return
 		}
-		span.ParentSpan.Parents(recurse)
-		if !keepGoing {
-			return
+		for parent := range span.ParentSpan.Parents {
+			if !f(parent) {
+				break
+			}
 		}
 	}
 }
@@ -356,14 +391,18 @@ func (span *Span) VisibleParent(opts FrontendOpts) *Span {
 }
 
 func (span *Span) Hidden(opts FrontendOpts) bool {
-	if span.IsInternal() && opts.Verbosity < ShowInternalVerbosity {
+	verbosity := opts.Verbosity
+	if v, ok := opts.SpanVerbosity[span.ID]; ok {
+		verbosity = v
+	}
+	if span.IsInternal() && verbosity < ShowInternalVerbosity {
 		// internal spans are hidden by default
 		return true
 	}
 	if span.ParentSpan != nil &&
 		(span.Encapsulated || span.ParentSpan.Encapsulate) &&
 		!span.ParentSpan.IsFailed() &&
-		opts.Verbosity < ShowEncapsulatedVerbosity {
+		verbosity < ShowEncapsulatedVerbosity {
 		// encapsulated steps are hidden (even on error) unless their parent errors
 		return true
 	}
@@ -374,9 +413,23 @@ func (span *Span) IsRunning() bool {
 	return span.EndTime.Before(span.StartTime)
 }
 
+// CausalSpans iterates over the spans that directly cause this span, by following
+// links (for newer engines) or attributes (for old engines).
 func (span *Span) CausalSpans(f func(*Span) bool) {
+	var visit func(*Span) bool
+	visit = func(s *Span) bool {
+		if !f(s) {
+			return false
+		}
+		for cause := range s.CausalSpans {
+			if !visit(cause) {
+				return false
+			}
+		}
+		return true
+	}
 	for _, cause := range span.causesViaLinks.Order {
-		if !f(cause) {
+		if !visit(cause) {
 			return
 		}
 	}
@@ -386,7 +439,7 @@ func (span *Span) CausalSpans(f func(*Span) bool) {
 				// cannot possibly be "caused" by it, since it came after
 				continue
 			}
-			if !f(cause) {
+			if !visit(cause) {
 				return
 			}
 		}
@@ -556,11 +609,6 @@ func (span *Span) CanceledReason() (bool, []string) {
 	var reasons []string
 	if span.Canceled {
 		reasons = append(reasons, "span says it is canceled")
-	}
-	if span.db.RootSpan != nil &&
-		!span.db.RootSpan.IsRunning() &&
-		span.IsRunningOrEffectsRunning() {
-		reasons = append(reasons, "root span completed, but this span span was still running")
 	}
 	return len(reasons) > 0, reasons
 }

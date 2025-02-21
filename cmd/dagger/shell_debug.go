@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/muesli/reflow/indent"
 	"github.com/muesli/termenv"
 	"mvdan.cc/sh/v3/interp"
@@ -88,6 +90,7 @@ func shellDebugFormat(data any) string {
 
 func shellDebug(ctx context.Context, title string, data ...any) {
 	hctx := interp.HandlerCtx(ctx)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	msg := shellDebugLine(title, data...)
-	fmt.Fprint(hctx.Stderr, msg)
+	fmt.Fprint(io.MultiWriter(hctx.Stderr, stdio.Stderr), msg)
 }

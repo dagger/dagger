@@ -92,6 +92,7 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 			"with-exec", "--args", "echo,hey",
 			"stdout",
 		}, Fail: true},
+		{Function: "revealed-spans"},
 
 		// tests intended to trigger consistent tui exec metrics output
 		{Function: "disk-metrics", Verbosity: 3, FuzzyTest: func(t *testctx.T, out string) {
@@ -112,7 +113,7 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 			require.Contains(t, ddLine, "| Memory Bytes (peak): X.X B")
 
 			// note cpu pressure, io pressure, and network stats are not tested here. they only appear when nonzero.
-		}},
+		}, Flaky: "Depends on details of the engine runner (e.g. fails in Windows + WSL2)"},
 
 		{Module: "./viztest/broken", Function: "broken", Fail: true},
 
