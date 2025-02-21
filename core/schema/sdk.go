@@ -95,7 +95,7 @@ func (s *sdkLoader) sdkForModule(
 	}
 
 	// TODO: include sdk source dir from module config dagger.json once we support default-args/scripts
-	return s.newModuleSDK(ctx, query, sdkMod, dagql.Instance[*core.Directory]{})
+	return core.NewModuleSDK(ctx, query, sdkMod, dagql.Instance[*core.Directory]{})
 }
 
 // parse and validate the name and version from sdkName
@@ -177,132 +177,6 @@ func (s *sdkLoader) builtinSDK(ctx context.Context, root *core.Query, sdk *core.
 	return nil, getInvalidBuiltinSDKError(sdk.Source)
 }
 
-// moduleSDK is an SDK implemented as module; i.e. every module besides the special case go sdk.
-type moduleSDK struct {
-	// The module implementing this SDK.
-	mod dagql.Instance[*core.Module]
-	// A server that the SDK module has been installed to.
-	dag *dagql.Server
-	// The SDK object retrieved from the server, for calling functions against.
-	sdk dagql.Object
-}
-
-func (s *sdkLoader) newModuleSDK(
-	ctx context.Context,
-	root *core.Query,
-	sdkModMeta dagql.Instance[*core.Module],
-	optionalFullSDKSourceDir dagql.Instance[*core.Directory],
-) (*moduleSDK, error) {
-	dag := dagql.NewServer(root)
-
-	var err error
-	dag.Cache, err = root.Cache(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get cache for sdk module %s: %w", sdkModMeta.Self.Name(), err)
-	}
-	dag.Around(core.AroundFunc)
-
-	if err := sdkModMeta.Self.Install(ctx, dag); err != nil {
-		return nil, fmt.Errorf("failed to install sdk module %s: %w", sdkModMeta.Self.Name(), err)
-	}
-	defaultDeps, err := sdkModMeta.Self.Query.DefaultDeps(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get default deps for sdk module %s: %w", sdkModMeta.Self.Name(), err)
-	}
-	for _, defaultDep := range defaultDeps.Mods {
-		if err := defaultDep.Install(ctx, dag); err != nil {
-			return nil, fmt.Errorf("failed to install default dep %s for sdk module %s: %w", defaultDep.Name(), sdkModMeta.Self.Name(), err)
-		}
-	}
-
-	var sdk dagql.Object
-	var constructorArgs []dagql.NamedInput
-	if optionalFullSDKSourceDir.Self != nil {
-		constructorArgs = []dagql.NamedInput{
-			{Name: "sdkSourceDir", Value: dagql.Opt(dagql.NewID[*core.Directory](optionalFullSDKSourceDir.ID()))},
-		}
-	}
-	if err := dag.Select(ctx, dag.Root(), &sdk,
-		dagql.Selector{
-			Field: gqlFieldName(sdkModMeta.Self.Name()),
-			Args:  constructorArgs,
-		},
-	); err != nil {
-		return nil, fmt.Errorf("failed to get sdk object for sdk module %s: %w", sdkModMeta.Self.Name(), err)
-	}
-
-	return &moduleSDK{mod: sdkModMeta, dag: dag, sdk: sdk}, nil
-}
-
-// Codegen calls the Codegen function on the SDK Module
-func (sdk *moduleSDK) Codegen(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (_ *core.GeneratedCode, rerr error) {
-	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: run codegen")
-	defer telemetry.End(span, func() error { return rerr })
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.Self.Name(), err)
-	}
-
-	var inst dagql.Instance[*core.GeneratedCode]
-	err = sdk.dag.Select(ctx, sdk.sdk, &inst, dagql.Selector{
-		Field: "codegen",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "modSource",
-				Value: dagql.NewID[*core.ModuleSource](source.ID()),
-			},
-			{
-				Name:  "introspectionJson",
-				Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
-			},
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to call sdk module codegen: %w", err)
-	}
-	return inst.Self, nil
-}
-
-// Runtime calls the Runtime function on the SDK Module
-func (sdk *moduleSDK) Runtime(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (_ *core.Container, rerr error) {
-	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load runtime")
-	defer telemetry.End(span, func() error { return rerr })
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.Self.Name(), err)
-	}
-
-	var inst dagql.Instance[*core.Container]
-	err = sdk.dag.Select(ctx, sdk.sdk, &inst,
-		dagql.Selector{
-			Field: "moduleRuntime",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "modSource",
-					Value: dagql.NewID[*core.ModuleSource](source.ID()),
-				},
-				{
-					Name:  "introspectionJson",
-					Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
-				},
-			},
-		},
-		dagql.Selector{
-			Field: "withWorkdir",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.NewString(runtimeWorkdirPath),
-				},
-			},
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to call sdk module moduleRuntime: %w", err)
-	}
-	return inst.Self, nil
-}
-
 // loadBuiltinSDK loads an SDK implemented as a module that is "builtin" to engine, which means its pre-packaged
 // with the engine container in order to enable use w/out hard dependencies on the internet
 func (s *sdkLoader) loadBuiltinSDK(
@@ -310,7 +184,7 @@ func (s *sdkLoader) loadBuiltinSDK(
 	root *core.Query,
 	name string,
 	manifestDigest digest.Digest,
-) (*moduleSDK, error) {
+) (core.SDK, error) {
 	// TODO: currently hardcoding assumption that builtin sdks put *module* source code at
 	// "runtime" subdir right under the *full* sdk source dir. Can be generalized once we support
 	// default-args/scripts in dagger.json
@@ -351,7 +225,7 @@ func (s *sdkLoader) loadBuiltinSDK(
 		return nil, fmt.Errorf("failed to import module sdk %s: %w", name, err)
 	}
 
-	return s.newModuleSDK(ctx, root, sdkMod, fullSDKDir)
+	return core.NewModuleSDK(ctx, root, sdkMod, fullSDKDir)
 }
 
 const (
@@ -372,6 +246,14 @@ it with the resulting /runtime binary.
 type goSDK struct {
 	root *core.Query
 	dag  *dagql.Server
+}
+
+func (sdk *goSDK) AsCodegen(_ context.Context) (core.SDKCodegen, bool, error) {
+	return sdk, true, nil
+}
+
+func (sdk *goSDK) AsRuntime(_ context.Context) (core.SDKRuntime, bool, error) {
+	return sdk, true, nil
 }
 
 func (sdk *goSDK) Codegen(
