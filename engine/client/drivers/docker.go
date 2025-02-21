@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -92,7 +93,7 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, containerNam
 		containerName = containerNamePrefix + id
 	}
 
-	leftoverEngines, err := collectLeftoverEngines(ctx)
+	leftoverEngines, err := collectLeftoverEngines(ctx, containerName)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return nil, err
@@ -231,12 +232,16 @@ func traceExec(ctx context.Context, cmd *exec.Cmd, opts ...trace.SpanStartOption
 	return outBuf.String(), nil
 }
 
-func collectLeftoverEngines(ctx context.Context) ([]string, error) {
+func collectLeftoverEngines(ctx context.Context, additionalNames ...string) ([]string, error) {
+	names := []string{"^" + containerNamePrefix}
+	for _, name := range additionalNames {
+		names = append(names, "^"+regexp.QuoteMeta(name)+"$")
+	}
 	cmd := exec.CommandContext(ctx,
 		"docker", "ps",
 		"-a",
 		"--no-trunc",
-		"--filter", "name=^/"+containerNamePrefix,
+		"--filter", "name="+strings.Join(names, "|"),
 		"--format", "{{.Names}}",
 	)
 	output, err := traceExec(ctx, cmd)
