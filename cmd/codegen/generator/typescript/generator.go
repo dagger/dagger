@@ -3,6 +3,7 @@ package typescriptgenerator
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"path/filepath"
 	"sort"
 
@@ -20,7 +21,7 @@ type TypeScriptGenerator struct {
 }
 
 // Generate will generate the TypeScript SDK code and might modify the schema to reorder types in a alphanumeric fashion.
-func (g *TypeScriptGenerator) Generate(_ context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
+func (g *TypeScriptGenerator) GenerateModule(_ context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
 	generator.SetSchema(schema)
 
 	sort.SliceStable(schema.Types, func(i, j int) bool {
@@ -43,7 +44,7 @@ func (g *TypeScriptGenerator) Generate(_ context.Context, schema *introspection.
 		})
 	}
 
-	tmpl := templates.New(schemaVersion, g.Config.ModuleName, g.Config.ModuleParentPath)
+	tmpl := templates.New(schemaVersion, g.Config)
 	data := struct {
 		Schema        *introspection.Schema
 		SchemaVersion string
@@ -65,14 +66,20 @@ func (g *TypeScriptGenerator) Generate(_ context.Context, schema *introspection.
 	if g.Config.ModuleName != "" {
 		target = filepath.Join(g.Config.ModuleSourcePath, "sdk/src/api", ClientGenFile)
 	}
+
 	if err := mfs.MkdirAll(filepath.Dir(target), 0700); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create target directory %s: %w", filepath.Dir(target), err)
 	}
 	if err := mfs.WriteFile(target, b.Bytes(), 0600); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to write client file at %s: %w", target, err)
 	}
 
 	return &generator.GeneratedState{
 		Overlay: mfs,
 	}, nil
+}
+
+func (g *TypeScriptGenerator) GenerateClient(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
+	// This is the same as the module generator for TypeScript
+	return g.GenerateModule(ctx, schema, schemaVersion)
 }

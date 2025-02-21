@@ -50,11 +50,23 @@ type Config struct {
 	// where a pre-existing go.mod file is checked during dagger init for whether its module
 	// name is the expected value.
 	IsInit bool
+
+	// ClientOnly indicates that the codegen should only generate the client code.
+	ClientOnly bool
+
+	// LocalSDK indicates that the codegen should use the local SDK instead of the published one.
+	// This is only relevant when ClientOnly is true.
+	LocalSDK bool
 }
 
 type Generator interface {
-	// Generate runs codegen and returns a map of default filename to content for that file.
-	Generate(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*GeneratedState, error)
+	// GenerateModule runs codegen in a context of a module and returns a map of
+	// default filename to content for that file.
+	GenerateModule(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*GeneratedState, error)
+
+	// GenerateClient runs codegen in a context of a standalone client and returns
+	// a map of default filename to content for that file.
+	GenerateClient(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*GeneratedState, error)
 }
 
 type GeneratedState struct {
