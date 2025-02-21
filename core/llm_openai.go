@@ -98,6 +98,10 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 	}
 
 	stream := c.client.Chat.Completions.NewStreaming(ctx, params)
+	if stream.Err() != nil {
+		// errored establishing connection; bail so stream.Close doesn't panic
+		return nil, stream.Err()
+	}
 	defer stream.Close()
 
 	var logsW io.Writer
