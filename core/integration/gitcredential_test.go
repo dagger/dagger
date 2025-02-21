@@ -9,14 +9,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
 type GitCredentialSuite struct{}
 
 func TestGitCredential(t *testing.T) {
-	testctx.Run(testCtx, t, GitCredentialSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(GitCredentialSuite{})
 }
 
 // TestGitCredentialErrors verifies Git authentication for private modules across different providers

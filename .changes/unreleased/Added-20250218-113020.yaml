@@ -1,0 +1,6 @@
+kind: Added
+body: 'helm: Enable setting imagePullSecrets'
+time: 2025-02-18T11:30:20.657036Z
+custom:
+    Author: vmaffet
+    PR: "9609"

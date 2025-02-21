@@ -26,7 +26,7 @@ The consolidated steps to use a custom runner are:
 - If changes to the base image are needed, make those and push them to a
   registry. If no changes are needed, just use it as is.
 - Start the runner image in your target of choice, [requirements](#execution-requirements) and [configuration](#configuration) in mind.
-- Export the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable with a [a value pointing to your target](#connection-interface).
+- Export the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable with a [value pointing to your target](#connection-interface).
 - Call `dagger call` or execute SDK code directly with that environment variable set.
 
 :::important
@@ -112,7 +112,7 @@ Use the following commands to deploy a GPU-enabled Dagger runner on Fly.io:
 ```shell
 export FLYIO_TOKEN=YOUR-FLY.IO-TOKEN
 export FLYIO_ORG=YOUR-FLY.IO-ORG-NAME
-dagger -m github.com/samalba/dagger-modules/nvidia-gpu call deploy-dagger-on-fly --token env:FLYIO_TOKEN --org env:FLYIO_ORG
+dagger -m github.com/samalba/dagger-modules/nvidia-gpu call deploy-dagger-on-fly --token env://FLYIO_TOKEN --org env://FLYIO_ORG
 ```
 
 :::note
@@ -132,7 +132,7 @@ To stop using the remote Dagger Engine on Fly.io and return to using your local 
 ```shell
 unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
 # Make sure the Fly app name matches the one that was provisioned earlier
-dagger -m github.com/samalba/dagger-modules/nvidia-gpu call destroy-dagger-on-fly --token env:FLYIO_TOKEN --app dagger-v0-14-0-smart-gerhard-2024-12-06
+dagger -m github.com/samalba/dagger-modules/nvidia-gpu call destroy-dagger-on-fly --token env://FLYIO_TOKEN --app dagger-v0-14-0-smart-gerhard-2024-12-06
 ```
 </TabItem>
 <TabItem value="Lambda Labs">

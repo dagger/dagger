@@ -339,31 +339,10 @@ func (s *moduleSourceSchema) localModuleSource(
 	}
 
 	if !daggerCfgFound {
-		// Even if dagger.json doesn't exist yet, the source root dir may exist and have contents we should load
-		// (e.g. a module source file from a previous module whose dagger.json was deleted).
+		// fill in an empty dir at the source root so the context dir digest incorporates that path
 		var srcRootDir dagql.Instance[*core.Directory]
-		_, err := bk.StatCallerHostPath(ctx, sourceRootPath, true)
-		switch {
-		case err == nil:
-			err := s.dag.Select(ctx, s.dag.Root(), &srcRootDir,
-				dagql.Selector{Field: "host"},
-				dagql.Selector{
-					Field: "directory",
-					Args: []dagql.NamedInput{
-						{Name: "path", Value: dagql.String(sourceRootPath)},
-					},
-				},
-			)
-			if err != nil {
-				return inst, fmt.Errorf("failed to load local module source root: %w", err)
-			}
-		case codes.NotFound == status.Code(err):
-			// fill in an empty dir at the source root so the context dir digest incorporates that path
-			if err := s.dag.Select(ctx, s.dag.Root(), &srcRootDir, dagql.Selector{Field: "directory"}); err != nil {
-				return inst, fmt.Errorf("failed to create empty directory for source root subpath: %w", err)
-			}
-		default:
-			return inst, fmt.Errorf("failed to stat source root path: %w", err)
+		if err := s.dag.Select(ctx, s.dag.Root(), &srcRootDir, dagql.Selector{Field: "directory"}); err != nil {
+			return inst, fmt.Errorf("failed to create empty directory for source root subpath: %w", err)
 		}
 
 		err = s.dag.Select(ctx, s.dag.Root(), &localSrc.ContextDirectory,
@@ -398,7 +377,7 @@ func (s *moduleSourceSchema) localModuleSource(
 			}
 
 			if localSrc.SDK != nil {
-				localSrc.SDKImpl, err = s.sdkForModule(ctx, query.Self, localSrc.SDK, localSrc)
+				localSrc.SDKImpl, err = newSDKLoader(s.dag).sdkForModule(ctx, query.Self, localSrc.SDK, localSrc)
 				if err != nil {
 					return fmt.Errorf("failed to load sdk for local module source: %w", err)
 				}
@@ -411,7 +390,7 @@ func (s *moduleSourceSchema) localModuleSource(
 		for i, depCfg := range localSrc.ConfigDependencies {
 			eg.Go(func() error {
 				var err error
-				localSrc.Dependencies[i], err = s.resolveDepToSource(ctx, bk, localSrc, depCfg.Source, depCfg.Pin, depCfg.Name)
+				localSrc.Dependencies[i], err = resolveDepToSource(ctx, bk, s.dag, localSrc, depCfg.Source, depCfg.Pin, depCfg.Name)
 				if err != nil {
 					return fmt.Errorf("failed to resolve dep to source: %w", err)
 				}
@@ -559,7 +538,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 		}
 
 		if gitSrc.SDK != nil {
-			gitSrc.SDKImpl, err = s.sdkForModule(ctx, query.Self, gitSrc.SDK, gitSrc)
+			gitSrc.SDKImpl, err = newSDKLoader(s.dag).sdkForModule(ctx, query.Self, gitSrc.SDK, gitSrc)
 			if err != nil {
 				return fmt.Errorf("failed to load sdk for git module source: %w", err)
 			}
@@ -572,7 +551,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 	for i, depCfg := range gitSrc.ConfigDependencies {
 		eg.Go(func() error {
 			var err error
-			gitSrc.Dependencies[i], err = s.resolveDepToSource(ctx, bk, gitSrc, depCfg.Source, depCfg.Pin, depCfg.Name)
+			gitSrc.Dependencies[i], err = resolveDepToSource(ctx, bk, s.dag, gitSrc, depCfg.Source, depCfg.Pin, depCfg.Name)
 			if err != nil {
 				return fmt.Errorf("failed to resolve dep to source: %w", err)
 			}
@@ -671,7 +650,7 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 			}
 
 			var err error
-			dirSrc.SDKImpl, err = s.sdkForModule(ctx, contextDir.Self.Query, dirSrc.SDK, dirSrc)
+			dirSrc.SDKImpl, err = newSDKLoader(s.dag).sdkForModule(ctx, contextDir.Self.Query, dirSrc.SDK, dirSrc)
 			if err != nil {
 				return fmt.Errorf("failed to load sdk for dir module source: %w", err)
 			}
@@ -684,7 +663,7 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 	for i, depCfg := range dirSrc.ConfigDependencies {
 		eg.Go(func() error {
 			var err error
-			dirSrc.Dependencies[i], err = s.resolveDepToSource(ctx, bk, dirSrc, depCfg.Source, depCfg.Pin, depCfg.Name)
+			dirSrc.Dependencies[i], err = resolveDepToSource(ctx, bk, s.dag, dirSrc, depCfg.Source, depCfg.Pin, depCfg.Name)
 			if err != nil {
 				return fmt.Errorf("failed to resolve dep to source: %w", err)
 			}
@@ -842,9 +821,10 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 }
 
 // given a parent module source, load a dependency of it from the given depSrcRef, depPin and depName
-func (s *moduleSourceSchema) resolveDepToSource(
+func resolveDepToSource(
 	ctx context.Context,
 	bk *buildkit.Client,
+	dag *dagql.Server,
 	parentSrc *core.ModuleSource,
 	depSrcRef string,
 	depPin string,
@@ -910,7 +890,7 @@ func (s *moduleSourceSchema) resolveDepToSource(
 					},
 				})
 			}
-			err = s.dag.Select(ctx, s.dag.Root(), &inst, selectors...)
+			err = dag.Select(ctx, dag.Root(), &inst, selectors...)
 			if err != nil {
 				if errors.Is(err, dagql.ErrCacheMapRecursiveCall) {
 					return inst, fmt.Errorf("module %q has a circular dependency on itself through dependency %q", parentSrc.ModuleName, depName)
@@ -943,7 +923,7 @@ func (s *moduleSourceSchema) resolveDepToSource(
 					},
 				})
 			}
-			err := s.dag.Select(ctx, s.dag.Root(), &inst, selectors...)
+			err := dag.Select(ctx, dag.Root(), &inst, selectors...)
 			if err != nil {
 				return inst, fmt.Errorf("failed to load local dep: %w", err)
 			}
@@ -967,7 +947,7 @@ func (s *moduleSourceSchema) resolveDepToSource(
 					},
 				})
 			}
-			err := s.dag.Select(ctx, parentSrc.ContextDirectory, &inst, selectors...)
+			err := dag.Select(ctx, parentSrc.ContextDirectory, &inst, selectors...)
 			if err != nil {
 				return inst, fmt.Errorf("failed to load local dep: %w", err)
 			}
@@ -994,7 +974,7 @@ func (s *moduleSourceSchema) resolveDepToSource(
 				},
 			})
 		}
-		err := s.dag.Select(ctx, s.dag.Root(), &inst, selectors...)
+		err := dag.Select(ctx, dag.Root(), &inst, selectors...)
 		if err != nil {
 			return inst, fmt.Errorf("failed to load git dep: %w", err)
 		}
@@ -1156,7 +1136,7 @@ func (s *moduleSourceSchema) moduleSourceWithSDK(
 
 	// reload the sdk implementation too
 	var err error
-	src.SDKImpl, err = s.sdkForModule(ctx, src.Query, src.SDK, src)
+	src.SDKImpl, err = newSDKLoader(s.dag).sdkForModule(ctx, src.Query, src.SDK, src)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load sdk for module source: %w", err)
 	}

@@ -8,14 +8,14 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
 type ShellSuite struct{}
 
 func TestShell(t *testing.T) {
-	testctx.Run(testCtx, t, ShellSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(ShellSuite{})
 }
 
 func daggerShell(script string) dagger.WithContainerFunc {

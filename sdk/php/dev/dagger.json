@@ -3,6 +3,5 @@
   "engineVersion": "v0.15.2",
   "sdk": {
     "source": "php"
-  },
-  "source": "."
+  }
 }
