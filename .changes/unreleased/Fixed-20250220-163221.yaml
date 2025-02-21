@@ -1,0 +1,6 @@
+kind: Fixed
+body: Improve load time when dagger commands run in directories with no dagger.json
+time: 2025-02-20T16:32:21.452320328-08:00
+custom:
+  Author: sipsma
+  PR: "9659"
