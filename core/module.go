@@ -624,6 +624,10 @@ type Mod interface {
 // The generated client is standalone and can be used in any project, even if no source code module is
 // available.
 type ClientGenerator interface {
+	// RequiredClientGenerationFiles returns the list of files that are required from the host
+	// to generate the client.
+	RequiredClientGenerationFiles(ctx context.Context) (dagql.Array[dagql.String], error)
+
 	// Generate client binding for the module and its dependencies at the given output directory.
 	// The generated client will be placed in the same directory as the module source root dir
 	// and contains bindings for all of the module's dependencies in addition to the

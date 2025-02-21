@@ -112,7 +112,7 @@ if (!tsconfig.compilerOptions.paths) {
 }
 
 tsconfig.compilerOptions.paths[daggerClientPathAlias] = [
-  path.join(libraryDir.value, "client.gen.ts"),
+  path.join("./", libraryDir.value, "client.gen.ts"),
 ]
 
 if (localSDK) {
