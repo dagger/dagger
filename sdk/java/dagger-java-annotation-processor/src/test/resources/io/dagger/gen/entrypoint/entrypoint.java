@@ -237,8 +237,7 @@ public class Entrypoint {
           if (inputArgs.get("b") != null) {
             b = (float) JsonConverter.fromJSON(dag, inputArgs.get("b"), float.class);
           }
-          Method fn = clazz.getMethod("addFloat", float.class, float.class);
-          float res = (float) fn.invoke(obj, a, b);
+          float res = obj.addFloat(a, b);
           return JsonConverter.toJSON(res);
         }
       }
