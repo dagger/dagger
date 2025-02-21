@@ -1,5 +1,4 @@
 import fs from "fs"
-import path from "path"
 
 const daggerPathAlias = "@dagger.io/dagger"
 const daggerTelemetryPathAlias = "@dagger.io/dagger/telemetry"
