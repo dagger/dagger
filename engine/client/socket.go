@@ -46,7 +46,7 @@ func (p SocketProvider) CheckAgent(ctx context.Context, req *sshforward.CheckAge
 		}
 	case "tcp", "udp":
 	default:
-		return nil, status.Errorf(codes.InvalidArgument, "invalid id: unsupported scheme %q", u.Scheme)
+		return nil, status.Errorf(codes.InvalidArgument, "invalid id: unsupported scheme %#v", u)
 	}
 	return &sshforward.CheckAgentResponse{}, nil
 }
