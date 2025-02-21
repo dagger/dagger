@@ -124,30 +124,37 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
 
           Optional<ConstructorInfo> constructorInfo = Optional.empty();
           if (mainObject) {
-            Optional<? extends Element> constructorDef =
+            List<? extends Element> constructorDefs =
                 typeElement.getEnclosedElements().stream()
                     .filter(elt -> elt.getKind() == ElementKind.CONSTRUCTOR)
                     .filter(elt -> !((ExecutableElement) elt).getParameters().isEmpty())
-                    .findFirst();
-            constructorInfo =
-                constructorDef.map(
-                    elt ->
-                        new ConstructorInfo(
-                            ((ExecutableElement) elt)
-                                .getParameters()
-                                .get(0)
-                                .asType()
-                                .toString()
-                                .equals("io.dagger.client.Client"),
-                            new FunctionInfo(
-                                "<init>",
-                                "New",
-                                parseFunctionDescription(elt),
-                                new TypeInfo(
-                                    ((ExecutableElement) elt).getReturnType().toString(),
-                                    ((ExecutableElement) elt).getReturnType().getKind().name()),
-                                parseParameters((ExecutableElement) elt)
-                                    .toArray(new ParameterInfo[0]))));
+                    .toList();
+            if (constructorDefs.size() == 1) {
+              Element elt = constructorDefs.get(0);
+              constructorInfo =
+                  Optional.of(
+                      new ConstructorInfo(
+                          ((ExecutableElement) elt)
+                              .getParameters()
+                              .get(0)
+                              .asType()
+                              .toString()
+                              .equals("io.dagger.client.Client"),
+                          new FunctionInfo(
+                              "<init>",
+                              "New",
+                              parseFunctionDescription(elt),
+                              new TypeInfo(
+                                  ((ExecutableElement) elt).getReturnType().toString(),
+                                  ((ExecutableElement) elt).getReturnType().getKind().name()),
+                              parseParameters((ExecutableElement) elt)
+                                  .toArray(new ParameterInfo[0]))));
+            } else if (constructorDefs.size() > 1) {
+              // There's more than one non-empty constructor, but Dagger only supports to expose a
+              // single one
+              throw new RuntimeException(
+                  "The class %s must have a single non-empty constructor".formatted(qName));
+            }
           }
 
           List<FieldInfo> fieldInfoInfos =
