@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
-	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
@@ -99,9 +101,23 @@ func withEngine(
 
 		// Automatically serve the module in the context directory if available.
 		if params.ServeModule {
-			mod, exist, err := initializeClientGeneratorModule(ctx, sess.Dagger(), ".", dagger.ModuleSourceOpts{
-				AllowNotExists: true,
-			})
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get current working directory: %w", err)
+			}
+
+			// Check if the current context directory contains a dagger.json file.
+			configFound, err := doDaggerConfigExist(cwd)
+			if err != nil {
+				return fmt.Errorf("failed to check if current working directory contains a dagger.json file: %w", err)
+			}
+
+			if !configFound {
+				// If not, directly execute the function.
+				return fn(ctx, sess)
+			}
+
+			mod, exist, err := initializeClientGeneratorModule(ctx, sess.Dagger(), ".")
 			if err != nil {
 				return fmt.Errorf("failed to initialize current module: %w", err)
 			}
@@ -118,6 +134,45 @@ func withEngine(
 
 		return fn(ctx, sess)
 	})
+}
+
+// doDaggerConfigExist searches for dagger.json recursively in parent directories until
+// it finds a dagger.json file, reaches the context directory or reaches the root directory.
+// This is very similar to the findUp logic of the engine but it only looks for the
+// file existence prior to loading the module to not create unnecessary operation on the
+// engine.
+func doDaggerConfigExist(dir string) (bool, error) {
+	daggerPath := filepath.Join(dir, modules.Filename)
+	gitPath := filepath.Join(dir, ".git")
+
+	// Check if dagger.json exists
+	_, err := os.Stat(daggerPath)
+	if err == nil {
+		return true, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return false, fmt.Errorf("failed to look for dagger.json file: %w", err)
+	}
+
+	// Check if .git directory exists and stop to search if found
+	_, err = os.Stat(gitPath)
+	if err == nil {
+		return false, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return false, fmt.Errorf("failed to look for .git directory: %w", err)
+	}
+
+	// Get the parent directory
+	parentDir := filepath.Dir(dir)
+
+	// Stop if we've reached the root directory
+	if parentDir == dir {
+		return false, nil
+	}
+
+	// Recurse into the parent directory
+	return doDaggerConfigExist(parentDir)
 }
 
 func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
