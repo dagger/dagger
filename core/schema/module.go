@@ -678,6 +678,26 @@ func (s *moduleSchema) moduleGenerateClient(
 		return nil, fmt.Errorf("failed to load generator module %s: %w", args.Generator, err)
 	}
 
+	requiredClientGenerationFiles, err := generator.RequiredClientGenerationFiles(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get required client generation files: %w", err)
+	}
+
+	// Add extra files required to correctly generate the client
+	var source dagql.Instance[*core.ModuleSource]
+	err = s.dag.Select(ctx, mod.Source, &source, dagql.Selector{
+		Field: "withIncludes",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "patterns",
+				Value: dagql.ArrayInput[dagql.String](requiredClientGenerationFiles),
+			},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to add module source required files: %w", err)
+	}
+
 	// Clone the module and add it to the deps so its binding are also generated
 	mod.Deps = mod.Deps.Append(mod.Clone())
 
@@ -685,7 +705,13 @@ func (s *moduleSchema) moduleGenerateClient(
 	// Remove the definitions from the module so they does not conflict with its self dependency
 	mod = mod.CloneWithoutDefs()
 
-	generatedClientDir, err := generator.GenerateClient(ctx, mod.Source, mod.Deps, args.OutputDir.String(), args.LocalSdk.GetOr(false).Bool())
+	generatedClientDir, err := generator.GenerateClient(
+		ctx,
+		source,
+		mod.Deps,
+		args.OutputDir.String(),
+		args.LocalSdk.GetOr(false).Bool(),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate clients: %w", err)
 	}

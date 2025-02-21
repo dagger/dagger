@@ -234,6 +234,20 @@ func (s *sdkLoader) newModuleSDK(
 	return &moduleSDK{mod: sdkModMeta, dag: dag, sdk: sdk}, nil
 }
 
+func (sdk *moduleSDK) RequiredClientGenerationFiles(
+	ctx context.Context,
+) (res dagql.Array[dagql.String], err error) {
+	err = sdk.dag.Select(ctx, sdk.sdk, &res, dagql.Selector{
+		Field: "requiredClientGenerationFiles",
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get required client generation files: %w", err)
+	}
+
+	return res, nil
+}
+
 func (sdk *moduleSDK) GenerateClient(
 	ctx context.Context,
 	modSource dagql.Instance[*core.ModuleSource],
@@ -411,6 +425,10 @@ it with the resulting /runtime binary.
 type goSDK struct {
 	root *core.Query
 	dag  *dagql.Server
+}
+
+func (sdk *goSDK) RequiredClientGenerationFiles(_ context.Context) (dagql.Array[dagql.String], error) {
+	return dagql.NewStringArray("./go.mod", "./go.sum"), nil
 }
 
 func (sdk *goSDK) GenerateClient(
