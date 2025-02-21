@@ -525,12 +525,12 @@ func (llm *Llm) Sync(ctx context.Context, dag *dagql.Server) (*Llm, error) {
 								if bkErr.Stdout != "" {
 									errResponse += "\n\n<stdout>\n"
 									errResponse += bkErr.Stdout
-									errResponse += "\n</stdout>\n\n"
+									errResponse += "\n</stdout>"
 								}
 								if bkErr.Stderr != "" {
 									errResponse += "\n\n<stderr>\n"
 									errResponse += bkErr.Stderr
-									errResponse += "\n</stderr>\n\n"
+									errResponse += "\n</stderr>"
 								}
 								return strings.TrimSpace(errResponse), true
 							}
