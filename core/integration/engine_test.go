@@ -626,3 +626,22 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 		})
 	}
 }
+
+func (EngineSuite) TestModuleVersionCompatInvalid(ctx context.Context, t *testctx.T) {
+	// a variant of the above test, but the format of the config file has
+	// changed, and can't be correctly unmarshalled - but we should still get a
+	// reasonable error
+
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=bare", "--sdk=go")).
+		WithNewFile("dagger.json", `{ "name": "bare", "engineVersion": "v100.0.0", "sdk": 123 }`)
+	_, err := modGen.
+		With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+		Stdout(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, `module requires dagger v100.0.0, but you have`)
+}

@@ -255,9 +255,9 @@ func (s *moduleSourceSchema) localModuleSource(
 				if err != nil {
 					return inst, fmt.Errorf("failed to read module config file: %w", err)
 				}
-				var modCfg modules.ModuleConfigWithUserFields
-				if err := json.Unmarshal(contents, &modCfg); err != nil {
-					return inst, fmt.Errorf("failed to decode module config: %w", err)
+				modCfg, err := modules.ParseModuleConfig(contents)
+				if err != nil {
+					return inst, err
 				}
 
 				namedDep, ok := modCfg.DependencyByName(localPath)
@@ -690,9 +690,9 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 		return fmt.Errorf("source root path must be set")
 	}
 
-	modCfg := &modules.ModuleConfigWithUserFields{}
-	if err := json.Unmarshal(configBytes, modCfg); err != nil {
-		return fmt.Errorf("failed to unmarshal module config: %w", err)
+	modCfg, err := modules.ParseModuleConfig(configBytes)
+	if err != nil {
+		return err
 	}
 
 	src.ModuleName = modCfg.Name

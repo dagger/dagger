@@ -5039,11 +5039,16 @@ func schemaVersion(ctx context.Context) (string, error) {
 			WithNewFile("main.go", moduleSrc)
 
 		work = work.With(daggerExec("develop"))
-		daggerJSON, err := work.
+		_, err := work.
 			File("dagger.json").
 			Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, engine.Version, gjson.Get(daggerJSON, "engineVersion").String())
+
+		// sadly, just no way to handle this :(
+		// in the future, the format of dagger.json might change dramatically,
+		// and so there's no real way to know from the older version how to
+		// convert it back down
+		require.Error(t, err)
+		requireErrOut(t, err, `module requires dagger v100.0.0, but you have`)
 	})
 
 	t.Run("from missing", func(ctx context.Context, t *testctx.T) {
