@@ -5,7 +5,8 @@
     "source": "go"
   },
   "include": [
-    "engine/distconsts/**/*"
+    "engine/distconsts/**/*",
+    "sdk/typescript/runtime/**/*"
   ],
   "dependencies": [
     {
