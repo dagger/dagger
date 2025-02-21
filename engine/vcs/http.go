@@ -64,7 +64,6 @@ func httpsOrHTTP(importPath string) (urlStr string, body io.ReadCloser, err erro
 			}
 		}
 		closeBody(res)
-		//nolint:bodyclose
 		urlStr, res, err = fetch("http")
 	}
 	if err != nil {

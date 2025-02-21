@@ -7,10 +7,11 @@ includes:
 nightly:
   # version_template will override .Version for nightly builds:
   # https://goreleaser.com/customization/nightlies/#how-it-works
+  # version should *not* have a v prefix
   version_template: "{{ trimprefix .Tag \"v\" }}"
 
 archives:
-  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
+  - name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
     id: sha
     files:
       - LICENSE
