@@ -13,11 +13,11 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"gopkg.in/yaml.v3"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/client/pathutil"
@@ -564,56 +564,44 @@ func handleObjectLeaf(ctx context.Context, q *querybuilder.Selection, typeDef *m
 		return q, nil
 	}
 
-	typeName := obj.ProviderName()
-	origSel := q
+	// Use duck typing to detect supported functions.
+	var hasSync bool
+	var hasExport bool
+	var hasExportAllowParentDirPath bool
+	fns := obj.GetFunctions()
+	for _, fn := range fns {
+		if fn.Name == "sync" && len(fn.SupportedArgs()) == 0 {
+			hasSync = true
+		}
+		if fn.Name == "export" {
+			for _, a := range fn.SupportedArgs() {
+				if a.Name == "path" {
+					hasExport = true
+				}
+				if a.Name == "allowParentDirPath" {
+					hasExportAllowParentDirPath = true
+				}
+			}
+		}
+	}
 
 	// Convenience for sub-selecting `export` when `--output` is used
 	// on a core type that supports it.
 	// TODO: Replace with interface when possible.
-	if outputPath != "" {
-		switch typeName {
-		case Container, Directory, File:
-			q = q.Select("export").Arg("path", outputPath)
-			if typeName == File {
-				q = q.Arg("allowParentDirPath", true)
-			}
-			return q, nil
+	if outputPath != "" && hasExport {
+		q = q.Select("export").Arg("path", outputPath)
+		if hasExportAllowParentDirPath {
+			q = q.Arg("allowParentDirPath", true)
 		}
+		return q, nil
 	}
 
-	switch typeName {
-	case Container, Terminal:
-		// There's no fields in `Container` that trigger container execution so
-		// we use `sync` first to evaluate, and then load the new `Container`
-		// from that response before continuing.
-		// TODO: Use an interface when possible.
-		var id string
-		q = q.Select("sync")
-		if err := makeRequest(ctx, q, &id); err != nil {
-			return nil, err
-		}
-		q = q.Root().Select(fmt.Sprintf("load%sFromID", typeName)).Arg("id", id)
+	// TODO: Replace with interface when possible.
+	if hasSync {
+		return q.Select("sync"), nil
 	}
 
-	fns := GetLeafFunctions(obj)
-	names := make([]string, 0, len(fns))
-	for _, f := range fns {
-		names = append(names, f.Name)
-	}
-	if len(names) > 0 {
-		q = q.SelectMultiple(names...)
-	}
-
-	// If the selection didn't change, it means selectObjectLeaf
-	// didn't handle it, probably because there's no scalars to select
-	// for printing. Rather than error, just return an empty
-	// response without making an API request. At minimum, the
-	// object's name will be returned.
-	if q == origSel {
-		return nil, nil
-	}
-
-	return q, nil
+	return q.Select("id"), nil
 }
 
 func makeRequest(ctx context.Context, q *querybuilder.Selection, response any) error {
@@ -650,30 +638,11 @@ func handleResponse(returnType *modTypeDef, response any, o, e io.Writer) error 
 
 	// Command chain ended in an object, so add the _type field.
 	if returnType.AsFunctionProvider() != nil {
-		typeName := returnType.AsFunctionProvider().ProviderName()
-
-		if typeName == "Query" {
-			typeName = "Client"
-		}
-
-		// Add the object's name so we always have something to show.
-		payload := make(map[string]any)
-		payload["_type"] = typeName
-
-		if response == nil {
-			response = payload
-		} else {
-			r, err := addPayload(response, payload)
-			if err != nil {
-				return err
-			}
-			response = r
-		}
+		return printID(o, response)
 	}
 
 	buf := new(bytes.Buffer)
-	frmt := outputFormat(returnType)
-	if err := printResponse(buf, response, frmt); err != nil {
+	if err := printResponse(buf, response, returnType); err != nil {
 		return err
 	}
 
@@ -698,80 +667,33 @@ func handleResponse(returnType *modTypeDef, response any, o, e io.Writer) error 
 	return err
 }
 
-func outputFormat(typeDef *modTypeDef) string {
-	var outputFormat string
-
-	if typeDef != nil && typeDef.AsFunctionProvider() != nil {
-		// Use yaml when printing scalars because it's more human-readable
-		// and handles lists and multiline strings well.
-		if stdoutIsTTY {
-			outputFormat = "yaml"
-		} else {
-			outputFormat = "json"
-		}
+func printID(w io.Writer, response any) error {
+	encodedID, ok := response.(string)
+	if !ok {
+		return fmt.Errorf("expected encoded ID, got %T: %+v", response, response)
 	}
-
-	// The --json flag has precedence over the autodetected format above.
-	if jsonOutput {
-		outputFormat = "json"
+	var id call.ID
+	if err := id.Decode(encodedID); err != nil {
+		return fmt.Errorf("failed to decode ID: %w", err)
 	}
-
-	return outputFormat
+	_, err := fmt.Fprintf(w, "%s@%s\n", id.Type().ToAST().Name(), id.Digest())
+	return err
 }
 
-func printResponse(w io.Writer, response any, format string) error {
-	switch format {
-	case "json":
+func printResponse(w io.Writer, response any, typeDef *modTypeDef) error {
+	if jsonOutput {
 		// disable HTML escaping to improve readability
 		encoder := json.NewEncoder(w)
 		encoder.SetEscapeHTML(false)
 		encoder.SetIndent("", "    ")
 		return encoder.Encode(response)
-
-	case "yaml":
-		out, err := yaml.Marshal(response)
-		if err != nil {
-			return err
-		}
-		_, err = w.Write(out)
-		return err
-
-	case "":
-		return printPlainResult(w, response)
-
-	default:
-		return fmt.Errorf("wrong output format %q", format)
 	}
-}
 
-// addPayload merges a map into a response from getting an object's values.
-func addPayload(response any, payload map[string]any) (any, error) {
-	switch t := response.(type) {
-	case []any:
-		r := make([]any, 0, len(t))
-		for _, v := range t {
-			p, err := addPayload(v, payload)
-			if err != nil {
-				return nil, err
-			}
-			r = append(r, p)
-		}
-		return r, nil
-	case map[string]any:
-		if len(t) == 0 {
-			return payload, nil
-		}
-		r := make(map[string]any, len(t)+len(payload))
-		for k, v := range t {
-			r[k] = v
-		}
-		for k, v := range payload {
-			r[k] = v
-		}
-		return r, nil
-	default:
-		return nil, fmt.Errorf("unexpected response %T for object values: %+v", response, response)
+	if typeDef != nil && typeDef.AsFunctionProvider() != nil {
+		return printID(w, response)
 	}
+
+	return printPlainResult(w, response)
 }
 
 // writeOutputFile writes the buffer to a file, creating the parent directories
