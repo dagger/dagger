@@ -148,8 +148,10 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 			content += b.Text
 		case anthropic.ToolUseBlock:
 			var args map[string]any
-			if err := json.Unmarshal([]byte(b.Input), &args); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal tool input: %w", err)
+			if len(b.Input) > 0 {
+				if err := json.Unmarshal([]byte(b.Input), &args); err != nil {
+					return nil, fmt.Errorf("failed to unmarshal tool input: %w", err)
+				}
 			}
 			// Map tool-use blocks to our generic tool call structure.
 			toolCalls = append(toolCalls, ToolCall{
