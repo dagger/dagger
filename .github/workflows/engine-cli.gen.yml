@@ -2010,25 +2010,24 @@ jobs:
                 fi
 
                 echo "::group::Starting dev engine"
+
                 if ! [[ -x "$(command -v docker)" ]]; then
                     echo "docker is not installed"
                     exit 1
                 fi
+                if ! [[ -x "$(command -v dagger)" ]]; then
+                    echo "dagger is not installed"
+                    exit 1
+                fi
 
-                (
-                    cd "$DAGGER_SOURCE"/.dagger/mage
-                    go run main.go -w ../.. engine:dev
-                ) \
-                | sed 's/^export //' \
-                | while IFS= read -r line; do
-                    eval echo "$line"
-                done \
-                | tee "${GITHUB_ENV}"
+                $DAGGER_SOURCE/hack/build
+                export PATH=$DAGGER_SOURCE/bin:$PATH
+                echo "PATH=$PATH" >>"${GITHUB_ENV}"
 
                 echo "::endgroup::"
               env:
                 _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ github.run_id }}-${{ github.job }}
-                _EXPERIMENTAL_DAGGER_DEV_OUTPUT: ./bin/dev-${{ github.run_id }}-${{ github.job }}
+                _EXPERIMENTAL_DAGGER_DEV_IMAGE: localhost/dagger-engine.dev:${{ github.run_id }}-${{ github.job }}
                 DAGGER_SOURCE: .
               shell: bash
             - name: scripts/warm-engine.sh
@@ -2261,25 +2260,24 @@ jobs:
                 fi
 
                 echo "::group::Starting dev engine"
+
                 if ! [[ -x "$(command -v docker)" ]]; then
                     echo "docker is not installed"
                     exit 1
                 fi
+                if ! [[ -x "$(command -v dagger)" ]]; then
+                    echo "dagger is not installed"
+                    exit 1
+                fi
 
-                (
-                    cd "$DAGGER_SOURCE"/.dagger/mage
-                    go run main.go -w ../.. engine:dev
-                ) \
-                | sed 's/^export //' \
-                | while IFS= read -r line; do
-                    eval echo "$line"
-                done \
-                | tee "${GITHUB_ENV}"
+                $DAGGER_SOURCE/hack/build
+                export PATH=$DAGGER_SOURCE/bin:$PATH
+                echo "PATH=$PATH" >>"${GITHUB_ENV}"
 
                 echo "::endgroup::"
               env:
                 _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ github.run_id }}-${{ github.job }}
-                _EXPERIMENTAL_DAGGER_DEV_OUTPUT: ./bin/dev-${{ github.run_id }}-${{ github.job }}
+                _EXPERIMENTAL_DAGGER_DEV_IMAGE: localhost/dagger-engine.dev:${{ github.run_id }}-${{ github.job }}
                 DAGGER_SOURCE: .
               shell: bash
             - name: scripts/warm-engine.sh
@@ -2512,25 +2510,24 @@ jobs:
                 fi
 
                 echo "::group::Starting dev engine"
+
                 if ! [[ -x "$(command -v docker)" ]]; then
                     echo "docker is not installed"
                     exit 1
                 fi
+                if ! [[ -x "$(command -v dagger)" ]]; then
+                    echo "dagger is not installed"
+                    exit 1
+                fi
 
-                (
-                    cd "$DAGGER_SOURCE"/.dagger/mage
-                    go run main.go -w ../.. engine:dev
-                ) \
-                | sed 's/^export //' \
-                | while IFS= read -r line; do
-                    eval echo "$line"
-                done \
-                | tee "${GITHUB_ENV}"
+                $DAGGER_SOURCE/hack/build
+                export PATH=$DAGGER_SOURCE/bin:$PATH
+                echo "PATH=$PATH" >>"${GITHUB_ENV}"
 
                 echo "::endgroup::"
               env:
                 _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ github.run_id }}-${{ github.job }}
-                _EXPERIMENTAL_DAGGER_DEV_OUTPUT: ./bin/dev-${{ github.run_id }}-${{ github.job }}
+                _EXPERIMENTAL_DAGGER_DEV_IMAGE: localhost/dagger-engine.dev:${{ github.run_id }}-${{ github.job }}
                 DAGGER_SOURCE: .
               shell: bash
             - name: scripts/warm-engine.sh

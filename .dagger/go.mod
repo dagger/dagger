@@ -11,7 +11,6 @@ require (
 	github.com/BurntSushi/toml v0.3.1
 	github.com/Khan/genqlient v0.7.0
 	github.com/containerd/platforms v0.2.1
-	github.com/magefile/mage v1.15.0
 	github.com/moby/buildkit v0.14.0-rc1.0.20240603193914-3d789eb740a9
 	github.com/netlify/open-api/v2 v2.35.0
 	github.com/opencontainers/image-spec v1.1.0
