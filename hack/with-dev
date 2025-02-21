@@ -9,4 +9,5 @@ pushd $MAGEDIR > /dev/null
 eval $(go run main.go -w $DAGGER_SRC_ROOT engine:devenv)
 popd > /dev/null
 
+export PATH=$DAGGER_SRC_ROOT/bin:$PATH
 exec "$@"

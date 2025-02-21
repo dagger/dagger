@@ -1,0 +1,7 @@
+kind: Fixed
+body: Fixed panic when dagger call or dagger functions called in directory with no
+  modules. It now errors cleanly instead.
+time: 2025-02-20T15:37:42.759956892-08:00
+custom:
+  Author: sipsma
+  PR: "9658"
