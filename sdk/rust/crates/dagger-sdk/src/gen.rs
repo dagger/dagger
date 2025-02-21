@@ -5917,6 +5917,12 @@ pub struct Module {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleGenerateClientOpts {
+    /// Use local SDK dependency
+    #[builder(setter(into, strip_option), default)]
+    pub local_sdk: Option<bool>,
+}
 impl Module {
     /// The dependencies of the module.
     pub fn dependencies(&self) -> Vec<Module> {
@@ -5940,6 +5946,52 @@ impl Module {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }]
+    }
+    /// Generates a client for the module.
+    ///
+    /// # Arguments
+    ///
+    /// * `generator` - The generator to use
+    /// * `output_dir` - The output directory for the generated client.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn generate_client(
+        &self,
+        generator: impl Into<String>,
+        output_dir: impl Into<String>,
+    ) -> Directory {
+        let mut query = self.selection.select("generateClient");
+        query = query.arg("generator", generator.into());
+        query = query.arg("outputDir", output_dir.into());
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Generates a client for the module.
+    ///
+    /// # Arguments
+    ///
+    /// * `generator` - The generator to use
+    /// * `output_dir` - The output directory for the generated client.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn generate_client_opts(
+        &self,
+        generator: impl Into<String>,
+        output_dir: impl Into<String>,
+        opts: ModuleGenerateClientOpts,
+    ) -> Directory {
+        let mut query = self.selection.select("generateClient");
+        query = query.arg("generator", generator.into());
+        query = query.arg("outputDir", output_dir.into());
+        if let Some(local_sdk) = opts.local_sdk {
+            query = query.arg("localSdk", local_sdk);
+        }
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// The generated files and directories made on top of the module source's context directory.
     pub fn generated_context_directory(&self) -> Directory {
