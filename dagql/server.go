@@ -216,6 +216,19 @@ var coreDirectives = []DirectiveSpec{
 			DirectiveLocationInputObject,
 		},
 	},
+	{
+		Name:        "enumValue",
+		Description: FormatDescription(`XXX`),
+		Args: []InputSpec{
+			{
+				Name: "value",
+				Type: String(""),
+			},
+		},
+		Locations: []DirectiveLocation{
+			DirectiveLocationEnumValue,
+		},
+	},
 }
 
 // Root returns the root object of the server. It is suitable for passing to

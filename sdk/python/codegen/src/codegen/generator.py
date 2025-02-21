@@ -24,6 +24,7 @@ from typing import (
     cast,
 )
 
+import graphql
 from graphql import (
     GraphQLArgument,
     GraphQLEnumType,
@@ -152,6 +153,8 @@ class Handler(ABC, Generic[_H]):
     ctx: Context
     """Generation execution context."""
 
+    schema: GraphQLSchema
+
     predicate: ClassVar[Predicate] = staticmethod(lambda _: False)
     """Does this handler render the given type?"""
 
@@ -203,10 +206,10 @@ def generate(schema: GraphQLSchema) -> Iterator[str]:
     ctx = Context(ids=ids)
 
     handlers: tuple[Handler, ...] = (
-        Scalar(ctx),
-        Enum(ctx),
-        Input(ctx),
-        Object(ctx),
+        Scalar(ctx, schema),
+        Enum(ctx, schema),
+        Input(ctx, schema),
+        Object(ctx, schema),
     )
 
     # Split into two iterators to update ctx.remaining.
@@ -716,8 +719,16 @@ class Enum(Handler[GraphQLEnumType]):
         for name, value in sorted(t.values.items()):
             yield ""
 
+            val = None
+            if value.ast_node and (directive := self.schema.get_directive("enumValue")):
+                args = graphql.get_directive_values(directive, value.ast_node)
+                if args:
+                    val = args["value"]
+            if not val:
+                val = value.value
+
             # repr uses single quotes for strings, contrary to black
-            val = repr(value.value).replace("'", '"')
+            val = repr(val).replace("'", '"')
             yield f"{name} = {val}"
 
             if value.description:

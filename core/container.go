@@ -1751,11 +1751,10 @@ type ImageLayerCompression string
 var ImageLayerCompressions = dagql.NewEnum[ImageLayerCompression]()
 
 var (
-	// FIXME: should be canonicalized as GZIP, ZSTD, ESTARGZ, UNCOMPRESSED
-	CompressionGzip         = ImageLayerCompressions.Register("Gzip")
-	CompressionZstd         = ImageLayerCompressions.Register("Zstd")
-	CompressionEStarGZ      = ImageLayerCompressions.Register("EStarGZ")
-	CompressionUncompressed = ImageLayerCompressions.Register("Uncompressed")
+	CompressionGzip         = ImageLayerCompressions.Register("GZIP")
+	CompressionZstd         = ImageLayerCompressions.Register("ZSTD")
+	CompressionEStarGZ      = ImageLayerCompressions.Register("ESTARGZ")
+	CompressionUncompressed = ImageLayerCompressions.Register("UNCOMPRESSED")
 )
 
 func (proto ImageLayerCompression) Type() *ast.Type {
@@ -1782,14 +1781,14 @@ type ImageMediaTypes string
 var ImageMediaTypesEnum = dagql.NewEnum[ImageMediaTypes]()
 
 var (
-	// FIXME: should be canonicalized as OCI_MEDIA_TYPES, DOCKER_MEDIA_TYPES
-	OCIMediaTypes    = ImageMediaTypesEnum.Register("OCIMediaTypes")
-	DockerMediaTypes = ImageMediaTypesEnum.Register("DockerMediaTypes")
+	OCIMediaTypes    = ImageMediaTypesEnum.Register("OCI")
+	DockerMediaTypes = ImageMediaTypesEnum.Register("DOCKER")
 )
 
 func (proto ImageMediaTypes) Type() *ast.Type {
 	return &ast.Type{
-		NamedType: "ImageMediaTypes",
+		// XXX: renaming types is hard
+		NamedType: "ImageMediaType",
 		NonNull:   true,
 	}
 }

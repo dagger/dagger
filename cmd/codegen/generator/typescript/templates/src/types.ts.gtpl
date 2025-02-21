@@ -35,20 +35,38 @@ export type {{ .Name }} = string & {__{{ .Name }}: never} {{- with .Directives.S
  */
 		{{- end }}
 export enum {{ .Name }} { {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
-		{{- $sortedEnumValues := SortEnumFields .EnumValues }}
-		{{- range $sortedEnumValues }}
-			{{- if .Description }}
-				{{- /* Split comment string into a slice of one line per element. */ -}}
-				{{- $desc := CommentToLines .Description }}
+    {{- $enumName := .Name }}
+	{{- range $fields := .EnumValues | SortEnumFields | GroupEnumByValue }}
+	{{- $mainFieldName := "" }}
+	{{- range $idx, $field := slice $fields }}
+		{{- $fieldName := ($field.Name | FormatEnum) }}
+
+		{{- $fieldValue := "" }}
+		{{ if eq $idx 0 }}
+			{{- $fieldValue = $field.Directives.EnumValue }}
+			{{- if not $fieldValue }}
+				{{- $fieldValue = $field.Name }}
+			{{- end }}
+			{{- $fieldValue = $fieldValue | printf "%q" }}
+
+			{{- $mainFieldName = $fieldName }}
+		{{ else }}
+			{{- $fieldValue = printf "%s.%s" $enumName $mainFieldName }}
+		{{ end }}
+
+		{{- if .Description }}
+			{{- /* Split comment string into a slice of one line per element. */ -}}
+			{{- $desc := CommentToLines .Description }}
 
   /**
-				{{- range $desc }}
+			{{- range $desc }}
    * {{ . }}
-				{{- end }}
-   */
 			{{- end }}
-  {{ .Name | FormatEnum }} = "{{ .Name }}", {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+   */
 		{{- end }}
+		{{ $fieldName }} = {{ $fieldValue }}, {{- with $field.Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+	{{- end }}
+	{{- end }}
 }
 	{{- end }}
 

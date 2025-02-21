@@ -286,14 +286,14 @@ func shellPreprocessArgs(ctx context.Context, fn *modFunction, args []string) ([
 		name := arg.FlagName()
 
 		switch arg.TypeDef.Kind {
-		case dagger.TypeDefKindListKind:
+		case dagger.TypeDefKindList:
 			switch arg.TypeDef.AsList.ElementTypeDef.Kind {
-			case dagger.TypeDefKindBooleanKind:
+			case dagger.TypeDefKindBoolean:
 				flags.BoolSlice(name, nil, "")
 			default:
 				flags.StringSlice(name, nil, "")
 			}
-		case dagger.TypeDefKindBooleanKind:
+		case dagger.TypeDefKindBoolean:
 			flags.Bool(name, false, "")
 		default:
 			flags.String(name, "", "")
@@ -583,7 +583,7 @@ func (h *shellCallHandler) Result(
 		return nil, fn.ReturnType, err
 	}
 
-	if fn.ReturnType.Kind == dagger.TypeDefKindVoidKind {
+	if fn.ReturnType.Kind == dagger.TypeDefKindVoid {
 		return nil, fn.ReturnType, nil
 	}
 

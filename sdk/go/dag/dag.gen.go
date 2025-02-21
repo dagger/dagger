@@ -182,16 +182,16 @@ func LoadEngineFromID(id dagger.EngineID) *dagger.Engine {
 	return client.LoadEngineFromID(id)
 }
 
+// Load a EnumMemberTypeDef from its ID.
+func LoadEnumMemberTypeDefFromID(id dagger.EnumMemberTypeDefID) *dagger.EnumMemberTypeDef {
+	client := initClient()
+	return client.LoadEnumMemberTypeDefFromID(id)
+}
+
 // Load a EnumTypeDef from its ID.
 func LoadEnumTypeDefFromID(id dagger.EnumTypeDefID) *dagger.EnumTypeDef {
 	client := initClient()
 	return client.LoadEnumTypeDefFromID(id)
-}
-
-// Load a EnumValueTypeDef from its ID.
-func LoadEnumValueTypeDefFromID(id dagger.EnumValueTypeDefID) *dagger.EnumValueTypeDef {
-	client := initClient()
-	return client.LoadEnumValueTypeDefFromID(id)
 }
 
 // Load a EnvVariable from its ID.
