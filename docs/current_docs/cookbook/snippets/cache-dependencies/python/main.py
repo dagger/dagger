@@ -16,6 +16,22 @@ class MyModule:
             .from_("python:3.11")
             .with_directory("/src", source)
             .with_workdir("/src")
+
+            # if using pip
             .with_mounted_cache("/root/.cache/pip", dag.cache_volume("pip_cache"))
             .with_exec(["pip", "install", "-r", "requirements.txt"])
+
+            # if using poetry
+            .with_mounted_cache("/root/.cache/pypoetry", dag.cache_volume("poetry_cache"))
+            .with_exec(
+                [
+                    "pip",
+                    "install",
+                    "--user",
+                    "poetry==1.5.1",
+                    "poetry-dynamic-versioning==0.23.0",
+                ]
+            )
+            .with_exec(["poetry", "install", "--no-root"])
+            .with_exec(["poetry", "install", "--only-root"])
         )
