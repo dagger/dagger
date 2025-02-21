@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 
@@ -36,11 +37,38 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 	// Convert generic Message to OpenAI specific format
 	var openAIMessages []openai.ChatCompletionMessageParamUnion
 	for _, msg := range history {
+		if msg.ToolCallID != "" {
+			content := msg.Content.(string)
+			if msg.ToolErrored {
+				content = "error: " + content
+			}
+			openAIMessages = append(openAIMessages, openai.ToolMessage(msg.ToolCallID, content))
+			continue
+		}
+		var blocks []openai.ChatCompletionContentPartUnionParam
 		switch msg.Role {
 		case "user":
-			openAIMessages = append(openAIMessages, openai.UserMessage(msg.Content.(string)))
+			blocks = append(blocks, openai.TextPart(msg.Content.(string)))
+			openAIMessages = append(openAIMessages, openai.UserMessageParts(blocks...))
 		case "assistant":
-			openAIMessages = append(openAIMessages, openai.AssistantMessage(msg.Content.(string)))
+			assistantMsg := openai.AssistantMessage(msg.Content.(string))
+			calls := make([]openai.ChatCompletionMessageToolCallParam, len(msg.ToolCalls))
+			for i, call := range msg.ToolCalls {
+				args, err := json.Marshal(call.Function.Arguments)
+				if err != nil {
+					return nil, fmt.Errorf("failed to marshal tool call arguments: %w", err)
+				}
+				calls[i] = openai.ChatCompletionMessageToolCallParam{
+					ID:   openai.String(call.ID),
+					Type: openai.F(openai.ChatCompletionMessageToolCallTypeFunction),
+					Function: openai.F(openai.ChatCompletionMessageToolCallFunctionParam{
+						Name:      openai.String(call.Function.Name),
+						Arguments: openai.String(string(args)),
+					}),
+				}
+			}
+			assistantMsg.ToolCalls = openai.F(calls)
+			openAIMessages = append(openAIMessages, assistantMsg)
 		case "system":
 			openAIMessages = append(openAIMessages, openai.SystemMessage(msg.Content.(string)))
 		}
@@ -110,24 +138,33 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 		return nil, fmt.Errorf("no response from model")
 	}
 
+	toolCalls, err := convertOpenAIToolCalls(acc.Choices[0].Message.ToolCalls)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert tool calls: %w", err)
+	}
+
 	// Convert OpenAI response to generic LLMResponse
 	return &LLMResponse{
 		Content:   acc.Choices[0].Message.Content,
-		ToolCalls: convertOpenAIToolCalls(acc.Choices[0].Message.ToolCalls),
+		ToolCalls: toolCalls,
 	}, nil
 }
 
-func convertOpenAIToolCalls(calls []openai.ChatCompletionMessageToolCall) []ToolCall {
+func convertOpenAIToolCalls(calls []openai.ChatCompletionMessageToolCall) ([]ToolCall, error) {
 	var toolCalls []ToolCall
 	for _, call := range calls {
+		var args map[string]any
+		if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal tool call arguments: %w", err)
+		}
 		toolCalls = append(toolCalls, ToolCall{
 			ID: call.ID,
 			Function: FuncCall{
 				Name:      call.Function.Name,
-				Arguments: call.Function.Arguments,
+				Arguments: args,
 			},
 			Type: string(call.Type),
 		})
 	}
-	return toolCalls
+	return toolCalls, nil
 }

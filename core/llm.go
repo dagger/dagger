@@ -73,10 +73,11 @@ type LLMResponse struct {
 
 // ModelMessage represents a generic message in the LLM conversation
 type ModelMessage struct {
-	Role       string      `json:"role"`
-	Content    interface{} `json:"content"`
-	ToolCallID string      `json:"tool_call_id,omitempty"`
-	ToolCalls  []ToolCall  `json:"tool_calls,omitempty"`
+	Role        string     `json:"role"`
+	Content     any        `json:"content"`
+	ToolCalls   []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID  string     `json:"tool_call_id,omitempty"`
+	ToolErrored bool       `json:"tool_errored,omitempty"`
 }
 
 type ToolCall struct {
@@ -86,8 +87,8 @@ type ToolCall struct {
 }
 
 type FuncCall struct {
-	Arguments string `json:"arguments"`
-	Name      string `json:"name"`
+	Name      string         `json:"name"`
+	Arguments map[string]any `json:"arguments"`
 }
 
 const (
@@ -504,46 +505,42 @@ func (llm *Llm) Sync(ctx context.Context, dag *dagql.Server) (*Llm, error) {
 		for _, toolCall := range res.ToolCalls {
 			for _, tool := range tools {
 				if tool.Name == toolCall.Function.Name {
-					var args map[string]any
-					decoder := json.NewDecoder(strings.NewReader(toolCall.Function.Arguments))
-					decoder.UseNumber()
-					if err := decoder.Decode(&args); err != nil {
-						return llm, fmt.Errorf("failed to unmarshal arguments: %w", err)
-					}
-					result := func() string {
+					result, isError := func() (string, bool) {
 						ctx, span := Tracer(ctx).Start(ctx,
 							fmt.Sprintf("🤖 💻 %s", toolCall.Function.Name),
 							telemetry.Passthrough(),
 							telemetry.Reveal())
 						defer span.End()
-						result, err := tool.Call(ctx, args)
+						result, err := tool.Call(ctx, toolCall.Function.Arguments)
 						if err != nil {
 							// If the BBI driver itself returned an error,
 							// send that error to the model
 							span.SetStatus(codes.Error, err.Error())
-							return fmt.Sprintf("error calling tool %q: %s", tool.Name, err.Error())
+							return err.Error(), true
 						}
 						stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 						defer stdio.Close()
 						switch v := result.(type) {
 						case string:
 							fmt.Fprint(stdio.Stdout, v)
-							return v
+							return v, false
 						default:
 							jsonBytes, err := json.Marshal(v)
 							if err != nil {
 								span.SetStatus(codes.Error, err.Error())
-								return fmt.Sprintf("error processing tool result: %s", err.Error())
+								return fmt.Sprintf("error processing tool result: %s", err.Error()), true
 							}
 							fmt.Fprint(stdio.Stdout, string(jsonBytes))
-							return string(jsonBytes)
+							return string(jsonBytes), false
 						}
 					}()
 					func() {
 						llm.calls[toolCall.ID] = result
 						llm.history = append(llm.history, ModelMessage{
-							Role:    "assistant",
-							Content: result,
+							Role:        "user", // Anthropic only allows tool calls in user messages
+							Content:     result,
+							ToolCallID:  toolCall.ID,
+							ToolErrored: isError,
 						})
 					}()
 				}
