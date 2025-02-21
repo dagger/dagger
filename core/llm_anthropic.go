@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 
@@ -41,11 +42,28 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 	var messages []anthropic.MessageParam
 	var systemPrompts []anthropic.TextBlockParam
 	for _, msg := range history {
+		var blocks []anthropic.ContentBlockParamUnion
+		if msg.ToolCallID != "" {
+			blocks = append(blocks, anthropic.NewToolResultBlock(
+				msg.ToolCallID,
+				msg.Content.(string),
+				msg.ToolErrored,
+			))
+		} else {
+			blocks = append(blocks, anthropic.NewTextBlock(msg.Content.(string)))
+		}
+		for _, call := range msg.ToolCalls {
+			blocks = append(blocks, anthropic.NewToolUseBlockParam(
+				call.ID,
+				call.Function.Name,
+				call.Function.Arguments,
+			))
+		}
 		switch msg.Role {
 		case "user":
-			messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(msg.Content.(string))))
+			messages = append(messages, anthropic.NewUserMessage(blocks...))
 		case "assistant":
-			messages = append(messages, anthropic.NewAssistantMessage(anthropic.NewTextBlock(msg.Content.(string))))
+			messages = append(messages, anthropic.NewAssistantMessage(blocks...))
 		case "system":
 			// Collect all system prompt messages.
 			systemPrompts = append(systemPrompts, anthropic.NewTextBlock(msg.Content.(string)))
@@ -129,12 +147,16 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 			// Append text from text blocks.
 			content += b.Text
 		case anthropic.ToolUseBlock:
+			var args map[string]any
+			if err := json.Unmarshal([]byte(b.Input), &args); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal tool input: %w", err)
+			}
 			// Map tool-use blocks to our generic tool call structure.
 			toolCalls = append(toolCalls, ToolCall{
 				ID: b.ID,
 				Function: FuncCall{
 					Name:      b.Name,
-					Arguments: string(b.Input),
+					Arguments: args,
 				},
 				Type: "function",
 			})
