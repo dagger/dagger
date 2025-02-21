@@ -67,7 +67,9 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 					}),
 				}
 			}
-			assistantMsg.ToolCalls = openai.F(calls)
+			if len(calls) > 0 {
+				assistantMsg.ToolCalls = openai.F(calls)
+			}
 			openAIMessages = append(openAIMessages, assistantMsg)
 		case "system":
 			openAIMessages = append(openAIMessages, openai.SystemMessage(msg.Content.(string)))
