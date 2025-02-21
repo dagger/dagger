@@ -156,6 +156,15 @@ defmodule Dagger.Directory do
     Client.execute(directory.client, query_builder)
   end
 
+  @doc "Returns the name of the directory."
+  @spec name(t()) :: {:ok, String.t()} | {:error, term()}
+  def name(%__MODULE__{} = directory) do
+    query_builder =
+      directory.query_builder |> QB.select("name")
+
+    Client.execute(directory.client, query_builder)
+  end
+
   @doc "Force evaluation in the engine."
   @spec sync(t()) :: {:ok, Dagger.Directory.t()} | {:error, term()}
   def sync(%__MODULE__{} = directory) do
