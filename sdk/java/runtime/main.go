@@ -90,10 +90,8 @@ func (m *JavaSdk) codegenBase(
 	introspectionJSON *dagger.File,
 ) (*dagger.Container, error) {
 	ctr := m.
-		// We need maven to build the user module
-		mvnContainer(ctx).
-		// Mount the maven folder where we installed all the generated dependencies
-		WithMountedDirectory("/root/.m2", m.buildJavaDependencies(ctx, introspectionJSON).Directory("/root/.m2")).
+		// Build dependencies
+		buildJavaDependencies(ctx, introspectionJSON).
 		// Copy the user module directory under /src
 		WithDirectory(ModSourceDirPath, modSource.ContextDirectory()).
 		// Set the working directory to the one containing the sources to build, not just the module root
@@ -112,6 +110,8 @@ func (m *JavaSdk) buildJavaDependencies(
 	return m.
 		// We need maven to build the dependencies
 		mvnContainer(ctx).
+		// Cache maven dependencies
+		WithMountedCache("/root/.m2", dag.CacheVolume("sdk-java-maven-m2")).
 		// Mount the introspection JSON file used to generate the SDK
 		WithMountedFile("/schema.json", introspectionJSON).
 		// Copy the SDK source directory, so all the files needed to build the dependencies
