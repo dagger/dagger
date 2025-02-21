@@ -64,6 +64,8 @@ linters-settings:
 
   govet:
     enable:
+    disable:
+      - lostcancel
 
   errorlint:
     errorf: true

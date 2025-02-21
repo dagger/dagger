@@ -12,8 +12,8 @@ import (
 
 const (
 	lintImageRepo   = "docker.io/golangci/golangci-lint"
-	lintImageTag    = "v1.60-alpine"
-	lintImageDigest = "sha256:e71ee0fd4db9214586a95cbdd0237bcb2f2b4ddfdf55805dfeb3bcf6cbab3333"
+	lintImageTag    = "v1.64-alpine"
+	lintImageDigest = "sha256:05e1762ba74443e44b3a179e9549ad134a9ee2180d4fcc06b19a77ea0c6ac66a"
 	lintImage       = lintImageRepo + ":" + lintImageTag + "@" + lintImageDigest
 )
 

@@ -75,7 +75,6 @@ require (
 	github.com/muesli/termenv v0.15.2
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0
-	github.com/opencontainers/runc v1.2.5
 	github.com/opencontainers/runtime-spec v1.2.0
 	github.com/pelletier/go-toml v1.9.5
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
@@ -249,9 +248,9 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/sys/mountinfo v0.7.2 // indirect
-	github.com/moby/sys/reexec v0.1.0 // indirect
+	github.com/moby/sys/reexec v0.1.0
 	github.com/moby/sys/sequential v0.6.0 // indirect
-	github.com/moby/sys/user v0.3.0 // indirect
+	github.com/moby/sys/user v0.3.0
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
