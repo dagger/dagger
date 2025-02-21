@@ -5333,6 +5333,21 @@ export class Dep {
 	}
 }
 
+func (ModuleSuite) TestLoadWhenNoModule(ctx context.Context, t *testctx.T) {
+	// verify that if a module is loaded from a directory w/ no module we don't
+	// load extra files
+	c := connect(ctx, t)
+
+	tmpDir := t.TempDir()
+	fileName := "foo"
+	filePath := filepath.Join(tmpDir, fileName)
+	require.NoError(t, os.WriteFile(filePath, []byte("foo"), 0o644))
+
+	ents, err := c.ModuleSource(tmpDir).ContextDirectory().Entries(ctx)
+	require.NoError(t, err)
+	require.Empty(t, ents)
+}
+
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
