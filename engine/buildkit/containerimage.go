@@ -11,7 +11,6 @@ import (
 	"github.com/containerd/platforms"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
-	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
@@ -124,21 +123,20 @@ func (c *Client) ExportContainerImage(
 func (c *Client) ContainerImageToTarball(
 	ctx context.Context,
 	engineHostPlatform specs.Platform,
-	tmpDir string,
-	fileName string,
+	destPath string,
 	inputByPlatform map[string]ContainerExport,
 	opts map[string]string,
-) (*bksolverpb.Definition, error) {
+) error {
 	ctx = buildkitTelemetryProvider(ctx)
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer cancel(errors.New("container image to tarball done"))
 
 	combinedResult, err := c.getContainerResult(ctx, inputByPlatform)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	exporterName := bkclient.ExporterDocker
@@ -148,15 +146,13 @@ func (c *Client) ContainerImageToTarball(
 
 	exporter, err := c.Worker.Exporter(exporterName, c.SessionManager)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	expInstance, err := exporter.Resolve(ctx, 0, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve exporter: %w", err)
+		return fmt.Errorf("failed to resolve exporter: %w", err)
 	}
-
-	destPath := path.Join(tmpDir, fileName)
 
 	ctx = engine.LocalExportOpts{
 		Path:         destPath,
@@ -165,24 +161,12 @@ func (c *Client) ContainerImageToTarball(
 
 	_, descRef, err := expInstance.Export(ctx, combinedResult, nil, c.ID())
 	if err != nil {
-		return nil, fmt.Errorf("failed to export: %w", err)
+		return fmt.Errorf("failed to export: %w", err)
 	}
 	if descRef != nil {
 		defer descRef.Release()
 	}
-
-	localDef, err := llb.Local(tmpDir,
-		llb.SessionID(c.ID()), // see engine/server/bk_session.go, we have a special session that points to our engine host
-		llb.SharedKeyHint(c.ID()),
-		llb.IncludePatterns([]string{fileName}),
-		llb.WithCustomName(fmt.Sprintf("container-image-to-tarball-%s", fileName)),
-		WithTracePropagation(ctx),
-	).Marshal(ctx, llb.Platform(engineHostPlatform))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create llb definition for container image to tarball: %w", err)
-	}
-
-	return localDef.ToPB(), nil
+	return nil
 }
 
 func (c *Client) getContainerResult(
