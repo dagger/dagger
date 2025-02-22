@@ -20,3 +20,16 @@ defmodule Dagger.CacheVolume do
     Client.execute(cache_volume.client, query_builder)
   end
 end
+
+defimpl Jason.Encoder, for: Dagger.CacheVolume do
+  def encode(cache_volume, opts) do
+    {:ok, id} = Dagger.CacheVolume.id(cache_volume)
+    Jason.Encode.string(id, opts)
+  end
+end
+
+defimpl Nestru.Decoder, for: Dagger.CacheVolume do
+  def decode_fields_hint(_struct, _context, id) do
+    {:ok, Dagger.Client.load_cache_volume_from_id(Dagger.Global.dag(), id)}
+  end
+end
