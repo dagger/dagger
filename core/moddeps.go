@@ -106,7 +106,14 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 		d.loadSchemaErr = rerr
 	}()
 
-	dag := dagql.NewServer[*Query](d.root)
+	// share the same cache session-wide
+	var err error
+	cache, err := d.root.Cache(ctx)
+	if err != nil {
+		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get cache: %w", err)
+	}
+
+	dag := dagql.NewServer[*Query](d.root, cache)
 	for _, mod := range d.Mods {
 		if version, ok := mod.View(); ok {
 			dag.View = version
@@ -115,13 +122,6 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 	}
 
 	dag.Around(AroundFunc)
-
-	// share the same cache session-wide
-	var err error
-	dag.Cache, err = d.root.Cache(ctx)
-	if err != nil {
-		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get cache: %w", err)
-	}
 
 	dagintro.Install[*Query](dag)
 

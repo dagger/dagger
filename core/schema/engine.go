@@ -27,11 +27,9 @@ func (s *engineSchema) Install() {
 	}.Install(s.srv)
 
 	dagql.Fields[*core.EngineCache]{
-		dagql.NodeFunc("entrySet", s.cacheEntrySet).
-			Doc("The current set of entries in the cache").
-			Impure("Cache is changing asynchronously in the background"),
-		dagql.Func("prune", s.cachePrune).
-			Impure("Mutates mutable state").
+		dagql.NodeFuncWithCacheKey("entrySet", s.cacheEntrySet, core.Impure).
+			Doc("The current set of entries in the cache"),
+		dagql.FuncWithCacheKey("prune", s.cachePrune, core.Impure).
 			Doc("Prune the cache of releaseable entries"),
 	}.Install(s.srv)
 

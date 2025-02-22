@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/zeebo/xxh3"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -325,10 +327,9 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	// override loadFooFromID to allow any ID that implements this interface
 	dag.Root().ObjectType().Extend(
 		dagql.FieldSpec{
-			Name:           fmt.Sprintf("load%sFromID", class.TypeName()),
-			Description:    fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
-			Type:           class.Typed(),
-			ImpurityReason: "The given ID ultimately determines the purity of its result.",
+			Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
+			Description: fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
+			Type:        class.Typed(),
 			Args: []dagql.InputSpec{
 				{
 					Name: "id",
@@ -340,7 +341,14 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			return iface.ConvertFromSDKResult(ctx, args["id"])
 		},
-		nil,
+		// TODO: dedupe
+		func(ctx context.Context, _ dagql.Object, _ map[string]dagql.Input, origDgst digest.Digest) (digest.Digest, error) {
+			const XXH3 digest.Algorithm = "xxh3"
+			randID := identity.NewID()
+			h := xxh3.New()
+			h.WriteString(randID)
+			return digest.NewDigest(XXH3, h), nil
+		},
 	)
 
 	return nil
