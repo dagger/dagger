@@ -88,7 +88,7 @@ type daggerSession struct {
 	containers   map[bkgw.Container]struct{}
 	containersMu sync.Mutex
 
-	dagqlCache dagql.Cache
+	dagqlCache *dagql.CacheWithResults
 
 	interactive        bool
 	interactiveCommand []string
@@ -237,7 +237,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.authProvider = auth.NewRegistryAuthProvider()
 	sess.refs = map[buildkit.Reference]struct{}{}
 	sess.containers = map[bkgw.Container]struct{}{}
-	sess.dagqlCache = dagql.NewCache()
+	sess.dagqlCache = dagql.NewCacheWithResults(srv.dagqlCache)
 	sess.telemetryPubSub = srv.telemetryPubSub
 	sess.interactive = clientMetadata.Interactive
 	sess.interactiveCommand = clientMetadata.InteractiveCommand
@@ -382,6 +382,10 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	sess.closeShutdownOnce.Do(func() {
 		close(sess.shutdownCh)
 	})
+
+	// release dagql cache
+	sess.dagqlCache.Release()
+
 	return errs
 }
 
@@ -555,8 +559,7 @@ func (srv *Server) initializeDaggerClient(
 	// setup the graphql server + module/function state for the client
 	client.dagqlRoot = core.NewRoot(srv)
 
-	dag := dagql.NewServer(client.dagqlRoot)
-	dag.Cache = client.daggerSession.dagqlCache
+	dag := dagql.NewServer(client.dagqlRoot, client.daggerSession.dagqlCache)
 	dag.Around(core.AroundFunc)
 	coreMod := &schema.CoreMod{Dag: dag}
 	if err := coreMod.Install(ctx, dag); err != nil {

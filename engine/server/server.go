@@ -21,6 +21,7 @@ import (
 	ctdsnapshot "github.com/containerd/containerd/snapshots"
 	"github.com/containerd/go-runc"
 	"github.com/containerd/platforms"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/config"
 	controlapi "github.com/moby/buildkit/api/services/control"
 	apitypes "github.com/moby/buildkit/api/types"
@@ -166,6 +167,11 @@ type Server struct {
 	gcmu                         sync.Mutex
 
 	//
+	// dagql cache
+	//
+	dagqlCache dagql.Cache
+
+	//
 	// session+client state
 	//
 	daggerSessions   map[string]*daggerSession // session id -> session state
@@ -203,6 +209,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			SearchDomains: bkcfg.DNS.SearchDomains,
 		},
 
+		dagqlCache:     dagql.NewCache(),
 		daggerSessions: make(map[string]*daggerSession),
 	}
 

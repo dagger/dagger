@@ -13,6 +13,16 @@ import (
 // TODO: DEDUPE W/ local.SingleflightGroup
 // TODO: DEDUPE W/ local.SingleflightGroup
 
+// Cache stores results of pure selections against Server.
+type Cache interface {
+	GetOrInitialize(
+		context.Context,
+		digest.Digest,
+		func(context.Context) (Typed, error),
+	) (*CachedResult[digest.Digest, Typed], error)
+	GetOrInitializeValue(context.Context, digest.Digest, Typed) (*CachedResult[digest.Digest, Typed], error)
+}
+
 // NewCache creates a new cache map suitable for assigning on a Server or
 // multiple Servers.
 func NewCache() Cache {
@@ -136,4 +146,55 @@ func (res *CachedResult[K, V]) Release() {
 	if res.refCount == 0 && res.waiters == 0 {
 		delete(res.cache.calls, res.key)
 	}
+}
+
+// TODO: doc
+type CacheWithResults struct {
+	Cache
+	results map[*CachedResult[digest.Digest, Typed]]struct{}
+	mu      sync.Mutex
+}
+
+func NewCacheWithResults(baseCache Cache) *CacheWithResults {
+	return &CacheWithResults{
+		Cache:   baseCache,
+		results: map[*CachedResult[digest.Digest, Typed]]struct{}{},
+	}
+}
+
+func (c *CacheWithResults) GetOrInitializeValue(
+	ctx context.Context,
+	key digest.Digest,
+	v Typed,
+) (*CachedResult[digest.Digest, Typed], error) {
+	return c.Cache.GetOrInitialize(ctx, key, func(context.Context) (Typed, error) {
+		return v, nil
+	})
+}
+
+func (c *CacheWithResults) GetOrInitialize(
+	ctx context.Context,
+	key digest.Digest,
+	fn func(context.Context) (Typed, error),
+) (*CachedResult[digest.Digest, Typed], error) {
+	res, err := c.Cache.GetOrInitialize(ctx, key, fn)
+	if err != nil {
+		return nil, err
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.results[res] = struct{}{}
+
+	return res, nil
+}
+
+func (c *CacheWithResults) Release() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for res := range c.results {
+		res.Release()
+	}
+	c.results = map[*CachedResult[digest.Digest, Typed]]struct{}{}
 }
