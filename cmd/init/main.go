@@ -190,8 +190,8 @@ func serveSession() {
 		client.SocketProvider{EnableHostNetworkAccess: true},
 		// host=>container networking
 		session.NewTunnelListenerAttachable(ctx),
-		// Git credentials
-		session.NewGitCredentialAttachable(ctx),
+		// Git attachable
+		session.NewGitAttachable(ctx),
 	}
 	// filesync
 	filesyncer, err := client.NewFilesyncer()
