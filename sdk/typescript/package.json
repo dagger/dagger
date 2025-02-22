@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "author": "hello@dagger.io",
   "license": "Apache-2.0",
-  "types": "./dist/index.d.ts",
+  "types": "./dist/src/index.d.ts",
   "type": "module",
   "files": [
     "dist/"
