@@ -150,6 +150,15 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Returns the name of the directory.
+     */
+    public function name(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
      * Force evaluation in the engine.
      */
     public function sync(): DirectoryId

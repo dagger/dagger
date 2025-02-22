@@ -1214,3 +1214,62 @@ func (DirectorySuite) TestDigest(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", digest)
 	})
 }
+
+func (DirectorySuite) TestDirectoryName(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("empty directory name", func(ctx context.Context, t *testctx.T) {
+		name, err := c.Directory().Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "/", name)
+	})
+
+	t.Run("not found directory", func(ctx context.Context, t *testctx.T) {
+		_, err := c.Directory().Directory("foo").Name(ctx)
+		requireErrOut(t, err, "no such file or directory")
+	})
+
+	t.Run("structured directory", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().WithDirectory("nested", c.Directory()).WithDirectory("very/nested", c.Directory())
+
+		t.Run("root directory", func(ctx context.Context, t *testctx.T) {
+			rootName, err := dir.Name(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "/", rootName)
+		})
+
+		t.Run("nested directory", func(ctx context.Context, t *testctx.T) {
+			nestedName, err := dir.Directory("nested").Name(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "nested", nestedName)
+		})
+
+		t.Run("very nested directory", func(ctx context.Context, t *testctx.T) {
+			veryNestedName, err := dir.Directory("very/nested").Name(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "nested", veryNestedName)
+		})
+	})
+
+	t.Run("git directory", func(ctx context.Context, t *testctx.T) {
+		dir := c.Git("https://github.com/dagger/dagger#ee32df913f57c876e067bd5ecc159561510b6f50").Head().Tree()
+
+		t.Run("root directory", func(ctx context.Context, t *testctx.T) {
+			rootName, err := dir.Name(ctx)
+			require.NoError(t, err)
+			require.Equal(t, ".", rootName)
+		})
+
+		t.Run("nested hidden directory", func(ctx context.Context, t *testctx.T) {
+			nestedName, err := dir.Directory(".dagger").Name(ctx)
+			require.NoError(t, err)
+			require.Equal(t, ".dagger", nestedName)
+		})
+
+		t.Run("nested directory", func(ctx context.Context, t *testctx.T) {
+			nestedName, err := dir.Directory("sdk").Directory("go").Name(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "go", nestedName)
+		})
+	})
+}
