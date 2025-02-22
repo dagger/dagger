@@ -490,7 +490,11 @@ func (r Instance[T]) call(
 	if newID.IsTainted() {
 		val, err = doCall(ctx)
 	} else {
-		val, _, err = s.Cache.GetOrInitialize(ctx, dig, doCall)
+		var cachedVal *CachedResult[digest.Digest, Typed]
+		cachedVal, err = s.Cache.GetOrInitialize(ctx, dig, doCall)
+		if cachedVal != nil {
+			val = cachedVal.val
+		}
 	}
 	if err != nil {
 		return nil, nil, err
@@ -517,7 +521,7 @@ func (r Instance[T]) call(
 
 		if isPure && digestChanged && matchesType {
 			newID = valID
-			_, _, err := s.Cache.GetOrInitializeValue(ctx, valID.Digest(), val)
+			_, err := s.Cache.GetOrInitializeValue(ctx, valID.Digest(), val)
 			if err != nil {
 				return nil, nil, err
 			}
