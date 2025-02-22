@@ -44,10 +44,6 @@ message Call {
   // ideally be in the order defined in the schema.
   repeated Argument args = 4;
 
-  // If true, this Call is not reproducible; repeated evaluations may return
-  // different values.
-  bool tainted = 5;
-
   // If true, this Call may be omitted from the DAG without changing
   // the final result.
   //

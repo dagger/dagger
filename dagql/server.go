@@ -13,6 +13,7 @@ import (
 	"github.com/99designs/gqlgen/graphql/errcode"
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/iancoleman/strcase"
+	"github.com/moby/buildkit/identity"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -20,6 +21,7 @@ import (
 	"github.com/vektah/gqlparser/v2/parser"
 	"github.com/vektah/gqlparser/v2/validator"
 	"github.com/vektah/gqlparser/v2/validator/rules"
+	"github.com/zeebo/xxh3"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql/call"
@@ -242,10 +244,9 @@ func (s *Server) installObject(class ObjectType) {
 		s.scalars[idType.TypeName()] = idType
 		s.Root().ObjectType().Extend(
 			FieldSpec{
-				Name:           fmt.Sprintf("load%sFromID", class.TypeName()),
-				Description:    fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
-				Type:           class.Typed(),
-				ImpurityReason: "The given ID ultimately determines the purity of its result.",
+				Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
+				Description: fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
+				Type:        class.Typed(),
 				Args: []InputSpec{
 					{
 						Name: "id",
@@ -268,7 +269,14 @@ func (s *Server) installObject(class ObjectType) {
 				}
 				return res, nil
 			},
-			nil,
+			// TODO: hack to avoid circular dependency, dedupe
+			func(ctx context.Context, _ Object, _ map[string]Input, origDgst digest.Digest) (digest.Digest, error) {
+				const XXH3 digest.Algorithm = "xxh3"
+				randID := identity.NewID()
+				h := xxh3.New()
+				h.WriteString(randID)
+				return digest.NewDigest(XXH3, h), nil
+			},
 		)
 	}
 }

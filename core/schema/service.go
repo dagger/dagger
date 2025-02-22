@@ -52,18 +52,16 @@ func (s *serviceSchema) Install() {
 				pid 1 process in the container. Otherwise it may result in unexpected behavior.`,
 			),
 
-		dagql.NodeFunc("up", s.containerUpLegacy).
+		dagql.NodeFuncWithCacheKey("up", s.containerUpLegacy, core.Impure).
 			View(BeforeVersion("v0.15.2")).
-			Impure("Starts a host tunnel, possibly with ports that change each time it's started.").
 			Doc(`Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.`,
 				`Be sure to set any exposed ports before calling this api.`).
 			ArgDoc("random", `Bind each tunnel port to a random port on the host.`).
 			ArgDoc("ports", `List of frontend/backend port mappings to forward.`,
 				`Frontend is the port accepting traffic on the host, backend is the service port.`),
 
-		dagql.NodeFunc("up", s.containerUp).
+		dagql.NodeFuncWithCacheKey("up", s.containerUp, core.Impure).
 			View(AfterVersion("v0.15.2")).
-			Impure("Starts a host tunnel, possibly with ports that change each time it's started.").
 			Doc(`Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.`,
 				`Be sure to set any exposed ports before calling this api.`).
 			ArgDoc("random", `Bind each tunnel port to a random port on the host.`).
@@ -103,32 +101,27 @@ func (s *serviceSchema) Install() {
 			Doc(`Configures a hostname which can be used by clients within the session to reach this container.`).
 			ArgDoc("hostname", `The hostname to use.`),
 
-		dagql.NodeFunc("ports", s.ports).
-			Impure("A tunnel service's ports can change each time it is restarted.").
+		dagql.NodeFuncWithCacheKey("ports", s.ports, core.Impure).
 			Doc(`Retrieves the list of ports provided by the service.`),
 
-		dagql.NodeFunc("endpoint", s.endpoint).
-			Impure("A tunnel service's endpoint can change if tunnel service is restarted.").
+		dagql.NodeFuncWithCacheKey("endpoint", s.endpoint, core.Impure).
 			Doc(`Retrieves an endpoint that clients can use to reach this container.`,
 				`If no port is specified, the first exposed port is used. If none exist an error is returned.`,
 				`If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.`).
 			ArgDoc("port", `The exposed port number for the endpoint`).
 			ArgDoc("scheme", `Return a URL with the given scheme, eg. http for http://`),
 
-		dagql.NodeFunc("start", s.start).
-			Impure("Imperatively mutates runtime state.").
+		dagql.NodeFuncWithCacheKey("start", s.start, core.Impure).
 			Doc(`Start the service and wait for its health checks to succeed.`,
 				`Services bound to a Container do not need to be manually started.`),
 
-		dagql.NodeFunc("up", s.up).
-			Impure("Starts a host tunnel, possibly with ports that change each time it's started.").
+		dagql.NodeFuncWithCacheKey("up", s.up, core.Impure).
 			Doc(`Creates a tunnel that forwards traffic from the caller's network to this service.`).
 			ArgDoc("random", `Bind each tunnel port to a random port on the host.`).
 			ArgDoc("ports", `List of frontend/backend port mappings to forward.`,
 				`Frontend is the port accepting traffic on the host, backend is the service port.`),
 
-		dagql.NodeFunc("stop", s.stop).
-			Impure("Imperatively mutates runtime state.").
+		dagql.NodeFuncWithCacheKey("stop", s.stop, core.Impure).
 			Doc(`Stop the service.`).
 			ArgDoc("kill", `Immediately kill the service without waiting for a graceful exit`),
 	}.Install(s.srv)

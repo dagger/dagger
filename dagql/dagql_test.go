@@ -20,6 +20,7 @@ import (
 	"gotest.tools/v3/assert/cmp"
 	"gotest.tools/v3/golden"
 
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/internal/pipes"
@@ -103,7 +104,7 @@ func TestBasic(t *testing.T) {
 
 	pointT := (&points.Point{}).Type()
 	expectedID := call.New().
-		Append(pointT, "point", "", nil, false, 0, "",
+		Append(pointT, "point", "", nil, 0, "",
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
@@ -115,7 +116,7 @@ func TestBasic(t *testing.T) {
 				false,
 			),
 		).
-		Append(pointT, "shiftLeft", "", nil, false, 0, "")
+		Append(pointT, "shiftLeft", "", nil, 0, "")
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	assert.Equal(t, 6, res.Point.X)
@@ -570,7 +571,7 @@ func TestIDsReflectQuery(t *testing.T) {
 
 	pointT := (&points.Point{}).Type()
 	expectedID := call.New().
-		Append(pointT, "point", "", nil, false, 0, "",
+		Append(pointT, "point", "", nil, 0, "",
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
@@ -582,7 +583,7 @@ func TestIDsReflectQuery(t *testing.T) {
 				false,
 			),
 		).
-		Append(pointT, "shiftLeft", "", nil, false, 0, "")
+		Append(pointT, "shiftLeft", "", nil, 0, "")
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.ShiftLeft.ID, expectedEnc)
@@ -670,7 +671,7 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 
 	pointT := (&points.Point{}).Type()
 	expectedID := call.New().
-		Append(pointT, "point", "", nil, false, 0, "",
+		Append(pointT, "point", "", nil, 0, "",
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
@@ -682,14 +683,14 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 				false,
 			),
 		).
-		Append(pointT, "loginTag", "", nil, false, 0, "")
+		Append(pointT, "loginTag", "", nil, 0, "")
 
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.LoginTag.ID, expectedEnc)
 
 	expectedID = call.New().
-		Append(pointT, "point", "", nil, false, 0, "",
+		Append(pointT, "point", "", nil, 0, "",
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
@@ -701,14 +702,14 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 				false,
 			),
 		).
-		Append(pointT, "loginChain", "", nil, false, 0, "")
+		Append(pointT, "loginChain", "", nil, 0, "")
 
 	expectedEnc, err = dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.LoginChain.ID, expectedEnc)
 
 	expectedID = call.New().
-		Append(pointT, "point", "", nil, false, 0, "",
+		Append(pointT, "point", "", nil, 0, "",
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
@@ -720,7 +721,7 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 				false,
 			),
 		).
-		Append(pointT, "loginTagFalse", "", nil, false, 0, "",
+		Append(pointT, "loginTagFalse", "", nil, 0, "",
 			call.NewArgument(
 				"password",
 				call.NewLiteralString("hunter2"),
@@ -815,10 +816,10 @@ func TestImpureIDsReEvaluate(t *testing.T) {
 
 	called := 0
 	dagql.Fields[*points.Point]{
-		dagql.Func("snitch", func(ctx context.Context, self *points.Point, _ struct{}) (*points.Point, error) {
+		dagql.FuncWithCacheKey("snitch", func(ctx context.Context, self *points.Point, _ struct{}) (*points.Point, error) {
 			called++
 			return self, nil
-		}).Impure("Increments internal state on each call."),
+		}, core.Impure),
 	}.Install(srv)
 
 	var res struct {
@@ -859,18 +860,18 @@ func TestImpureIDsReEvaluate(t *testing.T) {
 	assert.Equal(t, called, 2)
 }
 
-func TestPurityOverride(t *testing.T) {
+func TestImpureCustomCacheKey(t *testing.T) {
 	srv := dagql.NewServer(Query{})
 	points.Install[Query](srv)
 
 	calls := map[string]int{}
 	dagql.Fields[*points.Point]{
-		dagql.Func("snitch", func(ctx context.Context, self *points.Point, args struct {
+		dagql.FuncWithCacheKey("snitch", func(ctx context.Context, self *points.Point, args struct {
 			Key string `default:""`
 		}) (*points.Point, error) {
 			calls[args.Key]++
 			return self, nil
-		}).Impure("Increments internal state on each call."),
+		}, core.Impure),
 	}.Install(srv)
 
 	ctx := context.Background()
@@ -897,7 +898,7 @@ func TestPurityOverride(t *testing.T) {
 		}, dagql.Selector{
 			Field: "id",
 		}))
-		assert.Equal(t, true, id.ID().IsTainted())
+		dgst1 := id.ID().Digest()
 		assert.DeepEqual(t, map[string]int{"": 1}, calls)
 
 		assert.NilError(t, srv.Select(ctx, point, &id, dagql.Selector{
@@ -905,56 +906,10 @@ func TestPurityOverride(t *testing.T) {
 		}, dagql.Selector{
 			Field: "id",
 		}))
-		assert.Equal(t, true, id.ID().IsTainted())
+		dgst2 := id.ID().Digest()
 		assert.DeepEqual(t, map[string]int{"": 2}, calls)
-	})
 
-	t.Run("becomes cached with Pure: true", func(t *testing.T) {
-		var id dagql.ID[*points.Point]
-		assert.NilError(t, srv.Select(ctx, point, &id, dagql.Selector{
-			Field: "snitch",
-			Pure:  true,
-			Args: []dagql.NamedInput{
-				{
-					Name:  "key",
-					Value: dagql.NewString("a"),
-				},
-			},
-		}, dagql.Selector{
-			Field: "id",
-		}))
-		assert.Equal(t, false, id.ID().IsTainted())
-		assert.DeepEqual(t, map[string]int{"": 2, "a": 1}, calls)
-
-		assert.NilError(t, srv.Select(ctx, point, &id, dagql.Selector{
-			Field: "snitch",
-			Pure:  true,
-			Args: []dagql.NamedInput{
-				{
-					Name:  "key",
-					Value: dagql.NewString("a"),
-				},
-			},
-		}, dagql.Selector{
-			Field: "id",
-		}))
-		assert.Equal(t, false, id.ID().IsTainted())
-		assert.DeepEqual(t, map[string]int{"": 2, "a": 1}, calls)
-
-		assert.NilError(t, srv.Select(ctx, point, &id, dagql.Selector{
-			Field: "snitch",
-			Pure:  true,
-			Args: []dagql.NamedInput{
-				{
-					Name:  "key",
-					Value: dagql.NewString("b"),
-				},
-			},
-		}, dagql.Selector{
-			Field: "id",
-		}))
-		assert.Equal(t, false, id.ID().IsTainted())
-		assert.DeepEqual(t, map[string]int{"": 2, "a": 1, "b": 1}, calls)
+		assert.Assert(t, dgst1 != dgst2)
 	})
 }
 
@@ -1728,9 +1683,9 @@ func TestIntrospection(t *testing.T) {
 			return args.DeprecatedArg, nil
 		}).ArgDeprecated("deprecatedArg", "because I said so"),
 
-		dagql.Func("impureField", func(ctx context.Context, self Query, args struct{}) (string, error) {
+		dagql.FuncWithCacheKey("impureField", func(ctx context.Context, self Query, args struct{}) (string, error) {
 			return time.Now().String(), nil
-		}).Impure("Because I said so."),
+		}, core.Impure),
 
 		dagql.Func("metaField", func(ctx context.Context, self Query, args struct{}) (string, error) {
 			return "whoa", nil
@@ -2122,7 +2077,7 @@ func TestCustomDigest(t *testing.T) {
 
 	dagql.Fields[*CoolInt]{}.Install(srv)
 	dagql.Fields[Query]{
-		dagql.NodeFunc("coolInt", func(ctx context.Context, self dagql.Instance[Query], args struct {
+		dagql.NodeFuncWithCacheKey("coolInt", func(ctx context.Context, self dagql.Instance[Query], args struct {
 			Val      int
 			OtherArg string // used in test to force different IDs
 		}) (inst dagql.Instance[*CoolInt], err error) {
@@ -2131,10 +2086,10 @@ func TestCustomDigest(t *testing.T) {
 				return inst, err
 			}
 			return inst, nil
-		}).Impure("caching is too hard"),
+		}, core.Impure),
 
 		// like coolInt but set custom digest to the arg % 2 so we cache by whether it's even or odd
-		dagql.NodeFunc("modInt", func(ctx context.Context, self dagql.Instance[Query], args struct {
+		dagql.NodeFuncWithCacheKey("modInt", func(ctx context.Context, self dagql.Instance[Query], args struct {
 			Val      int
 			OtherArg string // used in test to *try* to force different IDs
 		}) (inst dagql.Instance[*CoolInt], err error) {
@@ -2142,8 +2097,8 @@ func TestCustomDigest(t *testing.T) {
 			if err != nil {
 				return inst, err
 			}
-			return inst.WithMetadata(digest.Digest(strconv.Itoa(args.Val%2)), true), nil
-		}).Impure("caching is too hard"),
+			return inst.WithMetadata(digest.Digest(strconv.Itoa(args.Val % 2))), nil
+		}, core.Impure),
 
 		dagql.NodeFunc("returnTheArg", func(ctx context.Context, self dagql.Instance[Query], args struct {
 			CoolInt dagql.ID[*CoolInt]

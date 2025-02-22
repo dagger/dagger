@@ -1805,7 +1805,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 		if err != nil {
 			return genDirInst, fmt.Errorf("failed to get or initialize instance: %w", err)
 		}
-		srcInstContentHashed := srcInst.WithMetadata(digest.Digest(srcInst.Self.Digest), true)
+		srcInstContentHashed := srcInst.WithMetadata(digest.Digest(srcInst.Self.Digest))
 
 		// run codegen to get the generated context directory
 		generatedCode, err := srcInst.Self.SDKImpl.Codegen(ctx, deps, srcInstContentHashed)
@@ -1981,7 +1981,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
-	srcInstContentHashed := src.WithMetadata(digest.Digest(src.Self.Digest), true)
+	srcInstContentHashed := src.WithMetadata(digest.Digest(src.Self.Digest))
 
 	// get the runtime container, which is what is exec'd when calling functions in the module
 	mod.Runtime, err = src.Self.SDKImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)

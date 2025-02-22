@@ -302,15 +302,14 @@ func (r Instance[T]) String() string {
 }
 
 // WithMetadata returns an updated instance with the given metadata set.
-// isPure changes the purity of the instance.
 // customDigest overrides the default digest of the instance to the provided value.
 // NOTE: customDigest must be used with care as any instances with the same digest
 // will be considered equivalent and can thus replace each other in the cache.
 // Generally, customDigest should be used when there's a content-based digest available
 // that won't be caputured by the default, call-chain derived digest.
-func (r Instance[T]) WithMetadata(customDigest digest.Digest, isPure bool) Instance[T] {
+func (r Instance[T]) WithMetadata(customDigest digest.Digest) Instance[T] {
 	return Instance[T]{
-		Constructor: r.Constructor.WithMetadata(customDigest, !isPure),
+		Constructor: r.Constructor.WithMetadata(customDigest),
 		Self:        r.Self,
 		Class:       r.Class,
 		Module:      r.Module,
@@ -372,14 +371,11 @@ func (r Instance[T]) Select(ctx context.Context, s *Server, sel Selector) (Typed
 		astType = astType.Elem
 	}
 
-	tainted := !sel.Pure && field.Spec.ImpurityReason != ""
-
 	newID := r.Constructor.Append(
 		astType,
 		sel.Field,
 		view,
 		field.Spec.Module,
-		tainted,
 		sel.Nth,
 		"",
 		idArgs...,
@@ -390,7 +386,7 @@ func (r Instance[T]) Select(ctx context.Context, s *Server, sel Selector) (Typed
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to compute cache key for %s.%s: %w", r.Type().Name(), sel.Field, err)
 		}
-		newID = newID.WithMetadata(customDgst, tainted)
+		newID = newID.WithMetadata(customDgst)
 	}
 
 	return r.call(ctx, s, newID, inputArgs)
@@ -444,7 +440,9 @@ func (r Instance[T]) call(
 	newID *call.ID,
 	inputArgs map[string]Input,
 ) (Typed, *call.ID, error) {
-	doCall := func(ctx context.Context) (innerVal Typed, innerErr error) {
+	ctx = idToContext(ctx, newID)
+	dig := newID.Digest()
+	cachedVal, err := s.Cache.GetOrInitialize(ctx, dig, func(ctx context.Context) (innerVal Typed, innerErr error) {
 		if s.telemetry != nil {
 			wrappedCtx, done := s.telemetry(ctx, r, newID)
 			defer func() { done(innerVal, false, innerErr) }()
@@ -481,34 +479,22 @@ func (r Instance[T]) call(
 		}
 
 		return innerVal, nil
-	}
+	})
 
-	ctx = idToContext(ctx, newID)
-	dig := newID.Digest()
 	var val Typed
-	var err error
-	if newID.IsTainted() {
-		val, err = doCall(ctx)
-	} else {
-		var cachedVal *CachedResult[digest.Digest, Typed]
-		cachedVal, err = s.Cache.GetOrInitialize(ctx, dig, doCall)
-		if cachedVal != nil {
-			val = cachedVal.val
-		}
+	if cachedVal != nil {
+		val = cachedVal.val
 	}
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// If the returned val is IDable, is pure, and has a different digest than the original, then
+	// If the returned val is IDable and has a different digest than the original, then
 	// add that different digest as a cache key for this val.
 	// This enables APIs to return new object instances with overridden purity and/or digests, e.g. returning
-	// values that have a pure content-based cache key different from the call-chain ID digest.
+	// values that have a content-based cache key different from the call-chain ID digest.
 	if idable, ok := val.(IDable); ok && idable != nil {
 		valID := idable.ID()
-
-		// only cache pure results
-		isPure := !valID.IsTainted()
 
 		// only need to add a new cache key if the returned val has a different custom digest than the original
 		digestChanged := valID.Digest() != dig
@@ -519,7 +505,7 @@ func (r Instance[T]) call(
 		// To avoid this, we check that the returned IDable type is the actual object type.
 		matchesType := valID.Type().ToAST().Name() == val.Type().Name()
 
-		if isPure && digestChanged && matchesType {
+		if digestChanged && matchesType {
 			newID = valID
 			_, err := s.Cache.GetOrInitializeValue(ctx, valID.Digest(), val)
 			if err != nil {
@@ -676,8 +662,6 @@ type FieldSpec struct {
 	// Sensitive indicates that the value returned by this field is sensitive and
 	// should not be displayed in telemetry.
 	Sensitive bool
-	// ImpurityReason indicates that the field's result may change over time.
-	ImpurityReason string
 	// DeprecatedReason deprecates the field and provides a reason.
 	DeprecatedReason string
 	// Module is the module that provides the field's implementation.
@@ -702,9 +686,6 @@ func (spec FieldSpec) FieldDefinition() *ast.FieldDefinition {
 	}
 	if spec.DeprecatedReason != "" {
 		def.Directives = append(def.Directives, deprecated(spec.DeprecatedReason))
-	}
-	if spec.ImpurityReason != "" {
-		def.Directives = append(def.Directives, impure(spec.ImpurityReason))
 	}
 	if spec.Meta {
 		def.Directives = append(def.Directives, meta())
@@ -964,16 +945,6 @@ func (field Field[T]) Deprecated(paras ...string) Field[T] {
 		panic("cannot call on extended field")
 	}
 	field.Spec.DeprecatedReason = FormatDescription(paras...)
-	return field
-}
-
-// Impure marks the field as "impure", meaning its result may change over time,
-// or it has side effects.
-func (field Field[T]) Impure(reason string, paras ...string) Field[T] {
-	if field.Spec.extend {
-		panic("cannot call on extended field")
-	}
-	field.Spec.ImpurityReason = FormatDescription(append([]string{reason}, paras...)...)
 	return field
 }
 

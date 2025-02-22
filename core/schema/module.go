@@ -40,10 +40,9 @@ func (s *moduleSchema) Install() {
 		dagql.FuncWithCacheKey("currentModule", s.currentModule, core.CachePerClient).
 			Doc(`The module currently being served in the session, if any.`),
 
-		dagql.Func("currentTypeDefs", s.currentTypeDefs).
-			// Impure for now, could use a finer grain cache key if we had the ability to mix
-			// a digest of the dagql server schema into the cache key.
-			Impure("Can change when modules are loaded into the schema.").
+		// Impure for now, could use a finer grain cache key if we had the ability to mix
+		// a digest of the dagql server schema into the cache key.
+		dagql.FuncWithCacheKey("currentTypeDefs", s.currentTypeDefs, core.Impure).
 			Doc(`The TypeDef representations of the objects currently being served in the session.`),
 
 		dagql.FuncWithCacheKey("currentFunctionCall", s.currentFunctionCall, core.CachePerClient).
@@ -85,8 +84,7 @@ func (s *moduleSchema) Install() {
 		dagql.Func("withEnum", s.moduleWithEnum).
 			Doc(`This module plus the given Enum type and associated values`),
 
-		dagql.NodeFunc("serve", s.moduleServe).
-			Impure(`Mutates the calling session's global schema.`).
+		dagql.NodeFuncWithCacheKey("serve", s.moduleServe, core.Impure).
 			Doc(`Serve a module's API in the current session.`,
 				`Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.`),
 	}.Install(s.dag)
