@@ -76,7 +76,7 @@ func initializeModule(
 		return nil, fmt.Errorf("failed to get configured module: %w", err)
 	}
 	if !configExists {
-		return nil, fmt.Errorf("module not found: %s", srcRef)
+		return nil, fmt.Errorf("module not found")
 	}
 
 	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())
