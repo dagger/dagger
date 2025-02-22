@@ -202,7 +202,11 @@ func (m *JavaSdk) generateCode(
 	// generate the java sdk dependencies
 	javaDeps := m.buildJavaDependencies(ctx, introspectionJSON)
 	// generate the entrypoint class based on the user module
-	entrypoint := ctr.WithExec([]string{"mvn", "clean", "compile"})
+	entrypoint := ctr.
+		// set the module name as an environment variable so we ensure constructor is only on main object
+		WithEnvVariable("_DAGGER_JAVA_SDK_MODULE_NAME", m.moduleConfig.name).
+		// generate the entrypoint
+		WithExec([]string{"mvn", "clean", "compile"})
 	return dag.
 		Directory().
 		// copy all user files
@@ -262,7 +266,11 @@ func (m *JavaSdk) buildJar(
 	ctr *dagger.Container,
 ) (*dagger.File, error) {
 	return m.finalJar(ctx,
-		ctr.WithExec([]string{"mvn", "clean", "package", "-DskipTests"}))
+		ctr.
+			// set the module name as an environment variable so we ensure constructor is only on main object
+			WithEnvVariable("_DAGGER_JAVA_SDK_MODULE_NAME", m.moduleConfig.name).
+			// build the final jar
+			WithExec([]string{"mvn", "clean", "package", "-DskipTests"}))
 }
 
 // finalJar will return the jar corresponding to the user module built
