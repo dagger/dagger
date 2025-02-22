@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/iancoleman/strcase"
 	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/dagql"
@@ -71,11 +70,6 @@ func SchemaIntrospectionJSON(ctx context.Context, dag *dagql.Server) (json.RawMe
 		return nil, fmt.Errorf("failed to marshal introspection result: %w", err)
 	}
 	return json.RawMessage(jsonBytes), nil
-}
-
-func gqlFieldName(name string) string {
-	// gql field name is uncapitalized camel case
-	return strcase.ToLowerCamel(name)
 }
 
 // AllVersion is a view that contains all versions.
