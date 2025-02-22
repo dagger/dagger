@@ -60,6 +60,11 @@ Here is an example of a Dagger Function that returns an HTTP service. This servi
 ```
 
 </TabItem>
+
+<TabItem value="Java">
+```java file=./snippets/services/bind-services/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
 </Tabs>
 
 Here is an example call for this Dagger Function:
@@ -143,6 +148,12 @@ Here is an example of how a container running in a Dagger Function can access an
 ```
 
 </TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/services/expose-host-services-to-dagger/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 Before calling this Dagger Function, use the following command to start a MariaDB database service on the host:
@@ -199,6 +210,12 @@ For example, you can now run two services that depend on each other, each using 
 ```
 
 </TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/services/create-interdependent-services/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 In this example, service A and service B are set up with custom hostnames `svca` and `svcb`, allowing each service to communicate with the other by hostname. This capability provides enhanced flexibility for managing service dependencies and interconnections within modular workflows, making it easier to handle complex setups in Dagger.
@@ -235,6 +252,12 @@ Dagger cancels each service run after a 10 second grace period to avoid frequent
 <TabItem value="PHP">
 
 ```php file=./snippets/services/persist-service-state/php/src/MyModule.php
+```
+
+</TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/services/persist-service-state/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 
 </TabItem>
@@ -290,6 +313,12 @@ The following example explicitly starts the Redis service and stops it at the en
 ```
 
 </TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/services/start-stop-services/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 ## Example: MariaDB database service for application tests
@@ -320,6 +349,12 @@ The application used in this example is [Drupal](https://www.drupal.org/), a pop
 <TabItem value="PHP">
 
 ```php file=./snippets/services/test-against-db-service/php/src/MyModule.php
+```
+
+</TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/services/test-against-db-service/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 
 </TabItem>
@@ -415,6 +450,20 @@ Here's what happens on the last line:
 1. Dagger runs the `ping` container with the `redis-srv` alias magically added to `/etc/hosts`.
 
 </TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/services/service-lifecycle-1/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+Here's what happens on the last line:
+
+1. The client requests the `ping` container's stdout, which requires the container to run.
+1. Dagger sees that the `ping` container has a service binding, `redisSrv`.
+1. Dagger starts the `redisSrv` container, which recurses into this same process.
+1. Dagger waits for health checks to pass against `redisSrv`.
+1. Dagger runs the `ping` container with the `redis-srv` alias magically added to `/etc/hosts`.
+
+</TabItem>
 </Tabs>
 
 :::note
@@ -456,6 +505,12 @@ Here's a more detailed client-server example of running commands against a Redis
 ```
 
 </TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/services/service-lifecycle-2/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 This example relies on the 10-second grace period, which you should try to avoid. Depending on the 10-second grace period is risky because there are many factors which could cause a 10-second delay between calls to Dagger, such as excessive CPU load, high network latency between the client and Dagger, or Dagger operations that require a variable amount of time to process.
@@ -484,6 +539,12 @@ It would be better to chain both commands together, which ensures that the servi
 <TabItem value="PHP">
 
 ```php file=./snippets/services/service-lifecycle-3/php/src/MyModule.php
+```
+
+</TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/services/service-lifecycle-3/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 
 </TabItem>
