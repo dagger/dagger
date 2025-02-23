@@ -21,7 +21,7 @@ const (
 
 	ModSourceDirPath = "/src"
 	ModDirPath       = "/opt/module"
-	GenPath          = "dagger-io"
+	GenPath          = "/dagger-io"
 )
 
 type JavaSdk struct {
@@ -36,10 +36,6 @@ type moduleConfig struct {
 
 func (c *moduleConfig) modulePath() string {
 	return filepath.Join(ModSourceDirPath, c.subPath)
-}
-
-func (c *moduleConfig) genPath() string {
-	return filepath.Join(ModSourceDirPath, GenPath)
 }
 
 func New(
@@ -115,8 +111,8 @@ func (m *JavaSdk) buildJavaDependencies(
 		// Mount the introspection JSON file used to generate the SDK
 		WithMountedFile("/schema.json", introspectionJSON).
 		// Copy the SDK source directory, so all the files needed to build the dependencies
-		WithDirectory(m.moduleConfig.genPath(), m.SDKSourceDir).
-		WithWorkdir(m.moduleConfig.genPath()).
+		WithDirectory(GenPath, m.SDKSourceDir).
+		WithWorkdir(GenPath).
 		// Build and install the java modules one by one
 		// - dagger-codegen-maven-plugin: this plugin will be used to generate the SDK code, from the introspection file,
 		//   this means including the ability to call other projects (not part of the main dagger SDK)
@@ -219,12 +215,12 @@ func (m *JavaSdk) generateCode(
 		// to a build system or an IDE without to interfere with the user source code
 		WithDirectory(
 			filepath.Join(m.moduleConfig.modulePath(), "target", "generated-sources", "dagger-io"),
-			javaDeps.Directory(filepath.Join(m.moduleConfig.genPath(), "dagger-java-sdk", "src", "main", "java"))).
+			javaDeps.Directory(filepath.Join(GenPath, "dagger-java-sdk", "src", "main", "java"))).
 		// copy the generated SDK files to target/generated-sources/dagger-module
 		// those are all the types generated from the introspection
 		WithDirectory(
 			filepath.Join(m.moduleConfig.modulePath(), "target", "generated-sources", "dagger-module"),
-			javaDeps.Directory(filepath.Join(m.moduleConfig.genPath(), "dagger-java-sdk", "target", "generated-sources", "dagger"))).
+			javaDeps.Directory(filepath.Join(GenPath, "dagger-java-sdk", "target", "generated-sources", "dagger"))).
 		Directory(ModSourceDirPath)
 }
 
