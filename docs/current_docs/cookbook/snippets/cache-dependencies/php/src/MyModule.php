@@ -19,14 +19,13 @@ class MyModule
     public function build(
         // source code location
         Directory $source,
-    ): Container
-    {
+    ): Container {
         return dag()
             ->container()
-            ->from("php:8.3-cli")
-            ->withDirectory("/src", $source)
-            ->withWorkdir("/src")
-            ->withMountedCache("/root/.composer", dag()->cacheVolume("composer"))
-            ->withExec(["composer", "install"]);
+            ->from('php:8.3-cli')
+            ->withDirectory('/src', $source)
+            ->withWorkdir('/src')
+            ->withMountedCache('/root/.composer', dag()->cacheVolume('composer'))
+            ->withExec(['composer', 'install']);
     }
 }

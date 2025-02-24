@@ -19,9 +19,9 @@ class MyModule
     {
         return dag()
             ->container()
-            ->from("alpine")
-            ->withEnvVariable("ENV_VAR", "VALUE")
-            ->withExec(["env"])
+            ->from('alpine')
+            ->withEnvVariable('ENV_VAR', 'VALUE')
+            ->withExec(['env'])
             ->stdout();
     }
 }

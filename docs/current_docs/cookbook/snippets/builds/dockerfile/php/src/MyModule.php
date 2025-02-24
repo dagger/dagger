@@ -18,11 +18,10 @@ class MyModule
     public function build(
         // location of directory containing Dockerfile
         Directory $src,
-    ): string
-    {
+    ): string {
         $ref = $src
         ->dockerBuild() // build from Dockerfile
-        ->publish("ttl.sh/hello-dagger");
+        ->publish('ttl.sh/hello-dagger');
         return $ref;
     }
 }

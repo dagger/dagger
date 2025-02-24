@@ -20,21 +20,22 @@ class MyModule
         // build app
         $builder = dag()
             ->container()
-            ->from("golang:latest")
-            ->withDirectory("/src", $src)
-            ->withWorkdir("/src")
-            ->withEnvVariable("CGO_ENABLED", "0")
-            ->withExec(["go", "build", "-o", "myapp"]);
+            ->from('golang:latest')
+            ->withDirectory('/src', $src)
+            ->withWorkdir('/src')
+            ->withEnvVariable('CGO_ENABLED', '0')
+            ->withExec(['go', 'build', '-o', 'myapp']);
 
         // publish binary on alpine base
         $prodImage = dag()
             ->container()
-            ->from("alpine")
-            ->withFile("/bin/myapp", $builder->file("/src/myapp"))
-            ->withEntrypoint(["/bin/myapp"]);
+            ->from('alpine')
+            ->withFile('/bin/myapp', $builder->file('/src/myapp'))
+            ->withEntrypoint(['/bin/myapp']);
 
         // publish to ttl.sh registry
-        $addr = $prodImage->publish("ttl.sh/myapp:latest");
+        $addr = $prodImage->publish('ttl.sh/myapp:latest');
         return $addr;
+
     }
 }

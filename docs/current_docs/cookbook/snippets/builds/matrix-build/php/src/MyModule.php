@@ -14,8 +14,8 @@ use function Dagger\dag;
 class MyModule
 {
     // define build matrix
-    const GOOSES = ["linux", "darwin"];
-    const GOARCHES = ["amd64", "arm64"];
+    const GOOSES = ['linux', 'darwin'];
+    const GOARCHES = ['amd64', 'arm64'];
 
     // Build and return directory of go binaries
     #[DaggerFunction]
@@ -26,9 +26,9 @@ class MyModule
 
         $golang = dag()
             ->container()
-            ->from("golang:latest")
-            ->withDirectory("/src", $src)
-            ->withWorkdir("/src");
+            ->from('golang:latest')
+            ->withDirectory('/src', $src)
+            ->withWorkdir('/src');
 
         foreach (self::GOOSES as $goos) {
           foreach (self::GOARCHES as $goarch) {
@@ -37,9 +37,9 @@ class MyModule
 
             // build artifact
             $build = $golang
-                ->withEnvVariable("GOOS", $goos)
-                ->withEnvVariable("GOARCH", $goarch)
-                ->withExec(["go", "build", "-o", $path]);
+                ->withEnvVariable('GOOS', $goos)
+                ->withEnvVariable('GOARCH', $goarch)
+                ->withExec(['go', 'build', '-o', $path]);
 
             // add build to outputs
             $outputs = $outputs->withDirectory($path, $build->directory($path));

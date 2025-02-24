@@ -17,7 +17,7 @@ class MyModule
 {
     #[DaggerFunction]
     public function __construct(
-        #[DefaultPath(".")]
+        #[DefaultPath('.')]
         public Directory $source
     ) {
     }
@@ -28,9 +28,9 @@ class MyModule
     {
         return dag()
             ->container()
-            ->from("alpine:latest")
-            ->withMountedDirectory("/app", $this->source)
-            ->directory("/app")
+            ->from('alpine:latest')
+            ->withMountedDirectory('/app', $this->source)
+            ->directory('/app')
             ->entries();
     }
 }
