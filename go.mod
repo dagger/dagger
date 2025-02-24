@@ -33,18 +33,18 @@ require (
 	github.com/containerd/errdefs v1.0.0
 	github.com/containerd/fuse-overlayfs-snapshotter v1.0.8
 	github.com/containerd/go-runc v1.1.0
-	github.com/containerd/platforms v1.0.0-rc.0
+	github.com/containerd/platforms v1.0.0-rc.1
 	github.com/containerd/stargz-snapshotter v0.15.1
 	github.com/containernetworking/cni v1.2.3
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/creack/pty v1.1.24
 	github.com/dagger/testctx v0.0.4
-	github.com/dagger/testctx/oteltest v0.0.1
+	github.com/dagger/testctx/oteltest v0.0.2
 	github.com/dave/jennifer v1.7.1
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/distribution/reference v0.6.0
-	github.com/docker/cli v27.5.1+incompatible
-	github.com/docker/docker v27.5.1+incompatible
+	github.com/docker/cli v28.0.0+incompatible
+	github.com/docker/docker v28.0.0+incompatible
 	github.com/dschmidt/go-layerfs v0.2.0
 	github.com/dustin/go-humanize v1.0.1
 	github.com/go-git/go-git/v5 v5.13.2
@@ -73,7 +73,7 @@ require (
 	github.com/moby/sys/signal v0.7.1
 	github.com/moby/sys/userns v0.1.0
 	github.com/muesli/reflow v0.3.0
-	github.com/muesli/termenv v0.15.3-0.20240618155329-98d742f6907a
+	github.com/muesli/termenv v0.16.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/opencontainers/runtime-spec v1.2.0
@@ -87,7 +87,7 @@ require (
 	github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29
 	github.com/sirupsen/logrus v1.9.3
 	github.com/sourcegraph/conc v0.3.0
-	github.com/spf13/cobra v1.9.0
+	github.com/spf13/cobra v1.9.1
 	github.com/spf13/pflag v1.0.6
 	github.com/stretchr/testify v1.10.0
 	github.com/tidwall/gjson v1.18.0
@@ -110,11 +110,11 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.32.0
 	go.opentelemetry.io/otel/trace v1.34.0
 	go.opentelemetry.io/proto/otlp v1.4.0
-	golang.org/x/crypto v0.33.0
+	golang.org/x/crypto v0.34.0
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0
 	golang.org/x/mod v0.23.0
 	golang.org/x/net v0.35.0
-	golang.org/x/oauth2 v0.25.0
+	golang.org/x/oauth2 v0.26.0
 	golang.org/x/sync v0.11.0
 	golang.org/x/sys v0.30.0
 	golang.org/x/term v0.29.0
