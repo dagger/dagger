@@ -77,7 +77,7 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 			return nil
 		})
 		recordStatus(ctx, res, span, cached, err, id)
-		logResult(ctx, res, span, self, id)
+		logResult(ctx, res, self, id)
 		collectEffects(ctx, res, span, self)
 	}
 }
@@ -126,7 +126,7 @@ func recordStatus(ctx context.Context, res dagql.Typed, span trace.Span, cached 
 }
 
 // logResult prints the result of a call to the span's stdout.
-func logResult(ctx context.Context, res dagql.Typed, span trace.Span, self dagql.Object, id *call.ID) {
+func logResult(ctx context.Context, res dagql.Typed, self dagql.Object, id *call.ID) {
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	defer stdio.Close()
 	fieldSpec, ok := self.ObjectType().FieldSpec(id.Field())
