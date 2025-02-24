@@ -13,6 +13,7 @@ import (
 	"github.com/99designs/gqlgen/graphql/errcode"
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/iancoleman/strcase"
+	"github.com/moby/buildkit/identity"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -20,6 +21,7 @@ import (
 	"github.com/vektah/gqlparser/v2/parser"
 	"github.com/vektah/gqlparser/v2/validator"
 	"github.com/vektah/gqlparser/v2/validator/rules"
+	"github.com/zeebo/xxh3"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql/call"
@@ -70,16 +72,6 @@ type AroundFunc func(
 	*call.ID,
 ) (context.Context, func(res Typed, cached bool, err error))
 
-// Cache stores results of pure selections against Server.
-type Cache interface {
-	GetOrInitialize(
-		context.Context,
-		digest.Digest,
-		func(context.Context) (Typed, error),
-	) (Typed, bool, error)
-	GetOrInitializeValue(context.Context, digest.Digest, Typed) (Typed, bool, error)
-}
-
 // TypeDef is a type whose sole practical purpose is to define a GraphQL type,
 // so it explicitly includes the Definitive interface.
 type TypeDef interface {
@@ -88,7 +80,7 @@ type TypeDef interface {
 }
 
 // NewServer returns a new Server with the given root object.
-func NewServer[T Typed](root T) *Server {
+func NewServer[T Typed](root T, cache Cache) *Server {
 	rootClass := NewClass(ClassOpts[T]{
 		// NB: there's nothing actually stopping this from being a thing, except it
 		// currently confuses the Dagger Go SDK. could be a nifty way to pass
@@ -96,7 +88,7 @@ func NewServer[T Typed](root T) *Server {
 		NoIDs: true,
 	})
 	srv := &Server{
-		Cache: NewCache(),
+		Cache: cache,
 		root: Instance[T]{
 			Self:  root,
 			Class: rootClass,
@@ -242,10 +234,9 @@ func (s *Server) installObject(class ObjectType) {
 		s.scalars[idType.TypeName()] = idType
 		s.Root().ObjectType().Extend(
 			FieldSpec{
-				Name:           fmt.Sprintf("load%sFromID", class.TypeName()),
-				Description:    fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
-				Type:           class.Typed(),
-				ImpurityReason: "The given ID ultimately determines the purity of its result.",
+				Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
+				Description: fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
+				Type:        class.Typed(),
 				Args: []InputSpec{
 					{
 						Name: "id",
@@ -268,7 +259,14 @@ func (s *Server) installObject(class ObjectType) {
 				}
 				return res, nil
 			},
-			nil,
+			// TODO: hack to avoid circular dependency, dedupe
+			func(ctx context.Context, _ Object, _ map[string]Input, origDgst digest.Digest) (digest.Digest, error) {
+				const XXH3 digest.Algorithm = "xxh3"
+				randID := identity.NewID()
+				h := xxh3.New()
+				h.WriteString(randID)
+				return digest.NewDigest(XXH3, h), nil
+			},
 		)
 	}
 }

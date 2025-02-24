@@ -35,9 +35,8 @@ func (s *fileSchema) Install() {
 		dagql.Func("withName", s.withName).
 			Doc(`Retrieves this file with its name set to the given name.`).
 			ArgDoc("name", `Name to set file to.`),
-		dagql.Func("export", s.export).
+		dagql.FuncWithCacheKey("export", s.export, core.Impure).
 			View(AllVersion).
-			Impure("Writes to the local host.").
 			Doc(`Writes the file to a file path on the host.`).
 			ArgDoc("path", `Location of the written directory (e.g., "output.txt").`).
 			ArgDoc("allowParentDirPath",

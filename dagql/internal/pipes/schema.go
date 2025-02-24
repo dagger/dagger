@@ -6,6 +6,7 @@ import (
 
 	"github.com/vektah/gqlparser/v2/ast"
 
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/internal/ioctx"
 )
@@ -33,16 +34,16 @@ func Install[Root dagql.Typed](srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[Pipe]{
-		dagql.Func("read", func(ctx context.Context, self Pipe, _ struct{}) (dagql.String, error) {
+		dagql.FuncWithCacheKey("read", func(ctx context.Context, self Pipe, _ struct{}) (dagql.String, error) {
 			fmt.Fprintln(ioctx.Stdout(ctx), "reading from", self.Channel)
 			return <-self.Channel, nil
-		}).Impure("Reads a value from internal state."),
-		dagql.Func("write", func(ctx context.Context, self Pipe, args struct {
+		}, core.Impure),
+		dagql.FuncWithCacheKey("write", func(ctx context.Context, self Pipe, args struct {
 			Message dagql.String
 		}) (Pipe, error) {
 			fmt.Fprintln(ioctx.Stdout(ctx), "writing", args.Message, "to", self.Channel)
 			self.Channel <- args.Message
 			return self, nil
-		}).Impure("Writes a value to internal state."),
+		}, core.Impure),
 	}.Install(srv)
 }

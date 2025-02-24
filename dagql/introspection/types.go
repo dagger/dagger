@@ -6,24 +6,36 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/moby/buildkit/identity"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/zeebo/xxh3"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 )
 
+// TODO: hack to avoid circular dependency for now, dedupe
+func Impure[P dagql.Typed, A any](ctx context.Context, inst dagql.Instance[P], args A, origDgst digest.Digest) (digest.Digest, error) {
+	const XXH3 digest.Algorithm = "xxh3"
+	randID := identity.NewID()
+	h := xxh3.New()
+	h.WriteString(randID)
+	return digest.NewDigest(XXH3, h), nil
+}
+
 func Install[T dagql.Typed](srv *dagql.Server) {
 	dagql.Fields[T]{
-		dagql.Func("__schema", func(ctx context.Context, self T, args struct{}) (*Schema, error) {
+		dagql.FuncWithCacheKey("__schema", func(ctx context.Context, self T, args struct{}) (*Schema, error) {
 			return WrapSchema(srv.Schema()), nil
-		}).Impure("A schema can be modified at runtime."),
+		}, Impure),
 
 		// custom dagger field
 		dagql.Func("__schemaVersion", func(ctx context.Context, self T, args struct{}) (string, error) {
 			return srv.View, nil
 		}).View(dagql.AllView{}),
 
-		dagql.Func("__type", func(ctx context.Context, self T, args struct {
+		dagql.FuncWithCacheKey("__type", func(ctx context.Context, self T, args struct {
 			Name string
 		}) (*Type, error) {
 			def, ok := srv.Schema().Types[args.Name]
@@ -31,7 +43,7 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 				return nil, fmt.Errorf("unknown type: %q", args.Name)
 			}
 			return WrapTypeFromDef(srv.Schema(), def), nil
-		}).Impure("A type can be modified at runtime."),
+		}, Impure),
 	}.Install(srv)
 
 	TypeKinds.Install(srv)

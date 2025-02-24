@@ -193,13 +193,12 @@ func (s *sdkLoader) newModuleSDK(
 	sdkModMeta dagql.Instance[*core.Module],
 	optionalFullSDKSourceDir dagql.Instance[*core.Directory],
 ) (*moduleSDK, error) {
-	dag := dagql.NewServer(root)
-
-	var err error
-	dag.Cache, err = root.Cache(ctx)
+	cache, err := root.Cache(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cache for sdk module %s: %w", sdkModMeta.Self.Name(), err)
 	}
+	dag := dagql.NewServer(root, cache)
+
 	dag.Around(core.AroundFunc)
 
 	if err := sdkModMeta.Self.Install(ctx, dag); err != nil {

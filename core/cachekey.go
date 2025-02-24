@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/moby/buildkit/identity"
 	"github.com/opencontainers/go-digest"
 	"github.com/zeebo/xxh3"
 
@@ -32,6 +33,11 @@ func CachePerClientObject[A any](ctx context.Context, _ dagql.Object, _ A, origD
 		return "", fmt.Errorf("client ID not found in context")
 	}
 	return HashFrom(origDgst.String(), clientMD.ClientID), nil
+}
+
+func Impure[P dagql.Typed, A any](ctx context.Context, inst dagql.Instance[P], args A, origDgst digest.Digest) (digest.Digest, error) {
+	randID := identity.NewID()
+	return HashFrom(randID), nil
 }
 
 func HashFrom(ins ...string) digest.Digest {

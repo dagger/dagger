@@ -13,7 +13,7 @@ import (
 func TestCoreModTypeDefs(t *testing.T) {
 	ctx := context.Background()
 	root := &core.Query{}
-	dag := dagql.NewServer(root)
+	dag := dagql.NewServer(root, dagql.NewCache())
 	coreMod := &CoreMod{Dag: dag}
 	coreModDeps := core.NewModDeps(root, []core.Mod{coreMod})
 	require.NoError(t, coreMod.Install(ctx, dag))
