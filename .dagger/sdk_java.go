@@ -15,8 +15,8 @@ const (
 	javaSDKVersionPomPath   = javaSDKPath + "/pom.xml"
 	javaSchemasDirPath      = javaSDKPath + "/dagger-codegen-maven-plugin/src/main/resources/schemas"
 	javaGeneratedSchemaPath = "target/generated-schema/schema.json"
-	javaVersion             = "17"
-	mavenVersion            = "3.9"
+	mavenImage              = "maven:3.9.9-eclipse-temurin-23-alpine"
+	mavenDigest             = "sha256:0e5e89100c3c1a0841ff67e0c1632b9b983e94ee5a9b1f758125d9e43c66856f"
 )
 
 type JavaSDK struct {
@@ -25,7 +25,7 @@ type JavaSDK struct {
 
 // Lint the Java SDK
 func (t JavaSDK) Lint(ctx context.Context) error {
-	_, err := t.Maven().
+	_, err := t.Maven(ctx).
 		WithExec([]string{"mvn", "fmt:check"}).
 		Sync(ctx)
 	return err
@@ -38,7 +38,7 @@ func (t JavaSDK) Test(ctx context.Context) error {
 		return err
 	}
 
-	_, err = t.Maven().
+	_, err = t.Maven(ctx).
 		With(installer).
 		WithExec([]string{"mvn", "clean", "verify", "-Ddaggerengine.version=local"}).
 		Sync(ctx)
@@ -52,7 +52,7 @@ func (t JavaSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 		return nil, err
 	}
 
-	base := t.Maven().With(installer)
+	base := t.Maven(ctx).With(installer)
 
 	generatedSchema, err := base.
 		WithExec([]string{"mvn", "clean", "install", "-pl", "dagger-codegen-maven-plugin"}).
@@ -96,7 +96,7 @@ func (t JavaSDK) Publish(
 		skipDeploy = "true"
 	}
 
-	_, err := t.Maven().
+	_, err := t.Maven(ctx).
 		WithExec([]string{"apt-get", "update"}).
 		WithExec([]string{"apt-get", "-y", "install", "gpg"}).
 		WithExec([]string{"mvn", "versions:set", fmt.Sprintf("-DnewVersion=%s", version)}).
@@ -123,14 +123,15 @@ func (t JavaSDK) Bump(ctx context.Context, version string) (*dagger.Directory, e
 }
 
 // Bump dependencies in the Java SDK
-func (t JavaSDK) BumpDeps() *dagger.Directory {
+func (t JavaSDK) BumpDeps(ctx context.Context) *dagger.Directory {
 	poms := []string{
 		"/sdk/java/dagger-codegen-maven-plugin/pom.xml",
+		"/sdk/java/dagger-java-annotation-processor/pom.xml",
 		"/sdk/java/dagger-java-sdk/pom.xml",
 		"/sdk/java/dagger-java-samples/pom.xml",
 		"/sdk/java/pom.xml",
 	}
-	bumpCtr := t.Maven()
+	bumpCtr := t.Maven(ctx)
 	for _, pom := range poms {
 		bumpCtr = bumpCtr.
 			WithWorkdir(path.Dir(pom)).
@@ -143,13 +144,19 @@ func (t JavaSDK) BumpDeps() *dagger.Directory {
 	return bumped
 }
 
-func (t JavaSDK) Maven() *dagger.Container {
+func (t JavaSDK) Maven(ctx context.Context) *dagger.Container {
 	src := t.Dagger.Source().Directory(javaSDKPath)
 	mountPath := "/" + javaSDKPath
 
 	return dag.Container().
-		From(fmt.Sprintf("maven:%s-eclipse-temurin-%s", mavenVersion, javaVersion)).
-		WithMountedCache("/root/.m2", dag.CacheVolume("maven-cache")).
+		From(fmt.Sprintf("%s@%s", mavenImage, mavenDigest)).
+		WithMountedCache("/root/.m2", dag.CacheVolume("sdk-java-maven-m2")).
+		With(func(ctr *dagger.Container) *dagger.Container {
+			if platform, err := ctr.Platform(ctx); err == nil && strings.Contains(string(platform), "arm64") {
+				ctr = ctr.WithEnvVariable("_JAVA_OPTIONS", "-XX:UseSVE=0")
+			}
+			return ctr
+		}).
 		WithWorkdir(mountPath).
 		WithDirectory(mountPath, src)
 }
