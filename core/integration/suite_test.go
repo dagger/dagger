@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -45,15 +46,12 @@ func TestMain(m *testing.M) {
 func Middleware() []testctx.Middleware[*testing.T] {
 	return []testctx.Middleware[*testing.T]{
 		testctx.WithParallel(),
-		oteltest.WithTracing[*testing.T](
-			oteltest.TraceConfig{
-				Attributes: []attribute.KeyValue{
-					attribute.String(testctxTypeAttr, "*testing.T"),
-				},
+		oteltest.WithTracing(
+			oteltest.TraceConfig[*testing.T]{
+				StartOptions: spanOpts[*testing.T],
 			},
 		),
 		oteltest.WithLogging[*testing.T](),
-		spanNameMiddleware[*testing.T](),
 	}
 }
 
@@ -62,33 +60,35 @@ func isPrewarm() bool {
 	return ok
 }
 
+func BenchMiddleware() []testctx.Middleware[*testing.B] {
+	return []testctx.Middleware[*testing.B]{
+		oteltest.WithTracing(
+			oteltest.TraceConfig[*testing.B]{
+				StartOptions: spanOpts[*testing.B],
+			},
+		),
+		oteltest.WithLogging[*testing.B](),
+	}
+}
+
 const testctxTypeAttr = "dagger.io/testctx.type"
 const testctxNameAttr = "dagger.io/testctx.name"
 const testctxPrewarmAttr = "dagger.io/testctx.prewarm"
 
-// spanNameMiddleware is a middleware that adds the test name to the span.
-func spanNameMiddleware[T testctx.Runner[T]]() testctx.Middleware[T] {
-	return func(next testctx.RunFunc[T]) testctx.RunFunc[T] {
-		return func(ctx context.Context, w *testctx.W[T]) {
-			span := trace.SpanFromContext(ctx)
-			span.SetAttributes(attribute.String(testctxNameAttr, w.Name()))
-			next(ctx, w)
-		}
+func spanOpts[T testctx.Runner[T]](w *testctx.W[T]) []trace.SpanStartOption {
+	var t T
+	attrs := []attribute.KeyValue{
+		attribute.String(testctxNameAttr, w.Name()),
+		attribute.String(testctxTypeAttr, fmt.Sprintf("%T", t)),
 	}
-}
-
-func BenchMiddleware() []testctx.Middleware[*testing.B] {
-	return []testctx.Middleware[*testing.B]{
-		oteltest.WithTracing[*testing.B](
-			oteltest.TraceConfig{
-				Attributes: []attribute.KeyValue{
-					attribute.String(testctxTypeAttr, "*testing.B"),
-					attribute.Bool(testctxPrewarmAttr, isPrewarm()),
-				},
-			},
-		),
-		oteltest.WithLogging[*testing.B](),
-		spanNameMiddleware[*testing.B](),
+	if strings.Count(w.Name(), "/") == 0 {
+		attrs = append(attrs, attribute.Bool("dagger.io/ui.reveal", true)) // TODO use telemetry const
+	}
+	if isPrewarm() {
+		attrs = append(attrs, attribute.Bool(testctxPrewarmAttr, true))
+	}
+	return []trace.SpanStartOption{
+		trace.WithAttributes(attrs...),
 	}
 }
 
