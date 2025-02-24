@@ -1,4 +1,5 @@
 import fs from "fs"
+import path from "path"
 
 const daggerPathAlias = "@dagger.io/dagger"
 const daggerTelemetryPathAlias = "@dagger.io/dagger/telemetry"
@@ -66,7 +67,9 @@ if (!fs.existsSync(tsConfigPath)) {
       moduleResolution: "Node",
       experimentalDecorators: true,
       paths: {
-        "@dagger.io/client": [`./${libraryDir.value}/client.gen.ts`],
+        "@dagger.io/client": [
+          `./${path.join(libraryDir.value, "client.gen.ts")}`,
+        ],
       },
     },
   }
@@ -111,7 +114,7 @@ if (!tsconfig.compilerOptions.paths) {
 }
 
 tsconfig.compilerOptions.paths[daggerClientPathAlias] = [
-  `./${libraryDir.value}/client.gen.ts`,
+  `./${path.join(libraryDir.value, "client.gen.ts")}`,
 ]
 
 if (localSDK) {

@@ -174,8 +174,13 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 		},
 	}
 
+	packageName := path.Base(g.Config.OutputDir)
+	if packageName == "." {
+		packageName = "main"
+	}
+
 	if err := generateCode(ctx, g.Config, schema, schemaVersion, mfs, &PackageInfo{
-		PackageName: "dagger",
+		PackageName: packageName,
 
 		PackageImport: packageImport,
 	}, nil, nil, 1); err != nil {
