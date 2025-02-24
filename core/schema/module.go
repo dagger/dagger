@@ -698,17 +698,10 @@ func (s *moduleSchema) moduleGenerateClient(
 		return nil, fmt.Errorf("failed to add module source required files: %w", err)
 	}
 
-	// Clone the module and add it to the deps so its binding are also generated
-	mod.Deps = mod.Deps.Append(mod.Clone())
-
-	// HACK: Is there actually a better
-	// Remove the definitions from the module so they does not conflict with its self dependency
-	mod = mod.CloneWithoutDefs()
-
 	generatedClientDir, err := generator.GenerateClient(
 		ctx,
 		source,
-		mod.Deps,
+		mod.Deps.Append(mod),
 		args.OutputDir.String(),
 		args.LocalSdk.GetOr(false).Bool(),
 	)
