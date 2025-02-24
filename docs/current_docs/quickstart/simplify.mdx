@@ -80,7 +80,7 @@ This code listing revises the Dagger Functions from earlier, replacing calls to 
 
 If you backtrack a little further and inspect the [Node module's source code](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/index.ts), you'll notice two important things:
 
-1. The Node module is written in TypeScript but is called from your Dagger module, which could be in Go, Python or TypeScript. Dagger takes care of the translation via its language-agnostic GraphQL layer.
+1. The Node module is written in TypeScript but is called from your Dagger module, which could be in Go, Python,  TypeScript, PHP, or Java. Dagger takes care of the translation via its language-agnostic GraphQL layer.
 1. The Node module is a Dagger module very similar to the one you built in this quickstart. If you inspect its source code, you'll recognize the `dag` client and many of the core Dagger API methods you  used when building your own Dagger Functions.
 
 There's one other improvement in this revised pipeline. Every Dagger Function now specifies a default path (`/`) for the `source` directory argument. This means that if no `source` argument is provided on the command line, Dagger will default to the root of the Git repository as the location of the application's source code.

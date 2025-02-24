@@ -90,6 +90,14 @@ dagger init --sdk=php --source=./dagger
 
 This will generate a `dagger.json` module metadata file, initial `dagger/src/HelloDagger.php` source code template, `dagger/composer.json`, `dagger/composer.lock` and `dagger/entrypoint.php` files, as well as a generated `dagger/sdk` folder for local development.
 </TabItem>
+<TabItem value="Java">
+
+```shell
+dagger init --sdk=java --source=./dagger
+```
+
+This will generate a `dagger.json` module metadata file, initial `dagger/src/main/java/io/dagger/modules/hellodagger/HelloDagger.java` source code template, `dagger/pom.xml` file for module dependencies, as well as a generated `dagger/target` folder for local development.
+</TabItem>
 </Tabs>
 
 :::important
@@ -98,7 +106,7 @@ By default, the Dagger module name is automatically generated from the name of t
 
 ### Construct a pipeline using Dagger Functions
 
-Dagger Functions are regular code, written in Go, Python or TypeScript using the corresponding Dagger SDK. They consist of a series of method/function calls, such as "pull a container image", "copy a file", "forward a TCP port", and so on, which can be chained together.
+Dagger Functions are regular code, written in Go, Python, TypeScript, PHP, or Java using the corresponding Dagger SDK. They consist of a series of method/function calls, such as "pull a container image", "copy a file", "forward a TCP port", and so on, which can be chained together.
 
 :::note
 Don't worry about how the Dagger Functions shown below work for the moment - it's explained in detail in  the next sections!
@@ -155,6 +163,21 @@ In this Dagger module, each Dagger Function performs a different operation:
 Replace the generated `dagger/src/HelloDagger.php` file with the following code, which adds four Dagger Functions to your Dagger module:
 
 ```php file=./snippets/daggerize/php/src/HelloDagger.php
+```
+
+In this Dagger module, each Dagger Function performs a different operation:
+
+- The `publish()` Dagger Function tests, builds and publishes a container image of the application to a registry.
+- The `test()` Dagger Function runs the application's unit tests and returns the results.
+- The `build()` Dagger Function performs a multi-stage build and returns a final container image with the production-ready application and an NGINX Web server to host and serve it.
+- The `buildEnv()` Dagger Function creates a container with the build environment for the application.
+
+</TabItem>
+<TabItem value="Java">
+
+Replace the generated `dagger/src/main/java/io/dagger/modules/hellodagger/HelloDagger.java` file with the following code, which adds four Dagger Functions to your Dagger module:
+
+```php file=./snippets/daggerize/java/src/main/java/io/dagger/modules/hellodagger/HelloDagger.java
 ```
 
 In this Dagger module, each Dagger Function performs a different operation:
