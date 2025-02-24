@@ -50,7 +50,7 @@ public class MyModule extends AbstractModule {
   }
 
   /**
-   * Get value fro mRedis service
+   * Get value from Redis service
    *
    * @param key The cache key to get
    */
