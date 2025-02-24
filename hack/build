@@ -24,8 +24,8 @@ engine |\
         ${_EXPERIMENTAL_DAGGER_GPU_SUPPORT:+--gpu-support} |\
     start \
         --name=$CONTAINER \
-        ${DAGGER_CLOUD_TOKEN:+--dagger-cloud-token=${DAGGER_CLOUD_TOKEN-}} \
-        ${DAGGER_CLOUD_URL:+--dagger-cloud-url=${DAGGER_CLOUD_URL-}} &
+        ${DAGGER_CLOUD_TOKEN:+--cloud-token=env://DAGGER_CLOUD_TOKEN} \
+        ${DAGGER_CLOUD_URL:+--cloud-url=${DAGGER_CLOUD_URL-}} &
 
 _wait
 
