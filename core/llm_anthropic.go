@@ -43,14 +43,25 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 	var systemPrompts []anthropic.TextBlockParam
 	for _, msg := range history {
 		var blocks []anthropic.ContentBlockParamUnion
+
+		// Anthropic's API sometimes returns an empty content whilst not accepting it:
+		// anthropic.BadRequestError: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'messages: text content blocks must be non-empty'}}
+		// This workaround overwrites the empty content to space character
+		// As soon as this issue is resolved, we can remove this hack
+		// https://github.com/anthropics/anthropic-sdk-python/issues/461#issuecomment-2141882744
+		content := msg.Content.(string)
+		if content == "" {
+			content = " "
+		}
+
 		if msg.ToolCallID != "" {
 			blocks = append(blocks, anthropic.NewToolResultBlock(
 				msg.ToolCallID,
-				msg.Content.(string),
+				content,
 				msg.ToolErrored,
 			))
 		} else {
-			blocks = append(blocks, anthropic.NewTextBlock(msg.Content.(string)))
+			blocks = append(blocks, anthropic.NewTextBlock(content))
 		}
 		for _, call := range msg.ToolCalls {
 			blocks = append(blocks, anthropic.NewToolUseBlockParam(
