@@ -37,9 +37,16 @@ func (s llmSchema) Install() {
 			Doc("set a variable for expansion in the prompt").
 			ArgDoc("name", "The name of the variable").
 			ArgDoc("value", "The value of the variable"),
-		dagql.Func("sync", s.sync).
+		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.Instance[*core.Llm], _ struct{}) (dagql.ID[*core.Llm], error) {
+			_, err := self.Self.Sync(ctx, s.srv)
+			if err != nil {
+				var zero dagql.ID[*core.Llm]
+				return zero, err
+			}
+			return dagql.NewID[*core.Llm](self.ID()), nil
+		}).
 			Doc("synchronize LLM state"),
-		dagql.Func("loop", s.sync).
+		dagql.Func("loop", s.loop).
 			Deprecated("use sync").
 			Doc("synchronize LLM state"),
 		dagql.Func("tools", s.tools).
@@ -87,7 +94,7 @@ func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.Llm, args stru
 	return llm.WithPromptFile(ctx, file.Self, s.srv)
 }
 
-func (s *llmSchema) sync(ctx context.Context, llm *core.Llm, args struct{}) (*core.Llm, error) {
+func (s *llmSchema) loop(ctx context.Context, llm *core.Llm, args struct{}) (*core.Llm, error) {
 	return llm.Sync(ctx, s.srv)
 }
 
