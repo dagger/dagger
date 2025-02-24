@@ -50,8 +50,7 @@ import javax.lang.model.util.Elements;
   "io.dagger.module.annotation.Function",
   "io.dagger.module.annotation.Optional",
   "io.dagger.module.annotation.Default",
-  "io.dagger.module.annotation.DefaultPath",
-  "io.dagger.module.annotation.Nullable"
+  "io.dagger.module.annotation.DefaultPath"
 })
 @SupportedSourceVersion(SourceVersion.RELEASE_17)
 @AutoService(Processor.class)
@@ -66,17 +65,20 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
   }
 
   ModuleInfo generateModuleInfo(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
+    String moduleName = System.getenv("_DAGGER_JAVA_SDK_MODULE_NAME");
+
     String moduleDescription = null;
     Set<ObjectInfo> annotatedObjects = new HashSet<>();
+    boolean hasModuleAnnotation = false;
 
     for (TypeElement annotation : annotations) {
       for (Element element : roundEnv.getElementsAnnotatedWith(annotation)) {
         if (element.getKind() == ElementKind.PACKAGE) {
-          Module module = element.getAnnotation(Module.class);
-          moduleDescription = module.description();
-          if (moduleDescription.isEmpty()) {
-            moduleDescription = trimDoc(processingEnv.getElementUtils().getDocComment(element));
+          if (hasModuleAnnotation) {
+            throw new IllegalStateException("Only one @Module annotation is allowed");
           }
+          hasModuleAnnotation = true;
+          moduleDescription = parseModuleDescription(element);
         } else if (element.getKind() == ElementKind.CLASS
             || element.getKind() == ElementKind.RECORD) {
           TypeElement typeElement = (TypeElement) element;
@@ -85,6 +87,9 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           if (name.isEmpty()) {
             name = typeElement.getSimpleName().toString();
           }
+
+          boolean mainObject = areSimilar(name, moduleName);
+
           if (!element.getModifiers().contains(Modifier.PUBLIC)) {
             throw new RuntimeException(
                 "The class %s must be public if annotated with @Object".formatted(qName));
@@ -115,6 +120,41 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
             throw new RuntimeException(
                 "The class %s must have a public no-argument constructor that calls super()"
                     .formatted(qName));
+          }
+
+          Optional<ConstructorInfo> constructorInfo = Optional.empty();
+          if (mainObject) {
+            List<? extends Element> constructorDefs =
+                typeElement.getEnclosedElements().stream()
+                    .filter(elt -> elt.getKind() == ElementKind.CONSTRUCTOR)
+                    .filter(elt -> !((ExecutableElement) elt).getParameters().isEmpty())
+                    .toList();
+            if (constructorDefs.size() == 1) {
+              Element elt = constructorDefs.get(0);
+              constructorInfo =
+                  Optional.of(
+                      new ConstructorInfo(
+                          ((ExecutableElement) elt)
+                              .getParameters()
+                              .get(0)
+                              .asType()
+                              .toString()
+                              .equals("io.dagger.client.Client"),
+                          new FunctionInfo(
+                              "<init>",
+                              "",
+                              parseFunctionDescription(elt),
+                              new TypeInfo(
+                                  ((ExecutableElement) elt).getReturnType().toString(),
+                                  ((ExecutableElement) elt).getReturnType().getKind().name()),
+                              parseParameters((ExecutableElement) elt)
+                                  .toArray(new ParameterInfo[0]))));
+            } else if (constructorDefs.size() > 1) {
+              // There's more than one non-empty constructor, but Dagger only supports to expose a
+              // single one
+              throw new RuntimeException(
+                  "The class %s must have a single non-empty constructor".formatted(qName));
+            }
           }
 
           List<FieldInfo> fieldInfoInfos =
@@ -174,9 +214,10 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
               new ObjectInfo(
                   name,
                   qName,
-                  parseTypeDescription(typeElement),
+                  parseObjectDescription(typeElement),
                   fieldInfoInfos.toArray(new FieldInfo[fieldInfoInfos.size()]),
-                  functionInfos.toArray(new FunctionInfo[functionInfos.size()])));
+                  functionInfos.toArray(new FunctionInfo[functionInfos.size()]),
+                  constructorInfo));
         }
       }
     }
@@ -187,6 +228,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
 
   private List<ParameterInfo> parseParameters(ExecutableElement elt) {
     return elt.getParameters().stream()
+        .filter(param -> !param.asType().toString().equals("io.dagger.client.Client"))
         .map(
             param -> {
               TypeMirror tm = param.asType();
@@ -309,6 +351,11 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           }
           rm.addCode(")");
         }
+        if (objectInfo.constructor().isPresent()) {
+          rm.addCode("\n            .withConstructor(")
+              .addCode(withFunction(objectInfo, objectInfo.constructor().get().constructor()))
+              .addCode(")"); // end of .withConstructor
+        }
         rm.addCode(")"); // end of .withObject(
       }
       rm.addCode(";\n") // end of module instantiation
@@ -333,15 +380,20 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
         } else {
           im.nextControlFlow("else if (parentName.equals($S))", objectInfo.name());
         }
-        ClassName objName = ClassName.bestGuess(objectInfo.qualifiedName());
-        im.addStatement("$T clazz = Class.forName($S)", Class.class, objectInfo.qualifiedName())
-            .addStatement(
-                "$T obj = ($T) $T.fromJSON(dag, parentJson, clazz)",
-                objName,
-                objName,
-                JsonConverter.class)
-            .addStatement(
-                "clazz.getMethod(\"setClient\", $T.class).invoke(obj, dag)", Client.class);
+        // If there's no constructor, we can initialize the main object here as it's the same for
+        // all.
+        // But if there's a constructor we want to inline it under the function branch.
+        if (objectInfo.constructor().isEmpty()) {
+          ClassName objName = ClassName.bestGuess(objectInfo.qualifiedName());
+          im.addStatement("$T clazz = Class.forName($S)", Class.class, objectInfo.qualifiedName())
+              .addStatement(
+                  "$T obj = ($T) $T.fromJSON(dag, parentJson, clazz)",
+                  objName,
+                  objName,
+                  JsonConverter.class)
+              .addStatement(
+                  "clazz.getMethod(\"setClient\", $T.class).invoke(obj, dag)", Client.class);
+        }
         var firstFn = true;
         for (var fnInfo : objectInfo.functions()) {
           if (firstFn) {
@@ -352,13 +404,27 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           }
           im.addCode(functionInvoke(objectInfo, fnInfo));
         }
+
+        if (objectInfo.constructor().isPresent()) {
+          if (firstFn) {
+            firstFn = false;
+            im.beginControlFlow("if (fnName.equals(\"\"))");
+          } else {
+            im.nextControlFlow("if (fnName.equals(\"\"))");
+          }
+          im.addCode(functionInvoke(objectInfo, objectInfo.constructor().get()));
+        }
+
         if (!firstFn) {
           im.endControlFlow(); // functions
         }
       }
       im.endControlFlow(); // objects
       im.endControlFlow() // try json
-          .addStatement("return null");
+          .addStatement(
+              "throw new $T(new $T(\"unknown function \" + fnName))",
+              InvocationTargetException.class,
+              java.lang.Error.class);
 
       var f =
           JavaFile.builder(
@@ -439,9 +505,31 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     }
   }
 
+  private static CodeBlock functionInvoke(ObjectInfo objectInfo, ConstructorInfo constructorInfo) {
+    return functionInvoke(
+        objectInfo, constructorInfo.constructor(), constructorInfo.hasDaggerClient());
+  }
+
   private static CodeBlock functionInvoke(ObjectInfo objectInfo, FunctionInfo fnInfo) {
+    return functionInvoke(objectInfo, fnInfo, false);
+  }
+
+  private static CodeBlock functionInvoke(
+      ObjectInfo objectInfo, FunctionInfo fnInfo, boolean hasDaggerClientInConstructor) {
     CodeBlock.Builder code = CodeBlock.builder();
     CodeBlock fnReturnType = typeName(fnInfo.returnType());
+
+    ClassName objName = ClassName.bestGuess(objectInfo.qualifiedName());
+    if (objectInfo.constructor().isPresent() && !fnInfo.name().equals("<init>")) {
+      // the object initialization has been skipped, it has to be done here
+      code.addStatement("$T clazz = Class.forName($S)", Class.class, objectInfo.qualifiedName())
+          .addStatement(
+              "$T obj = ($T) $T.fromJSON(dag, parentJson, clazz)",
+              objName,
+              objName,
+              JsonConverter.class)
+          .addStatement("obj.setClient(dag)");
+    }
 
     for (var parameterInfo : fnInfo.parameters()) {
       CodeBlock paramType = typeName(parameterInfo.type());
@@ -491,9 +579,18 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
       }
     }
 
-    code.add(fnReturnType)
-        .add(" res = obj.$L(", fnInfo.qName())
-        .add(
+    if (objectInfo.constructor().isPresent() && fnInfo.name().equals("<init>")) {
+      code.add("$T res = new $T(", objName, objName);
+      if (hasDaggerClientInConstructor) {
+        code.add("dag");
+        if (fnInfo.parameters().length > 0) {
+          code.add(", ");
+        }
+      }
+    } else {
+      code.add(fnReturnType).add(" res = obj.$L(", fnInfo.qName());
+    }
+    code.add(
             CodeBlock.join(
                 Arrays.stream(fnInfo.parameters())
                     .map(
@@ -513,11 +610,15 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
 
   public static CodeBlock withFunction(ObjectInfo objectInfo, FunctionInfo fnInfo)
       throws ClassNotFoundException {
+    boolean isConstructor = fnInfo.name().equals("<init>");
     CodeBlock.Builder code =
         CodeBlock.builder()
-            .add("\n                dag.function($S,", fnInfo.name())
+            .add("\n                dag.function($S,", isConstructor ? "" : fnInfo.name())
             .add("\n                    ")
-            .add(typeDef(fnInfo.returnType()))
+            .add(
+                isConstructor
+                    ? typeDef(tiFromName(objectInfo.qualifiedName()))
+                    : typeDef(fnInfo.returnType()))
             .add(")");
     if (isNotBlank(fnInfo.description())) {
       code.add("\n                    .withDescription($S)", fnInfo.description());
@@ -719,21 +820,36 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     return StaticJavaParser.parseJavadoc(javadocString).getDescription().toText().trim();
   }
 
-  private String parseTypeDescription(Element element) {
-    String javadocString = elementUtils.getDocComment(element);
-    if (javadocString == null) {
-      return element.getAnnotation(Object.class).description();
+  private String parseModuleDescription(Element element) {
+    Module annotation = element.getAnnotation(Module.class);
+    if (annotation != null && !annotation.description().isEmpty()) {
+      return annotation.description();
     }
-    return StaticJavaParser.parseJavadoc(javadocString).getDescription().toText().trim();
+    return parseJavaDocDescription(element);
+  }
+
+  private String parseObjectDescription(Element element) {
+    Object annotation = element.getAnnotation(Object.class);
+    if (annotation != null && !annotation.description().isEmpty()) {
+      return annotation.description();
+    }
+    return parseJavaDocDescription(element);
   }
 
   private String parseFunctionDescription(Element element) {
-    String javadocString = elementUtils.getDocComment(element);
-    if (javadocString == null) {
-      return element.getAnnotation(Function.class).description();
+    Function annotation = element.getAnnotation(Function.class);
+    if (annotation != null && !annotation.description().isEmpty()) {
+      return annotation.description();
     }
-    Javadoc javadoc = StaticJavaParser.parseJavadoc(javadocString);
-    return javadoc.getDescription().toText().trim();
+    return parseJavaDocDescription(element);
+  }
+
+  private String parseJavaDocDescription(Element element) {
+    String javadocString = elementUtils.getDocComment(element);
+    if (javadocString != null) {
+      return StaticJavaParser.parseJavadoc(javadocString).getDescription().toText().trim();
+    }
+    return "";
   }
 
   private String parseParameterDescription(Element element, String paramName) {
@@ -756,5 +872,19 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
         .add(CodeBlock.join(Arrays.stream(array).map(s -> CodeBlock.of("$S", s)).toList(), ", "))
         .add(")")
         .build();
+  }
+
+  private static boolean areSimilar(String str1, String str2) {
+    return normalize(str1).equals(normalize(str2));
+  }
+
+  private static String normalize(String str) {
+    if (str == null) {
+      return "";
+    }
+    return str.replaceAll("[-_]", " ") // Replace kebab and snake case delimiters with spaces
+        .replaceAll("([a-z])([A-Z])", "$1 $2") // Split camel case words
+        .toLowerCase(Locale.ROOT) // Convert to lowercase
+        .replaceAll("\\s+", ""); // Remove all spaces
   }
 }
