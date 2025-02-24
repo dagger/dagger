@@ -194,6 +194,7 @@ func (t *TypescriptSdk) GenerateClient(
 		).
 		// install tsx from its bundled location in the engine image
 		WithMountedDirectory("/usr/local/lib/node_modules/tsx", t.SDKSourceDir.Directory("/tsx_module")).
+		WithExec([]string{"ln", "-s", "/usr/local/lib/node_modules/tsx/dist/cli.mjs", "/usr/local/bin/tsx"}).
 		// Add dagger codegen binary.
 		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
 		WithDirectory("/ctx", modSource.ContextDirectory()).

@@ -97,6 +97,8 @@ func initializeModule(
 	return def, def.loadTypeDefs(ctx, dag)
 }
 
+var ErrConfigNotFound = errors.New("dagger.json not found")
+
 func initializeClientGeneratorModule(
 	ctx context.Context,
 	dag *dagger.Client,
@@ -104,7 +106,15 @@ func initializeClientGeneratorModule(
 	srcOpts ...dagger.ModuleSourceOpts,
 ) (gdef *clientGeneratorModuleDef, exist bool, rerr error) {
 	ctx, span := Tracer().Start(ctx, "load module")
-	defer telemetry.End(span, func() error { return rerr })
+	defer telemetry.End(span, func() error {
+		// To not confuse the user, we don't want to show the error if the config
+		// doesn't exist here. It should be handled in an upper function.
+		if !errors.Is(rerr, ErrConfigNotFound) {
+			return rerr
+		}
+
+		return nil
+	})
 
 	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
 	modSrc := dag.ModuleSource(srcRef, srcOpts...)
@@ -116,7 +126,7 @@ func initializeClientGeneratorModule(
 	}
 
 	if !configExists {
-		return nil, false, errors.New("dagger.json not found")
+		return nil, false, ErrConfigNotFound
 	}
 
 	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())
