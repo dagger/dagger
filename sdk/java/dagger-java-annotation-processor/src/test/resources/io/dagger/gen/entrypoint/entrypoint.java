@@ -137,7 +137,7 @@ public class Entrypoint {
                 .withField("source", dag.typeDef().withObject("Directory"), new TypeDef.WithFieldArguments().withDescription("Project source directory"))
                 .withField("version", dag.typeDef().withKind(TypeDefKind.STRING_KIND))
                 .withConstructor(
-                    dag.function("New",
+                    dag.function("",
                         dag.typeDef().withObject("DaggerJava"))
                         .withDescription("Initialize the DaggerJava Module")
                         .withArg("source", dag.typeDef().withObject("Directory").withOptional(true), new Function.WithArgArguments().withDescription("Project source directory"))

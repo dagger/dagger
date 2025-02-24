@@ -142,7 +142,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                               .equals("io.dagger.client.Client"),
                           new FunctionInfo(
                               "<init>",
-                              "New",
+                              "",
                               parseFunctionDescription(elt),
                               new TypeInfo(
                                   ((ExecutableElement) elt).getReturnType().toString(),
@@ -613,7 +613,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     boolean isConstructor = fnInfo.name().equals("<init>");
     CodeBlock.Builder code =
         CodeBlock.builder()
-            .add("\n                dag.function($S,", isConstructor ? "New" : fnInfo.name())
+            .add("\n                dag.function($S,", isConstructor ? "" : fnInfo.name())
             .add("\n                    ")
             .add(
                 isConstructor
