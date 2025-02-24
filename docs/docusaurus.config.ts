@@ -230,6 +230,11 @@ const config: Config = {
               href: "https://dagger.io/commanders",
               target: "_self",
             },
+            {
+              label: "Community SDKs",
+              href: "https://dagger.io/community-sdks",
+              target: "_self",
+            },
           ],
         },
         {
@@ -316,6 +321,10 @@ const config: Config = {
             {
               label: "Dagger Commanders",
               to: "https://dagger.io/commanders",
+            },
+            {
+              label: "Community SDKs",
+              to: "https://dagger.io/community-sdks",
             },
           ],
         },
