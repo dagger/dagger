@@ -527,26 +527,26 @@ func (ClientGeneratorTest) TestOutputDir(ctx context.Context, t *testctx.T) {
 					WithExec([]string{"go", "mod", "init", "test.com/test"}).
 					WithNewFile("main.go", fmt.Sprintf(`package main
 import (
-"context"
-"fmt"
+  "context"
+  "fmt"
 
-"test.com/test/%s"
+  "test.com/test/%s"
 )
 
 func main() {
-ctx := context.Background()
+  ctx := context.Background()
 
-dag, err := dagger.Connect(ctx)
-if err != nil {
-	panic(err)
-}
+  dag, err := dagger.Connect(ctx)
+  if err != nil {
+	  panic(err)
+  }
 
-res, err := dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "-n", "hello"}).Stdout(ctx)
-if err != nil {
-	panic(err)
-}
+  res, err := dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "-n", "hello"}).Stdout(ctx)
+  if err != nil {
+	  panic(err)
+  }
 
-fmt.Println("result:", res)
+  fmt.Println("result:", res)
 }`, outputDir))
 			},
 			postSetup: func(ctr *dagger.Container) *dagger.Container {
@@ -648,6 +648,109 @@ main()`)
 			}
 		})
 	}
+
+	t.Run("generate in root directory", func(ctx context.Context, t *testctx.T) {
+		testCases := []testSetup{
+			{
+				baseImage: golangImage,
+				generator: "go",
+				outputDir: ".",
+				callCmd:   []string{"go", "run", "."},
+				setup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.
+						WithExec([]string{"go", "mod", "init", "test.com/test"}).
+						WithNewFile("main.go", `package main
+import (
+  "context"
+  "fmt"
+)
+
+func main() {
+  ctx := context.Background()
+
+  dag, err := Connect(ctx)
+  if err != nil {
+	  panic(err)
+  }
+
+  res, err := dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "-n", "hello"}).Stdout(ctx)
+  if err != nil {
+	  panic(err)
+  }
+
+  fmt.Println("result:", res)
+}`)
+				},
+				postSetup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr
+				},
+			},
+			{
+				baseImage: nodeImage,
+				generator: "typescript",
+				outputDir: ".",
+				setup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.
+						WithExec([]string{"npm", "install", "-g", "tsx@4.15.6"}).
+						WithExec([]string{"npm", "init", "-y"}).
+						WithExec([]string{"npm", "pkg", "set", "type=module"}).
+						WithExec([]string{"npm", "install", "-D", "typescript"}).
+						WithNewFile("index.ts", `import { connection, dag } from "@dagger.io/client"
+
+async function main() {
+  await connection(async () => {
+    const res = await dag.container().from("alpine:3.20.2").withExec(["echo", "-n", "hello"]).stdout()
+
+    console.log("result:", res)
+  })
+}
+
+main()`)
+				},
+				postSetup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.
+						WithExec([]string{"npm", "install"})
+				},
+				callCmd: []string{"tsx", "index.ts"},
+			},
+		}
+
+		for _, tc := range testCases {
+			tc := tc
+
+			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+
+				devEngine := devEngineContainerAsService(devEngineContainer(c))
+
+				moduleSrc := c.Container().From(tc.baseImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					WithServiceBinding("dev-engine", devEngine).
+					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+					WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dev-engine:1234").
+					With(daggerUnprivilegedExec("init")).
+					With(tc.setup).
+					With(daggerClientAddAt(tc.generator, tc.outputDir)).
+					With(tc.postSetup)
+
+				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
+					out, err := moduleSrc.With(daggerUnprivilegedRun(tc.callCmd...)).
+						Stdout(ctx)
+
+					require.NoError(t, err)
+					require.Equal(t, "result: hello\n", out)
+				})
+
+				t.Run(strings.Join(tc.callCmd, " "), func(ctx context.Context, t *testctx.T) {
+					out, err := moduleSrc.WithExec(tc.callCmd).Stdout(ctx)
+
+					require.NoError(t, err)
+					require.Equal(t, "result: hello\n", out)
+				})
+			})
+		}
+	})
 }
 
 func (ClientGeneratorTest) TestCustomClientGenerator(ctx context.Context, t *testctx.T) {
