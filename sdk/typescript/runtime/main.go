@@ -185,15 +185,15 @@ func (t *TypescriptSdk) GenerateClient(
 	curentModuleDirectory := modSource.ContextDirectory().Directory(currentModuleDirectoryPath)
 
 	ctr := dag.Container().
-		From(nodeImageRef).
+		From(tsdistconsts.DefaultNodeImageRef).
 		WithoutEntrypoint().
 		// Add client config update file
 		WithMountedFile(
 			"/opt/__tsclientconfig.updator.ts",
 			dag.CurrentModule().Source().Directory("bin").File("__tsclientconfig.updator.ts"),
 		).
-		// Install tsx to execute it
-		WithExec([]string{"npm", "install", "-g", "tsx@4.15.6"}).
+		// install tsx from its bundled location in the engine image
+		WithMountedDirectory("/usr/local/lib/node_modules/tsx", t.SDKSourceDir.Directory("/tsx_module")).
 		// Add dagger codegen binary.
 		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
 		WithDirectory("/ctx", modSource.ContextDirectory()).
@@ -217,7 +217,8 @@ func (t *TypescriptSdk) GenerateClient(
 	if useLocalSdk {
 		ctr = ctr.WithDirectory("./sdk", t.SDKSourceDir.
 			WithoutDirectory("codegen").
-			WithoutDirectory("runtime"),
+			WithoutDirectory("runtime").
+			WithoutDirectory("tsx_module"),
 		).
 			WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=./sdk"}).
 			WithExec([]string{"tsx", "/opt/__tsclientconfig.updator.ts", "--local-sdk=true", fmt.Sprintf("--library-dir=%s", outputDir)})
@@ -322,7 +323,7 @@ func (t *TypescriptSdk) Base() (*dagger.Container, error) {
 		return ctr.
 			WithoutEntrypoint().
 			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", tsdistconsts.DefaultBunVersion)), dagger.ContainerWithMountedCacheOpts{
-				Sharing: dagger.CacheSharingModePrivate,
+				Sharing: dagger.Private,
 			}), nil
 	case Node:
 		return ctr.
