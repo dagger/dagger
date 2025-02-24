@@ -8,8 +8,8 @@ import (
 	"github.com/moby/buildkit/client/llb"
 )
 
-// DagOpMiddleware caches an arbitrary dagql field as a buildkit operation
-func DagOpMiddleware[T dagql.Typed, A any, R dagql.Typed](srv *dagql.Server, fn func(ctx context.Context, self dagql.Instance[T], args A) (R, error)) func(ctx context.Context, self dagql.Instance[T], args A) (R, error) {
+// DagOpWrapper caches an arbitrary dagql field as a buildkit operation
+func DagOpWrapper[T dagql.Typed, A any, R dagql.Typed](srv *dagql.Server, fn dagql.NodeFuncHandler[T, A, R]) dagql.NodeFuncHandler[T, A, R] {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst R, err error) {
 		if _, ok := core.DagOpFromContext[core.RawDagOp](ctx); ok {
 			return fn(ctx, self, args)
@@ -19,14 +19,14 @@ func DagOpMiddleware[T dagql.Typed, A any, R dagql.Typed](srv *dagql.Server, fn 
 		if err != nil {
 			return inst, err
 		}
-		return core.NewRawDagOp[R](ctx, srv, dagql.CurrentID(ctx).WithMetadata("", true), deps)
+		return core.NewRawDagOp[R](ctx, srv, dagql.CurrentID(ctx).WithTaint(), deps)
 	}
 }
 
-// DagOpFileMiddleware caches a file field as a buildkit operation - this is
-// more specialized than DagOpMiddleware, since that serializes the value to
+// DagOpFileWrapper caches a file field as a buildkit operation - this is
+// more specialized than DagOpWrapper, since that serializes the value to
 // JSON, so we'd just end up with a cached ID instead of the actual content.
-func DagOpFileMiddleware[T dagql.Typed, A any](srv *dagql.Server, fn func(ctx context.Context, self dagql.Instance[T], args A) (dagql.Instance[*core.File], error)) func(ctx context.Context, self dagql.Instance[T], args A) (dagql.Instance[*core.File], error) {
+func DagOpFileWrapper[T dagql.Typed, A any](srv *dagql.Server, fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]]) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]] {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.File], err error) {
 		if _, ok := core.DagOpFromContext[core.DirectoryDagOp](ctx); ok {
 			return fn(ctx, self, args)
@@ -51,7 +51,7 @@ func DagOpFileMiddleware[T dagql.Typed, A any](srv *dagql.Server, fn func(ctx co
 					},
 					{
 						Name:  "source",
-						Value: dagql.NewID[*core.File](dagql.CurrentID(ctx).WithMetadata("", true)),
+						Value: dagql.NewID[*core.File](dagql.CurrentID(ctx).WithTaint()),
 					},
 				},
 			},
@@ -72,9 +72,9 @@ func DagOpFileMiddleware[T dagql.Typed, A any](srv *dagql.Server, fn func(ctx co
 	}
 }
 
-// DagOpDirectoryMiddleware caches a directory field as a buildkit operation,
-// similar to DagOpFileMiddleware.
-func DagOpDirectoryMiddleware[T dagql.Typed, A any](srv *dagql.Server, fn func(ctx context.Context, self dagql.Instance[T], args A) (dagql.Instance[*core.Directory], error)) func(ctx context.Context, self dagql.Instance[T], args A) (dagql.Instance[*core.Directory], error) {
+// DagOpDirectoryWrapper caches a directory field as a buildkit operation,
+// similar to DagOpFileWrapper.
+func DagOpDirectoryWrapper[T dagql.Typed, A any](srv *dagql.Server, fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]]) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]] {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.Directory], err error) {
 		if _, ok := core.DagOpFromContext[core.DirectoryDagOp](ctx); ok {
 			return fn(ctx, self, args)
@@ -98,7 +98,7 @@ func DagOpDirectoryMiddleware[T dagql.Typed, A any](srv *dagql.Server, fn func(c
 					},
 					{
 						Name:  "source",
-						Value: dagql.NewID[*core.Directory](dagql.CurrentID(ctx).WithMetadata("", true)),
+						Value: dagql.NewID[*core.Directory](dagql.CurrentID(ctx).WithTaint()),
 					},
 				},
 			},
@@ -115,8 +115,8 @@ func DagOpDirectoryMiddleware[T dagql.Typed, A any](srv *dagql.Server, fn func(c
 	}
 }
 
-func extractLLBDependencies(ctx context.Context, a any) ([]llb.State, error) {
-	hasPBs, ok := a.(core.HasPBDefinitions)
+func extractLLBDependencies(ctx context.Context, val any) ([]llb.State, error) {
+	hasPBs, ok := dagql.UnwrapAs[core.HasPBDefinitions](val)
 	if !ok {
 		return nil, nil
 	}

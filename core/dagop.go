@@ -37,7 +37,7 @@ func NewDirectoryDagOp(ctx context.Context, srv *dagql.Server, id *call.ID, inpu
 	dagOp := DirectoryDagOp{ID: id}
 
 	st, err := buildkit.NewCustomLLB(ctx, dagOp, inputs,
-		llb.WithCustomNamef("%s %s", dagOp.Name(), id.Display()),
+		llb.WithCustomNamef("%s %s", dagOp.Name(), id.Name()),
 		buildkit.WithPassthrough())
 	if err != nil {
 		return nil, err
@@ -98,7 +98,7 @@ func (op DirectoryDagOp) Exec(ctx context.Context, g bksession.Group, inputs []s
 func NewRawDagOp[T dagql.Typed](ctx context.Context, srv *dagql.Server, id *call.ID, inputs []llb.State) (t T, err error) {
 	dagOp := RawDagOp{ID: id, Filename: "output.json"}
 	st, err := buildkit.NewCustomLLB(ctx, dagOp, inputs,
-		llb.WithCustomNamef("%s %s", dagOp.Name(), id.Display()),
+		llb.WithCustomNamef("%s %s", dagOp.Name(), id.Name()),
 		buildkit.WithPassthrough())
 	if err != nil {
 		return t, err

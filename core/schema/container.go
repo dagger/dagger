@@ -568,7 +568,7 @@ func (s *containerSchema) Install() {
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 
-		dagql.NodeFunc("asTarball", DagOpFileMiddleware(s.srv, s.asTarball)).
+		dagql.NodeFunc("asTarball", DagOpFileWrapper(s.srv, s.asTarball)).
 			Doc(`Returns a File representing the container serialized to a tarball.`).
 			ArgDoc("platformVariants",
 				`Identifiers for other platform specific containers.`,
