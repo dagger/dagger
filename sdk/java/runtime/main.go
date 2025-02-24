@@ -14,10 +14,10 @@ import (
 )
 
 const (
-	MavenImage  = "maven:3.9.9-eclipse-temurin-17"
-	MavenDigest = "sha256:f8ac06fcc542020a0b3741e850c6b023c17f325e2a5fb6b81abbe67120364680"
-	JavaImage   = "eclipse-temurin:23-jre-noble"
-	JavaDigest  = "sha256:7003c5ac866cbf50af64ef563d203a939f1ab2869ec7d9f89c3f5009ee605452"
+	MavenImage  = "maven:3.9.9-eclipse-temurin-23-alpine"
+	MavenDigest = "sha256:0e5e89100c3c1a0841ff67e0c1632b9b983e94ee5a9b1f758125d9e43c66856f"
+	JavaImage   = "eclipse-temurin:23-jre-alpine-3.21"
+	JavaDigest  = "sha256:88593498863c64b43be16e8357a3c70ea475fc20a93bf1e07f4609213a357c87"
 
 	ModSourceDirPath = "/src"
 	ModDirPath       = "/opt/module"
@@ -298,21 +298,26 @@ func (m *JavaSdk) finalJar(
 func (m *JavaSdk) mvnContainer(ctx context.Context) *dagger.Container {
 	ctr := dag.
 		Container().
-		From(fmt.Sprintf("%s@%s", MavenImage, MavenDigest))
-	if platform, err := ctr.Platform(ctx); err == nil && strings.Contains(string(platform), "arm64") {
-		ctr = ctr.WithEnvVariable("MAVEN_OPTS", "-XX:UseSVE=0")
-	}
+		From(fmt.Sprintf("%s@%s", MavenImage, MavenDigest)).
+		With(disableSVEOnArm64(ctx))
 	return ctr
 }
 
 func (m *JavaSdk) jreContainer(ctx context.Context) *dagger.Container {
 	ctr := dag.
 		Container().
-		From(fmt.Sprintf("%s@%s", JavaImage, JavaDigest))
-	if platform, err := ctr.Platform(ctx); err == nil && strings.Contains(string(platform), "arm64") {
-		ctr = ctr.WithEnvVariable("JAVA_OPTS", "-XX:UseSVE=0")
-	}
+		From(fmt.Sprintf("%s@%s", JavaImage, JavaDigest)).
+		With(disableSVEOnArm64(ctx))
 	return ctr
+}
+
+func disableSVEOnArm64(ctx context.Context) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		if platform, err := ctr.Platform(ctx); err == nil && strings.Contains(string(platform), "arm64") {
+			ctr = ctr.WithEnvVariable("_JAVA_OPTIONS", "-XX:UseSVE=0")
+		}
+		return ctr
+	}
 }
 
 func (m *JavaSdk) setModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) error {
