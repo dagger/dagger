@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/dagger/dagger/engine"
 )
 
 // Filename is the name of the module config file.
@@ -11,6 +13,35 @@ const Filename = "dagger.json"
 
 // EngineVersionLatest is replaced by the current engine.Version during module init.
 const EngineVersionLatest string = "latest"
+
+func ParseModuleConfig(src []byte) (*ModuleConfigWithUserFields, error) {
+	// before attempting to parse the entire config, just read the
+	// engineVersion field, to perform version checks to see if it's even
+	// possible
+	var meta struct {
+		EngineVersion string `json:"engineVersion"`
+	}
+	if err := json.Unmarshal(src, &meta); err != nil {
+		return nil, fmt.Errorf("failed to decode module config: %w", err)
+	}
+	meta.EngineVersion = engine.NormalizeVersion(meta.EngineVersion)
+	if !engine.CheckMaxVersionCompatibility(meta.EngineVersion, engine.BaseVersion(engine.Version)) {
+		return nil, fmt.Errorf("module requires dagger %s, but you have %s", meta.EngineVersion, engine.Version)
+	}
+
+	var modCfg ModuleConfigWithUserFields
+	if err := json.Unmarshal(src, &modCfg); err != nil {
+		return nil, fmt.Errorf("failed to decode module config: %w", err)
+	}
+	return &modCfg, nil
+}
+
+// ModuleConfigWithUserFields is the config for a single module as loaded from a dagger.json file.
+// Includes additional fields that should only be set by the user.
+type ModuleConfigWithUserFields struct {
+	ModuleConfigUserFields
+	ModuleConfig
+}
 
 // ModuleConfig is the config for a single module as loaded from a dagger.json file.
 // Only contains fields that are set/edited by dagger utilities.
@@ -39,6 +70,11 @@ type ModuleConfig struct {
 	// Paths to explicitly exclude from the module, relative to the configuration file.
 	// Deprecated: Use !<pattern> in the include list instead.
 	Exclude []string `json:"exclude,omitempty"`
+}
+
+type ModuleConfigUserFields struct {
+	// The self-describing json $schema
+	Schema string `json:"$schema,omitempty"`
 }
 
 // SDK represents the sdk field in dagger.json
@@ -74,18 +110,6 @@ func (sdk *SDK) UnmarshalJSON(data []byte) error {
 	}
 	*sdk = SDK(tmp)
 	return nil
-}
-
-type ModuleConfigUserFields struct {
-	// The self-describing json $schema
-	Schema string `json:"$schema,omitempty"`
-}
-
-// ModuleConfigWithUserFields is the config for a single module as loaded from a dagger.json file.
-// Includes additional fields that should only be set by the user.
-type ModuleConfigWithUserFields struct {
-	ModuleConfigUserFields
-	ModuleConfig
 }
 
 func (modCfg *ModuleConfig) UnmarshalJSON(data []byte) error {
