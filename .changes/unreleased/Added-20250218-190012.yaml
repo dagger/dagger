@@ -1,0 +1,6 @@
+kind: Added
+body: Add `name` function in directory to retrieve current directory name.
+time: 2025-02-18T19:00:12.391528+01:00
+custom:
+  Author: TomChv
+  PR: "9617"
