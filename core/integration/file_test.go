@@ -166,8 +166,8 @@ func (FileSuite) TestName(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("not found file", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Host().Directory("path").File("to/file.txt").Name(ctx)
-		require.Error(t, err)
+		_, err := c.Directory().File("to/file.txt").Name(ctx)
+		requireErrOut(t, err, "no such file or directory")
 	})
 }
 
