@@ -158,7 +158,7 @@ func (h *shellCallHandler) StdlibHelp() string {
 func (h *shellCallHandler) CoreHelp() string {
 	var doc ShellDoc
 
-	def := h.modDef(nil)
+	def := h.GetDef(nil)
 
 	doc.Add(
 		"Available Functions",
@@ -251,7 +251,7 @@ func (h *shellCallHandler) FunctionUseLine(md *moduleDef, fn *modFunction) strin
 	sb := new(strings.Builder)
 
 	if fn == md.MainObject.AsObject.Constructor {
-		sb.WriteString(h.ModRel(md))
+		sb.WriteString(h.modRelPath(md))
 	} else {
 		sb.WriteString(fn.CmdName())
 	}
@@ -315,7 +315,7 @@ func (h *shellCallHandler) ModuleDoc(st *ShellState, m *moduleDef) string {
 
 	// If it's just `.help` and the current module doesn't have required args,
 	// can use the default constructor and show available functions.
-	if st.IsEmpty() && st.ModRef == "" && !fn.HasRequiredArgs() {
+	if st.IsEmpty() && st.ModDigest == "" && !fn.HasRequiredArgs() {
 		if fns := m.MainObject.AsFunctionProvider().GetFunctions(); len(fns) > 0 {
 			doc.Add(
 				"Available Functions",

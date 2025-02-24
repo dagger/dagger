@@ -249,11 +249,11 @@ func (h *shellCallHandler) registerCommands() {
 
 					// Use the same function lookup as when executing
 					// so that `> .help wolfi` documents `> wolfi`.
-					st, err = h.stateLookup(ctx, args[0])
+					st, err = h.StateLookup(ctx, args[0])
 					if err != nil {
 						return err
 					}
-					if st.ModRef != "" {
+					if st.ModDigest != "" {
 						// First argument to `.help` is a module reference, so
 						// remove it from list of arguments now that it's loaded.
 						// The rest of the arguments should be passed on to
@@ -262,7 +262,7 @@ func (h *shellCallHandler) registerCommands() {
 					}
 				}
 
-				def := h.modDef(st)
+				def := h.GetDef(st)
 
 				if st.IsEmpty() {
 					switch {
@@ -361,7 +361,7 @@ Without arguments, the current working directory is replaced by the initial cont
 				if len(args) > 0 {
 					path = args[0]
 				}
-				return h.ChangeWorkdir(ctx, path)
+				return h.ChangeDir(ctx, path)
 			},
 		},
 		&ShellCommand{
@@ -410,7 +410,7 @@ Without arguments, the current working directory is replaced by the initial cont
 				if err != nil {
 					return err
 				}
-				return h.newDepsState().Write(ctx)
+				return h.NewDepsState().Write(ctx)
 			},
 			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
 				return &CompletionContext{
@@ -425,7 +425,7 @@ Without arguments, the current working directory is replaced by the initial cont
 			Args:        NoArgs,
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
-				return h.newStdlibState().Write(ctx)
+				return h.NewStdlibState().Write(ctx)
 			},
 			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
 				return &CompletionContext{
@@ -439,7 +439,7 @@ Without arguments, the current working directory is replaced by the initial cont
 			Description: "Load any core Dagger type",
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-				return h.newCoreState().Write(ctx)
+				return h.NewCoreState().Write(ctx)
 			},
 			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
 				return &CompletionContext{
@@ -455,7 +455,7 @@ Without arguments, the current working directory is replaced by the initial cont
 		cobraToShellCommand(moduleUpdateCmd),
 	)
 
-	def := h.modDef(nil)
+	def := h.GetDef(nil)
 
 	for _, fn := range def.GetCoreFunctions() {
 		// TODO: Don't hardcode this list.
@@ -484,7 +484,7 @@ Without arguments, the current working directory is replaced by the initial cont
 					return h.FunctionDoc(def, fn)
 				},
 				Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-					st := h.newState()
+					st := h.NewState()
 					st, err := h.functionCall(ctx, st, fn.CmdName(), args)
 					if err != nil {
 						return err

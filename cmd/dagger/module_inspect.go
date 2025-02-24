@@ -41,22 +41,6 @@ func initializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDe
 	return initializeModule(ctx, dag, dag.ModuleSource(modRef))
 }
 
-// maybeInitializeDefaultModule optionally loads the module referenced by the -m,--mod flag,
-// falling back to the core definitions
-func maybeInitializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDef, string, error) {
-	modRef, _ := getExplicitModuleSourceRef()
-	if modRef == "" {
-		modRef = moduleURLDefault
-	}
-
-	if def, err := initializeModule(ctx, dag, dag.ModuleSource(modRef)); def != nil || err != nil {
-		return def, modRef, err
-	}
-
-	def, err := initializeCore(ctx, dag)
-	return def, "", err
-}
-
 // initializeModule loads the module at the given source ref
 //
 // Returns an error if the module is not found or invalid.
@@ -157,6 +141,7 @@ type moduleDef struct {
 	SourceKind        dagger.ModuleSourceKind
 	SourceRoot        string
 	SourceRootSubpath string
+	SourceDigest      string
 
 	Dependencies []*moduleDef
 }
@@ -194,6 +179,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 	var res struct {
 		Source struct {
 			Kind              dagger.ModuleSourceKind
+			Digest            string
 			AsString          string
 			SourceRootSubpath string
 			Module            struct {
@@ -205,6 +191,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 					Source      struct {
 						ID       dagger.ModuleSourceID
 						AsString string
+						Digest   string
 					}
 				}
 			}
@@ -231,9 +218,10 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 	deps := make([]*moduleDef, 0, len(res.Source.Module.Dependencies))
 	for _, dep := range res.Source.Module.Dependencies {
 		deps = append(deps, &moduleDef{
-			Name:        dep.Name,
-			Description: dep.Description,
-			SourceRoot:  dep.Source.AsString,
+			Name:         dep.Name,
+			Description:  dep.Description,
+			SourceRoot:   dep.Source.AsString,
+			SourceDigest: dep.Source.Digest,
 			// Note: this should preserve the correct pin if it exists
 			Source: dag.LoadModuleSourceFromID(dep.Source.ID),
 		})
@@ -242,6 +230,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 	def := &moduleDef{
 		Source:            source,
 		SourceKind:        res.Source.Kind,
+		SourceDigest:      res.Source.Digest,
 		SourceRoot:        res.Source.AsString,
 		SourceRootSubpath: filepath.Join("/", res.Source.SourceRootSubpath),
 		Name:              res.Source.Module.Name,

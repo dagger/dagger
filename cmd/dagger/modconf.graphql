@@ -1,6 +1,7 @@
 query ModuleConfig($source: ModuleSourceID!) {
   source: loadModuleSourceFromID(id: $source) {
     kind
+    digest
     asString
     sourceRootSubpath
     module: asModule {
@@ -12,6 +13,7 @@ query ModuleConfig($source: ModuleSourceID!) {
         source {
           id
           asString
+          digest
         }
       }
     }

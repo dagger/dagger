@@ -149,19 +149,20 @@ type shellCallHandler struct {
 	// stdlib is the list of standard library commands
 	stdlib []*ShellCommand
 
-	// modDefs has the cached module definitions, after loading, and keyed by
-	// module reference as inputed by the user
+	// modDefs has the cached module definitions, after loading, and
+	// keyed by module digest
 	modDefs sync.Map
 
-	// workdir is the current working directory
-	workdir shellWorkdir
+	// initwd is used to return to the initial context
+	initwd shellWorkdir
 
-	// initContext is used to return to the initial context
-	//
-	// Can be nil if no module was loaded initially
-	initContext shellWorkdir
+	// wd is the current working directory
+	wd shellWorkdir
 
-	// mu is used to synchronize access to the default module's definitions via modRef
+	// oldpwd is used to return to the previous working directory
+	oldwd shellWorkdir
+
+	// mu is used to synchronize access to the workdir
 	mu sync.RWMutex
 }
 
@@ -197,7 +198,7 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 			// When there's a Dagger function with a name that conflicts
 			// with an interpreter builtin, the Dagger function is favored.
 			// To force the builtin to execute instead, prefix the command
-			// with "..". For example: "container | from $(..echo alpine)".
+			// with "_". For example: "container | from $(_echo alpine)".
 			if strings.HasPrefix(args[0], shellInterpBuiltinPrefix) {
 				args[0] = strings.TrimPrefix(args[0], shellInterpBuiltinPrefix)
 				return args, nil
@@ -216,27 +217,47 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 	}
 	h.runner = r
 
-	var def *moduleDef
-	var ref string
-	if shellNoLoadModule {
-		def, err = initializeCore(ctx, h.dag)
-	} else {
-		def, ref, err = maybeInitializeDefaultModule(ctx, h.dag)
-	}
-	if err != nil {
-		return err
+	// TODO: use `--workdir` and `--no-workdir` flags
+	ref, _ := getExplicitModuleSourceRef()
+	if ref == "" {
+		ref = moduleURLDefault
 	}
 
-	if def.Source != nil {
-		wd, err := h.newWorkdir(ctx, def, ref)
+	var def *moduleDef
+	var cfg *configuredModule
+
+	if !shellNoLoadModule {
+		def, cfg, err = h.maybeLoadModule(ctx, ref)
 		if err != nil {
 			return err
 		}
-		h.initContext = wd
-		h.workdir = wd
 	}
 
-	h.modDefs.Store(h.ModuleRoot(), def)
+	// Could be `--no-mod` or module not found from current dir
+	if def == nil {
+		def, err = initializeCore(ctx, h.dag)
+		if err != nil {
+			return err
+		}
+		h.modDefs.Store("", def)
+	}
+
+	subpath := ref
+	if cfg != nil {
+		subpath = cfg.Subpath
+	}
+
+	wd, err := h.newWorkdir(ctx, def, subpath)
+	if err != nil {
+		return fmt.Errorf("initial context: %w", err)
+	}
+
+	h.initwd = *wd
+	h.wd = h.initwd
+
+	if h.debug {
+		shellDebug(ctx, "initial context", h.initwd, h.debugLoadedModules())
+	}
 
 	h.registerCommands()
 
@@ -402,13 +423,13 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 			return h.run(ctx, strings.NewReader(line), "")
 		},
 		complete.Do,
-		h.Prompt,
+		h.prompt,
 	)
 
 	return nil
 }
 
-func (h *shellCallHandler) Prompt(out idtui.TermOutput, fg termenv.Color) string {
+func (h *shellCallHandler) prompt(out idtui.TermOutput, fg termenv.Color) string {
 	sb := new(strings.Builder)
 
 	if def, _ := h.GetModuleDef(nil); def != nil {
@@ -416,7 +437,7 @@ func (h *shellCallHandler) Prompt(out idtui.TermOutput, fg termenv.Color) string
 		sb.WriteString(out.String(" ").String())
 	}
 
-	if path := h.WorkdirPath(); path != "" {
+	if path := h.workdirPath(); path != "" {
 		sb.WriteString(out.String(path).Bold().Foreground(termenv.ANSIMagenta).String())
 		sb.WriteString(out.String(" ").String())
 	}
@@ -429,7 +450,6 @@ func (h *shellCallHandler) Prompt(out idtui.TermOutput, fg termenv.Color) string
 
 func (*shellCallHandler) Print(ctx context.Context, args ...any) error {
 	hctx := interp.HandlerCtx(ctx)
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	_, err := fmt.Fprintln(io.MultiWriter(hctx.Stdout, stdio.Stdout), args...)
+	_, err := fmt.Fprintln(hctx.Stdout, args...)
 	return err
 }
