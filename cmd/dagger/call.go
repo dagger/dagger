@@ -66,7 +66,7 @@ available functions.
 			if err != nil {
 				return err
 			}
-			var o functionProvider = mod.MainObject.AsFunctionProvider()
+			o := mod.MainObject.AsFunctionProvider()
 			// Walk the hypothetical function pipeline specified by the args
 			for _, field := range cmd.Flags().Args() {
 				// Lookup the next function in the specified pipeline

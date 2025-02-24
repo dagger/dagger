@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"slices"
 	"strings"
 	"sync"
@@ -125,7 +126,7 @@ func (h *shellCallHandler) cmd(ctx context.Context, args []string) (*ShellState,
 
 		case st.IsCore():
 			// Example: `.core | <function>`
-			def := h.modDef(st)
+			def := h.GetDef(st)
 			if !def.HasCoreFunction(c) {
 				return nil, fmt.Errorf("core function %q not found", c)
 			}
@@ -144,7 +145,7 @@ func (h *shellCallHandler) entrypointCall(ctx context.Context, cmd string, args 
 		return nil, cmd.Execute(ctx, h, args, nil)
 	}
 
-	st, err := h.stateLookup(ctx, cmd)
+	st, err := h.StateLookup(ctx, cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +186,7 @@ func (h *shellCallHandler) isCurrentContextFunction(name string) bool {
 	return md != nil && md.HasMainFunction(name)
 }
 
-func (h *shellCallHandler) stateLookup(ctx context.Context, name string) (*ShellState, error) {
+func (h *shellCallHandler) StateLookup(ctx context.Context, name string) (*ShellState, error) {
 	if h.debug {
 		shellDebug(ctx, "StateLookup", name)
 	}
@@ -194,7 +195,7 @@ func (h *shellCallHandler) stateLookup(ctx context.Context, name string) (*Shell
 	if md, _ := h.GetModuleDef(nil); md != nil {
 		// 1. Function in current context
 		if md.HasMainFunction(name) {
-			return h.newState(), nil
+			return h.NewState(), nil
 		}
 
 		// 2. Dependency short name
@@ -206,29 +207,19 @@ func (h *shellCallHandler) stateLookup(ctx context.Context, name string) (*Shell
 
 	// 3. Standard library command
 	if cmd, _ := h.StdlibCommand(name); cmd != nil {
-		return h.newStdlibState(), nil
+		return h.NewStdlibState(), nil
 	}
 
 	// 4. Path to local or remote module source
-	// (local paths are relative to the current working directory, not the loaded module)
-	st, err := h.getOrInitDefState(name, func() (*moduleDef, error) {
-		return initializeModule(ctx, h.dag, name)
-	})
-	if st == nil || (err != nil && strings.Contains(err.Error(), "does not exist")) {
-		return nil, fmt.Errorf("function or module %q not found", name)
-	}
+	def, _, err := h.maybeLoadModule(ctx, name)
 	if err != nil {
 		return nil, err
 	}
-	return st, nil
-}
-
-func (h *shellCallHandler) getOrInitDefState(ref string, fn func() (*moduleDef, error)) (*ShellState, error) {
-	def, err := h.getOrInitDef(ref, fn)
-	if err != nil || def == nil {
-		return nil, err
+	if def != nil {
+		return h.newModState(def.SourceDigest), nil
 	}
-	return h.newModState(ref), nil
+
+	return nil, fmt.Errorf("function or module %q not found", name)
 }
 
 func (h *shellCallHandler) constructorCall(ctx context.Context, md *moduleDef, st *ShellState, args []string) (*ShellState, error) {
@@ -244,7 +235,7 @@ func (h *shellCallHandler) constructorCall(ctx context.Context, md *moduleDef, s
 
 // functionCall is executed for every command that the exec handler processes
 func (h *shellCallHandler) functionCall(ctx context.Context, st *ShellState, name string, args []string) (*ShellState, error) {
-	def := h.modDef(st)
+	def := h.GetDef(st)
 	call := st.Function()
 
 	fn, err := call.GetNextDef(def, name)
@@ -437,7 +428,7 @@ func (h *shellCallHandler) parseArgumentValues(ctx context.Context, md *moduleDe
 		if err != nil {
 			return err
 		}
-		v, bypass, err := h.parseFlagValue(ctx, value, a.TypeDef)
+		v, bypass, err := h.parseFlagValue(ctx, value, a)
 		if err != nil {
 			return fmt.Errorf("cannot expand function argument %q: %w", a.FlagName(), err)
 		}
@@ -487,8 +478,19 @@ func (h *shellCallHandler) parseArgumentValues(ctx context.Context, md *moduleDe
 //
 // This happens most commonly when argument is the result of command expansion
 // from a sub-shell.
-func (h *shellCallHandler) parseFlagValue(ctx context.Context, value string, argType *modTypeDef) (any, bool, error) {
+func (h *shellCallHandler) parseFlagValue(ctx context.Context, value string, arg *modFunctionArg) (any, bool, error) {
+	argType := arg.TypeDef
 	if !strings.HasPrefix(value, shellStatePrefix) {
+		if argType.AsObject != nil {
+			switch argType.AsObject.Name {
+			case Directory, File:
+				// Ignore on git urls since the flag will parse it directly.
+				// We just need to resolve the ref for "local" (contextual) paths.
+				if _, err := parseGitURL(value); err != nil {
+					return h.contextArgRef(value), false, nil
+				}
+			}
+		}
 		return value, false, nil
 	}
 
@@ -524,7 +526,7 @@ func (h *shellCallHandler) Result(
 	ctx context.Context,
 	// r is the reader to read the shell state from
 	r io.Reader,
-	// doPrintResponse prep	// beforeRequest is a callback that allows modifying the query before making
+	// beforeRequest is a callback that allows modifying the query before making
 	// the request
 	//
 	// It's also useful for validating the query with the function's
@@ -546,14 +548,14 @@ func (h *shellCallHandler) Result(
 		case st.IsDeps():
 			return h.DependenciesList(), nil, nil
 		case st.IsCore():
-			def := h.modDef(nil)
+			def := h.GetDef(nil)
 			return h.FunctionsList(st.Cmd, def.GetCoreFunctions()), nil, nil
 		default:
 			return nil, nil, fmt.Errorf("unexpected namespace %q", st.Cmd)
 		}
 	}
 
-	def := h.modDef(st)
+	def := h.GetDef(st)
 
 	// Example: `build` (i.e., omitted constructor)
 	if def.HasModule() && st.IsEmpty() {
@@ -628,7 +630,7 @@ func (h *shellCallHandler) getOrInitDef(ref string, fn func() (*moduleDef, error
 			}
 			// Module found. If multiple goroutines reach this point they should
 			// have the same result from the onced function anyway.
-			h.modDefs.Store(ref, def)
+			h.modDefs.Store(def.SourceDigest, def)
 			return def, nil
 		default:
 			return nil, fmt.Errorf("unexpected initialization type %T for module definitions: %s", once, ref)
@@ -648,28 +650,28 @@ func (h *shellCallHandler) loadModDef(ref string) *moduleDef {
 	return nil
 }
 
-// modDef returns the module definition for a given state
+// GetDef returns the type definitions for a given state
 //
 // This is the main getter function for a module definition.
-func (h *shellCallHandler) modDef(st *ShellState) *moduleDef {
-	h.mu.RLock()
-	ref := h.modRef
-	h.mu.RUnlock()
+func (h *shellCallHandler) GetDef(st *ShellState) *moduleDef {
+	dig := h.modDigest()
 
-	if st != nil && st.ModRef != "" && st.ModRef != ref {
-		ref = st.ModRef
+	if st != nil && st.ModDigest != "" && st.ModDigest != dig {
+		dig = st.ModDigest
 	}
-	if def := h.loadModDef(ref); def != nil {
+
+	if def := h.loadModDef(dig); def != nil {
 		return def
 	}
 
-	// Every time h.modRef is set, there should be a corresponding value in
-	// h.modDefs. Otherwise there's a bug in the CLI.
-	panic(fmt.Sprintf("module %q not loaded", ref))
+	// Every time the default module ref is set, there should be a corresponding
+	// value in h.modDefs. Otherwise there's a bug in the CLI.
+	panic(fmt.Sprintf("module %q not loaded", dig))
 }
 
+// GetModuleDef returns the module definition for the current state
 func (h *shellCallHandler) GetModuleDef(st *ShellState) (*moduleDef, error) {
-	if def := h.modDef(st); def.HasModule() {
+	if def := h.GetDef(st); def.HasModule() {
 		return def, nil
 	}
 	return nil, fmt.Errorf("module not loaded")
@@ -684,40 +686,57 @@ func (h *shellCallHandler) GetDependency(ctx context.Context, name string) (*She
 	if dep == nil {
 		return nil, nil, fmt.Errorf("dependency %q not found", name)
 	}
-	st, err := h.getOrInitDefState(dep.ModRef, func() (*moduleDef, error) {
-		return initializeModule(ctx, h.dag, dep.ModRef, dagger.ModuleSourceOpts{
-			DisableFindUp: true,
-		})
+	def, err := h.getOrInitDef(dep.SourceDigest, func() (*moduleDef, error) {
+		return initializeModule(ctx, h.dag, dep.Source)
 	})
 	if err != nil {
 		return nil, nil, err
 	}
-	def, err := h.GetModuleDef(st)
-	if err != nil {
-		return nil, nil, err
-	}
-	return st, def, nil
+	return h.newModState(dep.SourceDigest), def, nil
 }
 
-// LoadedModulesList returns a sorted list of module references that are loaded and cached
-func (h *shellCallHandler) LoadedModulesList() []string {
-	var mods []string
+func (h *shellCallHandler) debugLoadedModules() []string {
+	return slices.Collect(h.loadedModuleValues(func(def *moduleDef) string {
+		a, r, d := def.SourceRoot, h.modRelPath(def), def.SourceDigest
+		if a != r {
+			a += " → " + r
+		}
+		if d != "" {
+			a += " (" + d + ")"
+		}
+		return a
+	}))
+}
+
+// LoadedModulePaths returns a sorted list of the paths to all loaded modules
+func (h *shellCallHandler) LoadedModulePaths() []string {
+	return slices.Sorted(h.loadedModuleValues(func(def *moduleDef) string {
+		return h.modRelPath(def)
+	}))
+}
+
+// loadedModuleValues iterates over all loaded module definition values after applying provided function
+func (h *shellCallHandler) loadedModuleValues(fn func(*moduleDef) string) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		for def := range h.loadedModules {
+			if !yield(fn(def)) {
+				return
+			}
+		}
+	}
+}
+
+// loadedModules iterates over all loaded module definitions
+func (h *shellCallHandler) loadedModules(yield func(*moduleDef) bool) {
 	h.modDefs.Range(func(key, val any) bool {
-		if modRef, ok := key.(string); ok && modRef != "" {
+		if dgst, ok := key.(string); ok && dgst != "" {
 			// ignore modules that aren't fully loaded yet
-			if _, ok := val.(*moduleDef); ok {
-				mods = append(mods, modRef)
+			if def, ok := val.(*moduleDef); ok && def.HasModule() {
+				if !yield(def) {
+					return false
+				}
 			}
 		}
 		return true
 	})
-	slices.Sort(mods)
-	return mods
-}
-
-// IsDefaultModule returns true if the given module reference is the default loaded module
-func (h *shellCallHandler) IsDefaultModule(ref string) bool {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return ref == "" || ref == h.modRef
 }

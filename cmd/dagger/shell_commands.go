@@ -229,93 +229,50 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 			},
 		},
 		&ShellCommand{
-			Use:         ".help [command]",
-			Description: "Print this help message",
+			Use:         ".help [command | module | function]\n<function> | .help [function]",
+			Description: `Show documentation for a command, a module, or a function`,
 			Args:        MaximumArgs(1),
-			State:       NoState,
-			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-				if len(args) == 1 {
-					c, err := h.BuiltinCommand(args[0])
-					if err != nil {
-						return err
-					}
-					if c == nil {
-						err = fmt.Errorf("command not found: %q", args[0])
-						if !strings.HasPrefix(args[0], ".") {
-							if builtin, _ := h.BuiltinCommand("." + args[0]); builtin != nil {
-								err = fmt.Errorf("%w, did you mean %q?", err, "."+args[0])
-							}
-						}
-						return err
-					}
-					return h.Print(ctx, c.Help())
-				}
-
-				var doc ShellDoc
-
-				for _, group := range shellGroups {
-					cmds := h.GroupBuiltins(group.ID)
-					if len(cmds) == 0 {
-						continue
-					}
-					doc.Add(
-						group.Title,
-						nameShortWrapped(cmds, func(c *ShellCommand) (string, string) {
-							return c.Name(), c.Short()
-						}),
-					)
-				}
-
-				doc.Add("", `Use ".help <command>" for more information.`)
-
-				return h.Print(ctx, doc)
-			},
-		},
-		&ShellCommand{
-			Use: ".doc [module]\n<function> | .doc [function]",
-			Description: `Show documentation for a module, a type, or a function
-
-
-Local module paths are resolved relative to the workdir on the host, not relative
-to the currently loaded module.
-`,
-			Args: MaximumArgs(1),
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, st *ShellState) error {
 				var err error
 
 				// First command in chain
 				if st == nil {
 					if len(args) == 0 {
-						// No arguments, e.g, `.doc`.
-						st = h.newState()
-					} else {
-						// Use the same function lookup as when executing so
-						// that `> .doc wolfi` documents `> wolfi`.
-						st, err = h.stateLookup(ctx, args[0])
-						if err != nil {
-							return err
-						}
-						if st.ModRef != "" {
-							// First argument to `.doc` is a module reference, so
-							// remove it from list of arguments now that it's loaded.
-							// The rest of the arguments should be passed on to
-							// the constructor.
-							args = args[1:]
-						}
+						// No arguments, e.g, `.help`.
+						return h.Print(ctx, h.MainHelp())
+					}
+
+					// Check builtins first
+					if c, _ := h.BuiltinCommand(args[0]); c != nil {
+						return h.Print(ctx, c.Help())
+					}
+
+					// Use the same function lookup as when executing
+					// so that `> .help wolfi` documents `> wolfi`.
+					st, err = h.StateLookup(ctx, args[0])
+					if err != nil {
+						return err
+					}
+					if st.ModDigest != "" {
+						// First argument to `.help` is a module reference, so
+						// remove it from list of arguments now that it's loaded.
+						// The rest of the arguments should be passed on to
+						// the constructor.
+						args = args[1:]
 					}
 				}
 
-				def := h.modDef(st)
+				def := h.GetDef(st)
 
 				if st.IsEmpty() {
 					switch {
 					case st.IsStdlib():
 						// Document stdlib
-						// Example: `.stdlib | .doc`
+						// Example: `.stdlib | .help`
 						if len(args) == 0 {
 							return h.Print(ctx, h.StdlibHelp())
 						}
-						// Example: .stdlib | .doc <command>`
+						// Example: .stdlib | .help <command>`
 						c, err := h.StdlibCommand(args[0])
 						if err != nil {
 							return err
@@ -324,37 +281,37 @@ to the currently loaded module.
 
 					case st.IsDeps():
 						// Document dependency
-						// Example: `.deps | .doc`
+						// Example: `.deps | .help`
 						if len(args) == 0 {
 							return h.Print(ctx, h.DepsHelp())
 						}
-						// Example: `.deps | .doc <dependency>`
+						// Example: `.deps | .help <dependency>`
 						depSt, depDef, err := h.GetDependency(ctx, args[0])
 						if err != nil {
 							return err
 						}
-						return h.Print(ctx, shellModuleDoc(depSt, depDef))
+						return h.Print(ctx, h.ModuleDoc(depSt, depDef))
 
 					case st.IsCore():
 						// Document core
-						// Example: `.core | .doc`
+						// Example: `.core | .help`
 						if len(args) == 0 {
 							return h.Print(ctx, h.CoreHelp())
 						}
-						// Example: `.core | .doc <function>`
+						// Example: `.core | .help <function>`
 						fn := def.GetCoreFunction(args[0])
 						if fn == nil {
 							return fmt.Errorf("core function %q not found", args[0])
 						}
-						return h.Print(ctx, shellFunctionDoc(def, fn))
+						return h.Print(ctx, h.FunctionDoc(def, fn))
 
 					case len(args) == 0:
 						if !def.HasModule() {
 							return fmt.Errorf("module not loaded.\nUse %q to see what's available", shellStdlibCmdName)
 						}
 						// Document module
-						// Example: `.doc [module]`
-						return h.Print(ctx, shellModuleDoc(st, def))
+						// Example: `.help [module]`
+						return h.Print(ctx, h.ModuleDoc(st, def))
 					}
 				}
 
@@ -364,7 +321,7 @@ to the currently loaded module.
 				}
 
 				// Document type
-				// Example: `container | .doc`
+				// Example: `container | .help`
 				if len(args) == 0 {
 					return h.Print(ctx, shellTypeDoc(t))
 				}
@@ -375,39 +332,71 @@ to the currently loaded module.
 				}
 
 				// Document function from type
-				// Example: `container | .doc with-exec`
+				// Example: `container | .help with-exec`
 				fn, err := def.GetFunction(fp, args[0])
 				if err != nil {
 					return err
 				}
-				return h.Print(ctx, shellFunctionDoc(def, fn))
+				return h.Print(ctx, h.FunctionDoc(def, fn))
 			},
 		},
 		&ShellCommand{
-			Use: ".use <module>",
-			Description: `Set a module as the default for the session
+			Use: ".cd [path | url]",
+			Description: `Change the current working directory 
 
-Local module paths are resolved relative to the workdir on the host, not relative
-to the currently loaded module.
+Absolute and relative paths are resolved in relation to the same context directory.
+Using a git URL changes the context. Only the initial context can target local 
+modules in different contexts.
+
+If the target path is in a different module within the same context, it will be
+loaded as the default automatically, making its functions available at the top level.
+
+Without arguments, the current working directory is replaced by the initial context.
 `,
 			GroupID: moduleGroup.ID,
-			Args:    ExactArgs(1),
+			Args:    MaximumArgs(1),
 			State:   NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-				st, err := h.getOrInitDefState(args[0], func() (*moduleDef, error) {
-					return initializeModule(ctx, h.dag, args[0])
-				})
+				var path string
+				if len(args) > 0 {
+					path = args[0]
+				}
+				return h.ChangeDir(ctx, path)
+			},
+		},
+		&ShellCommand{
+			Use:         ".pwd",
+			Description: "Print the current working directory's absolute path",
+			GroupID:     moduleGroup.ID,
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
+				if h.debug {
+					shellDebug(ctx, "Workdir", h.Workdir())
+				}
+				return h.Print(ctx, h.Pwd())
+			},
+		},
+		&ShellCommand{
+			Use:         ".ls [path]",
+			Description: "List files in the current working directory",
+			GroupID:     moduleGroup.ID,
+			Args:        MaximumArgs(1),
+			State:       NoState,
+			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
+				var path string
+				if len(args) > 0 {
+					path = args[0]
+				}
+				dir, err := h.Directory(path)
 				if err != nil {
 					return err
 				}
-
-				h.mu.Lock()
-				if st.ModRef != h.modRef {
-					h.modRef = st.ModRef
+				contents, err := dir.Entries(ctx)
+				if err != nil {
+					return err
 				}
-				h.mu.Unlock()
-
-				return nil
+				return h.Print(ctx, strings.Join(contents, "\n"))
 			},
 		},
 		&ShellCommand{
@@ -421,7 +410,7 @@ to the currently loaded module.
 				if err != nil {
 					return err
 				}
-				return h.newDepsState().Write(ctx)
+				return h.NewDepsState().Write(ctx)
 			},
 			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
 				return &CompletionContext{
@@ -436,7 +425,7 @@ to the currently loaded module.
 			Args:        NoArgs,
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
-				return h.newStdlibState().Write(ctx)
+				return h.NewStdlibState().Write(ctx)
 			},
 			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
 				return &CompletionContext{
@@ -450,7 +439,7 @@ to the currently loaded module.
 			Description: "Load any core Dagger type",
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-				return h.newCoreState().Write(ctx)
+				return h.NewCoreState().Write(ctx)
 			},
 			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
 				return &CompletionContext{
@@ -466,7 +455,7 @@ to the currently loaded module.
 		cobraToShellCommand(moduleUpdateCmd),
 	)
 
-	def := h.modDef(nil)
+	def := h.GetDef(nil)
 
 	for _, fn := range def.GetCoreFunctions() {
 		// TODO: Don't hardcode this list.
@@ -488,14 +477,14 @@ to the currently loaded module.
 
 		stdlib = append(stdlib,
 			&ShellCommand{
-				Use:         shellFunctionUseLine(def, fn),
+				Use:         h.FunctionUseLine(def, fn),
 				Description: fn.Description,
 				State:       NoState,
 				HelpFunc: func(cmd *ShellCommand) string {
-					return shellFunctionDoc(def, fn)
+					return h.FunctionDoc(def, fn)
 				},
 				Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-					st := h.newState()
+					st := h.NewState()
 					st, err := h.functionCall(ctx, st, fn.CmdName(), args)
 					if err != nil {
 						return err

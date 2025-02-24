@@ -4,7 +4,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/chzyer/readline"
+	"github.com/knz/bubbline/computil"
+	"github.com/knz/bubbline/editline"
 	"mvdan.cc/sh/v3/syntax"
 )
 
@@ -15,14 +16,15 @@ type shellAutoComplete struct {
 	*shellCallHandler
 }
 
-var _ readline.AutoCompleter = (*shellAutoComplete)(nil)
+var _ editline.AutoCompleteFn = (*shellAutoComplete)(nil).Do
 
-func (h *shellAutoComplete) Do(line []rune, pos int) (newLine [][]rune, length int) {
+func (h *shellAutoComplete) Do(entireInput [][]rune, row, col int) (msg string, comp editline.Completions) {
+	line, pos := computil.Flatten(entireInput, row, col)
 	line = line[:pos]
 
-	file, err := parseShell(strings.NewReader(string(line)), "", syntax.RecoverErrors(5))
+	file, err := parseShell(strings.NewReader(line), "", syntax.RecoverErrors(5))
 	if err != nil {
-		return nil, 0
+		return "", nil
 	}
 
 	// find the smallest stmt next to the cursor - this allows accurate
@@ -106,16 +108,28 @@ func (h *shellAutoComplete) Do(line []rune, pos int) (newLine [][]rune, length i
 		shctx = h.dispatch(shctx, stmt, cursor)
 	}
 	if shctx == nil {
-		return nil, 0
+		return "", nil
 	}
 
-	var results [][]rune
-	for _, result := range shctx.completions(inprogressPrefix) {
-		if result, ok := strings.CutPrefix(result, inprogressPrefix); ok {
-			results = append(results, []rune(result+" "))
+	completions := shctx.completions(inprogressPrefix)
+	var matches []string
+	suggested := map[string]struct{}{}
+	for _, c := range completions {
+		if strings.HasPrefix(c, inprogressPrefix) {
+			if _, ok := suggested[c]; ok {
+				continue
+			}
+			matches = append(matches, c)
+			suggested[c] = struct{}{}
 		}
 	}
-	return results, len(inprogressPrefix)
+	return "", editline.SimpleWordsCompletion(
+		matches,
+		"completion",
+		col,
+		pos-len(inprogressPrefix),
+		pos,
+	)
 }
 
 func (h *shellAutoComplete) dispatch(previous *CompletionContext, stmt *syntax.Stmt, cursor uint) *CompletionContext {
@@ -235,7 +249,7 @@ func (ctx *CompletionContext) completions(prefix string) []string {
 		}
 
 	case ctx.CmdType == shellCoreCmdName:
-		for _, fn := range ctx.Completer.modDef(nil).GetCoreFunctions() {
+		for _, fn := range ctx.Completer.GetDef(nil).GetCoreFunctions() {
 			results = append(results, fn.CmdName())
 		}
 
@@ -251,7 +265,7 @@ func (ctx *CompletionContext) completions(prefix string) []string {
 				results = append(results, dep.Name)
 			}
 		}
-		results = append(results, ctx.Completer.LoadedModulesList()...)
+		results = append(results, ctx.Completer.LoadedModulePaths()...)
 	}
 
 	return results
@@ -262,7 +276,7 @@ func (ctx *CompletionContext) lookupField(field string, args []string) *Completi
 		return cmd.Complete(ctx, args)
 	}
 
-	def := ctx.Completer.modDef(nil)
+	def := ctx.Completer.GetDef(nil)
 
 	if ctx.ModType != nil {
 		next, err := def.GetFunction(ctx.ModType, field)
@@ -337,7 +351,7 @@ func (ctx *CompletionContext) lookupField(field string, args []string) *Completi
 
 func (ctx *CompletionContext) lookupType() *CompletionContext {
 	if ctx.ModFunction != nil {
-		def := ctx.Completer.modDef(nil)
+		def := ctx.Completer.GetDef(nil)
 		next := def.GetFunctionProvider(ctx.ModFunction.ReturnType.Name())
 		return &CompletionContext{
 			Completer: ctx.Completer,
