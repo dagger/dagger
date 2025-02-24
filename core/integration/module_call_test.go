@@ -14,7 +14,7 @@ import (
 
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -25,7 +25,7 @@ import (
 type CallSuite struct{}
 
 func TestCall(t *testing.T) {
-	testctx.Run(testCtx, t, CallSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(CallSuite{})
 }
 
 func (CallSuite) TestHelp(ctx context.Context, t *testctx.T) {
@@ -2591,4 +2591,15 @@ func (CallSuite) TestExecStderr(ctx context.Context, t *testctx.T) {
 
 		requireErrOut(t, err, "ls: wat: No such file or directory")
 	})
+}
+
+func (CallSuite) TestErrNoModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	_, err := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerCall()).
+		Stdout(ctx)
+	requireErrOut(t, err, "module not found")
 }

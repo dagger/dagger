@@ -2,18 +2,54 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
+
+const (
+	GPUSupportEnv = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
+	RunnerHostEnv = "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
+)
+
+var (
+	// RunnerHost holds the host to connect to.
+	//
+	// Note: this is filled at link-time.
+	RunnerHost string
+)
+
+func init() {
+	if v, ok := os.LookupEnv(RunnerHostEnv); ok {
+		RunnerHost = v
+	}
+	if RunnerHost == "" {
+		RunnerHost = defaultRunnerHost()
+	}
+}
+
+func defaultRunnerHost() string {
+	tag := engine.Tag
+	if tag == "" {
+		// can happen during naive dev builds (so just fallback to something
+		// semi-reasonable)
+		return "docker-container://" + distconsts.EngineContainerName
+	}
+	if os.Getenv(GPUSupportEnv) != "" {
+		tag += "-gpu"
+	}
+	return fmt.Sprintf("docker-image://%s:%s", engine.EngineImageRepo, tag)
+}
 
 type runClientCallback func(context.Context, *client.Client) error
 
@@ -33,7 +69,7 @@ func withEngine(
 		}
 
 		if params.RunnerHost == "" {
-			params.RunnerHost = engine.RunnerHost()
+			params.RunnerHost = RunnerHost
 		}
 
 		params.DisableHostRW = disableHostRW

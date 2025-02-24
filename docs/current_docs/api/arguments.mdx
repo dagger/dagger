@@ -14,7 +14,7 @@ When calling a Dagger Function from the CLI, its arguments are exposed as comman
 Dagger Functions execute in containers and thus do not have default access to your host environment (host files, directories, environment variables, etc.). Access to these host resources can only be granted by explicitly passing them as argument values to the Dagger Function.
 - Files and directories: Dagger Functions can accept arguments of type `File` or `Directory`. Pass files and directories on your host by specifying their path as the value of the argument when using `dagger call`.
 - Environment variables: Pass environment variable values as argument values when invoking a function by just using the standard shell convention of using `$ENV_VAR_NAME` when using `dagger call`.
-- Local network services: Dagger Functions that accept an argument of type `Service` can be passed local network services in the form `tcp://<host>:<port>`.
+- Local network services: Dagger Functions that accept an argument of type `Service` can be passed local network services in the form `tcp://HOST:PORT`.
 :::
 
 ## String arguments
@@ -474,24 +474,49 @@ Secrets can be passed to Dagger Functions as arguments using the `Secret` core t
 
 The result will be a JSON-formatted list of issues from Dagger's repository.
 
-When invoking the Dagger Function using the Dagger CLI, secrets can be sourced from host environment variables (`env:`), the host filesystem (`file:`) or the result of host command execution (`cmd:`).
+When invoking the Dagger Function using the Dagger CLI, secrets can be sourced from multiple providers. Dagger can read secrets from the host environment, the host filesystem, and the result of host command execution, as well as from external secret managers [1Password](https://1password.com/) and [Vault](https://www.hashicorp.com/products/vault).
 
-Here is an example call for this Dagger Function, with the secret sourced from a host environment variable named `GITHUB_API_TOKEN`:
+### Host secret providers
+
+Here is an example call for this Dagger Function, with the secret sourced from a host environment variable named `GITHUB_API_TOKEN` via the `env` provider:
 
 ```shell
-dagger call github-api --token=env:GITHUB_API_TOKEN
+dagger call github-api --token=env://GITHUB_API_TOKEN
 ```
 
-Secrets can also be passed from a host file using the `file` source:
+Secrets can also be passed from a host file using the `file` provider:
 
 ```shell
-dagger call github-api --token=file:./github.txt
+dagger call github-api --token=file://./github.txt
 ```
 
-...or as the result of executing a command on the host using the `cmd` source:
+...or as the result of executing a command on the host using the `cmd` provider:
 
 ```shell
-dagger call github-api --token=cmd:"gh auth token"
+dagger call github-api --token=cmd://"gh auth token"
+```
+
+### External secret providers
+
+Secrets can also be sourced from external secret managers. Currently, Dagger supports 1Password and Vault.
+
+1Password requires creating a [service account](https://developer.1password.com/docs/service-accounts/get-started) and then setting the `OP_SERVICE_ACCOUNT_TOKEN` environment variable. Alternatively, if no `OP_SERVICE_ACCOUNT_TOKEN` is provided, the integration will attempt to execute the (official) `op` CLI if installed in the system.
+
+1Password [secret references](https://developer.1password.com/docs/cli/secret-references/), in the format `op://VAULT-NAME/ITEM-NAME/[SECTION-NAME/]FIELD-NAME` are supported. Here is an example:
+
+```shell
+OP_SERVICE_ACCOUNT_TOKEN="mytoken" dagger call github-api --token=op://infra/github/credential
+```
+
+Vault can be authenticated with either token or AppRole methods. The Vault host can be specified by setting the environment variable `VAULT_ADDR`. For token authentication, set the environment variable `VAULT_TOKEN`. For AppRole authentication, set the environment variables `VAULT_APPROLE_ROLE_ID` and `VAULT_APPROLE_SECRET_ID`. Additional client configuration can be specified by the default environment variables accepted by Vault.
+
+Vault KvV2 secrets are accessed with the scheme `vault://PATH/TO/SECRET.ITEM`. If your KvV2 is not mounted at `/secret`, specify the mount location with the environment variable `VAULT_PATH_PREFIX`. Here is an example:
+
+```shell
+VAULT_ADDR='https://example.com:8200' VAULT_TOKEN=abcd_1234 dagger call github-api --token=vault://infra/github.credential
+
+```shell
+dagger call github-api --token=vault://credentials.github
 ```
 
 ## Service arguments
@@ -500,7 +525,7 @@ Host network services or sockets can be passed to Dagger Functions as arguments.
 
 ### TCP and UDP services
 
-To pass host TCP or UDP network services as arguments when invoking a Dagger Function, specify them in the form `tcp://<host>:<port>` or `udp://<host>:<port>`.
+To pass host TCP or UDP network services as arguments when invoking a Dagger Function, specify them in the form `tcp://HOST:PORT` or `udp://HOST:PORT`.
 
 Assume that you have a PostgresQL database running locally on port 5432, as with:
 

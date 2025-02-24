@@ -10,21 +10,21 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/core/modules"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/iancoleman/strcase"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )
 
 func BenchmarkModule(b *testing.B) {
-	testctx.Bench(testCtx, b, ModuleSuite{}, BenchMiddleware()...)
+	testctx.New(b, BenchMiddleware()...).RunBenchmarks(ModuleSuite{})
 }
 
 func (ModuleSuite) BenchmarkLotsOfFunctions(ctx context.Context, b *testctx.B) {
 	const funcCount = 100
 
 	b.Run("go sdk", func(ctx context.Context, b *testctx.B) {
-		for range testctx.N(b) {
+		for range b.Unwrap().N {
 			c := connect(ctx, b)
 
 			mainSrc := `
@@ -154,7 +154,7 @@ export class PotatoSack {
 }
 
 func (ModuleSuite) BenchmarkLotsOfDeps(ctx context.Context, b *testctx.B) {
-	for range testctx.N(b) {
+	for range b.Unwrap().N {
 		c := connect(ctx, b)
 
 		modGen := goGitBase(b, c).
@@ -247,11 +247,12 @@ func (ModuleSuite) BenchmarkLotsOfDeps(ctx context.Context, b *testctx.B) {
 
 // make sure we don't hit any limits when an object field value is large
 func (ModuleSuite) BenchmarkLargeObjectFieldVal(ctx context.Context, b *testctx.B) {
-	for range testctx.N(b) {
+	for range b.Unwrap().N {
 		c := connect(ctx, b)
 
 		// put a timeout on this since failures modes could result in hangs
-		b = b.WithTimeout(60 * time.Second)
+		ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+		b.Cleanup(cancel)
 
 		_, err := goGitBase(b, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(b, c)).
@@ -286,7 +287,7 @@ func (m *Test) Fn() string {
 // regression test for https://github.com/dagger/dagger/issues/7334
 // and https://github.com/dagger/dagger/pull/7336
 func (ModuleSuite) BenchmarkCallSameModuleInParallel(ctx context.Context, b *testctx.B) {
-	for range testctx.N(b) {
+	for range b.Unwrap().N {
 		c := connect(ctx, b)
 
 		ctr := goGitBase(b, c).

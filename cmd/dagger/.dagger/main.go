@@ -7,6 +7,10 @@ import (
 
 func New(
 	ctx context.Context,
+
+	// +optional
+	runnerHost string,
+
 	// +optional
 	// +defaultPath="/"
 	// +ignore=["*", ".*", "!/cmd/dagger/*", "!**/go.sum", "!**/go.mod", "!**/*.go", "!**.graphql"]
@@ -25,14 +29,18 @@ func New(
 	if err != nil {
 		return nil, err
 	}
+	values := []string{
+		// FIXME: how to avoid duplication with engine module?
+		"github.com/dagger/dagger/engine.Version=" + version,
+		"github.com/dagger/dagger/engine.Tag=" + imageTag,
+	}
+	if runnerHost != "" {
+		values = append(values, "main.RunnerHost="+runnerHost)
+	}
 	return &DaggerCli{
 		Gomod: dag.Go(source, dagger.GoOpts{
-			Base: base,
-			Values: []string{
-				// FIXME: how to avoid duplication with engine module?
-				"github.com/dagger/dagger/engine.Version=" + version,
-				"github.com/dagger/dagger/engine.Tag=" + imageTag,
-			},
+			Base:   base,
+			Values: values,
 		}),
 	}, nil
 }

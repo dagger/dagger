@@ -1,0 +1,26 @@
+version: 2
+
+includes:
+  - from_file:
+      path: ./.goreleaser.common.yml
+
+nightly:
+  # version_template will override .Version for nightly builds:
+  # https://goreleaser.com/customization/nightlies/#how-it-works
+  # version should *not* have a v prefix
+  version_template: "{{ trimprefix .Tag \"v\" }}"
+
+archives:
+  - name_template: "{{ .ProjectName }}_v{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
+    id: sha
+    files:
+      - LICENSE
+    format_overrides:
+      - goos: windows
+        format: zip
+
+blobs:
+  - provider: s3
+    region: "{{ .Env.AWS_REGION }}"
+    bucket: "{{ .Env.AWS_BUCKET }}"
+    directory: "dagger/releases/{{ .Version }}"

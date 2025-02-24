@@ -40,7 +40,7 @@ dagger -m github.com/vvaswani/daggerverse/google-cloud-run@v0.1.5 call create-se
   --location=us-central1 \
   --image=us-docker.pkg.dev/cloudrun/container/hello \
   --http-port=3000 \
-  --credential=file:my-keyfile.json
+  --credential=file://my-keyfile.json
 ```
 
 If your requirements are more complex - for example, if you already have one or more Dagger Functions to build, test and containerize your application - you can install the `google-cloud-run` module as a dependency and call it from your existing Dagger Functions using code.
@@ -114,7 +114,7 @@ dagger call deploy \
   --service-location=us-central1 \
   --image-address=us-docker.pkg.dev/cloudrun/container/hello \
   --service-port=3000 \
-  --credential=file:my-keyfile.json
+  --credential=file://my-keyfile.json
 ```
 
 :::tip

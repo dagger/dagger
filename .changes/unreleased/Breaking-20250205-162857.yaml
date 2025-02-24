@@ -1,7 +1,0 @@
-kind: Breaking
-body: |
-    To match automatic configuration, `insecure-entitlements` now includes `security.insecure` when configuring the engine manually.
-time: 2025-02-05T16:28:57.336211843Z
-custom:
-    Author: jedevc
-    PR: "9513"

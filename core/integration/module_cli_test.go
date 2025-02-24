@@ -10,7 +10,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/modules"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -18,7 +18,7 @@ import (
 type CLISuite struct{}
 
 func TestCLI(t *testing.T) {
-	testctx.Run(testCtx, t, CLISuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(CLISuite{})
 }
 
 func (CLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
@@ -1185,6 +1185,14 @@ func (m *OtherObj) FnE() *dagger.Container {
 		require.Contains(t, lines, "other-field-c   doc for OtherFieldC")
 		require.Contains(t, lines, "other-field-d   doc for OtherFieldD")
 		require.Contains(t, lines, "fn-e            doc for FnE")
+	})
+
+	t.Run("no module present errors nicely", func(ctx context.Context, t *testctx.T) {
+		_, err := ctr.
+			WithWorkdir("/empty").
+			With(daggerFunctions()).
+			Stdout(ctx)
+		requireErrOut(t, err, `module not found`)
 	})
 }
 

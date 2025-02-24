@@ -1291,6 +1291,9 @@ type Directory {
   """A unique identifier for this Directory."""
   id: DirectoryID!
 
+  """Returns the name of the directory."""
+  name: String!
+
   """Force evaluation in the engine."""
   sync: DirectoryID!
 

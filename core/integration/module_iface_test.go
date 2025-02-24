@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
@@ -15,7 +15,7 @@ import (
 type InterfaceSuite struct{}
 
 func TestInterface(t *testing.T) {
-	testctx.Run(testCtx, t, InterfaceSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(InterfaceSuite{})
 }
 
 func (InterfaceSuite) TestIfaceBasic(ctx context.Context, t *testctx.T) {

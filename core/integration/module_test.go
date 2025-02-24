@@ -31,13 +31,13 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/internal/testutil"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 )
 
 type ModuleSuite struct{}
 
 func TestModule(t *testing.T) {
-	testctx.Run(testCtx, t, ModuleSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(ModuleSuite{})
 }
 
 func (ModuleSuite) TestInvalidSDK(ctx context.Context, t *testctx.T) {
@@ -5039,11 +5039,16 @@ func schemaVersion(ctx context.Context) (string, error) {
 			WithNewFile("main.go", moduleSrc)
 
 		work = work.With(daggerExec("develop"))
-		daggerJSON, err := work.
+		_, err := work.
 			File("dagger.json").
 			Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, engine.Version, gjson.Get(daggerJSON, "engineVersion").String())
+
+		// sadly, just no way to handle this :(
+		// in the future, the format of dagger.json might change dramatically,
+		// and so there's no real way to know from the older version how to
+		// convert it back down
+		require.Error(t, err)
+		requireErrOut(t, err, `module requires dagger v100.0.0, but you have`)
 	})
 
 	t.Run("from missing", func(ctx context.Context, t *testctx.T) {
@@ -5331,6 +5336,21 @@ export class Dep {
 			}
 		})
 	}
+}
+
+func (ModuleSuite) TestLoadWhenNoModule(ctx context.Context, t *testctx.T) {
+	// verify that if a module is loaded from a directory w/ no module we don't
+	// load extra files
+	c := connect(ctx, t)
+
+	tmpDir := t.TempDir()
+	fileName := "foo"
+	filePath := filepath.Join(tmpDir, fileName)
+	require.NoError(t, os.WriteFile(filePath, []byte("foo"), 0o644))
+
+	ents, err := c.ModuleSource(tmpDir).ContextDirectory().Entries(ctx)
+	require.NoError(t, err)
+	require.Empty(t, ents)
 }
 
 func daggerExec(args ...string) dagger.WithContainerFunc {

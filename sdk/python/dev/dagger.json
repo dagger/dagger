@@ -1,14 +1,14 @@
 {
   "name": "python-sdk-dev",
   "engineVersion": "v0.15.3",
-  "exclude": [
-    "**/.venv",
-    "**/__pycache__",
-    "**/.*cache"
-  ],
   "sdk": {
     "source": "python"
   },
+  "include": [
+    "!**/.venv",
+    "!**/__pycache__",
+    "!**/.*cache"
+  ],
   "dependencies": [
     {
       "name": "dockerd",
@@ -19,6 +19,5 @@
       "name": "wolfi",
       "source": "../../../modules/wolfi"
     }
-  ],
-  "source": "."
+  ]
 }

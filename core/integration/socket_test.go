@@ -8,7 +8,7 @@ import (
 	"net"
 	"path/filepath"
 
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"

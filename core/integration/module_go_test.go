@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -15,7 +15,7 @@ import (
 type GoSuite struct{}
 
 func TestGo(t *testing.T) {
-	testctx.Run(testCtx, t, GoSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(GoSuite{})
 }
 
 func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {

@@ -14,14 +14,6 @@ import (
 
 type Test struct {
 	Dagger *DaggerDev // +private
-
-	CacheConfig string // +private
-}
-
-func (t *Test) WithCache(config string) *Test {
-	clone := *t
-	clone.CacheConfig = config
-	return &clone
 }
 
 // Run all engine tests
@@ -359,10 +351,6 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).
 		WithServiceBinding("dagger-engine", devEngineSvc).
 		WithServiceBinding("registry", registrySvc)
-
-	if t.CacheConfig != "" {
-		tests = tests.WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", t.CacheConfig)
-	}
 
 	// TODO: should use c.Dagger.installer (but this currently can't connect to services)
 	tests = tests.

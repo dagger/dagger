@@ -11,7 +11,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/creack/pty"
 	"github.com/dagger/dagger/internal/testutil"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 

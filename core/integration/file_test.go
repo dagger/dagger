@@ -19,13 +19,13 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/internal/testutil"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 )
 
 type FileSuite struct{}
 
 func TestFile(t *testing.T) {
-	testctx.Run(testCtx, t, FileSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(FileSuite{})
 }
 
 func (FileSuite) TestFile(ctx context.Context, t *testctx.T) {
@@ -163,6 +163,11 @@ func (FileSuite) TestName(ctx context.Context, t *testctx.T) {
 		name, err := c.Host().Directory("path").File("to/file.txt").Name(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "file.txt", name)
+	})
+
+	t.Run("not found file", func(ctx context.Context, t *testctx.T) {
+		_, err := c.Directory().File("to/file.txt").Name(ctx)
+		requireErrOut(t, err, "no such file or directory")
 	})
 }
 

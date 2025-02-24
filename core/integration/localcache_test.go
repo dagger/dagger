@@ -14,7 +14,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/internal/testutil"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 )
 
 func (EngineSuite) TestLocalCacheGCDisabled(ctx context.Context, t *testctx.T) {

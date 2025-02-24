@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
@@ -19,7 +19,7 @@ import (
 type PythonSuite struct{}
 
 func TestPython(t *testing.T) {
-	testctx.Run(testCtx, t, PythonSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(PythonSuite{})
 }
 
 func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {

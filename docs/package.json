@@ -31,7 +31,7 @@
     "remark-code-import": "^1.2.0",
     "unist-util-visit": "^5.0.0",
     "sass": "^1.85.0",
-    "typedoc": "^0.27.7",
+    "typedoc": "^0.27.8",
     "typedoc-plugin-frontmatter": "^1.2.1",
     "typedoc-plugin-markdown": "^4.4.2",
     "typescript": "^5.7.3"

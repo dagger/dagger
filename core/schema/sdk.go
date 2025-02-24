@@ -22,6 +22,14 @@ const (
 	runtimeWorkdirPath = "/scratch"
 )
 
+type sdkLoader struct {
+	dag *dagql.Server
+}
+
+func newSDKLoader(dag *dagql.Server) *sdkLoader {
+	return &sdkLoader{dag: dag}
+}
+
 type SDK string
 
 const (
@@ -45,7 +53,7 @@ var validInbuiltSDKs = []SDK{
 }
 
 // load the SDK implementation with the given name for the module at the given source dir + subpath.
-func (s *moduleSourceSchema) sdkForModule(
+func (s *sdkLoader) sdkForModule(
 	ctx context.Context,
 	query *core.Query,
 	sdk *core.SDKConfig,
@@ -70,7 +78,7 @@ func (s *moduleSourceSchema) sdkForModule(
 		return nil, fmt.Errorf("failed to get buildkit for sdk %s: %w", sdk.Source, err)
 	}
 
-	sdkModSrc, err := s.resolveDepToSource(ctx, bk, parentSrc, sdk.Source, "", "")
+	sdkModSrc, err := resolveDepToSource(ctx, bk, s.dag, parentSrc, sdk.Source, "", "")
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", err.Error(), getInvalidBuiltinSDKError(sdk.Source))
 	}
@@ -145,7 +153,7 @@ The %q SDK does not exist. The available SDKs are:
 }
 
 // return a builtin SDK implementation with the given name
-func (s *moduleSourceSchema) builtinSDK(ctx context.Context, root *core.Query, sdk *core.SDKConfig) (core.SDK, error) {
+func (s *sdkLoader) builtinSDK(ctx context.Context, root *core.Query, sdk *core.SDKConfig) (core.SDK, error) {
 	sdkNameParsed, sdkSuffix, err := parseSDKName(sdk.Source)
 	if err != nil {
 		return nil, err
@@ -179,7 +187,7 @@ type moduleSDK struct {
 	sdk dagql.Object
 }
 
-func (s *moduleSourceSchema) newModuleSDK(
+func (s *sdkLoader) newModuleSDK(
 	ctx context.Context,
 	root *core.Query,
 	sdkModMeta dagql.Instance[*core.Module],
@@ -297,7 +305,7 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, deps *core.ModDeps, source da
 
 // loadBuiltinSDK loads an SDK implemented as a module that is "builtin" to engine, which means its pre-packaged
 // with the engine container in order to enable use w/out hard dependencies on the internet
-func (s *moduleSourceSchema) loadBuiltinSDK(
+func (s *sdkLoader) loadBuiltinSDK(
 	ctx context.Context,
 	root *core.Query,
 	name string,
