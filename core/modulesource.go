@@ -333,8 +333,6 @@ func (src *ModuleSource) LoadContext(
 			return inst, fmt.Errorf("failed to select directory: %w", err)
 		}
 
-		return inst, nil
-
 	case ModuleSourceKindGit:
 		slog.Debug("moduleSource.LoadContext: loading contextual directory from git", "path", path, "kind", src.Kind, "repo", src.Git.HTMLURL)
 
@@ -376,7 +374,10 @@ func (src *ModuleSource) LoadContext(
 			}
 		}
 
-		return MakeDirectoryContentHashed(ctx, bk, ctxDir)
+		inst, err = MakeDirectoryContentHashed(ctx, bk, ctxDir)
+		if err != nil {
+			return inst, err
+		}
 
 	case ModuleSourceKindDir:
 		if !filepath.IsAbs(path) {
@@ -417,19 +418,24 @@ func (src *ModuleSource) LoadContext(
 			}
 		}
 
-		mainClientCallerID, err := src.Query.MainClientCallerID(ctx)
+		inst, err = MakeDirectoryContentHashed(ctx, bk, ctxDir)
 		if err != nil {
-			return inst, fmt.Errorf("failed to retrieve mainClientCallerID: %w", err)
+			return inst, err
 		}
-		if err := src.Query.AddClientResourcesFromID(ctx, &resource.ID{ID: *ctxDir.ID()}, mainClientCallerID, false); err != nil {
-			return inst, fmt.Errorf("failed to add client resources from ID: %w", err)
-		}
-
-		return MakeDirectoryContentHashed(ctx, bk, ctxDir)
 
 	default:
 		return inst, fmt.Errorf("unsupported module src kind: %q", src.Kind)
 	}
+
+	mainClientCallerID, err := src.Query.MainClientCallerID(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to retrieve mainClientCallerID: %w", err)
+	}
+	if err := src.Query.AddClientResourcesFromID(ctx, &resource.ID{ID: *inst.ID()}, mainClientCallerID, false); err != nil {
+		return inst, fmt.Errorf("failed to add client resources from directory source: %w", err)
+	}
+
+	return inst, nil
 }
 
 type LocalModuleSource struct {
