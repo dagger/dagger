@@ -187,6 +187,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 			return inst, fmt.Errorf("failed to add unix socket to store: %w", err)
 		}
 		authSock = sockInst.Self
+
 	}
 
 	// For HTTP(S) refs, handle PAT auth if we're the main client
