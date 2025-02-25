@@ -49,13 +49,18 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 	// convert tools to Genai tool format.
 	var toolsConfig []*genai.Tool
 	for _, tool := range tools {
+		fd := &genai.FunctionDeclaration{
+			Name:        tool.Name,
+			Description: tool.Description,
+		}
+		schema := bbiSchemaToGenaiSchema(tool.Schema)
+		// only add Parameters if there are any
+		if len(schema.Properties) > 0 {
+			fd.Parameters = schema
+		}
 		toolsConfig = append(toolsConfig, &genai.Tool{
 			FunctionDeclarations: []*genai.FunctionDeclaration{
-				{
-					Name:        tool.Name,
-					Description: tool.Description,
-					Parameters:  bbiSchemaToGenaiSchema(tool.Schema),
-				},
+				fd,
 			},
 		})
 	}
@@ -95,7 +100,11 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 				},
 			})
 		} else { // just content
-			content.Parts = append(content.Parts, genai.Text(msg.Content.(string)))
+			c := msg.Content.(string)
+			if c == "" {
+				c = " "
+			}
+			content.Parts = append(content.Parts, genai.Text(c))
 		}
 
 		// add tool calls
@@ -112,7 +121,12 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 	chat := model.StartChat()
 	chat.History = genaiHistory
 
-	resp, err := chat.SendMessage(ctx, genai.Text(userMessage.Content.(string)))
+	userMessageStr := userMessage.Content.(string)
+	if userMessageStr == "" {
+		userMessageStr = " "
+	}
+
+	resp, err := chat.SendMessage(ctx, genai.Text(userMessageStr))
 	if err != nil {
 		return nil, err
 	}
@@ -168,14 +182,15 @@ func bbiSchemaToGenaiSchema(bbi map[string]interface{}) *genai.Schema {
 		case "type":
 			gtype := bbiTypeToGenaiType(param.(string))
 			schema.Type = gtype
-		case "format":
-			schema.Format = param.(string)
+		// case "format": // ignoring format. Genai is very picky about format values
+		// 	schema.Format = param.(string)
 		case "items":
 			schema.Items = bbiSchemaToGenaiSchema(param.(map[string]interface{}))
 		case "required":
 			schema.Required = bbi["required"].([]string)
 		}
 	}
+
 	return schema
 }
 
