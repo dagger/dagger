@@ -174,6 +174,22 @@ func (store *SecretStore) GetSecretURI(idDgst digest.Digest) (string, bool) {
 	return secret.URI, true
 }
 
+func (store *SecretStore) GetSecretNameOrURI(idDgst digest.Digest) (string, bool) {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	secret, ok := store.secrets[idDgst]
+	if !ok {
+		return "", false
+	}
+	if secret.URI != "" {
+		return secret.URI, true
+	}
+	if secret.Name != "" {
+		return secret.Name, true
+	}
+	return "", true
+}
+
 func (store *SecretStore) GetSecretPlaintext(ctx context.Context, idDgst digest.Digest) ([]byte, error) {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
