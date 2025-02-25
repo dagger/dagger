@@ -872,6 +872,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				`Experimental Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`+
 					"\n"),
 			fe.editline.Focus(),
+			tea.DisableMouse,
 		)
 
 	case backgroundMsg:
