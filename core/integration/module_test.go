@@ -4696,6 +4696,41 @@ func (m *Test) GetRelDepSource(ctx context.Context, src *dagger.Directory) (*dag
 	})
 }
 
+func (ModuleSuite) TestContextDirectoryGit(ctx context.Context, t *testctx.T) {
+	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
+		for _, mod := range []string{"context-dir", "context-dir-user"} {
+			t.Run(mod, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+				mountedSocket, cleanup := privateRepoSetup(c, t, tc)
+				defer cleanup()
+
+				modRef := testGitModuleRef(tc, mod)
+				modGen := goGitBase(t, c).
+					WithWorkdir("/work").
+					With(mountedSocket)
+
+				out, err := modGen.With(daggerCallAt(modRef, "absolute-path", "entries")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Contains(t, out, ".git\n")
+				require.Contains(t, out, "README.md\n")
+
+				out, err = modGen.With(daggerCallAt(modRef, "absolute-path-subdir", "entries")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Contains(t, out, "root_data.txt\n")
+
+				out, err = modGen.With(daggerCallAt(modRef, "relative-path", "entries")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Contains(t, out, "dagger.json\n")
+				require.Contains(t, out, "src\n")
+
+				out, err = modGen.With(daggerCallAt(modRef, "relative-path-subdir", "entries")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Contains(t, out, "bar.txt\n")
+			})
+		}
+	})
+}
+
 func (ModuleSuite) TestIgnore(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -5413,10 +5448,6 @@ func privateRepoSetup(c *dagger.Client, t *testctx.T, tc vcsTestCase) (dagger.Wi
 	}
 
 	return func(ctr *dagger.Container) *dagger.Container {
-		// Ensure that HOME env var is set, to ensure homePath expension in test suite
-		homeDir, _ := os.UserHomeDir()
-		ctr = ctr.WithEnvVariable("HOME", homeDir)
-
 		if socket != nil {
 			ctr = ctr.
 				WithUnixSocket("/sock/unix-socket", socket).
