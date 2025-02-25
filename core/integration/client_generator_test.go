@@ -98,21 +98,18 @@ main()`)
 			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
-				devEngine := devEngineContainerAsService(devEngineContainer(c))
-
 				moduleSrc := c.Container().From(tc.baseImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work").
-					WithServiceBinding("dev-engine", devEngine).
 					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
-					WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dev-engine:1234").
-					With(daggerUnprivilegedExec("init")).
+					With(nonNestedDevEngine(c)).
+					With(daggerNonNestedExec("init")).
 					With(tc.setup).
 					With(daggerClientAdd(tc.generator)).
 					With(tc.postSetup)
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
-					out, err := moduleSrc.With(daggerUnprivilegedRun(tc.callCmd...)).
+					out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
 						Stdout(ctx)
 
 					require.NoError(t, err)
@@ -213,22 +210,19 @@ main()
 			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
-				devEngine := devEngineContainerAsService(devEngineContainer(c))
-
 				moduleSrc := c.Container().From(tc.baseImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work").
-					WithServiceBinding("dev-engine", devEngine).
 					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
-					WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dev-engine:1234").
-					With(daggerUnprivilegedExec("init")).
-					With(daggerUnprivilegedExec("install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
+					With(nonNestedDevEngine(c)).
+					With(daggerNonNestedExec("init")).
+					With(daggerNonNestedExec("install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
 					With(tc.setup).
 					With(daggerClientAdd(tc.generator)).
 					With(tc.postSetup)
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
-					out, err := moduleSrc.With(daggerUnprivilegedRun(tc.callCmd...)).
+					out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
 						Stdout(ctx)
 
 					require.NoError(t, err)
@@ -329,8 +323,6 @@ main()
 			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
-				devEngine := devEngineContainerAsService(devEngineContainer(c))
-
 				moduleSrc := c.Container().From(tc.baseImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work/dep").
@@ -344,17 +336,16 @@ main()
 		}`,
 					)).
 					WithWorkdir("/work").
-					WithServiceBinding("dev-engine", devEngine).
 					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
-					WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dev-engine:1234").
-					With(daggerUnprivilegedExec("init")).
-					With(daggerUnprivilegedExec("install", "./dep")).
+					With(nonNestedDevEngine(c)).
+					With(daggerNonNestedExec("init")).
+					With(daggerNonNestedExec("install", "./dep")).
 					With(tc.setup).
 					With(daggerClientAdd(tc.generator)).
 					With(tc.postSetup)
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
-					out, err := moduleSrc.With(daggerUnprivilegedRun(tc.callCmd...)).
+					out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
 						Stdout(ctx)
 
 					require.NoError(t, err)
@@ -475,20 +466,17 @@ main()
 			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
-				devEngine := devEngineContainerAsService(devEngineContainer(c))
-
 				moduleSrc := c.Container().From(tc.baseImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work").
-					WithServiceBinding("dev-engine", devEngine).
 					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
-					WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dev-engine:1234").
+					With(nonNestedDevEngine(c)).
 					With(tc.setup).
 					With(daggerClientAdd(tc.generator)).
 					With(tc.postSetup)
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
-					out, err := moduleSrc.With(daggerUnprivilegedRun(tc.callCmd...)).
+					out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
 						Stdout(ctx)
 
 					require.NoError(t, err)
@@ -617,21 +605,18 @@ main()`)
 				t.Run(ts.generator, func(ctx context.Context, t *testctx.T) {
 					c := connect(ctx, t)
 
-					devEngine := devEngineContainerAsService(devEngineContainer(c))
-
 					moduleSrc := c.Container().From(ts.baseImage).
 						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 						WithWorkdir("/work").
-						WithServiceBinding("dev-engine", devEngine).
 						WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
-						WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dev-engine:1234").
-						With(daggerUnprivilegedExec("init")).
+						With(nonNestedDevEngine(c)).
+						With(daggerNonNestedExec("init")).
 						With(ts.setup).
 						With(daggerClientAddAt(ts.generator, ts.outputDir)).
 						With(ts.postSetup)
 
 					t.Run(fmt.Sprintf("dagger run %s", strings.Join(ts.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
-						out, err := moduleSrc.With(daggerUnprivilegedRun(ts.callCmd...)).
+						out, err := moduleSrc.With(daggerNonNestedRun(ts.callCmd...)).
 							Stdout(ctx)
 
 						require.NoError(t, err)
@@ -721,21 +706,18 @@ main()`)
 			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
-				devEngine := devEngineContainerAsService(devEngineContainer(c))
-
 				moduleSrc := c.Container().From(tc.baseImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work").
-					WithServiceBinding("dev-engine", devEngine).
 					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
-					WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dev-engine:1234").
-					With(daggerUnprivilegedExec("init")).
+					With(nonNestedDevEngine(c)).
+					With(daggerNonNestedExec("init")).
 					With(tc.setup).
 					With(daggerClientAddAt(tc.generator, tc.outputDir)).
 					With(tc.postSetup)
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
-					out, err := moduleSrc.With(daggerUnprivilegedRun(tc.callCmd...)).
+					out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
 						Stdout(ctx)
 
 					require.NoError(t, err)
