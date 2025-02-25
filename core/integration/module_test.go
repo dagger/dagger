@@ -2106,6 +2106,64 @@ func (ModuleSuite) TestCurrentModuleAPI(ctx context.Context, t *testctx.T) {
 }
 
 func (ModuleSuite) TestCustomSDK(ctx context.Context, t *testctx.T) {
+	t.Run("partial", func(ctx context.Context, t *testctx.T) {
+		t.Run("only codegen implemented", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			modGen := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work/sdk").
+				With(daggerExec("init", "--name=codegen-only", "--sdk=go", "--source=.")).
+				WithNewFile("main.go", `package main
+
+import (
+  "context"
+  "dagger/codegen-only/internal/dagger"
+)
+
+type CodegenOnly struct{}
+
+func (c *CodegenOnly) Codegen(
+  ctx context.Context,
+  modSource *dagger.ModuleSource,
+  introspectionJSON *dagger.File,
+) (*dagger.GeneratedCode, error) {
+  ctxDir := modSource.
+    ContextDirectory().
+    WithNewFile("hello.txt", "hello world")
+
+  return dag.GeneratedCode(
+    dag.Directory().
+    WithDirectory("/", ctxDir),
+  ), nil
+}`,
+				).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--name=test", "--sdk=./sdk"))
+
+			t.Run("dagger develop", func(ctx context.Context, t *testctx.T) {
+				ctr := modGen.With(daggerExec("develop"))
+
+				_, err := ctr.Stdout(ctx)
+				require.NoError(t, err)
+
+				contents, err := ctr.File("hello.txt").Contents(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "hello world", contents)
+			})
+
+			t.Run("dagger functions", func(ctx context.Context, t *testctx.T) {
+				_, err := modGen.With(daggerExec("functions")).Stdout(ctx)
+				requireErrOut(t, err, "module codegen-only does not support runtime capability but is required")
+			})
+
+			t.Run("dagger call", func(ctx context.Context, t *testctx.T) {
+				_, err := modGen.With(daggerExec("call")).Stdout(ctx)
+				requireErrOut(t, err, "module codegen-only does not support runtime capability but is required")
+			})
+		})
+	})
+
 	t.Run("local", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 

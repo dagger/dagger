@@ -39,7 +39,14 @@ func initializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDe
 	if modRef == "" {
 		modRef = moduleURLDefault
 	}
-	return initializeModule(ctx, dag, modRef)
+	return initializeModule(
+		ctx,
+		dag,
+		modRef,
+		[]dagger.ModuleSDKCapability{
+			dagger.ModuleSDKCapabilityRuntime,
+		},
+	)
 }
 
 // maybeInitializeDefaultModule optionally loads the module referenced by the -m,--mod flag,
@@ -50,7 +57,7 @@ func maybeInitializeDefaultModule(ctx context.Context, dag *dagger.Client) (*mod
 		modRef = moduleURLDefault
 	}
 
-	if def, err := initializeModule(ctx, dag, modRef); def != nil {
+	if def, err := initializeModule(ctx, dag, modRef, []dagger.ModuleSDKCapability{}); def != nil {
 		return def, modRef, err
 	}
 
@@ -65,6 +72,7 @@ func initializeModule(
 	ctx context.Context,
 	dag *dagger.Client,
 	srcRef string,
+	requiredCapabilities []dagger.ModuleSDKCapability,
 	srcOpts ...dagger.ModuleSourceOpts,
 ) (rdef *moduleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "load module")
@@ -83,7 +91,9 @@ func initializeModule(
 	}
 
 	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())
-	err = modSrc.AsModule().Serve(serveCtx)
+	err = modSrc.AsModule(dagger.ModuleSourceAsModuleOpts{
+		RequiredCapabilities: requiredCapabilities,
+	}).Serve(serveCtx)
 	telemetry.End(serveSpan, func() error { return err })
 	if err != nil {
 		return nil, fmt.Errorf("failed to serve module: %w", err)

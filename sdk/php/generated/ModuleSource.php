@@ -16,9 +16,12 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     /**
      * Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
      */
-    public function asModule(): Module
+    public function asModule(?array $requiredCapabilities = null): Module
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asModule');
+        if (null !== $requiredCapabilities) {
+        $innerQueryBuilder->setArgument('requiredCapabilities', $requiredCapabilities);
+        }
         return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

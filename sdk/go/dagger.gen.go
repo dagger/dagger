@@ -5615,9 +5615,21 @@ func (r *ModuleSource) WithGraphQLQuery(q *querybuilder.Selection) *ModuleSource
 	}
 }
 
+// ModuleSourceAsModuleOpts contains options for ModuleSource.AsModule
+type ModuleSourceAsModuleOpts struct {
+	// The capabilities required by the module to be loaded. If the module does not support any of the required capabilities, an error will be thrown.
+	RequiredCapabilities []ModuleSDKCapability
+}
+
 // Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
-func (r *ModuleSource) AsModule() *Module {
+func (r *ModuleSource) AsModule(opts ...ModuleSourceAsModuleOpts) *Module {
 	q := r.query.Select("asModule")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `requiredCapabilities` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RequiredCapabilities) {
+			q = q.Arg("requiredCapabilities", opts[i].RequiredCapabilities)
+		}
+	}
 
 	return &Module{
 		query: q,
@@ -8202,6 +8214,17 @@ const (
 	ImageMediaTypesDockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
 
 	ImageMediaTypesOcimediaTypes ImageMediaTypes = "OCIMediaTypes"
+)
+
+// Capabilities of the SDK used by the module.
+type ModuleSDKCapability string
+
+func (ModuleSDKCapability) IsEnum() {}
+
+const (
+	ModuleSDKCapabilityCodegen ModuleSDKCapability = "CODEGEN"
+
+	ModuleSDKCapabilityRuntime ModuleSDKCapability = "RUNTIME"
 )
 
 // The kind of module source.
