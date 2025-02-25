@@ -14,11 +14,22 @@ use function Dagger\dag;
 class MyModule
 {
     #[DaggerFunction]
-    public function clone(string $repository, string $branch): Container
+    public function clone(string $repository, string $locator, string $ref): Container
     {
         $r = dag()->git($repository);
         $d = dag()->directory();
-        $d = $r->branch($branch)->tree();
+
+        switch ($locator) {
+            case 'branch':
+                $d = $r->branch($ref)->tree();
+                break;
+            case 'tag':
+                $d = $r->tag($ref)->tree();
+                break;
+            default:
+                $d = $r->commit($ref)->tree();
+                break;
+        }
 
         return dag()
             ->container()
