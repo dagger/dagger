@@ -763,23 +763,44 @@ func optionalModCmdWrapper(
 			SecretToken: presetSecretToken,
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			_, explicitModRefSet := getExplicitModuleSourceRef()
+
+			if disableHostRW {
+				// we could never possibly load a module, don't even try
+				if explicitModRefSet {
+					return fmt.Errorf("cannot load module with --disable-host-read-write enabled")
+				}
+				return fn(ctx, engineClient, nil, cmd, cmdArgs)
+			}
+
 			dag := engineClient.Dagger()
-			loadedMod, err := dag.ModuleSource(getModuleSourceRefWithDefault()).
-				AsModule().
-				Sync(ctx)
+			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault(), dagger.ModuleSourceOpts{
+				AllowNotExists: true,
+			})
+			configExists, err := modSrc.ConfigExists(ctx)
 			if err != nil {
-				if !explicitModRefSet {
-					// the user didn't explicitly try to run with a module, so just run in default mode
+				if strings.Contains(err.Error(), "rpc error: code = Unimplemented desc") {
+					// this is a very obscure corner case: when running `dagger listen --disable-host-read-write`
+					// and then running `dagger query` against that listener, we will not have disableHostRW set
+					// true but do need to ignore this error about filesync being disabled
 					return fn(ctx, engineClient, nil, cmd, cmdArgs)
 				}
-				return fmt.Errorf("failed to get configured module: %w", err)
-			} else {
-				err := loadedMod.Serve(ctx)
+				return fmt.Errorf("failed to check if module exists: %w", err)
+			}
+			switch {
+			case configExists:
+				mod := modSrc.AsModule()
+				err := mod.Serve(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to serve module: %w", err)
 				}
+				return fn(ctx, engineClient, mod, cmd, cmdArgs)
+			case explicitModRefSet:
+				// the user explicitly asked for a module but we didn't find one
+				return fmt.Errorf("failed to get configured module: %w", err)
+			default:
+				// user didn't ask for a module, so just run in default mode since we didn't find one
+				return fn(ctx, engineClient, nil, cmd, cmdArgs)
 			}
-			return fn(ctx, engineClient, loadedMod, cmd, cmdArgs)
 		})
 	}
 }

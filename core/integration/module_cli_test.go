@@ -1645,3 +1645,23 @@ func (CLISuite) TestDaggerUpdate(ctx context.Context, t *testctx.T) {
 		})
 	}
 }
+
+func (CLISuite) TestInvalidModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("normal context dir", func(ctx context.Context, t *testctx.T) {
+		modGen := goGitBase(t, c).
+			WithNewFile("dagger.json", `{"name": "broke", "engineVersion": "v100.0.0", "sdk": 666}`)
+
+		_, err := modGen.With(daggerQuery(`{version}`)).Stdout(ctx)
+		requireErrOut(t, err, `failed to check if module exists`)
+	})
+
+	t.Run("fallback context dir", func(ctx context.Context, t *testctx.T) {
+		modGen := daggerCliBase(t, c).
+			WithNewFile("dagger.json", `{"name": "broke", "engineVersion": "v100.0.0", "sdk": 666}`)
+
+		_, err := modGen.With(daggerQuery(`{version}`)).Stdout(ctx)
+		requireErrOut(t, err, `failed to check if module exists`)
+	})
+}
