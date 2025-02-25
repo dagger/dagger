@@ -504,7 +504,7 @@ func (sdk *goSDK) Runtime(
 ) (_ *core.Container, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load runtime")
 	defer telemetry.End(span, func() error { return rerr })
-	ctr, err := sdk.baseWithCodegen(ctx, deps, source, false)
+	ctr, err := sdk.baseWithCodegen(ctx, deps, source, true)
 	if err != nil {
 		return nil, err
 	}
