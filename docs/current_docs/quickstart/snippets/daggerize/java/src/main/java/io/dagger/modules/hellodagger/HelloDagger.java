@@ -19,28 +19,31 @@ public class HelloDagger extends AbstractModule {
       throws InterruptedException, ExecutionException, DaggerQueryException {
     this.test(source);
     return this.build(source).
-        publish("ttl.sh/hello-dagger-" + (int)(Math.random() * 10000000));
+        publish("ttl.sh/hello-dagger-%d".formatted((int) (Math.random() * 10000000)));
   }
 
   /** Build the application container */
   @Function
   public Container build(Directory source)
       throws InterruptedException, ExecutionException, DaggerQueryException {
-    Directory build = this.buildEnv(source).
-        withExec(List.of("npm", "run", "build")).
-        directory("./dist");
-    return dag.container().from("nginx:1.25-alpine").
-        withDirectory("/usr/share/nginx/html", build).
-        withExposedPort(80);
+    Directory build = this
+        .buildEnv(source)
+        .withExec(List.of("npm", "run", "build"))
+        .directory("./dist");
+    return dag.container()
+        .from("nginx:1.25-alpine")
+        .withDirectory("/usr/share/nginx/html", build)
+        .withExposedPort(80);
   }
 
   /** Return the result of running unit tests */
   @Function
   public String test(Directory source)
       throws InterruptedException, ExecutionException, DaggerQueryException {
-    return this.buildEnv(source).
-        withExec(List.of("npm", "run", "test:unit", "run")).
-        stdout();
+    return this
+        .buildEnv(source)
+        .withExec(List.of("npm", "run", "test:unit", "run"))
+        .stdout();
   }
 
   /** Build a ready-to-use development environment */
@@ -48,11 +51,11 @@ public class HelloDagger extends AbstractModule {
   public Container buildEnv(Directory source)
       throws InterruptedException, ExecutionException, DaggerQueryException {
     CacheVolume nodeCache = dag.cacheVolume("node");
-    return dag.container().
-        from("node:21-slim").
-        withDirectory("/src", source).
-        withMountedCache("/root/.npm", nodeCache).
-        withWorkdir("/src").
-        withExec(List.of("npm", "install"));
+    return dag.container()
+        .from("node:21-slim")
+        .withDirectory("/src", source)
+        .withMountedCache("/root/.npm", nodeCache)
+        .withWorkdir("/src")
+        .withExec(List.of("npm", "install"));
   }
 }
