@@ -471,6 +471,11 @@
   status = 301
 
 [[redirects]]
+  from = "/integrations/java"
+  to = "/api/sdk"
+  status = 301
+
+[[redirects]]
   from = "/integrations/:docid/:slug"
   to = "/integrations/:slug"
   status = 301
