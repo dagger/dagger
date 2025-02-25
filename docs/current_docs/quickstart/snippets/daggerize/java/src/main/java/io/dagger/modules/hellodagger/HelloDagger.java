@@ -19,7 +19,7 @@ public class HelloDagger extends AbstractModule {
       throws InterruptedException, ExecutionException, DaggerQueryException {
     this.test(source);
     return this.build(source).
-        publish("ttl.sh/hello-dagger-" + (int)Math.random() * 10000000);
+        publish("ttl.sh/hello-dagger-" + (int)(Math.random() * 10000000));
   }
 
   /** Build the application container */
