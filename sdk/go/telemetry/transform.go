@@ -1123,7 +1123,6 @@ func metricFromPB(pbMetric *otlpmetricsv1.Metric) (metricdata.Metrics, error) {
 		Unit:        pbMetric.Unit,
 	}
 	switch a := pbMetric.Data.(type) {
-	// TODO: rest of cases once needed (hand-writing this rather than copy-pasting from internal otlp package)
 	case *otlpmetricsv1.Metric_Gauge:
 		res := gaugeFromPB(a.Gauge)
 		// NOTE: setting m.Data to non-pointer value is important, metrics exporters will fail if it's a pointer
@@ -1133,6 +1132,41 @@ func metricFromPB(pbMetric *otlpmetricsv1.Metric) (metricdata.Metrics, error) {
 		case res.AsDouble != nil:
 			m.Data = *res.AsDouble
 		}
+	case *otlpmetricsv1.Metric_Sum:
+		res, err := sumFromPB(a.Sum)
+		if err != nil {
+			return m, err
+		}
+		switch {
+		case res.AsInt != nil:
+			m.Data = *res.AsInt
+		case res.AsDouble != nil:
+			m.Data = *res.AsDouble
+		}
+	case *otlpmetricsv1.Metric_Histogram:
+		res, err := histogramFromPB(a.Histogram)
+		if err != nil {
+			return m, err
+		}
+		switch {
+		case res.AsInt != nil:
+			m.Data = *res.AsInt
+		case res.AsDouble != nil:
+			m.Data = *res.AsDouble
+		}
+	case *otlpmetricsv1.Metric_ExponentialHistogram:
+		res, err := exponentialHistogramFromPB(a.ExponentialHistogram)
+		if err != nil {
+			return m, err
+		}
+		switch {
+		case res.AsInt != nil:
+			m.Data = *res.AsInt
+		case res.AsDouble != nil:
+			m.Data = *res.AsDouble
+		}
+	case *otlpmetricsv1.Metric_Summary:
+		m.Data = summaryFromPB(a.Summary)
 	default:
 		return m, fmt.Errorf("unknown aggregation from pb: %T", a)
 	}
@@ -1502,4 +1536,328 @@ func QuantileValuesToPB(quantiles []metricdata.QuantileValue) []*otlpmetricsv1.S
 		out = append(out, quantile)
 	}
 	return out
+}
+
+type sumFromPBResult struct {
+	// only one of these will be set, depending on whether the ungeneric input
+	// resolves to in the returned generic type
+	AsInt    *metricdata.Sum[int64]
+	AsDouble *metricdata.Sum[float64]
+}
+
+func sumFromPB(s *otlpmetricsv1.Sum) (sumFromPBResult, error) {
+	dataPointsRes := dataPointsFromPB(s.DataPoints)
+	res := sumFromPBResult{}
+
+	temporality, err := temporalityFromPB(s.AggregationTemporality)
+	if err != nil {
+		return res, err
+	}
+
+	switch {
+	case len(dataPointsRes.AsInt) > 0:
+		res = sumFromPBResult{
+			AsInt: &metricdata.Sum[int64]{
+				DataPoints:  dataPointsRes.AsInt,
+				Temporality: temporality,
+				IsMonotonic: s.IsMonotonic,
+			},
+		}
+	case len(dataPointsRes.AsDouble) > 0:
+		res = sumFromPBResult{
+			AsDouble: &metricdata.Sum[float64]{
+				DataPoints:  dataPointsRes.AsDouble,
+				Temporality: temporality,
+				IsMonotonic: s.IsMonotonic,
+			},
+		}
+	}
+	return res, nil
+}
+
+type histogramFromPBResult struct {
+	// only one of these will be set, depending on whether the ungeneric input
+	// resolves to in the returned generic type
+	AsInt    *metricdata.Histogram[int64]
+	AsDouble *metricdata.Histogram[float64]
+}
+
+func histogramFromPB(h *otlpmetricsv1.Histogram) (histogramFromPBResult, error) {
+	res := histogramFromPBResult{}
+
+	temporality, err := temporalityFromPB(h.AggregationTemporality)
+	if err != nil {
+		return res, err
+	}
+
+	// Convert histogram data points
+	intDataPoints, doubleDataPoints := histogramDataPointsFromPB(h.DataPoints)
+
+	if len(intDataPoints) > 0 {
+		res.AsInt = &metricdata.Histogram[int64]{
+			DataPoints:  intDataPoints,
+			Temporality: temporality,
+		}
+	} else if len(doubleDataPoints) > 0 {
+		res.AsDouble = &metricdata.Histogram[float64]{
+			DataPoints:  doubleDataPoints,
+			Temporality: temporality,
+		}
+	}
+
+	return res, nil
+}
+
+func histogramDataPointsFromPB(dPts []*otlpmetricsv1.HistogramDataPoint) ([]metricdata.HistogramDataPoint[int64], []metricdata.HistogramDataPoint[float64]) {
+	intDPts := []metricdata.HistogramDataPoint[int64]{}
+	doubleDPts := []metricdata.HistogramDataPoint[float64]{}
+
+	for _, dPt := range dPts {
+		// Create a common structure for both types
+		attrs := attribute.NewSet(AttributesFromProto(dPt.Attributes)...)
+		startTime := time.Unix(0, int64(dPt.StartTimeUnixNano))
+		timeVal := time.Unix(0, int64(dPt.TimeUnixNano))
+		count := dPt.Count
+		bounds := dPt.ExplicitBounds
+		bucketCounts := dPt.BucketCounts
+
+		// Get sum value (if present)
+		var sum float64
+		if dPt.Sum != nil {
+			sum = *dPt.Sum
+		}
+
+		// Get exemplars
+		exemplarsRes := exemplarsFromPB(dPt.Exemplars)
+
+		// Create the appropriate data point type
+		// For simplicity, we'll use the sum type to determine if this is an int or float histogram
+		// This is a heuristic and might need refinement
+		if sum == float64(int64(sum)) {
+			// Get min/max values (if present)
+			var min, max metricdata.Extrema[int64]
+			if dPt.Min != nil {
+				min = metricdata.NewExtrema(int64(*dPt.Min))
+			}
+			if dPt.Max != nil {
+				max = metricdata.NewExtrema(int64(*dPt.Max))
+			}
+			intDPts = append(intDPts, metricdata.HistogramDataPoint[int64]{
+				Attributes:   attrs,
+				StartTime:    startTime,
+				Time:         timeVal,
+				Count:        count,
+				Sum:          int64(sum),
+				Bounds:       bounds,
+				BucketCounts: bucketCounts,
+				Min:          min,
+				Max:          max,
+				Exemplars:    exemplarsRes.AsInt,
+			})
+		} else {
+			// Get min/max values (if present)
+			var min, max metricdata.Extrema[float64]
+			if dPt.Min != nil {
+				min = metricdata.NewExtrema(*dPt.Min)
+			}
+			if dPt.Max != nil {
+				max = metricdata.NewExtrema(*dPt.Max)
+			}
+			doubleDPts = append(doubleDPts, metricdata.HistogramDataPoint[float64]{
+				Attributes:   attrs,
+				StartTime:    startTime,
+				Time:         timeVal,
+				Count:        count,
+				Sum:          sum,
+				Bounds:       bounds,
+				BucketCounts: bucketCounts,
+				Min:          min,
+				Max:          max,
+				Exemplars:    exemplarsRes.AsDouble,
+			})
+		}
+	}
+
+	return intDPts, doubleDPts
+}
+
+type exponentialHistogramFromPBResult struct {
+	// only one of these will be set, depending on whether the ungeneric input
+	// resolves to in the returned generic type
+	AsInt    *metricdata.ExponentialHistogram[int64]
+	AsDouble *metricdata.ExponentialHistogram[float64]
+}
+
+func exponentialHistogramFromPB(h *otlpmetricsv1.ExponentialHistogram) (exponentialHistogramFromPBResult, error) {
+	res := exponentialHistogramFromPBResult{}
+
+	temporality, err := temporalityFromPB(h.AggregationTemporality)
+	if err != nil {
+		return res, err
+	}
+
+	// Convert exponential histogram data points
+	intDataPoints, doubleDataPoints := exponentialHistogramDataPointsFromPB(h.DataPoints)
+
+	if len(intDataPoints) > 0 {
+		res.AsInt = &metricdata.ExponentialHistogram[int64]{
+			DataPoints:  intDataPoints,
+			Temporality: temporality,
+		}
+	} else if len(doubleDataPoints) > 0 {
+		res.AsDouble = &metricdata.ExponentialHistogram[float64]{
+			DataPoints:  doubleDataPoints,
+			Temporality: temporality,
+		}
+	}
+
+	return res, nil
+}
+
+func exponentialHistogramDataPointsFromPB(dPts []*otlpmetricsv1.ExponentialHistogramDataPoint) ([]metricdata.ExponentialHistogramDataPoint[int64], []metricdata.ExponentialHistogramDataPoint[float64]) {
+	intDPts := []metricdata.ExponentialHistogramDataPoint[int64]{}
+	doubleDPts := []metricdata.ExponentialHistogramDataPoint[float64]{}
+
+	for _, dPt := range dPts {
+		// Create a common structure for both types
+		attrs := attribute.NewSet(AttributesFromProto(dPt.Attributes)...)
+		startTime := time.Unix(0, int64(dPt.StartTimeUnixNano))
+		timeVal := time.Unix(0, int64(dPt.TimeUnixNano))
+		count := dPt.Count
+		scale := dPt.Scale
+		zeroCount := dPt.ZeroCount
+
+		// Convert positive and negative buckets
+		positiveBucket := exponentialHistogramBucketFromPB(dPt.Positive)
+		negativeBucket := exponentialHistogramBucketFromPB(dPt.Negative)
+
+		// Get sum value (if present)
+		var sum float64
+		if dPt.Sum != nil {
+			sum = *dPt.Sum
+		}
+
+		// Get exemplars
+		exemplarsRes := exemplarsFromPB(dPt.Exemplars)
+
+		// Create the appropriate data point type
+		// For simplicity, we'll use the sum type to determine if this is an int or float histogram
+		// This is a heuristic and might need refinement
+		if sum == float64(int64(sum)) {
+			var min, max metricdata.Extrema[int64]
+			if dPt.Min != nil {
+				min = metricdata.NewExtrema(int64(*dPt.Min))
+			}
+			if dPt.Max != nil {
+				max = metricdata.NewExtrema(int64(*dPt.Max))
+			}
+			intDPts = append(intDPts, metricdata.ExponentialHistogramDataPoint[int64]{
+				Attributes:     attrs,
+				StartTime:      startTime,
+				Time:           timeVal,
+				Count:          count,
+				Sum:            int64(sum),
+				Scale:          scale,
+				ZeroCount:      zeroCount,
+				PositiveBucket: positiveBucket,
+				NegativeBucket: negativeBucket,
+				Min:            min,
+				Max:            max,
+				Exemplars:      exemplarsRes.AsInt,
+			})
+		} else {
+			// Get min/max values (if present)
+			var min, max metricdata.Extrema[float64]
+			if dPt.Min != nil {
+				min = metricdata.NewExtrema(*dPt.Min)
+			}
+			if dPt.Max != nil {
+				max = metricdata.NewExtrema(*dPt.Max)
+			}
+			doubleDPts = append(doubleDPts, metricdata.ExponentialHistogramDataPoint[float64]{
+				Attributes:     attrs,
+				StartTime:      startTime,
+				Time:           timeVal,
+				Count:          count,
+				Sum:            sum,
+				Scale:          scale,
+				ZeroCount:      zeroCount,
+				PositiveBucket: positiveBucket,
+				NegativeBucket: negativeBucket,
+				Min:            min,
+				Max:            max,
+				Exemplars:      exemplarsRes.AsDouble,
+			})
+		}
+	}
+
+	return intDPts, doubleDPts
+}
+
+func exponentialHistogramBucketFromPB(bucket *otlpmetricsv1.ExponentialHistogramDataPoint_Buckets) metricdata.ExponentialBucket {
+	if bucket == nil {
+		return metricdata.ExponentialBucket{}
+	}
+
+	return metricdata.ExponentialBucket{
+		Offset: bucket.Offset,
+		Counts: bucket.BucketCounts,
+	}
+}
+
+func summaryFromPB(s *otlpmetricsv1.Summary) metricdata.Summary {
+	return metricdata.Summary{
+		DataPoints: summaryDataPointsFromPB(s.DataPoints),
+	}
+}
+
+func summaryDataPointsFromPB(dPts []*otlpmetricsv1.SummaryDataPoint) []metricdata.SummaryDataPoint {
+	if len(dPts) == 0 {
+		return nil
+	}
+
+	out := make([]metricdata.SummaryDataPoint, 0, len(dPts))
+	for _, dPt := range dPts {
+		if dPt == nil {
+			continue
+		}
+		out = append(out, metricdata.SummaryDataPoint{
+			Attributes:     attribute.NewSet(AttributesFromProto(dPt.Attributes)...),
+			StartTime:      time.Unix(0, int64(dPt.StartTimeUnixNano)),
+			Time:           time.Unix(0, int64(dPt.TimeUnixNano)),
+			Count:          dPt.Count,
+			Sum:            dPt.Sum,
+			QuantileValues: quantileValuesFromPB(dPt.QuantileValues),
+		})
+	}
+	return out
+}
+
+func quantileValuesFromPB(qVals []*otlpmetricsv1.SummaryDataPoint_ValueAtQuantile) []metricdata.QuantileValue {
+	if len(qVals) == 0 {
+		return nil
+	}
+
+	out := make([]metricdata.QuantileValue, 0, len(qVals))
+	for _, qVal := range qVals {
+		if qVal == nil {
+			continue
+		}
+		out = append(out, metricdata.QuantileValue{
+			Quantile: qVal.Quantile,
+			Value:    qVal.Value,
+		})
+	}
+	return out
+}
+
+func temporalityFromPB(t otlpmetricsv1.AggregationTemporality) (metricdata.Temporality, error) {
+	switch t {
+	case otlpmetricsv1.AggregationTemporality_AGGREGATION_TEMPORALITY_DELTA:
+		return metricdata.DeltaTemporality, nil
+	case otlpmetricsv1.AggregationTemporality_AGGREGATION_TEMPORALITY_CUMULATIVE:
+		return metricdata.CumulativeTemporality, nil
+	default:
+		return 0, fmt.Errorf("unknown temporality from pb: %v", t)
+	}
 }
