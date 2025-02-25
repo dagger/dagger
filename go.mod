@@ -51,6 +51,7 @@ require (
 	github.com/go-git/go-git/v5 v5.13.2
 	github.com/gofrs/flock v0.12.1
 	github.com/gogo/protobuf v1.3.2
+	github.com/google/generative-ai-go v0.19.0
 	github.com/google/go-containerregistry v0.20.3
 	github.com/google/go-github/v59 v59.0.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
@@ -123,6 +124,7 @@ require (
 	golang.org/x/term v0.29.0
 	golang.org/x/text v0.22.0
 	golang.org/x/tools v0.30.0
+	google.golang.org/api v0.189.0
 	google.golang.org/grpc v1.70.0
 	google.golang.org/protobuf v1.36.5
 	gopkg.in/yaml.v3 v3.0.1
@@ -130,6 +132,18 @@ require (
 	modernc.org/sqlite v1.35.0
 	mvdan.cc/sh/v3 v3.10.1-0.20250103084315-5e4be7920b8b
 	resenje.org/singleflight v0.4.3
+)
+
+require (
+	cloud.google.com/go v0.115.0 // indirect
+	cloud.google.com/go/ai v0.8.0 // indirect
+	cloud.google.com/go/auth v0.7.2 // indirect
+	cloud.google.com/go/auth/oauth2adapt v0.2.3 // indirect
+	cloud.google.com/go/compute/metadata v0.6.0 // indirect
+	cloud.google.com/go/longrunning v0.5.9 // indirect
+	github.com/google/s2a-go v0.1.7 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
+	github.com/googleapis/gax-go/v2 v2.12.5 // indirect
 )
 
 require (
@@ -312,7 +326,7 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.32.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/time v0.6.0 // indirect
-	google.golang.org/genproto v0.0.0-20240227224415-6ceb2ff114de // indirect
+	google.golang.org/genproto v0.0.0-20240722135656-d784300faade // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20241209162323-e6fa225c2576 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241209162323-e6fa225c2576 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect

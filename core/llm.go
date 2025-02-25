@@ -111,6 +111,9 @@ type LlmRouter struct {
 	OPENAI_API_KEY     string
 	OPENAI_BASE_URL    string
 	OPENAI_MODEL       string
+	GEMINI_API_KEY     string
+	GEMINI_BASE_URL    string
+	GEMINI_MODEL       string
 }
 
 func (r *LlmRouter) isAnthropicModel(model string) bool {
@@ -156,6 +159,22 @@ func (r *LlmRouter) routeOpenAIModel() *LlmEndpoint {
 	return endpoint
 }
 
+func (r *LlmRouter) routeGoogleModel() (*LlmEndpoint, error) {
+	defaultSystemPrompt := "You are a helpful AI assistant. You can use tools to accomplish the user's requests"
+	endpoint := &LlmEndpoint{
+		BaseURL:  r.GEMINI_BASE_URL,
+		Key:      r.GEMINI_API_KEY,
+		Provider: Google,
+	}
+	client, err := newGenaiClient(endpoint, defaultSystemPrompt)
+	if err != nil {
+		return nil, err
+	}
+	endpoint.Client = client
+
+	return endpoint, nil
+}
+
 func (r *LlmRouter) routeOtherModel() *LlmEndpoint {
 	// default to openAI compat from other providers
 	endpoint := &LlmEndpoint{
@@ -170,7 +189,7 @@ func (r *LlmRouter) routeOtherModel() *LlmEndpoint {
 
 // Return a default model, if configured
 func (r *LlmRouter) DefaultModel() string {
-	for _, model := range []string{r.OPENAI_MODEL, r.ANTHROPIC_MODEL} {
+	for _, model := range []string{r.OPENAI_MODEL, r.ANTHROPIC_MODEL, r.GEMINI_MODEL} {
 		if model != "" {
 			return model
 		}
@@ -183,6 +202,9 @@ func (r *LlmRouter) DefaultModel() string {
 	}
 	if r.OPENAI_BASE_URL != "" {
 		return "llama-3.2"
+	}
+	if r.GEMINI_API_KEY != "" {
+		return "gemini-2.0-flash"
 	}
 	return ""
 }
@@ -199,7 +221,11 @@ func (r *LlmRouter) Route(model string) (*LlmEndpoint, error) {
 	} else if r.isOpenAIModel(model) {
 		endpoint = r.routeOpenAIModel()
 	} else if r.isGoogleModel(model) {
-		return nil, fmt.Errorf("Google models are not yet supported")
+		googleEndpoint, err := r.routeGoogleModel()
+		if err != nil {
+			return nil, err
+		}
+		endpoint = googleEndpoint
 	} else if r.isMistralModel(model) {
 		return nil, fmt.Errorf("Mistral models are not yet supported")
 	} else {
@@ -237,6 +263,18 @@ func (cfg *LlmRouter) LoadConfig(ctx context.Context, getenv func(context.Contex
 		return err
 	}
 	cfg.OPENAI_MODEL, err = getenv(ctx, "OPENAI_MODEL")
+	if err != nil {
+		return err
+	}
+	cfg.GEMINI_API_KEY, err = getenv(ctx, "GEMINI_API_KEY")
+	if err != nil {
+		return err
+	}
+	cfg.GEMINI_BASE_URL, err = getenv(ctx, "GEMINI_BASE_URL")
+	if err != nil {
+		return err
+	}
+	cfg.GEMINI_MODEL, err = getenv(ctx, "GEMINI_MODEL")
 	if err != nil {
 		return err
 	}
