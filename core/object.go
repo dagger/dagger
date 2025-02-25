@@ -214,14 +214,15 @@ var _ HasPBDefinitions = (*ModuleObject)(nil)
 func (obj *ModuleObject) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	defs := []*pb.Definition{}
 	objDef := obj.TypeDef
-	for name, val := range obj.Fields {
-		fieldDef, ok := objDef.FieldByOriginalName(name)
+	for _, field := range objDef.Fields {
+		// TODO: we skip over private fields, we can't convert them anyways (this is a bug)
+		name := field.OriginalName
+		val, ok := obj.Fields[name]
 		if !ok {
-			// TODO: must be a private field; skip, since we can't convert it anyhow.
-			// (this is a bug)
+			// missing field
 			continue
 		}
-		fieldType, ok, err := obj.Module.ModTypeFor(ctx, fieldDef.TypeDef, true)
+		fieldType, ok, err := obj.Module.ModTypeFor(ctx, field.TypeDef, true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get mod type for field %q: %w", name, err)
 		}
