@@ -427,11 +427,11 @@ func (src *ModuleSource) LoadContext(
 		return inst, fmt.Errorf("unsupported module src kind: %q", src.Kind)
 	}
 
-	mainClientCallerID, err := src.Query.MainClientCallerID(ctx)
+	mainClientMetadata, err := src.Query.NonModuleParentClientMetadata(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to retrieve mainClientCallerID: %w", err)
+		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
-	if err := src.Query.AddClientResourcesFromID(ctx, &resource.ID{ID: *inst.ID()}, mainClientCallerID, false); err != nil {
+	if err := src.Query.AddClientResourcesFromID(ctx, &resource.ID{ID: *inst.ID()}, mainClientMetadata.ClientID, false); err != nil {
 		return inst, fmt.Errorf("failed to add client resources from directory source: %w", err)
 	}
 
