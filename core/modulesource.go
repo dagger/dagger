@@ -333,6 +333,14 @@ func (src *ModuleSource) LoadContext(
 			return inst, fmt.Errorf("failed to select directory: %w", err)
 		}
 
+		mainClientCallerID, err := src.Query.MainClientCallerID(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to retrieve mainClientCallerID: %w", err)
+		}
+		if err := src.Query.AddClientResourcesFromID(ctx, &resource.ID{ID: *inst.ID()}, mainClientCallerID, false); err != nil {
+			return inst, fmt.Errorf("failed to add client resources from ID: %w", err)
+		}
+
 		return inst, nil
 
 	case ModuleSourceKindGit:
