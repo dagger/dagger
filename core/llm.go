@@ -682,7 +682,7 @@ func (s LlmMiddleware) extendLlmType(targetType dagql.ObjectType) error {
 		return fmt.Errorf("failed to lookup ID type for %T", targetType)
 	}
 	typename := targetType.TypeName()
-	// Install with<targetType>()
+	// Install with<TargetType>()
 	llmType.Extend(
 		dagql.FieldSpec{
 			Name:        "with" + typename,
@@ -706,7 +706,7 @@ func (s LlmMiddleware) extendLlmType(targetType dagql.ObjectType) error {
 	// Install <targetType>()
 	llmType.Extend(
 		dagql.FieldSpec{
-			Name:        typename,
+			Name:        gqlFieldName(typename),
 			Description: fmt.Sprintf("Retrieve the llm state as a %s", typename),
 			Type:        targetType.Typed(),
 		},
