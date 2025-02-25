@@ -19,6 +19,7 @@ import (
 	"github.com/knz/bubbline/history"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
+	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -59,6 +60,8 @@ type frontendPretty struct {
 	prompt          func(out *termenv.Output, fg termenv.Color) string
 	editline        *editline.Model
 	editlineFocused bool
+	flushed         map[dagui.SpanID]struct{}
+	sawEOF          map[dagui.SpanID]struct{}
 
 	// updated as events are written
 	db           *dagui.DB
@@ -113,6 +116,10 @@ func NewWithDB(db *dagui.DB) *frontendPretty {
 		// set empty initial row state to avoid nil checks
 		rowsView: &dagui.RowsView{},
 		rows:     &dagui.Rows{BySpan: map[dagui.SpanID]*dagui.TraceRow{}},
+
+		// shell state
+		flushed: map[dagui.SpanID]struct{}{},
+		sawEOF:  map[dagui.SpanID]struct{}{},
 
 		// initial TUI state
 		window:     tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
@@ -384,17 +391,27 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	return renderPrimaryOutput(fe.db)
 }
 
-func (fe *frontendPretty) SpanExporter() sdktrace.SpanExporter {
-	return FrontendSpanExporter{fe}
+func (fe *frontendPretty) flush() {
+	go fe.program.Send(flushMsg{})
 }
 
-type FrontendSpanExporter struct {
+func (fe *frontendPretty) SpanExporter() sdktrace.SpanExporter {
+	return prettySpanExporter{fe}
+}
+
+type prettySpanExporter struct {
 	*frontendPretty
 }
 
-func (fe FrontendSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
+// flushMsg is sent after spans are exported and the view is recalculated. When
+// this message is received, top-level finished spans are printed to the
+// scrollback.
+type flushMsg struct{}
+
+func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
+	defer fe.flush()
 	defer fe.recalculateViewLocked() // recalculate view *after* updating the db
 	slog.Debug("frontend exporting spans", "spans", len(spans))
 	return fe.db.ExportSpans(ctx, spans)
@@ -418,10 +435,30 @@ type prettyLogExporter struct {
 func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
+	defer fe.flush()
 	if err := fe.db.LogExporter().Export(ctx, logs); err != nil {
 		return err
 	}
-	return fe.logs.Export(ctx, logs)
+	if err := fe.logs.Export(ctx, logs); err != nil {
+		return err
+	}
+	for _, rec := range logs {
+		var eof bool
+		rec.WalkAttributes(func(attr log.KeyValue) bool {
+			if attr.Key == telemetry.StdioEOFAttr {
+				if attr.Value.AsBool() {
+					eof = true
+				}
+				return false
+			}
+			return true
+		})
+		if rec.SpanID().IsValid() && eof {
+			spanID := dagui.SpanID{SpanID: rec.SpanID()}
+			fe.sawEOF[spanID] = struct{}{}
+		}
+	}
+	return nil
 }
 
 type eofMsg struct{}
@@ -875,6 +912,31 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			tea.DisableMouse,
 		)
 
+	case flushMsg:
+		if fe.shell == nil {
+			return fe, nil
+		}
+		buf := new(strings.Builder)
+		out := NewOutput(buf, termenv.WithProfile(fe.profile))
+		r := newRenderer(fe.db, 100, fe.FrontendOpts)
+		for _, row := range fe.rows.Order {
+			if row.IsRunningOrChildRunning || row.Depth > 0 {
+				continue
+			}
+			if _, ok := fe.sawEOF[row.Span.ID]; !ok {
+				// wait for EOF to be seen before rendering
+				continue
+			}
+			if _, ok := fe.flushed[row.Span.ID]; !ok {
+				fe.renderRow(out, r, row, "")
+				fe.flushed[row.Span.ID] = struct{}{}
+			}
+		}
+		if buf.Len() > 0 {
+			return fe, tea.Printf("%s", strings.TrimLeft(buf.String(), "\n"))
+		}
+		return fe, nil
+
 	case backgroundMsg:
 		fe.backgrounded = true
 		cmd := msg.cmd
@@ -1201,6 +1263,9 @@ func (fe *frontendPretty) renderLocked() {
 
 func (fe *frontendPretty) renderRow(out *termenv.Output, r *renderer, row *dagui.TraceRow, prefix string) {
 	if fe.shell != nil && row.Depth == 0 {
+		if _, ok := fe.flushed[row.Span.ID]; ok {
+			return
+		}
 		if row.Previous != nil {
 			fmt.Fprintln(out, prefix)
 		}

@@ -377,6 +377,8 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 
 			// redirect stdio to the current span
 			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+			defer stdio.Close()
+
 			stdoutW := newTerminalWriter(stdio.Stdout.Write)
 			// handle shell state
 			stdoutW.SetProcessFunc(h.shellStateProcessor(ctx))
