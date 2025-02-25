@@ -1,6 +1,10 @@
 ---
 slug: /api/ide-integration
 ---
+
+
+
+
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
@@ -267,5 +271,30 @@ Then open Emacs in any file within the scope of your module's `composer.json` fi
 
 </TabItem>
 </Tabs>
+</TabItem>
+<TabItem value="Java">
+When you generate a Dagger Java module, a `pom.xml` file is created in the module directory. For example, for a module name
+`your-module`, the example source code is created under `src/main/java/io/dagger/modules/yourmodule/YourModule.java`.
+
+The Dagger dependency code, especially the code generated based on the Dagger engine version and the different module
+dependencies you can have, is available under `target/generated-sources`.
+
+This creates a standard Maven project structure, and you can import the project into your favorite IDE as a Maven project.
+The IDE will automatically recognize the Dagger dependencies and provide code completion and other features out of the box.
+
+:::tip
+The `target` directory is added to the `.gitignore` file by default, so you don't need to worry about committing the generated code.
+This code is only to help the IDE provide code completion and other features. This code is not required to run the module.
+It can be refreshed by running `dagger develop` again.
+:::
+
+Most popular IDEs, like IntelliJ Idea or Visual Studio Code, support Maven projects, and will provide out-of-the-box code completion.
+
+:::note
+The provided `pom.xml` configures the `maven-compiler-plugin` to run the Dagger-specific annotation processor and the
+`maven-shade-plugin` to set the main class for the module and `build-helper-maven-plugin` to add generated Java files
+as sources to help for code completion. These configurations are necessary for the module to function correctly and
+should not be modified (although you can freely update other parts of the `pom.xml` file).
+:::
 </TabItem>
 </Tabs>
