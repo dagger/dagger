@@ -254,12 +254,31 @@ func (cls Class[T]) New(id *call.ID, val Typed) (Object, error) {
 }
 
 // Call calls a field on the class against an instance.
-func (cls Class[T]) Call(ctx context.Context, node Instance[T], fieldName string, view string, args map[string]Input) (Typed, error) {
+func (cls Class[T]) Call(
+	ctx context.Context,
+	node Instance[T],
+	fieldName string,
+	view string,
+	args map[string]Input,
+) (Typed, func(context.Context) error, error) {
 	field, ok := cls.Field(fieldName, view)
 	if !ok {
-		return nil, fmt.Errorf("Call: %s has no such field: %q", cls.inner.Type().Name(), fieldName)
+		return nil, nil, fmt.Errorf("Call: %s has no such field: %q", cls.inner.Type().Name(), fieldName)
 	}
-	return field.Func(ctx, node, args)
+
+	val, err := field.Func(ctx, node, args)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// field implementations can optionally return a wrapped Typed val that has
+	// a callback that should always run after the field is called
+	postCallVal, ok := val.(*PostCallTyped)
+	if !ok {
+		return val, nil, nil
+	}
+
+	return postCallVal.Typed, postCallVal.PostCall, nil
 }
 
 // Instance is an instance of an Object type.
@@ -444,56 +463,61 @@ func (r Instance[T]) call(
 	newID *call.ID,
 	inputArgs map[string]Input,
 ) (Typed, *call.ID, error) {
-	doCall := func(ctx context.Context) (innerVal Typed, innerErr error) {
+	doCall := func(ctx context.Context) (innerVal Typed, postCall func(context.Context) error, innerErr error) {
 		if s.telemetry != nil {
 			wrappedCtx, done := s.telemetry(ctx, r, newID)
 			defer func() { done(innerVal, false, innerErr) }()
 			ctx = wrappedCtx
 		}
 
-		innerVal, innerErr = r.Class.Call(ctx, r, newID.Field(), newID.View(), inputArgs)
+		innerVal, postCall, innerErr = r.Class.Call(ctx, r, newID.Field(), newID.View(), inputArgs)
 		if innerErr != nil {
-			return nil, innerErr
+			return nil, nil, innerErr
 		}
 
 		if n, ok := innerVal.(Derefable); ok {
 			innerVal, ok = n.Deref()
 			if !ok {
-				return nil, nil
+				return nil, nil, nil
 			}
 		}
 		nth := int(newID.Nth())
 		if nth != 0 {
 			enum, ok := innerVal.(Enumerable)
 			if !ok {
-				return nil, fmt.Errorf("cannot sub-select %dth item from %T", nth, innerVal)
+				return nil, nil, fmt.Errorf("cannot sub-select %dth item from %T", nth, innerVal)
 			}
 			innerVal, innerErr = enum.Nth(nth)
 			if innerErr != nil {
-				return nil, innerErr
+				return nil, nil, innerErr
 			}
 			if n, ok := innerVal.(Derefable); ok {
 				innerVal, ok = n.Deref()
 				if !ok {
-					return nil, nil
+					return nil, nil, nil
 				}
 			}
 		}
 
-		return innerVal, nil
+		return innerVal, postCall, nil
 	}
-
 	ctx = idToContext(ctx, newID)
 	dig := newID.Digest()
 	var val Typed
+	var postCall func(context.Context) error
 	var err error
 	if newID.IsTainted() {
-		val, err = doCall(ctx)
+		val, postCall, err = doCall(ctx)
 	} else {
-		val, _, err = s.Cache.GetOrInitialize(ctx, dig, doCall)
+		val, _, postCall, err = s.Cache.GetOrInitializeWithPostCall(ctx, dig, doCall)
 	}
 	if err != nil {
 		return nil, nil, err
+	}
+	if postCall != nil {
+		if err := postCall(ctx); err != nil {
+			return nil, nil, fmt.Errorf("post-call error: %w", err)
+		}
 	}
 
 	// If the returned val is IDable, is pure, and has a different digest than the original, then
@@ -525,6 +549,20 @@ func (r Instance[T]) call(
 	}
 
 	return val, newID, nil
+}
+
+// PostCallTyped wraps a Typed value with an additional callback that
+// needs to be called after any value is returned, whether the value was from
+// cache or not
+type PostCallTyped struct {
+	Typed
+	PostCall func(context.Context) error
+}
+
+var _ Wrapper = PostCallTyped{}
+
+func (p PostCallTyped) Unwrap() Typed {
+	return p.Typed
 }
 
 type View interface {
