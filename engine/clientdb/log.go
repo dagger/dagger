@@ -38,10 +38,6 @@ func LogsToPB(dbLog []Log) []*otlplogsv1.ResourceLogs {
 		} else {
 			res = telemetry.ResourceFromPB(sd.ResourceSchemaUrl, &resPb)
 		}
-		if res.SchemaURL() == "" {
-			slog.Error("log has no resource", "log", sd)
-			continue
-		}
 		var scope instrumentation.Scope
 		var scopePb otlpcommonv1.InstrumentationScope
 		if err := protojson.Unmarshal(sd.InstrumentationScope, &scopePb); err != nil {
@@ -74,25 +70,34 @@ func LogsToPB(dbLog []Log) []*otlplogsv1.ResourceLogs {
 			slog.Warn("failed to unmarshal log attributes", "error", err)
 			continue
 		}
-		tid, err := trace.TraceIDFromHex(sd.TraceID.String)
-		if err != nil {
-			slog.Error("failed to unmarshal trace id", "error", err)
-			continue
-		}
-		sid, err := trace.SpanIDFromHex(sd.SpanID.String)
-		if err != nil {
-			slog.Error("failed to unmarshal span id", "error", err)
-			continue
-		}
-		scopeLog.LogRecords = append(scopeLog.LogRecords, &otlplogsv1.LogRecord{
+		rec := &otlplogsv1.LogRecord{
 			TimeUnixNano:   uint64(sd.Timestamp),
 			SeverityNumber: otlplogsv1.SeverityNumber(sd.SeverityNumber),
 			SeverityText:   sd.SeverityText,
 			Body:           &bodyPb,
 			Attributes:     attrs,
-			TraceId:        tid[:],
-			SpanId:         sid[:],
-		})
+		}
+		if sd.TraceID.Valid {
+			tid, err := trace.TraceIDFromHex(sd.TraceID.String)
+			if err != nil {
+				slog.Error("failed to unmarshal trace id", "error", err)
+				continue
+			}
+			rec.TraceId = tid[:]
+		} else {
+			slog.Warn("log record has no trace id", "body", string(sd.Body))
+		}
+		if sd.SpanID.Valid {
+			sid, err := trace.SpanIDFromHex(sd.SpanID.String)
+			if err != nil {
+				slog.Error("failed to unmarshal span id", "error", err)
+				continue
+			}
+			rec.SpanId = sid[:]
+		} else {
+			slog.Warn("log record has no span id", "body", string(sd.Body))
+		}
+		scopeLog.LogRecords = append(scopeLog.LogRecords, rec)
 		ssm[k] = scopeLog
 
 		rs, rOk := rsm[rKey]
