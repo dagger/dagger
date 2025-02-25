@@ -416,6 +416,12 @@ The following Dagger module uses a constructor to set a module-wide `Directory` 
 ```
 
 </TabItem>
+<TabItem value="PHP">
+
+```php file=./snippets/set-common-default-path/php/src/MyModule.php
+```
+
+</TabItem>
 </Tabs>
 
 #### Examples
@@ -457,6 +463,12 @@ The following Dagger Function performs a multi-stage build.
 ```
 
 </TabItem>
+<TabItem value="PHP">
+
+```php file=./snippets/builds/multi-stage-build/php/src/MyModule.php
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -487,6 +499,12 @@ The following Dagger Function performs a matrix build.
 <TabItem value="TypeScript">
 
 ```typescript file=./snippets/builds/matrix-build/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="PHP">
+
+```php file=./snippets/builds/matrix-build/php/src/MyModule.php
 ```
 
 </TabItem>
@@ -613,13 +631,19 @@ The following Dagger Function builds an image from a Dockerfile.
 ```
 
 </TabItem>
+<TabItem value="PHP">
+
+```php file=./snippets/builds/dockerfile/php/src/MyModule.php
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
 Build and publish an image from an existing Dockerfile
 
 ```shell
-dagger call build --src https://github.com/dockersamples/python-flask-redis
+dagger call build --src=https://github.com/dockersamples/python-flask-redis
 ```
 
 ### Build image from Dockerfile using different build context
@@ -748,6 +772,12 @@ The following function demonstrates how to invalidate the Dagger layer cache and
 <TabItem value="TypeScript">
 
 ```typescript file=./snippets/builds/cache/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="PHP">
+
+```php file=./snippets/builds/cache/php/src/MyModule.php
 ```
 
 </TabItem>
@@ -1303,6 +1333,12 @@ The following Dagger Function uses a cache volume for application dependencies. 
 ```
 
 </TabItem>
+<TabItem value="PHP">
+
+```php file=./snippets/cache-dependencies/php/src/MyModule.php
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -1333,6 +1369,12 @@ The following Dagger Function demonstrates how to set a single environment varia
 <TabItem value="TypeScript">
 
 ```typescript file=./snippets/set-env-var/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="PHP">
+
+```php file=./snippets/set-env-var/php/src/MyModule.php
 ```
 
 </TabItem>
