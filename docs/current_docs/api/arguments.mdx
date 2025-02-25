@@ -350,8 +350,12 @@ dagger core container \
   stdout
 ```
 
-:::tip
 For more information about remote repository access, refer to the documentation on [reference schemes](#reference-schemes-for-remote-repositories) and [authentication methods](./remote-modules.mdx#authentication-methods).
+
+:::note
+Dagger offers two important features for working with `Directory` arguments:
+- [Default paths](./default-paths.mdx): Set a default directory path to use no value is specified for the argument.
+- [Filters](./fs-filters.mdx): Control which files and directories are uploaded to a Dagger Function.
 :::
 
 ## File arguments
@@ -391,8 +395,12 @@ And here is an example of passing a file from a remote Git repository as argumen
 dagger call read-file --source=https://github.com/dagger/dagger.git#main:README.md
 ```
 
-:::tip
 For more information about remote repository access, refer to the documentation on [reference schemes](#reference-schemes-for-remote-repositories) and [authentication methods](./remote-modules.mdx#authentication-methods).
+
+:::note
+Dagger offers two important features for working with `File` arguments:
+- [Default paths](./default-paths.mdx): Set a default file path to use no value is specified for the argument.
+- [Filters](./fs-filters.mdx): Control which files are uploaded to a Dagger Function.
 :::
 
 ## Container arguments
@@ -647,6 +655,10 @@ Hello, world
 ```
 
 Passing null to an optional argument signals that no default value should be used.
+
+:::note
+Dagger supports [default paths](./default-paths.mdx) for `Directory` or `File` arguments. Dagger will automatically use this default path when no value is specified for the corresponding argument.
+:::
 
 ## Reference schemes for remote repositories
 
