@@ -79,10 +79,16 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 	// exclude the final user message
 	for _, msg := range history[:len(history)-1] {
 		// Valid Content.Role values are "user" and "model"
-		role := "user"
-		if msg.Role != "user" {
+		var role string
+		switch msg.Role {
+		case "user", "function":
+			role = "user"
+		case "model", "assistant":
 			role = "model"
+		default:
+			return nil, fmt.Errorf("unexpected role %s", msg.Role)
 		}
+
 		content := &genai.Content{
 			Parts: []genai.Part{},
 			Role:  role,
@@ -136,7 +142,8 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 	// process response
 	var content string
 	var toolCalls []ToolCall
-	for _, candidate := range resp.Candidates {
+	if len(resp.Candidates) > 0 {
+		candidate := resp.Candidates[0]
 		if candidate.Content != nil {
 			for _, part := range candidate.Content.Parts {
 				// check if tool call
