@@ -1021,6 +1021,13 @@ export type LabelID = string & { __LabelID: never }
  */
 export type ListTypeDefID = string & { __ListTypeDefID: never }
 
+export type ModuleGenerateClientOpts = {
+  /**
+   * Use local SDK dependency
+   */
+  localSdk?: boolean
+}
+
 /**
  * The `ModuleID` scalar type represents an identifier for an object of type Module.
  */
@@ -5172,6 +5179,25 @@ export class Module_ extends BaseClient {
     const response: Awaited<enums[]> = await ctx.execute()
 
     return response.map((r) => new Client(ctx.copy()).loadTypeDefFromID(r.id))
+  }
+
+  /**
+   * Generates a client for the module.
+   * @param generator The generator to use
+   * @param outputDir The output directory for the generated client.
+   * @param opts.localSdk Use local SDK dependency
+   */
+  generateClient = (
+    generator: string,
+    outputDir: string,
+    opts?: ModuleGenerateClientOpts,
+  ): Directory => {
+    const ctx = this._ctx.select("generateClient", {
+      generator,
+      outputDir,
+      ...opts,
+    })
+    return new Directory(ctx)
   }
 
   /**

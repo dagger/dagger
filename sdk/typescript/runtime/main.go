@@ -161,6 +161,77 @@ func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *dagger.ModuleSou
 		}), nil
 }
 
+func (t *TypescriptSdk) RequiredClientGenerationFiles() []string {
+	return []string{
+		"./package.json",
+		"./tsconfig.json",
+	}
+}
+
+func (t *TypescriptSdk) GenerateClient(
+	ctx context.Context,
+	modSource *dagger.ModuleSource,
+	introspectionJSON *dagger.File,
+	outputDir string,
+	useLocalSdk bool,
+) (*dagger.Directory, error) {
+	workdirPath := "/module"
+
+	currentModuleDirectoryPath, err := modSource.SourceRootSubpath(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module source root subpath: %w", err)
+	}
+
+	curentModuleDirectory := modSource.ContextDirectory().Directory(currentModuleDirectoryPath)
+
+	ctr := dag.Container().
+		From(tsdistconsts.DefaultNodeImageRef).
+		WithoutEntrypoint().
+		// Add client config update file
+		WithMountedFile(
+			"/opt/__tsclientconfig.updator.ts",
+			dag.CurrentModule().Source().Directory("bin").File("__tsclientconfig.updator.ts"),
+		).
+		// install tsx from its bundled location in the engine image
+		WithMountedDirectory("/usr/local/lib/node_modules/tsx", t.SDKSourceDir.Directory("/tsx_module")).
+		WithExec([]string{"ln", "-s", "/usr/local/lib/node_modules/tsx/dist/cli.mjs", "/usr/local/bin/tsx"}).
+		// Add dagger codegen binary.
+		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
+		WithDirectory("/ctx", modSource.ContextDirectory()).
+		// Mount the introspection file.
+		WithMountedFile(schemaPath, introspectionJSON).
+		// Mount the current module directory.
+		WithDirectory(workdirPath, curentModuleDirectory).
+		WithWorkdir(workdirPath).
+		// Execute the code generator using the given introspection file.
+		WithExec([]string{
+			codegenBinPath,
+			"--lang", "typescript",
+			"--output", outputDir,
+			"--introspection-json-path", schemaPath,
+			fmt.Sprintf("--local-sdk=%t", useLocalSdk),
+			"--client-only",
+		}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		})
+
+	if useLocalSdk {
+		ctr = ctr.WithDirectory("./sdk", t.SDKSourceDir.
+			WithoutDirectory("codegen").
+			WithoutDirectory("runtime").
+			WithoutDirectory("tsx_module"),
+		).
+			WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=./sdk"}).
+			WithExec([]string{"tsx", "/opt/__tsclientconfig.updator.ts", "--local-sdk=true", fmt.Sprintf("--library-dir=%s", outputDir)})
+	} else {
+		ctr = ctr.
+			WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=@dagger.io/dagger"}).
+			WithExec([]string{"tsx", "/opt/__tsclientconfig.updator.ts", "--local-sdk=false", fmt.Sprintf("--library-dir=%s", outputDir)})
+	}
+
+	return dag.Directory().WithDirectory("/", ctr.Directory(workdirPath)), nil
+}
+
 // CodegenBase returns a Container containing the SDK from the engine container
 // and the user's code with a generated API based on what he did.
 func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, installDep bool) (*dagger.Container, error) {
@@ -253,7 +324,7 @@ func (t *TypescriptSdk) Base() (*dagger.Container, error) {
 		return ctr.
 			WithoutEntrypoint().
 			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", tsdistconsts.DefaultBunVersion)), dagger.ContainerWithMountedCacheOpts{
-				Sharing: dagger.CacheSharingModePrivate,
+				Sharing: dagger.Private,
 			}), nil
 	case Node:
 		return ctr.
@@ -346,7 +417,8 @@ func (t *TypescriptSdk) addSDK() *dagger.Directory {
 	return t.SDKSourceDir.
 		WithoutDirectory("codegen").
 		WithoutDirectory("runtime").
-		WithoutDirectory("tsx_module")
+		WithoutDirectory("tsx_module").
+		WithoutDirectory("src/provisioning")
 }
 
 // generateClient uses the given container to generate the client code.

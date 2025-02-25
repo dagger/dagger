@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -95,6 +96,23 @@ func withEngine(
 			return err
 		}
 		defer sess.Close()
+
+		// Automatically serve the module in the context directory if available.
+		if params.ServeModule {
+			mod, exist, err := initializeClientGeneratorModule(ctx, sess.Dagger(), ".")
+			if err != nil && !errors.Is(err, ErrConfigNotFound) {
+				return fmt.Errorf("failed to initialize current module: %w", err)
+			}
+
+			if exist {
+				for _, dep := range mod.Dependencies {
+					err := dep.AsModule().Serve(ctx)
+					if err != nil {
+						return fmt.Errorf("failed to serve dependency %w", err)
+					}
+				}
+			}
+		}
 
 		return fn(ctx, sess)
 	})

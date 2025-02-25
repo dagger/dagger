@@ -91,7 +91,6 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 		Exclude: []string{
 			"src/**/test/*",
 			"src/**/*.spec.ts",
-			"src/provisioning",
 		},
 	})
 
