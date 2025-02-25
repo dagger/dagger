@@ -52,6 +52,12 @@ dagger init --name=my-module
 dagger develop --sdk=php
 ```
 </TabItem>
+<TabItem value="Java">
+```shell
+dagger init --name=my-module
+dagger develop --sdk=java
+```
+</TabItem>
 </Tabs>
 
 :::warning
@@ -159,6 +165,34 @@ In this structure:
 - `sdk/` contains the PHP SDK.
 
 </TabItem>
+<TabItem value="Java">
+```
+.
+├── LICENSE
+├── dagger.json
+├── pom.xml
+├── src
+│   └── main
+│       └── java
+│           └── io
+│               └── dagger
+│                   └── modules
+│                       └── mymodule
+│                           ├── MyModule.java
+│                           └── package-info.java
+└── target
+
+9 directories, 5 files
+```
+
+In this structure:
+
+- `dagger.json` is the [Dagger module configuration file](../configuration/modules.mdx).
+- `pom.xml` manages the module dependencies.
+- `src/main/java/io/dagger/modules/mymodule/` is where your Dagger module code goes. It contains sample code to help you get started.
+- `target` contains the compiled Java classes.
+
+</TabItem>
 </Tabs>
 
 :::note
@@ -197,6 +231,10 @@ the main object needs to be named `MyModule`.
 </TabItem>
 <TabItem value="PHP">
 ```php file=./snippets/functions/functions-complex/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="Java">
+```php file=./snippets/functions/functions-complex/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 </TabItem>
 </Tabs>
