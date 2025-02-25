@@ -462,7 +462,7 @@ func (sdk *goSDK) Codegen(
 ) (_ *core.GeneratedCode, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: run codegen")
 	defer telemetry.End(span, func() error { return rerr })
-	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
+	ctr, err := sdk.baseWithCodegen(ctx, deps, source, true)
 	if err != nil {
 		return nil, err
 	}
@@ -504,7 +504,7 @@ func (sdk *goSDK) Runtime(
 ) (_ *core.Container, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "go SDK: load runtime")
 	defer telemetry.End(span, func() error { return rerr })
-	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
+	ctr, err := sdk.baseWithCodegen(ctx, deps, source, false)
 	if err != nil {
 		return nil, err
 	}
@@ -573,6 +573,7 @@ func (sdk *goSDK) baseWithCodegen(
 	ctx context.Context,
 	deps *core.ModDeps,
 	src dagql.Instance[*core.ModuleSource],
+	mountSocket bool,
 ) (dagql.Instance[*core.Container], error) {
 	var ctr dagql.Instance[*core.Container]
 
@@ -682,16 +683,18 @@ func (sdk *goSDK) baseWithCodegen(
 		selectors = append(selectors, gitConfigSelectors...)
 	}
 
-	// TODO(rajatjindal): verify with Erik as to why this
-	// cause failures if we also mount this in Runtime.
-	// Issue we run into is that when we try to run sdk checks
-	// using .dagger, it fails trying to find the socket
-	sshAuthSelectors, err := sdk.getUnixSocketSelector(ctx)
-	if err != nil {
-		return ctr, err
-	}
-	if len(sshAuthSelectors) > 0 {
-		selectors = append(selectors, sshAuthSelectors...)
+	if mountSocket {
+		// TODO(rajatjindal): verify with Erik as to why this
+		// cause failures if we also mount this in Runtime.
+		// Issue we run into is that when we try to run sdk checks
+		// using .dagger, it fails trying to find the socket
+		sshAuthSelectors, err := sdk.getUnixSocketSelector(ctx)
+		if err != nil {
+			return ctr, err
+		}
+		if len(sshAuthSelectors) > 0 {
+			selectors = append(selectors, sshAuthSelectors...)
+		}
 	}
 
 	// now that we are done with gitconfig and injecting env
@@ -926,24 +929,27 @@ func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, 
 		return nil, nil
 	}
 
+	accessor, err := core.GetClientResourceAccessor(ctx, sdk.root, clientMetadata.SSHAuthSocketPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client resource name: %w", err)
+	}
+
 	var sockInst dagql.Instance[*core.Socket]
 	if err := sdk.dag.Select(ctx, sdk.dag.Root(), &sockInst,
 		dagql.Selector{
 			Field: "host",
 		},
 		dagql.Selector{
-			// TODO(rajatjindal): should we use __internalSocket here? what is the difference?
-			// also try using accessor again here
-			Field: "unixSocket",
+			Field: "__internalSocket",
 			Args: []dagql.NamedInput{
 				{
-					Name:  "path",
-					Value: dagql.NewString(clientMetadata.SSHAuthSocketPath),
+					Name:  "accessor",
+					Value: dagql.NewString(accessor),
 				},
 			},
 		},
 	); err != nil {
-		return nil, fmt.Errorf("failed to select unix socket: %w", err)
+		return nil, fmt.Errorf("failed to select internal socket: %w", err)
 	}
 
 	if sockInst.Self == nil {
