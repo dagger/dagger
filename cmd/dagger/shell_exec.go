@@ -212,7 +212,9 @@ func (h *shellCallHandler) stateLookup(ctx context.Context, name string) (*Shell
 	// 4. Path to local or remote module source
 	// (local paths are relative to the current working directory, not the loaded module)
 	st, err := h.getOrInitDefState(name, func() (*moduleDef, error) {
-		return initializeModule(ctx, h.dag, name)
+		return initializeModule(ctx, h.dag, name, []dagger.ModuleSDKCapability{
+			dagger.ModuleSDKCapabilityRuntime,
+		})
 	})
 	if st == nil || (err != nil && strings.Contains(err.Error(), "does not exist")) {
 		return nil, fmt.Errorf("function or module %q not found", name)
@@ -685,9 +687,13 @@ func (h *shellCallHandler) GetDependency(ctx context.Context, name string) (*She
 		return nil, nil, fmt.Errorf("dependency %q not found", name)
 	}
 	st, err := h.getOrInitDefState(dep.ModRef, func() (*moduleDef, error) {
-		return initializeModule(ctx, h.dag, dep.ModRef, dagger.ModuleSourceOpts{
-			DisableFindUp: true,
-		})
+		return initializeModule(ctx, h.dag, dep.ModRef,
+			[]dagger.ModuleSDKCapability{
+				dagger.ModuleSDKCapabilityRuntime,
+			},
+			dagger.ModuleSourceOpts{
+				DisableFindUp: true,
+			})
 	})
 	if err != nil {
 		return nil, nil, err

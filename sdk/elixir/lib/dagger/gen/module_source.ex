@@ -12,10 +12,13 @@ defmodule Dagger.ModuleSource do
   @type t() :: %__MODULE__{}
 
   @doc "Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation"
-  @spec as_module(t()) :: Dagger.Module.t()
-  def as_module(%__MODULE__{} = module_source) do
+  @spec as_module(t(), [{:required_capabilities, [Dagger.ModuleSDKCapability.t()]}]) ::
+          Dagger.Module.t()
+  def as_module(%__MODULE__{} = module_source, optional_args \\ []) do
     query_builder =
-      module_source.query_builder |> QB.select("asModule")
+      module_source.query_builder
+      |> QB.select("asModule")
+      |> QB.maybe_put_arg("requiredCapabilities", optional_args[:required_capabilities])
 
     %Dagger.Module{
       query_builder: query_builder,

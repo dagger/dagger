@@ -48,6 +48,7 @@ func (s *querySchema) Install() {
 	s.srv.InstallScalar(core.JSON{})
 	s.srv.InstallScalar(core.Void{})
 
+	core.ModuleSDKCapabilities.Install(s.srv)
 	core.NetworkProtocols.Install(s.srv)
 	core.ImageLayerCompressions.Install(s.srv)
 	core.ImageMediaTypesEnum.Install(s.srv)

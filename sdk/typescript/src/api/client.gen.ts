@@ -1027,6 +1027,20 @@ export type ListTypeDefID = string & { __ListTypeDefID: never }
 export type ModuleID = string & { __ModuleID: never }
 
 /**
+ * Capabilities of the SDK used by the module.
+ */
+export enum ModuleSDKCapability {
+  Codegen = "CODEGEN",
+  Runtime = "RUNTIME",
+}
+export type ModuleSourceAsModuleOpts = {
+  /**
+   * The capabilities required by the module to be loaded. If the module does not support any of the required capabilities, an error will be thrown.
+   */
+  requiredCapabilities?: ModuleSDKCapability[]
+}
+
+/**
  * The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
  */
 export type ModuleSourceID = string & { __ModuleSourceID: never }
@@ -5411,9 +5425,10 @@ export class ModuleSource extends BaseClient {
 
   /**
    * Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
+   * @param opts.requiredCapabilities The capabilities required by the module to be loaded. If the module does not support any of the required capabilities, an error will be thrown.
    */
-  asModule = (): Module_ => {
-    const ctx = this._ctx.select("asModule")
+  asModule = (opts?: ModuleSourceAsModuleOpts): Module_ => {
+    const ctx = this._ctx.select("asModule", { ...opts })
     return new Module_(ctx)
   }
 

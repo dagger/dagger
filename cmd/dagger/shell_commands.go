@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger/telemetry"
+	"dagger.io/dagger"
 	"github.com/spf13/cobra"
 	"mvdan.cc/sh/v3/interp"
 )
@@ -395,7 +396,9 @@ to the currently loaded module.
 			State:   NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
 				st, err := h.getOrInitDefState(args[0], func() (*moduleDef, error) {
-					return initializeModule(ctx, h.dag, args[0])
+					return initializeModule(ctx, h.dag, args[0], []dagger.ModuleSDKCapability{
+						dagger.ModuleSDKCapabilityRuntime,
+					})
 				})
 				if err != nil {
 					return err

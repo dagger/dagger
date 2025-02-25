@@ -249,6 +249,14 @@ class ImageMediaTypes(Enum):
     OCIMediaTypes = "OCIMediaTypes"
 
 
+class ModuleSDKCapability(Enum):
+    """Capabilities of the SDK used by the module."""
+
+    CODEGEN = "CODEGEN"
+
+    RUNTIME = "RUNTIME"
+
+
 class ModuleSourceKind(Enum):
     """The kind of module source."""
 
@@ -5671,11 +5679,28 @@ class ModuleSource(Type):
     """The source needed to load and run a module, along with any metadata
     about the source such as versions/urls/etc."""
 
-    def as_module(self) -> Module:
+    def as_module(
+        self,
+        *,
+        required_capabilities: list[ModuleSDKCapability] | None = None,
+    ) -> Module:
         """Load the source as a module. If this is a local source, the parent
         directory must have been provided during module source creation
+
+        Parameters
+        ----------
+        required_capabilities:
+            The capabilities required by the module to be loaded. If the
+            module does not support any of the required capabilities, an error
+            will be thrown.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg(
+                "requiredCapabilities",
+                () if required_capabilities is None else required_capabilities,
+                (),
+            ),
+        ]
         _ctx = self._select("asModule", _args)
         return Module(_ctx)
 
@@ -8245,6 +8270,7 @@ __all__ = [
     "ListTypeDefID",
     "Module",
     "ModuleID",
+    "ModuleSDKCapability",
     "ModuleSource",
     "ModuleSourceID",
     "ModuleSourceKind",

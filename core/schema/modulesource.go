@@ -110,7 +110,8 @@ func (s *moduleSourceSchema) Install() {
 			Doc(`The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.`),
 
 		dagql.NodeFunc("asModule", s.moduleSourceAsModule).
-			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`),
+			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`).
+			ArgDoc("requiredCapabilities", `The capabilities required by the module to be loaded. If the module does not support any of the required capabilities, an error will be thrown.`),
 
 		dagql.Func("directory", s.moduleSourceDirectory).
 			Doc(`The directory containing the module configuration and source code (source code may be in a subdir).`).
@@ -1946,10 +1947,14 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 	return genDirInst, nil
 }
 
+type moduleSourceAsModuleArgs struct {
+	RequiredCapabilities dagql.Array[core.ModuleSDKCapability] `default:"[]"` 
+}
+
 func (s *moduleSourceSchema) moduleSourceAsModule(
 	ctx context.Context,
 	src dagql.Instance[*core.ModuleSource],
-	args struct{},
+	args moduleSourceAsModuleArgs,
 ) (inst dagql.Instance[*core.Module], err error) {
 	if src.Self.ModuleName == "" || src.Self.SDK == nil || src.Self.SDK.Source == "" {
 		return inst, fmt.Errorf("module name and SDK must be set")
@@ -1993,6 +1998,11 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	runtimeSDK, implemented, err := src.Self.SDKImpl.AsRuntime(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get runtime SDK function: %w", err)
+	}
+
+	// If it's not implemented by required by the call, we throw an error.
+	if !implemented && core.ModuleSDKCapabilityRuntime.IncludedIn(args.RequiredCapabilities) {
+		return inst, fmt.Errorf("module %s does not support %s capability but is required", src.Self.ModuleName, core.ModuleSDKCapabilityRuntime.Capability())
 	}
 
 	if implemented {

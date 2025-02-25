@@ -3,9 +3,12 @@ package core
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 const (
@@ -52,6 +55,55 @@ loads them as modules from the engine container.
 type SDK interface {
 	AsRuntime(context.Context) (SDKRuntime, bool, error)
 	AsCodegen(context.Context) (SDKCodegen, bool, error)
+}
+
+// ModuleSDKCapabilities defines the capabilities of the SDK used
+// by the module.
+// And can be used to enfore what capabilities are required to execute
+// a specific function.
+// For example, `dagger call` & `dagger functions` requires the SDK to
+// implements the Runtime interface to work.
+type ModuleSDKCapability string
+
+var ModuleSDKCapabilities = dagql.NewEnum[ModuleSDKCapability]()
+
+var (
+	ModuleSDKCapabilityRuntime = ModuleSDKCapabilities.Register("RUNTIME")
+	ModuleSDKCapabilityCodegen = ModuleSDKCapabilities.Register("CODEGEN")
+)
+
+func (capability ModuleSDKCapability) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ModuleSDKCapability",
+		NonNull:   true,
+	}
+}
+
+func (capability ModuleSDKCapability) TypeDescription() string {
+	return "Capabilities of the SDK used by the module."
+}
+
+func (capability ModuleSDKCapability) Decoder() dagql.InputDecoder {
+	return ModuleSDKCapabilities
+}
+
+func (capability ModuleSDKCapability) ToLiteral() call.Literal {
+	return ModuleSDKCapabilities.Literal(capability)
+}
+
+func (capability ModuleSDKCapability) Capability() string {
+	return strings.ToLower(string(capability))
+}
+
+// Returns true if the given capabilities include the capability.
+func (capability ModuleSDKCapability) IncludedIn(capabilities []ModuleSDKCapability) bool {
+	for _, cap := range capabilities {
+		if cap == capability {
+			return true
+		}
+	}
+
+	return false
 }
 
 // moduleSDK is an SDK implemented as module; i.e. every module besides the special case go sdk.
