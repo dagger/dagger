@@ -10,6 +10,7 @@ from opentelemetry.environment_variables import (
     OTEL_PYTHON_TRACER_PROVIDER,
     OTEL_TRACES_EXPORTER,
 )
+from opentelemetry.sdk import trace as sdktrace
 from opentelemetry.sdk._configuration import _BaseConfigurator as _BaseSDKConfigurator
 from opentelemetry.sdk._configuration import (
     _get_exporter_names,
@@ -29,7 +30,6 @@ from opentelemetry.sdk.environment_variables import (
     OTEL_SDK_DISABLED,
     OTEL_SERVICE_NAME,
 )
-from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
 from opentelemetry.semconv.trace import SpanAttributes
 from opentelemetry.trace import get_tracer_provider, propagation
@@ -71,6 +71,10 @@ def otel_enabled() -> bool:
     return os.getenv(OTEL_SDK_DISABLED, "").strip().lower() != "true"
 
 
+def live_traces_enabled() -> bool:
+    return os.getenv("OTEL_EXPORTER_OTLP_TRACES_LIVE") is not None
+
+
 class _BaseConfigurator(_BaseSDKConfigurator):
     """Base configurator singleton, that ensures configuration only happens once."""
 
@@ -97,15 +101,32 @@ class _DaggerPropagationConfigurator(_BaseConfigurator):
             context.attach(ctx)
 
 
+class LiveSpanProcessor(sdktrace.ConcurrentMultiSpanProcessor):
+    """Live span processor implementation.
+
+    It's a SpanProcessor whose on_start calls on_end on the underlying
+    SpanProcessor in order to send live telemetry.
+    """
+
+    def __init__(self, exp: SpanExporter):
+        super().__init__()
+        self.add_span_processor(BatchSpanProcessor(exp, schedule_delay_millis=100))
+
+    def on_start(self, span: sdktrace.Span, parent_context=None) -> None:
+        return self.on_end(span)
+
+
 def _init_tracing(exporters: dict[str, type[SpanExporter]]):
     # By default this is a NoOpTracerProvider, unless OTEL_PYTHON_TRACER_PROVIDER
     # is set, which is done in _prepare_env.
     provider = get_tracer_provider()
 
-    if isinstance(provider, TracerProvider):
+    if isinstance(provider, sdktrace.TracerProvider):
         for exporter_class in exporters.values():
-            # TODO: Use a LiveSpanProcessor (TBD).
-            provider.add_span_processor(BatchSpanProcessor(exporter_class()))
+            proc_cls = (
+                LiveSpanProcessor if live_traces_enabled() else BatchSpanProcessor
+            )
+            provider.add_span_processor(proc_cls(exporter_class()))
 
 
 class _DaggerOtelConfigurator(_BaseConfigurator):
