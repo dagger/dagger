@@ -932,8 +932,8 @@ func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, 
 			Field: "host",
 		},
 		dagql.Selector{
-			//TODO(rajatjindal): should we use __internalSocket here? what is the difference?
-			//also try using accessor again here
+			// TODO(rajatjindal): should we use __internalSocket here? what is the difference?
+			// also try using accessor again here
 			Field: "unixSocket",
 			Args: []dagql.NamedInput{
 				{
