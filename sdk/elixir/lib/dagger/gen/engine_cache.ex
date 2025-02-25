@@ -82,3 +82,16 @@ defmodule Dagger.EngineCache do
     Client.execute(engine_cache.client, query_builder)
   end
 end
+
+defimpl Jason.Encoder, for: Dagger.EngineCache do
+  def encode(engine_cache, opts) do
+    {:ok, id} = Dagger.EngineCache.id(engine_cache)
+    Jason.Encode.string(id, opts)
+  end
+end
+
+defimpl Nestru.Decoder, for: Dagger.EngineCache do
+  def decode_fields_hint(_struct, _context, id) do
+    {:ok, Dagger.Client.load_engine_cache_from_id(Dagger.Global.dag(), id)}
+  end
+end

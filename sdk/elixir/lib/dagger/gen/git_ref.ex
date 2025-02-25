@@ -43,3 +43,16 @@ defmodule Dagger.GitRef do
     }
   end
 end
+
+defimpl Jason.Encoder, for: Dagger.GitRef do
+  def encode(git_ref, opts) do
+    {:ok, id} = Dagger.GitRef.id(git_ref)
+    Jason.Encode.string(id, opts)
+  end
+end
+
+defimpl Nestru.Decoder, for: Dagger.GitRef do
+  def decode_fields_hint(_struct, _context, id) do
+    {:ok, Dagger.Client.load_git_ref_from_id(Dagger.Global.dag(), id)}
+  end
+end
