@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -77,14 +76,14 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 			}
 			return nil
 		})
-		recordStatus(ctx, span, cached, err, id)
-		logResult(ctx, res, span, self, id)
+		recordStatus(ctx, res, span, cached, err, id)
+		logResult(ctx, res, self, id)
 		collectEffects(ctx, res, span, self)
 	}
 }
 
 // recordStatus records the status of a call on a span.
-func recordStatus(ctx context.Context, span trace.Span, cached bool, err error, id *call.ID) {
+func recordStatus(ctx context.Context, res dagql.Typed, span trace.Span, cached bool, err error, id *call.ID) {
 	if cached {
 		// NOTE: this is never actually called on cache hits, but might be in the
 		// future.
@@ -96,27 +95,6 @@ func recordStatus(ctx context.Context, span trace.Span, cached bool, err error, 
 		span.SetAttributes(attribute.Bool(telemetry.CanceledAttr, true))
 	}
 
-	if err == nil {
-		// It is important to set an Ok status here so functions can encapsulate
-		// any internal errors.
-		span.SetStatus(codes.Ok, "")
-	} else {
-		// append id.Display() instead of setting it as a field to avoid double
-		// quoting
-		slog.Warn("error resolving "+id.Display(), "error", err)
-	}
-}
-
-// logResult prints the result of a call to the span's stdout.
-func logResult(ctx context.Context, res dagql.Typed, span trace.Span, self dagql.Object, id *call.ID) {
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	defer stdio.Close()
-
-	// Take care not to print any sensitive values.
-	sensitive := true
-	if spec, ok := self.ObjectType().FieldSpec(id.Field()); ok {
-		sensitive = spec.Sensitive
-	}
 	// Record an object result as an output of this call.
 	//
 	// This allows the UI to "simplify" the returned object's ID back to the
@@ -134,34 +112,35 @@ func logResult(ctx context.Context, res dagql.Typed, span trace.Span, self dagql
 			objDigest := obj.ID().Digest()
 			span.SetAttributes(attribute.String(telemetry.DagOutputAttr, objDigest.String()))
 		}
-	} else if enum, ok := dagql.UnwrapAs[dagql.Enumerable](res); ok {
-		if sensitive {
-			return
-		}
-		items := enum.Len()
-		if items == 0 {
-			return
-		}
-		// peek at the first item to determine the type
-		peek, err := enum.Nth(1)
-		if err != nil {
-			return
-		}
-		if _, isObj := dagql.UnwrapAs[dagql.Object](peek); isObj {
-			fmt.Fprintf(stdio.Stdout, "%d %ss", items, peek.Type().Name())
-		} else {
-			enc := json.NewEncoder(stdio.Stdout)
-			enc.SetIndent("", "  ")
-			enc.Encode(enum)
-		}
-	} else if str, ok := dagql.UnwrapAs[dagql.String](res); ok {
-		if !sensitive {
-			fmt.Fprint(stdio.Stdout, str)
-		}
+	}
+
+	if err == nil {
+		// It is important to set an Ok status here so functions can encapsulate
+		// any internal errors.
+		span.SetStatus(codes.Ok, "")
+	} else {
+		// append id.Display() instead of setting it as a field to avoid double
+		// quoting
+		slog.Warn("error resolving "+id.Display(), "error", err)
+	}
+}
+
+// logResult prints the result of a call to the span's stdout.
+func logResult(ctx context.Context, res dagql.Typed, self dagql.Object, id *call.ID) {
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
+	fieldSpec, ok := self.ObjectType().FieldSpec(id.Field())
+	if !ok {
+		return
+	}
+	if fieldSpec.Sensitive {
+		// Take care not to print any sensitive values.
+		return
+	}
+	if str, ok := dagql.UnwrapAs[dagql.String](res); ok {
+		fmt.Fprint(stdio.Stdout, str)
 	} else if lit, ok := dagql.UnwrapAs[call.Literate](res); ok {
-		if !sensitive {
-			fmt.Fprint(stdio.Stdout, lit.ToLiteral().Display())
-		}
+		fmt.Fprint(stdio.Stdout, lit.ToLiteral().Display())
 	}
 }
 
