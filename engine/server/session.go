@@ -37,6 +37,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
+	"resenje.org/singleflight"
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/auth"
@@ -145,13 +146,13 @@ type daggerClient struct {
 	fnCall *core.FunctionCall
 
 	// buildkit job-related state/config
-	buildkitSession     *bksession.Session
-	getMainClientCaller func() (bksession.Caller, error)
-	job                 *bksolver.Job
-	llbSolver           *llbsolver.Solver
-	llbBridge           bkfrontend.FrontendLLBBridge
-	dialer              *net.Dialer
-	bkClient            *buildkit.Client
+	buildkitSession *bksession.Session
+	getClientCaller func(string) (bksession.Caller, error)
+	job             *bksolver.Job
+	llbSolver       *llbsolver.Solver
+	llbBridge       bkfrontend.FrontendLLBBridge
+	dialer          *net.Dialer
+	bkClient        *buildkit.Client
 
 	// SQLite database storing telemetry + anything else
 	db             *sql.DB
@@ -212,6 +213,10 @@ func (client *daggerClient) ShutdownTelemetry(ctx context.Context) error {
 		errs = errors.Join(errs, client.meterProvider.Shutdown(ctx))
 	}
 	return errs
+}
+
+func (client *daggerClient) getMainClientCaller() (bksession.Caller, error) {
+	return client.getClientCaller(client.daggerSession.mainClientCallerID)
 }
 
 func (sess *daggerSession) FlushTelemetry(ctx context.Context) error {
@@ -471,11 +476,15 @@ func (srv *Server) initializeDaggerClient(
 	}
 	failureCleanups.Add("close llb solver", client.llbSolver.Close)
 
-	client.getMainClientCaller = sync.OnceValues(func() (bksession.Caller, error) {
+	var callerG singleflight.Group[string, bksession.Caller]
+	client.getClientCaller = func(id string) (bksession.Caller, error) {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
-		return srv.bkSessionManager.Get(ctx, client.daggerSession.mainClientCallerID, false)
-	})
+		caller, _, err := callerG.Do(ctx, id, func(ctx context.Context) (bksession.Caller, error) {
+			return srv.bkSessionManager.Get(ctx, id, false)
+		})
+		return caller, err
+	}
 
 	client.buildkitSession, err = srv.newBuildkitSession(ctx, client)
 	if err != nil {
@@ -542,6 +551,7 @@ func (srv *Server) initializeDaggerClient(
 		BkSession:            client.buildkitSession,
 		LLBBridge:            client.llbBridge,
 		Dialer:               client.dialer,
+		GetClientCaller:      client.getClientCaller,
 		GetMainClientCaller:  client.getMainClientCaller,
 		Entitlements:         srv.entitlements,
 		UpstreamCacheImports: client.daggerSession.cacheImporterCfgs,

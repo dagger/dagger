@@ -192,12 +192,12 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 
 	// For HTTP(S) refs, handle PAT auth if we're the main client
 	if (remote.Scheme == "https" || remote.Scheme == "http") && clientMetadata != nil {
-		mainClientCallerID, err := parent.Self.MainClientCallerID(ctx)
+		mainClientCallerMetadata, err := parent.Self.NonModuleParentClientMetadata(ctx)
 		if err != nil {
 			return inst, fmt.Errorf("failed to retrieve mainClientCallerID: %w", err)
 		}
 
-		if clientMetadata.ClientID == mainClientCallerID {
+		if clientMetadata.ClientID == mainClientCallerMetadata.ClientID {
 			// Check if repo is public
 			repo := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
 				Name: "origin",
@@ -207,19 +207,21 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 			_, err := repo.ListContext(ctx, &git.ListOptions{Auth: nil})
 			if err != nil && errors.Is(err, transport.ErrAuthenticationRequired) {
 				// Only proceed with auth if repo requires authentication
-				bk, err := parent.Self.Buildkit(ctx)
+				authCtx := engine.ContextWithClientMetadata(ctx, mainClientCallerMetadata)
+
+				bk, err := parent.Self.Buildkit(authCtx)
 				if err != nil {
 					return inst, fmt.Errorf("failed to get buildkit: %w", err)
 				}
 
 				// Retrieve credential from host
-				credentials, err := bk.GetCredential(ctx, remote.Scheme, remote.Host, remote.Path)
+				credentials, err := bk.GetCredential(authCtx, remote.Scheme, remote.Host, remote.Path)
 				if err == nil {
 					// Credentials found, create and set auth token
 					var secretAuthToken dagql.Instance[*core.Secret]
 					hash := sha256.Sum256([]byte(credentials.Password))
 					secretName := hex.EncodeToString(hash[:])
-					if err := s.srv.Select(ctx, s.srv.Root(), &secretAuthToken,
+					if err := s.srv.Select(authCtx, s.srv.Root(), &secretAuthToken,
 						dagql.Selector{
 							Field: "setSecret",
 							Args: []dagql.NamedInput{
