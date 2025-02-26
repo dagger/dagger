@@ -1314,15 +1314,21 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 	}
 	span := row.Span
 	if span.Message != "" {
+		isFocused := row.Span.ID == fe.FocusedSpan && !fe.editlineFocused
 		r.indent(out, row.Depth-1)
 		fmt.Fprint(out, out.String(VertBar).
 			Foreground(termenv.ANSIBrightBlack).
 			Faint())
-		if span.ActorEmoji != "" {
-			fmt.Fprint(out, span.ActorEmoji+" ")
-		} else {
-			fmt.Fprint(out, "💬 ")
+		emoji := span.ActorEmoji
+		if emoji == "" {
+			emoji = "💬"
 		}
+		icon := out.String(emoji)
+		if isFocused {
+			icon = icon.Reverse()
+		}
+		fmt.Fprint(out, icon)
+		fmt.Fprint(out, out.String(" "))
 		fe.renderStepLogs(out, r, row, prefix)
 	} else {
 		fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
