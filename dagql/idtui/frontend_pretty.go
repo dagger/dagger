@@ -689,7 +689,7 @@ func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, full bool,
 
 	if full {
 		for _, row := range rows.Order {
-			if fe.renderRow(out, r, row, "", true) {
+			if fe.renderRow(out, r, row, "", fe.shell != nil) {
 				rendered = true
 			}
 		}
