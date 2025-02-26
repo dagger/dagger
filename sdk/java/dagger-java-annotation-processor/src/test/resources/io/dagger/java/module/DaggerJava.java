@@ -1,11 +1,9 @@
 package io.dagger.java.module;
 
-import io.dagger.client.Container;
-import io.dagger.client.DaggerQueryException;
-import io.dagger.client.Directory;
-import io.dagger.client.Platform;
+import io.dagger.client.*;
 import io.dagger.module.AbstractModule;
 import io.dagger.module.annotation.*;
+import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.Optional;
@@ -23,6 +21,18 @@ public class DaggerJava extends AbstractModule {
 
   public DaggerJava() {
     super();
+  }
+
+  /**
+   * Initialize the DaggerJava Module
+   *
+   * @param source Project source directory
+   * @param version Go version
+   */
+  public DaggerJava(Client dag, Optional<Directory> source, @Default("1.23.2") String version) {
+    super(dag);
+    this.source = source.orElseGet(() -> dag.currentModule().source());
+    this.version = version;
   }
 
   /**
@@ -62,7 +72,12 @@ public class DaggerJava extends AbstractModule {
     return this;
   }
 
-  @Function
+  /**
+   * Return true if the value is 0.
+   *
+   * <p>This description should not be exposed to dagger.
+   */
+  @Function(description = "but this description should be exposed")
   public boolean isZero(int value) {
     return value == 0;
   }

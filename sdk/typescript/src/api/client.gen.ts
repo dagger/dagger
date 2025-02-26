@@ -2681,6 +2681,7 @@ export class Directory extends BaseClient {
   private readonly _id?: DirectoryID = undefined
   private readonly _digest?: string = undefined
   private readonly _export?: string = undefined
+  private readonly _name?: string = undefined
   private readonly _sync?: DirectoryID = undefined
 
   /**
@@ -2691,6 +2692,7 @@ export class Directory extends BaseClient {
     _id?: DirectoryID,
     _digest?: string,
     _export?: string,
+    _name?: string,
     _sync?: DirectoryID,
   ) {
     super(ctx)
@@ -2698,6 +2700,7 @@ export class Directory extends BaseClient {
     this._id = _id
     this._digest = _digest
     this._export = _export
+    this._name = _name
     this._sync = _sync
   }
 
@@ -2835,6 +2838,21 @@ export class Directory extends BaseClient {
     const ctx = this._ctx.select("glob", { pattern })
 
     const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Returns the name of the directory.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }

@@ -9,13 +9,20 @@ pagination_prev: null
 
 A tool to run CI/CD pipelines in containers, anywhere
 
+```
+dagger [flags]
+```
+
 ### Options
 
 ```
+  -c, --code string                  Command to be executed
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -m, --mod string                   Path to the module directory. Either local path or a remote git repo
   -E, --no-exit                      Leave the TUI running after completion
+      --no-mod                       Don't load module during shell startup (mutually exclusive with --mod)
       --progress string              Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
   -s, --silent                       Do not show progress at all

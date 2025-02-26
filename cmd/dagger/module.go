@@ -102,8 +102,12 @@ func init() {
 	funcListCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
-	shellCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	configCmd.PersistentFlags().AddFlagSet(moduleFlags)
+
+	shellCmd.PersistentFlags().AddFlagSet(moduleFlags)
+	rootCmd.Flags().AddFlagSet(moduleFlags)
+	shellAddFlags(shellCmd)
+	shellAddFlags(rootCmd)
 
 	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "Optionally install a Dagger SDK")
 	moduleInitCmd.Flags().StringVar(&moduleName, "name", "", "Name of the new module (defaults to parent directory name)")

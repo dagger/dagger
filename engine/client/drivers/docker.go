@@ -48,9 +48,10 @@ func (d *dockerDriver) Provision(ctx context.Context, target *url.URL, opts *Dri
 		cleanup, _ = strconv.ParseBool(val)
 	}
 
-	name := target.Query().Get("name")
+	containerName := target.Query().Get("container")
+	volumeName := target.Query().Get("volume")
 
-	helper, err := d.create(ctx, target.Host+target.Path, name, cleanup, opts)
+	helper, err := d.create(ctx, target.Host+target.Path, containerName, volumeName, cleanup, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +80,7 @@ const InstrumentationLibrary = "dagger.io/client.drivers"
 // previous executions of the engine at different versions (which
 // are identified by looking for containers with the prefix
 // "dagger-engine-").
-func (d *dockerDriver) create(ctx context.Context, imageRef string, containerName string, cleanup bool, opts *DriverOpts) (helper *connh.ConnectionHelper, rerr error) {
+func (d *dockerDriver) create(ctx context.Context, imageRef string, containerName string, volumeName string, cleanup bool, opts *DriverOpts) (helper *connh.ConnectionHelper, rerr error) {
 	ctx, span := otel.Tracer("").Start(ctx, "create")
 	defer telemetry.End(span, func() error { return rerr })
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
@@ -127,13 +128,17 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, containerNam
 		}
 	}
 
+	volume := distconsts.EngineDefaultStateDir
+	if volumeName != "" {
+		volume = volumeName + ":" + volume
+	}
 	cmd := exec.CommandContext(ctx,
 		"docker",
 		"run",
 		"--name", containerName,
 		"-d",
 		"--restart", "always",
-		"-v", distconsts.EngineDefaultStateDir,
+		"-v", volume,
 		"--privileged",
 	)
 

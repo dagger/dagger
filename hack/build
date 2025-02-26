@@ -7,10 +7,11 @@
 .use ${0%/build}/..
 
 CONTAINER=${_EXPERIMENTAL_DAGGER_DEV_CONTAINER:-dagger-engine.dev}
+VOLUME=$CONTAINER
 IMAGE=${_EXPERIMENTAL_DAGGER_DEV_IMAGE:-localhost/dagger-engine.dev}
 
 cli |\
-    dev-binaries --runner-host="docker-image://$IMAGE?name=$CONTAINER&cleanup=false" --platform=current |\
+    dev-binaries --runner-host="docker-image://$IMAGE?container=$CONTAINER&volume=$VOLUME&cleanup=false" --platform=current |\
     export ./bin &
 
 engine |
@@ -24,8 +25,8 @@ engine |\
         ${_EXPERIMENTAL_DAGGER_GPU_SUPPORT:+--gpu-support} |\
     start \
         --name=$CONTAINER \
-        ${DAGGER_CLOUD_TOKEN:+--dagger-cloud-token=${DAGGER_CLOUD_TOKEN-}} \
-        ${DAGGER_CLOUD_URL:+--dagger-cloud-url=${DAGGER_CLOUD_URL-}} &
+        ${DAGGER_CLOUD_TOKEN:+--cloud-token=env://DAGGER_CLOUD_TOKEN} \
+        ${DAGGER_CLOUD_URL:+--cloud-url=${DAGGER_CLOUD_URL-}} &
 
 _wait
 

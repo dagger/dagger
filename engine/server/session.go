@@ -178,6 +178,13 @@ func (client *daggerClient) FlushTelemetry(ctx context.Context) error {
 	var errs error
 	if client.tracerProvider != nil {
 		slog.ExtraDebug("force flushing client traces")
+		// FIXME: mitigation for goroutine leak fixed upstream in
+		// https://github.com/open-telemetry/opentelemetry-go/pull/6363
+		// Just give this context a real generous timeout for now so if we
+		// are canceled we don't leak
+		// Can undo this once we've picked up the upstream fix.
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
+		defer cancel()
 		errs = errors.Join(errs, client.tracerProvider.ForceFlush(ctx))
 	}
 	if client.loggerProvider != nil {

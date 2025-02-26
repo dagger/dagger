@@ -2709,6 +2709,27 @@ class Directory(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(DirectoryID)
 
+    async def name(self) -> str:
+        """Returns the name of the directory.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
     async def sync(self) -> Self:
         """Force evaluation in the engine.
 
