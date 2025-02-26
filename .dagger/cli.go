@@ -58,8 +58,8 @@ func (cli *CLI) DevBinaries(
 
 const (
 	// https://github.com/goreleaser/goreleaser/releases
-	goReleaserVersion = "v2.4.8"
-	goReleaserImage   = "ghcr.io/goreleaser/goreleaser-pro:" + goReleaserVersion + "-pro"
+	goReleaserVersion = "v2.7.0"
+	goReleaserImage   = "ghcr.io/goreleaser/goreleaser-pro:" + goReleaserVersion
 )
 
 // Publish the CLI using GoReleaser
@@ -145,6 +145,7 @@ func (cli *CLI) Publish(
 		With(optEnvVariable("ARTEFACTS_FQDN", artefactsFQDN)).
 		WithEnvVariable("ENGINE_VERSION", cli.Dagger.Version).
 		WithEnvVariable("ENGINE_TAG", cli.Dagger.Tag).
+		WithEnvVariable("GORELEASER_CURRENT_TAG", tag).
 		WithEntrypoint([]string{"/sbin/tini", "--", "/entrypoint.sh"}).
 		WithExec(args, dagger.ContainerWithExecOpts{
 			UseEntrypoint: true,
