@@ -99,7 +99,7 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.22
 	github.com/vito/bubbline v0.0.0-20250226023736-e1b950822f33
 	github.com/vito/go-sse v1.1.2
-	github.com/vito/midterm v0.2.1-0.20241012205340-d5c6540bf1e1
+	github.com/vito/midterm v0.2.1-0.20250226054212-2183cda0d97d
 	github.com/zeebo/xxh3 v1.0.2
 	go.etcd.io/bbolt v1.4.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.57.0
@@ -206,7 +206,7 @@ require (
 	github.com/containernetworking/plugins v1.5.1 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.6 // indirect
 	github.com/cyphar/filepath-securejoin v0.4.1 // indirect
-	github.com/danielgatis/go-ansicode v1.0.6 // indirect
+	github.com/danielgatis/go-ansicode v1.0.7 // indirect
 	github.com/danielgatis/go-iterator v0.0.1 // indirect
 	github.com/danielgatis/go-utf8 v1.0.0 // indirect
 	github.com/danielgatis/go-vte v1.0.8 // indirect
