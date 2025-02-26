@@ -67,8 +67,13 @@ func (m *JavaSdk) Codegen(
 		return nil, err
 	}
 
+	generatedCode, err := m.generateCode(ctx, mvnCtr, introspectionJSON)
+	if err != nil {
+		return nil, err
+	}
+
 	return dag.
-		GeneratedCode(dag.Directory().WithDirectory("/", m.generateCode(ctx, mvnCtr, introspectionJSON))).
+		GeneratedCode(dag.Directory().WithDirectory("/", generatedCode)).
 		WithVCSGeneratedPaths([]string{
 			"target/generated-sources/**",
 		}).
@@ -85,9 +90,11 @@ func (m *JavaSdk) codegenBase(
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
 ) (*dagger.Container, error) {
-	ctr := m.
-		// Build dependencies
-		buildJavaDependencies(ctx, introspectionJSON).
+	ctr, err := m.buildJavaDependencies(ctx, introspectionJSON)
+	if err != nil {
+		return nil, err
+	}
+	ctr = ctr.
 		// Copy the user module directory under /src
 		WithDirectory(ModSourceDirPath, modSource.ContextDirectory()).
 		// Set the working directory to the one containing the sources to build, not just the module root
@@ -102,10 +109,13 @@ func (m *JavaSdk) codegenBase(
 func (m *JavaSdk) buildJavaDependencies(
 	ctx context.Context,
 	introspectionJSON *dagger.File,
-) *dagger.Container {
-	return m.
-		// We need maven to build the dependencies
-		mvnContainer(ctx).
+) (*dagger.Container, error) {
+	// We need maven to build the dependencies
+	ctr, err := m.mvnContainer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return ctr.
 		// Cache maven dependencies
 		WithMountedCache("/root/.m2", dag.CacheVolume("sdk-java-maven-m2")).
 		// Mount the introspection JSON file used to generate the SDK
@@ -131,7 +141,7 @@ func (m *JavaSdk) buildJavaDependencies(
 			// specify the introspection json file
 			"-Ddaggerengine.schema=/schema.json",
 			// "-e", // this is just for debug purpose, uncomment if needed
-		})
+		}), nil
 }
 
 // addTemplate creates all the necessary files to start a new Java module
@@ -194,9 +204,12 @@ func (m *JavaSdk) generateCode(
 	ctx context.Context,
 	ctr *dagger.Container,
 	introspectionJSON *dagger.File,
-) *dagger.Directory {
+) (*dagger.Directory, error) {
 	// generate the java sdk dependencies
-	javaDeps := m.buildJavaDependencies(ctx, introspectionJSON)
+	javaDeps, err := m.buildJavaDependencies(ctx, introspectionJSON)
+	if err != nil {
+		return nil, err
+	}
 	// generate the entrypoint class based on the user module
 	entrypoint := ctr.
 		// set the module name as an environment variable so we ensure constructor is only on main object
@@ -225,7 +238,7 @@ func (m *JavaSdk) generateCode(
 		WithDirectory(
 			filepath.Join(m.moduleConfig.modulePath(), "target", "generated-sources", "dagger-module"),
 			javaDeps.Directory(filepath.Join(GenPath, "dagger-java-sdk", "target", "generated-sources", "dagger"))).
-		Directory(ModSourceDirPath)
+		Directory(ModSourceDirPath), nil
 }
 
 func (m *JavaSdk) ModuleRuntime(
@@ -248,7 +261,11 @@ func (m *JavaSdk) ModuleRuntime(
 		return nil, err
 	}
 
-	javaCtr := m.jreContainer(ctx).
+	javaCtr, err := m.jreContainer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	javaCtr = javaCtr.
 		WithFile(filepath.Join(ModDirPath, "module.jar"), jar).
 		WithWorkdir(ModDirPath).
 		WithEntrypoint([]string{"java", "-jar", filepath.Join(ModDirPath, "module.jar")})
@@ -295,29 +312,27 @@ func (m *JavaSdk) finalJar(
 	return ctr.File(filepath.Join(m.moduleConfig.modulePath(), "target", jarFileName)), nil
 }
 
-func (m *JavaSdk) mvnContainer(ctx context.Context) *dagger.Container {
+func (m *JavaSdk) mvnContainer(ctx context.Context) (*dagger.Container, error) {
 	ctr := dag.
 		Container().
-		From(fmt.Sprintf("%s@%s", MavenImage, MavenDigest)).
-		With(disableSVEOnArm64(ctx))
-	return ctr
+		From(fmt.Sprintf("%s@%s", MavenImage, MavenDigest))
+	return disableSVEOnArm64(ctx, ctr)
 }
 
-func (m *JavaSdk) jreContainer(ctx context.Context) *dagger.Container {
+func (m *JavaSdk) jreContainer(ctx context.Context) (*dagger.Container, error) {
 	ctr := dag.
 		Container().
-		From(fmt.Sprintf("%s@%s", JavaImage, JavaDigest)).
-		With(disableSVEOnArm64(ctx))
-	return ctr
+		From(fmt.Sprintf("%s@%s", JavaImage, JavaDigest))
+	return disableSVEOnArm64(ctx, ctr)
 }
 
-func disableSVEOnArm64(ctx context.Context) dagger.WithContainerFunc {
-	return func(ctr *dagger.Container) *dagger.Container {
-		if platform, err := ctr.Platform(ctx); err == nil && strings.Contains(string(platform), "arm64") {
-			ctr = ctr.WithEnvVariable("_JAVA_OPTIONS", "-XX:UseSVE=0")
-		}
-		return ctr
+func disableSVEOnArm64(ctx context.Context, ctr *dagger.Container) (*dagger.Container, error) {
+	if platform, err := ctr.Platform(ctx); err != nil {
+		return nil, err
+	} else if strings.Contains(string(platform), "arm64") {
+		return ctr.WithEnvVariable("_JAVA_OPTIONS", "-XX:UseSVE=0"), nil
 	}
+	return ctr, nil
 }
 
 func (m *JavaSdk) setModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) error {
