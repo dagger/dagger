@@ -338,7 +338,7 @@ func (r Instance[T]) WithMetadata(customDigest digest.Digest, isPure bool) Insta
 
 func NoopDone(res Typed, cached bool, rerr error) {}
 
-// Selects calls the field on the instance specified by the selector
+// Select calls the field on the instance specified by the selector
 func (r Instance[T]) Select(ctx context.Context, s *Server, sel Selector) (Typed, *call.ID, error) {
 	view := sel.View
 	field, ok := r.Class.Field(sel.Field, view)
