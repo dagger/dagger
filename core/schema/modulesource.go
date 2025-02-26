@@ -19,6 +19,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/opencontainers/go-digest"
@@ -936,7 +937,7 @@ func resolveDepToSource(
 			}
 			err = dag.Select(ctx, dag.Root(), &inst, selectors...)
 			if err != nil {
-				if errors.Is(err, dagql.ErrCacheMapRecursiveCall) {
+				if errors.Is(err, cache.ErrCacheRecursiveCall) {
 					return inst, fmt.Errorf("module %q has a circular dependency on itself through dependency %q", parentSrc.ModuleName, depName)
 				}
 				return inst, fmt.Errorf("failed to load local dep: %w", err)
@@ -1853,7 +1854,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 		// cache the current source instance by it's digest before passing to codegen
 		// this scopes the cache key of codegen calls to an exact content hash detached
 		// from irrelevant details like specific host paths, specific git repos+commits, etc.
-		_, _, err = s.dag.Cache.GetOrInitializeValue(ctx, digest.Digest(srcInst.Self.Digest), srcInst)
+		_, err = s.dag.Cache.GetOrInitializeValue(ctx, digest.Digest(srcInst.Self.Digest), srcInst)
 		if err != nil {
 			return genDirInst, fmt.Errorf("failed to get or initialize instance: %w", err)
 		}
@@ -2029,7 +2030,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	// cache the current source instance by it's digest before passing to codegen
 	// this scopes the cache key of codegen calls to an exact content hash detached
 	// from irrelevant details like specific host paths, specific git repos+commits, etc.
-	_, _, err = s.dag.Cache.GetOrInitializeValue(ctx, digest.Digest(src.Self.Digest), src)
+	_, err = s.dag.Cache.GetOrInitializeValue(ctx, digest.Digest(src.Self.Digest), src)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
