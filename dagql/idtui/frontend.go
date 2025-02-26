@@ -288,19 +288,23 @@ func (r *renderer) renderSpan(
 	fmt.Fprint(out, prefix)
 	r.indent(out, depth)
 
-	r.renderStatus(out, span, focused)
+	if span != nil {
+		r.renderStatus(out, span, focused)
+	}
 
 	label := out.String(name)
-	if len(span.Links) > 0 {
+	if span != nil && len(span.Links) > 0 {
 		label = label.Italic()
 	}
 	fmt.Fprint(out, label)
 
-	// TODO: when a span has child spans that have progress, do 2-d progress
-	// fe.renderVertexTasks(out, span, depth)
-	r.renderDuration(out, span)
-	r.renderMetrics(out, span)
-	r.renderCached(out, span)
+	if span != nil {
+		// TODO: when a span has child spans that have progress, do 2-d progress
+		// fe.renderVertexTasks(out, span, depth)
+		r.renderDuration(out, span)
+		r.renderMetrics(out, span)
+		r.renderCached(out, span)
+	}
 
 	return nil
 }
