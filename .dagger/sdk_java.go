@@ -15,8 +15,8 @@ const (
 	javaSDKVersionPomPath   = javaSDKPath + "/pom.xml"
 	javaSchemasDirPath      = javaSDKPath + "/dagger-codegen-maven-plugin/src/main/resources/schemas"
 	javaGeneratedSchemaPath = "target/generated-schema/schema.json"
-	mavenImage              = "maven:3.9.9-eclipse-temurin-23-alpine"
-	mavenDigest             = "sha256:0e5e89100c3c1a0841ff67e0c1632b9b983e94ee5a9b1f758125d9e43c66856f"
+	mavenImage              = "maven:3.9.9-eclipse-temurin-21-alpine"
+	mavenDigest             = "sha256:4cbb8bf76c46b97e028998f2486ed014759a8e932480431039bdb93dffe6813e"
 )
 
 type JavaSDK struct {
