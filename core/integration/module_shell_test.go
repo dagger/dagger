@@ -284,7 +284,7 @@ func (Other) Version() string {
 			With(daggerShell("dep")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"version": "dep function"}`, out)
+		require.Regexp(t, `Dep@xxh3:[a-f0-9]{16}`, out)
 	})
 
 	t.Run("dep doc type", func(ctx context.Context, t *testctx.T) {
@@ -477,7 +477,7 @@ type Foo struct{
 			With(daggerShell("foo")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"bar": "foobar"}`, out)
+		require.Regexp(t, `Foo@xxh3:[a-f0-9]{16}`, out)
 	})
 
 	t.Run("stateful", func(ctx context.Context, t *testctx.T) {
@@ -587,7 +587,7 @@ func (ShellSuite) TestStateCommand(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := daggerCliBase(t, c).With(daggerShell(script)).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "foo")
+		require.Regexp(t, `Directory@xxh3:[a-f0-9]{16}`, out)
 	})
 
 	t.Run("pipeline from state value", func(ctx context.Context, t *testctx.T) {
