@@ -14,6 +14,9 @@ import (
 	"github.com/dagger/testctx"
 )
 
+//go:embed testdata/secretkey.txt
+var secretKeyBytes []byte
+
 type SecretSuite struct{}
 
 func TestSecret(t *testing.T) {
@@ -183,6 +186,3 @@ func (SecretSuite) TestBigScrubbed(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.Equal(t, "***", stdout)
 }
-
-//go:embed testdata/secretkey.txt
-var secretKeyBytes []byte

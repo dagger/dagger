@@ -115,7 +115,7 @@ func (s *moduleSourceSchema) Install() {
 		dagql.Func("localContextDirectoryPath", s.moduleSourceLocalContextDirectoryPath).
 			Doc(`The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.`),
 
-		dagql.NodeFunc("asModule", s.moduleSourceAsModule).
+		dagql.NodeFuncWithCacheKey("asModule", s.moduleSourceAsModule, s.moduleSourceAsModuleCacheKey).
 			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`),
 
 		dagql.Func("directory", s.moduleSourceDirectory).
@@ -2125,6 +2125,22 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 	}
 
 	return genDirInst, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceAsModuleCacheKey(
+	ctx context.Context,
+	src dagql.Instance[*core.ModuleSource],
+	args struct{},
+	cacheCfg dagql.CacheConfig,
+) (*dagql.CacheConfig, error) {
+	// TODO: this works just fine, but feels fiddly to use a string inline,
+	// Would benefit from some standard re-usable util to ensure future uses
+	// are consistent and correct. e.g. this works cause no args, but other
+	// uses should digest the args too
+
+	// TODO: doc why
+	cacheCfg.Digest = dagql.HashFrom(src.Self.Digest, "asModule")
+	return &cacheCfg, nil
 }
 
 func (s *moduleSourceSchema) moduleSourceAsModule(

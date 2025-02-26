@@ -28,7 +28,7 @@ type gitSchema struct {
 
 func (s *gitSchema) Install() {
 	dagql.Fields[*core.Query]{
-		dagql.NodeFuncWithCacheKey("git", s.git, nil).
+		dagql.NodeFuncWithCacheKey("git", s.git, dagql.CachePerClient).
 			View(AllVersion).
 			Doc(`Queries a Git repository.`).
 			ArgDoc("url",
@@ -39,7 +39,7 @@ func (s *gitSchema) Install() {
 			ArgDoc("sshKnownHosts", `Set SSH known hosts`).
 			ArgDoc("sshAuthSocket", `Set SSH auth socket`).
 			ArgDoc("experimentalServiceHost", `A service which must be started before the repo is fetched.`),
-		dagql.NodeFuncWithCacheKey("git", s.gitLegacy, nil).
+		dagql.NodeFuncWithCacheKey("git", s.gitLegacy, dagql.CachePerClient).
 			View(BeforeVersion("v0.13.4")).
 			Doc(`Queries a Git repository.`).
 			ArgDoc("url",

@@ -29,6 +29,9 @@ type Cache[K comparable, V any] interface {
 		K,
 		func(context.Context) (*ValueWithCallbacks[V], error),
 	) (Result[K, V], error)
+
+	// Returns the number of entries in the cache.
+	Size() int
 }
 
 type Result[K comparable, V any] interface {
@@ -61,6 +64,8 @@ type cache[K comparable, V any] struct {
 	calls map[K]*result[K, V]
 }
 
+var _ Cache[int, int] = &cache[int, int]{}
+
 type result[K comparable, V any] struct {
 	cache *cache[K, V]
 
@@ -78,9 +83,18 @@ type result[K comparable, V any] struct {
 	refCount int
 }
 
+var _ Result[int, int] = &result[int, int]{}
+
 type cacheContextKey[K comparable, V any] struct {
 	key   K
 	cache *cache[K, V]
+}
+
+func (c *cache[K, V]) Size() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return len(c.calls)
 }
 
 func (c *cache[K, V]) GetOrInitializeValue(
@@ -302,4 +316,8 @@ func (c *CacheWithResults[K, V]) ReleaseAll(ctx context.Context) error {
 	c.results = nil
 
 	return rerr
+}
+
+func (c *CacheWithResults[K, V]) Size() int {
+	return c.cache.Size()
 }
