@@ -582,11 +582,7 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
 
 	if fe.shell != nil {
-		var bg termenv.Color = termenv.ANSIColor(0)
-		if !isDark {
-			bg = termenv.ANSI256Color(255)
-		}
-		out = NewBackgroundWriter(out, bg)
+		out = focusedBg(out)
 	}
 
 	var progPrefix string
@@ -597,7 +593,10 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 	}
 
 	below := new(strings.Builder)
-	countOut := NewOutput(below, termenv.WithProfile(fe.profile))
+	var countOut TermOutput = NewOutput(below, termenv.WithProfile(fe.profile))
+	if fe.shell != nil {
+		countOut = focusedBg(countOut)
+	}
 
 	if fe.shell == nil {
 		fmt.Fprint(countOut, fe.viewKeymap())
@@ -662,11 +661,7 @@ func (fe *frontendPretty) renderedRowLines(r *renderer, row *dagui.TraceRow, pre
 	buf := new(strings.Builder)
 	var out TermOutput = NewOutput(buf, termenv.WithProfile(fe.profile))
 	if fe.shell != nil {
-		var bg termenv.Color = termenv.ANSIColor(0)
-		if !isDark {
-			bg = termenv.ANSI256Color(255)
-		}
-		out = NewBackgroundWriter(out, bg)
+		out = focusedBg(out)
 	}
 	fe.renderRow(out, r, row, prefix)
 	if buf.String() == "" {
@@ -1173,13 +1168,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 func (fe *frontendPretty) updatePrompt() {
 	var out TermOutput = fe.viewOut
 	if fe.editlineFocused {
-		var bgColor termenv.Color
-		if isDark {
-			bgColor = termenv.ANSIColor(0)
-		} else {
-			bgColor = termenv.ANSI256Color(255)
-		}
-		out = NewBackgroundWriter(out, bgColor)
+		out = focusedBg(out)
 	}
 	fe.editline.Prompt = fe.prompt(out, fe.promptFg)
 	fe.editline.Reset()
@@ -1460,7 +1449,8 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, logs *Vterm, d
 		fmt.Fprint(buf, prefix)
 		indentOut := NewOutput(buf, termenv.WithProfile(fe.profile))
 		r.indent(indentOut, depth)
-		fmt.Fprint(indentOut, pipe.String()+" ")
+		fmt.Fprint(indentOut, pipe)
+		fmt.Fprint(indentOut, out.String(" "))
 		logs.SetPrefix(buf.String())
 	}
 	if height <= 0 {
@@ -1582,7 +1572,7 @@ type BackgroundWriter struct {
 	lineEnd string
 }
 
-func NewBackgroundWriter(out TermOutput, bgColor termenv.Color) *BackgroundWriter {
+func NewBackgroundOutput(out TermOutput, bgColor termenv.Color) *BackgroundWriter {
 	return &BackgroundWriter{
 		TermOutput: out,
 		bgColor:    bgColor,
@@ -1596,4 +1586,11 @@ func (bg *BackgroundWriter) String(s ...string) termenv.Style {
 
 func (bg *BackgroundWriter) Write(p []byte) (n int, err error) {
 	return bg.TermOutput.Write(bytes.ReplaceAll(p, []byte("\n"), []byte(bg.lineEnd)))
+}
+
+func focusedBg(out TermOutput) TermOutput {
+	if isDark {
+		return NewBackgroundOutput(out, termenv.ANSIColor(0))
+	}
+	return NewBackgroundOutput(out, termenv.ANSIColor(255))
 }
