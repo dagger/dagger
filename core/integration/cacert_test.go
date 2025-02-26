@@ -383,7 +383,7 @@ func (m *Test) GetHttp(ctx context.Context) (string, error) {
 			require.Equal(t, "hello", strings.TrimSpace(out))
 		}},
 
-		caCertsTest{"python module", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"python module", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
@@ -405,7 +405,7 @@ class Test:
 			require.Equal(t, "hello", strings.TrimSpace(out))
 		}},
 
-		caCertsTest{"typescript module", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"typescript module", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
@@ -446,7 +446,7 @@ export class Test {
 			require.Equal(t, "hello", strings.TrimSpace(out))
 		}},
 
-		caCertsTest{"terminal", func(t *testctx.T, _ *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"terminal", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			modDir := t.TempDir()
 			err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(fmt.Sprintf(`package main
 
