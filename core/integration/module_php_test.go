@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -79,4 +80,42 @@ func (PHPSuite) TestInit(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "hello\n", out)
 	})
+}
+
+func (PHPSuite) TestDefaultValue(_ context.Context, t *testctx.T) {
+	t.Run("can set a value", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := phpModule(t, c, "defaults").
+			With(daggerCall("echo", "--value=hello")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "hello", out)
+	})
+
+	t.Run("can use a default value", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := phpModule(t, c, "defaults").
+			With(daggerCall("echo")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "default value", out)
+	})
+}
+
+func phpModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
+	t.Helper()
+	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/php", moduleName))
+	require.NoError(t, err)
+
+	sdkSrc, err := filepath.Abs("../../sdk/php")
+	require.NoError(t, err)
+
+	return goGitBase(t, c).
+		WithDirectory("modules/"+moduleName, c.Host().Directory(modSrc)).
+		WithDirectory("sdk/php", c.Host().Directory(sdkSrc)).
+		WithWorkdir("/work/modules/" + moduleName)
 }
