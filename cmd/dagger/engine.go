@@ -112,7 +112,12 @@ func withEngine(
 					}
 				}
 
-				if mod.Source.SDK() != nil {
+				sdkSource, err := mod.Source.SDK().Source(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get module SDK source: %w", err)
+				}
+
+				if sdkSource != "" {
 					err := mod.Source.AsModule().Serve(ctx)
 					if err != nil {
 						return fmt.Errorf("failed to serve module source: %w", err)
