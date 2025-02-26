@@ -58,8 +58,8 @@ func (cli *CLI) DevBinaries(
 
 const (
 	// https://github.com/goreleaser/goreleaser/releases
-	goReleaserVersion = "v2.4.8"
-	goReleaserImage   = "ghcr.io/goreleaser/goreleaser-pro:" + goReleaserVersion + "-pro"
+	goReleaserVersion = "v2.7.0"
+	goReleaserImage   = "ghcr.io/goreleaser/goreleaser-pro:" + goReleaserVersion
 )
 
 // Publish the CLI using GoReleaser

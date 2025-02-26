@@ -13,7 +13,7 @@ archives:
       - LICENSE
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
 
 # https://goreleaser.com/customization/homebrew/
 brews:
