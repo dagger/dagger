@@ -269,7 +269,7 @@ func (src *ModuleSource) CalcDigest() digest.Digest {
 		inputs = append(inputs, dep.Self.Digest)
 	}
 
-	return HashFrom(inputs...)
+	return dagql.HashFrom(inputs...)
 }
 
 // LoadContext loads addition files+directories from the module source's context, including those that

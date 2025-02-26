@@ -6,7 +6,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/opencontainers/go-digest"
 )
 
 type cacheSchema struct {
@@ -38,17 +37,18 @@ type cacheArgs struct {
 	Namespace string `default:""`
 }
 
-func (s *cacheSchema) cacheVolumeCacheKey(ctx context.Context, parent dagql.Instance[*core.Query], args cacheArgs, origDgst digest.Digest) (digest.Digest, error) {
+func (s *cacheSchema) cacheVolumeCacheKey(ctx context.Context, parent dagql.Instance[*core.Query], args cacheArgs, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
 	if args.Namespace != "" {
-		return origDgst, nil
+		return &cacheCfg, nil
 	}
 
 	m, err := parent.Self.CurrentModule(ctx)
 	if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
-		return "", err
+		return nil, err
 	}
 	namespaceKey := namespaceFromModule(m)
-	return core.HashFrom(origDgst.String(), namespaceKey), nil
+	cacheCfg.Digest = dagql.HashFrom(cacheCfg.Digest.String(), namespaceKey)
+	return &cacheCfg, nil
 }
 
 func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.Instance[*core.Query], args cacheArgs) (dagql.Instance[*core.CacheVolume], error) {

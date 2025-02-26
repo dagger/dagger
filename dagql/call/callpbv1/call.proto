@@ -44,21 +44,6 @@ message Call {
   // ideally be in the order defined in the schema.
   repeated Argument args = 4;
 
-  // If true, this Call is not reproducible; repeated evaluations may return
-  // different values.
-  bool tainted = 5;
-
-  // If true, this Call may be omitted from the DAG without changing
-  // the final result.
-  //
-  // This may be used to prevent meta-queries from busting cache keys when
-  // desired, if Calls are used as a cache key for persistence.
-  //
-  // It is worth noting that we don't store meta information at this level and
-  // continue to force metadata to be set via GraphQL queries. It makes Calls
-  // always easy to evaluate.
-  bool meta = 6;
-
   // If the field selection returns a list, this is the index of the element to
   // return from the Call. This value is 1-indexed, hence being call nth (1st,
   // not 0th). At the same time that this is set, the Call's Type must also be

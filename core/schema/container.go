@@ -511,7 +511,7 @@ func (s *containerSchema) Install() {
 			ArgDoc("name", `The name of the annotation.`),
 
 		dagql.Func("publish", s.publish).
-			Impure("Writes to the specified Docker registry.").
+			DoNotCache("Writes to the specified Docker registry.").
 			Doc(`Publishes this container as a new image to the specified address.`,
 				`Publish returns a fully qualified ref.`,
 				`It can also publish platform variants.`).
@@ -540,7 +540,7 @@ func (s *containerSchema) Install() {
 
 		dagql.Func("export", s.export).
 			View(AllVersion).
-			Impure("Writes to the local host.").
+			DoNotCache("Writes to the local host.").
 			Doc(`Writes the container as an OCI tarball to the destination file path on the host.`,
 				`It can also export platform variants.`).
 			ArgDoc("path",
@@ -661,7 +661,7 @@ func (s *containerSchema) Install() {
 
 		dagql.NodeFunc("terminal", s.terminal).
 			View(AfterVersion("v0.12.0")).
-			Impure("Nondeterministic.").
+			DoNotCache("Only creates a temporary container for the user to interact with and then returns original parent.").
 			Doc(`Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
 			ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`).
 			ArgDoc("experimentalPrivilegedNesting",
