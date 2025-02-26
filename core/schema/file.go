@@ -37,7 +37,7 @@ func (s *fileSchema) Install() {
 			ArgDoc("name", `Name to set file to.`),
 		dagql.Func("export", s.export).
 			View(AllVersion).
-			Impure("Writes to the local host.").
+			DoNotCache("Writes to the local host.").
 			Doc(`Writes the file to a file path on the host.`).
 			ArgDoc("path", `Location of the written directory (e.g., "output.txt").`).
 			ArgDoc("allowParentDirPath",
