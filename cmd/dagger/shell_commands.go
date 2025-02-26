@@ -249,11 +249,11 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 
 					// Use the same function lookup as when executing
 					// so that `> .help wolfi` documents `> wolfi`.
-					st, err = h.StateLookup(ctx, args[0])
+					st, err = h.stateLookup(ctx, args[0])
 					if err != nil {
 						return err
 					}
-					if st.ModDigest != "" {
+					if st.ModRef != "" {
 						// First argument to `.help` is a module reference, so
 						// remove it from list of arguments now that it's loaded.
 						// The rest of the arguments should be passed on to
@@ -262,7 +262,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 					}
 				}
 
-				def := h.GetDef(st)
+				def := h.modDef(st)
 
 				if st.IsEmpty() {
 					switch {
@@ -290,7 +290,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 						if err != nil {
 							return err
 						}
-						return h.Print(ctx, h.ModuleDoc(depSt, depDef))
+						return h.Print(ctx, shellModuleDoc(depSt, depDef))
 
 					case st.IsCore():
 						// Document core
@@ -303,7 +303,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 						if fn == nil {
 							return fmt.Errorf("core function %q not found", args[0])
 						}
-						return h.Print(ctx, h.FunctionDoc(def, fn))
+						return h.Print(ctx, shellFunctionDoc(def, fn))
 
 					case len(args) == 0:
 						if !def.HasModule() {
@@ -311,7 +311,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 						}
 						// Document module
 						// Example: `.help [module]`
-						return h.Print(ctx, h.ModuleDoc(st, def))
+						return h.Print(ctx, shellModuleDoc(st, def))
 					}
 				}
 
@@ -337,66 +337,34 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 				if err != nil {
 					return err
 				}
-				return h.Print(ctx, h.FunctionDoc(def, fn))
+				return h.Print(ctx, shellFunctionDoc(def, fn))
 			},
 		},
 		&ShellCommand{
-			Use: ".cd [path | url]",
-			Description: `Change the current working directory 
+			Use: ".use <module>",
+			Description: `Set a module as the default for the session
 
-Absolute and relative paths are resolved in relation to the same context directory.
-Using a git URL changes the context. Only the initial context can target local 
-modules in different contexts.
-
-If the target path is in a different module within the same context, it will be
-loaded as the default automatically, making its functions available at the top level.
-
-Without arguments, the current working directory is replaced by the initial context.
+Local module paths are resolved relative to the workdir on the host, not relative
+to the currently loaded module.
 `,
 			GroupID: moduleGroup.ID,
-			Args:    MaximumArgs(1),
+			Args:    ExactArgs(1),
 			State:   NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-				var path string
-				if len(args) > 0 {
-					path = args[0]
-				}
-				return h.ChangeDir(ctx, path)
-			},
-		},
-		&ShellCommand{
-			Use:         ".pwd",
-			Description: "Print the current working directory's absolute path",
-			GroupID:     moduleGroup.ID,
-			Args:        NoArgs,
-			State:       NoState,
-			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
-				if h.debug {
-					shellDebug(ctx, "Workdir", h.Workdir())
-				}
-				return h.Print(ctx, h.Pwd())
-			},
-		},
-		&ShellCommand{
-			Use:         ".ls [path]",
-			Description: "List files in the current working directory",
-			GroupID:     moduleGroup.ID,
-			Args:        MaximumArgs(1),
-			State:       NoState,
-			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-				var path string
-				if len(args) > 0 {
-					path = args[0]
-				}
-				dir, err := h.Directory(path)
+				st, err := h.getOrInitDefState(args[0], func() (*moduleDef, error) {
+					return initializeModule(ctx, h.dag, args[0])
+				})
 				if err != nil {
 					return err
 				}
-				contents, err := dir.Entries(ctx)
-				if err != nil {
-					return err
+
+				h.mu.Lock()
+				if st.ModRef != h.modRef {
+					h.modRef = st.ModRef
 				}
-				return h.Print(ctx, strings.Join(contents, "\n"))
+				h.mu.Unlock()
+
+				return nil
 			},
 		},
 		&ShellCommand{
@@ -407,22 +375,24 @@ Without arguments, the current working directory is replaced by the initial cont
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, st *ShellState) error {
 				// Get current module definition
-				def := h.GetDef(st)
+				def := h.modDef(st)
 
 				// Re-initialize the module to get fresh schema
 				var newDef *moduleDef
 				var err error
-				if def.SourceDigest == "" {
+				if def.ModRef == "" {
 					newDef, err = initializeCore(ctx, h.dag)
 				} else {
-					newDef, err = initializeModule(ctx, h.dag, h.dag.ModuleSource(def.SourceRoot))
+					newDef, err = initializeModule(ctx, h.dag, def.ModRef)
 				}
 				if err != nil {
 					return fmt.Errorf("failed to reinitialize module: %w", err)
 				}
 
 				// Update handler state with new definition
-				h.modDefs.Store(def.SourceDigest, newDef)
+				h.mu.Lock()
+				h.modDefs.Store(def.ModRef, newDef)
+				h.mu.Unlock()
 
 				// Reload type definitions
 				if err := newDef.loadTypeDefs(ctx, h.dag); err != nil {
@@ -443,7 +413,7 @@ Without arguments, the current working directory is replaced by the initial cont
 				if err != nil {
 					return err
 				}
-				return h.NewDepsState().Write(ctx)
+				return h.newDepsState().Write(ctx)
 			},
 			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
 				return &CompletionContext{
@@ -458,7 +428,7 @@ Without arguments, the current working directory is replaced by the initial cont
 			Args:        NoArgs,
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
-				return h.NewStdlibState().Write(ctx)
+				return h.newStdlibState().Write(ctx)
 			},
 			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
 				return &CompletionContext{
@@ -472,7 +442,7 @@ Without arguments, the current working directory is replaced by the initial cont
 			Description: "Load any core Dagger type",
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-				return h.NewCoreState().Write(ctx)
+				return h.newCoreState().Write(ctx)
 			},
 			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
 				return &CompletionContext{
@@ -488,7 +458,7 @@ Without arguments, the current working directory is replaced by the initial cont
 		cobraToShellCommand(moduleUpdateCmd),
 	)
 
-	def := h.GetDef(nil)
+	def := h.modDef(nil)
 
 	for _, fn := range def.GetCoreFunctions() {
 		// TODO: Don't hardcode this list.
@@ -511,14 +481,14 @@ Without arguments, the current working directory is replaced by the initial cont
 
 		stdlib = append(stdlib,
 			&ShellCommand{
-				Use:         h.FunctionUseLine(def, fn),
+				Use:         shellFunctionUseLine(def, fn),
 				Description: fn.Description,
 				State:       NoState,
 				HelpFunc: func(cmd *ShellCommand) string {
-					return h.FunctionDoc(def, fn)
+					return shellFunctionDoc(def, fn)
 				},
 				Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-					st := h.NewState()
+					st := h.newState()
 					st, err := h.functionCall(ctx, st, fn.CmdName(), args)
 					if err != nil {
 						return err

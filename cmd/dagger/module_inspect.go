@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -38,7 +39,23 @@ func initializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDe
 	if modRef == "" {
 		modRef = moduleURLDefault
 	}
-	return initializeModule(ctx, dag, dag.ModuleSource(modRef))
+	return initializeModule(ctx, dag, modRef)
+}
+
+// maybeInitializeDefaultModule optionally loads the module referenced by the -m,--mod flag,
+// falling back to the core definitions
+func maybeInitializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDef, string, error) {
+	modRef, _ := getExplicitModuleSourceRef()
+	if modRef == "" {
+		modRef = moduleURLDefault
+	}
+
+	if def, err := initializeModule(ctx, dag, modRef); def != nil {
+		return def, modRef, err
+	}
+
+	def, err := initializeCore(ctx, dag)
+	return def, "", err
 }
 
 // initializeModule loads the module at the given source ref
@@ -47,12 +64,14 @@ func initializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDe
 func initializeModule(
 	ctx context.Context,
 	dag *dagger.Client,
-	modSrc *dagger.ModuleSource,
+	srcRef string,
+	srcOpts ...dagger.ModuleSourceOpts,
 ) (rdef *moduleDef, rerr error) {
 	ctx, span := Tracer().Start(ctx, "load module")
 	defer telemetry.End(span, func() error { return rerr })
 
 	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
+	modSrc := dag.ModuleSource(srcRef, srcOpts...)
 	configExists, err := modSrc.ConfigExists(findCtx)
 	telemetry.End(findSpan, func() error { return err })
 
@@ -60,7 +79,7 @@ func initializeModule(
 		return nil, fmt.Errorf("failed to get configured module: %w", err)
 	}
 	if !configExists {
-		return nil, fmt.Errorf("module not found")
+		return nil, fmt.Errorf("module not found: %s", srcRef)
 	}
 
 	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())
@@ -75,11 +94,7 @@ func initializeModule(
 		return nil, err
 	}
 
-	if err := def.loadTypeDefs(ctx, dag); err != nil {
-		return nil, err
-	}
-
-	return def, nil
+	return def, def.loadTypeDefs(ctx, dag)
 }
 
 // moduleDef is a representation of a dagger module.
@@ -94,16 +109,27 @@ type moduleDef struct {
 
 	// the ModuleSource definition for the module, needed by some arg types
 	// applying module-specific configs to the arg value.
-	Source            *dagger.ModuleSource
-	SourceKind        dagger.ModuleSourceKind
-	SourceRoot        string
-	SourceRootSubpath string
-	SourceDigest      string
+	Source *dagger.ModuleSource
 
-	Dependencies []*moduleDef
+	// ModRef is the human readable module source reference as returned by the API
+	ModRef string
+
+	Dependencies []*moduleDependency
 }
 
-func (m *moduleDef) Short() string {
+type moduleDependency struct {
+	Name        string
+	Description string
+	Source      *dagger.ModuleSource
+
+	// ModRef is the human readable module source reference as returned by the API
+	ModRef string
+
+	// RefPin is the module source pin for this dependency, if any
+	RefPin string
+}
+
+func (m *moduleDependency) Short() string {
 	s := m.Description
 	if s == "" {
 		s = "-"
@@ -129,20 +155,17 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 
 	var res struct {
 		Source struct {
-			Kind              dagger.ModuleSourceKind
-			Digest            string
-			AsString          string
-			SourceRootSubpath string
-			Module            struct {
+			AsString string
+			Kind     dagger.ModuleSourceKind
+			Module   struct {
 				Name         string
 				Description  string
 				Dependencies []struct {
 					Name        string
 					Description string
 					Source      struct {
-						ID       dagger.ModuleSourceID
 						AsString string
-						Digest   string
+						Pin      string
 					}
 				}
 			}
@@ -166,27 +189,36 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 		return nil, fmt.Errorf("query module metadata: %w", err)
 	}
 
-	deps := make([]*moduleDef, 0, len(res.Source.Module.Dependencies))
+	deps := make([]*moduleDependency, 0, len(res.Source.Module.Dependencies))
 	for _, dep := range res.Source.Module.Dependencies {
-		deps = append(deps, &moduleDef{
-			Name:         dep.Name,
-			Description:  dep.Description,
-			SourceRoot:   dep.Source.AsString,
-			SourceDigest: dep.Source.Digest,
-			// Note: this should preserve the correct pin if it exists
-			Source: dag.LoadModuleSourceFromID(dep.Source.ID),
+		deps = append(deps, &moduleDependency{
+			Name:        dep.Name,
+			Description: dep.Description,
+			ModRef:      dep.Source.AsString,
+			RefPin:      dep.Source.Pin,
 		})
 	}
 
 	def := &moduleDef{
-		Source:            source,
-		SourceKind:        res.Source.Kind,
-		SourceDigest:      res.Source.Digest,
-		SourceRoot:        res.Source.AsString,
-		SourceRootSubpath: filepath.Join("/", res.Source.SourceRootSubpath),
-		Name:              res.Source.Module.Name,
-		Description:       res.Source.Module.Description,
-		Dependencies:      deps,
+		Source:       source,
+		ModRef:       res.Source.AsString,
+		Name:         res.Source.Module.Name,
+		Description:  res.Source.Module.Description,
+		Dependencies: deps,
+	}
+
+	// if this is a local module source, make the mod ref relative to the caller
+	// since that is usually a shorter+easier to work with path
+	if res.Source.Kind == dagger.ModuleSourceKindLocalSource {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+		relPath, err := filepath.Rel(cwd, def.ModRef)
+		if err != nil {
+			return nil, err
+		}
+		def.ModRef = relPath
 	}
 
 	return def, nil
@@ -401,7 +433,7 @@ func (m *moduleDef) GetInput(name string) *modInput {
 	return nil
 }
 
-func (m *moduleDef) GetDependency(name string) *moduleDef {
+func (m *moduleDef) GetDependency(name string) *moduleDependency {
 	for _, dep := range m.Dependencies {
 		if dep.Name == name {
 			return dep
@@ -915,7 +947,7 @@ func (r *modFunctionArg) Long() string {
 		} else if sb.Len() > 0 {
 			sb.WriteString(" ")
 		}
-		fmt.Fprintf(sb, "(default: %s)", defVal)
+		sb.WriteString(fmt.Sprintf("(default: %s)", defVal))
 	}
 
 	if r.TypeDef.Kind == dagger.TypeDefKindEnumKind {
@@ -925,7 +957,7 @@ func (r *modFunctionArg) Long() string {
 		} else if sb.Len() > 0 {
 			sb.WriteString(" ")
 		}
-		fmt.Fprintf(sb, "(possible values: %s)", names)
+		sb.WriteString(fmt.Sprintf("(possible values: %s)", names))
 	}
 
 	return sb.String()

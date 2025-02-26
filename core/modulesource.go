@@ -112,8 +112,6 @@ type ModuleSource struct {
 	// SourceSubpath is the relative path from the context dir to the dir containing the module's source code
 	SourceSubpath string
 
-	OriginalSubpath string
-
 	ContextDirectory dagql.Instance[*Directory] `field:"true" name:"contextDirectory" doc:"The full directory loaded for the module source, including the source code as a subdirectory."`
 
 	Digest string `field:"true" name:"digest" doc:"A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance."`

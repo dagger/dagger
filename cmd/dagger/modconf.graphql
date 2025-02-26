@@ -1,9 +1,7 @@
 query ModuleConfig($source: ModuleSourceID!) {
   source: loadModuleSourceFromID(id: $source) {
-    kind
-    digest
     asString
-    sourceRootSubpath
+    kind
     module: asModule {
       name
       description
@@ -11,9 +9,8 @@ query ModuleConfig($source: ModuleSourceID!) {
         name
         description
         source {
-          id
           asString
-          digest
+          pin
         }
       }
     }

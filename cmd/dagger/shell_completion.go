@@ -249,7 +249,7 @@ func (ctx *CompletionContext) completions(prefix string) []string {
 		}
 
 	case ctx.CmdType == shellCoreCmdName:
-		for _, fn := range ctx.Completer.GetDef(nil).GetCoreFunctions() {
+		for _, fn := range ctx.Completer.modDef(nil).GetCoreFunctions() {
 			results = append(results, fn.CmdName())
 		}
 
@@ -265,7 +265,7 @@ func (ctx *CompletionContext) completions(prefix string) []string {
 				results = append(results, dep.Name)
 			}
 		}
-		results = append(results, ctx.Completer.LoadedModulePaths()...)
+		results = append(results, ctx.Completer.LoadedModulesList()...)
 	}
 
 	return results
@@ -276,7 +276,7 @@ func (ctx *CompletionContext) lookupField(field string, args []string) *Completi
 		return cmd.Complete(ctx, args)
 	}
 
-	def := ctx.Completer.GetDef(nil)
+	def := ctx.Completer.modDef(nil)
 
 	if ctx.ModType != nil {
 		next, err := def.GetFunction(ctx.ModType, field)
@@ -351,7 +351,7 @@ func (ctx *CompletionContext) lookupField(field string, args []string) *Completi
 
 func (ctx *CompletionContext) lookupType() *CompletionContext {
 	if ctx.ModFunction != nil {
-		def := ctx.Completer.GetDef(nil)
+		def := ctx.Completer.modDef(nil)
 		next := def.GetFunctionProvider(ctx.ModFunction.ReturnType.Name())
 		return &CompletionContext{
 			Completer: ctx.Completer,

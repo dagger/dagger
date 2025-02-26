@@ -33,11 +33,12 @@ const (
 // one's stdin. Each handler in the chain should add a corresponding FunctionCall
 // to the state and write it to stdout for the next handler to read.
 type ShellState struct {
-	// ModDigest is the module source digest for the current state
+	// ModRef is the module reference for the current state
 	//
 	// If empty, it must fall back to the default context.
-	// It matches a key in the modDefs map in the handler.
-	ModDigest string `json:"digest"`
+	// It matches a key in the modDefs map in the handler, which comes from
+	// user input, not from the API.
+	ModRef string `json:"modRef"`
 
 	// Cmd is non-empty if next command comes from a builtin instead of an API object
 	Cmd string `json:"cmd"`
@@ -127,8 +128,8 @@ func (st ShellState) Function() FunctionCall {
 func (st ShellState) WithCall(fn *modFunction, argValues map[string]any) *ShellState {
 	prev := st.Function()
 	return &ShellState{
-		Cmd:       st.Cmd,
-		ModDigest: st.ModDigest,
+		Cmd:    st.Cmd,
+		ModRef: st.ModRef,
 		Calls: append(st.Calls, FunctionCall{
 			Object:       prev.ReturnObject,
 			Name:         fn.Name,
@@ -215,30 +216,30 @@ func shellState(ctx context.Context) (*ShellState, []byte, error) {
 	return readShellState(interp.HandlerCtx(ctx).Stdin)
 }
 
-func (h *shellCallHandler) newModState(dig string) *ShellState {
+func (h *shellCallHandler) newModState(ref string) *ShellState {
 	return &ShellState{
-		ModDigest: dig,
+		ModRef: ref,
 	}
 }
 
-func (h *shellCallHandler) NewState() *ShellState {
-	return &ShellState{}
-}
-
-func (h *shellCallHandler) NewStdlibState() *ShellState {
+func (h *shellCallHandler) newStdlibState() *ShellState {
 	return &ShellState{
 		Cmd: shellStdlibCmdName,
 	}
 }
 
-func (h *shellCallHandler) NewCoreState() *ShellState {
+func (h *shellCallHandler) newCoreState() *ShellState {
 	return &ShellState{
 		Cmd: shellCoreCmdName,
 	}
 }
 
-func (h *shellCallHandler) NewDepsState() *ShellState {
+func (h *shellCallHandler) newDepsState() *ShellState {
 	return &ShellState{
 		Cmd: shellDepsCmdName,
 	}
+}
+
+func (h *shellCallHandler) newState() *ShellState {
+	return &ShellState{}
 }

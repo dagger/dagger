@@ -65,9 +65,6 @@ func (s *moduleSourceSchema) Install() {
 		dagql.Func("sourceSubpath", s.moduleSourceSubpath).
 			Doc(`The path to the directory containing the module's source code, relative to the context directory.`),
 
-		dagql.Func("originalSubpath", s.moduleSourceOriginalSubpath).
-			Doc(`The original subpath used when instantiating this module source, relative to the context directory.`),
-
 		dagql.FuncWithCacheKey("withSourceSubpath", s.moduleSourceWithSourceSubpath, core.CachePerClient).
 			Doc(`Update the module source with a new source subpath.`).
 			ArgDoc("path", `The path to set as the source subpath. Must be relative to the module source's source root directory.`),
@@ -331,16 +328,10 @@ func (s *moduleSourceSchema) localModuleSource(
 		return inst, fmt.Errorf("source root path %q escapes context %q", sourceRootRelPath, contextDirPath)
 	}
 
-	originalRelPath, err := pathutil.LexicalRelativePath(contextDirPath, localAbsPath)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get relative path from context to original path: %w", err)
-	}
-
 	localSrc := &core.ModuleSource{
 		Query:             query.Self,
 		ConfigExists:      daggerCfgFound,
 		SourceRootSubpath: sourceRootRelPath,
-		OriginalSubpath:   originalRelPath,
 		Kind:              core.ModuleSourceKindLocal,
 		Local: &core.LocalModuleSource{
 			ContextDirectoryPath: contextDirPath,
@@ -463,7 +454,6 @@ func (s *moduleSourceSchema) gitModuleSource(
 	gitSrc.Git.UnfilteredContextDir = gitSrc.ContextDirectory
 
 	gitSrc.SourceRootSubpath = strings.TrimPrefix(parsed.repoRootSubdir, "/")
-	gitSrc.OriginalSubpath = gitSrc.SourceRootSubpath
 
 	var configPath string
 	if !doFindUp {
@@ -1001,14 +991,6 @@ func (s *moduleSourceSchema) moduleSourceSubpath(
 	args struct{},
 ) (string, error) {
 	return src.SourceSubpath, nil
-}
-
-func (s *moduleSourceSchema) moduleSourceOriginalSubpath(
-	ctx context.Context,
-	src *core.ModuleSource,
-	args struct{},
-) (string, error) {
-	return src.OriginalSubpath, nil
 }
 
 func (s *moduleSourceSchema) moduleSourceWithSourceSubpath(
