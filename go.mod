@@ -61,7 +61,6 @@ require (
 	github.com/jackpal/gateway v1.0.16
 	github.com/juju/ansiterm v1.0.0
 	github.com/klauspost/compress v1.18.0
-	github.com/knz/bubbline v0.0.0-20230717192058-486954f9953f
 	github.com/koron-go/prefixw v1.0.0
 	github.com/lmittmann/tint v1.0.7
 	github.com/mackerelio/go-osstat v0.2.5
@@ -94,6 +93,7 @@ require (
 	github.com/tonistiigi/fsutil v0.0.0-20240424095704-91a3fc46842c
 	github.com/urfave/cli v1.22.16
 	github.com/vektah/gqlparser/v2 v2.5.22
+	github.com/vito/bubbline v0.0.0-20250226023736-e1b950822f33
 	github.com/vito/go-sse v1.1.2
 	github.com/vito/midterm v0.2.1-0.20241012205340-d5c6540bf1e1
 	github.com/zeebo/xxh3 v1.0.2

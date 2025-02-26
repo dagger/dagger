@@ -15,10 +15,10 @@ import (
 	"github.com/adrg/xdg"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/knz/bubbline/editline"
-	"github.com/knz/bubbline/history"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
+	"github.com/vito/bubbline/editline"
+	"github.com/vito/bubbline/history"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -57,11 +57,11 @@ type frontendPretty struct {
 	shellCtx        context.Context
 	shellInterrupt  context.CancelCauseFunc
 	promptFg        termenv.Color
-	prompt          func(out *termenv.Output, fg termenv.Color) string
+	prompt          func(out TermOutput, fg termenv.Color) string
 	editline        *editline.Model
 	editlineFocused bool
-	flushed         map[dagui.SpanID]struct{}
-	sawEOF          map[dagui.SpanID]struct{}
+	flushed         map[dagui.SpanID]bool
+	sawEOF          map[dagui.SpanID]bool
 
 	// updated as events are written
 	db           *dagui.DB
@@ -118,8 +118,8 @@ func NewWithDB(db *dagui.DB) *frontendPretty {
 		rows:     &dagui.Rows{BySpan: map[dagui.SpanID]*dagui.TraceRow{}},
 
 		// shell state
-		flushed: map[dagui.SpanID]struct{}{},
-		sawEOF:  map[dagui.SpanID]struct{}{},
+		flushed: map[dagui.SpanID]bool{},
+		sawEOF:  map[dagui.SpanID]bool{},
 
 		// initial TUI state
 		window:     tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
@@ -135,14 +135,14 @@ type startShellMsg struct {
 	ctx          context.Context
 	handler      func(ctx context.Context, input string) error
 	autocomplete editline.AutoCompleteFn
-	prompt       func(out *termenv.Output, fg termenv.Color) string
+	prompt       func(out TermOutput, fg termenv.Color) string
 }
 
 func (fe *frontendPretty) Shell(
 	ctx context.Context,
 	fn func(ctx context.Context, input string) error,
 	autocomplete editline.AutoCompleteFn,
-	prompt func(out *termenv.Output, fg termenv.Color) string,
+	prompt func(out TermOutput, fg termenv.Color) string,
 ) {
 	fe.program.Send(startShellMsg{
 		ctx:          ctx,
@@ -311,7 +311,7 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Conte
 	return fe.err
 }
 
-func (fe *frontendPretty) renderErrorLogs(out *termenv.Output, r *renderer) bool {
+func (fe *frontendPretty) renderErrorLogs(out TermOutput, r *renderer) bool {
 	if fe.rowsView == nil {
 		return false
 	}
@@ -455,7 +455,7 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 		})
 		if rec.SpanID().IsValid() && eof {
 			spanID := dagui.SpanID{SpanID: rec.SpanID()}
-			fe.sawEOF[spanID] = struct{}{}
+			fe.sawEOF[spanID] = true
 		}
 	}
 	return nil
@@ -572,7 +572,7 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 	return lipgloss.Width(res)
 }
 
-func (fe *frontendPretty) Render(out *termenv.Output) error {
+func (fe *frontendPretty) Render(out TermOutput) error {
 	progHeight := fe.window.Height
 
 	if fe.editline != nil {
@@ -580,6 +580,14 @@ func (fe *frontendPretty) Render(out *termenv.Output) error {
 	}
 
 	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
+
+	if fe.shell != nil {
+		var bg termenv.Color = termenv.ANSIColor(0)
+		if !isDark {
+			bg = termenv.ANSI256Color(255)
+		}
+		out = NewBackgroundWriter(out, bg)
+	}
 
 	var progPrefix string
 	if fe.rowsView != nil && fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
@@ -603,8 +611,9 @@ func (fe *frontendPretty) Render(out *termenv.Output) error {
 	belowOut := strings.TrimRight(below.String(), "\n")
 	progHeight -= lipgloss.Height(belowOut)
 
-	fe.renderProgress(out, r, false, progHeight, progPrefix)
-	fmt.Fprintln(out)
+	if fe.renderProgress(out, r, false, progHeight, progPrefix) {
+		fmt.Fprintln(out)
+	}
 
 	fmt.Fprint(out, belowOut)
 	return nil
@@ -651,12 +660,22 @@ func (fe *frontendPretty) recalculateViewLocked() {
 
 func (fe *frontendPretty) renderedRowLines(r *renderer, row *dagui.TraceRow, prefix string) []string {
 	buf := new(strings.Builder)
-	out := NewOutput(buf, termenv.WithProfile(fe.profile))
+	var out TermOutput = NewOutput(buf, termenv.WithProfile(fe.profile))
+	if fe.shell != nil {
+		var bg termenv.Color = termenv.ANSIColor(0)
+		if !isDark {
+			bg = termenv.ANSI256Color(255)
+		}
+		out = NewBackgroundWriter(out, bg)
+	}
 	fe.renderRow(out, r, row, prefix)
+	if buf.String() == "" {
+		return nil
+	}
 	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 }
 
-func (fe *frontendPretty) renderProgress(out *termenv.Output, r *renderer, full bool, height int, prefix string) {
+func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, full bool, height int, prefix string) (rendered bool) {
 	if fe.rowsView == nil {
 		return
 	}
@@ -665,14 +684,20 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, r *renderer, full 
 
 	if full {
 		for _, row := range rows.Order {
-			fe.renderRow(out, r, row, "")
+			if fe.renderRow(out, r, row, "") {
+				rendered = true
+			}
 		}
 		return
 	}
 
 	lines := fe.renderLines(r, height, prefix)
+	if len(lines) > 0 {
+		rendered = true
+	}
 
 	fmt.Fprint(out, strings.Join(lines, "\n"))
+	return
 }
 
 func (fe *frontendPretty) renderLines(r *renderer, height int, prefix string) []string {
@@ -920,16 +945,12 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		out := NewOutput(buf, termenv.WithProfile(fe.profile))
 		r := newRenderer(fe.db, 100, fe.FrontendOpts)
 		for _, row := range fe.rows.Order {
-			if row.IsRunningOrChildRunning || row.Depth > 0 {
+			if (row.IsRunningOrChildRunning || row.Depth > 0 || !fe.sawEOF[row.Span.ID]) && !fe.flushed[row.Parent.ID] {
 				continue
 			}
-			if _, ok := fe.sawEOF[row.Span.ID]; !ok {
-				// wait for EOF to be seen before rendering
-				continue
-			}
-			if _, ok := fe.flushed[row.Span.ID]; !ok {
+			if !fe.flushed[row.Span.ID] {
 				fe.renderRow(out, r, row, "")
-				fe.flushed[row.Span.ID] = struct{}{}
+				fe.flushed[row.Span.ID] = true
 			}
 		}
 		if buf.Len() > 0 {
@@ -1150,7 +1171,17 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 }
 
 func (fe *frontendPretty) updatePrompt() {
-	fe.editline.Prompt = fe.prompt(fe.viewOut, fe.promptFg)
+	var out TermOutput = fe.viewOut
+	if fe.editlineFocused {
+		var bgColor termenv.Color
+		if isDark {
+			bgColor = termenv.ANSIColor(0)
+		} else {
+			bgColor = termenv.ANSI256Color(255)
+		}
+		out = NewBackgroundWriter(out, bgColor)
+	}
+	fe.editline.Prompt = fe.prompt(out, fe.promptFg)
 	fe.editline.Reset()
 }
 
@@ -1261,13 +1292,15 @@ func (fe *frontendPretty) renderLocked() {
 	fe.Render(fe.viewOut)
 }
 
-func (fe *frontendPretty) renderRow(out *termenv.Output, r *renderer, row *dagui.TraceRow, prefix string) {
+func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) bool {
+	if fe.flushed[row.Span.ID] && fe.editlineFocused {
+		return false
+	}
 	if fe.shell != nil && row.Depth == 0 {
-		if _, ok := fe.flushed[row.Span.ID]; ok {
-			return
-		}
-		if row.Previous != nil {
-			fmt.Fprintln(out, prefix)
+		// navigating history and there's a previous row
+		if (!fe.editlineFocused && row.Previous != nil) ||
+			(row.Previous != nil && !fe.flushed[row.Previous.Span.ID]) {
+			fmt.Fprintln(out, out.String(prefix))
 		}
 		fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
@@ -1278,14 +1311,15 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, r *renderer, row *dagui
 			fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix)
 		}
 		fe.renderStepError(out, r, row.Span, 0, prefix)
-		return
+		return true
 	}
 	if row.Previous != nil &&
 		row.Previous.Depth >= row.Depth &&
 		!row.Chained &&
 		(row.Previous.Depth > row.Depth || row.Span.Call() != nil ||
 			(row.Previous.Span.Call() != nil && row.Span.Call() == nil) ||
-			row.Previous.Span.Message != "") {
+			row.Previous.Span.Message != "") &&
+		(!fe.editlineFocused || (row.Previous != nil && !fe.flushed[row.Previous.Span.ID])) {
 		fmt.Fprint(out, prefix)
 		r.indent(out, row.Depth)
 		fmt.Fprintln(out)
@@ -1309,9 +1343,10 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, r *renderer, row *dagui
 		}
 	}
 	fe.renderStepError(out, r, row.Span, row.Depth, prefix)
+	return true
 }
 
-func (fe *frontendPretty) renderStepLogs(out *termenv.Output, r *renderer, row *dagui.TraceRow, prefix string) {
+func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
 	if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
 		fe.renderLogs(out, r,
 			logs,
@@ -1322,7 +1357,7 @@ func (fe *frontendPretty) renderStepLogs(out *termenv.Output, r *renderer, row *
 	}
 }
 
-func (fe *frontendPretty) renderStepError(out *termenv.Output, r *renderer, span *dagui.Span, depth int, prefix string) {
+func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, span *dagui.Span, depth int, prefix string) {
 	for _, span := range span.Errors().Order {
 		// only print the first line
 		for _, line := range strings.Split(span.Status.Description, "\n") {
@@ -1340,7 +1375,7 @@ func (fe *frontendPretty) renderStepError(out *termenv.Output, r *renderer, span
 	}
 }
 
-func (fe *frontendPretty) renderStep(out *termenv.Output, r *renderer, span *dagui.Span, chained bool, depth int, prefix string) error {
+func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, span *dagui.Span, chained bool, depth int, prefix string) error {
 	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused
 
 	if call := span.Call(); call != nil {
@@ -1415,7 +1450,7 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, r *renderer, span *dag
 	return nil
 }
 
-func (fe *frontendPretty) renderLogs(out *termenv.Output, r *renderer, logs *Vterm, depth int, height int, prefix string) {
+func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, logs *Vterm, depth int, height int, prefix string) {
 	pipe := out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack)
 	if depth == -1 {
 		// clear prefix when zoomed
@@ -1532,4 +1567,33 @@ func (ts *wrapCommand) Run() error {
 		err = err2
 	}
 	return err
+}
+
+// TermOutput is an interface that captures the methods we need from termenv.Output
+type TermOutput interface {
+	io.Writer
+	String(...string) termenv.Style
+}
+
+// BackgroundWriter wraps a termenv.Output to maintain background color
+type BackgroundWriter struct {
+	TermOutput
+	bgColor termenv.Color
+	lineEnd string
+}
+
+func NewBackgroundWriter(out TermOutput, bgColor termenv.Color) *BackgroundWriter {
+	return &BackgroundWriter{
+		TermOutput: out,
+		bgColor:    bgColor,
+		lineEnd:    termenv.CSI + bgColor.Sequence(true) + "m" + termenv.CSI + termenv.EraseLineRightSeq + "\n",
+	}
+}
+
+func (bg *BackgroundWriter) String(s ...string) termenv.Style {
+	return bg.TermOutput.String(s...).Background(bg.bgColor)
+}
+
+func (bg *BackgroundWriter) Write(p []byte) (n int, err error) {
+	return bg.TermOutput.Write(bytes.ReplaceAll(p, []byte("\n"), []byte(bg.lineEnd)))
 }

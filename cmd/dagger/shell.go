@@ -394,16 +394,16 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 	return nil
 }
 
-func (h *shellCallHandler) Prompt(out *termenv.Output, fg termenv.Color) string {
+func (h *shellCallHandler) Prompt(out idtui.TermOutput, fg termenv.Color) string {
 	sb := new(strings.Builder)
 
 	if def, _ := h.GetModuleDef(nil); def != nil {
 		sb.WriteString(out.String(def.ModRef).Bold().Foreground(termenv.ANSICyan).String())
-		sb.WriteString(" ")
+		sb.WriteString(out.String(" ").String())
 	}
 
 	sb.WriteString(out.String(shellPrompt).Bold().Foreground(fg).String())
-	sb.WriteString(" ")
+	sb.WriteString(out.String(" ").String())
 
 	return sb.String()
 }

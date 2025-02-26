@@ -4,8 +4,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/knz/bubbline/computil"
-	"github.com/knz/bubbline/editline"
+	"github.com/vito/bubbline/computil"
+	"github.com/vito/bubbline/editline"
 	"mvdan.cc/sh/v3/syntax"
 )
 

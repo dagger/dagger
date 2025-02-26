@@ -8,10 +8,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
-	"github.com/knz/bubbline/editline"
 	"github.com/muesli/termenv"
+	"github.com/vito/bubbline/editline"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -91,7 +90,7 @@ type Frontend interface {
 		ctx context.Context,
 		fn func(ctx context.Context, input string) error,
 		autocomplete editline.AutoCompleteFn,
-		prompt func(out *termenv.Output, fg termenv.Color) string,
+		prompt func(out TermOutput, fg termenv.Color) string,
 	)
 }
 
@@ -151,13 +150,13 @@ const (
 	moduleColor = termenv.ANSIMagenta
 )
 
-func (r *renderer) indent(out *termenv.Output, depth int) {
+func (r *renderer) indent(out TermOutput, depth int) {
 	fmt.Fprint(out, out.String(strings.Repeat(VertBar+" ", depth)).
 		Foreground(termenv.ANSIBrightBlack).
 		Faint())
 }
 
-func (r *renderer) renderIDBase(out *termenv.Output, call *callpbv1.Call) {
+func (r *renderer) renderIDBase(out TermOutput, call *callpbv1.Call) {
 	typeName := call.Type.ToAST().Name()
 	parent := out.String(typeName)
 	if call.Module != nil {
@@ -170,7 +169,7 @@ func (r *renderer) renderIDBase(out *termenv.Output, call *callpbv1.Call) {
 }
 
 func (r *renderer) renderCall(
-	out *termenv.Output,
+	out TermOutput,
 	span *dagui.Span,
 	call *callpbv1.Call,
 	prefix string,
@@ -200,13 +199,13 @@ func (r *renderer) renderCall(
 		if !chained {
 			r.renderIDBase(out, r.db.MustCall(call.ReceiverDigest))
 		}
-		fmt.Fprint(out, ".")
+		fmt.Fprint(out, out.String("."))
 	}
 
 	fmt.Fprint(out, out.String(call.Field).Bold())
 
 	if len(call.Args) > 0 {
-		fmt.Fprint(out, "(")
+		fmt.Fprint(out, out.String("("))
 		var needIndent bool
 		for _, arg := range call.Args {
 			if arg.GetValue().GetCallDigest() != "" {
@@ -223,7 +222,7 @@ func (r *renderer) renderCall(
 				r.indent(out, depth)
 				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String(), arg.GetName())
 				val := arg.GetValue()
-				fmt.Fprint(out, " ")
+				fmt.Fprint(out, out.String(" "))
 				if argDig := val.GetCallDigest(); argDig != "" {
 					forceSimplify := false
 					internal := internal
@@ -251,13 +250,13 @@ func (r *renderer) renderCall(
 		} else {
 			for i, arg := range call.Args {
 				if i > 0 {
-					fmt.Fprint(out, ", ")
+					fmt.Fprint(out, out.String(", "))
 				}
-				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String()+" ", arg.GetName())
+				fmt.Fprintf(out, out.String("%s: ").Foreground(kwColor).String(), arg.GetName())
 				r.renderLiteral(out, arg.GetValue())
 			}
 		}
-		fmt.Fprint(out, ")")
+		fmt.Fprint(out, out.String(")"))
 	}
 
 	if call.Type != nil {
@@ -279,7 +278,7 @@ func (r *renderer) renderCall(
 }
 
 func (r *renderer) renderSpan(
-	out *termenv.Output,
+	out TermOutput,
 	span *dagui.Span,
 	name string,
 	prefix string,
@@ -289,27 +288,24 @@ func (r *renderer) renderSpan(
 	fmt.Fprint(out, prefix)
 	r.indent(out, depth)
 
-	style := lipgloss.NewStyle()
-	if span != nil {
-		r.renderStatus(out, span, focused)
-		if len(span.Links) > 0 {
-			style = style.Italic(true)
-		}
-	}
-	fmt.Fprint(out, style.Render(name))
+	r.renderStatus(out, span, focused)
 
-	if span != nil {
-		// TODO: when a span has child spans that have progress, do 2-d progress
-		// fe.renderVertexTasks(out, span, depth)
-		r.renderDuration(out, span)
-		r.renderMetrics(out, span)
-		r.renderCached(out, span)
+	label := out.String(name)
+	if len(span.Links) > 0 {
+		label = label.Italic()
 	}
+	fmt.Fprint(out, label)
+
+	// TODO: when a span has child spans that have progress, do 2-d progress
+	// fe.renderVertexTasks(out, span, depth)
+	r.renderDuration(out, span)
+	r.renderMetrics(out, span)
+	r.renderCached(out, span)
 
 	return nil
 }
 
-func (r *renderer) renderLiteral(out *termenv.Output, lit *callpbv1.Literal) {
+func (r *renderer) renderLiteral(out TermOutput, lit *callpbv1.Literal) {
 	switch val := lit.GetValue().(type) {
 	case *callpbv1.Literal_Bool:
 		fmt.Fprint(out, out.String(fmt.Sprintf("%v", val.Bool)).Foreground(termenv.ANSIRed))
@@ -326,28 +322,28 @@ func (r *renderer) renderLiteral(out *termenv.Output, lit *callpbv1.Literal) {
 	case *callpbv1.Literal_Null:
 		fmt.Fprint(out, out.String("null").Foreground(termenv.ANSIBrightBlack))
 	case *callpbv1.Literal_List:
-		fmt.Fprint(out, "[")
+		fmt.Fprint(out, out.String("["))
 		for i, item := range val.List.GetValues() {
 			if i > 0 {
-				fmt.Fprint(out, ", ")
+				fmt.Fprint(out, out.String(", "))
 			}
 			r.renderLiteral(out, item)
 		}
-		fmt.Fprint(out, "]")
+		fmt.Fprint(out, out.String("]"))
 	case *callpbv1.Literal_Object:
-		fmt.Fprint(out, "{")
+		fmt.Fprint(out, out.String("{"))
 		for i, item := range val.Object.GetValues() {
 			if i > 0 {
-				fmt.Fprint(out, ", ")
+				fmt.Fprint(out, out.String(", "))
 			}
-			fmt.Fprintf(out, "%s: ", item.GetName())
+			fmt.Fprintf(out, out.String("%s: ").String(), item.GetName())
 			r.renderLiteral(out, item.GetValue())
 		}
-		fmt.Fprint(out, "}")
+		fmt.Fprint(out, out.String("}"))
 	}
 }
 
-func (r *renderer) renderStatus(out *termenv.Output, span *dagui.Span, focused bool) {
+func (r *renderer) renderStatus(out TermOutput, span *dagui.Span, focused bool) {
 	var symbol string
 	var color termenv.Color
 	switch {
@@ -377,15 +373,16 @@ func (r *renderer) renderStatus(out *termenv.Output, span *dagui.Span, focused b
 	}
 	symbol = style.String()
 
-	fmt.Fprintf(out, "%s ", symbol)
+	fmt.Fprint(out, symbol)
+	fmt.Fprint(out, out.String(" "))
 
 	if r.Debug {
-		fmt.Fprintf(out, "%s ", out.String(span.ID.String()).Foreground(termenv.ANSIBrightBlack))
+		fmt.Fprintf(out, out.String("%s ").Foreground(termenv.ANSIBrightBlack).String(), span.ID)
 	}
 }
 
-func (r *renderer) renderDuration(out *termenv.Output, span *dagui.Span) {
-	fmt.Fprint(out, " ")
+func (r *renderer) renderDuration(out TermOutput, span *dagui.Span) {
+	fmt.Fprint(out, out.String(" "))
 	duration := out.String(dagui.FormatDuration(span.Activity.Duration(r.now)))
 	if span.IsRunningOrEffectsRunning() {
 		duration = duration.Foreground(termenv.ANSIYellow)
@@ -395,14 +392,14 @@ func (r *renderer) renderDuration(out *termenv.Output, span *dagui.Span) {
 	fmt.Fprint(out, duration)
 }
 
-func (r *renderer) renderCached(out *termenv.Output, span *dagui.Span) {
+func (r *renderer) renderCached(out TermOutput, span *dagui.Span) {
 	if !span.IsRunningOrEffectsRunning() && span.IsCached() {
-		fmt.Fprintf(out, " %s", out.String("CACHED").
-			Foreground(termenv.ANSIBlue))
+		fmt.Fprint(out, out.String(" "))
+		fmt.Fprint(out, out.String("CACHED").Foreground(termenv.ANSIBlue))
 	}
 }
 
-func (r renderer) renderMetrics(out *termenv.Output, span *dagui.Span) {
+func (r renderer) renderMetrics(out TermOutput, span *dagui.Span) {
 	if r.Verbosity < dagui.ShowMetricsVerbosity {
 		return
 	}
@@ -434,7 +431,7 @@ func (r renderer) renderMetrics(out *termenv.Output, span *dagui.Span) {
 }
 
 func (r renderer) renderMetric(
-	out *termenv.Output,
+	out TermOutput,
 	metricsByName map[string][]metricdata.DataPoint[int64],
 	metricName string, label string,
 	formatValue func(int64) string,
@@ -449,7 +446,7 @@ func (r renderer) renderMetric(
 }
 
 func (r renderer) renderMetricIfNonzero(
-	out *termenv.Output,
+	out TermOutput,
 	metricsByName map[string][]metricdata.DataPoint[int64],
 	metricName string, label string,
 	formatValue func(int64) string,
@@ -464,7 +461,7 @@ func (r renderer) renderMetricIfNonzero(
 }
 
 func (r renderer) renderNetworkMetric(
-	out *termenv.Output,
+	out TermOutput,
 	metricsByName map[string][]metricdata.DataPoint[int64],
 	bytesMetric, droppedMetric, packetsMetric, label string,
 ) {
@@ -475,7 +472,7 @@ func (r renderer) renderNetworkMetric(
 }
 
 func renderPacketLoss(
-	out *termenv.Output,
+	out TermOutput,
 	metricsByName map[string][]metricdata.DataPoint[int64],
 	droppedMetric, packetsMetric string,
 ) {
