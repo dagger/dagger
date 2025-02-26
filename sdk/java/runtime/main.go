@@ -14,10 +14,10 @@ import (
 )
 
 const (
-	MavenImage  = "maven:3.9.9-eclipse-temurin-23-alpine"
-	MavenDigest = "sha256:0e5e89100c3c1a0841ff67e0c1632b9b983e94ee5a9b1f758125d9e43c66856f"
-	JavaImage   = "eclipse-temurin:23-jre-alpine-3.21"
-	JavaDigest  = "sha256:88593498863c64b43be16e8357a3c70ea475fc20a93bf1e07f4609213a357c87"
+	MavenImage  = "maven:3.9.9-eclipse-temurin-21-alpine"
+	MavenDigest = "sha256:4cbb8bf76c46b97e028998f2486ed014759a8e932480431039bdb93dffe6813e"
+	JavaImage   = "eclipse-temurin:21-jre-alpine-3.21"
+	JavaDigest  = "sha256:4e9ab608d97796571b1d5bbcd1c9f430a89a5f03fe5aa6c093888ceb6756c502"
 
 	ModSourceDirPath = "/src"
 	ModDirPath       = "/opt/module"
