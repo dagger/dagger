@@ -1307,8 +1307,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 		!row.Chained &&
 		(row.Previous.Depth > row.Depth || row.Span.Call() != nil ||
 			(row.Previous.Span.Call() != nil && row.Span.Call() == nil) ||
-			row.Previous.Span.Message != "") &&
-		(!fe.editlineFocused || (row.Previous != nil && !fe.flushed[row.Previous.Span.ID])) {
+			row.Previous.Span.Message != "") {
 		fmt.Fprint(out, prefix)
 		r.indent(out, row.Depth)
 		fmt.Fprintln(out)
