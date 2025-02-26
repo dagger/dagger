@@ -121,6 +121,23 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
+  @doc "Generates a client for the module."
+  @spec generate_client(t(), String.t(), String.t(), [{:local_sdk, boolean() | nil}]) ::
+          Dagger.Directory.t()
+  def generate_client(%__MODULE__{} = module_source, generator, output_dir, optional_args \\ []) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("generateClient")
+      |> QB.put_arg("generator", generator)
+      |> QB.put_arg("outputDir", output_dir)
+      |> QB.maybe_put_arg("localSdk", optional_args[:local_sdk])
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
   @doc "The generated files and directories made on top of the module source's context directory."
   @spec generated_context_directory(t()) :: Dagger.Directory.t()
   def generated_context_directory(%__MODULE__{} = module_source) do

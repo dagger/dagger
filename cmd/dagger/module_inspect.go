@@ -129,21 +129,13 @@ func initializeClientGeneratorModule(
 		return nil, false, ErrConfigNotFound
 	}
 
-	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())
-
-	err = modSrc.AsModule().Serve(serveCtx)
-	telemetry.End(serveSpan, func() error { return err })
-	if err != nil {
-		return nil, true, fmt.Errorf("failed to serve module: %w", err)
-	}
-
 	dependencies, err := modSrc.Dependencies(ctx)
 	if err != nil {
 		return nil, true, fmt.Errorf("failed to get module dependencies: %w", err)
 	}
 
 	return &clientGeneratorModuleDef{
-		mod:          modSrc.AsModule(),
+		Source:       modSrc,
 		Dependencies: dependencies,
 	}, true, nil
 }
@@ -169,7 +161,7 @@ type moduleDef struct {
 }
 
 type clientGeneratorModuleDef struct {
-	mod *dagger.Module
+	Source *dagger.ModuleSource
 
 	Dependencies []dagger.ModuleSource
 }

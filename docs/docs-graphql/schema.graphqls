@@ -2176,18 +2176,6 @@ type Module {
   """Enumerations served by this module."""
   enums: [TypeDef!]!
 
-  """Generates a client for the module."""
-  generateClient(
-    """The generator to use"""
-    generator: String!
-
-    """Use local SDK dependency"""
-    localSdk: Boolean
-
-    """The output directory for the generated client."""
-    outputDir: String!
-  ): Directory!
-
   """
   The generated files and directories made on top of the module source's context directory.
   """
@@ -2300,6 +2288,18 @@ type ModuleSource {
 
   """The engine version of the module."""
   engineVersion: String!
+
+  """Generates a client for the module."""
+  generateClient(
+    """The generator to use"""
+    generator: String!
+
+    """Use local SDK dependency"""
+    localSdk: Boolean
+
+    """The output directory for the generated client."""
+    outputDir: String!
+  ): Directory!
 
   """
   The generated files and directories made on top of the module source's context directory.

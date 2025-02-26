@@ -174,8 +174,8 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 		},
 	}
 
-	packageName := path.Base(g.Config.OutputDir)
-	if packageName == "." {
+	packageName := "dagger"
+	if g.Config.OutputDir == "." {
 		packageName = "main"
 	}
 

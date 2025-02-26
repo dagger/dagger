@@ -75,7 +75,7 @@ func (c *clientAddHandler) Run(ctx context.Context) (rerr error) {
 		return fmt.Errorf("failed to initialize client generator module: %w", err)
 	}
 
-	_, err = mod.mod.GenerateClient(generator, c.outputPath, dagger.ModuleGenerateClientOpts{
+	_, err = mod.Source.GenerateClient(generator, c.outputPath, dagger.ModuleSourceGenerateClientOpts{
 		LocalSDK: localSDK,
 	}).Export(ctx, ".")
 	if err != nil {

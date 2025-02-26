@@ -72,12 +72,6 @@ func (s *moduleSchema) Install() {
 		dagql.NodeFunc("generatedContextDirectory", s.moduleGeneratedContextDirectory).
 			Doc(`The generated files and directories made on top of the module source's context directory.`),
 
-		dagql.Func("generateClient", s.moduleGenerateClient).
-			Doc(`Generates a client for the module.`).
-			ArgDoc("generator", `The generator to use`).
-			ArgDoc("outputDir", `The output directory for the generated client.`).
-			ArgDoc("localSdk", `Use local SDK dependency`),
-
 		dagql.Func("withDescription", s.moduleWithDescription).
 			Doc(`Retrieves the module with the given description`).
 			ArgDoc("description", `The description to set`),
@@ -656,60 +650,6 @@ func (s *moduleSchema) currentModuleWorkdirFile(
 		},
 	)
 	return inst, err
-}
-func (s *moduleSchema) moduleGenerateClient(
-	ctx context.Context,
-	mod *core.Module,
-	args struct {
-		Generator dagql.String
-		OutputDir dagql.String
-		LocalSdk  dagql.Optional[dagql.Boolean]
-	},
-) (*core.Directory, error) {
-	generator, err := newSDKLoader(s.dag).sdkForModule(
-		ctx,
-		mod.Query,
-		&core.SDKConfig{
-			Source: args.Generator.String(),
-		},
-		mod.Source.Self,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load generator module %s: %w", args.Generator, err)
-	}
-
-	requiredClientGenerationFiles, err := generator.RequiredClientGenerationFiles(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get required client generation files: %w", err)
-	}
-
-	// Add extra files required to correctly generate the client
-	var source dagql.Instance[*core.ModuleSource]
-	err = s.dag.Select(ctx, mod.Source, &source, dagql.Selector{
-		Field: "withIncludes",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "patterns",
-				Value: dagql.ArrayInput[dagql.String](requiredClientGenerationFiles),
-			},
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to add module source required files: %w", err)
-	}
-
-	generatedClientDir, err := generator.GenerateClient(
-		ctx,
-		source,
-		mod.Deps.Append(mod),
-		args.OutputDir.String(),
-		args.LocalSdk.GetOr(false).Bool(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate clients: %w", err)
-	}
-
-	return generatedClientDir.Self, nil
 }
 
 func (s *moduleSchema) loadSourceMap(ctx context.Context, sourceMap dagql.Optional[core.SourceMapID]) (*core.SourceMap, error) {
