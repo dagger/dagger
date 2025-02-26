@@ -70,7 +70,7 @@ import (
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	daggercache "github.com/dagger/dagger/engine/cache"
+	daggercache "github.com/dagger/dagger/engine/cache/cachemanager"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
