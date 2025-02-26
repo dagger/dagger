@@ -400,7 +400,9 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 }
 
 func (fe *frontendPretty) flush() {
-	go fe.program.Send(flushMsg{})
+	if fe.program != nil {
+		go fe.program.Send(flushMsg{})
+	}
 }
 
 func (fe *frontendPretty) SpanExporter() sdktrace.SpanExporter {
