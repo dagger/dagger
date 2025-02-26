@@ -46,6 +46,24 @@ func CachePerClientObject[A any](
 	return &cacheCfg, nil
 }
 
+func CachePerSession[P Typed, A any](
+	ctx context.Context,
+	_ Instance[P],
+	_ A,
+	cacheCfg CacheConfig,
+) (*CacheConfig, error) {
+	clientMD, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	if clientMD.SessionID == "" {
+		return nil, fmt.Errorf("session ID not found in context")
+	}
+
+	cacheCfg.Digest = HashFrom(cacheCfg.Digest.String(), clientMD.SessionID)
+	return &cacheCfg, nil
+}
+
 // CachePerCall results in the API always running when called, but the returned result from that call is cached.
 // For instance, the API may return a snapshot of some live mutating state; in that case the first call to get the snapshot
 // should always run but if the returned object is passed around it should continue to be that snapshot rather than the API
