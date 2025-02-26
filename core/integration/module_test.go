@@ -5418,14 +5418,6 @@ func daggerClientAddAt(generator string, outputDirPath string) dagger.WithContai
 	return daggerExec("client", "add", "--generator="+generator, "--local-sdk", outputDirPath)
 }
 
-func daggerNonNestedClientAdd(generator string) dagger.WithContainerFunc {
-	return daggerNonNestedExec("client", "add", "--generator="+generator, "--local-sdk")
-}
-
-func daggerNonNestedClientAddAt(generator string, outputDirPath string) dagger.WithContainerFunc {
-	return daggerNonNestedExec("client", "add", "--generator="+generator, "--local-sdk", outputDirPath)
-}
-
 func daggerQuery(query string, args ...any) dagger.WithContainerFunc {
 	return daggerQueryAt("", query, args...)
 }
