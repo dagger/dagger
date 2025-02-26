@@ -2017,18 +2017,6 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	}
 	srcInstContentHashed := src.WithMetadata(digest.Digest(src.Self.Digest), true)
 
-	// If no SDK is set, then we don't need to get the module runtime nor codegen
-	if src.Self.SDK == nil {
-		mod.InstanceID = dagql.CurrentID(ctx)
-
-		inst, err = dagql.NewInstanceForCurrentID(ctx, s.dag, srcInstContentHashed, mod)
-		if err != nil {
-			return inst, fmt.Errorf("failed to create instance for module: %w", err)
-		}
-
-		return inst, nil
-	}
-
 	// get the runtime container, which is what is exec'd when calling functions in the module
 	mod.Runtime, err = src.Self.SDKImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)
 	if err != nil {
