@@ -713,8 +713,8 @@ github.com/vito/bubbline v0.0.0-20250226023736-e1b950822f33 h1:KZKg/goBaW/2NYDnk
 github.com/vito/bubbline v0.0.0-20250226023736-e1b950822f33/go.mod h1:vaI9wTWR1F4UV95RDO+lZYCsfU0lFrLGcdO8YFNjBQg=
 github.com/vito/go-sse v1.1.2 h1:FLQ1J0tMGN7pKa3KOyZCHojYDR0Z/L/y+3ejUO3P+tM=
 github.com/vito/go-sse v1.1.2/go.mod h1:2wkcaQ+jtlZ94Uve8gYZjFpL68luAjssTINA2hpgcZs=
-github.com/vito/midterm v0.2.1 h1:PY6cQaI/frJeb66mhY3jfH+9bkHCduX2qNIJneaHvdE=
-github.com/vito/midterm v0.2.1/go.mod h1:WkbqZBIhH4jfxXkE2bjhosM1BdF/dCp7sR4x9wQB6fA=
+github.com/vito/midterm v0.2.2 h1:Uo+nk1n/GYbh29Ha0y+NdIfMuzcUyTvRreurs4YQLYM=
+github.com/vito/midterm v0.2.2/go.mod h1:WkbqZBIhH4jfxXkE2bjhosM1BdF/dCp7sR4x9wQB6fA=
 github.com/wk8/go-ordered-map/v2 v2.1.8 h1:5h/BUHu93oj4gIdvHHHGsScSTMijfx5PeYkE/fJgbpc=
 github.com/wk8/go-ordered-map/v2 v2.1.8/go.mod h1:5nJHM5DyteebpVlHnWMV0rPz6Zp7+xBAnxjb1X5vnTw=
 github.com/xanzy/ssh-agent v0.3.3 h1:+/15pJfg/RsTxqYcX6fHqOXZwwMP+2VyYWJeWM2qQFM=

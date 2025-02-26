@@ -336,7 +336,7 @@ var scrubs = []scrubber{
 	},
 	// Trailing whitespace
 	{
-		regexp.MustCompile(`\s*` + regexp.QuoteMeta(midterm.Reset.Render(nil, nil))),
+		regexp.MustCompile(`\s*` + regexp.QuoteMeta(midterm.Reset.Render())),
 		"	        \x1b[0m", // from logs (which ignore NO_COLOR for the reset - bug)
 		"",
 	},
