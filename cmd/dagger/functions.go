@@ -598,7 +598,7 @@ func handleObjectLeaf(ctx context.Context, q *querybuilder.Selection, typeDef *m
 
 	// TODO: Replace with interface when possible.
 	if hasSync {
-		return q.Select("sync"), nil
+		return q.SelectWithAlias("id", "sync"), nil
 	}
 
 	return q.Select("id"), nil

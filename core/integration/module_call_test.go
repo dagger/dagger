@@ -17,7 +17,6 @@ import (
 	"github.com/dagger/testctx"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
 
 	"dagger.io/dagger"
 )
@@ -1787,27 +1786,19 @@ type Foo struct {
 	t.Run("main object", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerCall()).Stdout(ctx)
 		require.NoError(t, err)
-		// Deploy function should not be included
-		require.JSONEq(t, fmt.Sprintf(`{"_type": "Test", "baseImage": "%s"}`, alpineImage), out)
+		require.Regexp(t, `Test@xxh3:[a-f0-9]{16}`, out)
 	})
 
 	t.Run("no scalars", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerCall("foo")).Stdout(ctx)
 		require.NoError(t, err)
-		// At minimum should print the type of the object
-		require.JSONEq(t, `{"_type": "TestFoo"}`, out)
+		require.Regexp(t, `TestFoo@xxh3:[a-f0-9]{16}`, out)
 	})
 
 	t.Run("list of objects", func(ctx context.Context, t *testctx.T) {
-		expected := []string{"foo.txt", "bar.txt"}
 		out, err := modGen.With(daggerCall("files")).Stdout(ctx)
 		require.NoError(t, err)
-		actual := gjson.Get(out, "@this").Array()
-		require.Len(t, actual, len(expected))
-		for i, res := range actual {
-			require.Equal(t, "File", res.Get("_type").String())
-			require.Equal(t, expected[i], res.Get("name").String())
-		}
+		require.Regexp(t, strings.Repeat(`- File@xxh3:[a-f0-9]{16}\n`, 2), out)
 	})
 }
 
