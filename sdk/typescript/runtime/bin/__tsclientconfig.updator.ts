@@ -74,7 +74,7 @@ if (!fs.existsSync(tsConfigPath)) {
     },
   }
 
-  if (localSDK) {
+  if (localSDK.value === true) {
     defaultTsConfig.compilerOptions.paths[daggerPathAlias] = [daggerPath]
     defaultTsConfig.compilerOptions.paths[daggerTelemetryPathAlias] = [
       daggerTelemetryPath,
@@ -117,7 +117,7 @@ tsconfig.compilerOptions.paths[daggerClientPathAlias] = [
   `./${path.join(libraryDir.value, "client.gen.ts")}`,
 ]
 
-if (localSDK) {
+if (localSDK.value === true) {
   tsconfig.compilerOptions.paths[daggerPathAlias] = [daggerPath]
   tsconfig.compilerOptions.paths[daggerTelemetryPathAlias] = [
     daggerTelemetryPath,
