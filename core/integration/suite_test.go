@@ -11,15 +11,12 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
@@ -48,47 +45,21 @@ func Middleware() []testctx.Middleware[*testing.T] {
 		testctx.WithParallel(),
 		oteltest.WithTracing(
 			oteltest.TraceConfig[*testing.T]{
-				StartOptions: spanOpts[*testing.T],
+				StartOptions: testutil.SpanOpts[*testing.T],
 			},
 		),
 		oteltest.WithLogging[*testing.T](),
 	}
 }
 
-func isPrewarm() bool {
-	_, ok := os.LookupEnv("TESTCTX_PREWARM")
-	return ok
-}
-
 func BenchMiddleware() []testctx.Middleware[*testing.B] {
 	return []testctx.Middleware[*testing.B]{
 		oteltest.WithTracing(
 			oteltest.TraceConfig[*testing.B]{
-				StartOptions: spanOpts[*testing.B],
+				StartOptions: testutil.SpanOpts[*testing.B],
 			},
 		),
 		oteltest.WithLogging[*testing.B](),
-	}
-}
-
-const testctxTypeAttr = "dagger.io/testctx.type"
-const testctxNameAttr = "dagger.io/testctx.name"
-const testctxPrewarmAttr = "dagger.io/testctx.prewarm"
-
-func spanOpts[T testctx.Runner[T]](w *testctx.W[T]) []trace.SpanStartOption {
-	var t T
-	attrs := []attribute.KeyValue{
-		attribute.String(testctxNameAttr, w.Name()),
-		attribute.String(testctxTypeAttr, fmt.Sprintf("%T", t)),
-	}
-	if strings.Count(w.Name(), "/") == 0 {
-		attrs = append(attrs, attribute.Bool("dagger.io/ui.reveal", true)) // TODO use telemetry const
-	}
-	if isPrewarm() {
-		attrs = append(attrs, attribute.Bool(testctxPrewarmAttr, true))
-	}
-	return []trace.SpanStartOption{
-		trace.WithAttributes(attrs...),
 	}
 }
 
