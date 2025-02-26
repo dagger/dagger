@@ -35,6 +35,7 @@ func (s *gitSchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFunc("git", s.git).
 			View(AllVersion).
+			Impure("HACK").
 			Doc(`Queries a Git repository.`).
 			ArgDoc("url",
 				`URL of the git repository.`,

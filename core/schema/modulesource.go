@@ -161,7 +161,8 @@ type moduleSourceArgs struct {
 
 func (s *moduleSourceSchema) moduleSourceCacheKey(ctx context.Context, query dagql.Instance[*core.Query], args moduleSourceArgs, origDgst digest.Digest) (digest.Digest, error) {
 	if fastModuleSourceKindCheck(args.RefString, args.RefPin) == core.ModuleSourceKindGit {
-		return origDgst, nil
+		// HACK:
+		// return origDgst, nil
 	}
 
 	return core.CachePerClient(ctx, query, args, origDgst)
