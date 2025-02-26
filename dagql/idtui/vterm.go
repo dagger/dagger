@@ -209,7 +209,7 @@ func (term *Vterm) redraw() {
 		st.Document.BackgroundColor = &bg
 		renderer, _ := glamour.NewTermRenderer(
 			glamour.WithWordWrap(term.Width-lipgloss.Width(term.Prefix)),
-			glamour.WithStyles(style),
+			glamour.WithStyles(st),
 		)
 
 		rendered, err := renderer.Render(term.markdownBuf.String())
