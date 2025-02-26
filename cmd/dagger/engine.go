@@ -111,12 +111,12 @@ func withEngine(
 						return fmt.Errorf("failed to serve dependency %w", err)
 					}
 				}
-			}
 
-			if mod.Source.SDK() != nil {
-				err := mod.Source.AsModule().Serve(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to serve module source: %w", err)
+				if mod.Source.SDK() != nil {
+					err := mod.Source.AsModule().Serve(ctx)
+					if err != nil {
+						return fmt.Errorf("failed to serve module source: %w", err)
+					}
 				}
 			}
 		}
