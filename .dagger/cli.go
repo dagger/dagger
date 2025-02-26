@@ -145,6 +145,7 @@ func (cli *CLI) Publish(
 		With(optEnvVariable("ARTEFACTS_FQDN", artefactsFQDN)).
 		WithEnvVariable("ENGINE_VERSION", cli.Dagger.Version).
 		WithEnvVariable("ENGINE_TAG", cli.Dagger.Tag).
+		WithEnvVariable("GORELEASER_CURRENT_TAG", tag).
 		WithEntrypoint([]string{"/sbin/tini", "--", "/entrypoint.sh"}).
 		WithExec(args, dagger.ContainerWithExecOpts{
 			UseEntrypoint: true,
