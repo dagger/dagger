@@ -34,6 +34,14 @@ import (
 
 var isDark = termenv.HasDarkBackground()
 
+var highlightBg termenv.Color = termenv.ANSI256Color(255)
+
+func init() {
+	if isDark {
+		highlightBg = termenv.ANSIColor(0)
+	}
+}
+
 var historyFile = filepath.Join(xdg.DataHome, "dagger", "histfile")
 
 type frontendPretty struct {
@@ -110,7 +118,7 @@ func NewWithDB(db *dagui.DB) *frontendPretty {
 	view := new(strings.Builder)
 	return &frontendPretty{
 		db:        db,
-		logs:      newPrettyLogs(),
+		logs:      newPrettyLogs(profile),
 		autoFocus: true,
 
 		// set empty initial row state to avoid nil checks
@@ -338,7 +346,7 @@ func (fe *frontendPretty) renderErrorLogs(out TermOutput, r *renderer) bool {
 		if logs != nil && logs.UsedHeight() > 0 {
 			fmt.Fprintln(out)
 			fe.renderStep(out, r, tree.Span, tree.Chained, 0, "")
-			fe.renderLogs(out, r, logs, -1, logs.UsedHeight(), "")
+			fe.renderLogs(out, r, logs, -1, logs.UsedHeight(), "", false)
 			fe.renderStepError(out, r, tree.Span, 0, "")
 		}
 		return dagui.WalkContinue
@@ -604,7 +612,7 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 
 	if logs := fe.logs.Logs[fe.ZoomedSpan]; logs != nil && logs.UsedHeight() > 0 {
 		fmt.Fprintln(below)
-		fe.renderLogs(countOut, r, logs, -1, fe.window.Height/3, progPrefix)
+		fe.renderLogs(countOut, r, logs, -1, fe.window.Height/3, progPrefix, false)
 	}
 
 	belowOut := strings.TrimRight(below.String(), "\n")
@@ -663,7 +671,7 @@ func (fe *frontendPretty) renderedRowLines(r *renderer, row *dagui.TraceRow, pre
 	if fe.shell != nil {
 		out = focusedBg(out)
 	}
-	fe.renderRow(out, r, row, prefix)
+	fe.renderRow(out, r, row, prefix, true)
 	if buf.String() == "" {
 		return nil
 	}
@@ -679,7 +687,7 @@ func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, full bool,
 
 	if full {
 		for _, row := range rows.Order {
-			if fe.renderRow(out, r, row, "") {
+			if fe.renderRow(out, r, row, "", true) {
 				rendered = true
 			}
 		}
@@ -944,7 +952,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				continue
 			}
 			if !fe.flushed[row.Span.ID] {
-				fe.renderRow(out, r, row, "")
+				fe.renderRow(out, r, row, "", false)
 				fe.flushed[row.Span.ID] = true
 			}
 		}
@@ -1281,7 +1289,7 @@ func (fe *frontendPretty) renderLocked() {
 	fe.Render(fe.viewOut)
 }
 
-func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) bool {
+func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, highlight bool) bool {
 	if fe.flushed[row.Span.ID] && fe.editlineFocused {
 		return false
 	}
@@ -1297,7 +1305,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 			if fe.Verbosity < dagui.ExpandCompletedVerbosity {
 				logDepth = -1
 			}
-			fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix)
+			fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix, highlight)
 		}
 		fe.renderStepError(out, r, row.Span, 0, prefix)
 		return true
@@ -1329,24 +1337,25 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 		}
 		fmt.Fprint(out, icon)
 		fmt.Fprint(out, out.String(" "))
-		fe.renderStepLogs(out, r, row, prefix)
+		fe.renderStepLogs(out, r, row, prefix, highlight)
 	} else {
 		fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
 		if row.IsRunningOrChildRunning || row.Span.IsFailedOrCausedFailure() || fe.Verbosity >= dagui.ExpandCompletedVerbosity {
-			fe.renderStepLogs(out, r, row, prefix)
+			fe.renderStepLogs(out, r, row, prefix, highlight)
 		}
 	}
 	fe.renderStepError(out, r, row.Span, row.Depth, prefix)
 	return true
 }
 
-func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
+func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, highlight bool) {
 	if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
 		fe.renderLogs(out, r,
 			logs,
 			row.Depth,
 			fe.window.Height/3,
 			prefix,
+			highlight,
 		)
 	}
 }
@@ -1444,7 +1453,7 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, span *dagui.Sp
 	return nil
 }
 
-func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, logs *Vterm, depth int, height int, prefix string) {
+func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, logs *Vterm, depth int, height int, prefix string, highlight bool) {
 	pipe := out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack)
 	if depth == -1 {
 		// clear prefix when zoomed
@@ -1458,6 +1467,11 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, logs *Vterm, d
 		fmt.Fprint(indentOut, out.String(" "))
 		logs.SetPrefix(buf.String())
 	}
+	if highlight {
+		logs.SetBackground(highlightBg)
+	} else {
+		logs.SetBackground(nil)
+	}
 	if height <= 0 {
 		logs.SetHeight(logs.UsedHeight())
 	} else {
@@ -1469,12 +1483,14 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, logs *Vterm, d
 type prettyLogs struct {
 	Logs     map[dagui.SpanID]*Vterm
 	LogWidth int
+	Profile  termenv.Profile
 }
 
-func newPrettyLogs() *prettyLogs {
+func newPrettyLogs(profile termenv.Profile) *prettyLogs {
 	return &prettyLogs{
 		Logs:     make(map[dagui.SpanID]*Vterm),
 		LogWidth: -1,
+		Profile:  profile,
 	}
 }
 
@@ -1504,7 +1520,7 @@ func (l *prettyLogs) spanLogs(id trace.SpanID) *Vterm {
 	spanID := dagui.SpanID{SpanID: id}
 	term, found := l.Logs[spanID]
 	if !found {
-		term = NewVterm()
+		term = NewVterm(l.Profile)
 		if l.LogWidth > -1 {
 			term.SetWidth(l.LogWidth)
 		}
@@ -1594,8 +1610,5 @@ func (bg *BackgroundWriter) Write(p []byte) (n int, err error) {
 }
 
 func focusedBg(out TermOutput) TermOutput {
-	if isDark {
-		return NewBackgroundOutput(out, termenv.ANSIColor(0))
-	}
-	return NewBackgroundOutput(out, termenv.ANSIColor(255))
+	return NewBackgroundOutput(out, highlightBg)
 }
