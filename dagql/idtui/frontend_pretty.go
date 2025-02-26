@@ -400,7 +400,9 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 }
 
 func (fe *frontendPretty) flush() {
-	go fe.program.Send(flushMsg{})
+	if fe.program != nil {
+		go fe.program.Send(flushMsg{})
+	}
 }
 
 func (fe *frontendPretty) SpanExporter() sdktrace.SpanExporter {
@@ -948,7 +950,16 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		out := NewOutput(buf, termenv.WithProfile(fe.profile))
 		r := newRenderer(fe.db, 100, fe.FrontendOpts)
 		for _, row := range fe.rows.Order {
-			if (row.IsRunningOrChildRunning || row.Depth > 0 || !fe.sawEOF[row.Span.ID]) && !fe.flushed[row.Parent.ID] {
+			var shouldFlush bool
+			if row.Depth == 0 && !row.IsRunningOrChildRunning && fe.sawEOF[row.Span.ID] {
+				// we're a top-level completed span and we've seen EOF, so flush
+				shouldFlush = true
+			}
+			if row.Parent != nil && fe.flushed[row.Parent.ID] {
+				// our parent flushed, so we should too
+				shouldFlush = true
+			}
+			if !shouldFlush {
 				continue
 			}
 			if !fe.flushed[row.Span.ID] {

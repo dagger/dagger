@@ -44,8 +44,12 @@ func TestMain(m *testing.M) {
 func Middleware() []testctx.Middleware[*testing.T] {
 	return []testctx.Middleware[*testing.T]{
 		testctx.WithParallel(),
+		oteltest.WithTracing[*testing.T](
+			oteltest.TraceConfig[*testing.T]{
+				StartOptions: testutil.SpanOpts[*testing.T],
+			},
+		),
 		oteltest.WithLogging[*testing.T](),
-		oteltest.WithTracing[*testing.T](),
 	}
 }
 
