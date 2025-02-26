@@ -1055,6 +1055,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				if fe.shellInterrupt != nil {
 					fe.shellInterrupt(errors.New("interrupted"))
 				}
+				fe.editline.Reset()
 				return fe, nil
 			case "esc":
 				fe.editlineFocused = false
