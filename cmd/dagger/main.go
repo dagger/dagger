@@ -376,7 +376,9 @@ func main() {
 		var exit ExitError
 		if errors.As(err, &exit) {
 			os.Exit(exit.Code)
-		} else if errors.Is(err, context.Canceled) {
+		} else if errors.Is(err, idtui.ShellExited) {
+			os.Exit(0)
+		} else if errors.Is(err, context.Canceled) || errors.Is(err, idtui.Interrupted) {
 			os.Exit(2)
 		} else {
 			fmt.Fprintln(os.Stderr, rootCmd.ErrPrefix(), err)

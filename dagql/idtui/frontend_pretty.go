@@ -44,6 +44,9 @@ func init() {
 
 var historyFile = filepath.Join(xdg.DataHome, "dagger", "histfile")
 
+var ShellExited = errors.New("shell exited")
+var Interrupted = errors.New("interrupted")
+
 type frontendPretty struct {
 	dagui.FrontendOpts
 
@@ -312,7 +315,9 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Conte
 	// if the ctx was canceled, we don't need to return whatever random garbage
 	// error string we got back; just return the ctx err.
 	if fe.runCtx.Err() != nil {
-		return fe.runCtx.Err()
+		// return the cause, since it can hint the CLI to e.g. exit 0 if the
+		// user is just pressing Ctrl+D in the shell
+		return context.Cause(fe.runCtx)
 	}
 
 	// return the run err result
@@ -1049,7 +1054,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			switch msg.String() {
 			case "ctrl+d":
 				if fe.editline.Value() == "" {
-					return fe.quit()
+					return fe.quit(ShellExited)
 				}
 			case "ctrl+c":
 				if fe.shellInterrupt != nil {
@@ -1081,7 +1086,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		fe.pressedKeyAt = time.Now()
 		switch msg.String() {
 		case "q", "ctrl+c":
-			return fe.quit()
+			return fe.quit(Interrupted)
 		case "ctrl+\\": // SIGQUIT
 			fe.program.ReleaseTerminal()
 			sigquit()
@@ -1194,7 +1199,7 @@ func (fe *frontendPretty) updatePrompt() {
 	fe.editline.Reset()
 }
 
-func (fe *frontendPretty) quit() (*frontendPretty, tea.Cmd) {
+func (fe *frontendPretty) quit(interruptErr error) (*frontendPretty, tea.Cmd) {
 	if fe.CustomExit != nil {
 		fe.CustomExit()
 		return fe, nil
@@ -1214,7 +1219,7 @@ func (fe *frontendPretty) quit() (*frontendPretty, tea.Cmd) {
 		slog.Warn("canceling... (press again to exit immediately)")
 	}
 	fe.interrupted = true
-	fe.interrupt(errors.New("interrupted"))
+	fe.interrupt(interruptErr)
 	return fe, nil // tea.Quit is deferred until we receive doneMsg
 }
 
