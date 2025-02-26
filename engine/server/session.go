@@ -47,6 +47,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/cache/cachemanager"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
@@ -89,7 +90,7 @@ type daggerSession struct {
 	containers   map[bkgw.Container]struct{}
 	containersMu sync.Mutex
 
-	dagqlCache dagql.Cache
+	dagqlCache *cache.CacheWithResults[digest.Digest, dagql.Typed]
 
 	interactive        bool
 	interactiveCommand []string
@@ -252,7 +253,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.authProvider = auth.NewRegistryAuthProvider()
 	sess.refs = map[buildkit.Reference]struct{}{}
 	sess.containers = map[bkgw.Container]struct{}{}
-	sess.dagqlCache = dagql.NewCache()
+	sess.dagqlCache = cache.NewCacheWithResults(srv.baseDagqlCache)
 	sess.telemetryPubSub = srv.telemetryPubSub
 	sess.interactive = clientMetadata.Interactive
 	sess.interactiveCommand = clientMetadata.InteractiveCommand
@@ -403,6 +404,15 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	sess.closeShutdownOnce.Do(func() {
 		close(sess.shutdownCh)
 	})
+
+	// TODO: should this be in defer? very painful to end up in a situation where it doesn't run
+	// TODO: should this be in defer? very painful to end up in a situation where it doesn't run
+	// TODO: should this be in defer? very painful to end up in a situation where it doesn't run
+	if sess.dagqlCache != nil {
+		releaseCount := sess.dagqlCache.ReleaseAll()
+		slog.Debug("released dagql cache entries", "count", releaseCount)
+	}
+
 	return errs
 }
 
@@ -581,8 +591,7 @@ func (srv *Server) initializeDaggerClient(
 	// setup the graphql server + module/function state for the client
 	client.dagqlRoot = core.NewRoot(srv)
 
-	dag := dagql.NewServer(client.dagqlRoot)
-	dag.Cache = client.daggerSession.dagqlCache
+	dag := dagql.NewServer(client.dagqlRoot, client.daggerSession.dagqlCache)
 	dag.Around(core.AroundFunc)
 	coreMod := &schema.CoreMod{Dag: dag}
 	if err := coreMod.Install(ctx, dag); err != nil {
@@ -726,6 +735,24 @@ func (srv *Server) clientFromIDs(sessID, clientID string) (*daggerClient, bool) 
 	}
 
 	return client, true
+}
+
+// TODO: doc if stays, safe because client IDs are random, never repeat across sessions
+func (srv *Server) clientFromAnySession(clientID string) (*daggerClient, bool) {
+	srv.daggerSessionsMu.RLock()
+	defer srv.daggerSessionsMu.RUnlock()
+	// TODO: is this locking too long? or who cares?
+	for _, sess := range srv.daggerSessions {
+		sess.clientMu.RLock()
+		client, ok := sess.clients[clientID]
+		if ok {
+			sess.clientMu.RUnlock()
+			return client, true
+		}
+		sess.clientMu.RUnlock()
+	}
+
+	return nil, false
 }
 
 // initialize session+client if needed, return:
