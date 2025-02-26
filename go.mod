@@ -95,7 +95,7 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.22
 	github.com/vito/bubbline v0.0.0-20250226023736-e1b950822f33
 	github.com/vito/go-sse v1.1.2
-	github.com/vito/midterm v0.2.1-0.20250226054212-2183cda0d97d
+	github.com/vito/midterm v0.2.1
 	github.com/zeebo/xxh3 v1.0.2
 	go.etcd.io/bbolt v1.4.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.57.0
