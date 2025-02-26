@@ -37,26 +37,23 @@ func (s *moduleSchema) Install() {
 			ArgDoc("line", "The line number within the filename.").
 			ArgDoc("column", "The column number within the line."),
 
-		dagql.FuncWithCacheKey("currentModule", s.currentModule, core.CachePerClient).
+		dagql.FuncWithCacheKey("currentModule", s.currentModule, dagql.CachePerClient).
 			Doc(`The module currently being served in the session, if any.`),
 
-		dagql.Func("currentTypeDefs", s.currentTypeDefs).
-			// Impure for now, could use a finer grain cache key if we had the ability to mix
-			// a digest of the dagql server schema into the cache key.
-			Impure("Can change when modules are loaded into the schema.").
+		dagql.FuncWithCacheKey("currentTypeDefs", s.currentTypeDefs, dagql.CachePerCall).
 			Doc(`The TypeDef representations of the objects currently being served in the session.`),
 
-		dagql.FuncWithCacheKey("currentFunctionCall", s.currentFunctionCall, core.CachePerClient).
+		dagql.FuncWithCacheKey("currentFunctionCall", s.currentFunctionCall, dagql.CachePerClient).
 			Doc(`The FunctionCall context that the SDK caller is currently executing in.`,
 				`If the caller is not currently executing in a function, this will
 				return an error.`),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.FunctionCall]{
-		dagql.FuncWithCacheKey("returnValue", s.functionCallReturnValue, core.CachePerClient).
+		dagql.FuncWithCacheKey("returnValue", s.functionCallReturnValue, dagql.CachePerClient).
 			Doc(`Set the return value of the function call to the provided value.`).
 			ArgDoc("value", `JSON serialization of the return value.`),
-		dagql.FuncWithCacheKey("returnError", s.functionCallReturnError, core.CachePerClient).
+		dagql.FuncWithCacheKey("returnError", s.functionCallReturnError, dagql.CachePerClient).
 			Doc(`Return an error from the function.`).
 			ArgDoc("error", `The error to return.`),
 	}.Install(s.dag)
@@ -86,7 +83,7 @@ func (s *moduleSchema) Install() {
 			Doc(`This module plus the given Enum type and associated values`),
 
 		dagql.NodeFunc("serve", s.moduleServe).
-			Impure(`Mutates the calling session's global schema.`).
+			DoNotCache(`Mutates the calling session's global schema.`).
 			Doc(`Serve a module's API in the current session.`,
 				`Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.`),
 	}.Install(s.dag)
@@ -98,13 +95,13 @@ func (s *moduleSchema) Install() {
 		dagql.Func("source", s.currentModuleSource).
 			Doc(`The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).`),
 
-		dagql.FuncWithCacheKey("workdir", s.currentModuleWorkdir, core.CachePerClient).
+		dagql.FuncWithCacheKey("workdir", s.currentModuleWorkdir, dagql.CachePerClient).
 			Doc(`Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.`).
 			ArgDoc("path", `Location of the directory to access (e.g., ".").`).
 			ArgDoc("exclude", `Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`).
 			ArgDoc("include", `Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 
-		dagql.FuncWithCacheKey("workdirFile", s.currentModuleWorkdirFile, core.CachePerClient).
+		dagql.FuncWithCacheKey("workdirFile", s.currentModuleWorkdirFile, dagql.CachePerClient).
 			Doc(`Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.`).
 			ArgDoc("path", `Location of the file to retrieve (e.g., "README.md").`),
 	}.Install(s.dag)

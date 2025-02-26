@@ -40,8 +40,7 @@ func (s *querySchema) Install() {
 		// JSON and written to a core.File. This is currently used internally for calling
 		// module SDKs and is thus hidden the same way the rest of introspection is hidden
 		// (via the magic __ prefix).
-		dagql.NodeFunc("__schemaJSONFile", s.schemaJSONFile).
-			Impure("Return value depends on what the caller has installed in the server.").
+		dagql.NodeFuncWithCacheKey("__schemaJSONFile", s.schemaJSONFile, dagql.CachePerCall).
 			Doc("Get the current schema as a JSON file."),
 	}.Install(s.srv)
 
@@ -145,5 +144,5 @@ func (s *querySchema) schemaJSONFile(ctx context.Context, parent dagql.Instance[
 		return inst, err
 	}
 
-	return fileInst.WithMetadata(dgst, true), nil
+	return fileInst.WithMetadata(dgst), nil
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/moby/buildkit/client/llb"
 )
 
@@ -19,7 +20,7 @@ func DagOpWrapper[T dagql.Typed, A any, R dagql.Typed](srv *dagql.Server, fn dag
 		if err != nil {
 			return inst, err
 		}
-		return core.NewRawDagOp[R](ctx, srv, dagql.CurrentID(ctx).WithTaint(), deps)
+		return core.NewRawDagOp[R](ctx, srv, currentIDForDagOp(ctx), deps)
 	}
 }
 
@@ -51,7 +52,7 @@ func DagOpFileWrapper[T dagql.Typed, A any](srv *dagql.Server, fn dagql.NodeFunc
 					},
 					{
 						Name:  "source",
-						Value: dagql.NewID[*core.File](dagql.CurrentID(ctx).WithTaint()),
+						Value: dagql.NewID[*core.File](currentIDForDagOp(ctx)),
 					},
 				},
 			},
@@ -98,7 +99,7 @@ func DagOpDirectoryWrapper[T dagql.Typed, A any](srv *dagql.Server, fn dagql.Nod
 					},
 					{
 						Name:  "source",
-						Value: dagql.NewID[*core.Directory](dagql.CurrentID(ctx).WithTaint()),
+						Value: dagql.NewID[*core.Directory](currentIDForDagOp(ctx)),
 					},
 				},
 			},
@@ -113,6 +114,18 @@ func DagOpDirectoryWrapper[T dagql.Typed, A any](srv *dagql.Server, fn dagql.Nod
 		}
 		return dagql.NewInstanceForCurrentID(ctx, srv, self, dir)
 	}
+}
+
+const runDagOpDigestMixin = "runDagOpDigestMixin"
+
+// Return an ID that can be used to force execution of the current ID as a DagOp.
+// It works by mixing in a constant value into the current ID's digest.
+func currentIDForDagOp(ctx context.Context) *call.ID {
+	currentID := dagql.CurrentID(ctx)
+	return currentID.WithMetadata(dagql.HashFrom(
+		currentID.Digest().String(),
+		runDagOpDigestMixin,
+	))
 }
 
 func extractLLBDependencies(ctx context.Context, val any) ([]llb.State, error) {

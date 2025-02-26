@@ -143,17 +143,17 @@ func (s *hostSchema) Install() {
 	dagql.Fields[*core.Host]{
 		// NOTE: (for near future) we can support force reloading by adding a new arg to this function and providing
 		// a custom cache key function that uses a random value when that arg is true.
-		dagql.NodeFuncWithCacheKey("directory", s.directory, core.CachePerClient).
+		dagql.NodeFuncWithCacheKey("directory", s.directory, dagql.CachePerClient).
 			Doc(`Accesses a directory on the host.`).
 			ArgDoc("path", `Location of the directory to access (e.g., ".").`).
 			ArgDoc("exclude", `Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`).
 			ArgDoc("include", `Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 
-		dagql.FuncWithCacheKey("file", s.file, core.CachePerClient).
+		dagql.FuncWithCacheKey("file", s.file, dagql.CachePerClient).
 			Doc(`Accesses a file on the host.`).
 			ArgDoc("path", `Location of the file to retrieve (e.g., "README.md").`),
 
-		dagql.FuncWithCacheKey("unixSocket", s.socket, core.CachePerClient).
+		dagql.FuncWithCacheKey("unixSocket", s.socket, dagql.CachePerClient).
 			Doc(`Accesses a Unix socket on the host.`).
 			ArgDoc("path", `Location of the Unix socket (e.g., "/var/run/docker.sock").`),
 
@@ -177,7 +177,7 @@ func (s *hostSchema) Install() {
 				is false, each port maps to a random port chosen by the host.`,
 				`If ports are given and native is true, the ports are additive.`),
 
-		dagql.FuncWithCacheKey("service", s.service, core.CachePerClient).
+		dagql.FuncWithCacheKey("service", s.service, dagql.CachePerClient).
 			Doc(`Creates a service that forwards traffic to a specified address via the host.`).
 			ArgDoc("ports",
 				`Ports to expose via the service, forwarding through the host network.`,
@@ -190,7 +190,7 @@ func (s *hostSchema) Install() {
 		dagql.Func("__internalService", s.internalService).
 			Doc(`(Internal-only) "service" but scoped to the exact right buildkit session ID.`),
 
-		dagql.FuncWithCacheKey("setSecretFile", s.setSecretFile, core.CachePerClient).
+		dagql.FuncWithCacheKey("setSecretFile", s.setSecretFile, dagql.CachePerClient).
 			Doc(
 				`Sets a secret given a user-defined name and the file path on the host,
 				and returns the secret.`,

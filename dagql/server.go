@@ -247,10 +247,9 @@ func (s *Server) installObject(class ObjectType) {
 		s.scalars[idType.TypeName()] = idType
 		s.Root().ObjectType().Extend(
 			FieldSpec{
-				Name:           fmt.Sprintf("load%sFromID", class.TypeName()),
-				Description:    fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
-				Type:           class.Typed(),
-				ImpurityReason: "The given ID ultimately determines the purity of its result.",
+				Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
+				Description: fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
+				Type:        class.Typed(),
 				Args: []InputSpec{
 					{
 						Name: "id",
@@ -273,7 +272,9 @@ func (s *Server) installObject(class ObjectType) {
 				}
 				return res, nil
 			},
-			nil,
+			CacheSpec{
+				DoNotCache: "The given ID ultimately determines the purity of its result.",
+			},
 		)
 	}
 }
