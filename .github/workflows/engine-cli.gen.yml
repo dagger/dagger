@@ -204,6 +204,7 @@ jobs:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 COMMAND: dagger call -q cli test-publish
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_CLOUD_URL: https://api-ch-replica-api.preview.dagger.cloud
               shell: bash
         timeout-minutes: 20
     engine-lint:
@@ -393,6 +394,7 @@ jobs:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 COMMAND: dagger call -q engine lint
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_CLOUD_URL: https://api-ch-replica-api.preview.dagger.cloud
               shell: bash
         timeout-minutes: 20
     engine-test-publish:
@@ -582,6 +584,7 @@ jobs:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 COMMAND: dagger call -q engine publish --image=dagger-engine.dev --tag=main --dry-run
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_CLOUD_URL: https://api-ch-replica-api.preview.dagger.cloud
               shell: bash
         timeout-minutes: 20
     scan-engine:
@@ -771,6 +774,7 @@ jobs:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 COMMAND: dagger call -q engine scan
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_CLOUD_URL: https://api-ch-replica-api.preview.dagger.cloud
               shell: bash
         timeout-minutes: 20
     scripts-lint:
@@ -960,6 +964,7 @@ jobs:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 COMMAND: dagger call -q scripts lint
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_CLOUD_URL: https://api-ch-replica-api.preview.dagger.cloud
               shell: bash
         timeout-minutes: 20
     test-cgroupsv-2:
@@ -1152,6 +1157,7 @@ jobs:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 COMMAND: dagger call -q test specific --race=true --parallel=16 --run='TestProvision|TestTelemetry'
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_CLOUD_URL: https://api-ch-replica-api.preview.dagger.cloud
                 NO_OUTPUT: "true"
               shell: bash
             - name: Upload call logs
@@ -1349,6 +1355,7 @@ jobs:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 COMMAND: dagger call -q test specific --race=true --parallel=16 --run='TestCLI|TestEngine'
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_CLOUD_URL: https://api-ch-replica-api.preview.dagger.cloud
                 NO_OUTPUT: "true"
               shell: bash
             - name: Upload call logs
@@ -1546,6 +1553,7 @@ jobs:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 COMMAND: dagger call -q test specific --race=true --parallel=16 --skip='TestModule|TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestJava|TestCLI|TestEngine|TestProvision|TestTelemetry'
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_CLOUD_URL: https://api-ch-replica-api.preview.dagger.cloud
                 NO_OUTPUT: "true"
               shell: bash
             - name: Upload call logs
@@ -1743,6 +1751,7 @@ jobs:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 COMMAND: dagger call -q test specific --race=true --parallel=16 --run='TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestJava'
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_CLOUD_URL: https://api-ch-replica-api.preview.dagger.cloud
                 NO_OUTPUT: "true"
               shell: bash
             - name: Upload call logs
@@ -1940,6 +1949,7 @@ jobs:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 COMMAND: dagger call -q test specific --race=true --parallel=16 --run='TestModule'
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_CLOUD_URL: https://api-ch-replica-api.preview.dagger.cloud
                 NO_OUTPUT: "true"
               shell: bash
             - name: Upload call logs
@@ -2174,6 +2184,7 @@ jobs:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 COMMAND: dagger call -q test specific --race=true --parallel=16 --run='TestContainer'
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_CLOUD_URL: https://api-ch-replica-api.preview.dagger.cloud
                 NO_OUTPUT: "true"
               shell: bash
             - name: Upload call logs
@@ -2419,6 +2430,7 @@ jobs:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 COMMAND: dagger call -q test specific --race=true --parallel=16 --run='TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestJava'
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_CLOUD_URL: https://api-ch-replica-api.preview.dagger.cloud
                 NO_OUTPUT: "true"
               shell: bash
             - name: Upload call logs
@@ -2664,6 +2676,7 @@ jobs:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 COMMAND: dagger call -q test specific --race=true --parallel=16 --run='TestModule'
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_CLOUD_URL: https://api-ch-replica-api.preview.dagger.cloud
                 NO_OUTPUT: "true"
               shell: bash
             - name: Upload call logs

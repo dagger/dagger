@@ -108,6 +108,19 @@ func (j *Job) callDaggerStep() api.JobStep {
 		env["_EXPERIMENTAL_DAGGER_CLOUD_TOKEN"] = j.PublicToken
 	}
 
+	// DNM
+	// DNM
+	// DNM
+	// DNM
+	// DNM
+	// DNM
+	// DNM
+	// DNM
+	// DNM
+	// DNM
+	// DNM
+	env["DAGGER_CLOUD_URL"] = "https://api-ch-replica-api.preview.dagger.cloud"
+
 	if j.UploadLogs {
 		env["NO_OUTPUT"] = "true"
 	}

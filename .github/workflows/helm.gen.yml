@@ -204,5 +204,6 @@ jobs:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 COMMAND: dagger call -q --docker-cfg=file:$HOME/.docker/config.json check --targets=helm
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_CLOUD_URL: https://api-ch-replica-api.preview.dagger.cloud
               shell: bash
         timeout-minutes: 20

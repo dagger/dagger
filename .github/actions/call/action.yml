@@ -125,6 +125,7 @@ runs:
           redirect_logs dagger -m "${{ inputs.module }}" call ${{ inputs.function }}
         fi
       env:
+        DAGGER_CLOUD_URL: https://api-ch-replica-api.preview.dagger.cloud
         DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
     - name: Archive call logs
