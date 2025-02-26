@@ -393,7 +393,7 @@ func (h *shellCallHandler) getModuleConfig(ctx context.Context, ref string) (rcf
 	}, nil
 }
 
-func (h *shellCallHandler) newWorkdir(ctx context.Context, def *moduleDef, subpath string) (*shellWorkdir, error) {
+func (h *shellCallHandler) newWorkdir(ctx context.Context, def *moduleDef, subpath string) (rwd *shellWorkdir, rerr error) {
 	var context moduleContext
 	var digest string
 	var err error
@@ -413,22 +413,42 @@ func (h *shellCallHandler) newWorkdir(ctx context.Context, def *moduleDef, subpa
 
 	// initial context, without a loaded module (core API only)
 	if context == nil {
-		apath, err := pathutil.Abs(subpath)
+		// a few quick checks first
+		root, err := pathutil.Abs(subpath)
 		if err != nil {
 			return nil, err
 		}
-		info, err := os.Stat(apath)
+		info, err := os.Stat(root)
 		if err != nil {
 			return nil, err
 		}
 		if !info.IsDir() {
-			return nil, fmt.Errorf("%q is not a directory", apath)
+			return nil, fmt.Errorf("%q is not a directory", root)
+		}
+
+		if !shellNoLoadModule {
+			// ask API where the context dir is (.git)
+			ctx, span := Tracer().Start(ctx, "looking for context directory", telemetry.Internal())
+			defer telemetry.End(span, func() error { return rerr })
+
+			src := h.dag.ModuleSource(root, dagger.ModuleSourceOpts{
+				DisableFindUp:  true,
+				AllowNotExists: true,
+			})
+			root, err = src.LocalContextDirectoryPath(ctx)
+			if err != nil {
+				return nil, err
+			}
+			subpath, err = src.SourceRootSubpath(ctx)
+			if err != nil {
+				return nil, err
+			}
 		}
 		return &shellWorkdir{
 			Context: localSourceContext{
-				Root: apath,
+				Root: root,
 			},
-			Path: "/",
+			Path: filepath.Join("/", subpath),
 		}, nil
 	}
 
