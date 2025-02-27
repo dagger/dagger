@@ -205,8 +205,19 @@ func (term *Vterm) redraw() {
 		// HACK: we want "0" or "255", but termenv.Color doesn't have a
 		// String() method, only Sequence(bool) which prints the ANSI
 		// formatting sequence.
-		bg := fmt.Sprint(term.Background)
-		st.Document.BackgroundColor = &bg
+		if term.Background != nil {
+			switch x := term.Background.(type) {
+			case termenv.ANSIColor, termenv.ANSI256Color:
+				// annoyingly, there's no clean conversion from termenv.Color
+				// back to the value that lipgloss wants, because ANSI 0
+				// translates to "#000000" and we want "0"
+				bg := fmt.Sprintf("%d", x)
+				st.Document.BackgroundColor = &bg
+			default:
+				bg := fmt.Sprint(term.Background)
+				st.Document.BackgroundColor = &bg
+			}
+		}
 		renderer, _ := glamour.NewTermRenderer(
 			glamour.WithWordWrap(term.Width-lipgloss.Width(term.Prefix)),
 			glamour.WithStyles(st),
