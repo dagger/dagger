@@ -110,6 +110,7 @@ type gitArgs struct {
 	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
 }
 
+//nolint:gocyclo
 func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query], args gitArgs) (inst dagql.Instance[*core.GitRepository], err error) {
 	// 1. Setup experimental service host
 	var svcs core.ServiceBindings
