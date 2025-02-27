@@ -18,3 +18,4 @@ func (m *MyModule) GithubApi(
 		WithExec([]string{"sh", "-c", `curl "https://api.github.com/repos/dagger/dagger/issues" --header "Accept: application/vnd.github+json" --header "Authorization: Bearer $GITHUB_API_TOKEN"`}).
 		Stdout(ctx)
 }
+
