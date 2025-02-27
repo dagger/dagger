@@ -39,6 +39,7 @@ __all__ = [
     "initialize",
     "otel_configured",
     "otel_enabled",
+    "shutdown",
 ]
 
 SERVICE_NAME: Final = "dagger-python-sdk"
@@ -59,6 +60,17 @@ def get_tracer() -> trace.Tracer:
         "dagger.io/sdk.python",
         schema_url=SpanAttributes.SCHEMA_URL,
     )
+
+
+def shutdown():
+    """Process all spans that have not yet been processed."""
+    provider = get_tracer_provider()
+
+    if isinstance(provider, sdktrace.TracerProvider):
+        provider.force_flush()
+        # shutdown is called automatically on exit, we just need the forced
+        # flush, but might as well shutdown now too
+        provider.shutdown()
 
 
 def otel_configured() -> bool:
