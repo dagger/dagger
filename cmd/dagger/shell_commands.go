@@ -436,15 +436,15 @@ Without arguments, the current working directory is replaced by the initial cont
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, st *ShellState) error {
 				// Get current module definition
-				def := h.modDef(st)
+				def := h.GetDef(st)
 
 				// Re-initialize the module to get fresh schema
 				var newDef *moduleDef
 				var err error
-				if def.ModRef == "" {
+				if def.Source == nil {
 					newDef, err = initializeCore(ctx, h.dag)
 				} else {
-					newDef, err = initializeModule(ctx, h.dag, def.ModRef)
+					newDef, err = initializeModule(ctx, h.dag, def.Source)
 				}
 				if err != nil {
 					return fmt.Errorf("failed to reinitialize module: %w", err)
@@ -452,7 +452,7 @@ Without arguments, the current working directory is replaced by the initial cont
 
 				// Update handler state with new definition
 				h.mu.Lock()
-				h.modDefs.Store(def.ModRef, newDef)
+				h.modDefs.Store(def.SourceDigest, newDef)
 				h.mu.Unlock()
 
 				// Reload type definitions
