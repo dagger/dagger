@@ -305,7 +305,7 @@
         <javapoet.version>0.6.0</javapoet.version>
         <javaparser.version>3.26.3</javaparser.version>
         <json-path.version>2.9.0</json-path.version>
-        <junit.version>5.11.4</junit.version>
+        <junit.version>5.12.0</junit.version>
         <maven-assembly-plugin.version>3.7.1</maven-assembly-plugin.version>
         <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
         <maven-failsafe-plugin.version>3.5.2</maven-failsafe-plugin.version>
