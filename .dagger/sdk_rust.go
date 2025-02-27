@@ -11,7 +11,6 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/dagger/dagger/.dagger/internal/dagger"
-	"github.com/dagger/dagger/.dagger/util"
 )
 
 const (
@@ -230,12 +229,14 @@ func (r RustSDK) rustBase(image string) *dagger.Container {
 		WithEnvVariable("CARGO_HOME", "/root/.cargo").
 		WithMountedCache("/root/.cargo", dag.CacheVolume("rust-cargo-"+image)).
 		// combine into one layer so there's no assumptions on state of cache volume across steps
-		With(util.ShellCmds(
-			"rustup component add rustfmt",
-			"cargo install --locked cargo-chef@"+cargoChefVersion,
-			"cargo chef prepare --recipe-path /tmp/recipe.json",
-			"cargo chef cook --release --workspace --recipe-path /tmp/recipe.json",
-		)).
+		WithExec([]string{"sh", "-c",
+			strings.Join([]string{
+				"rustup component add rustfmt",
+				"cargo install --locked cargo-chef@" + cargoChefVersion,
+				"cargo chef prepare --recipe-path /tmp/recipe.json",
+				"cargo chef cook --release --workspace --recipe-path /tmp/recipe.json",
+			}, "&& "),
+		}).
 		WithMountedDirectory(mountPath, src)
 
 	return base

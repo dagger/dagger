@@ -16,7 +16,6 @@ import (
 
 	"github.com/dagger/dagger/.dagger/consts"
 	"github.com/dagger/dagger/.dagger/internal/dagger"
-	"github.com/dagger/dagger/.dagger/util"
 )
 
 var dag = dagger.Connect()
@@ -206,9 +205,9 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 			WithoutEnvVariable("DAGGER_APT_CACHE_BUSTER")
 		if build.gpuSupport {
 			base = base.
-				With(util.ShellCmd(`curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg`)).
-				With(util.ShellCmd(`curl -s -L https://nvidia.github.io/libnvidia-container/experimental/"$(. /etc/os-release;echo $ID$VERSION_ID)"/libnvidia-container.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list`)).
-				With(util.ShellCmd(`apt-get update && apt-get install -y nvidia-container-toolkit`))
+				WithExec([]string{"sh", "-c", `curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg`}).
+				WithExec([]string{"sh", "-c", `curl -s -L https://nvidia.github.io/libnvidia-container/experimental/"$(. /etc/os-release;echo $ID$VERSION_ID)"/libnvidia-container.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list`}).
+				WithExec([]string{"sh", "-c", `apt-get update && apt-get install -y nvidia-container-toolkit`})
 		}
 	case "wolfi":
 		pkgs := []string{
