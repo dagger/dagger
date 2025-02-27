@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/identity"
@@ -23,7 +22,6 @@ import (
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
@@ -215,7 +213,7 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 	return callInputs, nil
 }
 
-func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t *dagql.PostCallTyped, rerr error) { //nolint: gocyclo
+func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typed, rerr error) { //nolint: gocyclo
 	mod := fn.mod
 
 	lg := bklog.G(ctx).WithField("module", mod.Name()).WithField("function", fn.metadata.Name)
@@ -398,27 +396,15 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t *dagql.Po
 
 	// Function calls are cached per-session, but every client caller needs to add
 	// secret/socket/etc. resources from the result to their store.
-	callerClientMemo := sync.Map{}
-	return &dagql.PostCallTyped{
-		Typed: returnValueTyped,
-		PostCall: func(ctx context.Context) error {
-			// only run this once per calling client, no need to re-add resources
-			clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get client metadata: %w", err)
-			}
-			if _, alreadyRan := callerClientMemo.LoadOrStore(clientMetadata.ClientID, struct{}{}); alreadyRan {
-				return nil
-			}
-
-			for _, id := range returnedIDs {
-				if err := fn.root.AddClientResourcesFromID(ctx, id, clientID, false); err != nil {
-					return fmt.Errorf("failed to add client resources from ID: %w", err)
-				}
-			}
-			return nil
-		},
-	}, nil
+	returnedIDsList := make([]*resource.ID, 0, len(returnedIDs))
+	for _, id := range returnedIDs {
+		returnedIDsList = append(returnedIDsList, id)
+	}
+	secretTransferPostCall, err := SecretTransferPostCall(ctx, fn.root, clientID, returnedIDsList...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create secret transfer post call: %w", err)
+	}
+	return dagql.NewPostCallTyped(returnValueTyped, secretTransferPostCall), nil
 }
 
 func extractError(ctx context.Context, client *buildkit.Client, baseErr error) (dagql.ID[*Error], bool, error) {

@@ -13,7 +13,6 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
-	"sync"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -35,7 +34,7 @@ type gitSchema struct {
 
 func (s *gitSchema) Install() {
 	dagql.Fields[*core.Query]{
-		dagql.NodeFuncWithCacheKeyAndPostCall[*core.Query, gitArgs, dagql.Instance[*core.GitRepository]]("git", s.git, nil).
+		dagql.NodeFuncWithCacheKey("git", s.git, nil).
 			View(AllVersion).
 			Doc(`Queries a Git repository.`).
 			ArgDoc("url",
@@ -46,7 +45,7 @@ func (s *gitSchema) Install() {
 			ArgDoc("sshKnownHosts", `Set SSH known hosts`).
 			ArgDoc("sshAuthSocket", `Set SSH auth socket`).
 			ArgDoc("experimentalServiceHost", `A service which must be started before the repo is fetched.`),
-		dagql.NodeFuncWithCacheKeyAndPostCall[*core.Query, gitArgsLegacy, dagql.Instance[*core.GitRepository]]("git", s.gitLegacy, nil).
+		dagql.NodeFuncWithCacheKey("git", s.gitLegacy, nil).
 			View(BeforeVersion("v0.13.4")).
 			Doc(`Queries a Git repository.`).
 			ArgDoc("url",
@@ -111,19 +110,17 @@ type gitArgs struct {
 	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
 }
 
-func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query], args gitArgs) (*dagql.PostCallTyped, error) {
-	var inst dagql.Instance[*core.GitRepository]
-
+func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query], args gitArgs) (inst dagql.Instance[*core.GitRepository], err error) {
 	// 1. Setup experimental service host
 	var svcs core.ServiceBindings
 	if args.ExperimentalServiceHost.Valid {
 		svc, err := args.ExperimentalServiceHost.Value.Load(ctx, s.srv)
 		if err != nil {
-			return nil, err
+			return inst, err
 		}
 		host, err := svc.Self.Hostname(ctx, svc.ID())
 		if err != nil {
-			return nil, err
+			return inst, err
 		}
 		svcs = append(svcs, core.ServiceBinding{
 			ID:       svc.ID(),
@@ -135,7 +132,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 	// 2. Get client metadata
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get client metadata from context: %w", err)
+		return inst, fmt.Errorf("failed to get client metadata from context: %w", err)
 	}
 
 	// 3. Setup authentication
@@ -148,26 +145,26 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 		remote, err = gitutil.ParseURL("https://" + args.URL)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse Git URL: %w", err)
+		return inst, fmt.Errorf("failed to parse Git URL: %w", err)
 	}
 
 	// Handle explicit SSH socket if provided
 	if args.SSHAuthSocket.Valid {
 		sock, err := args.SSHAuthSocket.Value.Load(ctx, s.srv)
 		if err != nil {
-			return nil, err
+			return inst, err
 		}
 		authSock = sock.Self
 	} else if remote.Scheme == "ssh" && clientMetadata != nil && clientMetadata.SSHAuthSocketPath != "" {
 		// For SSH refs, try to load client's SSH socket if no explicit socket was provided
 		socketStore, err := parent.Self.Sockets(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get socket store: %w", err)
+			return inst, fmt.Errorf("failed to get socket store: %w", err)
 		}
 
 		accessor, err := core.GetClientResourceAccessor(ctx, parent.Self, clientMetadata.SSHAuthSocketPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get client resource name: %w", err)
+			return inst, fmt.Errorf("failed to get client resource name: %w", err)
 		}
 
 		var sockInst dagql.Instance[*core.Socket]
@@ -185,11 +182,11 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 				},
 			},
 		); err != nil {
-			return nil, fmt.Errorf("failed to select internal socket: %w", err)
+			return inst, fmt.Errorf("failed to select internal socket: %w", err)
 		}
 
 		if err := socketStore.AddUnixSocket(sockInst.Self, clientMetadata.ClientID, clientMetadata.SSHAuthSocketPath); err != nil {
-			return nil, fmt.Errorf("failed to add unix socket to store: %w", err)
+			return inst, fmt.Errorf("failed to add unix socket to store: %w", err)
 		}
 		authSock = sockInst.Self
 	}
@@ -198,7 +195,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 	if (remote.Scheme == "https" || remote.Scheme == "http") && clientMetadata != nil {
 		mainClientCallerMetadata, err := parent.Self.NonModuleParentClientMetadata(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to retrieve mainClientCallerID: %w", err)
+			return inst, fmt.Errorf("failed to retrieve mainClientCallerID: %w", err)
 		}
 
 		if clientMetadata.ClientID == mainClientCallerMetadata.ClientID {
@@ -215,7 +212,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 
 				bk, err := parent.Self.Buildkit(authCtx)
 				if err != nil {
-					return nil, fmt.Errorf("failed to get buildkit: %w", err)
+					return inst, fmt.Errorf("failed to get buildkit: %w", err)
 				}
 
 				// Retrieve credential from host
@@ -240,7 +237,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 							},
 						},
 					); err != nil {
-						return nil, fmt.Errorf("failed to create a new secret with the git auth token: %w", err)
+						return inst, fmt.Errorf("failed to create a new secret with the git auth token: %w", err)
 					}
 					authToken = secretAuthToken
 				} else {
@@ -267,7 +264,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 		Platform:      parent.Self.Platform(),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create GitRepository instance: %w", err)
+		return inst, fmt.Errorf("failed to create GitRepository instance: %w", err)
 	}
 
 	// set the auth token by selecting withAuthToken so that it shows up in the dagql call
@@ -286,37 +283,22 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 			},
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to set auth token: %w", err)
+			return inst, fmt.Errorf("failed to set auth token: %w", err)
 		}
 		inst = instWithToken
 	}
 
-	callerClientMemo := sync.Map{} // TODO: might be nice to wrap this up since it's duped with modfunc.go now
-	return &dagql.PostCallTyped{
-		Typed: inst,
-		PostCall: func(ctx context.Context) error {
-			if authToken.Self == nil {
-				return nil
-			}
+	if authToken.Self != nil {
+		secretTransferPostCall, err := core.SecretTransferPostCall(ctx, parent.Self, clientMetadata.ClientID, &resource.ID{
+			ID: *authToken.ID(),
+		})
+		if err != nil {
+			return inst, fmt.Errorf("failed to create secret transfer post call: %w", err)
+		}
 
-			// only run this once per calling client, no need to re-add resources
-			callerClientMD, err := engine.ClientMetadataFromContext(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get client metadata: %w", err)
-			}
-			if callerClientMD.ClientID == clientMetadata.ClientID {
-				return nil
-			}
-			if _, alreadyRan := callerClientMemo.LoadOrStore(callerClientMD.ClientID, struct{}{}); alreadyRan {
-				return nil
-			}
-
-			if err := parent.Self.AddClientResourcesFromID(ctx, &resource.ID{ID: *inst.ID()}, clientMetadata.ClientID, false); err != nil {
-				return fmt.Errorf("failed to add client resources from ID: %w", err)
-			}
-			return nil
-		},
-	}, nil
+		inst = inst.WithPostCall(secretTransferPostCall)
+	}
+	return inst, nil
 }
 
 type gitArgsLegacy struct {
@@ -328,7 +310,7 @@ type gitArgsLegacy struct {
 	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
 }
 
-func (s *gitSchema) gitLegacy(ctx context.Context, parent dagql.Instance[*core.Query], args gitArgsLegacy) (*dagql.PostCallTyped, error) {
+func (s *gitSchema) gitLegacy(ctx context.Context, parent dagql.Instance[*core.Query], args gitArgsLegacy) (dagql.Instance[*core.GitRepository], error) {
 	return s.git(ctx, parent, gitArgs{
 		URL:                     args.URL,
 		KeepGitDir:              &args.KeepGitDir,

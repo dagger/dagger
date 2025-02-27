@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
@@ -37,7 +36,7 @@ var _ SchemaResolvers = &moduleSourceSchema{}
 
 func (s *moduleSourceSchema) Install() {
 	dagql.Fields[*core.Query]{
-		dagql.NodeFuncWithCacheKeyAndPostCall[*core.Query, moduleSourceArgs, dagql.Instance[*core.ModuleSource]]("moduleSource", s.moduleSource, s.moduleSourceCacheKey).
+		dagql.NodeFuncWithCacheKey("moduleSource", s.moduleSource, s.moduleSourceCacheKey).
 			ArgDoc("refString", `The string ref representation of the module source`).
 			ArgDoc("refPin", `The pinned version of the module source`).
 			ArgDoc("disableFindUp", `If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.`).
@@ -173,66 +172,36 @@ func (s *moduleSourceSchema) moduleSource(
 	ctx context.Context,
 	query dagql.Instance[*core.Query],
 	args moduleSourceArgs,
-) (_ *dagql.PostCallTyped, err error) {
+) (inst dagql.Instance[*core.ModuleSource], err error) {
 	bk, err := query.Self.Buildkit(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 	parsedRef, err := parseRefString(ctx, callerStatFS{bk}, args.RefString, args.RefPin)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 
 	if args.RequireKind.Valid && parsedRef.kind != args.RequireKind.Value {
-		return nil, fmt.Errorf("module source %q kind must be %q, got %q", args.RefString, args.RequireKind.Value.HumanString(), parsedRef.kind.HumanString())
+		return inst, fmt.Errorf("module source %q kind must be %q, got %q", args.RefString, args.RequireKind.Value.HumanString(), parsedRef.kind.HumanString())
 	}
 
-	var inst dagql.Instance[*core.ModuleSource]
 	switch parsedRef.kind {
 	case core.ModuleSourceKindLocal:
 		inst, err = s.localModuleSource(ctx, query, bk, parsedRef.local.modPath, !args.DisableFindUp, args.AllowNotExists)
 		if err != nil {
-			return nil, err
+			return inst, err
 		}
 	case core.ModuleSourceKindGit:
 		inst, err = s.gitModuleSource(ctx, query, parsedRef.git, args.RefPin, !args.DisableFindUp)
 		if err != nil {
-			return nil, err
+			return inst, err
 		}
 	default:
-		return nil, fmt.Errorf("unknown module source kind: %s", parsedRef.kind)
+		return inst, fmt.Errorf("unknown module source kind: %s", parsedRef.kind)
 	}
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get client metadata: %w", err)
-	}
-	callerClientMemo := sync.Map{} // TODO: might be nice to wrap this up since it's duped with modfunc.go now
-	return &dagql.PostCallTyped{
-		Typed: inst,
-		PostCall: func(ctx context.Context) error {
-			if parsedRef.kind != core.ModuleSourceKindGit {
-				return nil
-			}
-
-			// only run this once per calling client, no need to re-add resources
-			callerClientMD, err := engine.ClientMetadataFromContext(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get client metadata: %w", err)
-			}
-			if callerClientMD.ClientID == clientMetadata.ClientID {
-				return nil
-			}
-			if _, alreadyRan := callerClientMemo.LoadOrStore(callerClientMD.ClientID, struct{}{}); alreadyRan {
-				return nil
-			}
-
-			if err := query.Self.AddClientResourcesFromID(ctx, &resource.ID{ID: *inst.Self.ContextDirectory.ID()}, clientMetadata.ClientID, false); err != nil {
-				return fmt.Errorf("failed to add client resources from ID: %w", err)
-			}
-			return nil
-		},
-	}, nil
+	return inst, nil
 }
 
 //nolint:gocyclo
@@ -602,7 +571,23 @@ func (s *moduleSourceSchema) gitModuleSource(
 
 	gitSrc.Digest = gitSrc.CalcDigest().String()
 
-	return dagql.NewInstanceForCurrentID(ctx, s.dag, query, gitSrc)
+	inst, err = dagql.NewInstanceForCurrentID(ctx, s.dag, query, gitSrc)
+	if err != nil {
+		return inst, fmt.Errorf("failed to create instance: %w", err)
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	secretTransferPostCall, err := core.SecretTransferPostCall(ctx, query.Self, clientMetadata.ClientID, &resource.ID{
+		ID: *gitSrc.ContextDirectory.ID(),
+	})
+	if err != nil {
+		return inst, fmt.Errorf("failed to create secret transfer post call: %w", err)
+	}
+
+	return inst.WithPostCall(secretTransferPostCall), nil
 }
 
 type directoryAsModuleArgs struct {
@@ -2040,7 +2025,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		getModDefSpan.End()
 		return inst, fmt.Errorf("failed to create module definition function for module %q: %w", modName, err)
 	}
-	postCallRes, err := getModDefFn.Call(getModDefCtx, &core.CallOpts{
+	result, err := getModDefFn.Call(getModDefCtx, &core.CallOpts{
 		Cache:          true,
 		SkipSelfSchema: true,
 		Server:         s.dag,
@@ -2054,13 +2039,17 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		getModDefSpan.End()
 		return inst, fmt.Errorf("failed to call module %q to get functions: %w", modName, err)
 	}
-	result := postCallRes.Typed
-	if postCallRes.PostCall != nil {
-		if err := postCallRes.PostCall(ctx); err != nil {
-			getModDefSpan.End()
-			return inst, fmt.Errorf("failed to run post-call for module %q: %w", modName, err)
+	if postCallRes, ok := dagql.UnwrapAs[dagql.PostCallable](result); ok {
+		var postCall func(context.Context) error
+		postCall, result = postCallRes.GetPostCall()
+		if postCall != nil {
+			if err := postCall(ctx); err != nil {
+				getModDefSpan.End()
+				return inst, fmt.Errorf("failed to run post-call for module %q: %w", modName, err)
+			}
 		}
 	}
+
 	resultInst, ok := result.(dagql.Instance[*core.Module])
 	if !ok {
 		getModDefSpan.End()

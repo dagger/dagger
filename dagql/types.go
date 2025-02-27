@@ -79,6 +79,8 @@ type IDable interface {
 type Object interface {
 	Typed
 	IDable
+	PostCallable
+
 	// ObjectType returns the type of the object.
 	ObjectType() ObjectType
 
@@ -97,6 +99,14 @@ type Object interface {
 	//
 	// Any Nullable values are automatically unwrapped.
 	Select(context.Context, *Server, Selector) (Typed, *call.ID, error)
+}
+
+// A type that has a callback attached that needs to always run before returned to a caller
+// whether or not the type is being returned from cache or not
+type PostCallable interface {
+	// Return the postcall func (or nil if not set) and the Typed value in case it was wrapped
+	// with a type used for attaching the postcall func
+	GetPostCall() (func(context.Context) error, Typed)
 }
 
 // ScalarType represents a GraphQL Scalar type.
