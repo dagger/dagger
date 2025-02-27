@@ -443,12 +443,7 @@ func (h *shellCallHandler) prompt(out idtui.TermOutput, fg termenv.Color) string
 	sb := new(strings.Builder)
 
 	if def, _ := h.GetModuleDef(nil); def != nil {
-		sb.WriteString(out.String("(" + def.Name + ")").Bold().Foreground(termenv.ANSICyan).String())
-		sb.WriteString(out.String(" ").String())
-	}
-
-	if path := h.workdirPath(); path != "" {
-		sb.WriteString(out.String(path).Bold().Foreground(termenv.ANSIMagenta).String())
+		sb.WriteString(out.String(def.Name).Bold().Foreground(termenv.ANSICyan).String())
 		sb.WriteString(out.String(" ").String())
 	}
 
