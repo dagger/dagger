@@ -59,7 +59,7 @@ defmodule Dagger.Mod do
     Enum.into(input_args, %{}, fn arg ->
       {:ok, name} = Dagger.FunctionCallArgValue.name(arg)
       {:ok, value} = Dagger.FunctionCallArgValue.value(arg)
-      {String.to_existing_atom(name), value}
+      {Macro.underscore(name), value}
     end)
   end
 
@@ -68,7 +68,7 @@ defmodule Dagger.Mod do
     for {name, arg_def} <- arg_defs do
       {:ok, value} =
         input_args
-        |> Map.fetch!(name)
+        |> Map.fetch!(to_string(name))
         |> Decoder.decode(arg_def[:type], dag)
 
       value
