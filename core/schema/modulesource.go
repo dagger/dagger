@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
@@ -20,6 +21,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/opencontainers/go-digest"
 	fsutiltypes "github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
@@ -35,7 +37,7 @@ var _ SchemaResolvers = &moduleSourceSchema{}
 
 func (s *moduleSourceSchema) Install() {
 	dagql.Fields[*core.Query]{
-		dagql.NodeFuncWithCacheKey("moduleSource", s.moduleSource, s.moduleSourceCacheKey).
+		dagql.NodeFuncWithCacheKeyAndPostCall[*core.Query, moduleSourceArgs, dagql.Instance[*core.ModuleSource]]("moduleSource", s.moduleSource, s.moduleSourceCacheKey).
 			ArgDoc("refString", `The string ref representation of the module source`).
 			ArgDoc("refPin", `The pinned version of the module source`).
 			ArgDoc("disableFindUp", `If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.`).
@@ -161,8 +163,7 @@ type moduleSourceArgs struct {
 
 func (s *moduleSourceSchema) moduleSourceCacheKey(ctx context.Context, query dagql.Instance[*core.Query], args moduleSourceArgs, origDgst digest.Digest) (digest.Digest, error) {
 	if fastModuleSourceKindCheck(args.RefString, args.RefPin) == core.ModuleSourceKindGit {
-		// HACK:
-		// return origDgst, nil
+		return origDgst, nil
 	}
 
 	return core.CachePerClient(ctx, query, args, origDgst)
@@ -172,36 +173,66 @@ func (s *moduleSourceSchema) moduleSource(
 	ctx context.Context,
 	query dagql.Instance[*core.Query],
 	args moduleSourceArgs,
-) (inst dagql.Instance[*core.ModuleSource], err error) {
+) (_ *dagql.PostCallTyped, err error) {
 	bk, err := query.Self.Buildkit(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 	parsedRef, err := parseRefString(ctx, callerStatFS{bk}, args.RefString, args.RefPin)
 	if err != nil {
-		return inst, err
+		return nil, err
 	}
 
 	if args.RequireKind.Valid && parsedRef.kind != args.RequireKind.Value {
-		return inst, fmt.Errorf("module source %q kind must be %q, got %q", args.RefString, args.RequireKind.Value.HumanString(), parsedRef.kind.HumanString())
+		return nil, fmt.Errorf("module source %q kind must be %q, got %q", args.RefString, args.RequireKind.Value.HumanString(), parsedRef.kind.HumanString())
 	}
 
+	var inst dagql.Instance[*core.ModuleSource]
 	switch parsedRef.kind {
 	case core.ModuleSourceKindLocal:
 		inst, err = s.localModuleSource(ctx, query, bk, parsedRef.local.modPath, !args.DisableFindUp, args.AllowNotExists)
 		if err != nil {
-			return inst, err
+			return nil, err
 		}
 	case core.ModuleSourceKindGit:
 		inst, err = s.gitModuleSource(ctx, query, parsedRef.git, args.RefPin, !args.DisableFindUp)
 		if err != nil {
-			return inst, err
+			return nil, err
 		}
 	default:
-		return inst, fmt.Errorf("unknown module source kind: %s", parsedRef.kind)
+		return nil, fmt.Errorf("unknown module source kind: %s", parsedRef.kind)
 	}
 
-	return inst, nil
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	callerClientMemo := sync.Map{} // TODO: might be nice to wrap this up since it's duped with modfunc.go now
+	return &dagql.PostCallTyped{
+		Typed: inst,
+		PostCall: func(ctx context.Context) error {
+			if parsedRef.kind != core.ModuleSourceKindGit {
+				return nil
+			}
+
+			// only run this once per calling client, no need to re-add resources
+			callerClientMD, err := engine.ClientMetadataFromContext(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get client metadata: %w", err)
+			}
+			if callerClientMD.ClientID == clientMetadata.ClientID {
+				return nil
+			}
+			if _, alreadyRan := callerClientMemo.LoadOrStore(callerClientMD.ClientID, struct{}{}); alreadyRan {
+				return nil
+			}
+
+			if err := query.Self.AddClientResourcesFromID(ctx, &resource.ID{ID: *inst.Self.ContextDirectory.ID()}, clientMetadata.ClientID, false); err != nil {
+				return fmt.Errorf("failed to add client resources from ID: %w", err)
+			}
+			return nil
+		},
+	}, nil
 }
 
 //nolint:gocyclo

@@ -695,6 +695,68 @@ func NodeFuncWithCacheKey[T Typed, A any, R any](
 	return field
 }
 
+// TODO: cleanup
+func NodeFuncWithCacheKeyAndPostCall[T Typed, A any, R any](
+	name string,
+	fn func(ctx context.Context, self Instance[T], args A) (*PostCallTyped, error),
+	cacheKeyFn func(ctx context.Context, self Instance[T], args A, origDgst digest.Digest) (digest.Digest, error),
+) Field[T] {
+	var zeroArgs A
+	inputs, argsErr := inputSpecsForType(zeroArgs, true)
+	if argsErr != nil {
+		var zeroSelf T
+		slog.Error("failed to parse args", "type", zeroSelf.Type(), "field", name, "error", argsErr)
+	}
+
+	var zeroRet R
+	ret, err := builtinOrTyped(zeroRet)
+	if err != nil {
+		var zeroSelf T
+		slog.Error("failed to parse return type", "type", zeroSelf.Type(), "field", name, "error", err)
+	}
+
+	field := Field[T]{
+		Spec: FieldSpec{
+			Name: name,
+			Args: inputs,
+			Type: ret,
+		},
+		Func: func(ctx context.Context, self Instance[T], argVals map[string]Input) (Typed, error) {
+			if argsErr != nil {
+				// this error is deferred until runtime, since it's better (at least
+				// more testable) than panicking
+				return nil, argsErr
+			}
+			var args A
+			if err := setInputFields(inputs, argVals, &args); err != nil {
+				return nil, err
+			}
+			res, err := fn(ctx, self, args)
+			if err != nil {
+				return nil, err
+			}
+			return builtinOrTyped(res)
+		},
+	}
+
+	if cacheKeyFn != nil {
+		field.CacheKeyFunc = func(ctx context.Context, self Instance[T], argVals map[string]Input, origDgst digest.Digest) (digest.Digest, error) {
+			if argsErr != nil {
+				// this error is deferred until runtime, since it's better (at least
+				// more testable) than panicking
+				return "", argsErr
+			}
+			var args A
+			if err := setInputFields(inputs, argVals, &args); err != nil {
+				return "", err
+			}
+			return cacheKeyFn(ctx, self, args, origDgst)
+		}
+	}
+
+	return field
+}
+
 // FieldSpec is a specification for a field.
 type FieldSpec struct {
 	// Name is the name of the field.
