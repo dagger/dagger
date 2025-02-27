@@ -4,9 +4,9 @@ go 1.23.1
 
 require (
 	chainguard.dev/apko v0.19.2
-	github.com/99designs/gqlgen v0.17.63
-	github.com/Khan/genqlient v0.7.0
-	github.com/vektah/gqlparser/v2 v2.5.21
+	github.com/99designs/gqlgen v0.17.66
+	github.com/Khan/genqlient v0.8.0
+	github.com/vektah/gqlparser/v2 v2.5.22
 	go.opentelemetry.io/otel v1.32.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.8.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.8.0
@@ -17,9 +17,9 @@ require (
 	go.opentelemetry.io/otel/sdk/log v0.8.0
 	go.opentelemetry.io/otel/trace v1.32.0
 	go.opentelemetry.io/proto/otlp v1.3.1
-	golang.org/x/mod v0.20.0
-	golang.org/x/sync v0.10.0
-	google.golang.org/grpc v1.68.0
+	golang.org/x/mod v0.23.0
+	golang.org/x/sync v0.11.0
+	google.golang.org/grpc v1.70.0
 )
 
 require golang.org/x/exp v0.0.0-20240808152545-0cdaa3abc0fa // indirect
@@ -78,16 +78,16 @@ require (
 	go.opentelemetry.io/otel/metric v1.32.0
 	go.opentelemetry.io/otel/sdk/metric v1.32.0
 	go.step.sm/crypto v0.52.0 // indirect
-	golang.org/x/crypto v0.31.0 // indirect
-	golang.org/x/net v0.33.0 // indirect
-	golang.org/x/oauth2 v0.23.0 // indirect
-	golang.org/x/sys v0.28.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/crypto v0.33.0 // indirect
+	golang.org/x/net v0.35.0 // indirect
+	golang.org/x/oauth2 v0.24.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/text v0.22.0 // indirect
 	golang.org/x/time v0.6.0 // indirect
 	google.golang.org/api v0.198.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20241104194629-dd2ea8efbc28 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20241104194629-dd2ea8efbc28 // indirect
-	google.golang.org/protobuf v1.36.1 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20241202173237-19429a94021a // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20241202173237-19429a94021a // indirect
+	google.golang.org/protobuf v1.36.5 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 )
 
