@@ -11,6 +11,7 @@ import (
 
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/.dagger/internal/dagger"
+	"github.com/dagger/dagger/.dagger/util"
 )
 
 type CLI struct {
@@ -203,14 +204,21 @@ func (cli *CLI) PublishMetadata(
 		WithExec([]string{"aws", "cloudfront", "create-invalidation", "--distribution-id", awsCloudfrontDistribution, "--paths", "/dagger/install.sh", "/dagger/install.ps1"})
 
 	// update version pointers (only on proper releases)
-	if version := cli.Dagger.Version; semver.IsValid(version) && semver.Prerelease(version) == "" {
+	if version := cli.Dagger.Version; semver.IsValid(version) {
 		cpOpts := dagger.ContainerWithExecOpts{
 			Stdin: strings.TrimPrefix(version, "v"),
 		}
-		ctr = ctr.
-			WithExec([]string{"aws", "s3", "cp", "-", s3Path(awsBucket, "dagger/latest_version")}, cpOpts).
-			WithExec([]string{"aws", "s3", "cp", "-", s3Path(awsBucket, "dagger/versions/latest")}, cpOpts).
-			WithExec([]string{"aws", "s3", "cp", "-", s3Path(awsBucket, "dagger/versions/%s", strings.TrimPrefix(semver.MajorMinor(version), "v"))}, cpOpts)
+		if semver.Prerelease(version) == "" {
+			ctr = ctr.
+				WithExec([]string{"aws", "s3", "cp", "-", s3Path(awsBucket, "dagger/latest_version")}, cpOpts).
+				WithExec([]string{"aws", "s3", "cp", "-", s3Path(awsBucket, "dagger/versions/latest")}, cpOpts).
+				WithExec([]string{"aws", "s3", "cp", "-", s3Path(awsBucket, "dagger/versions/%s", strings.TrimPrefix(semver.MajorMinor(version), "v"))}, cpOpts)
+		} else {
+			for _, variant := range util.PrereleaseVariants(version) {
+				ctr = ctr.
+					WithExec([]string{"aws", "s3", "cp", "-", s3Path(awsBucket, "dagger/versions/%s", strings.TrimPrefix(variant, "v"))}, cpOpts)
+			}
+		}
 	}
 
 	_, err := ctr.Sync(ctx)

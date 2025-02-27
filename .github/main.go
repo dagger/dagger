@@ -166,7 +166,7 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 		WithJob(runner.Job("engine-lint", "engine lint", dagger.GhaJobOpts{
 			Runner: []string{GoldRunner(false)},
 		})).
-		WithJob(runner.Job("scripts-lint", "scripts lint")).
+		WithJob(runner.Job("scripts", "check --targets=scripts")).
 		WithJob(runner.Job("cli-test-publish", "cli test-publish")).
 		WithJob(runner.Job("engine-test-publish", "engine publish --image=dagger-engine.dev --tag=main --dry-run")).
 		WithJob(runner.Job("scan-engine", "engine scan")).
