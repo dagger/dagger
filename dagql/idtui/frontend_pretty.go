@@ -1370,34 +1370,34 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 		}
 	}
 	fe.renderStepError(out, r, row.Span, row.Depth, prefix)
-	fe.renderDebug(out, r, row.Span, prefix)
+	fe.renderDebug(out, row.Span, prefix+Block25+" ")
 	return true
 }
 
-func (fe *frontendPretty) renderDebug(out TermOutput, r *renderer, span *dagui.Span, prefix string) {
-	if span.ID == fe.debugged {
-		prefix := prefix + Block25 + " "
-		vt := NewVterm(fe.profile)
-		vt.WriteMarkdown([]byte("## Span\n"))
-		vt.SetPrefix(prefix)
-		var buf strings.Builder
-		enc := json.NewEncoder(&buf)
-		enc.SetIndent("", "  ")
-		enc.Encode(span.Snapshot())
-		vt.WriteMarkdown([]byte("```json\n" + strings.TrimSpace(buf.String()) + "\n```"))
-		if len(span.EffectIDs) > 0 {
-			vt.WriteMarkdown([]byte("\n\n## Installed effects\n\n"))
-			for _, id := range span.EffectIDs {
-				vt.WriteMarkdown([]byte("- " + id + "\n"))
-				if spans := fe.db.EffectSpans[id]; spans != nil {
-					for _, effect := range spans.Order {
-						vt.WriteMarkdown([]byte("  - " + effect.Name + "\n"))
-					}
+func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix string) {
+	if span.ID != fe.debugged {
+		return
+	}
+	vt := NewVterm(fe.profile)
+	vt.WriteMarkdown([]byte("## Span\n"))
+	vt.SetPrefix(prefix)
+	var buf strings.Builder
+	enc := json.NewEncoder(&buf)
+	enc.SetIndent("", "  ")
+	enc.Encode(span.Snapshot())
+	vt.WriteMarkdown([]byte("```json\n" + strings.TrimSpace(buf.String()) + "\n```"))
+	if len(span.EffectIDs) > 0 {
+		vt.WriteMarkdown([]byte("\n\n## Installed effects\n\n"))
+		for _, id := range span.EffectIDs {
+			vt.WriteMarkdown([]byte("- " + id + "\n"))
+			if spans := fe.db.EffectSpans[id]; spans != nil {
+				for _, effect := range spans.Order {
+					vt.WriteMarkdown([]byte("  - " + effect.Name + "\n"))
 				}
 			}
 		}
-		fmt.Fprint(out, prefix+vt.View())
 	}
+	fmt.Fprint(out, prefix+vt.View())
 }
 
 func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, highlight bool) {
