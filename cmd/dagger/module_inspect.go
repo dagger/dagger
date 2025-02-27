@@ -819,8 +819,8 @@ type modEnum struct {
 	Values      []*modEnumValue
 }
 
-func (o *modEnum) Short() string {
-	s := strings.SplitN(o.Description, "\n", 2)[0]
+func (e *modEnum) Short() string {
+	s := strings.SplitN(e.Description, "\n", 2)[0]
 	if s == "" {
 		s = "-"
 	}

@@ -492,7 +492,7 @@ func (h *shellCallHandler) parseFlagValue(ctx context.Context, value string, arg
 				// Ignore on git urls since the flag will parse it directly.
 				// We just need to resolve the ref for "local" (contextual) paths.
 				if _, err := parseGitURL(value); err != nil {
-					return h.contextArgRef(value), false, nil
+					return h.contextArgRef(value), false, nil //nolint:nilerr
 				}
 			}
 		}

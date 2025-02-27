@@ -212,7 +212,7 @@ func (h *shellCallHandler) Stdlib() []*ShellCommand {
 	return l
 }
 
-func (h *shellCallHandler) registerCommands() {
+func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 	var builtins []*ShellCommand
 	var stdlib []*ShellCommand
 
