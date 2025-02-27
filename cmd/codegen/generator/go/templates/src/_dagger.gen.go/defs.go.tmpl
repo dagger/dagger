@@ -27,7 +27,9 @@ import (
 {{ end }}
 
 {{- if IsStandaloneClient }}
+	{{ if not IsLocalSDK }}
 	"dagger.io/dagger/querybuilder"
+	{{ end }}
 	"dagger.io/dagger"
 {{ end }}
 )
