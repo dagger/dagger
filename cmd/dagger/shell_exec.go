@@ -203,14 +203,19 @@ func (h *shellCallHandler) StateLookup(ctx context.Context, name string) (*Shell
 			depSt, _, err := h.GetDependency(ctx, name)
 			return depSt, err
 		}
+
+		// 3. Is it the current module's name?
+		if md.Name == name {
+			return h.newModState(md.SourceDigest), nil
+		}
 	}
 
-	// 3. Standard library command
+	// 4. Standard library command
 	if cmd, _ := h.StdlibCommand(name); cmd != nil {
 		return h.NewStdlibState(), nil
 	}
 
-	// 4. Path to local or remote module source
+	// 5. Path to local or remote module source
 	def, _, err := h.maybeLoadModule(ctx, name)
 	if err != nil {
 		return nil, err
