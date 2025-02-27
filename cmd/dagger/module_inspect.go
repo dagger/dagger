@@ -439,6 +439,15 @@ func (m *moduleDef) GetFunctionProvider(name string) functionProvider {
 	return nil
 }
 
+func (m *moduleDef) GetTypeDef(name string) *modTypeDef {
+	for _, t := range append(m.Objects, m.Interfaces...) {
+		if name == t.String() {
+			return t
+		}
+	}
+	return nil
+}
+
 // GetInput retrieves a saved input type definition from the module.
 func (m *moduleDef) GetInput(name string) *modInput {
 	for _, input := range m.AsInputs() {
@@ -668,6 +677,7 @@ func (t *modTypeDef) Long() string {
 
 type functionProvider interface {
 	ProviderName() string
+	Short() string
 	GetFunctions() []*modFunction
 	IsCore() bool
 }
@@ -734,6 +744,14 @@ func (o *modObject) ProviderName() string {
 	return o.Name
 }
 
+func (o *modObject) Short() string {
+	s := strings.SplitN(o.Description, "\n", 2)[0]
+	if s == "" {
+		s = "-"
+	}
+	return s
+}
+
 func (o *modObject) IsCore() bool {
 	return o.SourceModuleName == ""
 }
@@ -774,6 +792,14 @@ func (o *modInterface) ProviderName() string {
 	return o.Name
 }
 
+func (o *modInterface) Short() string {
+	s := strings.SplitN(o.Description, "\n", 2)[0]
+	if s == "" {
+		s = "-"
+	}
+	return s
+}
+
 func (o *modInterface) IsCore() bool {
 	return o.SourceModuleName == ""
 }
@@ -791,6 +817,14 @@ type modEnum struct {
 	Name        string
 	Description string
 	Values      []*modEnumValue
+}
+
+func (o *modEnum) Short() string {
+	s := strings.SplitN(o.Description, "\n", 2)[0]
+	if s == "" {
+		s = "-"
+	}
+	return s
 }
 
 func (e *modEnum) ValueNames() []string {

@@ -229,8 +229,8 @@ func (h *shellCallHandler) registerCommands() {
 			},
 		},
 		&ShellCommand{
-			Use:         ".help [command | module | function]\n<function> | .help [function]",
-			Description: `Show documentation for a command, a module, or a function`,
+			Use:         ".help [command | function | module | type]\n<function> | .help [function]",
+			Description: `Show documentation for a command, function, module, or type.`,
 			Args:        MaximumArgs(1),
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, st *ShellState) error {
 				var err error
@@ -245,6 +245,11 @@ func (h *shellCallHandler) registerCommands() {
 					// Check builtins first
 					if c, _ := h.BuiltinCommand(args[0]); c != nil {
 						return h.Print(ctx, c.Help())
+					}
+
+					// Check if a type before handing off to state lookup
+					if t := h.GetDef(nil).GetTypeDef(args[0]); t != nil {
+						return h.Print(ctx, shellTypeDoc(t))
 					}
 
 					// Use the same function lookup as when executing
@@ -412,6 +417,15 @@ Without arguments, the current working directory is replaced by the initial cont
 					return err
 				}
 				return h.Print(ctx, strings.Join(contents, "\n"))
+			},
+		},
+		&ShellCommand{
+			Use:         ".types",
+			Description: "List all types available in the current context",
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
+				return h.Print(ctx, h.TypesHelp())
 			},
 		},
 		&ShellCommand{

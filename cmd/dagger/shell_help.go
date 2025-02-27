@@ -193,6 +193,43 @@ func (h *shellCallHandler) DepsHelp() string {
 	return doc.String()
 }
 
+func (h *shellCallHandler) TypesHelp() string {
+	var doc ShellDoc
+
+	var core []functionProvider
+	var mod []functionProvider
+
+	def := h.GetDef(nil)
+
+	for _, o := range def.AsFunctionProviders() {
+		if o.IsCore() {
+			core = append(core, o)
+		} else {
+			mod = append(mod, o)
+		}
+	}
+
+	doc.Add(
+		"Core Types",
+		nameShortWrapped(core, func(o functionProvider) (string, string) {
+			return o.ProviderName(), o.Short()
+		}),
+	)
+
+	if len(mod) > 0 && def.HasModule() {
+		doc.Add(
+			def.Name+" Types",
+			nameShortWrapped(mod, func(o functionProvider) (string, string) {
+				return o.ProviderName(), o.Short()
+			}),
+		)
+	}
+
+	doc.Add("", `Use ".help <type>" for more information on a type.`)
+
+	return doc.String()
+}
+
 type ShellDoc struct {
 	Groups []ShellDocSection
 }

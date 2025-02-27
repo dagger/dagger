@@ -20,7 +20,8 @@ func TestShell(t *testing.T) {
 
 func daggerShell(script string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec([]string{"dagger", "shell", "-c", script}, dagger.ContainerWithExecOpts{
+		return c.WithExec([]string{"dagger"}, dagger.ContainerWithExecOpts{
+			Stdin:                         script,
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
@@ -28,7 +29,8 @@ func daggerShell(script string) dagger.WithContainerFunc {
 
 func daggerShellNoMod(script string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec([]string{"dagger", "shell", "--no-mod", "-c", script}, dagger.ContainerWithExecOpts{
+		return c.WithExec([]string{"dagger", "--no-mod"}, dagger.ContainerWithExecOpts{
+			Stdin:                         script,
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
@@ -380,6 +382,26 @@ func (Other) Version() string {
 		require.Regexp(t, regexp.MustCompile(`^Load a Container from its ID`), out)
 		require.Contains(t, out, "load-container-from-id <id>")
 		require.Contains(t, out, "RETURNS")
+	})
+
+	t.Run("types result", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".types")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "An OCI-compatible container")
+		require.Contains(t, out, "A directory")
+		require.Contains(t, out, "Test main object")
+	})
+
+	t.Run("doc Test type", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".help Test")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "OBJECT")
+		require.Contains(t, out, "Test main object")
+		require.Contains(t, out, "Encouragement")
 	})
 }
 
