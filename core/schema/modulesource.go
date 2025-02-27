@@ -169,12 +169,12 @@ type moduleSourceArgs struct {
 	RequireKind    dagql.Optional[core.ModuleSourceKind]
 }
 
-func (s *moduleSourceSchema) moduleSourceCacheKey(ctx context.Context, query dagql.Instance[*core.Query], args moduleSourceArgs, origDgst digest.Digest) (digest.Digest, error) {
+func (s *moduleSourceSchema) moduleSourceCacheKey(ctx context.Context, query dagql.Instance[*core.Query], args moduleSourceArgs, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
 	if fastModuleSourceKindCheck(args.RefString, args.RefPin) == core.ModuleSourceKindGit {
-		return origDgst, nil
+		return &cacheCfg, nil
 	}
 
-	return core.CachePerClient(ctx, query, args, origDgst)
+	return core.CachePerClient(ctx, query, args, cacheCfg)
 }
 
 func (s *moduleSourceSchema) moduleSource(
@@ -1857,7 +1857,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 		if err != nil {
 			return genDirInst, fmt.Errorf("failed to get or initialize instance: %w", err)
 		}
-		srcInstContentHashed := srcInst.WithMetadata(digest.Digest(srcInst.Self.Digest), true)
+		srcInstContentHashed := srcInst.WithMetadata(digest.Digest(srcInst.Self.Digest))
 
 		// run codegen to get the generated context directory
 		generatedCode, err := srcInst.Self.SDKImpl.Codegen(ctx, deps, srcInstContentHashed)
@@ -2033,7 +2033,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}
-	srcInstContentHashed := src.WithMetadata(digest.Digest(src.Self.Digest), true)
+	srcInstContentHashed := src.WithMetadata(digest.Digest(src.Self.Digest))
 
 	// get the runtime container, which is what is exec'd when calling functions in the module
 	mod.Runtime, err = src.Self.SDKImpl.Runtime(ctx, mod.Deps, srcInstContentHashed)

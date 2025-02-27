@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/moby/buildkit/identity"
 	"github.com/opencontainers/go-digest"
 	"github.com/zeebo/xxh3"
 
@@ -18,20 +19,47 @@ const (
 // CachePerClient is a CacheKeyFunc that scopes the cache key to the client by mixing in the client ID to the original digest of the operation.
 // It should be used when the operation should be run for each client, but not more than once for a given client.
 // Canonical examples include loading client filesystem data or referencing client-side sockets/ports.
-func CachePerClient[P dagql.Typed, A any](ctx context.Context, inst dagql.Instance[P], args A, origDgst digest.Digest) (digest.Digest, error) {
-	return CachePerClientObject(ctx, inst, args, origDgst)
+func CachePerClient[P dagql.Typed, A any](
+	ctx context.Context,
+	inst dagql.Instance[P],
+	args A,
+	cacheCfg dagql.CacheConfig,
+) (*dagql.CacheConfig, error) {
+	return CachePerClientObject(ctx, inst, args, cacheCfg)
 }
 
 // CachePerClientObject is the same as CachePerClient but when you have a dagql.Object instead of a dagql.Instance.
-func CachePerClientObject[A any](ctx context.Context, _ dagql.Object, _ A, origDgst digest.Digest) (digest.Digest, error) {
+func CachePerClientObject[A any](
+	ctx context.Context,
+	_ dagql.Object,
+	_ A,
+	cacheCfg dagql.CacheConfig,
+) (*dagql.CacheConfig, error) {
 	clientMD, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to get client metadata: %w", err)
+		return nil, fmt.Errorf("failed to get client metadata: %w", err)
 	}
 	if clientMD.ClientID == "" {
-		return "", fmt.Errorf("client ID not found in context")
+		return nil, fmt.Errorf("client ID not found in context")
 	}
-	return HashFrom(origDgst.String(), clientMD.ClientID), nil
+
+	cacheCfg.Digest = HashFrom(cacheCfg.Digest.String(), clientMD.ClientID)
+	return &cacheCfg, nil
+}
+
+// CachePerCall results in the API always running when called, but the returned result from that call is cached.
+// For instance, the API may return a snapshot of some live mutating state; in that case the first call to get the snapshot
+// should always run but if the returned object is passed around it should continue to be that snapshot rather than the API
+// always re-running.
+func CachePerCall[P dagql.Typed, A any](
+	ctx context.Context,
+	inst dagql.Instance[P],
+	args A,
+	cacheCfg dagql.CacheConfig,
+) (*dagql.CacheConfig, error) {
+	randID := identity.NewID()
+	cacheCfg.Digest = HashFrom(randID)
+	return &cacheCfg, nil
 }
 
 func HashFrom(ins ...string) digest.Digest {
