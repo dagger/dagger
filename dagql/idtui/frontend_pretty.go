@@ -1370,6 +1370,11 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 		}
 	}
 	fe.renderStepError(out, r, row.Span, row.Depth, prefix)
+	fe.renderDebug(out, r, row.Span, prefix)
+	return true
+}
+
+func (fe *frontendPretty) renderDebug(out TermOutput, r *renderer, span *dagui.Span, prefix string) {
 	if span.ID == fe.debugged {
 		prefix := prefix + Block25 + " "
 		vt := NewVterm(fe.profile)
@@ -1393,8 +1398,6 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 		}
 		fmt.Fprint(out, prefix+vt.View())
 	}
-
-	return true
 }
 
 func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, highlight bool) {
@@ -1412,7 +1415,7 @@ func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui
 func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, span *dagui.Span, depth int, prefix string) {
 	for _, span := range span.Errors().Order {
 		// only print the first line
-		for _, line := range strings.Split(span.Status.Description, "\n") {
+		for line := range strings.SplitSeq(span.Status.Description, "\n") {
 			if line == "" {
 				continue
 			}
