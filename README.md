@@ -1,35 +1,68 @@
 ## What is Dagger?
 
-Dagger is a tool that lets you replace your software project's artisanal scripts with a modern API and cross-language scripting engine.
+Dagger is an open-source runtime for container-based AI workflows, by the creators of Docker.
+It goes beyond conventional “agent frameworks” by focusing on reproducible, observable execution, cross-language extensibility, and built-in support for containerizing AI state.
 
-1. Encapsulate all your project's tasks and workflows into simple functions, written in your programming language of choice
-2. Dagger packages your functions into a custom GraphQL API
-3. Run your functions from the CLI, your language interpreter, or a custom HTTP client
-4. Package your functions into a module, to reuse in your next project or share with the community
-5. Search the Daggerverse for existing modules, and import them into yours. All Dagger modules can reuse each other's functions - across language.
+### Why Dagger for AI Agents?
 
-## Benefits to app teams
+1. **Reproducible Execution**
 
-* Reduce complexity: even complex builds can be expressed as a few simple functions
-* No more "push and pray": everything CI can do, your dev environment can do too
-* Use the same language to develop your app and its scripts
-* Easy onboarding of new developers: if you can build, test and deploy - they can too.
-* Everything is cached by default: expect 2x to 10x speedups
-* Parity between dev and CI environments
-* Cross-team collaboration: reuse another team's workflows without learning their stack
+Every AI operation—model inference, code generation, data transforms—runs in isolated, cacheable containers, guaranteeing consistent results across environments.
 
-## Benefits to platform teams
+2. **End-to-End Observability**
 
-* Reduce CI lock-in. Dagger functions run on all major CI platforms - no proprietary DSL needed.
-* Don't be a bottleneck. Let app teams write their own functions. Enable standardization by providing them a library of reusable components.
-* Faster CI runs. CI pipelines that are "Daggerized" typically run 2x to 10x faster, thanks to caching and concurrency. This means developers waste less time waiting for CI, and you spend less money on CI compute.
-* A viable platform strategy. App teams need flexibility, and you need control. Dagger gives you a way to reconcile the two, in an incremental way that leverages the stack you already have.
+Dagger traces agent workflows from prompt to system call. Dig into performance, logs, and container state without black-box uncertainty.
 
-## Learn more
+3. **Flexible AI Integration**
 
-* [How does it work?](https://docs.dagger.io/#how-does-dagger-work)
-* [Quickstart](https://docs.dagger.io/quickstart)
-* [Cookbook](https://docs.dagger.io/cookbook)
+Attach LLM state directly to your workflow, choosing from OpenAI, Anthropic, or any other endpoint.
+Give your AI agent dynamic access to code, files, and more.
+
+4. **Fast Iteration**
+
+With caching and concurrency, repeat tasks only once and run multiple tasks in parallel—perfect for iterative model tuning or experimentation.
+
+5. **Meets you where you are**
+
+Dagger supports multiple programming languages (Python, Go, TypeScript, Java, PHP), can run anywhere, and is easy to integrate with the frameworks and infrastructure you already use.
+
+### Key Features
+
+- **Composable Functions**
+  Define workflow steps as discrete functions—chain, parallelize, or reuse them with minimal effort.
+
+- **Cross-Language Module System**
+  Package those functions as modules, exposing them via GraphQL. Import them in Python, Go, TypeScript, Java, or PHP.
+
+- **Built-In Container Runtime**
+  Dagger includes its own OCI-compatible runtime—no need for Docker, Containerd, or other external engines.
+
+- **Caching & Concurrency**
+  Automate detection of redundant work, cache results, and parallelize tasks for 2x–10x faster builds and AI workflows.
+
+- **Deep tracing**
+  Trace execution via OpenTelemetry, inspect container states, and debug every function call with precision.
+
+- **AI integration**
+  Connect to existing inference endpoints (OpenAI, Anthropic, Ollama, etc.), and easily mix and match models.
+  Attach Dagger objects to the model’s environment for tool calling and reproducible state.
+
+- **Easy to integrate**
+  Embed Dagger modules in your existing application, with generated bindings or native MCP support (coming soon).
+
+- **Interactive shell**
+  Compose workflows interactively from the command-line, for rapid experiments, lightning-speed debugging, and cool demos
+
+### Is Dagger only for AI?
+
+No. It’s equally suited for CI/CD, general build automation, or any container-based workflow. AI is just one (very powerful) use case.
+You can also take advantage of its native AI features to gradually introduce "agentic" features in your existing workflows,
+without throwing away the stack you have.
+
+## Getting started
+
+- [Getting started with Dagger for AI agents](./agents/README.md) *(technology preview)*
+- [Getting started with Dagger for CI/CD](https://docs.dagger.io/quickstart)
 
 ## Join the community
 
