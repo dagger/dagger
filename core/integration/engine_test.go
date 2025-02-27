@@ -134,6 +134,20 @@ func engineClientContainer(ctx context.Context, t *testctx.T, c *dagger.Client, 
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint)
 }
 
+// withNonNestedDevEngine configures a Container to use the same dev engine
+// as the tests are running against but while avoiding use of a nested exec.
+// This is needed occasionally for tests like TestClientGenerator where we
+// can't use nested execs.
+// It works because our integ test setup code in the dagger-dev module mount
+// in the engine service's unix sock to the test container.
+func nonNestedDevEngine(c *dagger.Client) func(*dagger.Container) *dagger.Container {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			WithUnixSocket("/run/dagger-engine.sock", c.Host().UnixSocket("/run/dagger-engine.sock")).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "unix:///run/dagger-engine.sock")
+	}
+}
+
 func (EngineSuite) TestExitsZeroOnSignal(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

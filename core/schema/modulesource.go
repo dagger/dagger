@@ -139,6 +139,12 @@ func (s *moduleSourceSchema) Install() {
 			View(BeforeVersion("v0.13.0")).
 			Doc(`The URL to clone the root of the git repo from`).
 			Deprecated("Use `cloneRef` instead. `cloneRef` supports both URL-style and SCP-like SSH references"),
+
+		dagql.NodeFunc("generateClient", s.moduleSourceGenerateClient).
+			Doc(`Generates a client for the module.`).
+			ArgDoc("generator", `The generator to use`).
+			ArgDoc("outputDir", `The output directory for the generated client.`).
+			ArgDoc("localSdk", `Use local SDK dependency`),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.SDKConfig]{}.Install(s.dag)
@@ -2137,6 +2143,80 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src *cor
 	}
 
 	return deps, nil
+}
+
+func (s *moduleSourceSchema) moduleSourceGenerateClient(
+	ctx context.Context,
+	src dagql.Instance[*core.ModuleSource],
+	args struct {
+		Generator dagql.String
+		OutputDir dagql.String
+		LocalSdk  dagql.Optional[dagql.Boolean]
+	},
+) (*core.Directory, error) {
+	generator, err := newSDKLoader(s.dag).sdkForModule(
+		ctx,
+		src.Self.Query,
+		&core.SDKConfig{
+			Source: args.Generator.String(),
+		},
+		src.Self,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load generator module %s: %w", args.Generator, err)
+	}
+
+	requiredClientGenerationFiles, err := generator.RequiredClientGenerationFiles(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get required client generation files: %w", err)
+	}
+
+	// Add extra files required to correctly generate the client
+	var source dagql.Instance[*core.ModuleSource]
+	err = s.dag.Select(ctx, src, &source, dagql.Selector{
+		Field: "withIncludes",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "patterns",
+				Value: dagql.ArrayInput[dagql.String](requiredClientGenerationFiles),
+			},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to add module source required files: %w", err)
+	}
+
+	deps, err := s.loadDependencyModules(ctx, src.Self)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load dependencies of this modules: %w", err)
+	}
+
+	// If the current module source has sources, we can transform it into a module
+	// to generate self bindings.
+	if src.Self.SDK != nil {
+		var mod dagql.Instance[*core.Module]
+		err = s.dag.Select(ctx, src, &mod, dagql.Selector{
+			Field: "asModule",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to transform module source into module: %w", err)
+		}
+
+		deps = mod.Self.Deps.Append(mod.Self)
+	}
+
+	generatedClientDir, err := generator.GenerateClient(
+		ctx,
+		source,
+		deps,
+		args.OutputDir.String(),
+		args.LocalSdk.GetOr(false).Bool(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate clients: %w", err)
+	}
+
+	return generatedClientDir.Self, nil
 }
 
 // find-up a given soughtName in curDirPath and its parent directories, return the dir

@@ -1026,6 +1026,13 @@ export type ListTypeDefID = string & { __ListTypeDefID: never }
  */
 export type ModuleID = string & { __ModuleID: never }
 
+export type ModuleSourceGenerateClientOpts = {
+  /**
+   * Use local SDK dependency
+   */
+  localSdk?: boolean
+}
+
 /**
  * The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
  */
@@ -5539,6 +5546,25 @@ export class ModuleSource extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Generates a client for the module.
+   * @param generator The generator to use
+   * @param outputDir The output directory for the generated client.
+   * @param opts.localSdk Use local SDK dependency
+   */
+  generateClient = (
+    generator: string,
+    outputDir: string,
+    opts?: ModuleSourceGenerateClientOpts,
+  ): Directory => {
+    const ctx = this._ctx.select("generateClient", {
+      generator,
+      outputDir,
+      ...opts,
+    })
+    return new Directory(ctx)
   }
 
   /**

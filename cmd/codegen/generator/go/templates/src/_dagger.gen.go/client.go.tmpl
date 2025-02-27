@@ -1,16 +1,3 @@
-package dagger
-
-import (
-	"context"
-	"io"
-
-	"github.com/Khan/genqlient/graphql"
-	"github.com/vektah/gqlparser/v2/gqlerror"
-
-	"dagger.io/dagger/engineconn"
-	"dagger.io/dagger/querybuilder"
-)
-
 // Client is the Dagger Engine Client
 type Client struct {
 	conn engineconn.EngineConn
@@ -70,6 +57,12 @@ func WithVerbosity(level int) ClientOpt {
 	})
 }
 
+func WithServeCurrentModule(serveCurrentModule bool) ClientOpt {
+	return clientOptFunc(func(cfg *engineconn.Config) {
+		cfg.ServeCurrentModule = serveCurrentModule
+	})
+}
+
 // WithRunnerHost sets the runner host URL for provisioning and connecting to
 // an engine.
 //
@@ -81,15 +74,11 @@ func WithRunnerHost(runnerHost string) ClientOpt {
 	})
 }
 
-func WithServeCurrentModule(serveCurrentModule bool) ClientOpt {
-	return clientOptFunc(func(cfg *engineconn.Config) {
-		cfg.ServeCurrentModule = serveCurrentModule
-	})
-}
-
 // Connect to a Dagger Engine
 func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	cfg := &engineconn.Config{}
+
+	opts = append(opts, WithServeCurrentModule(true))
 
 	for _, o := range opts {
 		o.setClientOpt(cfg)
@@ -112,10 +101,6 @@ func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 // GraphQLClient returns the underlying graphql.Client
 func (c *Client) GraphQLClient() graphql.Client {
 	return c.client
-}
-
-func (c *Client) QueryBuilder() *querybuilder.Selection {
-	return c.query
 }
 
 // Close the engine connection

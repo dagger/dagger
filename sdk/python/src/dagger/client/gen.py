@@ -5851,6 +5851,32 @@ class ModuleSource(Type):
         _ctx = self._select("engineVersion", _args)
         return await _ctx.execute(str)
 
+    def generate_client(
+        self,
+        generator: str,
+        output_dir: str,
+        *,
+        local_sdk: bool | None = None,
+    ) -> Directory:
+        """Generates a client for the module.
+
+        Parameters
+        ----------
+        generator:
+            The generator to use
+        output_dir:
+            The output directory for the generated client.
+        local_sdk:
+            Use local SDK dependency
+        """
+        _args = [
+            Arg("generator", generator),
+            Arg("outputDir", output_dir),
+            Arg("localSdk", local_sdk, None),
+        ]
+        _ctx = self._select("generateClient", _args)
+        return Directory(_ctx)
+
     def generated_context_directory(self) -> Directory:
         """The generated files and directories made on top of the module source's
         context directory.
