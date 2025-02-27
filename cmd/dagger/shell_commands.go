@@ -212,7 +212,7 @@ func (h *shellCallHandler) Stdlib() []*ShellCommand {
 	return l
 }
 
-func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
+func (h *shellCallHandler) registerCommands() {
 	var builtins []*ShellCommand
 	var stdlib []*ShellCommand
 
@@ -229,79 +229,36 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 			},
 		},
 		&ShellCommand{
-			Use:         ".help [command]",
-			Description: "Print this help message",
+			Use:         ".help [command | module | function]\n<function> | .help [function]",
+			Description: `Show documentation for a command, a module, or a function`,
 			Args:        MaximumArgs(1),
-			State:       NoState,
-			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-				if len(args) == 1 {
-					c, err := h.BuiltinCommand(args[0])
-					if err != nil {
-						return err
-					}
-					if c == nil {
-						err = fmt.Errorf("command not found: %q", args[0])
-						if !strings.HasPrefix(args[0], ".") {
-							if builtin, _ := h.BuiltinCommand("." + args[0]); builtin != nil {
-								err = fmt.Errorf("%w, did you mean %q?", err, "."+args[0])
-							}
-						}
-						return err
-					}
-					return h.Print(ctx, c.Help())
-				}
-
-				var doc ShellDoc
-
-				for _, group := range shellGroups {
-					cmds := h.GroupBuiltins(group.ID)
-					if len(cmds) == 0 {
-						continue
-					}
-					doc.Add(
-						group.Title,
-						nameShortWrapped(cmds, func(c *ShellCommand) (string, string) {
-							return c.Name(), c.Short()
-						}),
-					)
-				}
-
-				doc.Add("", `Use ".help <command>" for more information.`)
-
-				return h.Print(ctx, doc)
-			},
-		},
-		&ShellCommand{
-			Use: ".doc [module]\n<function> | .doc [function]",
-			Description: `Show documentation for a module, a type, or a function
-
-
-Local module paths are resolved relative to the workdir on the host, not relative
-to the currently loaded module.
-`,
-			Args: MaximumArgs(1),
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, st *ShellState) error {
 				var err error
 
 				// First command in chain
 				if st == nil {
 					if len(args) == 0 {
-						// No arguments, e.g, `.doc`.
-						st = h.newState()
-					} else {
-						// Use the same function lookup as when executing so
-						// that `> .doc wolfi` documents `> wolfi`.
-						st, err = h.stateLookup(ctx, args[0])
-						if err != nil {
-							return err
-						}
-						if st.ModRef != "" {
-							// First argument to `.doc` is a module reference, so
-							// remove it from list of arguments now that it's loaded.
-							// The rest of the arguments should be passed on to
-							// the constructor.
-							args = args[1:]
-						}
+						// No arguments, e.g, `.help`.
+						return h.Print(ctx, h.MainHelp())
+					}
+
+					// Check builtins first
+					if c, _ := h.BuiltinCommand(args[0]); c != nil {
+						return h.Print(ctx, c.Help())
+					}
+
+					// Use the same function lookup as when executing
+					// so that `> .help wolfi` documents `> wolfi`.
+					st, err = h.stateLookup(ctx, args[0])
+					if err != nil {
+						return err
+					}
+					if st.ModRef != "" {
+						// First argument to `.help` is a module reference, so
+						// remove it from list of arguments now that it's loaded.
+						// The rest of the arguments should be passed on to
+						// the constructor.
+						args = args[1:]
 					}
 				}
 
@@ -311,11 +268,11 @@ to the currently loaded module.
 					switch {
 					case st.IsStdlib():
 						// Document stdlib
-						// Example: `.stdlib | .doc`
+						// Example: `.stdlib | .help`
 						if len(args) == 0 {
 							return h.Print(ctx, h.StdlibHelp())
 						}
-						// Example: .stdlib | .doc <command>`
+						// Example: .stdlib | .help <command>`
 						c, err := h.StdlibCommand(args[0])
 						if err != nil {
 							return err
@@ -324,11 +281,11 @@ to the currently loaded module.
 
 					case st.IsDeps():
 						// Document dependency
-						// Example: `.deps | .doc`
+						// Example: `.deps | .help`
 						if len(args) == 0 {
 							return h.Print(ctx, h.DepsHelp())
 						}
-						// Example: `.deps | .doc <dependency>`
+						// Example: `.deps | .help <dependency>`
 						depSt, depDef, err := h.GetDependency(ctx, args[0])
 						if err != nil {
 							return err
@@ -337,11 +294,11 @@ to the currently loaded module.
 
 					case st.IsCore():
 						// Document core
-						// Example: `.core | .doc`
+						// Example: `.core | .help`
 						if len(args) == 0 {
 							return h.Print(ctx, h.CoreHelp())
 						}
-						// Example: `.core | .doc <function>`
+						// Example: `.core | .help <function>`
 						fn := def.GetCoreFunction(args[0])
 						if fn == nil {
 							return fmt.Errorf("core function %q not found", args[0])
@@ -353,7 +310,7 @@ to the currently loaded module.
 							return fmt.Errorf("module not loaded.\nUse %q to see what's available", shellStdlibCmdName)
 						}
 						// Document module
-						// Example: `.doc [module]`
+						// Example: `.help [module]`
 						return h.Print(ctx, shellModuleDoc(st, def))
 					}
 				}
@@ -364,7 +321,7 @@ to the currently loaded module.
 				}
 
 				// Document type
-				// Example: `container | .doc`
+				// Example: `container | .help`
 				if len(args) == 0 {
 					return h.Print(ctx, shellTypeDoc(t))
 				}
@@ -375,7 +332,7 @@ to the currently loaded module.
 				}
 
 				// Document function from type
-				// Example: `container | .doc with-exec`
+				// Example: `container | .help with-exec`
 				fn, err := def.GetFunction(fp, args[0])
 				if err != nil {
 					return err
