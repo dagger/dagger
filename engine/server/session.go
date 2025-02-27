@@ -48,6 +48,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/cache"
+	"github.com/dagger/dagger/engine/cache/cachemanager"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -89,7 +90,7 @@ type daggerSession struct {
 	containers   map[bkgw.Container]struct{}
 	containersMu sync.Mutex
 
-	dagqlCache dagql.Cache
+	dagqlCache *cache.CacheWithResults[digest.Digest, dagql.Typed]
 
 	interactive        bool
 	interactiveCommand []string
@@ -249,7 +250,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.authProvider = auth.NewRegistryAuthProvider()
 	sess.refs = map[buildkit.Reference]struct{}{}
 	sess.containers = map[bkgw.Container]struct{}{}
-	sess.dagqlCache = dagql.NewCache()
+	sess.dagqlCache = cache.NewCacheWithResults(srv.baseDagqlCache)
 	sess.telemetryPubSub = srv.telemetryPubSub
 	sess.interactive = clientMetadata.Interactive
 	sess.interactiveCommand = clientMetadata.InteractiveCommand
@@ -262,7 +263,7 @@ func (srv *Server) initializeDaggerSession(
 				engine.Version,
 				runtime.GOOS,
 				runtime.GOARCH,
-				srv.SolverCache.ID() != cache.LocalCacheID,
+				srv.SolverCache.ID() != cachemanager.LocalCacheID,
 			),
 		CloudToken: clientMetadata.CloudToken,
 	})
@@ -394,6 +395,15 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	sess.closeShutdownOnce.Do(func() {
 		close(sess.shutdownCh)
 	})
+
+	// TODO: should this be in defer? very painful to end up in a situation where it doesn't run
+	// TODO: should this be in defer? very painful to end up in a situation where it doesn't run
+	// TODO: should this be in defer? very painful to end up in a situation where it doesn't run
+	if sess.dagqlCache != nil {
+		releaseCount := sess.dagqlCache.ReleaseAll()
+		slog.Debug("released dagql cache entries", "count", releaseCount)
+	}
+
 	return errs
 }
 
@@ -572,8 +582,7 @@ func (srv *Server) initializeDaggerClient(
 	// setup the graphql server + module/function state for the client
 	client.dagqlRoot = core.NewRoot(srv)
 
-	dag := dagql.NewServer(client.dagqlRoot)
-	dag.Cache = client.daggerSession.dagqlCache
+	dag := dagql.NewServer(client.dagqlRoot, client.daggerSession.dagqlCache)
 	dag.Around(core.AroundFunc)
 	coreMod := &schema.CoreMod{Dag: dag}
 	if err := coreMod.Install(ctx, dag); err != nil {

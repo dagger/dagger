@@ -1,0 +1,264 @@
+package cache
+
+import (
+	"context"
+	"fmt"
+	"sync"
+)
+
+type Cache[K comparable, V any] interface {
+	GetOrInitializeValue(context.Context, K, V) (Result[K, V], error)
+
+	GetOrInitialize(
+		context.Context,
+		K,
+		func(context.Context) (V, error),
+	) (Result[K, V], error)
+
+	GetOrInitializeWithPostCall(
+		context.Context,
+		K,
+		func(context.Context) (V, PostCallFunc, error),
+	) (Result[K, V], error)
+
+	Size() int
+}
+
+type Result[K comparable, V any] interface {
+	Result() V
+	Release()
+	PostCall(context.Context) error
+}
+
+type PostCallFunc = func(context.Context) error
+
+var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
+
+func NewCache[K comparable, V any]() Cache[K, V] {
+	return &cache[K, V]{}
+}
+
+type cache[K comparable, V any] struct {
+	mu    sync.Mutex
+	calls map[K]*result[K, V]
+}
+
+var _ Cache[int, int] = &cache[int, int]{}
+
+type result[K comparable, V any] struct {
+	cache *cache[K, V]
+
+	key      K
+	val      V
+	postCall PostCallFunc
+	err      error
+
+	done    chan struct{}
+	cancel  context.CancelCauseFunc
+	waiters int
+
+	refCount int
+}
+
+var _ Result[int, int] = &result[int, int]{}
+
+type cacheContextKey[K comparable, V any] struct {
+	key   K
+	cache *cache[K, V]
+}
+
+func (c *cache[K, V]) Size() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return len(c.calls)
+}
+
+func (c *cache[K, V]) GetOrInitializeValue(
+	ctx context.Context,
+	key K,
+	val V,
+) (Result[K, V], error) {
+	return c.GetOrInitialize(ctx, key, func(_ context.Context) (V, error) {
+		return val, nil
+	})
+}
+
+func (c *cache[K, V]) GetOrInitialize(
+	ctx context.Context,
+	key K,
+	fn func(context.Context) (V, error),
+) (Result[K, V], error) {
+	return c.GetOrInitializeWithPostCall(ctx, key, func(ctx context.Context) (V, PostCallFunc, error) {
+		val, err := fn(ctx)
+		return val, nil, err
+	})
+}
+
+func (c *cache[K, V]) GetOrInitializeWithPostCall(
+	ctx context.Context,
+	key K,
+	fn func(context.Context) (V, PostCallFunc, error),
+) (Result[K, V], error) {
+	var zeroKey K
+	if key == zeroKey {
+		// don't cache, don't dedupe calls, just call it
+		res := &result[K, V]{}
+		res.val, res.postCall, res.err = fn(ctx)
+		return res, res.err
+	}
+
+	c.mu.Lock()
+	if c.calls == nil {
+		c.calls = make(map[K]*result[K, V])
+	}
+
+	if res, ok := c.calls[key]; ok {
+		res.waiters++
+		c.mu.Unlock()
+		return c.wait(ctx, key, res)
+	}
+
+	callCtx := context.WithValue(ctx, cacheContextKey[K, V]{key, c}, struct{}{})
+	callCtx, cancel := context.WithCancelCause(context.WithoutCancel(callCtx))
+	res := &result[K, V]{
+		cache: c,
+
+		key: key,
+
+		done:    make(chan struct{}),
+		cancel:  cancel,
+		waiters: 1,
+	}
+	c.calls[key] = res
+	go func() {
+		defer close(res.done)
+		res.val, res.postCall, res.err = fn(callCtx)
+	}()
+
+	c.mu.Unlock()
+	return c.wait(ctx, key, res)
+}
+
+func (c *cache[K, V]) wait(ctx context.Context, key K, res *result[K, V]) (*result[K, V], error) {
+	var err error
+	select {
+	case <-res.done:
+		err = res.err
+	case <-ctx.Done():
+		err = context.Cause(ctx)
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	res.waiters--
+	if res.waiters == 0 {
+		res.cancel(err)
+	}
+
+	if err == nil {
+		res.refCount++
+		return res, nil
+	}
+
+	if res.refCount == 0 {
+		delete(c.calls, key)
+	}
+	return nil, err
+}
+
+func (res *result[K, V]) Result() V {
+	return res.val
+}
+
+func (res *result[K, V]) Release() {
+	if res == nil || res.cache == nil {
+		// wasn't cached, nothing to do
+		return
+	}
+
+	res.cache.mu.Lock()
+	defer res.cache.mu.Unlock()
+
+	res.refCount--
+	if res.refCount == 0 && res.waiters == 0 {
+		delete(res.cache.calls, res.key)
+	}
+}
+
+func (res *result[K, V]) PostCall(ctx context.Context) error {
+	if res.postCall == nil {
+		return nil
+	}
+	return res.postCall(ctx)
+}
+
+type CacheWithResults[K comparable, V any] struct {
+	cache   Cache[K, V]
+	results []Result[K, V]
+	mu      sync.Mutex
+}
+
+var _ Cache[int, int] = &CacheWithResults[int, int]{}
+
+func NewCacheWithResults[K comparable, V any](baseCache Cache[K, V]) *CacheWithResults[K, V] {
+	return &CacheWithResults[K, V]{
+		cache: baseCache,
+	}
+}
+
+func (c *CacheWithResults[K, V]) GetOrInitializeValue(
+	ctx context.Context,
+	key K,
+	val V,
+) (Result[K, V], error) {
+	return c.GetOrInitialize(ctx, key, func(_ context.Context) (V, error) {
+		return val, nil
+	})
+}
+
+func (c *CacheWithResults[K, V]) GetOrInitialize(
+	ctx context.Context,
+	key K,
+	fn func(context.Context) (V, error),
+) (Result[K, V], error) {
+	return c.GetOrInitializeWithPostCall(ctx, key, func(ctx context.Context) (V, PostCallFunc, error) {
+		val, err := fn(ctx)
+		return val, nil, err
+	})
+}
+
+func (c *CacheWithResults[K, V]) GetOrInitializeWithPostCall(
+	ctx context.Context,
+	key K,
+	fn func(context.Context) (V, PostCallFunc, error),
+) (Result[K, V], error) {
+	res, err := c.cache.GetOrInitializeWithPostCall(ctx, key, fn)
+
+	var zeroKey K
+	if res != nil && key != zeroKey {
+		c.mu.Lock()
+		c.results = append(c.results, res)
+		c.mu.Unlock()
+	}
+
+	return res, err
+}
+
+func (c *CacheWithResults[K, V]) Size() int {
+	return c.cache.Size()
+}
+
+func (c *CacheWithResults[K, V]) ReleaseAll() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	count := len(c.results)
+	for _, res := range c.results {
+		res.Release()
+	}
+	c.results = nil
+
+	return count
+}
