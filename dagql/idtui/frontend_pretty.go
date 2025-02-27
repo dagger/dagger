@@ -3,6 +3,7 @@ package idtui
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -1147,7 +1148,11 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				return nil
 			}
 		case "?":
-			fe.debugged = fe.FocusedSpan
+			if fe.debugged == fe.FocusedSpan {
+				fe.debugged = dagui.SpanID{}
+			} else {
+				fe.debugged = fe.FocusedSpan
+			}
 			return fe, nil
 		case "enter":
 			fe.ZoomedSpan = fe.FocusedSpan
@@ -1365,6 +1370,30 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 		}
 	}
 	fe.renderStepError(out, r, row.Span, row.Depth, prefix)
+	if span.ID == fe.debugged {
+		prefix := prefix + Block25 + " "
+		vt := NewVterm(fe.profile)
+		vt.WriteMarkdown([]byte("## Span\n"))
+		vt.SetPrefix(prefix)
+		var buf strings.Builder
+		enc := json.NewEncoder(&buf)
+		enc.SetIndent("", "  ")
+		enc.Encode(span.Snapshot())
+		vt.WriteMarkdown([]byte("```json\n" + strings.TrimSpace(buf.String()) + "\n```"))
+		if len(span.EffectIDs) > 0 {
+			vt.WriteMarkdown([]byte("\n\n## Installed effects\n\n"))
+			for _, id := range span.EffectIDs {
+				vt.WriteMarkdown([]byte("- " + id + "\n"))
+				if spans := fe.db.EffectSpans[id]; spans != nil {
+					for _, effect := range spans.Order {
+						vt.WriteMarkdown([]byte("  - " + effect.Name + "\n"))
+					}
+				}
+			}
+		}
+		fmt.Fprint(out, prefix+vt.View())
+	}
+
 	return true
 }
 
@@ -1411,64 +1440,6 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, span *dagui.Sp
 		}
 	}
 	fmt.Fprintln(out)
-
-	if span.ID == fe.debugged {
-		r.indent(out, depth+1)
-		fmt.Fprintf(out, prefix+"? version: %d\n", span.Version)
-		r.indent(out, depth+1)
-		fmt.Fprintf(out, prefix+"? earliest running: %s\n", span.Activity.EarliestRunning)
-		r.indent(out, depth+1)
-		fmt.Fprintf(out, prefix+"? encapsulate: %v\n", span.Encapsulate)
-		r.indent(out, depth+1)
-		fmt.Fprintf(out, prefix+"? encapsulated: %v\n", span.Encapsulated)
-		r.indent(out, depth+1)
-		fmt.Fprintf(out, prefix+"? internal: %v\n", span.Internal)
-		r.indent(out, depth+1)
-		fmt.Fprintf(out, prefix+"? canceled: %v\n", span.Canceled)
-		r.indent(out, depth+1)
-		fmt.Fprintf(out, prefix+"? passthrough: %v\n", span.Passthrough)
-		r.indent(out, depth+1)
-		fmt.Fprintf(out, prefix+"? ignore: %v\n", span.Ignore)
-		pending, reasons := span.PendingReason()
-		r.indent(out, depth+1)
-		fmt.Fprintf(out, prefix+"? pending: %v\n", pending)
-		for _, reason := range reasons {
-			r.indent(out, depth+1)
-			fmt.Fprintln(out, prefix+"- "+reason)
-		}
-		cached, reasons := span.CachedReason()
-		r.indent(out, depth+1)
-		fmt.Fprintf(out, prefix+"? cached: %v\n", cached)
-		for _, reason := range reasons {
-			r.indent(out, depth+1)
-			fmt.Fprintln(out, prefix+"- "+reason)
-		}
-		failed, reasons := span.FailedReason()
-		r.indent(out, depth+1)
-		fmt.Fprintf(out, prefix+"? failed: %v\n", failed)
-		for _, reason := range reasons {
-			r.indent(out, depth+1)
-			fmt.Fprintln(out, prefix+"- "+reason)
-		}
-		if span.EffectID != "" {
-			r.indent(out, depth+1)
-			fmt.Fprintf(out, prefix+"? is effect: %s\n", span.EffectID)
-		}
-		if len(span.EffectIDs) > 0 {
-			r.indent(out, depth+1)
-			fmt.Fprintf(out, prefix+"? installed effects: %d\n", len(span.EffectIDs))
-			for _, id := range span.EffectIDs {
-				r.indent(out, depth+1)
-				fmt.Fprintln(out, prefix+" - "+id)
-				if spans := fe.db.EffectSpans[id]; spans != nil {
-					for _, effect := range spans.Order {
-						r.indent(out, depth+1)
-						fmt.Fprintln(out, prefix+"   - "+effect.Name)
-					}
-				}
-			}
-		}
-	}
 
 	return nil
 }
