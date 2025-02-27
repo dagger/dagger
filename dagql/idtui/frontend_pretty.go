@@ -44,8 +44,8 @@ func init() {
 
 var historyFile = filepath.Join(xdg.DataHome, "dagger", "histfile")
 
-var ShellExited = errors.New("shell exited")
-var Interrupted = errors.New("interrupted")
+var ErrShellExited = errors.New("shell exited")
+var ErrInterrupted = errors.New("interrupted")
 
 type frontendPretty struct {
 	dagui.FrontendOpts
@@ -1054,7 +1054,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			switch msg.String() {
 			case "ctrl+d":
 				if fe.editline.Value() == "" {
-					return fe.quit(ShellExited)
+					return fe.quit(ErrShellExited)
 				}
 			case "ctrl+c":
 				if fe.shellInterrupt != nil {
@@ -1086,7 +1086,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		fe.pressedKeyAt = time.Now()
 		switch msg.String() {
 		case "q", "ctrl+c":
-			return fe.quit(Interrupted)
+			return fe.quit(ErrInterrupted)
 		case "ctrl+\\": // SIGQUIT
 			fe.program.ReleaseTerminal()
 			sigquit()
