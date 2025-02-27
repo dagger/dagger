@@ -31,9 +31,14 @@ func Middleware() []testctx.Middleware[*testing.T] {
 	}
 }
 
-func TestShellAutocomplete(tt *testing.T) {
-	t := testctx.New(tt, Middleware()...)
+type DaggerCMDSuite struct {
+}
 
+func TestDaggerCMD(tt *testing.T) {
+	testctx.New(tt, Middleware()...).RunTests(DaggerCMDSuite{})
+}
+
+func (DaggerCMDSuite) TestShellAutocomplete(ctx context.Context, t *testctx.T) {
 	// each cmdline is a prompt input
 	// the contents of the angle brackets are the word we want to complete -
 	// everything before the $ sign is already written, and one of the response
@@ -107,8 +112,6 @@ func TestShellAutocomplete(tt *testing.T) {
 		os.Chdir(wd)
 	})
 	t.Setenv("DAGGER_MODULE", "./wolfi")
-
-	ctx := context.TODO()
 
 	client, err := dagger.Connect(ctx)
 	require.NoError(t, err)
