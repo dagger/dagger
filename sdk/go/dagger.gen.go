@@ -5592,6 +5592,7 @@ type ModuleSource struct {
 	localContextDirectoryPath *string
 	moduleName                *string
 	moduleOriginalName        *string
+	originalSubpath           *string
 	pin                       *string
 	repoRootPath              *string
 	sourceRootSubpath         *string
@@ -5896,6 +5897,19 @@ func (r *ModuleSource) ModuleOriginalName(ctx context.Context) (string, error) {
 		return *r.moduleOriginalName, nil
 	}
 	q := r.query.Select("moduleOriginalName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The original subpath used when instantiating this module source, relative to the context directory.
+func (r *ModuleSource) OriginalSubpath(ctx context.Context) (string, error) {
+	if r.originalSubpath != nil {
+		return *r.originalSubpath, nil
+	}
+	q := r.query.Select("originalSubpath")
 
 	var response string
 

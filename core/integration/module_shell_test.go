@@ -20,7 +20,8 @@ func TestShell(t *testing.T) {
 
 func daggerShell(script string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec([]string{"dagger", "shell", "-c", script}, dagger.ContainerWithExecOpts{
+		return c.WithExec([]string{"dagger"}, dagger.ContainerWithExecOpts{
+			Stdin:                         script,
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
@@ -28,7 +29,8 @@ func daggerShell(script string) dagger.WithContainerFunc {
 
 func daggerShellNoMod(script string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec([]string{"dagger", "shell", "--no-mod", "-c", script}, dagger.ContainerWithExecOpts{
+		return c.WithExec([]string{"dagger", "--no-mod"}, dagger.ContainerWithExecOpts{
+			Stdin:                         script,
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
@@ -381,6 +383,26 @@ func (Other) Version() string {
 		require.Contains(t, out, "load-container-from-id <id>")
 		require.Contains(t, out, "RETURNS")
 	})
+
+	t.Run("types result", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".types")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "An OCI-compatible container")
+		require.Contains(t, out, "A directory")
+		require.Contains(t, out, "Test main object")
+	})
+
+	t.Run("doc Test type", func(ctx context.Context, t *testctx.T) {
+		out, err := setup.
+			With(daggerShell(".help Test")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "OBJECT")
+		require.Contains(t, out, "Test main object")
+		require.Contains(t, out, "Encouragement")
+	})
 }
 
 func (ShellSuite) TestNoModule(ctx context.Context, t *testctx.T) {
@@ -415,7 +437,7 @@ func (ShellSuite) TestNoLoadModule(ctx context.Context, t *testctx.T) {
 	t.Run("dynamically loaded", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := modInit(t, c, "go", "").
-			With(daggerShellNoMod(".use .; .help")).
+			With(daggerShellNoMod(".cd .; .help")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "container-echo")
@@ -479,7 +501,7 @@ type Foo struct{
 		out, err := modInit(t, c, "go", test).
 			With(daggerExec("init", "--sdk=go", "--source=foo", "foo")).
 			With(sdkSourceAt("foo", "go", foo)).
-			With(daggerShell(".use foo; bar")).
+			With(daggerShell(".cd foo; bar")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "foobar")
@@ -510,7 +532,7 @@ func (ShellSuite) TestNotExists(ctx context.Context, t *testctx.T) {
 	_, err := modInit(t, c, "go", "").
 		With(daggerShell("load-container-from-id")).
 		Sync(ctx)
-	requireErrOut(t, err, "not found")
+	requireErrOut(t, err, "\"load-container-from-id\" does not exist")
 }
 
 func (ShellSuite) TestIntegerArg(ctx context.Context, t *testctx.T) {
@@ -656,7 +678,7 @@ func (ShellSuite) TestCommandStateArgs(ctx context.Context, t *testctx.T) {
 	_, err := daggerCliBase(t, c).
 		With(daggerShell(script)).
 		Sync(ctx)
-	requireErrOut(t, err, `"foo" not found`)
+	requireErrOut(t, err, `"foo" does not exist`)
 }
 
 func (ShellSuite) TestExecStderr(ctx context.Context, t *testctx.T) {
@@ -697,7 +719,7 @@ directory | with-new-file test bar | file test | contents
 	t.Run("async", func(ctx context.Context, t *testctx.T) {
 		script := `
 directory | with-new-file test foo | file test | contents &
-directory | with-new-file test bar | file test | contents & _wait
+directory | with-new-file test bar | file test | contents & .wait
 `
 		c := connect(ctx, t)
 		out, err := daggerCliBase(t, c).
@@ -712,7 +734,7 @@ directory | with-new-file test bar | file test | contents & _wait
 }
 
 func (ShellSuite) TestInterpreterBuiltins(ctx context.Context, t *testctx.T) {
-	t.Run("builtin", func(ctx context.Context, t *testctx.T) {
+	t.Run("internal", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := daggerCliBase(t, c).
 			With(daggerShell(`_echo foobar`)).
@@ -721,7 +743,16 @@ func (ShellSuite) TestInterpreterBuiltins(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "foobar\n", out)
 	})
 
-	t.Run("internal", func(ctx context.Context, t *testctx.T) {
+	t.Run("exposed", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			With(daggerShell(`.echo foobar`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foobar\n", out)
+	})
+
+	t.Run("reserved", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		_, err := daggerCliBase(t, c).
 			With(daggerShell(`__dag`)).

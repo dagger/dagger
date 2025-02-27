@@ -6258,6 +6258,11 @@ impl ModuleSource {
         let query = self.selection.select("moduleOriginalName");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The original subpath used when instantiating this module source, relative to the context directory.
+    pub async fn original_subpath(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("originalSubpath");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The pinned version of this module source.
     pub async fn pin(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("pin");

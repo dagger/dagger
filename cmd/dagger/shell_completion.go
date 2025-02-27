@@ -1,7 +1,6 @@
 package main
 
 import (
-	"slices"
 	"strings"
 
 	"github.com/vito/bubbline/computil"
@@ -249,12 +248,12 @@ func (ctx *CompletionContext) completions(prefix string) []string {
 		}
 
 	case ctx.CmdType == shellCoreCmdName:
-		for _, fn := range ctx.Completer.modDef(nil).GetCoreFunctions() {
+		for _, fn := range ctx.Completer.GetDef(nil).GetCoreFunctions() {
 			results = append(results, fn.CmdName())
 		}
 
 	case ctx.root:
-		for _, cmd := range slices.Concat(ctx.builtins(), ctx.stdlib()) {
+		for _, cmd := range ctx.stdlib() {
 			results = append(results, cmd.Name())
 		}
 		if md, _ := ctx.Completer.GetModuleDef(nil); md != nil {
@@ -265,7 +264,7 @@ func (ctx *CompletionContext) completions(prefix string) []string {
 				results = append(results, dep.Name)
 			}
 		}
-		results = append(results, ctx.Completer.LoadedModulesList()...)
+		results = append(results, ctx.Completer.LoadedModulePaths()...)
 	}
 
 	return results
@@ -276,7 +275,7 @@ func (ctx *CompletionContext) lookupField(field string, args []string) *Completi
 		return cmd.Complete(ctx, args)
 	}
 
-	def := ctx.Completer.modDef(nil)
+	def := ctx.Completer.GetDef(nil)
 
 	if ctx.ModType != nil {
 		next, err := def.GetFunction(ctx.ModType, field)
@@ -351,7 +350,7 @@ func (ctx *CompletionContext) lookupField(field string, args []string) *Completi
 
 func (ctx *CompletionContext) lookupType() *CompletionContext {
 	if ctx.ModFunction != nil {
-		def := ctx.Completer.modDef(nil)
+		def := ctx.Completer.GetDef(nil)
 		next := def.GetFunctionProvider(ctx.ModFunction.ReturnType.Name())
 		return &CompletionContext{
 			Completer: ctx.Completer,

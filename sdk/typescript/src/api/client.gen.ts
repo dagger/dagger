@@ -5346,6 +5346,7 @@ export class ModuleSource extends BaseClient {
   private readonly _localContextDirectoryPath?: string = undefined
   private readonly _moduleName?: string = undefined
   private readonly _moduleOriginalName?: string = undefined
+  private readonly _originalSubpath?: string = undefined
   private readonly _pin?: string = undefined
   private readonly _repoRootPath?: string = undefined
   private readonly _sourceRootSubpath?: string = undefined
@@ -5371,6 +5372,7 @@ export class ModuleSource extends BaseClient {
     _localContextDirectoryPath?: string,
     _moduleName?: string,
     _moduleOriginalName?: string,
+    _originalSubpath?: string,
     _pin?: string,
     _repoRootPath?: string,
     _sourceRootSubpath?: string,
@@ -5393,6 +5395,7 @@ export class ModuleSource extends BaseClient {
     this._localContextDirectoryPath = _localContextDirectoryPath
     this._moduleName = _moduleName
     this._moduleOriginalName = _moduleOriginalName
+    this._originalSubpath = _originalSubpath
     this._pin = _pin
     this._repoRootPath = _repoRootPath
     this._sourceRootSubpath = _sourceRootSubpath
@@ -5659,6 +5662,21 @@ export class ModuleSource extends BaseClient {
     }
 
     const ctx = this._ctx.select("moduleOriginalName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The original subpath used when instantiating this module source, relative to the context directory.
+   */
+  originalSubpath = async (): Promise<string> => {
+    if (this._originalSubpath) {
+      return this._originalSubpath
+    }
+
+    const ctx = this._ctx.select("originalSubpath")
 
     const response: Awaited<string> = await ctx.execute()
 

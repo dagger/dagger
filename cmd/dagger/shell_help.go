@@ -104,7 +104,7 @@ func (h *shellCallHandler) MainHelp() string {
 	if deps := h.getCurrentDependencies(); len(deps) > 0 {
 		doc.Add(
 			"Available Module Dependencies",
-			nameShortWrapped(deps, func(dep *moduleDependency) (string, string) {
+			nameShortWrapped(deps, func(dep *moduleDef) (string, string) {
 				return dep.Name, dep.Short()
 			}),
 		)
@@ -135,7 +135,7 @@ func (h *shellCallHandler) getDefaultFunctions() []*modFunction {
 	return fns
 }
 
-func (h *shellCallHandler) getCurrentDependencies() []*moduleDependency {
+func (h *shellCallHandler) getCurrentDependencies() []*moduleDef {
 	def, _ := h.GetModuleDef(nil)
 	if def == nil {
 		return nil
@@ -158,7 +158,7 @@ func (h *shellCallHandler) StdlibHelp() string {
 func (h *shellCallHandler) CoreHelp() string {
 	var doc ShellDoc
 
-	def := h.modDef(nil)
+	def := h.GetDef(nil)
 
 	doc.Add(
 		"Available Functions",
@@ -183,12 +183,49 @@ func (h *shellCallHandler) DepsHelp() string {
 
 	doc.Add(
 		"Module Dependencies",
-		nameShortWrapped(def.Dependencies, func(dep *moduleDependency) (string, string) {
+		nameShortWrapped(def.Dependencies, func(dep *moduleDef) (string, string) {
 			return dep.Name, dep.Short()
 		}),
 	)
 
 	doc.Add("", fmt.Sprintf(`Use "%s | .help <dependency>" for more information on a dependency.`, shellDepsCmdName))
+
+	return doc.String()
+}
+
+func (h *shellCallHandler) TypesHelp() string {
+	var doc ShellDoc
+
+	var core []functionProvider
+	var mod []functionProvider
+
+	def := h.GetDef(nil)
+
+	for _, o := range def.AsFunctionProviders() {
+		if o.IsCore() {
+			core = append(core, o)
+		} else {
+			mod = append(mod, o)
+		}
+	}
+
+	doc.Add(
+		"Core Types",
+		nameShortWrapped(core, func(o functionProvider) (string, string) {
+			return o.ProviderName(), o.Short()
+		}),
+	)
+
+	if len(mod) > 0 && def.HasModule() {
+		doc.Add(
+			def.Name+" Types",
+			nameShortWrapped(mod, func(o functionProvider) (string, string) {
+				return o.ProviderName(), o.Short()
+			}),
+		)
+	}
+
+	doc.Add("", `Use ".help <type>" for more information on a type.`)
 
 	return doc.String()
 }
@@ -247,11 +284,11 @@ func (d ShellDoc) String() string {
 }
 
 // shellFunctionUseLine returns the usage line fine for a function
-func shellFunctionUseLine(md *moduleDef, fn *modFunction) string {
+func (h *shellCallHandler) FunctionUseLine(md *moduleDef, fn *modFunction) string {
 	sb := new(strings.Builder)
 
 	if fn == md.MainObject.AsObject.Constructor {
-		sb.WriteString(md.ModRef)
+		sb.WriteString(h.modRelPath(md))
 	} else {
 		sb.WriteString(fn.CmdName())
 	}
@@ -269,7 +306,7 @@ func shellFunctionUseLine(md *moduleDef, fn *modFunction) string {
 	return sb.String()
 }
 
-func shellModuleDoc(st *ShellState, m *moduleDef) string {
+func (h *shellCallHandler) ModuleDoc(st *ShellState, m *moduleDef) string {
 	var doc ShellDoc
 
 	meta := new(strings.Builder)
@@ -286,7 +323,7 @@ func shellModuleDoc(st *ShellState, m *moduleDef) string {
 	if len(fn.Args) > 0 {
 		constructor := new(strings.Builder)
 		constructor.WriteString("Usage: ")
-		constructor.WriteString(shellFunctionUseLine(m, fn))
+		constructor.WriteString(h.FunctionUseLine(m, fn))
 
 		if fn.Description != "" {
 			constructor.WriteString("\n\n")
@@ -315,7 +352,7 @@ func shellModuleDoc(st *ShellState, m *moduleDef) string {
 
 	// If it's just `.help` and the current module doesn't have required args,
 	// can use the default constructor and show available functions.
-	if st.IsEmpty() && st.ModRef == "" && !fn.HasRequiredArgs() {
+	if st.IsEmpty() && st.ModDigest == "" && !fn.HasRequiredArgs() {
 		if fns := m.MainObject.AsFunctionProvider().GetFunctions(); len(fns) > 0 {
 			doc.Add(
 				"Available Functions",
@@ -358,14 +395,14 @@ func shellTypeDoc(t *modTypeDef) string {
 	return doc.String()
 }
 
-func shellFunctionDoc(md *moduleDef, fn *modFunction) string {
+func (h *shellCallHandler) FunctionDoc(md *moduleDef, fn *modFunction) string {
 	var doc ShellDoc
 
 	if fn.Description != "" {
 		doc.Add("", fn.Description)
 	}
 
-	usage := shellFunctionUseLine(md, fn)
+	usage := h.FunctionUseLine(md, fn)
 	if usage != "" {
 		doc.Add("Usage", usage)
 	}
