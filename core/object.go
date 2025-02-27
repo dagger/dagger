@@ -161,7 +161,7 @@ func (t *ModuleObjectType) TypeDef() *TypeDef {
 }
 
 type Callable interface {
-	Call(context.Context, *CallOpts) (*dagql.PostCallTyped, error)
+	Call(context.Context, *CallOpts) (dagql.Typed, error)
 	ReturnType() (ModType, error)
 	ArgType(argName string) (ModType, error)
 }
@@ -484,7 +484,7 @@ type CallableField struct {
 	Return ModType
 }
 
-func (f *CallableField) Call(ctx context.Context, opts *CallOpts) (*dagql.PostCallTyped, error) {
+func (f *CallableField) Call(ctx context.Context, opts *CallOpts) (dagql.Typed, error) {
 	val, ok := opts.ParentFields[f.Field.OriginalName]
 	if !ok {
 		return nil, fmt.Errorf("field %q not found on object %q", f.Field.Name, opts.ParentFields)
@@ -493,7 +493,7 @@ func (f *CallableField) Call(ctx context.Context, opts *CallOpts) (*dagql.PostCa
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert field %q: %w", f.Field.Name, err)
 	}
-	return &dagql.PostCallTyped{Typed: typed}, nil
+	return typed, nil
 }
 
 func (f *CallableField) ReturnType() (ModType, error) {

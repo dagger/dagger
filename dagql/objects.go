@@ -273,12 +273,12 @@ func (cls Class[T]) Call(
 
 	// field implementations can optionally return a wrapped Typed val that has
 	// a callback that should always run after the field is called
-	postCallVal, ok := val.(*PostCallTyped)
-	if !ok {
-		return val, nil, nil
+	var postCall func(context.Context) error
+	if postCallable, ok := UnwrapAs[PostCallable](val); ok {
+		postCall, val = postCallable.GetPostCall()
 	}
 
-	return postCallVal.Typed, postCallVal.PostCall, nil
+	return val, postCall, nil
 }
 
 // Instance is an instance of an Object type.
@@ -287,6 +287,7 @@ type Instance[T Typed] struct {
 	Self        T
 	Class       Class[T]
 	Module      *call.ID
+	postCall    func(context.Context) error
 }
 
 var _ Typed = Instance[Typed]{}
@@ -334,6 +335,15 @@ func (r Instance[T]) WithMetadata(customDigest digest.Digest, isPure bool) Insta
 		Class:       r.Class,
 		Module:      r.Module,
 	}
+}
+
+func (r Instance[T]) WithPostCall(fn func(context.Context) error) Instance[T] {
+	r.postCall = fn
+	return r
+}
+
+func (r Instance[T]) GetPostCall() (func(context.Context) error, Typed) {
+	return r.postCall, r
 }
 
 func NoopDone(res Typed, cached bool, rerr error) {}
@@ -556,10 +566,21 @@ func (r Instance[T]) call(
 // cache or not
 type PostCallTyped struct {
 	Typed
-	PostCall func(context.Context) error
+	postCall func(context.Context) error
 }
 
-var _ Wrapper = PostCallTyped{}
+var _ PostCallable = PostCallTyped{}
+
+func NewPostCallTyped(t Typed, fn func(context.Context) error) PostCallTyped {
+	return PostCallTyped{
+		Typed:    t,
+		postCall: fn,
+	}
+}
+
+func (p PostCallTyped) GetPostCall() (func(context.Context) error, Typed) {
+	return p.postCall, p.Typed
+}
 
 func (p PostCallTyped) Unwrap() Typed {
 	return p.Typed

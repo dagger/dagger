@@ -20,6 +20,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/opencontainers/go-digest"
 	fsutiltypes "github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
@@ -570,7 +571,23 @@ func (s *moduleSourceSchema) gitModuleSource(
 
 	gitSrc.Digest = gitSrc.CalcDigest().String()
 
-	return dagql.NewInstanceForCurrentID(ctx, s.dag, query, gitSrc)
+	inst, err = dagql.NewInstanceForCurrentID(ctx, s.dag, query, gitSrc)
+	if err != nil {
+		return inst, fmt.Errorf("failed to create instance: %w", err)
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	secretTransferPostCall, err := core.SecretTransferPostCall(ctx, query.Self, clientMetadata.ClientID, &resource.ID{
+		ID: *gitSrc.ContextDirectory.ID(),
+	})
+	if err != nil {
+		return inst, fmt.Errorf("failed to create secret transfer post call: %w", err)
+	}
+
+	return inst.WithPostCall(secretTransferPostCall), nil
 }
 
 type directoryAsModuleArgs struct {
@@ -2008,7 +2025,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		getModDefSpan.End()
 		return inst, fmt.Errorf("failed to create module definition function for module %q: %w", modName, err)
 	}
-	postCallRes, err := getModDefFn.Call(getModDefCtx, &core.CallOpts{
+	result, err := getModDefFn.Call(getModDefCtx, &core.CallOpts{
 		Cache:          true,
 		SkipSelfSchema: true,
 		Server:         s.dag,
@@ -2022,13 +2039,17 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		getModDefSpan.End()
 		return inst, fmt.Errorf("failed to call module %q to get functions: %w", modName, err)
 	}
-	result := postCallRes.Typed
-	if postCallRes.PostCall != nil {
-		if err := postCallRes.PostCall(ctx); err != nil {
-			getModDefSpan.End()
-			return inst, fmt.Errorf("failed to run post-call for module %q: %w", modName, err)
+	if postCallRes, ok := dagql.UnwrapAs[dagql.PostCallable](result); ok {
+		var postCall func(context.Context) error
+		postCall, result = postCallRes.GetPostCall()
+		if postCall != nil {
+			if err := postCall(ctx); err != nil {
+				getModDefSpan.End()
+				return inst, fmt.Errorf("failed to run post-call for module %q: %w", modName, err)
+			}
 		}
 	}
+
 	resultInst, ok := result.(dagql.Instance[*core.Module])
 	if !ok {
 		getModDefSpan.End()

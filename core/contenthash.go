@@ -103,7 +103,7 @@ func GetContentHashFromDef(
 		)
 		defer telemetry.End(span, func() error { return rerr })
 
-		dgst, err := bkcontenthash.Checksum(ctx, ref, "/", bkcontenthash.ChecksumOpts{}, nil)
+		dgst, err := bkcontenthash.Checksum(ctx, ref, subdir, bkcontenthash.ChecksumOpts{}, nil)
 		if err != nil {
 			return "", fmt.Errorf("failed to checksum ref: %w", err)
 		}

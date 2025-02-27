@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -33,7 +34,7 @@ type gitSchema struct {
 
 func (s *gitSchema) Install() {
 	dagql.Fields[*core.Query]{
-		dagql.NodeFunc("git", s.git).
+		dagql.NodeFuncWithCacheKey("git", s.git, nil).
 			View(AllVersion).
 			Doc(`Queries a Git repository.`).
 			ArgDoc("url",
@@ -44,7 +45,7 @@ func (s *gitSchema) Install() {
 			ArgDoc("sshKnownHosts", `Set SSH known hosts`).
 			ArgDoc("sshAuthSocket", `Set SSH auth socket`).
 			ArgDoc("experimentalServiceHost", `A service which must be started before the repo is fetched.`),
-		dagql.NodeFunc("git", s.gitLegacy).
+		dagql.NodeFuncWithCacheKey("git", s.gitLegacy, nil).
 			View(BeforeVersion("v0.13.4")).
 			Doc(`Queries a Git repository.`).
 			ArgDoc("url",
@@ -109,7 +110,8 @@ type gitArgs struct {
 	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
 }
 
-func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query], args gitArgs) (inst dagql.Instance[*core.GitRepository], _ error) {
+//nolint:gocyclo
+func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query], args gitArgs) (inst dagql.Instance[*core.GitRepository], err error) {
 	// 1. Setup experimental service host
 	var svcs core.ServiceBindings
 	if args.ExperimentalServiceHost.Valid {
@@ -192,12 +194,12 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 
 	// For HTTP(S) refs, handle PAT auth if we're the main client
 	if (remote.Scheme == "https" || remote.Scheme == "http") && clientMetadata != nil {
-		mainClientCallerID, err := parent.Self.MainClientCallerID(ctx)
+		mainClientCallerMetadata, err := parent.Self.NonModuleParentClientMetadata(ctx)
 		if err != nil {
 			return inst, fmt.Errorf("failed to retrieve mainClientCallerID: %w", err)
 		}
 
-		if clientMetadata.ClientID == mainClientCallerID {
+		if clientMetadata.ClientID == mainClientCallerMetadata.ClientID {
 			// Check if repo is public
 			repo := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
 				Name: "origin",
@@ -207,19 +209,21 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 			_, err := repo.ListContext(ctx, &git.ListOptions{Auth: nil})
 			if err != nil && errors.Is(err, transport.ErrAuthenticationRequired) {
 				// Only proceed with auth if repo requires authentication
-				bk, err := parent.Self.Buildkit(ctx)
+				authCtx := engine.ContextWithClientMetadata(ctx, mainClientCallerMetadata)
+
+				bk, err := parent.Self.Buildkit(authCtx)
 				if err != nil {
 					return inst, fmt.Errorf("failed to get buildkit: %w", err)
 				}
 
 				// Retrieve credential from host
-				credentials, err := bk.GetCredential(ctx, remote.Scheme, remote.Host, remote.Path)
+				credentials, err := bk.GetCredential(authCtx, remote.Scheme, remote.Host, remote.Path)
 				if err == nil {
 					// Credentials found, create and set auth token
-					var secretAuthToken dagql.Instance[*core.Secret]
 					hash := sha256.Sum256([]byte(credentials.Password))
 					secretName := hex.EncodeToString(hash[:])
-					if err := s.srv.Select(ctx, s.srv.Root(), &secretAuthToken,
+					var secretAuthToken dagql.Instance[*core.Secret]
+					if err := s.srv.Select(authCtx, s.srv.Root(), &secretAuthToken,
 						dagql.Selector{
 							Field: "setSecret",
 							Args: []dagql.NamedInput{
@@ -285,6 +289,16 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 		inst = instWithToken
 	}
 
+	if authToken.Self != nil {
+		secretTransferPostCall, err := core.SecretTransferPostCall(ctx, parent.Self, clientMetadata.ClientID, &resource.ID{
+			ID: *authToken.ID(),
+		})
+		if err != nil {
+			return inst, fmt.Errorf("failed to create secret transfer post call: %w", err)
+		}
+
+		inst = inst.WithPostCall(secretTransferPostCall)
+	}
 	return inst, nil
 }
 

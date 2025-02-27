@@ -2155,12 +2155,12 @@ func (m *Test) Fn() string {
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		t.Run("git", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+			privateSetup, cleanup := privateRepoSetup(c, t, tc)
 			defer cleanup()
 
-			ctr := c.Container().From(golangImage).
+			ctr := goGitBase(t, c).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				With(mountedSocket).
+				With(privateSetup).
 				WithWorkdir("/work").
 				With(daggerExec("init", "--source=.", "--name=test", "--sdk="+testGitModuleRef(tc, "cool-sdk"))).
 				WithNewFile("main.go", `package main
@@ -4696,6 +4696,41 @@ func (m *Test) GetRelDepSource(ctx context.Context, src *dagger.Directory) (*dag
 	})
 }
 
+func (ModuleSuite) TestContextDirectoryGit(ctx context.Context, t *testctx.T) {
+	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
+		for _, mod := range []string{"context-dir", "context-dir-user"} {
+			t.Run(mod, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+				mountedSocket, cleanup := privateRepoSetup(c, t, tc)
+				defer cleanup()
+
+				modRef := testGitModuleRef(tc, mod)
+				modGen := goGitBase(t, c).
+					WithWorkdir("/work").
+					With(mountedSocket)
+
+				out, err := modGen.With(daggerCallAt(modRef, "absolute-path", "entries")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Contains(t, out, ".git\n")
+				require.Contains(t, out, "README.md\n")
+
+				out, err = modGen.With(daggerCallAt(modRef, "absolute-path-subdir", "entries")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Contains(t, out, "root_data.txt\n")
+
+				out, err = modGen.With(daggerCallAt(modRef, "relative-path", "entries")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Contains(t, out, "dagger.json\n")
+				require.Contains(t, out, "src\n")
+
+				out, err = modGen.With(daggerCallAt(modRef, "relative-path-subdir", "entries")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Contains(t, out, "bar.txt\n")
+			})
+		}
+	})
+}
+
 func (ModuleSuite) TestIgnore(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -5396,19 +5431,37 @@ func daggerCallAt(modPath string, args ...string) dagger.WithContainerFunc {
 	}
 }
 
-func mountedPrivateRepoSocket(c *dagger.Client, t *testctx.T) (dagger.WithContainerFunc, func()) {
-	sockPath, cleanup := setupPrivateRepoSSHAgent(t)
+func privateRepoSetup(c *dagger.Client, t *testctx.T, tc vcsTestCase) (dagger.WithContainerFunc, func()) {
+	var socket *dagger.Socket
+	cleanup := func() {}
+	if tc.sshKey {
+		var sockPath string
+		sockPath, cleanup = setupPrivateRepoSSHAgent(t)
+		socket = c.Host().UnixSocket(sockPath)
+	}
+
+	token := ""
+	if tc.token != "" {
+		decoded, err := base64.StdEncoding.DecodeString(tc.token)
+		require.NoError(t, err)
+		token = strings.TrimSpace(string(decoded))
+	}
 
 	return func(ctr *dagger.Container) *dagger.Container {
-		sock := c.Host().UnixSocket(sockPath)
-		if sock != nil {
-			// Ensure that HOME env var is set, to ensure homePath expension in test suite
-			homeDir, _ := os.UserHomeDir()
-			ctr = ctr.WithEnvVariable("HOME", homeDir)
-
-			ctr = ctr.WithUnixSocket("/sock/unix-socket", sock)
-			ctr = ctr.WithEnvVariable("SSH_AUTH_SOCK", "/sock/unix-socket")
+		if socket != nil {
+			ctr = ctr.
+				WithUnixSocket("/sock/unix-socket", socket).
+				WithEnvVariable("SSH_AUTH_SOCK", "/sock/unix-socket")
 		}
+		if token != "" {
+			ctr = ctr.
+				WithExec([]string{
+					"git", "config", "--global",
+					"credential.https://" + tc.expectedHost + ".helper",
+					`!f() { test "$1" = get && echo "password=` + token + `"; }; f`,
+				})
+		}
+
 		return ctr
 	}, cleanup
 }
@@ -5702,16 +5755,16 @@ func (ModuleSuite) TestSSHAgentConnection(ctx context.Context, t *testctx.T) {
 }
 
 func (ModuleSuite) TestSSHAuthSockPathHandling(ctx context.Context, t *testctx.T) {
-	repoURL := "git@gitlab.com:dagger-modules/private/test/more/dagger-test-modules-private.git"
+	tc := getVCSTestCase(t, "ssh://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
 
 	t.Run("SSH auth with home expansion and symlink", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+		privateSetup, cleanup := privateRepoSetup(c, t, tc)
 		defer cleanup()
 
-		ctr := c.Container().From(golangImage).
+		ctr := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			With(mountedSocket).
+			With(privateSetup).
 			WithExec([]string{"mkdir", "-p", "/home/dagger"}).
 			WithEnvVariable("HOME", "/home/dagger").
 			WithExec([]string{"ln", "-s", "/sock/unix-socket", "/home/dagger/.ssh-sock"}).
@@ -5721,7 +5774,7 @@ func (ModuleSuite) TestSSHAuthSockPathHandling(ctx context.Context, t *testctx.T
 			WithWorkdir("/work/some/subdir").
 			WithExec([]string{"mkdir", "-p", "/home/dagger"}).
 			WithExec([]string{"sh", "-c", "cd", "/work/some/subdir"}).
-			With(daggerFunctions("-m", repoURL)).
+			With(daggerFunctions("-m", tc.gitTestRepoRef)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(out, "\n")
@@ -5730,18 +5783,18 @@ func (ModuleSuite) TestSSHAuthSockPathHandling(ctx context.Context, t *testctx.T
 
 	t.Run("SSH auth from different relative paths", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+		privateSetup, cleanup := privateRepoSetup(c, t, tc)
 		defer cleanup()
 
-		ctr := c.Container().From(golangImage).
+		ctr := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			With(mountedSocket).
+			With(privateSetup).
 			WithExec([]string{"mkdir", "-p", "/work/subdir"})
 
 		// Test from same directory as the socket
 		out, err := ctr.
 			WithWorkdir("/sock").
-			With(daggerFunctions("-m", repoURL)).
+			With(daggerFunctions("-m", tc.gitTestRepoRef)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(out, "\n")
@@ -5750,7 +5803,7 @@ func (ModuleSuite) TestSSHAuthSockPathHandling(ctx context.Context, t *testctx.T
 		// Test from a subdirectory
 		out, err = ctr.
 			WithWorkdir("/work/subdir").
-			With(daggerFunctions("-m", repoURL)).
+			With(daggerFunctions("-m", tc.gitTestRepoRef)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		lines = strings.Split(out, "\n")
@@ -5759,7 +5812,7 @@ func (ModuleSuite) TestSSHAuthSockPathHandling(ctx context.Context, t *testctx.T
 		// Test from parent directory
 		out, err = ctr.
 			WithWorkdir("/").
-			With(daggerFunctions("-m", repoURL)).
+			With(daggerFunctions("-m", tc.gitTestRepoRef)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		lines = strings.Split(out, "\n")

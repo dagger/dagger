@@ -142,10 +142,10 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 				t.Run("git", func(ctx context.Context, t *testctx.T) {
 					c := connect(ctx, t)
-					mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+					privateSetup, cleanup := privateRepoSetup(c, t, tc)
 					defer cleanup()
 
-					_, err := baseCtr(t, c).With(mountedSocket).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-source"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
+					_, err := baseCtr(t, c).With(privateSetup).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-source"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
 					requireErrOut(t, err, `source path "../../../" contains parent directory components`)
 				})
 			})
@@ -246,10 +246,10 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 				t.Run("git", func(ctx context.Context, t *testctx.T) {
 					c := connect(ctx, t)
-					mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+					privateSetup, cleanup := privateRepoSetup(c, t, tc)
 					defer cleanup()
 
-					_, err := baseCtr(t, c).With(mountedSocket).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-dep"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
+					_, err := baseCtr(t, c).With(privateSetup).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-dep"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
 					requireErrRegexp(t, err, `git module source ".*" does not contain a dagger config file`)
 				})
 			})
@@ -829,7 +829,14 @@ type vcsTestCase struct {
 	expectedPathPrefix string
 	isPrivateRepo      bool
 	skipProxyTest      bool
+
+	// token is a based64 encoded read-only PAT
+	token string
+	// sshKey determines whether to propagate the host's ssh-key
+	sshKey bool
 }
+
+const vcsTestCaseCommit = "ca6493ac2a5ed309c44565121b7bdd20a17b1abb"
 
 var vcsTestCases = []vcsTestCase{
 	// Test cases for public repositories using Go-style references, without '.git' suffix (optional)
@@ -839,7 +846,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "GitHub public",
 		gitTestRepoRef:           "github.com/dagger/dagger-test-modules",
-		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
+		gitTestRepoCommit:        vcsTestCaseCommit,
 		expectedHost:             "github.com",
 		expectedBaseHTMLURL:      "github.com/dagger/dagger-test-modules",
 		expectedURLPathComponent: "tree",
@@ -848,7 +855,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "GitLab public",
 		gitTestRepoRef:           "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
-		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
+		gitTestRepoCommit:        vcsTestCaseCommit,
 		expectedHost:             "gitlab.com",
 		expectedBaseHTMLURL:      "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
 		expectedURLPathComponent: "tree",
@@ -857,7 +864,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "BitBucket public",
 		gitTestRepoRef:           "bitbucket.org/dagger-modules/dagger-test-modules-public",
-		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
+		gitTestRepoCommit:        vcsTestCaseCommit,
 		expectedHost:             "bitbucket.org",
 		expectedBaseHTMLURL:      "bitbucket.org/dagger-modules/dagger-test-modules-public",
 		expectedURLPathComponent: "src",
@@ -866,7 +873,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "Azure DevOps public",
 		gitTestRepoRef:           "dev.azure.com/daggere2e/public/_git/dagger-test-modules",
-		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
+		gitTestRepoCommit:        vcsTestCaseCommit,
 		expectedHost:             "dev.azure.com",
 		expectedBaseHTMLURL:      "dev.azure.com/daggere2e/public/_git/dagger-test-modules",
 		expectedURLPathComponent: "commit",
@@ -880,37 +887,53 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "SSH Private GitLab",
 		gitTestRepoRef:           "ssh://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git",
-		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
+		gitTestRepoCommit:        vcsTestCaseCommit,
 		expectedHost:             "gitlab.com",
 		expectedBaseHTMLURL:      "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private",
 		expectedURLPathComponent: "tree",
 		expectedPathPrefix:       "",
 		isPrivateRepo:            true,
 		skipProxyTest:            true,
+		sshKey:                   true,
+	},
+	// GitLab private repository using PAT
+	{
+		name:                     "Private GitLab",
+		gitTestRepoRef:           "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git",
+		gitTestRepoCommit:        vcsTestCaseCommit,
+		expectedHost:             "gitlab.com",
+		expectedBaseHTMLURL:      "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private",
+		expectedURLPathComponent: "tree",
+		expectedPathPrefix:       "",
+		isPrivateRepo:            true,
+		skipProxyTest:            true,
+		token:                    "Z2xwYXQtQXlHQU4zR0xOeEhfM3VSckNzck0K",
 	},
 	// BitBucket private repository using SCP-like SSH reference format
 	{
 		name:                     "SSH Private BitBucket",
 		gitTestRepoRef:           "git@bitbucket.org:dagger-modules/private-modules-test.git",
-		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
+		gitTestRepoCommit:        vcsTestCaseCommit,
 		expectedHost:             "bitbucket.org",
 		expectedBaseHTMLURL:      "bitbucket.org/dagger-modules/private-modules-test",
 		expectedURLPathComponent: "src",
 		expectedPathPrefix:       "",
 		isPrivateRepo:            true,
 		skipProxyTest:            true,
+		sshKey:                   true,
 	},
 	// GitHub public repository using SSH reference
 	// Note: This format is also valid for private GitHub repositories
 	{
 		name:                     "SSH Public GitHub",
 		gitTestRepoRef:           "git@github.com:dagger/dagger-test-modules.git",
-		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
+		gitTestRepoCommit:        vcsTestCaseCommit,
 		expectedHost:             "github.com",
 		expectedBaseHTMLURL:      "github.com/dagger/dagger-test-modules",
 		expectedURLPathComponent: "tree",
 		expectedPathPrefix:       "",
 		skipProxyTest:            true,
+		sshKey:                   true,
 	},
 	// Azure DevOps private repository using SSH reference
 	// Note: Currently commented out due to Azure DevOps limitations on scoped SSH keys at the repository level
@@ -934,6 +957,16 @@ func testOnMultipleVCS(t *testctx.T, testFunc func(ctx context.Context, t *testc
 			testFunc(ctx, t, tc)
 		})
 	}
+}
+
+func getVCSTestCase(t *testctx.T, url string) vcsTestCase {
+	for _, tc := range vcsTestCases {
+		if tc.gitTestRepoRef == url {
+			return tc
+		}
+	}
+	require.Fail(t, "no test case found", url)
+	return vcsTestCase{}
 }
 
 func testGitModuleRef(tc vcsTestCase, subpath string) string {
@@ -1035,11 +1068,11 @@ func (ConfigSuite) TestDaggerGitWithSources(ctx context.Context, t *testctx.T) {
 			modSubpath := modSubpath
 			t.Run(modSubpath, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
-				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+				privateSetup, cleanup := privateRepoSetup(c, t, tc)
 				defer cleanup()
 
 				ctr := goGitBase(t, c).
-					With(mountedSocket).
+					With(privateSetup).
 					WithWorkdir("/work").
 					With(daggerExec("init", "--source=.")).
 					With(daggerExec("install", "--name", "foo", testGitModuleRef(tc, "various-source-values/"+modSubpath)))
