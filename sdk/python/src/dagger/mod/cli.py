@@ -45,6 +45,8 @@ def app():
         logger.exception("Fatal error")
         e.rich_print()
         sys.exit(1)
+    finally:
+        telemetry.shutdown()
 
 
 def load_module() -> Module:
