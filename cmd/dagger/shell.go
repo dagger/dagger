@@ -203,6 +203,16 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 				args[0] = strings.TrimPrefix(args[0], shellInterpBuiltinPrefix)
 				return args, nil
 			}
+			// We may allow some interpreter builtins to be used as dagger shell
+			// builtins, but there's no way to directly call the interpreter
+			// command from there so we use ShellCommand just for the documentation
+			// (.help) but strip the builtin prefix here ('.') when executing.
+			if cmd, _ := h.BuiltinCommand(args[0]); cmd != nil && cmd.Run == nil {
+				if name := strings.TrimPrefix(args[0], "."); isInterpBuiltin(name) {
+					args[0] = name
+					return args, nil
+				}
+			}
 			// If the command is an interpreter builtin, bypass the interpreter
 			// builtins to ensure the exec handler is executed.
 			if isInterpBuiltin(args[0]) {

@@ -341,6 +341,21 @@ func (h *shellCallHandler) registerCommands() {
 			},
 		},
 		&ShellCommand{
+			Use: ".echo [-n] [string ...]",
+			Description: `Write arguments to the standard output
+
+Writes any specified operands, separated by single blank (' ') characters and followed by a newline ('\n') character, to the standard output. If the -n option is specified, the trailing newline is suppressed.
+`,
+		},
+		&ShellCommand{
+			Use: ".wait",
+			Description: `Wait for background processes to complete
+
+The return status is 0 if all specified processes exit successfully. 
+If any process exits with a nonzero status, wait returns that status. 
+`,
+		},
+		&ShellCommand{
 			Use: ".cd [path | url]",
 			Description: `Change the current working directory 
 
