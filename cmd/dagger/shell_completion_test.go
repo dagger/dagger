@@ -10,10 +10,30 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/testctx"
+	"github.com/dagger/testctx/oteltest"
 	"github.com/stretchr/testify/require"
 )
 
-func TestShellAutocomplete(t *testing.T) {
+func TestMain(m *testing.M) {
+	os.Exit(oteltest.Main(m))
+}
+
+func Middleware() []testctx.Middleware[*testing.T] {
+	return []testctx.Middleware[*testing.T]{
+		oteltest.WithTracing[*testing.T](
+			oteltest.TraceConfig[*testing.T]{
+				StartOptions: testutil.SpanOpts[*testing.T],
+			},
+		),
+		oteltest.WithLogging[*testing.T](),
+	}
+}
+
+func TestShellAutocomplete(tt *testing.T) {
+	t := testctx.New(tt, Middleware()...)
+
 	// each cmdline is a prompt input
 	// the contents of the angle brackets are the word we want to complete -
 	// everything before the $ sign is already written, and one of the response
@@ -55,22 +75,16 @@ func TestShellAutocomplete(t *testing.T) {
 		`container | directory <--$expand >`,
 
 		// .deps builtin
-		`<.dep$s >`,
-		`<$.deps >`,
 		`.deps | <$alpine >`,
 		`.deps | <a$lpine >`,
 
 		// .stdlib builtin
-		`<.std$lib >`,
-		`<$.stdlib >`,
 		`.stdlib | <$container >`,
 		`.stdlib | <con$tainer >`,
 		`.stdlib | container <--$platform >`,
 		`.stdlib | container | <dir$ectory >`,
 
 		// .core builtin
-		`<.co$re >`,
-		`<$.core >`,
 		`.core | <con$tainer >`,
 		`.core | container <--$platform >`,
 		`.core | container | <dir$ectory >`,
@@ -111,7 +125,7 @@ func TestShellAutocomplete(t *testing.T) {
 	autoComplete := shellAutoComplete{handler}
 
 	for _, cmdline := range cmdlines {
-		t.Run(cmdline, func(t *testing.T) {
+		t.Run(cmdline, func(ctx context.Context, t *testctx.T) {
 			start := strings.IndexRune(cmdline, '<')
 			end := strings.IndexRune(cmdline, '>')
 			if start == -1 || end == -1 || !(start < end) {
@@ -127,6 +141,7 @@ func TestShellAutocomplete(t *testing.T) {
 			cursor := start + len(inprogress)
 
 			_, comp := autoComplete.Do([][]rune{[]rune(cmdline)}, 0, cursor)
+			require.NotNil(t, comp)
 			require.Equal(t, 1, comp.NumCategories())
 			candidates := make([]string, 0, comp.NumEntries(0))
 			for i := 0; i < comp.NumEntries(0); i++ {

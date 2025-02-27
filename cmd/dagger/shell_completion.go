@@ -253,6 +253,9 @@ func (ctx *CompletionContext) completions(prefix string) []string {
 		}
 
 	case ctx.root:
+		for _, cmd := range ctx.stdlib() {
+			results = append(results, cmd.Name())
+		}
 		if md, _ := ctx.Completer.GetModuleDef(nil); md != nil {
 			for _, fn := range md.MainObject.AsFunctionProvider().GetFunctions() {
 				results = append(results, fn.CmdName())
