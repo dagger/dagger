@@ -11,6 +11,7 @@ import (
 
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/.dagger/internal/dagger"
+	"github.com/dagger/dagger/.dagger/util"
 )
 
 type CLI struct {
@@ -213,7 +214,7 @@ func (cli *CLI) PublishMetadata(
 				WithExec([]string{"aws", "s3", "cp", "-", s3Path(awsBucket, "dagger/versions/latest")}, cpOpts).
 				WithExec([]string{"aws", "s3", "cp", "-", s3Path(awsBucket, "dagger/versions/%s", strings.TrimPrefix(semver.MajorMinor(version), "v"))}, cpOpts)
 		} else {
-			for _, variant := range prereleaseVariants(version) {
+			for _, variant := range util.PrereleaseVariants(version) {
 				ctr = ctr.
 					WithExec([]string{"aws", "s3", "cp", "-", s3Path(awsBucket, "dagger/versions/%s", strings.TrimPrefix(variant, "v"))}, cpOpts)
 			}
@@ -231,31 +232,6 @@ func s3Path(bucket string, path string, args ...any) string {
 		Path:   fmt.Sprintf(path, args...),
 	}
 	return u.String()
-}
-
-// prereleaseVariants takes a version with a prerelease, and returns variants
-// of it that should be aliased to the original one.
-// Example: v0.17.0-foo.1.2.3 -> [v0.17.0-foo.1.2.3, v0.17.0-foo.1.2, v0.17.0-foo.1, v0.17.0-foo]
-func prereleaseVariants(version string) (results []string) {
-	parts := strings.Split(semver.Prerelease(version), ".")
-	name, parts := parts[0], parts[1:]
-	for len(parts) > 0 {
-		newVersion := baseVersion(version) + name
-		if build := semver.Build(version); build != "" {
-			newVersion += build
-		}
-		results = append(results, newVersion)
-
-		name += "." + parts[0]
-		parts = parts[1:]
-	}
-	return results
-}
-
-func baseVersion(version string) string {
-	version = strings.TrimSuffix(version, semver.Build(version))
-	version = strings.TrimSuffix(version, semver.Prerelease(version))
-	return version
 }
 
 // Verify that the CLI builds without actually publishing anything
