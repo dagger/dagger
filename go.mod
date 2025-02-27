@@ -22,7 +22,7 @@ require (
 	github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2
 	github.com/adrg/xdg v0.5.3
 	github.com/cenkalti/backoff/v4 v4.3.0
-	github.com/charmbracelet/bubbletea v1.3.3
+	github.com/charmbracelet/bubbletea v1.3.4
 	github.com/charmbracelet/glamour v0.8.0
 	github.com/charmbracelet/lipgloss v1.0.0
 	github.com/containerd/console v1.0.4
@@ -72,7 +72,7 @@ require (
 	github.com/moby/sys/signal v0.7.1
 	github.com/moby/sys/userns v0.1.0
 	github.com/muesli/reflow v0.3.0
-	github.com/muesli/termenv v0.15.3-0.20240618155329-98d742f6907a
+	github.com/muesli/termenv v0.16.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/opencontainers/runtime-spec v1.2.0
@@ -93,7 +93,7 @@ require (
 	github.com/tonistiigi/fsutil v0.0.0-20240424095704-91a3fc46842c
 	github.com/urfave/cli v1.22.16
 	github.com/vektah/gqlparser/v2 v2.5.22
-	github.com/vito/bubbline v0.0.0-20250226023736-e1b950822f33
+	github.com/vito/bubbline v0.0.0-20250227004723-9472f5b7eb83
 	github.com/vito/go-sse v1.1.2
 	github.com/vito/midterm v0.2.2
 	github.com/zeebo/xxh3 v1.0.2
@@ -130,8 +130,8 @@ require (
 )
 
 require (
-	github.com/charmbracelet/bubbles v0.15.1-0.20230123181021-a6a12c4a31eb // indirect
-	github.com/sahilm/fuzzy v0.1.0 // indirect
+	github.com/charmbracelet/bubbles v0.20.0 // indirect
+	github.com/sahilm/fuzzy v0.1.1 // indirect
 )
 
 require (
