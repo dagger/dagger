@@ -532,7 +532,7 @@ func (ShellSuite) TestNotExists(ctx context.Context, t *testctx.T) {
 	_, err := modInit(t, c, "go", "").
 		With(daggerShell("load-container-from-id")).
 		Sync(ctx)
-	requireErrOut(t, err, "not found")
+	requireErrOut(t, err, "\"load-container-from-id\" does not exist")
 }
 
 func (ShellSuite) TestIntegerArg(ctx context.Context, t *testctx.T) {
@@ -678,7 +678,7 @@ func (ShellSuite) TestCommandStateArgs(ctx context.Context, t *testctx.T) {
 	_, err := daggerCliBase(t, c).
 		With(daggerShell(script)).
 		Sync(ctx)
-	requireErrOut(t, err, `"foo" not found`)
+	requireErrOut(t, err, `"foo" does not exist`)
 }
 
 func (ShellSuite) TestExecStderr(ctx context.Context, t *testctx.T) {
