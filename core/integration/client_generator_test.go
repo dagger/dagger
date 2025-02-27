@@ -108,7 +108,7 @@ main()`)
 					With(daggerClientAdd(tc.generator)).
 					With(tc.postSetup)
 
-				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
+				t.Run(fmt.Sprintf("%s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
 					out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
 						Stdout(ctx)
 
@@ -809,4 +809,54 @@ export class Generator {
 			require.Equal(t, "hello world", out)
 		})
 	}
+}
+
+func (ClientGeneratorTest) TestGlobalClient(ctx context.Context, t *testctx.T) {
+	t.Run("go", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		moduleSrc := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+			With(nonNestedDevEngine(c)).
+			With(daggerNonNestedExec("init")).
+			With(daggerNonNestedExec("install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
+			WithExec([]string{"go", "mod", "init", "test.com/test"}).
+			WithNewFile("main.go", `package main
+import (
+  "context"
+  "fmt"
+
+  "test.com/test/dagger/dag"
+)
+
+func main() {
+  ctx := context.Background()
+
+  res, err := dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "-n", "hello"}).Stdout(ctx)
+  if err != nil {
+    panic(err)
+  }
+
+  fmt.Println("result:", res)
+}`).
+			With(daggerClientAdd("go"))
+
+		t.Run("dagger run go run .", func(ctx context.Context, t *testctx.T) {
+			out, err := moduleSrc.With(daggerNonNestedRun("go", "run", ".")).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Contains(t, out, "result: hello\n")
+		})
+
+		t.Run("go run .", func(ctx context.Context, t *testctx.T) {
+			out, err := moduleSrc.WithExec([]string{"go", "run", "."}).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Contains(t, out, "result: hello\n")
+		})
+	})
 }

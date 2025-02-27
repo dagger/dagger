@@ -18,8 +18,12 @@ func initClient() *dagger.Client {
 	defer clientMu.Unlock()
 
 	if client == nil {
+		opts := []dagger.ClientOpt{
+			dagger.WithLogOutput(os.Stdout),
+		}
+
 		var err error
-		client, err = dagger.Connect(context.Background(), dagger.WithLogOutput(os.Stdout))
+		client, err = dagger.Connect(context.Background(), opts...)
 		if err != nil {
 			panic(err)
 		}
