@@ -108,7 +108,7 @@ main()`)
 					With(daggerClientAdd(tc.generator)).
 					With(tc.postSetup)
 
-				t.Run(fmt.Sprintf("%s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
+				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
 					out, err := moduleSrc.With(daggerNonNestedRun(tc.callCmd...)).
 						Stdout(ctx)
 
