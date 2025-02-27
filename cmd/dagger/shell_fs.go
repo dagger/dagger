@@ -471,7 +471,10 @@ func (h *shellCallHandler) newWorkdir(ctx context.Context, def *moduleDef, subpa
 	}, nil
 }
 
-func newModuleContext(ctx context.Context, def *moduleDef) (moduleContext, error) {
+func newModuleContext(ctx context.Context, def *moduleDef) (rctx moduleContext, rerr error) {
+	ctx, span := Tracer().Start(ctx, "getting more information from module source", telemetry.Internal())
+	defer telemetry.End(span, func() error { return rerr })
+
 	if def.SourceKind == dagger.ModuleSourceKindLocalSource {
 		root, err := def.Source.LocalContextDirectoryPath(ctx)
 		if err != nil {
