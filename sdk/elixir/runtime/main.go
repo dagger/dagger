@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	_ "embed"
 	"fmt"
+	"html/template"
 	"path"
 
 	"elixir-sdk/internal/dagger"
@@ -17,6 +20,12 @@ const (
 	schemaPath       = "/schema.json"
 	elixirImage      = "hexpm/elixir:1.17.3-erlang-27.2-alpine-3.20.3@sha256:557156f12d23b0d2aa12d8955668cc3b9a981563690bb9ecabd7a5a951702afe"
 )
+
+//go:embed template/mix.exs
+var mixExs string
+
+//go:embed template/lib/template.ex
+var mainModuleEx string
 
 func New(
 	// Directory with the Elixir SDK source code.
@@ -56,21 +65,19 @@ func (m *ElixirSdk) ModuleRuntime(
 		return nil, err
 	}
 
-	elixirApplication := toElixirApplicationName(modName)
-
 	ctr, err := m.Common(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, err
 	}
 
 	return ctr.
-		WithWorkdir(elixirApplication).
-		WithExec([]string{"mix", "deps.get", "--only", "dev"}).
+		WithEnvVariable("MIX_ENV", "prod").
+		WithExec([]string{"mix", "deps.get", "--only", "prod"}).
 		WithExec([]string{"mix", "deps.compile"}).
 		WithExec([]string{"mix", "compile"}).
 		WithEntrypoint([]string{
 			"mix", "cmd",
-			"--cd", path.Join(ModSourceDirPath, subPath, elixirApplication),
+			"--cd", path.Join(ModSourceDirPath, subPath),
 			fmt.Sprintf("mix dagger.entrypoint.invoke %s", toElixirModuleName(modName)),
 		}), nil
 }
@@ -87,7 +94,18 @@ func (m *ElixirSdk) Codegen(
 
 	return dag.GeneratedCode(ctr.Directory(ModSourceDirPath)).
 		WithVCSGeneratedPaths([]string{genDir + "/**"}).
-		WithVCSIgnoredPaths([]string{genDir}), nil
+		WithVCSIgnoredPaths([]string{
+			genDir,
+			// Elixir ignore files & directories from `mix new`.
+			"_build",
+			"cover",
+			"deps", 
+			"doc", 
+			"erl_crash.dump", 
+			"*.ez", 
+			"template-*.tar", 
+			"tmp",
+		}), nil
 }
 
 func (m *ElixirSdk) Common(ctx context.Context,
@@ -104,7 +122,7 @@ func (m *ElixirSdk) Common(ctx context.Context,
 	}
 	m = m.Base(modSource, subPath).
 		WithSDK(introspectionJSON).
-		WithNewElixirPackage(ctx, toElixirApplicationName(modName))
+		WithNewElixirPackage(ctx, modName)
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -122,9 +140,7 @@ func (m *ElixirSdk) Base(modSource *dagger.ModuleSource, subPath string) *Elixir
 // Generate a new Elixir package named by `modName`. This step will ignored if the
 // package already generated.
 func (m *ElixirSdk) WithNewElixirPackage(ctx context.Context, modName string) *ElixirSdk {
-	// Ensure to have a directory to list files/directories.
-	ctr := m.Container.WithExec([]string{"mkdir", "-p", modName})
-	entries, err := ctr.Directory(modName).Entries(ctx)
+	entries, err := m.Container.Directory(".").Entries(ctx)
 	if err != nil {
 		m.err = err
 		return m
@@ -139,11 +155,45 @@ func (m *ElixirSdk) WithNewElixirPackage(ctx context.Context, modName string) *E
 
 	// Generate scaffolding code when no project exists.
 	if !alreadyNewPackage {
+		app := dag.CurrentModule().Source().Directory("template")
+		mixExsTmpl, err := template.New("mix.exs").Parse(mixExs)
+		if err != nil {
+			m.err = err
+			return m
+		}
+		mainModExTmpl, err := template.New("main.ex").Parse(mainModuleEx)
+		if err != nil {
+			m.err = err
+			return m
+		}
+
+		appName := toElixirApplicationName(modName)
+		appContext := struct {
+			AppName string
+			ModName string
+		}{
+			AppName: appName,
+			ModName: toElixirModuleName(modName),
+		}
+
+		mixExs, err := execTemplate(mixExsTmpl, appContext)
+		if err != nil {
+			m.err = err
+			return m
+		}
+		mainModEx, err := execTemplate(mainModExTmpl, appContext)
+		if err != nil {
+			m.err = err
+			return m
+		}
+
 		m.Container = m.Container.
-			WithExec([]string{"mix", "new", modName}).
-			WithDirectory(modName+"/lib/mix/tasks", dag.Directory()).
-			WithMountedFile("/template.exs", dag.CurrentModule().Source().File("template.exs")).
-			WithExec([]string{"elixir", "/template.exs", "generate", modName})
+			WithDirectory(".", app, dagger.ContainerWithDirectoryOpts{
+				Exclude: []string{"mix.exs", "lib/template.ex"},
+			}).
+			WithNewFile("mix.exs", mixExs).
+			WithNewFile(fmt.Sprintf("lib/%s.ex", appName), mainModEx).
+			WithExec([]string{"mix", "deps.get"})
 	}
 	return m
 }
@@ -200,4 +250,13 @@ func toElixirApplicationName(name string) string {
 
 func toElixirModuleName(name string) string {
 	return strcase.ToCamel(name)
+}
+
+func execTemplate(tmpl *template.Template, data any) (string, error) {
+	var out bytes.Buffer
+	if err := tmpl.Execute(&out, data); err != nil {
+		return "", err
+	}
+	return out.String(), nil
+
 }
