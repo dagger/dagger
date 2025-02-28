@@ -182,14 +182,12 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 	stream := c.client.Messages.NewStreaming(ctx, params)
 	defer stream.Close()
 
+	if err := stream.Err(); err != nil {
+		return nil, err
+	}
+
 	acc := new(anthropic.Message)
-
-	// Loop over the streamed events.
 	for stream.Next() {
-		if err := stream.Err(); err != nil {
-			return nil, err
-		}
-
 		event := stream.Current()
 		acc.Accumulate(event)
 
