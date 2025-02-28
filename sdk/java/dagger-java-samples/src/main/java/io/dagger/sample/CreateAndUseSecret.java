@@ -10,7 +10,7 @@ public class CreateAndUseSecret {
     if (token == null) {
       token = new String(System.console().readPassword("GithHub API token: "));
     }
-    try (Client client = Dagger.connect()) {
+    try (AutoCloseableClient client = Dagger.connect()) {
       Secret secret = client.setSecret("ghApiToken", token);
 
       // use secret in container environment

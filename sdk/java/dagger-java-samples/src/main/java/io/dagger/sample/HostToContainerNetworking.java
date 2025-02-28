@@ -1,6 +1,6 @@
 package io.dagger.sample;
 
-import io.dagger.client.Client;
+import io.dagger.client.AutoCloseableClient;
 import io.dagger.client.Dagger;
 import io.dagger.client.Service;
 import java.net.URL;
@@ -11,7 +11,7 @@ import java.util.List;
 public class HostToContainerNetworking {
 
   public static void main(String... args) throws Exception {
-    try (Client client = Dagger.connect()) {
+    try (AutoCloseableClient client = Dagger.connect()) {
       // create web service container with exposed port 8080
       Service httpSrv =
           client

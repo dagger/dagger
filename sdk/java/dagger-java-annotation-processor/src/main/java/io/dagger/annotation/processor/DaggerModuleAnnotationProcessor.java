@@ -7,7 +7,6 @@ import com.github.javaparser.javadoc.JavadocBlockTag.Type;
 import com.google.auto.service.AutoService;
 import com.palantir.javapoet.*;
 import io.dagger.client.*;
-import io.dagger.module.AbstractModule;
 import io.dagger.module.annotation.*;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Module;
@@ -93,18 +92,6 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           if (!element.getModifiers().contains(Modifier.PUBLIC)) {
             throw new RuntimeException(
                 "The class %s must be public if annotated with @Object".formatted(qName));
-          }
-
-          if (!processingEnv
-              .getTypeUtils()
-              .isSubtype(
-                  typeElement.getSuperclass(),
-                  processingEnv
-                      .getElementUtils()
-                      .getTypeElement(AbstractModule.class.getName())
-                      .asType())) {
-            throw new RuntimeException(
-                "The class %s must extend %s".formatted(qName, AbstractModule.class.getName()));
           }
 
           boolean hasDefaultConstructor =
@@ -390,9 +377,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                   "$T obj = ($T) $T.fromJSON(dag, parentJson, clazz)",
                   objName,
                   objName,
-                  JsonConverter.class)
-              .addStatement(
-                  "clazz.getMethod(\"setClient\", $T.class).invoke(obj, dag)", Client.class);
+                  JsonConverter.class);
         }
         var firstFn = true;
         for (var fnInfo : objectInfo.functions()) {
@@ -445,8 +430,10 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                               .addException(Exception.class)
                               .returns(void.class)
                               .addParameter(String[].class, "args")
-                              .beginControlFlow("try (Client dag = $T.connect())", Dagger.class)
-                              .addStatement("new Entrypoint(dag).dispatch()")
+                              .beginControlFlow("try")
+                              .addStatement("new Entrypoint($T.dag()).dispatch()", Dagger.class)
+                              .nextControlFlow("finally")
+                              .addStatement("$T.dag().close()", Dagger.class)
                               .endControlFlow()
                               .build())
                       .addMethod(
@@ -527,8 +514,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
               "$T obj = ($T) $T.fromJSON(dag, parentJson, clazz)",
               objName,
               objName,
-              JsonConverter.class)
-          .addStatement("obj.setClient(dag)");
+              JsonConverter.class);
     }
 
     for (var parameterInfo : fnInfo.parameters()) {
