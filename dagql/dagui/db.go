@@ -37,8 +37,9 @@ type DB struct {
 	OutputOf  map[string]map[string]struct{}
 	Intervals map[string]map[time.Time]*Span
 
-	CauseSpans  map[string]SpanSet
-	EffectSpans map[string]SpanSet
+	CauseSpans   map[string]SpanSet
+	EffectSpans  map[string]SpanSet
+	CreatorSpans map[string]SpanSet
 
 	CompletedEffects map[string]bool
 	FailedEffects    map[string]bool
@@ -73,10 +74,12 @@ func NewDB() *DB {
 		Outputs:   make(map[string]map[string]struct{}),
 		Intervals: make(map[string]map[time.Time]*Span),
 
+		CauseSpans:   make(map[string]SpanSet),
+		EffectSpans:  make(map[string]SpanSet),
+		CreatorSpans: make(map[string]SpanSet),
+
 		CompletedEffects: make(map[string]bool),
 		FailedEffects:    make(map[string]bool),
-		CauseSpans:       make(map[string]SpanSet),
-		EffectSpans:      make(map[string]SpanSet),
 
 		updatedSpans: NewSpanSet(),
 		seenSpans:    make(map[SpanID]struct{}),
@@ -648,7 +651,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		db.CompletedEffects[dig] = true
 	}
 
-	if span.CallDigest != "" {
+	if span.CallDigest != "" && span.Output != "" {
 		// parent -> child
 		if db.Outputs[span.CallDigest] == nil {
 			db.Outputs[span.CallDigest] = make(map[string]struct{})
@@ -660,6 +663,12 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			db.OutputOf[span.Output] = make(map[string]struct{})
 		}
 		db.OutputOf[span.Output][span.CallDigest] = struct{}{}
+
+		// output -> creator
+		if db.CreatorSpans[span.Output] == nil {
+			db.CreatorSpans[span.Output] = NewSpanSet()
+		}
+		db.CreatorSpans[span.Output].Add(span)
 	}
 
 	for _, id := range span.EffectIDs {
@@ -743,21 +752,35 @@ func (*DB) Close() error {
 }
 
 func (db *DB) Call(dig string) *callpbv1.Call {
-	cached, ok := db.Calls[dig]
-	if ok {
+	// First, check if we already have the call cached
+	if cached, ok := db.Calls[dig]; ok {
 		return cached
 	}
-	callPayload, ok := db.CallPayloads[dig]
-	if !ok {
-		return nil
+
+	// Next, try to decode from the call payload
+	if callPayload, ok := db.CallPayloads[dig]; ok {
+		var call callpbv1.Call
+		if err := call.Decode(callPayload); err != nil {
+			slog.Warn("failed to decode call", "err", err)
+		} else {
+			// Cache the decoded call for future use
+			db.Calls[dig] = &call
+			return &call
+		}
 	}
-	var call callpbv1.Call
-	if err := call.Decode(callPayload); err != nil {
-		slog.Warn("failed to decode call", "err", err)
-	} else {
-		db.Calls[dig] = &call
+
+	// Finally, try to find the call through creator spans
+	if creators, ok := db.CreatorSpans[dig]; ok {
+		// Try each creator in order
+		for _, creator := range creators.Order {
+			if creatorCall := db.Call(creator.CallDigest); creatorCall != nil {
+				return creatorCall
+			}
+		}
 	}
-	return &call
+
+	// No call found
+	return nil
 }
 
 func (db *DB) MustCall(dig string) *callpbv1.Call {
