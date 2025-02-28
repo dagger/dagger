@@ -3,10 +3,10 @@ package core
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 
 	"dagger.io/dagger/telemetry"
@@ -15,7 +15,6 @@ import (
 	_ "github.com/dagger/dagger/core/bbi/empty"
 	_ "github.com/dagger/dagger/core/bbi/flat"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/joho/godotenv"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
@@ -565,22 +564,42 @@ func (llm *Llm) Sync(ctx context.Context, dag *dagql.Server) (*Llm, error) {
 							// If the BBI driver itself returned an error,
 							// send that error to the model
 							span.SetStatus(codes.Error, err.Error())
+
 							errResponse := err.Error()
-							// Send along stdout/stderr if available
-							var bkErr *buildkit.ExecError
-							if errors.As(err, &bkErr) {
-								if bkErr.Stdout != "" {
-									errResponse += "\n\n<stdout>\n"
-									errResponse += bkErr.Stdout
-									errResponse += "\n</stdout>"
+
+							// propagate error values to the model
+							if extErr, ok := err.(dagql.ExtendedError); ok {
+								var exts []string
+								for k, v := range extErr.Extensions() {
+									var ext strings.Builder
+									fmt.Fprintf(&ext, "<%s>\n", k)
+
+									switch v := v.(type) {
+									case string:
+										ext.WriteString(v)
+									case []string:
+										for _, s := range v {
+											fmt.Fprintf(&ext, "%s\n", s)
+										}
+									default:
+										jsonBytes, err := json.Marshal(v)
+										if err != nil {
+											fmt.Fprintf(&ext, "error marshalling value: %s", err.Error())
+										} else {
+											ext.Write(jsonBytes)
+										}
+									}
+
+									fmt.Fprintf(&ext, "\n</%s>", k)
+
+									exts = append(exts, ext.String())
 								}
-								if bkErr.Stderr != "" {
-									errResponse += "\n\n<stderr>\n"
-									errResponse += bkErr.Stderr
-									errResponse += "\n</stderr>"
+								if len(exts) > 0 {
+									sort.Strings(exts)
+									errResponse += "\n\n" + strings.Join(exts, "\n\n")
 								}
-								return strings.TrimSpace(errResponse), true
 							}
+
 							return errResponse, true
 						}
 						stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
