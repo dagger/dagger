@@ -99,6 +99,15 @@ type Object interface {
 	//
 	// Any Nullable values are automatically unwrapped.
 	Select(context.Context, *Server, Selector) (Typed, *call.ID, error)
+
+	// ReturnType gets the return type of the field selected by the given
+	// selector.
+	//
+	// The returned value is the raw Typed value returned from the field; it must
+	// be instantiated with a class for further selection.
+	//
+	// Any Nullable values are automatically unwrapped.
+	ReturnType(context.Context, Selector) (Typed, *call.ID, error)
 }
 
 // A type that has a callback attached that needs to always run before returned to a caller
@@ -760,6 +769,8 @@ func (i ID[T]) Load(ctx context.Context, server *Server) (Instance[T], error) {
 
 // Enumerable is a value that has a length and allows indexing.
 type Enumerable interface {
+	// Element returns the element of the Enumerable.
+	Element() Typed
 	// Len returns the number of elements in the Enumerable.
 	Len() int
 	// Nth returns the Nth element of the Enumerable, with 1 representing the
@@ -895,6 +906,11 @@ func (i Array[T]) Type() *ast.Type {
 }
 
 var _ Enumerable = Array[Typed]{}
+
+func (arr Array[T]) Element() Typed {
+	var t T
+	return t
+}
 
 func (arr Array[T]) Len() int {
 	return len(arr)

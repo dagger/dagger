@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/containerd/platforms"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -2943,7 +2944,6 @@ func (ContainerSuite) TestAnnotations(ctx context.Context, t *testctx.T) {
 				if asTarball {
 					_, err := c.Container().
 						AsTarball(dagger.ContainerAsTarballOpts{
-
 							PlatformVariants: []*dagger.Container{
 								build(c, "linux/amd64"),
 								build(c, "linux/arm64"),
@@ -2988,7 +2988,7 @@ func (ContainerSuite) TestAnnotations(ctx context.Context, t *testctx.T) {
 		}
 	}
 	t.Run("export", testExport(false))
-	t.Run("export", testExport(true))
+	t.Run("export tarball", testExport(true))
 }
 
 func (ContainerSuite) TestExecFromScratch(ctx context.Context, t *testctx.T) {
@@ -3134,6 +3134,30 @@ func (ContainerSuite) TestAsTarball(ctx context.Context, t *testctx.T) {
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "/foo.tar: POSIX tar archive\n", output)
+}
+
+func (ContainerSuite) TestAsTarballCached(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := c.Container().From(alpineImage)
+	first, err := ctr.
+		WithMountedFile("/foo.tar", ctr.AsTarball()).
+		WithExec([]string{"sha256sum", "/foo.tar"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	// make sure the index.json timestamp changes so we get a different hash
+	time.Sleep(2 * time.Second)
+
+	// setup a second client, so we don't share the dagql cache
+	c2 := connect(ctx, t)
+	ctr2 := c2.Container().From(alpineImage)
+	second, err := ctr2.
+		WithMountedFile("/foo.tar", ctr2.AsTarball()).
+		WithExec([]string{"sha256sum", "/foo.tar"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, first, second)
 }
 
 func (ContainerSuite) TestImport(ctx context.Context, t *testctx.T) {

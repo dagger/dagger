@@ -350,6 +350,26 @@ func NoopDone(res Typed, cached bool, rerr error) {}
 
 // Select calls the field on the instance specified by the selector
 func (r Instance[T]) Select(ctx context.Context, s *Server, sel Selector) (Typed, *call.ID, error) {
+	inputArgs, newID, err := r.preselect(ctx, sel)
+	if err != nil {
+		return nil, nil, err
+	}
+	return r.call(ctx, s, newID, inputArgs)
+}
+
+func (r Instance[T]) ReturnType(ctx context.Context, sel Selector) (Typed, *call.ID, error) {
+	_, newID, err := r.preselect(ctx, sel)
+	if err != nil {
+		return nil, nil, err
+	}
+	returnType, err := r.returnType(newID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return returnType, newID, nil
+}
+
+func (r Instance[T]) preselect(ctx context.Context, sel Selector) (map[string]Input, *call.ID, error) {
 	view := sel.View
 	field, ok := r.Class.Field(sel.Field, view)
 	if !ok {
@@ -422,7 +442,7 @@ func (r Instance[T]) Select(ctx context.Context, s *Server, sel Selector) (Typed
 		newID = newID.WithMetadata(customDgst, tainted)
 	}
 
-	return r.call(ctx, s, newID, inputArgs)
+	return inputArgs, newID, nil
 }
 
 // Call calls the field on the instance specified by the ID.
@@ -561,6 +581,37 @@ func (r Instance[T]) call(
 	return val, newID, nil
 }
 
+func (r Instance[T]) returnType(newID *call.ID) (Typed, error) {
+	field, ok := r.Class.Field(newID.Field(), newID.View())
+	if !ok {
+		return nil, fmt.Errorf("ReturnType: %s has no such field: %q", r.Class.inner.Type().Name(), newID.Field())
+	}
+	val := field.Spec.Type
+
+	if n, ok := val.(Derefable); ok {
+		val, ok = n.Deref()
+		if !ok {
+			return nil, nil
+		}
+	}
+	nth := int(newID.Nth())
+	if nth != 0 {
+		enum, ok := val.(Enumerable)
+		if !ok {
+			return nil, fmt.Errorf("cannot sub-select %dth item from %T", nth, val)
+		}
+		val = enum.Element()
+		if n, ok := val.(Derefable); ok {
+			val, ok = n.Deref()
+			if !ok {
+				return nil, nil
+			}
+		}
+	}
+
+	return val, nil
+}
+
 // PostCallTyped wraps a Typed value with an additional callback that
 // needs to be called after any value is returned, whether the value was from
 // cache or not
@@ -613,6 +664,13 @@ func (v ExactView) Contains(s string) bool {
 	return s == string(v)
 }
 
+type (
+	FuncHandler[T Typed, A any, R any]     = func(ctx context.Context, self T, args A) (R, error)
+	NodeFuncHandler[T Typed, A any, R any] = func(ctx context.Context, self Instance[T], args A) (R, error)
+
+	CacheKeyHandler[T Typed, A any, R any] = func(ctx context.Context, self Instance[T], args A, origDgst digest.Digest) (digest.Digest, error)
+)
+
 // Func is a helper for defining a field resolver and schema.
 //
 // The function must accept a context.Context, the receiver, and a struct of
@@ -631,7 +689,7 @@ func (v ExactView) Contains(s string) bool {
 //
 // To configure a description for the field in the schema, call .Doc on the
 // result.
-func Func[T Typed, A any, R any](name string, fn func(ctx context.Context, self T, args A) (R, error)) Field[T] {
+func Func[T Typed, A any, R any](name string, fn FuncHandler[T, A, R]) Field[T] {
 	return NodeFunc(name, func(ctx context.Context, self Instance[T], args A) (R, error) {
 		return fn(ctx, self.Self, args)
 	})
@@ -640,8 +698,8 @@ func Func[T Typed, A any, R any](name string, fn func(ctx context.Context, self 
 // FuncWithCacheKey is like Func but allows specifying a custom digest that will be used to cache the operation in dagql.
 func FuncWithCacheKey[T Typed, A any, R any](
 	name string,
-	fn func(ctx context.Context, self T, args A) (R, error),
-	cacheKeyFn func(ctx context.Context, self Instance[T], args A, origDgst digest.Digest) (digest.Digest, error),
+	fn FuncHandler[T, A, R],
+	cacheKeyFn CacheKeyHandler[T, A, R],
 ) Field[T] {
 	return NodeFuncWithCacheKey(name, func(ctx context.Context, self Instance[T], args A) (R, error) {
 		return fn(ctx, self.Self, args)
@@ -650,15 +708,15 @@ func FuncWithCacheKey[T Typed, A any, R any](
 
 // NodeFunc is the same as Func, except it passes the Instance instead of the
 // receiver so that you can access its ID.
-func NodeFunc[T Typed, A any, R any](name string, fn func(ctx context.Context, self Instance[T], args A) (R, error)) Field[T] {
+func NodeFunc[T Typed, A any, R any](name string, fn NodeFuncHandler[T, A, R]) Field[T] {
 	return NodeFuncWithCacheKey(name, fn, nil)
 }
 
 // NodeFuncWithCacheKey is like NodeFunc but allows specifying a custom digest that will be used to cache the operation in dagql.
 func NodeFuncWithCacheKey[T Typed, A any, R any](
 	name string,
-	fn func(ctx context.Context, self Instance[T], args A) (R, error),
-	cacheKeyFn func(ctx context.Context, self Instance[T], args A, origDgst digest.Digest) (digest.Digest, error),
+	fn NodeFuncHandler[T, A, R],
+	cacheKeyFn CacheKeyHandler[T, A, R],
 ) Field[T] {
 	var zeroArgs A
 	inputs, argsErr := inputSpecsForType(zeroArgs, true)
