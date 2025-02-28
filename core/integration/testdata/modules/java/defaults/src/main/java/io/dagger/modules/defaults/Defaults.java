@@ -13,10 +13,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.Optional;
 
 @Object
-public class Defaults extends AbstractModule {
-  public Defaults() {
-    super();
-  }
+public class Defaults {
+  public Defaults() {}
 
   @Function
   public String echo(@Default("default value") String value) {
