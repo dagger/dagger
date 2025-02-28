@@ -539,11 +539,6 @@ This command is idempotent: you can run it at any time, any number of times. It 
 				developSourcePath = filepath.Join(srcRootAbsPath, inferredSourcePath)
 			}
 
-			// if there's no SDK and the user isn't changing the source path, there's nothing to do.
-			// error out rather than silently doing nothing.
-			if modSDK == "" && developSourcePath == "" {
-				return fmt.Errorf("dagger develop on a module without an SDK requires either --sdk or --source")
-			}
 			if developSourcePath != "" {
 				// ensure source path is relative to the source root
 				sourceAbsPath, err := pathutil.Abs(developSourcePath)
