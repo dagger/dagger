@@ -70,6 +70,9 @@ type ModuleConfig struct {
 	// Paths to explicitly exclude from the module, relative to the configuration file.
 	// Deprecated: Use !<pattern> in the include list instead.
 	Exclude []string `json:"exclude,omitempty"`
+
+	// The clients generated for this module.
+	Clients []*ModuleConfigClient `json:"clients,omitempty"`
 }
 
 type ModuleConfigUserFields struct {
@@ -232,4 +235,15 @@ func (cfg ModuleCodegenConfig) Clone() *ModuleCodegenConfig {
 	clone := *cfg.AutomaticGitignore
 	cfg.AutomaticGitignore = &clone
 	return &cfg
+}
+
+type ModuleConfigClient struct {
+	// The generator the client uses to be generated.
+	Generator string `json:"generator"`
+
+	// The directory the client is generated in.
+	Directory string `json:"directory"`
+
+	// Whether the client is generated using the local SDK.
+	LocalLibrary *bool `json:"localLibrary,omitempty"`
 }

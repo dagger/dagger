@@ -182,8 +182,6 @@ func (t *TypescriptSdk) GenerateClient(
 		return nil, fmt.Errorf("failed to get module source root subpath: %w", err)
 	}
 
-	curentModuleDirectory := modSource.ContextDirectory().Directory(currentModuleDirectoryPath)
-
 	ctr := dag.Container().
 		From(tsdistconsts.DefaultNodeImageRef).
 		WithoutEntrypoint().
@@ -197,12 +195,11 @@ func (t *TypescriptSdk) GenerateClient(
 		WithExec([]string{"ln", "-s", "/usr/local/lib/node_modules/tsx/dist/cli.mjs", "/usr/local/bin/tsx"}).
 		// Add dagger codegen binary.
 		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
-		WithDirectory("/ctx", modSource.ContextDirectory()).
 		// Mount the introspection file.
 		WithMountedFile(schemaPath, introspectionJSON).
 		// Mount the current module directory.
-		WithDirectory(workdirPath, curentModuleDirectory).
-		WithWorkdir(workdirPath).
+		WithDirectory(workdirPath, modSource.ContextDirectory()).
+		WithWorkdir(filepath.Join(workdirPath, currentModuleDirectoryPath)).
 		// Execute the code generator using the given introspection file.
 		WithExec([]string{
 			codegenBinPath,
