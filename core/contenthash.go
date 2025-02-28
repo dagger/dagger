@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	bkcontenthash "github.com/moby/buildkit/cache/contenthash"
 	"github.com/moby/buildkit/client/llb"
@@ -80,7 +81,8 @@ func GetContentHashFromDef(
 	}
 	ref := workerRef.ImmutableRef
 
-	dgst, _, err := checksumG.Do(ctx, ref.ID(), func(ctx context.Context) (_ digest.Digest, rerr error) {
+	key := ref.ID() + "/" + strings.TrimPrefix(subdir, "/")
+	dgst, _, err := checksumG.Do(ctx, key, func(ctx context.Context) (_ digest.Digest, rerr error) {
 		if err := ref.Finalize(ctx); err != nil {
 			return "", fmt.Errorf("failed to finalize ref: %w", err)
 		}
