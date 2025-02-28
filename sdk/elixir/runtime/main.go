@@ -27,6 +27,9 @@ var mixExs string
 //go:embed template/lib/template.ex
 var mainModuleEx string
 
+//go:embed template/README.md
+var moduleReadme string
+
 func New(
 	// Directory with the Elixir SDK source code.
 	// +optional
@@ -99,11 +102,11 @@ func (m *ElixirSdk) Codegen(
 			// Elixir ignore files & directories from `mix new`.
 			"_build",
 			"cover",
-			"deps", 
-			"doc", 
-			"erl_crash.dump", 
-			"*.ez", 
-			"template-*.tar", 
+			"deps",
+			"doc",
+			"erl_crash.dump",
+			"*.ez",
+			"template-*.tar",
 			"tmp",
 		}), nil
 }
@@ -156,16 +159,6 @@ func (m *ElixirSdk) WithNewElixirPackage(ctx context.Context, modName string) *E
 	// Generate scaffolding code when no project exists.
 	if !alreadyNewPackage {
 		app := dag.CurrentModule().Source().Directory("template")
-		mixExsTmpl, err := template.New("mix.exs").Parse(mixExs)
-		if err != nil {
-			m.err = err
-			return m
-		}
-		mainModExTmpl, err := template.New("main.ex").Parse(mainModuleEx)
-		if err != nil {
-			m.err = err
-			return m
-		}
 
 		appName := toElixirApplicationName(modName)
 		appContext := struct {
@@ -176,12 +169,17 @@ func (m *ElixirSdk) WithNewElixirPackage(ctx context.Context, modName string) *E
 			ModName: toElixirModuleName(modName),
 		}
 
-		mixExs, err := execTemplate(mixExsTmpl, appContext)
+		mixExs, err := execTemplate(mixExs, appContext)
 		if err != nil {
 			m.err = err
 			return m
 		}
-		mainModEx, err := execTemplate(mainModExTmpl, appContext)
+		mainModEx, err := execTemplate(mainModuleEx, appContext)
+		if err != nil {
+			m.err = err
+			return m
+		}
+		readme, err := execTemplate(moduleReadme, appContext)
 		if err != nil {
 			m.err = err
 			return m
@@ -193,6 +191,7 @@ func (m *ElixirSdk) WithNewElixirPackage(ctx context.Context, modName string) *E
 			}).
 			WithNewFile("mix.exs", mixExs).
 			WithNewFile(fmt.Sprintf("lib/%s.ex", appName), mainModEx).
+			WithNewFile("README.md", readme).
 			WithExec([]string{"mix", "deps.get"})
 	}
 	return m
@@ -252,7 +251,11 @@ func toElixirModuleName(name string) string {
 	return strcase.ToCamel(name)
 }
 
-func execTemplate(tmpl *template.Template, data any) (string, error) {
+func execTemplate(text string, data any) (string, error) {
+	tmpl, err := template.New("template").Parse(text)
+	if err != nil {
+		return "", err
+	}
 	var out bytes.Buffer
 	if err := tmpl.Execute(&out, data); err != nil {
 		return "", err
