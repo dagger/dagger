@@ -211,6 +211,14 @@ func (id *ID) Display() string {
 	return fmt.Sprintf("%s: %s", id.Path(), id.typ.ToAST())
 }
 
+func (id *ID) Name() string {
+	name := id.pb.Field
+	if id.receiver != nil {
+		name = id.receiver.typ.NamedType() + "." + name
+	}
+	return name
+}
+
 // Return a new ID that's the selection of the nth element of the return value of the existing ID.
 // The new digest is derived from the existing ID's digest and the nth index.
 func (id *ID) SelectNth(nth int) *ID {
@@ -288,7 +296,8 @@ func (id *ID) Append(
 	return newID
 }
 
-// Return a new ID that's the same as before except with the given metadata changed.
+// WithMetadata returns a new ID that's the same as before except with the
+// given metadata changed.
 // customDigest, if not empty string, will become the ID's digest.
 // tainted sets the ID's tainted flag.
 func (id *ID) WithMetadata(customDigest digest.Digest, tainted bool) *ID {
@@ -302,6 +311,11 @@ func (id *ID) WithMetadata(customDigest digest.Digest, tainted bool) *ID {
 		customDigest,
 		id.args...,
 	)
+}
+
+// WithTaint is a shorthand for WithMetadata that sets the id as tainted
+func (id *ID) WithTaint() *ID {
+	return id.WithMetadata("", true)
 }
 
 func (id *ID) Encode() (string, error) {
