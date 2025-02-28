@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core/bbi"
@@ -12,6 +11,7 @@ import (
 	"github.com/openai/openai-go/option"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -34,6 +34,34 @@ func newOpenAIClient(endpoint *LlmEndpoint) *OpenAIClient {
 }
 
 func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, tools []bbi.Tool) (_ *LLMResponse, rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
+		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+		attribute.String(telemetry.UIMessageAttr, "received"),
+	))
+	defer telemetry.End(span, func() error { return rerr })
+
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+	defer stdio.Close()
+
+	m := telemetry.Meter(ctx, InstrumentationLibrary)
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetry.MetricsTraceIDAttr, span.SpanContext().TraceID().String()),
+		attribute.String(telemetry.MetricsSpanIDAttr, span.SpanContext().SpanID().String()),
+		attribute.String("model", c.endpoint.Model),
+		attribute.String("provider", string(c.endpoint.Provider)),
+	}
+
+	inputTokens, err := m.Int64Gauge(telemetry.LLMInputTokens)
+	if err != nil {
+		return nil, err
+	}
+
+	outputTokens, err := m.Int64Gauge(telemetry.LLMOutputTokens)
+	if err != nil {
+		return nil, err
+	}
+
 	// Convert generic Message to OpenAI specific format
 	var openAIMessages []openai.ChatCompletionMessageParamUnion
 	for _, msg := range history {
@@ -104,34 +132,28 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 	}
 	defer stream.Close()
 
-	var logsW io.Writer
+	if stream.Err() != nil {
+		return nil, stream.Err()
+	}
+
 	acc := new(openai.ChatCompletionAccumulator)
 	for stream.Next() {
-		if stream.Err() != nil {
-			return nil, stream.Err()
-		}
-
 		res := stream.Current()
 		acc.AddChunk(res)
 
+		// Keep track of the token usage
+		//
+		// NOTE: so far I'm only seeing 0 back from OpenAI - is this not actually supported?
+		if res.Usage.CompletionTokens > 0 {
+			outputTokens.Record(ctx, acc.Usage.CompletionTokens, metric.WithAttributes(attrs...))
+		}
+		if res.Usage.PromptTokens > 0 {
+			inputTokens.Record(ctx, acc.Usage.PromptTokens, metric.WithAttributes(attrs...))
+		}
+
 		if len(res.Choices) > 0 {
 			if content := res.Choices[0].Delta.Content; content != "" {
-				if logsW == nil {
-					// only show a message if we actually get a text response back
-					// (as opposed to tool calls)
-					ctx, span := Tracer(ctx).Start(ctx, "LLM response", telemetry.Reveal(), trace.WithAttributes(
-						attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-						attribute.String(telemetry.UIMessageAttr, "received"),
-					))
-					defer telemetry.End(span, func() error { return rerr })
-
-					stdio := telemetry.SpanStdio(ctx, "",
-						log.String(telemetry.ContentTypeAttr, "text/markdown"))
-
-					logsW = stdio.Stdout
-				}
-
-				fmt.Fprint(logsW, content)
+				fmt.Fprint(stdio.Stdout, content)
 			}
 		}
 	}
@@ -153,6 +175,11 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 	return &LLMResponse{
 		Content:   acc.Choices[0].Message.Content,
 		ToolCalls: toolCalls,
+		TokenUsage: TokenUsage{
+			InputTokens:  acc.Usage.PromptTokens,
+			OutputTokens: acc.Usage.CompletionTokens,
+			TotalTokens:  acc.Usage.TotalTokens,
+		},
 	}, nil
 }
 

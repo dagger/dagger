@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/anthropics/anthropic-sdk-go"
@@ -12,6 +11,7 @@ import (
 	"github.com/dagger/dagger/core/bbi"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -37,10 +37,62 @@ func newAnthropicClient(endpoint *LlmEndpoint, defaultSystemPrompt string) *Anth
 	}
 }
 
-func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage, tools []bbi.Tool) (*LLMResponse, error) {
+var ephemeral = anthropic.F(anthropic.CacheControlEphemeralParam{
+	Type: anthropic.F(anthropic.CacheControlEphemeralTypeEphemeral),
+})
+
+// Anthropic's API only allows 4 cache breakpoints.
+const maxAnthropicCacheBlocks = 4
+
+// Set a reasonable threshold for when we should start caching.
+//
+// Sonnet's minimum is 1024, Haiku's is 2048. Better to err on the higher side
+// so we don't waste cache breakpoints.
+const anthropicCacheThreshold = 2048
+
+func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage, tools []bbi.Tool) (res *LLMResponse, rerr error) {
+	ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
+		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+		attribute.String(telemetry.UIMessageAttr, "received"),
+	))
+	defer telemetry.End(span, func() error { return rerr })
+
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+	defer stdio.Close()
+
+	m := telemetry.Meter(ctx, InstrumentationLibrary)
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetry.MetricsTraceIDAttr, span.SpanContext().TraceID().String()),
+		attribute.String(telemetry.MetricsSpanIDAttr, span.SpanContext().SpanID().String()),
+		attribute.String("model", c.endpoint.Model),
+		attribute.String("provider", string(c.endpoint.Provider)),
+	}
+
+	inputTokens, err := m.Int64Gauge(telemetry.LLMInputTokens)
+	if err != nil {
+		return nil, err
+	}
+
+	inputTokensCacheReads, err := m.Int64Gauge(telemetry.LLMInputTokensCacheReads)
+	if err != nil {
+		return nil, err
+	}
+
+	inputTokensCacheWrites, err := m.Int64Gauge(telemetry.LLMInputTokensCacheWrites)
+	if err != nil {
+		return nil, err
+	}
+
+	outputTokens, err := m.Int64Gauge(telemetry.LLMOutputTokens)
+	if err != nil {
+		return nil, err
+	}
+
 	// Convert generic messages to Anthropic-specific message parameters.
 	var messages []anthropic.MessageParam
 	var systemPrompts []anthropic.TextBlockParam
+	var cachedBlocks int
 	for _, msg := range history {
 		var blocks []anthropic.ContentBlockParamUnion
 
@@ -54,22 +106,39 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 			content = " "
 		}
 
-		if msg.ToolCallID != "" {
-			blocks = append(blocks, anthropic.NewToolResultBlock(
-				msg.ToolCallID,
-				content,
-				msg.ToolErrored,
-			))
-		} else {
-			blocks = append(blocks, anthropic.NewTextBlock(content))
+		cacheControl := anthropic.Null[anthropic.CacheControlEphemeralParam]()
+
+		// enable caching based on simple token usage heuristic
+		if msg.TokenUsage.TotalTokens > anthropicCacheThreshold && cachedBlocks < maxAnthropicCacheBlocks {
+			cacheControl = ephemeral
+			cachedBlocks++
 		}
+
+		// add tool usage blocks first so they get cached when setting
+		// CacheControl below
 		for _, call := range msg.ToolCalls {
-			blocks = append(blocks, anthropic.NewToolUseBlockParam(
+			param := anthropic.NewToolUseBlockParam(
 				call.ID,
 				call.Function.Name,
 				call.Function.Arguments,
-			))
+			)
+			blocks = append(blocks, param)
 		}
+
+		if msg.ToolCallID != "" {
+			param := anthropic.NewToolResultBlock(
+				msg.ToolCallID,
+				content,
+				msg.ToolErrored,
+			)
+			param.CacheControl = cacheControl
+			blocks = append(blocks, param)
+		} else {
+			param := anthropic.NewTextBlock(content)
+			param.CacheControl = cacheControl
+			blocks = append(blocks, param)
+		}
+
 		switch msg.Role {
 		case "user":
 			messages = append(messages, anthropic.NewUserMessage(blocks...))
@@ -83,16 +152,20 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 
 	// If no system messages were found, use the default system prompt.
 	if len(systemPrompts) == 0 {
-		systemPrompts = []anthropic.TextBlockParam{anthropic.NewTextBlock(c.defaultSystemPrompt)}
+		block := anthropic.NewTextBlock(c.defaultSystemPrompt)
+		// block.CacheControl = ephemeral
+		systemPrompts = []anthropic.TextBlockParam{block}
 	}
 
 	// Convert tools to Anthropic tool format.
-	var toolsConfig []anthropic.ToolParam
+	var toolsConfig []anthropic.ToolUnionUnionParam
 	for _, tool := range tools {
+		// TODO: figure out cache control. do we want a checkpoint at the end?
 		toolsConfig = append(toolsConfig, anthropic.ToolParam{
 			Name:        anthropic.F(tool.Name),
 			Description: anthropic.F(tool.Description),
-			InputSchema: anthropic.F(interface{}(tool.Schema)),
+			InputSchema: anthropic.F(any(tool.Schema)),
+			// CacheControl: ephemeral,
 		})
 	}
 
@@ -109,8 +182,8 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 	stream := c.client.Messages.NewStreaming(ctx, params)
 	defer stream.Close()
 
-	var logsW io.Writer
 	acc := new(anthropic.Message)
+
 	// Loop over the streamed events.
 	for stream.Next() {
 		if err := stream.Err(); err != nil {
@@ -120,22 +193,26 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 		event := stream.Current()
 		acc.Accumulate(event)
 
+		// Keep track of the token usage
+		if acc.Usage.OutputTokens > 0 {
+			outputTokens.Record(ctx, acc.Usage.OutputTokens, metric.WithAttributes(attrs...))
+		}
+		if acc.Usage.InputTokens > 0 {
+			inputTokens.Record(ctx, acc.Usage.InputTokens, metric.WithAttributes(attrs...))
+		}
+		if acc.Usage.CacheReadInputTokens > 0 {
+			inputTokensCacheReads.Record(ctx, acc.Usage.CacheReadInputTokens, metric.WithAttributes(attrs...))
+		}
+		if acc.Usage.CacheCreationInputTokens > 0 {
+			inputTokensCacheWrites.Record(ctx, acc.Usage.CacheCreationInputTokens, metric.WithAttributes(attrs...))
+		}
+
 		// Check if the event delta contains text and trace it.
 		switch delta := event.Delta.(type) {
 		case anthropic.ContentBlockDeltaEventDelta:
 			if delta.Text != "" {
 				// Lazily initialize telemetry/logging on first text response.
-				if logsW == nil {
-					ctx, span := Tracer(ctx).Start(ctx, "LLM response", telemetry.Reveal(), trace.WithAttributes(
-						attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-						attribute.String(telemetry.UIMessageAttr, "received"),
-					))
-					defer telemetry.End(span, func() error { return nil })
-
-					stdio := telemetry.SpanStdio(ctx, "", log.String(telemetry.ContentTypeAttr, "text/markdown"))
-					logsW = stdio.Stdout
-				}
-				fmt.Fprint(logsW, delta.Text)
+				fmt.Fprint(stdio.Stdout, delta.Text)
 			}
 		}
 	}
@@ -179,5 +256,10 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 	return &LLMResponse{
 		Content:   content,
 		ToolCalls: toolCalls,
+		TokenUsage: TokenUsage{
+			InputTokens:  acc.Usage.InputTokens,
+			OutputTokens: acc.Usage.OutputTokens,
+			TotalTokens:  acc.Usage.InputTokens + acc.Usage.OutputTokens,
+		},
 	}, nil
 }

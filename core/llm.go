@@ -69,8 +69,15 @@ type LLMClient interface {
 }
 
 type LLMResponse struct {
-	Content   string
-	ToolCalls []ToolCall
+	Content    string
+	ToolCalls  []ToolCall
+	TokenUsage TokenUsage
+}
+
+type TokenUsage struct {
+	InputTokens  int64
+	OutputTokens int64
+	TotalTokens  int64
 }
 
 // ModelMessage represents a generic message in the LLM conversation
@@ -80,6 +87,7 @@ type ModelMessage struct {
 	ToolCalls   []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID  string     `json:"tool_call_id,omitempty"`
 	ToolErrored bool       `json:"tool_errored,omitempty"`
+	TokenUsage  TokenUsage `json:"token_usage,omitempty"`
 }
 
 type ToolCall struct {
@@ -533,9 +541,10 @@ func (llm *Llm) Sync(ctx context.Context, dag *dagql.Server) (*Llm, error) {
 
 		// Add the model reply to the history
 		llm.history = append(llm.history, ModelMessage{
-			Role:      "assistant",
-			Content:   res.Content,
-			ToolCalls: res.ToolCalls,
+			Role:       "assistant",
+			Content:    res.Content,
+			ToolCalls:  res.ToolCalls,
+			TokenUsage: res.TokenUsage,
 		})
 		// Handle tool calls
 		// calls := res.Choices[0].Message.ToolCalls

@@ -1362,7 +1362,16 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 		}
 		fmt.Fprint(out, icon)
 		fmt.Fprint(out, out.String(" "))
-		fe.renderStepLogs(out, r, row, prefix, highlight)
+		if fe.renderStepLogs(out, r, row, prefix, highlight) {
+			r.indent(out, row.Depth)
+			fmt.Fprint(out, out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack))
+		} else {
+			// no logs were printed, so snug the duration up against the emoji
+			fmt.Fprint(out, "\b")
+		}
+		r.renderDuration(out, span)
+		r.renderMetrics(out, span)
+		fmt.Fprintln(out)
 	} else {
 		fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
 		if row.IsRunningOrChildRunning || row.Span.IsFailedOrCausedFailure() || fe.Verbosity >= dagui.ExpandCompletedVerbosity {
@@ -1400,7 +1409,7 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 	fmt.Fprint(out, prefix+vt.View())
 }
 
-func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, highlight bool) {
+func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, highlight bool) bool {
 	if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
 		fe.renderLogs(out, r,
 			logs,
@@ -1409,7 +1418,9 @@ func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui
 			prefix,
 			highlight,
 		)
+		return true
 	}
+	return false
 }
 
 func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, span *dagui.Span, depth int, prefix string) {

@@ -403,35 +403,53 @@ func (r *renderer) renderCached(out TermOutput, span *dagui.Span) {
 	}
 }
 
+var metricsVerbosity = map[string]int{
+	telemetry.IOStatDiskReadBytes:      3,
+	telemetry.IOStatDiskWriteBytes:     3,
+	telemetry.IOStatPressureSomeTotal:  3,
+	telemetry.CPUStatPressureSomeTotal: 3,
+	telemetry.CPUStatPressureFullTotal: 3,
+	telemetry.MemoryCurrentBytes:       3,
+	telemetry.MemoryPeakBytes:          3,
+	telemetry.NetstatRxBytes:           3,
+	telemetry.NetstatTxBytes:           3,
+	telemetry.NetstatRxDropped:         3,
+	telemetry.NetstatTxDropped:         3,
+	telemetry.NetstatRxPackets:         3,
+	telemetry.NetstatTxPackets:         3,
+	telemetry.LLMInputTokens:           1,
+	telemetry.LLMOutputTokens:          1,
+}
+
 func (r renderer) renderMetrics(out TermOutput, span *dagui.Span) {
-	if r.Verbosity < dagui.ShowMetricsVerbosity {
-		return
+	if span.CallDigest != "" {
+		if metricsByName := r.db.MetricsByCall[span.CallDigest]; metricsByName != nil {
+			// IO Stats
+			r.renderMetric(out, metricsByName, telemetry.IOStatDiskReadBytes, "Disk Read", humanizeBytes)
+			r.renderMetric(out, metricsByName, telemetry.IOStatDiskWriteBytes, "Disk Write", humanizeBytes)
+			r.renderMetricIfNonzero(out, metricsByName, telemetry.IOStatPressureSomeTotal, "IO Pressure", durationString)
+
+			// CPU Stats
+			r.renderMetricIfNonzero(out, metricsByName, telemetry.CPUStatPressureSomeTotal, "CPU Pressure (some)", durationString)
+			r.renderMetricIfNonzero(out, metricsByName, telemetry.CPUStatPressureFullTotal, "CPU Pressure (full)", durationString)
+
+			// Memory Stats
+			r.renderMetric(out, metricsByName, telemetry.MemoryCurrentBytes, "Memory Bytes (current)", humanizeBytes)
+			r.renderMetric(out, metricsByName, telemetry.MemoryPeakBytes, "Memory Bytes (peak)", humanizeBytes)
+
+			// Network Stats
+			r.renderNetworkMetric(out, metricsByName, telemetry.NetstatRxBytes, telemetry.NetstatRxDropped, telemetry.NetstatRxPackets, "Network Rx")
+			r.renderNetworkMetric(out, metricsByName, telemetry.NetstatTxBytes, telemetry.NetstatTxDropped, telemetry.NetstatTxPackets, "Network Tx")
+		}
 	}
 
-	if span.CallDigest == "" {
-		return
+	if metricsByName := r.db.MetricsBySpan[span.ID]; metricsByName != nil {
+		// LLM Stats
+		r.renderMetric(out, metricsByName, telemetry.LLMInputTokens, "LLM Input Tokens", humanizeTokens)
+		r.renderMetric(out, metricsByName, telemetry.LLMOutputTokens, "LLM Output Tokens", humanizeTokens)
+		r.renderMetric(out, metricsByName, telemetry.LLMInputTokensCacheReads, "LLM Input Tokens (cache reads)", humanizeTokens)
+		r.renderMetric(out, metricsByName, telemetry.LLMInputTokensCacheWrites, "LLM Input Tokens (cache writes)", humanizeTokens)
 	}
-	metricsByName := r.db.MetricsByCall[span.CallDigest]
-	if metricsByName == nil {
-		return
-	}
-
-	// IO Stats
-	r.renderMetric(out, metricsByName, telemetry.IOStatDiskReadBytes, "Disk Read", humanizeBytes)
-	r.renderMetric(out, metricsByName, telemetry.IOStatDiskWriteBytes, "Disk Write", humanizeBytes)
-	r.renderMetricIfNonzero(out, metricsByName, telemetry.IOStatPressureSomeTotal, "IO Pressure", durationString)
-
-	// CPU Stats
-	r.renderMetricIfNonzero(out, metricsByName, telemetry.CPUStatPressureSomeTotal, "CPU Pressure (some)", durationString)
-	r.renderMetricIfNonzero(out, metricsByName, telemetry.CPUStatPressureFullTotal, "CPU Pressure (full)", durationString)
-
-	// Memory Stats
-	r.renderMetric(out, metricsByName, telemetry.MemoryCurrentBytes, "Memory Bytes (current)", humanizeBytes)
-	r.renderMetric(out, metricsByName, telemetry.MemoryPeakBytes, "Memory Bytes (peak)", humanizeBytes)
-
-	// Network Stats
-	r.renderNetworkMetric(out, metricsByName, telemetry.NetstatRxBytes, telemetry.NetstatRxDropped, telemetry.NetstatRxPackets, "Network Rx")
-	r.renderNetworkMetric(out, metricsByName, telemetry.NetstatTxBytes, telemetry.NetstatTxDropped, telemetry.NetstatTxPackets, "Network Tx")
 }
 
 func (r renderer) renderMetric(
@@ -440,9 +458,12 @@ func (r renderer) renderMetric(
 	metricName string, label string,
 	formatValue func(int64) string,
 ) {
+	if v, ok := metricsVerbosity[metricName]; ok && v > r.Verbosity {
+		return
+	}
 	if dataPoints := metricsByName[metricName]; len(dataPoints) > 0 {
 		lastPoint := dataPoints[len(dataPoints)-1]
-		fmt.Fprint(out, " | ")
+		fmt.Fprint(out, out.String(" "+Diamond+" ").Faint())
 		displayMetric := out.String(fmt.Sprintf("%s: %s", label, formatValue(lastPoint.Value)))
 		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
 		fmt.Fprint(out, displayMetric)
@@ -503,6 +524,10 @@ func durationString(microseconds int64) string {
 
 func humanizeBytes(v int64) string {
 	return humanize.Bytes(uint64(v))
+}
+
+func humanizeTokens(v int64) string {
+	return humanize.Commaf(float64(v))
 }
 
 // var (
