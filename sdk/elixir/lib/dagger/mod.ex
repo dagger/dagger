@@ -68,7 +68,7 @@ defmodule Dagger.Mod do
     for {name, arg_def} <- arg_defs do
       {:ok, value} =
         input_args
-        |> Map.fetch!(to_string(name))
+        |> Map.get(to_string(name))
         |> Decoder.decode(arg_def[:type], dag)
 
       value
