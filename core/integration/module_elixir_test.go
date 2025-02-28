@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -79,4 +80,31 @@ func (ElixirSuite) TestInit(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
+}
+
+func (ElixirSuite) TestOptionalValue(ctx context.Context, t *testctx.T) {
+	t.Run("can set a value", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := elixirModule(t, c, "defaults").
+			With(daggerCall("echo-else", "--value=foo")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "foo", out)
+	})
+}
+
+func elixirModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
+	t.Helper()
+	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/elixir", moduleName))
+	require.NoError(t, err)
+
+	sdkSrc, err := filepath.Abs("../../sdk/elixir")
+	require.NoError(t, err)
+
+	return goGitBase(t, c).
+		WithDirectory("modules/"+moduleName, c.Host().Directory(modSrc)).
+		WithDirectory("sdk/elixir", c.Host().Directory(sdkSrc)).
+		WithWorkdir("/work/modules/" + moduleName)
 }
