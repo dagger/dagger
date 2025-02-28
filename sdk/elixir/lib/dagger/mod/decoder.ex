@@ -6,6 +6,12 @@ defmodule Dagger.Mod.Decoder do
   @doc """
   Decode the given `value` into a proper `type`.
   """
+  def decode(value, type, dag)
+
+  def decode(nil, type, dag) do
+    cast(nil, type, dag)
+  end
+
   def decode(value, type, dag) do
     with {:ok, value} <- Jason.decode(value) do
       cast(value, type, dag)
