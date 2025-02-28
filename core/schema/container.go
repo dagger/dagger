@@ -1902,10 +1902,7 @@ func (s *containerSchema) asTarball(
 	if err != nil {
 		return inst, fmt.Errorf("container image to tarball file conversion failed: %w", err)
 	}
-	localDef, err := llb.Local(tmpDir,
-		llb.SessionID(bk.ID()), // see engine/server/bk_session.go, we have a special session that points to our engine host
-		llb.SharedKeyHint(bk.ID()),
-		llb.IncludePatterns([]string{fileName}),
+	localDef, err := importFromHost(bk, tmpDir, []string{fileName},
 		llb.WithCustomName(fmt.Sprintf("container-image-to-tarball-%s", fileName)),
 		buildkit.WithTracePropagation(ctx),
 	).Marshal(ctx, llb.Platform(engineHostPlatform.Spec()))
@@ -1930,6 +1927,19 @@ func (s *containerSchema) asTarball(
 		return inst, err
 	}
 	return fileInst, err
+}
+
+func importFromHost(bk *buildkit.Client, path string, includePatterns []string, opts ...llb.ConstraintsOpt) llb.State {
+	localOpts := []llb.LocalOption{
+		llb.SessionID(bk.ID()), // see engine/server/bk_session.go, we have a special session that points to our engine host
+		llb.SharedKeyHint(bk.ID()),
+		llb.IncludePatterns(includePatterns),
+	}
+	for _, opt := range opts {
+		localOpts = append(localOpts, opt)
+
+	}
+	return llb.Local(path, localOpts...)
 }
 
 type containerImportArgs struct {
