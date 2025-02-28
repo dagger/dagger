@@ -1,0 +1,13 @@
+{
+  "name": "toy-programmer-ts",
+  "engineVersion": "v0.17.0-llm.2",
+  "sdk": {
+    "source": "typescript"
+  },
+  "dependencies": [
+    {
+      "name": "toy-workspace",
+      "source": "../toy-workspace"
+    }
+  ]
+}

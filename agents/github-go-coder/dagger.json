@@ -1,0 +1,24 @@
+{
+  "name": "go-coder",
+  "engineVersion": "v0.17.0-llm.2",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "feature-branch",
+      "source": "github.com/kpenfound/dag/feature-branch",
+      "pin": "aeda09133df4ec88e3aabf513000753db6d2aa30"
+    },
+    {
+      "name": "github-issue",
+      "source": "github.com/kpenfound/dag/github-issue",
+      "pin": "fc2a4886e7eda23c8daa1ecb23bec5985ec19a63"
+    },
+    {
+      "name": "workspace",
+      "source": "github.com/kpenfound/dag/workspace",
+      "pin": "c6809821f7133cc03bea4290fbe81212e25338c8"
+    }
+  ]
+}

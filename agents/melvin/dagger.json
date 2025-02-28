@@ -1,0 +1,21 @@
+{
+  "name": "melvin",
+  "engineVersion": "v0.17.0-llm.2",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "github",
+      "source": "github"
+    },
+    {
+      "name": "go-checker",
+      "source": "go-checker"
+    },
+    {
+      "name": "workspace",
+      "source": "workspace"
+    }
+  ]
+}

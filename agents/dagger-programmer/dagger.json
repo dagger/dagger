@@ -1,0 +1,13 @@
+{
+  "name": "dagger-programmer",
+  "engineVersion": "v0.17.0-llm.2",
+  "sdk": {
+    "source": "python"
+  },
+  "dependencies": [
+    {
+      "name": "moduleWorkspace",
+      "source": "moduleWorkspace"
+    }
+  ]
+}

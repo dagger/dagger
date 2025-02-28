@@ -1,0 +1,15 @@
+{
+  "name": "go-checker",
+  "engineVersion": "v0.16.0-llm.1",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "go",
+      "source": "github.com/dagger/dagger/modules/go",
+      "pin": "679b93b80c634cf57eb995177d6a178f7497c312"
+    }
+  ],
+  "source": "."
+}
