@@ -1,0 +1,15 @@
+{
+  "name": "agents",
+  "engineVersion": "v0.16.2",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "supergit",
+      "source": "github.com/shykes/git",
+      "pin": "fd0bb09e0b3e4d1f27568e2f411fbc1bad925c58"
+    }
+  ],
+  "source": ".dagger"
+}
