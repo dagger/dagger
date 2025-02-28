@@ -2,34 +2,9 @@
 
 ## Overview
 
-Dagger is best known for [making CI less terrible](https://docs.dagger.io/#what-problem-does-dagger-solve),
-by transforming a mess of artisanal build scripts into clean containerized functions that can run anywhere.
+Dagger can be used as a runtime and programming environment for AI agents. Benefits include *reproducible execution*, *end-to-end observability*, *multi-model support*, *rapid iteration*, and *easy integration*.
 
-But Dagger is actually a complete runtime and programming environment for distributed applications,
-with unique features such as *repeatability*, *caching*, *tracing*, *platform independence*, and a [growing cross-language ecosystem](https://daggerverse.dev).
-
-Besides complex build and test workflows, these features are **perfect for running AI agents**.
-
-This repository explores how and why to use Dagger to build AI agents.
-
-## What is Dagger?
-
-Dagger is a new kind of runtime and programming environment for distributed applications, by the creators of Docker.
-
-Dagger is open-source, and can be installed on any machine that can run Linux containers.
-This includes Mac and Windows machines with a Docker-compatible tool installed.
-
-It builds on familiar, proven technology such as [containers](https://github.com/opencontainers/runc),
-[DAG engines](https://github.com/moby/buildkit) and [GraphQL](https://graphql.org), and integrates them
-into a development experience that emphasizes *simplicity*, *speed* and *repeatability*.
-
-- *Simplicity*: quality software is built from simple components, just like Lego bricks.
-- *Speed*: success requires rapid iteration. The faster one can iterate, the faster one can improve.
-- *Repeatability*: when components can be trusted to consistently produce the same results under the same conditions, one can build more powerful software, faster.
-
-As we will see, these principles apply to both *complex builds* and *complex AI workflows*.
-
-## Building AI agents with Dagger
+## Architecture
 
 Dagger's module system allows implementing agentic features as modular components that you can integrate into your application, or use individually.
 
@@ -65,9 +40,9 @@ The repository includes several examples of Dagger modules with agentic capabili
 
 ## Initial setup
 
-### 1. Install Dagger
+### 1. Install Dagger with llm support
 
-*Note: the latest version is `0.17.0-llm.2`. It was released on Feb 21 2025. If you are running an older build, we recommend upgrading.*
+*Note: the latest version is `0.17.0-llm.3`. It was released on Feb 21 2025. If you are running an older build, we recommend upgrading.*
 
 You will need a *development version* of Dagger which adds native support for LLM prompting and tool calling.
 
@@ -76,7 +51,7 @@ Once this feature is merged (current target is 0.17), a development build will n
 Install the development version of LLM-enabled Dagger:
 
 ```console
-curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.17.0-llm.2 BIN_DIR=/usr/local/bin sh
+curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.17.0-llm.3 BIN_DIR=/usr/local/bin sh
 ```
 
 You can adjust `BIN_DIR` to customize where the `dagger` CLI is installed.
@@ -84,8 +59,8 @@ You can adjust `BIN_DIR` to customize where the `dagger` CLI is installed.
 Verify that your Dagger installation works:
 
 ```console
-$ dagger core version
-v0.17.0-llm.2
+$ dagger -c version
+v0.17.0-llm.3
 ```
 
 ### 2.Configure LLM endpoints
@@ -160,18 +135,18 @@ Use the `dagger` CLI to load a module and call its functions.
 For example, to use the `toy-programmer` module:
 
 ```console
-dagger shell -m ./toy-programmer
+dagger -m ./toy-programmer
 ```
 
 Then, run this command in the dagger shell:
 
-```
-.doc
+```dagger
+.help
 ```
 
 This prints available functions. Let's call one:
 
-```
+```dagger
 go-program "develop a curl clone" | terminal
 ```
 
