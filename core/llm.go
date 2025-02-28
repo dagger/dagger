@@ -577,10 +577,6 @@ func (llm *Llm) Sync(ctx context.Context, dag *dagql.Server) (*Llm, error) {
 									switch v := v.(type) {
 									case string:
 										ext.WriteString(v)
-									case []string:
-										for _, s := range v {
-											fmt.Fprintf(&ext, "%s\n", s)
-										}
 									default:
 										jsonBytes, err := json.Marshal(v)
 										if err != nil {
