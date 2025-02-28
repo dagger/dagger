@@ -83,6 +83,17 @@ func (ElixirSuite) TestInit(ctx context.Context, t *testctx.T) {
 }
 
 func (ElixirSuite) TestOptionalValue(ctx context.Context, t *testctx.T) {
+	t.Run("can run without a value", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := elixirModule(t, c, "defaults").
+			With(daggerCall("echo-else")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "default value if null", out)
+	})
+
 	t.Run("can set a value", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
