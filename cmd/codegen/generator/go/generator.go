@@ -158,7 +158,8 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 		)
 
 		// Get the go package from the module
-		pkg, _, err := loadPackage(ctx, "/module")
+		// We assume that we'll be located at the root source directory
+		pkg, _, err := loadPackage(ctx, ".")
 		if err != nil {
 			return nil, fmt.Errorf("load package %q: %w", outDir, err)
 		}
