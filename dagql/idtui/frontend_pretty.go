@@ -382,14 +382,17 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 
 		if fe.msgPreFinalRender.Len() > 0 {
 			defer func() {
-				fmt.Fprintln(os.Stderr)
+				if fe.shell == nil {
+					// shell already prints blank line as it flushes
+					fmt.Fprintln(os.Stderr)
+				}
 				fmt.Fprintln(os.Stderr, fe.msgPreFinalRender.String())
 			}()
 		}
 	}
 
 	// If there are errors, show log output.
-	if fe.err != nil {
+	if fe.err != nil && fe.shell == nil {
 		// Counter-intuitively, we don't want to render the primary output
 		// when there's an error, because the error is better represented by
 		// the progress output and error summary.
