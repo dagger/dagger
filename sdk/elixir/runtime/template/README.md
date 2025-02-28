@@ -1,4 +1,4 @@
-# Template
+# {{ .ModName }}
 
 This is a README for you module. Feel free to edit it.
 
@@ -18,9 +18,9 @@ The module is just a regular Elixir application. The structure is looks like:
 ```
 .
 ├── lib
-│   └── template.ex
+│   └── {{ .AppName }}.ex
 ├── mix.exs
 └── README.md
 ```
 
-The `lib` is the Elixir source code while the `template.ex` is the main Dagger module.
+The `lib` is the Elixir source code while the `{{ .AppName }}.ex` is the main Dagger module.
