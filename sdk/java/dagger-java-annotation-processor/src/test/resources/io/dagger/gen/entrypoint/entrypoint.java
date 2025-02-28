@@ -39,8 +39,10 @@ public class Entrypoint {
   }
 
   public static void main(String[] args) throws Exception {
-    try (Client dag = Dagger.connect()) {
-      new Entrypoint(dag).dispatch();
+    try {
+      new Entrypoint(Dagger.dag()).dispatch();
+    } finally {
+      Dagger.dag().close();
     }
   }
 
@@ -152,7 +154,6 @@ public class Entrypoint {
         if (fnName.equals("containerEcho")) {
           Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
           DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(dag, parentJson, clazz);
-          obj.setClient(dag);
           String stringArg = null;
           if (inputArgs.get("stringArg") != null) {
             stringArg = (String) JsonConverter.fromJSON(dag, inputArgs.get("stringArg"), String.class);
@@ -163,7 +164,6 @@ public class Entrypoint {
         } else if (fnName.equals("grepDir")) {
           Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
           DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(dag, parentJson, clazz);
-          obj.setClient(dag);
           Directory directoryArg = null;
           if (inputArgs.get("directoryArg") != null) {
             directoryArg = (Directory) JsonConverter.fromJSON(dag, inputArgs.get("directoryArg"), Directory.class);
@@ -179,13 +179,11 @@ public class Entrypoint {
         } else if (fnName.equals("itself")) {
           Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
           DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(dag, parentJson, clazz);
-          obj.setClient(dag);
           DaggerJava res = obj.itself();
           return JsonConverter.toJSON(res);
         } else if (fnName.equals("isZero")) {
           Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
           DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(dag, parentJson, clazz);
-          obj.setClient(dag);
           int value = 0;
           if (inputArgs.get("value") != null) {
             value = (int) JsonConverter.fromJSON(dag, inputArgs.get("value"), int.class);
@@ -195,7 +193,6 @@ public class Entrypoint {
         } else if (fnName.equals("doThings")) {
           Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
           DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(dag, parentJson, clazz);
-          obj.setClient(dag);
           String[] stringArray = null;
           if (inputArgs.get("stringArray") != null) {
             stringArray = (String[]) JsonConverter.fromJSON(dag, inputArgs.get("stringArray"), String[].class);
@@ -216,7 +213,6 @@ public class Entrypoint {
         } else if (fnName.equals("nonNullableNoDefault")) {
           Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
           DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(dag, parentJson, clazz);
-          obj.setClient(dag);
           String stringArg = null;
           if (inputArgs.get("stringArg") != null) {
             stringArg = (String) JsonConverter.fromJSON(dag, inputArgs.get("stringArg"), String.class);
@@ -227,7 +223,6 @@ public class Entrypoint {
         } else if (fnName.equals("nonNullableDefault")) {
           Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
           DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(dag, parentJson, clazz);
-          obj.setClient(dag);
           String stringArg = null;
           if (inputArgs.get("stringArg") != null) {
             stringArg = (String) JsonConverter.fromJSON(dag, inputArgs.get("stringArg"), String.class);
@@ -238,7 +233,6 @@ public class Entrypoint {
         } else if (fnName.equals("nullable")) {
           Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
           DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(dag, parentJson, clazz);
-          obj.setClient(dag);
           String stringArg = null;
           if (inputArgs.get("stringArg") != null) {
             stringArg = (String) JsonConverter.fromJSON(dag, inputArgs.get("stringArg"), String.class);
@@ -249,7 +243,6 @@ public class Entrypoint {
         } else if (fnName.equals("nullableDefault")) {
           Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
           DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(dag, parentJson, clazz);
-          obj.setClient(dag);
           String stringArg = null;
           if (inputArgs.get("stringArg") != null) {
             stringArg = (String) JsonConverter.fromJSON(dag, inputArgs.get("stringArg"), String.class);
@@ -260,13 +253,11 @@ public class Entrypoint {
         } else if (fnName.equals("defaultPlatform")) {
           Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
           DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(dag, parentJson, clazz);
-          obj.setClient(dag);
           Platform res = obj.defaultPlatform();
           return JsonConverter.toJSON(res);
         } else if (fnName.equals("addFloat")) {
           Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
           DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(dag, parentJson, clazz);
-          obj.setClient(dag);
           float a = 0;
           if (inputArgs.get("a") != null) {
             a = (float) JsonConverter.fromJSON(dag, inputArgs.get("a"), float.class);

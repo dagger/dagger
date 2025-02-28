@@ -45,8 +45,6 @@ class ObjectVisitor extends AbstractVisitor {
                   "connection",
                   Modifier.PRIVATE)
               .build());
-      // AutoCloseable implementation
-      classBuilder.addSuperinterface(AutoCloseable.class);
       MethodSpec closeMethod =
           MethodSpec.methodBuilder("close")
               .addException(Exception.class)

@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 public class ConvertTest {
   @Test
   public void json_convert() throws Exception {
-    try (Client client = Dagger.connect()) {
+    try (AutoCloseableClient client = Dagger.connect()) {
       Container alpine = client.container().from("alpine:3.16.2").withWorkdir("/my-dir");
       assertThat(alpine.workdir()).isEqualTo("/my-dir");
 
