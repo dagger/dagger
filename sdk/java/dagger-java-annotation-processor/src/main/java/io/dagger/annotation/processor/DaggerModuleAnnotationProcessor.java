@@ -367,11 +367,10 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           ClassName objName = ClassName.bestGuess(objectInfo.qualifiedName());
           im.addStatement("$T clazz = Class.forName($S)", Class.class, objectInfo.qualifiedName())
               .addStatement(
-                  "$T obj = ($T) $T.fromJSON($T.dag(), parentJson, clazz)",
+                  "$T obj = ($T) $T.fromJSON(parentJson, clazz)",
                   objName,
                   objName,
-                  JsonConverter.class,
-                  Dagger.class);
+                  JsonConverter.class);
         }
         var firstFn = true;
         for (var fnInfo : objectInfo.functions()) {
@@ -494,11 +493,10 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
       // the object initialization has been skipped, it has to be done here
       code.addStatement("$T clazz = Class.forName($S)", Class.class, objectInfo.qualifiedName())
           .addStatement(
-              "$T obj = ($T) $T.fromJSON($T.dag(), parentJson, clazz)",
+              "$T obj = ($T) $T.fromJSON(parentJson, clazz)",
               objName,
               objName,
-              JsonConverter.class,
-              Dagger.class);
+              JsonConverter.class);
     }
 
     for (var parameterInfo : fnInfo.parameters()) {
@@ -525,9 +523,8 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                   .add("$L = (", parameterInfo.name())
                   .add(paramType)
                   .add(
-                      ") $T.fromJSON($T.dag(), inputArgs.get($S), ",
+                      ") $T.fromJSON(inputArgs.get($S), ",
                       JsonConverter.class,
-                      Dagger.class,
                       parameterInfo.name())
                   .add(paramType)
                   .add(".class")

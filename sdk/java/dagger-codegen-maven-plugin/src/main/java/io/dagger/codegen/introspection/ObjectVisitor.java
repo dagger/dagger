@@ -3,6 +3,7 @@ package io.dagger.codegen.introspection;
 import static org.apache.commons.lang3.StringUtils.capitalize;
 
 import com.palantir.javapoet.*;
+import jakarta.json.bind.annotation.JsonbTypeDeserializer;
 import jakarta.json.bind.annotation.JsonbTypeSerializer;
 import jakarta.json.bind.serializer.DeserializationContext;
 import jakarta.json.bind.serializer.JsonbDeserializer;
@@ -70,6 +71,13 @@ class ObjectVisitor extends AbstractVisitor {
             AnnotationSpec.builder(JsonbTypeSerializer.class)
                 .addMember("value", "$T.class", ClassName.bestGuess("IDAbleSerializer"))
                 .build());
+        classBuilder.addAnnotation(
+            AnnotationSpec.builder(JsonbTypeDeserializer.class)
+                .addMember(
+                    "value",
+                    "$T.class",
+                    ClassName.bestGuess(Helpers.formatName(type) + ".Deserializer"))
+                .build());
         classBuilder.addType(
             TypeSpec.classBuilder("Deserializer")
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -77,12 +85,6 @@ class ObjectVisitor extends AbstractVisitor {
                     ParameterizedTypeName.get(
                         ClassName.get(JsonbDeserializer.class),
                         ClassName.bestGuess(Helpers.formatName(type))))
-                .addField(ClassName.bestGuess("Client"), "dag", Modifier.PRIVATE, Modifier.FINAL)
-                .addMethod(
-                    MethodSpec.constructorBuilder()
-                        .addParameter(ClassName.bestGuess("Client"), "dag")
-                        .addStatement("this.dag = dag")
-                        .build())
                 .addMethod(
                     MethodSpec.methodBuilder("deserialize")
                         .addModifiers(Modifier.PUBLIC)
@@ -94,8 +96,9 @@ class ObjectVisitor extends AbstractVisitor {
                         .addStatement(
                             "$T id = ctx.deserialize($T.class, parser)", String.class, String.class)
                         .addStatement(
-                            "$T o = dag.load$LFromID(new $T(id))",
+                            "$T o = $T.dag().load$LFromID(new $T(id))",
                             ClassName.bestGuess(Helpers.formatName(type)),
+                            ClassName.bestGuess("io.dagger.client.Dagger"),
                             Helpers.formatName(type),
                             type.getIdField().getTypeRef().formatOutput())
                         .addStatement("return o")

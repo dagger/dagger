@@ -13,7 +13,7 @@ public class ConvertTest {
 
       JSON json = JsonConverter.toJSON(alpine);
 
-      Container a = JsonConverter.fromJSON(client, json, Container.class);
+      Container a = JsonConverter.fromJSON(json, Container.class);
       assertThat(a.workdir()).isEqualTo("/my-dir");
     }
   }
