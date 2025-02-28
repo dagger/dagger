@@ -1,5 +1,7 @@
 package io.dagger.java.module;
 
+import static io.dagger.client.Dagger.dag;
+
 import io.dagger.client.*;
 import io.dagger.module.AbstractModule;
 import io.dagger.module.annotation.*;
@@ -11,7 +13,7 @@ import java.util.concurrent.ExecutionException;
 
 /** Dagger Java Module main object */
 @Object
-public class DaggerJava extends AbstractModule {
+public class DaggerJava {
   private String notExportedField;
 
   /** Project source directory */
@@ -19,9 +21,7 @@ public class DaggerJava extends AbstractModule {
 
   public String version;
 
-  public DaggerJava() {
-    super();
-  }
+  public DaggerJava() {}
 
   /**
    * Initialize the DaggerJava Module
@@ -29,9 +29,8 @@ public class DaggerJava extends AbstractModule {
    * @param source Project source directory
    * @param version Go version
    */
-  public DaggerJava(Client dag, Optional<Directory> source, @Default("1.23.2") String version) {
-    super(dag);
-    this.source = source.orElseGet(() -> dag.currentModule().source());
+  public DaggerJava(Optional<Directory> source, @Default("1.23.2") String version) {
+    this.source = source.orElseGet(() -> dag().currentModule().source());
     this.version = version;
   }
 
@@ -43,7 +42,7 @@ public class DaggerJava extends AbstractModule {
    */
   @Function
   public Container containerEcho(@Default("Hello Dagger") String stringArg) {
-    return dag.container().from("alpine:latest").withExec(List.of("echo", stringArg));
+    return dag().container().from("alpine:latest").withExec(List.of("echo", stringArg));
   }
 
   /**
@@ -59,7 +58,8 @@ public class DaggerJava extends AbstractModule {
       Optional<String> pattern)
       throws InterruptedException, ExecutionException, DaggerQueryException {
     String grepPattern = pattern.orElse("dagger");
-    return dag.container()
+    return dag()
+        .container()
         .from("alpine:latest")
         .withMountedDirectory("/mnt", directoryArg)
         .withWorkdir("/mnt")
@@ -127,7 +127,7 @@ public class DaggerJava extends AbstractModule {
   @Function
   public Platform defaultPlatform()
       throws InterruptedException, ExecutionException, DaggerQueryException {
-    return dag.defaultPlatform();
+    return dag().defaultPlatform();
   }
 
   @Function
