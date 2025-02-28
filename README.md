@@ -1,7 +1,6 @@
 ## What is Dagger?
 
-Dagger is an open-source runtime for container-based AI workflows, by the creators of Docker.
-It goes beyond conventional “agent frameworks” by focusing on reproducible, observable execution, cross-language extensibility, and built-in support for containerizing AI state.
+Dagger is an open-source composable runtime for AI agents, by the creators of Docker. Originally developed and still used to replace CI workflows, Dagger's container-based execution engine has proven ideal for building AI agents — it transforms complex operations into programmable, repeatable, and observable workflows that scale seamlessly across environments.
 
 ### Why Dagger for AI Agents?
 
@@ -28,8 +27,8 @@ Dagger supports multiple programming languages (Python, Go, TypeScript, Java, PH
 
 ### Key Features
 
-- **Composable Functions**
-  Define workflow steps as discrete functions—chain, parallelize, or reuse them with minimal effort.
+- **Typed composition**
+  Define workflow steps as discrete, strongly typed functions. Chain, parallelize, or reuse them with minimal effort.
 
 - **Cross-Language Module System**
   Package those functions as modules, exposing them via GraphQL. Import them in Python, Go, TypeScript, Java, or PHP.
