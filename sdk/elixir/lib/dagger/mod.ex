@@ -58,7 +58,7 @@ defmodule Dagger.Mod do
   defp fetch_args!(input_args) do
     Enum.into(input_args, %{}, fn arg ->
       {:ok, name} = Dagger.FunctionCallArgValue.name(arg)
-      {:ok, value} = Dagger.FunctionCallArgValue.value(arg)
+      {:ok, value} = Dagger.FunctionCallArgValue.value(arg) |> dbg()
       {Macro.underscore(name), value}
     end)
   end
@@ -68,7 +68,7 @@ defmodule Dagger.Mod do
     for {name, arg_def} <- arg_defs do
       {:ok, value} =
         input_args
-        |> Map.fetch!(to_string(name))
+        |> Map.get(to_string(name))
         |> Decoder.decode(arg_def[:type], dag)
 
       value
