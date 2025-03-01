@@ -329,6 +329,7 @@ func (db *DB) newSpan(spanID SpanID) *Span {
 		RunningSpans:    NewSpanSet(),
 		RevealedSpans:   NewSpanSet(),
 		FailedLinks:     NewSpanSet(),
+		CanceledLinks:   NewSpanSet(),
 		causesViaLinks:  NewSpanSet(),
 		effectsViaLinks: NewSpanSet(),
 		db:              db,
@@ -610,6 +611,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 				if span.IsRunning() {
 					span.Canceled = true
 					span.EndTime = db.RootSpan.EndTime
+					span.PropagateStatusToParentsAndLinks()
 					db.update(span)
 				}
 			}
@@ -617,6 +619,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	} else if db.RootSpan != nil && !db.RootSpan.IsRunning() && span.IsRunning() {
 		span.Canceled = true
 		span.EndTime = db.RootSpan.EndTime
+		span.PropagateStatusToParentsAndLinks()
 	}
 
 	if span.EffectID != "" {

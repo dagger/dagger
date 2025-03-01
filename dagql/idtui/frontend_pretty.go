@@ -1364,7 +1364,10 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 		fe.renderStepLogs(out, r, row, prefix, highlight)
 	} else {
 		fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
-		if row.IsRunningOrChildRunning || row.Span.IsFailedOrCausedFailure() || fe.Verbosity >= dagui.ExpandCompletedVerbosity {
+		if row.IsRunningOrChildRunning ||
+			row.Span.IsFailedOrCausedFailure() ||
+			row.Span.IsCanceled() ||
+			fe.Verbosity >= dagui.ExpandCompletedVerbosity {
 			fe.renderStepLogs(out, r, row, prefix, highlight)
 		}
 	}
