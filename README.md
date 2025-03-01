@@ -33,10 +33,10 @@ Dagger is an open-source runtime for composable workflows. It's perfect for syst
 
 ## Join the community
 
-* Join the [Dagger community server](https://discord.gg/NpzVhsGnZu)
-* Follow us on [Twitter](https://twitter.com/dagger_io)
-* Check out our [community activities](https://dagger.io/community)
-* Read more in our [documentation](https://docs.dagger.io)
+- Join the [Dagger community server](https://discord.gg/NpzVhsGnZu)
+- Follow us on [Twitter](https://twitter.com/dagger_io)
+- Check out our [community activities](https://dagger.io/community)
+- Read more in our [documentation](https://docs.dagger.io)
 
 ## Contributing
 
