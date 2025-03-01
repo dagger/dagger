@@ -405,10 +405,41 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	return renderPrimaryOutput(fe.db)
 }
 
-func (fe *frontendPretty) flush() {
-	if fe.program != nil {
-		go fe.program.Send(flushMsg{})
+func (fe *frontendPretty) flush() tea.Cmd {
+	if fe.shell == nil {
+		return nil
 	}
+	buf := new(strings.Builder)
+	out := NewOutput(buf, termenv.WithProfile(fe.profile))
+
+	// unfocus, so we don't print a permanently focused one
+	// (but also because we'll have a new thing to focus on anyway)
+	fe.FocusedSpan = dagui.SpanID{}
+
+	r := newRenderer(fe.db, 100, fe.FrontendOpts)
+
+	for _, row := range fe.rows.Order {
+		var shouldFlush bool
+		if row.Depth == 0 && !row.IsRunningOrChildRunning && fe.logs.SawEOF[row.Span.ID] {
+			// we're a top-level completed span and we've seen EOF, so flush
+			shouldFlush = true
+		}
+		if row.Parent != nil && fe.flushed[row.Parent.ID] {
+			// our parent flushed, so we should too
+			shouldFlush = true
+		}
+		if !shouldFlush {
+			continue
+		}
+		if !fe.flushed[row.Span.ID] {
+			fe.renderRow(out, r, row, "", false)
+			fe.flushed[row.Span.ID] = true
+		}
+	}
+	if buf.Len() > 0 {
+		return tea.Printf("%s", strings.TrimLeft(buf.String(), "\n"))
+	}
+	return nil
 }
 
 func (fe *frontendPretty) SpanExporter() sdktrace.SpanExporter {
@@ -419,15 +450,9 @@ type prettySpanExporter struct {
 	*frontendPretty
 }
 
-// flushMsg is sent after spans are exported and the view is recalculated. When
-// this message is received, top-level finished spans are printed to the
-// scrollback.
-type flushMsg struct{}
-
 func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
-	defer fe.flush()
 	defer fe.recalculateViewLocked() // recalculate view *after* updating the db
 	slog.Debug("frontend exporting spans", "spans", len(spans))
 	return fe.db.ExportSpans(ctx, spans)
@@ -451,7 +476,6 @@ type prettyLogExporter struct {
 func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
-	defer fe.flush()
 	if err := fe.db.LogExporter().Export(ctx, logs); err != nil {
 		return err
 	}
@@ -932,36 +956,6 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			tea.DisableMouse,
 		)
 
-	case flushMsg:
-		if fe.shell == nil {
-			return fe, nil
-		}
-		buf := new(strings.Builder)
-		out := NewOutput(buf, termenv.WithProfile(fe.profile))
-		r := newRenderer(fe.db, 100, fe.FrontendOpts)
-		for _, row := range fe.rows.Order {
-			var shouldFlush bool
-			if row.Depth == 0 && !row.IsRunningOrChildRunning && fe.logs.SawEOF[row.Span.ID] {
-				// we're a top-level completed span and we've seen EOF, so flush
-				shouldFlush = true
-			}
-			if row.Parent != nil && fe.flushed[row.Parent.ID] {
-				// our parent flushed, so we should too
-				shouldFlush = true
-			}
-			if !shouldFlush {
-				continue
-			}
-			if !fe.flushed[row.Span.ID] {
-				fe.renderRow(out, r, row, "", false)
-				fe.flushed[row.Span.ID] = true
-			}
-		}
-		if buf.Len() > 0 {
-			return fe, tea.Printf("%s", strings.TrimLeft(buf.String(), "\n"))
-		}
-		return fe, nil
-
 	case backgroundMsg:
 		fe.backgrounded = true
 		cmd := msg.cmd
@@ -1018,9 +1012,14 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			ctx, cancel := context.WithCancelCause(fe.shellCtx)
 			fe.shellInterrupt = cancel
 
-			return fe, func() tea.Msg {
-				return shellDoneMsg{fe.shell(ctx, value)}
-			}
+			return fe, tea.Batch(
+				// flush the progress to the scrollback
+				fe.flush(),
+				// run the shell command
+				func() tea.Msg {
+					return shellDoneMsg{fe.shell(ctx, value)}
+				},
+			)
 		}
 		return fe, nil
 
