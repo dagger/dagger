@@ -45,10 +45,10 @@ func (ElixirSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--name=bare", "--sdk=github.com/dagger/dagger/sdk/elixir"))
 
 		out, err := modGen.
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerCall("container-echo", "--string-arg=hello", "stdout")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+		require.Equal(t, "hello\n", out)
 	})
 
 	t.Run("from alias", func(ctx context.Context, t *testctx.T) {
@@ -60,10 +60,10 @@ func (ElixirSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--name=bare", "--sdk=elixir"))
 
 		out, err := modGen.
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerCall("container-echo", "--string-arg=hello", "stdout")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+		require.Equal(t, "hello\n", out)
 	})
 
 	t.Run("from alias with ref", func(ctx context.Context, t *testctx.T) {
@@ -75,10 +75,10 @@ func (ElixirSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--name=bare", "--sdk=elixir@main"))
 
 		out, err := modGen.
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerCall("container-echo", "--string-arg=hello", "stdout")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+		require.Equal(t, "hello\n", out)
 	})
 }
 
@@ -103,6 +103,30 @@ func (ElixirSuite) TestOptionalValue(ctx context.Context, t *testctx.T) {
 
 		require.NoError(t, err)
 		require.Equal(t, "foo", out)
+	})
+}
+
+func (ElixirSuite) TestDefaultPath(ctx context.Context, t *testctx.T) {
+	t.Run("can set a path for a file", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := elixirModule(t, c, "defaults").
+			With(daggerCall("file-name", "--file=./mix.exs")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "mix.exs", out)
+	})
+
+	t.Run("can use a default path for a file", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := elixirModule(t, c, "defaults").
+			With(daggerCall("file-name")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "dagger.json", out)
 	})
 }
 
