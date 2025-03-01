@@ -487,18 +487,10 @@ func (span *Span) EffectSpans(f func(*Span) bool) {
 }
 
 func (span *Span) IsRunningOrEffectsRunning() bool {
-	if span.Final {
-		return span.Activity.IsRunning()
-	}
-	if span.IsRunning() {
-		return true
-	}
-	for effect := range span.EffectSpans {
-		if effect.IsRunning() {
-			return true
-		}
-	}
-	return false
+	return span.IsRunning() ||
+		// leverage the work that goes into span.Activity, rather than having two
+		// sources of truth
+		span.Activity.IsRunning()
 }
 
 func (span *Span) IsPending() bool {
