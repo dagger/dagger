@@ -38,7 +38,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/creack/pty v1.1.24
 	github.com/dagger/testctx v0.0.4
-	github.com/dagger/testctx/oteltest v0.0.2
+	github.com/dagger/testctx/oteltest v0.0.3
 	github.com/dave/jennifer v1.7.1
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/distribution/reference v0.6.0
