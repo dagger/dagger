@@ -38,7 +38,7 @@ module.exports = {
       items: [
         {
           type: "category",
-          label: "Dagger for CI: Quickstart",
+          label: "Quickstart",
           link: {
             type: "doc",
             id: "ci/quickstart/index",
@@ -56,7 +56,7 @@ module.exports = {
         },
         {
           type: "doc",
-          label: "Dagger for CI: Day 2",
+          label: "Day 2",
           id: "ci/adopting",
         },
         {
