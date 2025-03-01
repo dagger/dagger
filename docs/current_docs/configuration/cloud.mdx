@@ -95,7 +95,7 @@ You can use Dagger Cloud whether you're hosting your own CI runners and infrastr
 
 1. Update your GitHub Actions workflow and add the secret to the Dagger pipeline step as an environment variable. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the workflow using the format `DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}`. Refer to the GitHub documentation on [using secrets in a workflow](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#using-secrets-in-a-workflow).
 
-    [See an example of a sample GitHub Actions workflow file](../integrations/github.mdx)
+    [See an example of a sample GitHub Actions workflow file](../ci/integrations/github.mdx)
 
 1. Install the [Dagger Cloud GitHub App](https://github.com/apps/dagger-cloud). Once installed, GitHub automatically adds a new check for your GitHub pull requests, with a link to see CI status for each workflow job in Dagger Cloud.
 
@@ -106,7 +106,7 @@ You can use Dagger Cloud whether you're hosting your own CI runners and infrastr
 
 1. Update your GitLab CI workflow and add the variable to your CI environment. The environment variable must be named `DAGGER_CLOUD_TOKEN`. Refer to the GitLab documentation on [using CI/CD variables](https://docs.gitlab.com/ee/ci/variables/index.html#use-cicd-variables-in-job-scripts).
 
-    [See an example of a sample GitLab workflow file](../integrations/gitlab.mdx)
+    [See an example of a sample GitLab workflow file](../ci/integrations/gitlab.mdx)
 
 </TabItem>
 <TabItem value="CircleCI">
@@ -139,7 +139,7 @@ You can use Dagger Cloud whether you're hosting your own CI runners and infrastr
       CIRCLE_PIPELINE_NUMBER: << pipeline.number >>
     ```
 
-    [See an example of a sample CircleCI workflow](../integrations/circleci.mdx)
+    [See an example of a sample CircleCI workflow](../ci/integrations/circleci.mdx)
 
 
 </TabItem>
@@ -149,7 +149,7 @@ You can use Dagger Cloud whether you're hosting your own CI runners and infrastr
 
 1. Update your Jenkins Pipeline and add the variable to the CI environment. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the Pipeline environment using the format `DAGGER_CLOUD_TOKEN = credentials('DAGGER_CLOUD_TOKEN')`. Refer to the Jenkins documentation on [handling credentials](https://www.jenkins.io/doc/book/pipeline/jenkinsfile/#handling-credentials).
 
-    [See an example of a sample Jenkins Pipeline](../integrations/jenkins.mdx)
+    [See an example of a sample Jenkins Pipeline](../ci/integrations/jenkins.mdx)
 
 :::note
 - This Jenkins Pipeline assumes that the Dagger CLI is pre-installed on the Jenkins runner(s), together with other required dependencies.
@@ -168,7 +168,7 @@ You can use Dagger Cloud whether you're hosting your own CI runners and infrastr
 
 1. Update your Argo Workflows specification and add the secret as an environment variable. The environment variable must be named `DAGGER_CLOUD_TOKEN`.
 
-    [See an example of a sample Argo Workflows specification](../integrations/argo-workflows.mdx)
+    [See an example of a sample Argo Workflows specification](../ci/integrations/argo-workflows.mdx)
 
 </TabItem>
 </Tabs>
