@@ -411,3 +411,11 @@ func (*Viztest) DiskMetrics(ctx context.Context) (string, error) {
 		WithExec([]string{"sh", "-c", "dd if=/dev/urandom of=random_file bs=1M count=1000 && sync"}).
 		Stdout(ctx)
 }
+
+func (*Viztest) List(ctx context.Context, dir *dagger.Directory) (string, error) {
+	ents, err := dir.Entries(ctx)
+	if err != nil {
+		return "", err
+	}
+	return strings.Join(ents, "\n"), nil
+}
