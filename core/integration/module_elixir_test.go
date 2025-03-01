@@ -128,6 +128,17 @@ func (ElixirSuite) TestDefaultPath(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "dagger.json", out)
 	})
+
+	t.Run("can use a default path for a dir", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := elixirModule(t, c, "defaults").
+			With(daggerCall("file-names")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "defaults.ex", out)
+	})
 }
 
 func elixirModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {

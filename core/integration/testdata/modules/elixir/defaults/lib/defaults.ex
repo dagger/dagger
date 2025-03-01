@@ -10,4 +10,10 @@ defmodule Defaults do
   defn file_name(file: {Dagger.File.t(), default_path: "dagger.json"}) :: String.t() do
     Dagger.File.name(file)
   end
+
+  defn file_names(dir: {Dagger.Directory.t(), default_path: "lib"}) :: String.t() do
+    with {:ok, entries} <- Dagger.Directory.entries(dir) do
+      Enum.join(entries, " ")
+    end
+  end
 end
