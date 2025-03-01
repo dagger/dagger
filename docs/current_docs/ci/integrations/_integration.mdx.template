@@ -1,5 +1,5 @@
 ---
-slug: /integrations/<name-of-integration>
+slug: /ci/integrations/<name-of-integration>
 ---
 
 # <name of integration>
