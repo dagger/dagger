@@ -141,6 +141,45 @@ func (ElixirSuite) TestDefaultPath(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (ElixirSuite) TestIgnore(ctx context.Context, t *testctx.T) {
+	t.Run("without ignore", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := elixirModule(t, c, "defaults").
+			With(daggerCall("files-no-ignore")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, out, "dagger.json")
+		require.Contains(t, out, "mix.exs")
+	})
+
+	t.Run("with ignore", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := elixirModule(t, c, "defaults").
+			With(daggerCall("files-ignore")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, out, "dagger.json")
+		require.NotContains(t, out, "mix.exs")
+	})
+
+	t.Run("with negated ignore", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := elixirModule(t, c, "defaults").
+			With(daggerCall("files-neg-ignore")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.NotContains(t, out, "dagger.json")
+		require.NotContains(t, out, "mix.exs")
+		require.Contains(t, out, "lib")
+	})
+}
+
 func elixirModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/elixir", moduleName))

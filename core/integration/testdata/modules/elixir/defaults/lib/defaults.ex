@@ -16,4 +16,22 @@ defmodule Defaults do
       Enum.join(entries, " ")
     end
   end
+
+  defn files_no_ignore(dir: {Dagger.Directory.t(), default_path: "."}) :: String.t() do
+    with {:ok, entries} <- Dagger.Directory.entries(dir) do
+      Enum.join(entries, " ")
+    end
+  end
+
+  defn files_ignore(dir: {Dagger.Directory.t(), default_path: ".", ignore: ["mix.exs"]}) :: String.t() do
+    with {:ok, entries} <- Dagger.Directory.entries(dir) do
+      Enum.join(entries, " ")
+    end
+  end
+
+  defn files_neg_ignore(dir: {Dagger.Directory.t(), default_path: ".", ignore: ["**", "!**/*.ex"]}) :: String.t() do
+    with {:ok, entries} <- Dagger.Directory.entries(dir) do
+      Enum.join(entries, " ")
+    end
+  end
 end
