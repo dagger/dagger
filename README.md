@@ -24,7 +24,7 @@ Dagger is an open-source runtime for composable workflows. It's perfect for syst
 
 - **LLM augmentation**. Connect to any LLM endpoint (OpenAI, Google, Anthropic, LLama, DeepSeek, etc.) and give it access to your Dagger objects. Dagger automatically handles the agentic loop. No complicated framework needed.
 
-<img src="docs/static/img/spider-robot-1.svg" width="10%">
+<img src="docs/static/img/spider-robot-1.svg" width="15%">
 
 ## Getting started
 
