@@ -104,6 +104,8 @@ func (ElixirSuite) TestOptionalValue(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "foo", out)
 	})
+
+	// TODO: ensure that optional works with default value after the https://github.com/dagger/dagger/issues/9744 is resolved.
 }
 
 func (ElixirSuite) TestDefaultPath(ctx context.Context, t *testctx.T) {
