@@ -261,5 +261,4 @@ func execTemplate(text string, data any) (string, error) {
 		return "", err
 	}
 	return out.String(), nil
-
 }
