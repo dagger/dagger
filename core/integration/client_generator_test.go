@@ -713,7 +713,6 @@ main()
 						WithExec([]string{"npm", "install"}).
 						WithoutDirectory("dagger").
 						WithoutDirectory(".dagger/sdk")
-
 				},
 				callCmd: []string{"tsx", "index.ts"},
 			},
@@ -756,7 +755,6 @@ main()
 			})
 		}
 	})
-
 }
 
 func (ClientGeneratorTest) TestOutputDir(ctx context.Context, t *testctx.T) {
