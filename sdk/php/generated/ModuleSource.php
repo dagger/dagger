@@ -50,6 +50,15 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The clients generated for the module.
+     */
+    public function configClients(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configClients');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'configClients');
+    }
+
+    /**
      * Whether an existing dagger.json for the module was found.
      */
     public function configExists(): bool
@@ -251,13 +260,13 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     /**
      * Update the module source with a new client to generate.
      */
-    public function withClient(string $generator, string $outputDir, ?bool $localSdk = null): ModuleSource
+    public function withClient(string $generator, string $outputDir, ?bool $dev = null): ModuleSource
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withClient');
         $innerQueryBuilder->setArgument('generator', $generator);
         $innerQueryBuilder->setArgument('outputDir', $outputDir);
-        if (null !== $localSdk) {
-        $innerQueryBuilder->setArgument('localSdk', $localSdk);
+        if (null !== $dev) {
+        $innerQueryBuilder->setArgument('dev', $dev);
         }
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
