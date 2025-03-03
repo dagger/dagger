@@ -448,31 +448,14 @@ func (sdk *goSDK) GenerateClient(
 		return inst, fmt.Errorf("failed to get base container during module client generation: %w", err)
 	}
 
-	workdirPath := "/module"
+	contextDir := modSource.Self.ContextDirectory
+	rootSourcePath := modSource.Self.SourceRootSubpath
 
 	codegenArgs := dagql.ArrayInput[dagql.String]{
 		"--output", dagql.String(outputDir),
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
 		dagql.String(fmt.Sprintf("--local-sdk=%t", useLocalSDK)),
 		"--client-only",
-	}
-
-	var currentModuleDirectory dagql.Instance[*core.Directory]
-	err = sdk.dag.Select(ctx, modSource, &currentModuleDirectory,
-		dagql.Selector{
-			Field: "contextDirectory",
-		},
-		dagql.Selector{
-			Field: "directory",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.String(modSource.Self.SourceRootSubpath),
-				},
-			},
-		})
-	if err != nil {
-		return inst, fmt.Errorf("failed to get module source root directory: %w", err)
 	}
 
 	err = sdk.dag.Select(ctx, ctr, &ctr,
@@ -493,15 +476,15 @@ func (sdk *goSDK) GenerateClient(
 			Field: "withoutDefaultArgs",
 		},
 		dagql.Selector{
-			Field: "withDirectory",
+			Field: "withMountedDirectory",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "path",
-					Value: dagql.String(workdirPath),
+					Value: dagql.String(goSDKUserModContextDirPath),
 				},
 				{
-					Name:  "directory",
-					Value: dagql.NewID[*core.Directory](currentModuleDirectory.ID()),
+					Name:  "source",
+					Value: dagql.NewID[*core.Directory](contextDir.ID()),
 				},
 			},
 		},
@@ -510,7 +493,7 @@ func (sdk *goSDK) GenerateClient(
 			Args: []dagql.NamedInput{
 				{
 					Name:  "path",
-					Value: dagql.String(workdirPath),
+					Value: dagql.NewString(filepath.Join(goSDKUserModContextDirPath, rootSourcePath)),
 				},
 			},
 		},
@@ -536,7 +519,7 @@ func (sdk *goSDK) GenerateClient(
 		Args: []dagql.NamedInput{
 			{
 				Name:  "path",
-				Value: dagql.String(workdirPath),
+				Value: dagql.String(goSDKUserModContextDirPath),
 			},
 		},
 	}); err != nil {
