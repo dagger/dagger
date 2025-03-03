@@ -28,7 +28,7 @@ var (
 
 	clientOnly bool
 
-	localSDK bool
+	dev bool
 	isInit   bool
 )
 
@@ -57,7 +57,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&merge, "merge", false, "merge module deps with project's existing go.mod in a parent directory")
 	rootCmd.Flags().BoolVar(&isInit, "is-init", false, "whether this command is initializing a new module")
 	rootCmd.Flags().BoolVar(&clientOnly, "client-only", false, "generate only client code")
-	rootCmd.Flags().BoolVar(&localSDK, "local-sdk", false, "use local SDK dependency")
+	rootCmd.Flags().BoolVar(&dev, "dev", false, "generate in dev mode")
 
 	introspectCmd.Flags().StringVarP(&outputSchema, "output", "o", "", "save introspection result to file")
 	rootCmd.AddCommand(introspectCmd)
@@ -73,7 +73,7 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		Merge:      merge,
 		IsInit:     isInit,
 		ClientOnly: clientOnly,
-		LocalSDK:   localSDK,
+		Dev:   dev,
 	}
 
 	if moduleName != "" {

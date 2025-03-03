@@ -13,12 +13,12 @@ import (
 
 var (
 	generator string
-	localSDK  bool
+	dev  bool
 )
 
 func init() {
 	clientAddCmd.Flags().StringVar(&generator, "generator", "", "Generator to use to generate the client")
-	clientAddCmd.Flags().BoolVar(&localSDK, "local-sdk", false, "Use local SDK dependency")
+	clientAddCmd.Flags().BoolVar(&dev, "dev", false, "Generate in developer mode")
 }
 
 var clientAddCmd = &cobra.Command{
@@ -82,7 +82,7 @@ func (c *clientAddHandler) Run(ctx context.Context) (rerr error) {
 
 	_, err = mod.Source.
 		WithClient(generator, c.outputPath, dagger.ModuleSourceWithClientOpts{
-			LocalSDK: localSDK,
+			Dev: dev,
 		}).
 		GeneratedContextDirectory().
 		Export(ctx, contextDirPath)

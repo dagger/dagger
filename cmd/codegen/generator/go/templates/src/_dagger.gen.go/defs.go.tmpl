@@ -21,13 +21,13 @@ import (
 	"{{.PackageImport}}/internal/telemetry"
 {{ end }}
 
-{{ if IsLocalSDK }}
+{{ if IsDevMode }}
 	"{{.PackageImport}}/internal/querybuilder"
 	"{{.PackageImport}}/internal/engineconn"
 {{ end }}
 
 {{- if IsStandaloneClient }}
-	{{ if not IsLocalSDK }}
+	{{ if not IsDevMode }}
 	"dagger.io/dagger/querybuilder"
 	{{ end }}
 	"dagger.io/dagger"
@@ -228,7 +228,7 @@ func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Reques
 {{ end }}
 
 {{ if IsStandaloneClient }}
-{{ if IsLocalSDK }}
+{{ if IsDevMode }}
 {{ template "_dagger.gen.go/client.go.tmpl" . }}
 {{ else }}
 type Client struct {

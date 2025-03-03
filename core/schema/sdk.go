@@ -253,7 +253,7 @@ func (sdk *moduleSDK) GenerateClient(
 	modSource dagql.Instance[*core.ModuleSource],
 	deps *core.ModDeps,
 	outputDir string,
-	useLocalSDK bool,
+	dev bool,
 ) (inst dagql.Instance[*core.Directory], err error) {
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
 	if err != nil {
@@ -276,8 +276,8 @@ func (sdk *moduleSDK) GenerateClient(
 				Value: dagql.String(outputDir),
 			},
 			{
-				Name:  "useLocalSdk",
-				Value: dagql.NewBoolean(useLocalSDK),
+				Name:  "dev",
+				Value: dagql.NewBoolean(dev),
 			},
 		},
 	})
@@ -436,7 +436,7 @@ func (sdk *goSDK) GenerateClient(
 	modSource dagql.Instance[*core.ModuleSource],
 	deps *core.ModDeps,
 	outputDir string,
-	useLocalSDK bool,
+	dev bool,
 ) (inst dagql.Instance[*core.Directory], err error) {
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
 	if err != nil {
@@ -454,7 +454,7 @@ func (sdk *goSDK) GenerateClient(
 	codegenArgs := dagql.ArrayInput[dagql.String]{
 		"--output", dagql.String(outputDir),
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
-		dagql.String(fmt.Sprintf("--local-sdk=%t", useLocalSDK)),
+		dagql.String(fmt.Sprintf("--dev=%t", dev)),
 		"--client-only",
 	}
 

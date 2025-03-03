@@ -108,7 +108,7 @@ type ModuleSource struct {
 	Dependencies []dagql.Instance[*ModuleSource] `field:"true" name:"dependencies" doc:"The dependencies of the module source."`
 
 	// Clients are the clients generated for the module.
-	ConfigClients []*modules.ModuleConfigClient
+	ConfigClients []*modules.ModuleConfigClient `field:"true" name:"configClients" doc:"The clients generated for the module."`
 
 	// SourceRootSubpath is the relative path from the context dir to the dir containing the module's dagger.json
 	SourceRootSubpath string `field:"true" name:"sourceRootSubpath" doc:"The path, relative to the context directory, that contains the module's dagger.json."`
@@ -278,8 +278,8 @@ func (src *ModuleSource) CalcDigest() digest.Digest {
 
 	for _, client := range src.ConfigClients {
 		inputs = append(inputs, client.Generator, client.Directory)
-		if client.LocalLibrary != nil {
-			inputs = append(inputs, fmt.Sprintf("%t", *client.LocalLibrary))
+		if client.Dev != nil {
+			inputs = append(inputs, fmt.Sprintf("%t", *client.Dev))
 		}
 	}
 	

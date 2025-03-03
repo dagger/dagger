@@ -149,8 +149,8 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 	// Use the published package library for external dagger packages.
 	packageImport := "dagger.io/dagger"
 
-	// If localSDK is needed, we need to add local files to the overlay and change the package import
-	if g.Config.LocalSDK {
+	// If dev is set, we need to add local files to the overlay and change the package import
+	if g.Config.Dev {
 		layers = append(
 			layers,
 			&MountedFS{FS: dagger.QueryBuilder, Name: "internal"},

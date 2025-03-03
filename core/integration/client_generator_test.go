@@ -496,7 +496,7 @@ main()
 	})
 }
 
-func (ClientGeneratorTest) TestPersistency(ctx context.Context, t *testctx.T) {
+func (ClientGeneratorTest) TestPersistence(ctx context.Context, t *testctx.T) {
 	t.Run("work without a module implementation", func(ctx context.Context, t *testctx.T) {
 		type testCase struct {
 			baseImage string
@@ -1024,7 +1024,7 @@ func (g *Generator) GenerateClient(
   ctx context.Context,
   modSource *dagger.ModuleSource,
   introspectionJSON *dagger.File,
-  useLocalSdk bool,
+  dev bool,
 ) (*dagger.Directory, error) {
   return dag.Directory().WithNewFile("hello.txt", "hello world"), nil
 }`,
@@ -1044,7 +1044,7 @@ export class Generator {
   generateClient(
     modSource: ModuleSource,
     introspectionJSON: File,
-    useLocalSdk: boolean,
+    dev: boolean,
   ): Directory {
     return dag.directory().withNewFile("hello.txt", "hello world")
   }

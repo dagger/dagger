@@ -34,8 +34,8 @@ func (funcs goTemplateFuncs) isStandaloneClient() bool {
 	return funcs.cfg.ClientOnly
 }
 
-func (funcs goTemplateFuncs) isLocalSDK() bool {
-	return funcs.cfg.LocalSDK
+func (funcs goTemplateFuncs) isDevMode() bool {
+	return funcs.cfg.Dev
 }
 
 func (funcs goTemplateFuncs) moduleRelPath(path string) string {
