@@ -312,7 +312,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 					Fields:  map[string]any{},
 				}, nil
 			},
-			nil, // no cache key, empty constructor calls will thus be cached across dagql sessions
+			dagql.CacheSpec{}, // no cache key, empty constructor calls will thus be cached in dagql per-session and buildkit cross-session
 		)
 		return nil
 	}
@@ -367,7 +367,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 				Server:       dag,
 			})
 		},
-		nil,
+		dagql.CacheSpec{},
 	)
 
 	return nil

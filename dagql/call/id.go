@@ -103,21 +103,6 @@ func (id *ID) Nth() int64 {
 	return id.pb.Nth
 }
 
-// Tainted returns true if the ID contains any tainted selectors.
-// If true, this Selector is not reproducible.
-func (id *ID) IsTainted() bool {
-	if id == nil {
-		return false
-	}
-	if id.pb.Tainted {
-		return true
-	}
-	if id.receiver != nil {
-		return id.receiver.IsTainted()
-	}
-	return false
-}
-
 // The module that provides the implementation of the field, if any.
 func (id *ID) Module() *Module {
 	return id.module
@@ -233,7 +218,6 @@ func (id *ID) SelectNth(nth int) *ID {
 		id.pb.Field,
 		id.pb.View,
 		id.module,
-		id.pb.Tainted,
 		nth,
 		dgst,
 		id.args...,
@@ -245,7 +229,6 @@ func (id *ID) Append(
 	field string,
 	view string,
 	mod *Module,
-	tainted bool,
 	nth int,
 	customDigest digest.Digest,
 	args ...*Argument,
@@ -256,7 +239,6 @@ func (id *ID) Append(
 			Field:          field,
 			View:           view,
 			Args:           make([]*callpbv1.Argument, 0, len(args)),
-			Tainted:        tainted,
 			Nth:            int64(nth),
 		},
 		receiver: id,
@@ -272,9 +254,6 @@ func (id *ID) Append(
 	}
 
 	for _, arg := range args {
-		if arg.Tainted() {
-			newID.pb.Tainted = true
-		}
 		if arg.isSensitive {
 			continue
 		}
@@ -300,22 +279,16 @@ func (id *ID) Append(
 // given metadata changed.
 // customDigest, if not empty string, will become the ID's digest.
 // tainted sets the ID's tainted flag.
-func (id *ID) WithMetadata(customDigest digest.Digest, tainted bool) *ID {
+func (id *ID) WithMetadata(customDigest digest.Digest) *ID {
 	return id.receiver.Append(
 		id.pb.Type.ToAST(),
 		id.pb.Field,
 		id.pb.View,
 		id.module,
-		tainted,
 		int(id.pb.Nth),
 		customDigest,
 		id.args...,
 	)
-}
-
-// WithTaint is a shorthand for WithMetadata that sets the id as tainted
-func (id *ID) WithTaint() *ID {
-	return id.WithMetadata("", true)
 }
 
 func (id *ID) Encode() (string, error) {

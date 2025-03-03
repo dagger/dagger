@@ -95,13 +95,13 @@ func NewFileWithContents(
 	return dir.File(ctx, name)
 }
 
-func NewFileSt(ctx context.Context, query *Query, st llb.State, dir string, platform Platform, services ServiceBindings) (*File, error) {
+func NewFileSt(ctx context.Context, query *Query, st llb.State, file string, platform Platform, services ServiceBindings) (*File, error) {
 	def, err := st.Marshal(ctx, llb.Platform(platform.Spec()))
 	if err != nil {
 		return nil, err
 	}
 
-	return NewFile(query, def.ToPB(), dir, platform, services), nil
+	return NewFile(query, def.ToPB(), file, platform, services), nil
 }
 
 // Clone returns a deep copy of the container suitable for modifying in a
