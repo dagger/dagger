@@ -539,6 +539,17 @@ This command is idempotent: you can run it at any time, any number of times. It 
 				developSourcePath = filepath.Join(srcRootAbsPath, inferredSourcePath)
 			}
 
+			clients, err := modSrc.ConfigClients(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get module clients configuration: %w", err)
+			}
+
+			// if there's no SDK and the user isn't changing the source path, there's nothing to do.
+			// error out rather than silently doing nothing.
+			if modSDK == "" && developSourcePath == "" && len(clients) == 0 {
+				return fmt.Errorf("dagger develop on a module without an SDK or clients requires either --sdk or --source")
+			}
+
 			if developSourcePath != "" {
 				// ensure source path is relative to the source root
 				sourceAbsPath, err := pathutil.Abs(developSourcePath)

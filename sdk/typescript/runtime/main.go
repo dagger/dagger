@@ -173,7 +173,7 @@ func (t *TypescriptSdk) GenerateClient(
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
 	outputDir string,
-	useLocalSdk bool,
+	dev bool,
 ) (*dagger.Directory, error) {
 	workdirPath := "/module"
 
@@ -206,24 +206,24 @@ func (t *TypescriptSdk) GenerateClient(
 			"--lang", "typescript",
 			"--output", outputDir,
 			"--introspection-json-path", schemaPath,
-			fmt.Sprintf("--local-sdk=%t", useLocalSdk),
+			fmt.Sprintf("--dev=%t", dev),
 			"--client-only",
 		}, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 
-	if useLocalSdk {
+	if dev {
 		ctr = ctr.WithDirectory("./sdk", t.SDKSourceDir.
 			WithoutDirectory("codegen").
 			WithoutDirectory("runtime").
 			WithoutDirectory("tsx_module"),
 		).
 			WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=./sdk"}).
-			WithExec([]string{"tsx", "/opt/__tsclientconfig.updator.ts", "--local-sdk=true", fmt.Sprintf("--library-dir=%s", outputDir)})
+			WithExec([]string{"tsx", "/opt/__tsclientconfig.updator.ts", "--dev=true", fmt.Sprintf("--library-dir=%s", outputDir)})
 	} else {
 		ctr = ctr.
 			WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=@dagger.io/dagger"}).
-			WithExec([]string{"tsx", "/opt/__tsclientconfig.updator.ts", "--local-sdk=false", fmt.Sprintf("--library-dir=%s", outputDir)})
+			WithExec([]string{"tsx", "/opt/__tsclientconfig.updator.ts", "--dev=false", fmt.Sprintf("--library-dir=%s", outputDir)})
 	}
 
 	return dag.Directory().WithDirectory("/", ctr.Directory(workdirPath)), nil

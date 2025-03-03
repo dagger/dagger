@@ -7,7 +7,7 @@ const daggerPath = "./sdk/src"
 const daggerTelemetryPath = "./sdk/src/telemetry"
 const daggerClientPathAlias = "@dagger.io/client"
 
-const help = `Usage: ts_client_config_updator <local-sdk=true|false> <output-dir=string>`
+const help = `Usage: ts_client_config_updator <dev=true|false> <output-dir=string>`
 const args = process.argv.slice(2)
 
 class Arg<T> {
@@ -17,24 +17,24 @@ class Arg<T> {
   ) {}
 }
 
-const localSDK = new Arg<boolean>("local-sdk", false)
+const dev = new Arg<boolean>("dev", false)
 const libraryDir = new Arg<string>("library-dir", null)
 
 for (const arg of args) {
   const [name, value] = arg.slice("--".length).split("=")
   switch (name) {
-    case "local-sdk":
+    case "dev":
       if (value === undefined || value === "true") {
-        localSDK.value = true
+        dev.value = true
         break
       }
 
       if (value === "false") {
-        localSDK.value = false
+        dev.value = false
         break
       }
 
-      console.error(`Invalid value for local-sdk: ${value}\n ${help}`)
+      console.error(`Invalid value for dev: ${value}\n ${help}`)
       process.exit(1)
 
       break
@@ -50,7 +50,7 @@ if (libraryDir.value === null) {
 }
 
 console.log(
-  `Updating ts client configuration (localSDK=${localSDK.value}) (libraryDir=${libraryDir.value})`,
+  `Updating ts client configuration (dev=${dev.value}) (libraryDir=${libraryDir.value})`,
 )
 
 const tsConfigPath = `./tsconfig.json`
@@ -74,7 +74,7 @@ if (!fs.existsSync(tsConfigPath)) {
     },
   }
 
-  if (localSDK.value === true) {
+  if (dev.value === true) {
     defaultTsConfig.compilerOptions.paths[daggerPathAlias] = [daggerPath]
     defaultTsConfig.compilerOptions.paths[daggerTelemetryPathAlias] = [
       daggerTelemetryPath,
@@ -117,7 +117,7 @@ tsconfig.compilerOptions.paths[daggerClientPathAlias] = [
   `./${path.join(libraryDir.value, "client.gen.ts")}`,
 ]
 
-if (localSDK.value === true) {
+if (dev.value === true) {
   tsconfig.compilerOptions.paths[daggerPathAlias] = [daggerPath]
   tsconfig.compilerOptions.paths[daggerTelemetryPathAlias] = [
     daggerTelemetryPath,

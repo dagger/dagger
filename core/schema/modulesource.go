@@ -144,10 +144,11 @@ func (s *moduleSourceSchema) Install() {
 			Doc(`Update the module source with a new client to generate.`).
 			ArgDoc("generator", `The generator to use`).
 			ArgDoc("outputDir", `The output directory for the generated client.`).
-			ArgDoc("localSdk", `Use local SDK dependency`),
+			ArgDoc("dev", `Generate in developer mode`),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.SDKConfig]{}.Install(s.dag)
+	dagql.Fields[*modules.ModuleConfigClient]{}.Install(s.dag)
 
 	dagql.Fields[*core.GeneratedCode]{
 		dagql.Func("withVCSGeneratedPaths", s.generatedCodeWithVCSGeneratedPaths).
@@ -1991,9 +1992,9 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 			deps = mod.Self.Deps.Append(mod.Self)
 		}
 
-		useLocalSDK := dagql.Boolean(false)
-		if client.LocalLibrary != nil {
-			useLocalSDK = dagql.Boolean(*client.LocalLibrary)
+		dev := dagql.Boolean(false)
+		if client.Dev != nil {
+			dev = dagql.Boolean(*client.Dev)
 		}
 
 		generatedClientDir, err := generator.GenerateClient(
@@ -2001,7 +2002,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 			source,
 			deps,
 			client.Directory,
-			useLocalSDK.Bool(),
+			dev.Bool(),
 		)
 		if err != nil {
 			return genDirInst, fmt.Errorf("failed to generate clients: %w", err)
@@ -2242,7 +2243,7 @@ func (s *moduleSourceSchema) moduleSourceWithClient(
 	args struct {
 		Generator dagql.String
 		OutputDir dagql.String
-		LocalSdk  dagql.Optional[dagql.Boolean]
+		Dev  dagql.Optional[dagql.Boolean]
 	},
 ) (*core.ModuleSource, error) {
 	src = src.Clone()
@@ -2256,9 +2257,9 @@ func (s *moduleSourceSchema) moduleSourceWithClient(
 		Directory: args.OutputDir.String(),
 	}
 
-	if args.LocalSdk.Valid {
-		value := args.LocalSdk.Value.Bool()
-		moduleConfigClient.LocalLibrary = &value
+	if args.Dev.Valid {
+		value := args.Dev.Value.Bool()
+		moduleConfigClient.Dev = &value
 	}
 
 	src.ConfigClients = append(src.ConfigClients, moduleConfigClient)
