@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
+	"github.com/vito/bubbline/computil"
 	"github.com/vito/bubbline/editline"
 	"github.com/vito/bubbline/history"
 	"go.opentelemetry.io/otel/log"
@@ -27,6 +28,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
+	"mvdan.cc/sh/v3/syntax"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -952,9 +954,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		}
 
 		// if input ends with a pipe, then it's not complete
-		fe.editline.CheckInputComplete = func(entireInput [][]rune, line int, col int) bool {
-			return !strings.HasSuffix(string(entireInput[line][col:]), "|")
-		}
+		fe.editline.CheckInputComplete = shellIsComplete
 
 		// put the bowtie on
 		fe.updatePrompt()
@@ -1607,4 +1607,16 @@ func (bg *BackgroundWriter) Write(p []byte) (n int, err error) {
 
 func focusedBg(out TermOutput) TermOutput {
 	return NewBackgroundOutput(out, highlightBg)
+}
+
+func shellIsComplete(entireInput [][]rune, line int, col int) bool {
+	input, _ := computil.Flatten(entireInput, line, col)
+	_, err := syntax.NewParser().Parse(strings.NewReader(input), "")
+	if err != nil {
+		if syntax.IsIncomplete(err) {
+			// only return false here if it's incomplete
+			return false
+		}
+	}
+	return true
 }
