@@ -1026,7 +1026,7 @@ export type ListTypeDefID = string & { __ListTypeDefID: never }
  */
 export type ModuleID = string & { __ModuleID: never }
 
-export type ModuleSourceGenerateClientOpts = {
+export type ModuleSourceWithClientOpts = {
   /**
    * Use local SDK dependency
    */
@@ -5552,25 +5552,6 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * Generates a client for the module.
-   * @param generator The generator to use
-   * @param outputDir The output directory for the generated client.
-   * @param opts.localSdk Use local SDK dependency
-   */
-  generateClient = (
-    generator: string,
-    outputDir: string,
-    opts?: ModuleSourceGenerateClientOpts,
-  ): Directory => {
-    const ctx = this._ctx.select("generateClient", {
-      generator,
-      outputDir,
-      ...opts,
-    })
-    return new Directory(ctx)
-  }
-
-  /**
    * The generated files and directories made on top of the module source's context directory.
    */
   generatedContextDirectory = (): Directory => {
@@ -5775,6 +5756,25 @@ export class ModuleSource extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Update the module source with a new client to generate.
+   * @param generator The generator to use
+   * @param outputDir The output directory for the generated client.
+   * @param opts.localSdk Use local SDK dependency
+   */
+  withClient = (
+    generator: string,
+    outputDir: string,
+    opts?: ModuleSourceWithClientOpts,
+  ): ModuleSource => {
+    const ctx = this._ctx.select("withClient", {
+      generator,
+      outputDir,
+      ...opts,
+    })
+    return new ModuleSource(ctx)
   }
 
   /**
