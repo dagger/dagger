@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // Filename is the name of the module config file.
@@ -239,11 +240,29 @@ func (cfg ModuleCodegenConfig) Clone() *ModuleCodegenConfig {
 
 type ModuleConfigClient struct {
 	// The generator the client uses to be generated.
-	Generator string `json:"generator"`
+	Generator string `field:"true" name:"generator" json:"generator" doc:"The generator to use"`
 
 	// The directory the client is generated in.
-	Directory string `json:"directory"`
+	Directory string `field:"true" name:"directory" json:"directory" doc:"The directory the client is generated in."`
 
-	// Whether the client is generated using the local SDK.
-	LocalLibrary *bool `json:"localLibrary,omitempty"`
+	// Whether the client is generated in Dev mode or not.
+	// If set using an official SDK like Go or Typescript, the client will use the local SDK library
+	// instead of the published one.
+	Dev *bool `field:"true" name:"dev" json:"localLibrary,omitempty" doc:"If true, generate the client in developer mode."`
+}
+
+func (*ModuleConfigClient) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ModuleConfigClient",
+		NonNull:   true,
+	}
+}
+
+func (*ModuleConfigClient) TypeDescription() string {
+	return "The client generated for the module."
+}
+
+func (m ModuleConfigClient) Clone() *ModuleConfigClient {
+	cp := m
+	return &cp
 }

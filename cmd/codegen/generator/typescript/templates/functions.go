@@ -66,7 +66,7 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"ModuleRelPath":             funcs.moduleRelPath,
 		"FormatProtected":           funcs.formatProtected,
 		"IsClientOnly":              funcs.isClientOnly,
-		"IsLocalSDK":                funcs.isLocalSDK,
+		"IsDevMode":                 funcs.isDevMode,
 	}
 }
 
@@ -326,6 +326,6 @@ func (funcs typescriptTemplateFuncs) isClientOnly() bool {
 	return funcs.cfg.ClientOnly
 }
 
-func (funcs typescriptTemplateFuncs) isLocalSDK() bool {
-	return funcs.cfg.LocalSDK
+func (funcs typescriptTemplateFuncs) isDevMode() bool {
+	return funcs.cfg.Dev
 }
