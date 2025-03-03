@@ -1957,8 +1957,6 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 		}
 	}
 
-	// TODO apply change from the codegen first
-
 	// Generate clients
 	for _, client := range modCfg.Clients {
 		generator, err := newSDKLoader(s.dag).sdkForModule(
