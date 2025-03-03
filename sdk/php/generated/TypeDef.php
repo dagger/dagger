@@ -113,7 +113,8 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
         string $name,
         ?string $description = '',
         SourceMapId|SourceMap|null $sourceMap = null,
-    ): TypeDef {
+    ): TypeDef
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnum');
         $innerQueryBuilder->setArgument('name', $name);
         if (null !== $description) {
@@ -132,7 +133,8 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
         string $value,
         ?string $description = '',
         SourceMapId|SourceMap|null $sourceMap = null,
-    ): TypeDef {
+    ): TypeDef
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnumValue');
         $innerQueryBuilder->setArgument('value', $value);
         if (null !== $description) {
@@ -152,7 +154,8 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
         TypeDefId|TypeDef $typeDef,
         ?string $description = '',
         SourceMapId|SourceMap|null $sourceMap = null,
-    ): TypeDef {
+    ): TypeDef
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withField');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('typeDef', $typeDef);
@@ -182,7 +185,8 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
         string $name,
         ?string $description = '',
         SourceMapId|SourceMap|null $sourceMap = null,
-    ): TypeDef {
+    ): TypeDef
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withInterface');
         $innerQueryBuilder->setArgument('name', $name);
         if (null !== $description) {
@@ -223,7 +227,8 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
         string $name,
         ?string $description = '',
         SourceMapId|SourceMap|null $sourceMap = null,
-    ): TypeDef {
+    ): TypeDef
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withObject');
         $innerQueryBuilder->setArgument('name', $name);
         if (null !== $description) {
