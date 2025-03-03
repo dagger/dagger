@@ -2,7 +2,6 @@ package dagui
 
 import (
 	"context"
-	"fmt"
 	"iter"
 	"slices"
 	"sort"
@@ -31,13 +30,16 @@ type DB struct {
 
 	Resources map[attribute.Distinct]*resource.Resource
 
-	Calls     map[string]*callpbv1.Call
+	CallPayloads map[string]string
+	Calls        map[string]*callpbv1.Call
+
 	Outputs   map[string]map[string]struct{}
 	OutputOf  map[string]map[string]struct{}
 	Intervals map[string]map[time.Time]*Span
 
-	CauseSpans  map[string]SpanSet
-	EffectSpans map[string]SpanSet
+	CauseSpans   map[string]SpanSet
+	EffectSpans  map[string]SpanSet
+	CreatorSpans map[string]SpanSet
 
 	CompletedEffects map[string]bool
 	FailedEffects    map[string]bool
@@ -65,15 +67,19 @@ func NewDB() *DB {
 		Spans:     NewSpanSet(),
 		Resources: make(map[attribute.Distinct]*resource.Resource),
 
-		Calls:     make(map[string]*callpbv1.Call),
+		CallPayloads: make(map[string]string),
+		Calls:        make(map[string]*callpbv1.Call),
+
 		OutputOf:  make(map[string]map[string]struct{}),
 		Outputs:   make(map[string]map[string]struct{}),
 		Intervals: make(map[string]map[time.Time]*Span),
 
+		CauseSpans:   make(map[string]SpanSet),
+		EffectSpans:  make(map[string]SpanSet),
+		CreatorSpans: make(map[string]SpanSet),
+
 		CompletedEffects: make(map[string]bool),
 		FailedEffects:    make(map[string]bool),
-		CauseSpans:       make(map[string]SpanSet),
-		EffectSpans:      make(map[string]SpanSet),
 
 		updatedSpans: NewSpanSet(),
 		seenSpans:    make(map[SpanID]struct{}),
@@ -98,6 +104,10 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 		if span.IsFailedOrCausedFailure() {
 			// include failed spans so we can summarize them without having to
 			// deep-dive.
+			return true
+		}
+		if span.Reveal || len(span.RevealedSpans.Order) > 0 {
+			// always include revealed spans and their parents
 			return true
 		}
 		if span.Passthrough {
@@ -317,10 +327,11 @@ func (db *DB) newSpan(spanID SpanID) *Span {
 		},
 		ChildSpans:      NewSpanSet(),
 		RunningSpans:    NewSpanSet(),
+		RevealedSpans:   NewSpanSet(),
 		FailedLinks:     NewSpanSet(),
+		CanceledLinks:   NewSpanSet(),
 		causesViaLinks:  NewSpanSet(),
 		effectsViaLinks: NewSpanSet(),
-		effectsViaAttrs: map[string]SpanSet{},
 		db:              db,
 	}
 }
@@ -505,29 +516,31 @@ func (activity *Activity) updateEarliest() (changed bool) {
 
 // mergeIntervals merges overlapping intervals in the activity.
 func (activity *Activity) mergeIntervals() {
-	merged := []Interval{}
-	var lastIval *Interval
-	for _, ival := range activity.CompletedIntervals {
-		ival := ival
-		if lastIval == nil {
-			merged = append(merged, ival)
-			lastIval = &merged[len(merged)-1]
-			continue
-		}
-		if ival.Start.Before(lastIval.End) {
-			if ival.End.After(lastIval.End) {
-				// extend
-				lastIval.End = ival.End
-			} else {
-				// wholly subsumed; skip
-				continue
+	// If there are no intervals, there's nothing to merge.
+	if len(activity.CompletedIntervals) == 0 {
+		return
+	}
+
+	// Keep track of the index of the last merged interval.
+	lastIndex := 0
+	for i := 1; i < len(activity.CompletedIntervals); i++ {
+		ival := activity.CompletedIntervals[i]
+		// If the current interval overlaps with the last one, merge them.
+		if ival.Start.Before(activity.CompletedIntervals[lastIndex].End) {
+			if ival.End.After(activity.CompletedIntervals[lastIndex].End) {
+				// Extend the last interval.
+				activity.CompletedIntervals[lastIndex].End = ival.End
 			}
+			// If ival is wholly subsumed, do nothing (continue).
 		} else {
-			merged = append(merged, ival)
-			lastIval = &merged[len(merged)-1]
+			// No overlap, move the lastIndex forward.
+			lastIndex++
+			activity.CompletedIntervals[lastIndex] = ival
 		}
 	}
-	activity.CompletedIntervals = merged
+
+	// Resize the slice to only include the merged intervals.
+	activity.CompletedIntervals = activity.CompletedIntervals[:lastIndex+1]
 }
 
 // integrateSpan takes a possibly newly created span and updates
@@ -574,48 +587,8 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		db.Intervals[span.CallDigest][span.StartTime] = span
 	}
 
-	if span.Call == nil && span.CallPayload != "" {
-		var call callpbv1.Call
-		if err := call.Decode(span.CallPayload); err != nil {
-			slog.Warn("failed to decode id", "err", err)
-		} else {
-			span.Call = &call
-
-			if span.CallDigest != "" {
-				db.Calls[span.CallDigest] = &call
-			}
-		}
-	}
-
-	if call := span.Call; call != nil {
-		// Seeing loadFooFromID is only really interesting if it actually
-		// resulted in evaluating the ID, so we set Passthrough, which will only
-		// show its children.
-		if call.Field == fmt.Sprintf("load%sFromID", call.Type.ToAST().Name()) {
-			span.Passthrough = true
-		}
-
-		// We also don't care about seeing the id field selection itself, since
-		// it's more noisy and confusing than helpful. We'll still show all the
-		// spans leading up to it, just not the ID selection.
-		if call.Field == "id" {
-			span.Ignore = true
-		}
-
-		// We don't care about seeing the sync span itself - all relevant info
-		// should show up somewhere more familiar.
-		if call.Field == "sync" {
-			span.Passthrough = true
-		}
-	}
-
-	// TODO: respect an already-set base value computed server-side, and client
-	// subsequently requests necessary DAG
-	if span.Call != nil && span.Call.ReceiverDigest != "" {
-		parentCall, ok := db.Calls[span.Call.ReceiverDigest]
-		if ok {
-			span.Base = db.Simplify(parentCall, span.Internal)
-		}
+	if span.CallDigest != "" && span.CallPayload != "" {
+		db.CallPayloads[span.CallDigest] = span.CallPayload
 	}
 
 	if !span.ParentID.IsValid() {
@@ -632,6 +605,21 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			// span" in a nested scenario.
 			db.PrimarySpan = span.ID
 		}
+
+		if !span.IsRunning() {
+			for _, span := range db.Spans.Order {
+				if span.IsRunning() {
+					span.Canceled = true
+					span.EndTime = db.RootSpan.EndTime
+					span.PropagateStatusToParentsAndLinks()
+					db.update(span)
+				}
+			}
+		}
+	} else if db.RootSpan != nil && !db.RootSpan.IsRunning() && span.IsRunning() {
+		span.Canceled = true
+		span.EndTime = db.RootSpan.EndTime
+		span.PropagateStatusToParentsAndLinks()
 	}
 
 	if span.EffectID != "" {
@@ -656,6 +644,9 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			effects = NewSpanSet()
 			db.EffectSpans[id] = effects
 		}
+		if span.effectsViaAttrs == nil {
+			span.effectsViaAttrs = make(map[string]SpanSet)
+		}
 		span.effectsViaAttrs[id] = effects
 	}
 
@@ -663,7 +654,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		db.CompletedEffects[dig] = true
 	}
 
-	if span.CallDigest != "" {
+	if span.CallDigest != "" && span.Output != "" {
 		// parent -> child
 		if db.Outputs[span.CallDigest] == nil {
 			db.Outputs[span.CallDigest] = make(map[string]struct{})
@@ -675,6 +666,12 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			db.OutputOf[span.Output] = make(map[string]struct{})
 		}
 		db.OutputOf[span.Output][span.CallDigest] = struct{}{}
+
+		// output -> creator
+		if db.CreatorSpans[span.Output] == nil {
+			db.CreatorSpans[span.Output] = NewSpanSet()
+		}
+		db.CreatorSpans[span.Output].Add(span)
 	}
 
 	for _, id := range span.EffectIDs {
@@ -757,15 +754,43 @@ func (*DB) Close() error {
 	return nil
 }
 
+func (db *DB) Call(dig string) *callpbv1.Call {
+	// First, check if we already have the call cached
+	if cached, ok := db.Calls[dig]; ok {
+		return cached
+	}
+
+	// Next, try to decode from the call payload
+	if callPayload, ok := db.CallPayloads[dig]; ok {
+		var call callpbv1.Call
+		if err := call.Decode(callPayload); err != nil {
+			slog.Warn("failed to decode call", "err", err)
+		} else {
+			// Cache the decoded call for future use
+			db.Calls[dig] = &call
+			return &call
+		}
+	}
+
+	// Finally, try to find the call through creator spans
+	if creators, ok := db.CreatorSpans[dig]; ok {
+		// Try each creator in order
+		for _, creator := range creators.Order {
+			if creatorCall := db.Call(creator.CallDigest); creatorCall != nil {
+				return creatorCall
+			}
+		}
+	}
+
+	// No call found
+	return nil
+}
+
 func (db *DB) MustCall(dig string) *callpbv1.Call {
-	call, ok := db.Calls[dig]
-	if !ok {
-		// Sometimes may see a call's digest before the call itself.
-		//
-		// The loadFooFromID APIs for example will emit their call via their span
-		// before loading the ID, and its ID argument will just be a digest like
-		// anything else.
-		return &callpbv1.Call{
+	call := db.Call(dig)
+	if call == nil {
+		// Rather than blowing up, fill in an "easter egg."
+		call = &callpbv1.Call{
 			Field: "no",
 			Type: &callpbv1.Type{
 				NamedType: "Missing",
@@ -786,80 +811,22 @@ func (db *DB) MustCall(dig string) *callpbv1.Call {
 	return call
 }
 
-func (db *DB) litSize(lit *callpbv1.Literal) int {
-	switch x := lit.GetValue().(type) {
-	case *callpbv1.Literal_CallDigest:
-		return db.idSize(db.MustCall(x.CallDigest))
-	case *callpbv1.Literal_List:
-		size := 0
-		for _, lit := range x.List.GetValues() {
-			size += db.litSize(lit)
-		}
-		return size
-	case *callpbv1.Literal_Object:
-		size := 0
-		for _, lit := range x.Object.GetValues() {
-			size += db.litSize(lit.GetValue())
-		}
-		return size
-	}
-	return 1
-}
-
-func (db *DB) idSize(id *callpbv1.Call) int {
-	size := 0
-	for id := id; id != nil; id = db.Calls[id.ReceiverDigest] {
-		size++
-		size += len(id.Args)
-		for _, arg := range id.Args {
-			size += db.litSize(arg.GetValue())
-		}
-	}
-	return size
-}
-
-func (db *DB) Simplify(call *callpbv1.Call, force bool) (smallest *callpbv1.Call) {
-	smallest = call
-	smallestSize := -1
-	if !force {
-		smallestSize = db.idSize(smallest)
-	}
-
-	creators, ok := db.OutputOf[call.Digest]
+func (db *DB) Simplify(call *callpbv1.Call, force bool) *callpbv1.Call {
+	creators, ok := db.CreatorSpans[call.Digest]
 	if !ok {
-		return smallest
+		return call
 	}
-	simplified := false
 
-loop:
-	for creatorDig := range creators {
-		if creatorDig == call.Digest {
-			// can't be simplified to itself
+	for _, creator := range creators.Order {
+		if creator.CallDigest == "" {
 			continue
 		}
-		creator, ok := db.Calls[creatorDig]
-		if ok {
-			for _, creatorArg := range creator.Args {
-				if creatorArg, ok := creatorArg.Value.Value.(*callpbv1.Literal_CallDigest); ok {
-					if creatorArg.CallDigest == call.Digest {
-						// can't be simplified to a call that references itself
-						// in it's argument - which would loop endlessly
-						continue loop
-					}
-				}
-			}
-
-			if size := db.idSize(creator); smallestSize == -1 || size < smallestSize {
-				smallest = creator
-				smallestSize = size
-				simplified = true
-			}
+		if creatorCall := db.Call(creator.CallDigest); creatorCall != nil {
+			return creatorCall // TODO: re-simplify?
 		}
 	}
-	if simplified {
-		return db.Simplify(smallest, false)
-	}
-	return smallest
+
+	return call
 }
 
 // Function to check if a row is or contains a target row
@@ -875,14 +842,29 @@ func isOrContains(row, target *TraceTree) bool {
 	return false
 }
 
-func WalkTree(tree []*TraceTree, f func(*TraceTree, int) bool) {
+type WalkDecision int
+
+const (
+	WalkContinue WalkDecision = iota
+	WalkSkip
+	WalkPassthrough
+	WalkStop
+)
+
+func WalkTree(tree []*TraceTree, f func(*TraceTree, int) WalkDecision) {
 	var walk func([]*TraceTree, int)
 	walk = func(rows []*TraceTree, depth int) {
 		for _, row := range rows {
-			if f(row, depth) {
+			switch f(row, depth) {
+			case WalkContinue:
+				walk(row.Children, depth+1)
+			case WalkPassthrough:
+				walk(row.Children, depth)
+			case WalkSkip:
+				continue
+			case WalkStop:
 				return
 			}
-			walk(row.Children, depth+1)
 		}
 	}
 	walk(tree, 0)

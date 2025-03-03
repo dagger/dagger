@@ -17,19 +17,14 @@ import (
 
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
+	"github.com/dagger/testctx/oteltest"
 )
-
-var testCtx = context.Background()
 
 func TestMain(m *testing.M) {
 	// Preserve original SSH_AUTH_SOCK value and
@@ -37,9 +32,7 @@ func TestMain(m *testing.M) {
 	origAuthSock := os.Getenv("SSH_AUTH_SOCK")
 	os.Unsetenv("SSH_AUTH_SOCK")
 
-	testCtx = telemetry.InitEmbedded(testCtx, nil)
-	res := m.Run()
-	telemetry.Close()
+	res := oteltest.Main(m)
 
 	if origAuthSock != "" {
 		os.Setenv("SSH_AUTH_SOCK", origAuthSock)
@@ -47,28 +40,26 @@ func TestMain(m *testing.M) {
 	os.Exit(res)
 }
 
-const InstrumentationLibrary = "dagger.io/integration"
-
-func Tracer() trace.Tracer {
-	return otel.Tracer(InstrumentationLibrary)
-}
-
-func Logger() log.Logger {
-	return telemetry.Logger(testCtx, InstrumentationLibrary)
-}
-
-func Middleware() []testctx.MiddlewareT {
-	return []testctx.MiddlewareT{
-		testctx.WithParallel,
-		testctx.WithOTelLogging[*testing.T](Logger()),
-		testctx.WithOTelTracing[*testing.T](Tracer()),
+func Middleware() []testctx.Middleware[*testing.T] {
+	return []testctx.Middleware[*testing.T]{
+		testctx.WithParallel(),
+		oteltest.WithTracing(
+			oteltest.TraceConfig[*testing.T]{
+				StartOptions: testutil.SpanOpts[*testing.T],
+			},
+		),
+		oteltest.WithLogging[*testing.T](),
 	}
 }
 
-func BenchMiddleware() []testctx.MiddlewareB {
-	return []testctx.MiddlewareB{
-		testctx.WithOTelLogging[*testing.B](Logger()),
-		testctx.WithOTelTracing[*testing.B](Tracer()),
+func BenchMiddleware() []testctx.Middleware[*testing.B] {
+	return []testctx.Middleware[*testing.B]{
+		oteltest.WithTracing(
+			oteltest.TraceConfig[*testing.B]{
+				StartOptions: testutil.SpanOpts[*testing.B],
+			},
+		),
+		oteltest.WithLogging[*testing.B](),
 	}
 }
 

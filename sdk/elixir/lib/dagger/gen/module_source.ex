@@ -121,6 +121,23 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
+  @doc "Generates a client for the module."
+  @spec generate_client(t(), String.t(), String.t(), [{:local_sdk, boolean() | nil}]) ::
+          Dagger.Directory.t()
+  def generate_client(%__MODULE__{} = module_source, generator, output_dir, optional_args \\ []) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("generateClient")
+      |> QB.put_arg("generator", generator)
+      |> QB.put_arg("outputDir", output_dir)
+      |> QB.maybe_put_arg("localSdk", optional_args[:local_sdk])
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
   @doc "The generated files and directories made on top of the module source's context directory."
   @spec generated_context_directory(t()) :: Dagger.Directory.t()
   def generated_context_directory(%__MODULE__{} = module_source) do
@@ -195,6 +212,15 @@ defmodule Dagger.ModuleSource do
   def module_original_name(%__MODULE__{} = module_source) do
     query_builder =
       module_source.query_builder |> QB.select("moduleOriginalName")
+
+    Client.execute(module_source.client, query_builder)
+  end
+
+  @doc "The original subpath used when instantiating this module source, relative to the context directory."
+  @spec original_subpath(t()) :: {:ok, String.t()} | {:error, term()}
+  def original_subpath(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("originalSubpath")
 
     Client.execute(module_source.client, query_builder)
   end
@@ -376,5 +402,18 @@ defmodule Dagger.ModuleSource do
       query_builder: query_builder,
       client: module_source.client
     }
+  end
+end
+
+defimpl Jason.Encoder, for: Dagger.ModuleSource do
+  def encode(module_source, opts) do
+    {:ok, id} = Dagger.ModuleSource.id(module_source)
+    Jason.Encode.string(id, opts)
+  end
+end
+
+defimpl Nestru.Decoder, for: Dagger.ModuleSource do
+  def decode_fields_hint(_struct, _context, id) do
+    {:ok, Dagger.Client.load_module_source_from_id(Dagger.Global.dag(), id)}
   end
 end

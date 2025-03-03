@@ -10,6 +10,7 @@ import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Ignore;
 import io.dagger.module.annotation.Object;
 import java.util.concurrent.ExecutionException;
+import java.util.Optional;
 
 @Object
 public class Defaults extends AbstractModule {
@@ -20,6 +21,16 @@ public class Defaults extends AbstractModule {
   @Function
   public String echo(@Default("default value") String value) {
     return value;
+  }
+
+  @Function
+  public String echoElse(Optional<String> value) {
+    return value.orElse("default value if null");
+  }
+
+  @Function
+  public String echoOptDefault(@Default("default value") Optional<String> value) {
+    return value.get();
   }
 
   @Function

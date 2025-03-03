@@ -14,8 +14,8 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/llbsolver/provenance"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/moby/sys/user"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/opencontainers/runc/libcontainer/user"
 	"github.com/pkg/errors"
 
 	"github.com/dagger/dagger/core/reffs"

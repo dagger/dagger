@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 
+# hack/dev wraps hack/build to build and start a dev environment, allowing
+# running a specified command in that environment.
+
 set -e -u
 
-export DAGGER_SRC_ROOT="$(cd $(dirname $(realpath "${BASH_SOURCE[0]}"))/.. && pwd)"
-export MAGEDIR="$DAGGER_SRC_ROOT/.dagger/mage"
+export HACK="$(cd $(dirname $(realpath "${BASH_SOURCE[0]}")) && pwd)"
 
-pushd $MAGEDIR
-eval $(go run main.go -w $DAGGER_SRC_ROOT engine:dev)
-popd
+# HACK: dagger shell can't get docker context info, so we need to
+export DOCKER_HOST=${DOCKER_HOST:-$(docker context inspect -f '{{.Endpoints.docker.Host}}')}
 
-exec "$@"
+$HACK/build
+$HACK/with-dev $@

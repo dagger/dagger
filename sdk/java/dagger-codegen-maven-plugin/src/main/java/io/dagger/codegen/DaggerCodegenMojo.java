@@ -1,6 +1,5 @@
 package io.dagger.codegen;
 
-import com.ongres.process.FluentProcess;
 import io.dagger.codegen.introspection.CodegenVisitor;
 import io.dagger.codegen.introspection.Schema;
 import io.dagger.codegen.introspection.SchemaVisitor;
@@ -8,8 +7,6 @@ import io.dagger.codegen.introspection.Type;
 import java.io.*;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
-import java.time.Duration;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -125,42 +122,15 @@ public class DaggerCodegenMojo extends AbstractMojo {
     return daggerSchema();
   }
 
-  private InputStream queryForSchema(InputStream introspectionQuery) {
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    FluentProcess.start(bin, "query")
-        .withTimeout(Duration.of(60, ChronoUnit.SECONDS))
-        .inputStream(introspectionQuery)
-        .writeToOutputStream(out);
-    return new ByteArrayInputStream(out.toByteArray());
-  }
-
   private InputStream daggerSchema()
       throws IOException, InterruptedException, MojoFailureException {
     String actualVersion = DaggerCLIUtils.getVersion(this.bin);
-    if ("local".equalsIgnoreCase(version) || "devel".equalsIgnoreCase(version)) {
-      getLog()
-          .info(String.format("Querying local dagger CLI for schema (version=%s)", actualVersion));
-      this.version = actualVersion;
-      return DaggerCLIUtils.query(
-          getClass().getClassLoader().getResourceAsStream("introspection/introspection.graphql"),
-          this.bin);
-    } else {
-      if (!actualVersion.equals(version)) {
-        throw new MojoFailureException(
-            String.format(
-                "Actual dagger CLI version (%s) mismatches expected version (%s)",
-                actualVersion, version));
-      }
-      InputStream in =
-          getClass()
-              .getClassLoader()
-              .getResourceAsStream(String.format("schemas/schema-%s.json", version));
-      if (in == null) {
-        throw new MojoFailureException(
-            String.format("GraphQL schema for version %s not found", version));
-      }
-      return in;
-    }
+    getLog()
+        .info(String.format("Querying local dagger CLI for schema (version=%s)", actualVersion));
+    this.version = actualVersion;
+    return DaggerCLIUtils.query(
+        getClass().getClassLoader().getResourceAsStream("introspection/introspection.graphql"),
+        this.bin);
   }
 
   public File getOutputDirectory() {

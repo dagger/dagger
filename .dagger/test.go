@@ -14,14 +14,6 @@ import (
 
 type Test struct {
 	Dagger *DaggerDev // +private
-
-	CacheConfig string // +private
-}
-
-func (t *Test) WithCache(config string) *Test {
-	clone := *t
-	clone.CacheConfig = config
-	return &clone
 }
 
 // Run all engine tests
@@ -323,14 +315,17 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 			Permissions: 0755,
 		})
 
+	engineRunVol := dag.CacheVolume("dagger-dev-engine-test-varrun" + identity.NewID())
 	registrySvc := registry()
 	devEngineSvc := devEngine.
 		WithServiceBinding("registry", registrySvc).
 		WithServiceBinding("privateregistry", privateRegistry()).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-dev-engine-test-state"+identity.NewID())).
+		WithMountedCache("/run", engineRunVol).
 		AsService(dagger.ContainerAsServiceOpts{
 			Args: []string{
+				"--addr", "unix:///run/dagger-engine.sock",
 				"--addr", "tcp://0.0.0.0:1234",
 				"--network-name", "dagger-dev",
 				"--network-cidr", "10.88.0.0/16",
@@ -357,12 +352,9 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 	tests := t.Dagger.Go().Env().
 		WithMountedDirectory(utilDirPath, testEngineUtils).
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).
-		WithServiceBinding("dagger-engine", devEngineSvc).
+		WithServiceBinding("daggerengine", devEngineSvc).
+		WithMountedCache("/run", engineRunVol).
 		WithServiceBinding("registry", registrySvc)
-
-	if t.CacheConfig != "" {
-		tests = tests.WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", t.CacheConfig)
-	}
 
 	// TODO: should use c.Dagger.installer (but this currently can't connect to services)
 	tests = tests.

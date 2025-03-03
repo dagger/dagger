@@ -2,10 +2,6 @@ version: 2
 
 project_name: dagger
 
-before:
-  hooks:
-    - go mod download
-
 builds:
   - builder: prebuilt
     binary: ./dagger

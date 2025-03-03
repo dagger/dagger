@@ -7,7 +7,7 @@ This describes how to release Dagger:
 - [🌌 Daggerverse ⏱ `2mins`](#-daggerverse--2mins)
 - [🌥️ Dagger Cloud ⏱ `2mins`](#-dagger-cloud--2mins)
 - [🪣 Install scripts ⏱ `2mins`](#-install-scripts--2mins)
-- [🐙 dagger-for-github ⏱ `10mins`](#-dagger-for-github--10mins)
+- [🐙 dagger-for-github ⏱ `2mins`](#-dagger-for-github--2mins)
 - [🍺 dagger Homebrew ⏱ `2mins`](#-dagger-homebrew--2mins)
 - [❄️ nix ⏱ `2mins`](#-nix--2mins)
 - [⚙️ Improvements ⏱ `2mins`](#-improvements--2mins)
@@ -342,33 +342,17 @@ Be sure to use "Rebase and Merge" when merging the PR to `main` to preserve the 
 - [ ] Mention in the release thread on Discord that Dagger Cloud can be updated
       to the just-released version. cc @marcosnils @matipan @sipsma
 
-## 🐙 dagger-for-github ⏱ `10mins`
+## 🐙 dagger-for-github ⏱ `2mins`
 
-- [ ] Submit PR with the version bump.
+The action's `README.md` and `action.yml` should be relatively evergreen now, so we don't need to bump with Dagger releases anymore, just if there is a fix to `dagger-for-github`. We'll use `8.0.0` style versions for the action going forward to comply with GitHub immutable actions standards. Should not need separate `v8` tag. Should automatically get `v8`, `v8.0`, `v8.0.0` as well as `8.0.0` resolved by GitHub.
 
-```console
-dagger develop -m dev --compat=$ENGINE_VERSION
-dagger call -m dev bump --version=$ENGINE_VERSION -o .
-git checkout -b bump-dagger-$ENGINE_VERSION
-git add .
-git commit -s -m "chore: bump default dagger version to $ENGINE_VERSION"
-gh pr create --title "chore: bump default dagger version to $ENGINE_VERSION" --body ""
-```
+- [ ] Take a peek at the action or mention it in the release thread on Discord if there are updates to reflect in the docs. Not tied to the Dagger release itself outside of docs. cc @jpadams @kpenfound @vikram-dagger @jasonmccallister
 
-- [ ] Ask @gerhard or @jpadams to review it
-
-> [!TIP]
-> We should automate the above mentioned steps same as we do with the PR which
-> bumps the Engine version, e.g. https://github.com/dagger/dagger/pull/7318
-
-- [ ] Once this PR is merged, tag the new full semver version
+- [ ] Create/push a new patch tag for fixes/changes to `dagger-for-github` 
 
 ```console
 # Find the latest released patch https://github.com/dagger/dagger-for-github/releases
 # or via the `gh` CLI. Use that to figure out the NEXT_PATCH_VERSION.
-# For `dagger` minor bumps, bump `dagger-for-github` major version.
-# For `dagger` patch bumps, bump `dagger-for-github` minor version. Use `dagger-for-github`
-# patch version for fixes to bugs in `dagger-for-github`.
 gh release view --repo dagger/dagger-for-github --json tagName,publishedAt
 
 # Sign the tag, using the date as the comment, e.g. 2024-07-22
@@ -378,18 +362,11 @@ git push origin <NEXT_PATCH_VERSION> #shouldn't need to force since new tag
 
 - [ ] Create a new release from the patch tag (auto-fill release notes via the
       GitHub UI or via the `gh` CLI)
-- [ ] Submit PR to change the version mentioned in Dagger docs. See example [here](https://github.com/dagger/dagger/pull/8131)
+- [ ] Submit PR to change the version mentioned in Dagger docs. See example [here](https://github.com/dagger/dagger/pull/9705/files)
 
 ```console
 # --verify-tag will ensure the last tag creation step was done
 gh release create --generate-notes --verify-tag <NEXT_PATCH_VERSION>
-```
-
-- [ ] Force update the major version, currently `v7`, using the date as the comment, e.g. 2024-07-22
-
-```console
-git tag --sign -m $(date '+%Y-%m-%d') v7 --force
-git push origin v7 --force #need to force since moving this tag
 ```
 
 ## Improve releasing 改善

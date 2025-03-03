@@ -1026,6 +1026,13 @@ export type ListTypeDefID = string & { __ListTypeDefID: never }
  */
 export type ModuleID = string & { __ModuleID: never }
 
+export type ModuleSourceGenerateClientOpts = {
+  /**
+   * Use local SDK dependency
+   */
+  localSdk?: boolean
+}
+
 /**
  * The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
  */
@@ -2681,6 +2688,7 @@ export class Directory extends BaseClient {
   private readonly _id?: DirectoryID = undefined
   private readonly _digest?: string = undefined
   private readonly _export?: string = undefined
+  private readonly _name?: string = undefined
   private readonly _sync?: DirectoryID = undefined
 
   /**
@@ -2691,6 +2699,7 @@ export class Directory extends BaseClient {
     _id?: DirectoryID,
     _digest?: string,
     _export?: string,
+    _name?: string,
     _sync?: DirectoryID,
   ) {
     super(ctx)
@@ -2698,6 +2707,7 @@ export class Directory extends BaseClient {
     this._id = _id
     this._digest = _digest
     this._export = _export
+    this._name = _name
     this._sync = _sync
   }
 
@@ -2835,6 +2845,21 @@ export class Directory extends BaseClient {
     const ctx = this._ctx.select("glob", { pattern })
 
     const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Returns the name of the directory.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -5321,6 +5346,7 @@ export class ModuleSource extends BaseClient {
   private readonly _localContextDirectoryPath?: string = undefined
   private readonly _moduleName?: string = undefined
   private readonly _moduleOriginalName?: string = undefined
+  private readonly _originalSubpath?: string = undefined
   private readonly _pin?: string = undefined
   private readonly _repoRootPath?: string = undefined
   private readonly _sourceRootSubpath?: string = undefined
@@ -5346,6 +5372,7 @@ export class ModuleSource extends BaseClient {
     _localContextDirectoryPath?: string,
     _moduleName?: string,
     _moduleOriginalName?: string,
+    _originalSubpath?: string,
     _pin?: string,
     _repoRootPath?: string,
     _sourceRootSubpath?: string,
@@ -5368,6 +5395,7 @@ export class ModuleSource extends BaseClient {
     this._localContextDirectoryPath = _localContextDirectoryPath
     this._moduleName = _moduleName
     this._moduleOriginalName = _moduleOriginalName
+    this._originalSubpath = _originalSubpath
     this._pin = _pin
     this._repoRootPath = _repoRootPath
     this._sourceRootSubpath = _sourceRootSubpath
@@ -5524,6 +5552,25 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * Generates a client for the module.
+   * @param generator The generator to use
+   * @param outputDir The output directory for the generated client.
+   * @param opts.localSdk Use local SDK dependency
+   */
+  generateClient = (
+    generator: string,
+    outputDir: string,
+    opts?: ModuleSourceGenerateClientOpts,
+  ): Directory => {
+    const ctx = this._ctx.select("generateClient", {
+      generator,
+      outputDir,
+      ...opts,
+    })
+    return new Directory(ctx)
+  }
+
+  /**
    * The generated files and directories made on top of the module source's context directory.
    */
   generatedContextDirectory = (): Directory => {
@@ -5615,6 +5662,21 @@ export class ModuleSource extends BaseClient {
     }
 
     const ctx = this._ctx.select("moduleOriginalName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The original subpath used when instantiating this module source, relative to the context directory.
+   */
+  originalSubpath = async (): Promise<string> => {
+    if (this._originalSubpath) {
+      return this._originalSubpath
+    }
+
+    const ctx = this._ctx.select("originalSubpath")
 
     const response: Awaited<string> = await ctx.execute()
 

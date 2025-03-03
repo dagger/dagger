@@ -287,6 +287,15 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				if err != nil {
 					return nil, fmt.Errorf("failed to call interface function %s.%s: %w", ifaceName, fieldDef.Name, err)
 				}
+				if postCallRes, ok := dagql.UnwrapAs[dagql.PostCallable](res); ok {
+					var postCall func(context.Context) error
+					postCall, res = postCallRes.GetPostCall()
+					if postCall != nil {
+						if err := postCall(ctx); err != nil {
+							return nil, fmt.Errorf("failed to run post-call for %s.%s: %w", ifaceName, fieldDef.Name, err)
+						}
+					}
+				}
 
 				if fnTypeDef.ReturnType.Underlying().Kind != TypeDefKindInterface {
 					return res, nil
@@ -430,13 +439,15 @@ var _ HasPBDefinitions = (*InterfaceAnnotatedValue)(nil)
 func (iface *InterfaceAnnotatedValue) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	defs := []*pb.Definition{}
 	objDef := iface.UnderlyingType.TypeDef().AsObject.Value
-	for name, val := range iface.Fields {
-		fieldDef, ok := objDef.FieldByOriginalName(name)
+	for _, field := range objDef.Fields {
+		// TODO: we skip over private fields, we can't convert them anyways (this is a bug)
+		name := field.OriginalName
+		val, ok := iface.Fields[name]
 		if !ok {
-			// TODO: private field; skip. (this is a bug)
+			// missing field
 			continue
 		}
-		fieldType, ok, err := iface.UnderlyingType.SourceMod().ModTypeFor(ctx, fieldDef.TypeDef, true)
+		fieldType, ok, err := iface.UnderlyingType.SourceMod().ModTypeFor(ctx, field.TypeDef, true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get mod type for field %q: %w", name, err)
 		}

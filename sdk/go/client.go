@@ -7,7 +7,7 @@ import (
 	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 
-	"dagger.io/dagger/internal/engineconn"
+	"dagger.io/dagger/engineconn"
 	"dagger.io/dagger/querybuilder"
 )
 
@@ -81,6 +81,12 @@ func WithRunnerHost(runnerHost string) ClientOpt {
 	})
 }
 
+func WithServeCurrentModule(serveCurrentModule bool) ClientOpt {
+	return clientOptFunc(func(cfg *engineconn.Config) {
+		cfg.ServeCurrentModule = serveCurrentModule
+	})
+}
+
 // Connect to a Dagger Engine
 func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	cfg := &engineconn.Config{}
@@ -106,6 +112,10 @@ func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 // GraphQLClient returns the underlying graphql.Client
 func (c *Client) GraphQLClient() graphql.Client {
 	return c.client
+}
+
+func (c *Client) QueryBuilder() *querybuilder.Selection {
+	return c.query
 }
 
 // Close the engine connection

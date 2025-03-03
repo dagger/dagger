@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,7 +22,7 @@ func (ModuleSuite) TestDaggerUp(ctx context.Context, t *testctx.T) {
 		t.SkipNow()
 	}
 	// set timeout to 3m for each test
-	t = t.WithTimeout(3 * time.Minute)
+	t = t.Using(testctx.WithTimeout[*testing.T](3 * time.Minute))
 
 	const defaultTrafficPortForContainerTests = "23100"
 	const defaultTrafficPortForServiceTests = "23200"

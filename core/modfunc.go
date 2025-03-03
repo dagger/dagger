@@ -389,18 +389,22 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to collect IDs: %w", err)
 	}
 
-	for _, id := range returnedIDs {
-		if err := fn.root.AddClientResourcesFromID(ctx, id, clientID, false); err != nil {
-			return nil, fmt.Errorf("failed to add client resources from ID: %w", err)
-		}
-	}
-
 	// NOTE: once generalized function caching is enabled we need to ensure that any non-reproducible
 	// cache entries are linked to the result of this call.
 	// See the previous implementation of this for a reference:
 	// https://github.com/dagger/dagger/blob/7c31db76e07c9a17fcdb3f3c4513c915344c1da8/core/modfunc.go#L483
 
-	return returnValueTyped, nil
+	// Function calls are cached per-session, but every client caller needs to add
+	// secret/socket/etc. resources from the result to their store.
+	returnedIDsList := make([]*resource.ID, 0, len(returnedIDs))
+	for _, id := range returnedIDs {
+		returnedIDsList = append(returnedIDsList, id)
+	}
+	secretTransferPostCall, err := SecretTransferPostCall(ctx, fn.root, clientID, returnedIDsList...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create secret transfer post call: %w", err)
+	}
+	return dagql.NewPostCallTyped(returnValueTyped, secretTransferPostCall), nil
 }
 
 func extractError(ctx context.Context, client *buildkit.Client, baseErr error) (dagql.ID[*Error], bool, error) {

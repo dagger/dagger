@@ -9,11 +9,10 @@ import (
 	"fmt"
 	"reflect"
 
+	"dagger.io/dagger/querybuilder"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
-
-	"dagger.io/dagger/querybuilder"
 )
 
 func Tracer() trace.Tracer {
@@ -2169,6 +2168,7 @@ type Directory struct {
 	digest *string
 	export *string
 	id     *DirectoryID
+	name   *string
 	sync   *DirectoryID
 }
 type WithDirectoryFunc func(r *Directory) *Directory
@@ -2420,6 +2420,19 @@ func (r *Directory) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// Returns the name of the directory.
+func (r *Directory) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Force evaluation in the engine.
@@ -5579,6 +5592,7 @@ type ModuleSource struct {
 	localContextDirectoryPath *string
 	moduleName                *string
 	moduleOriginalName        *string
+	originalSubpath           *string
 	pin                       *string
 	repoRootPath              *string
 	sourceRootSubpath         *string
@@ -5740,6 +5754,29 @@ func (r *ModuleSource) EngineVersion(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// ModuleSourceGenerateClientOpts contains options for ModuleSource.GenerateClient
+type ModuleSourceGenerateClientOpts struct {
+	// Use local SDK dependency
+	LocalSDK bool
+}
+
+// Generates a client for the module.
+func (r *ModuleSource) GenerateClient(generator string, outputDir string, opts ...ModuleSourceGenerateClientOpts) *Directory {
+	q := r.query.Select("generateClient")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `localSdk` optional argument
+		if !querybuilder.IsZeroValue(opts[i].LocalSDK) {
+			q = q.Arg("localSdk", opts[i].LocalSDK)
+		}
+	}
+	q = q.Arg("generator", generator)
+	q = q.Arg("outputDir", outputDir)
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // The generated files and directories made on top of the module source's context directory.
 func (r *ModuleSource) GeneratedContextDirectory() *Directory {
 	q := r.query.Select("generatedContextDirectory")
@@ -5860,6 +5897,19 @@ func (r *ModuleSource) ModuleOriginalName(ctx context.Context) (string, error) {
 		return *r.moduleOriginalName, nil
 	}
 	q := r.query.Select("moduleOriginalName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The original subpath used when instantiating this module source, relative to the context directory.
+func (r *ModuleSource) OriginalSubpath(ctx context.Context) (string, error) {
+	if r.originalSubpath != nil {
+		return *r.originalSubpath, nil
+	}
+	q := r.query.Select("originalSubpath")
 
 	var response string
 

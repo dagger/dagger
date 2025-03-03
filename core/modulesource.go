@@ -112,6 +112,8 @@ type ModuleSource struct {
 	// SourceSubpath is the relative path from the context dir to the dir containing the module's source code
 	SourceSubpath string
 
+	OriginalSubpath string
+
 	ContextDirectory dagql.Instance[*Directory] `field:"true" name:"contextDirectory" doc:"The full directory loaded for the module source, including the source code as a subdirectory."`
 
 	Digest string `field:"true" name:"digest" doc:"A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance."`
@@ -333,8 +335,6 @@ func (src *ModuleSource) LoadContext(
 			return inst, fmt.Errorf("failed to select directory: %w", err)
 		}
 
-		return inst, nil
-
 	case ModuleSourceKindGit:
 		slog.Debug("moduleSource.LoadContext: loading contextual directory from git", "path", path, "kind", src.Kind, "repo", src.Git.HTMLURL)
 
@@ -376,7 +376,10 @@ func (src *ModuleSource) LoadContext(
 			}
 		}
 
-		return MakeDirectoryContentHashed(ctx, bk, ctxDir)
+		inst, err = MakeDirectoryContentHashed(ctx, bk, ctxDir)
+		if err != nil {
+			return inst, err
+		}
 
 	case ModuleSourceKindDir:
 		if !filepath.IsAbs(path) {
@@ -417,19 +420,24 @@ func (src *ModuleSource) LoadContext(
 			}
 		}
 
-		mainClientCallerID, err := src.Query.MainClientCallerID(ctx)
+		inst, err = MakeDirectoryContentHashed(ctx, bk, ctxDir)
 		if err != nil {
-			return inst, fmt.Errorf("failed to retrieve mainClientCallerID: %w", err)
+			return inst, err
 		}
-		if err := src.Query.AddClientResourcesFromID(ctx, &resource.ID{ID: *ctxDir.ID()}, mainClientCallerID, false); err != nil {
-			return inst, fmt.Errorf("failed to add client resources from ID: %w", err)
-		}
-
-		return MakeDirectoryContentHashed(ctx, bk, ctxDir)
 
 	default:
 		return inst, fmt.Errorf("unsupported module src kind: %q", src.Kind)
 	}
+
+	mainClientMetadata, err := src.Query.NonModuleParentClientMetadata(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	if err := src.Query.AddClientResourcesFromID(ctx, &resource.ID{ID: *inst.ID()}, mainClientMetadata.ClientID, false); err != nil {
+		return inst, fmt.Errorf("failed to add client resources from directory source: %w", err)
+	}
+
+	return inst, nil
 }
 
 type LocalModuleSource struct {

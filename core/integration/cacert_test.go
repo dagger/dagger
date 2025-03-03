@@ -11,7 +11,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/creack/pty"
 	"github.com/dagger/dagger/internal/testutil"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +19,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	customCACertTests(ctx, t, c,
-		caCertsTest{"alpine basic", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"alpine basic", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(alpineImage).
 				WithExec([]string{"apk", "add", "curl"})
 			initialBundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
@@ -41,7 +41,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			require.Equal(t, initialBundleContents, bundleContents)
 		}},
 
-		caCertsTest{"alpine empty diff", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"alpine empty diff", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(alpineImage)
 			diff := ctr.Rootfs().Diff(ctr.WithExec([]string{"true"}).Rootfs())
 			ents, err := diff.Glob(ctx, "**/*")
@@ -55,7 +55,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			require.Empty(t, ents)
 		}},
 
-		caCertsTest{"alpine non-root user", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"alpine non-root user", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(alpineImage).
 				WithExec([]string{"apk", "add", "curl"})
 			initialBundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
@@ -78,7 +78,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			require.Equal(t, initialBundleContents, bundleContents)
 		}},
 
-		caCertsTest{"alpine install ca-certificates and curl at once", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"alpine install ca-certificates and curl at once", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr, err := c.Container().From(alpineImage).
 				WithExec([]string{"sh", "-c", "apk add curl && curl https://server"}).
 				Sync(ctx)
@@ -95,7 +95,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			require.NotContains(t, bundleContents, f.caCertContents)
 		}},
 
-		caCertsTest{"alpine ca-certificates not installed", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"alpine ca-certificates not installed", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(golangImage).
 				WithExec([]string{"apk", "del", "ca-certificates"})
 
@@ -151,7 +151,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			require.NotContains(t, bundleContents, f.caCertContents)
 		}},
 
-		caCertsTest{"wolfi basic", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"wolfi basic", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(wolfiImage).
 				WithExec([]string{"apk", "add", "curl"})
 			initialBundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
@@ -172,7 +172,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			require.Equal(t, initialBundleContents, bundleContents)
 		}},
 
-		caCertsTest{"debian basic", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"debian basic", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(debianImage).
 				WithExec([]string{"apt", "update"}).
 				WithExec([]string{"apt", "install", "-y", "curl"})
@@ -195,7 +195,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			require.Equal(t, initialBundleContents, bundleContents)
 		}},
 
-		caCertsTest{"debian empty diff", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"debian empty diff", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(debianImage)
 			diff := ctr.Rootfs().Diff(ctr.WithExec([]string{"true"}).Rootfs())
 			ents, err := diff.Glob(ctx, "**/*")
@@ -209,7 +209,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			require.Empty(t, ents)
 		}},
 
-		caCertsTest{"debian non-root user", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"debian non-root user", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(debianImage).
 				WithExec([]string{"apt", "update"}).
 				WithExec([]string{"apt", "install", "-y", "curl"})
@@ -233,7 +233,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			require.Equal(t, initialBundleContents, bundleContents)
 		}},
 
-		caCertsTest{"debian install ca-certificates and curl at once", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"debian install ca-certificates and curl at once", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr, err := c.Container().From(debianImage).
 				WithExec([]string{"apt", "update"}).
 				WithExec([]string{"sh", "-c", "apt install -y curl && curl https://server"}).
@@ -251,7 +251,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			require.NotContains(t, bundleContents, f.caCertContents)
 		}},
 
-		caCertsTest{"debian ca-certificates not installed", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"debian ca-certificates not installed", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr, err := c.Container().From(debianImage).
 				WithExec([]string{"apt", "update"}).
 				WithExec([]string{"apt", "install", "-y", "golang"}).
@@ -295,7 +295,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			requireErrOut(t, err, "no such file or directory")
 		}},
 
-		caCertsTest{"rhel basic", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"rhel basic", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(rhelImage)
 			initialBundleContents, err := ctr.File("/etc/pki/tls/certs/ca-bundle.crt").Contents(ctx)
 			require.NoError(t, err)
@@ -316,7 +316,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			require.Equal(t, initialBundleContents, bundleContents)
 		}},
 
-		caCertsTest{"rhel empty diff", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"rhel empty diff", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(rhelImage)
 			diff := ctr.Rootfs().Diff(ctr.WithExec([]string{"true"}).Rootfs())
 			ents, err := diff.Glob(ctx, "**/*")
@@ -324,7 +324,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			require.Empty(t, ents)
 		}},
 
-		caCertsTest{"rhel non-root user", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"rhel non-root user", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(rhelImage)
 			initialBundleContents, err := ctr.File("/etc/pki/tls/certs/ca-bundle.crt").Contents(ctx)
 			require.NoError(t, err)
@@ -346,7 +346,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			require.Equal(t, initialBundleContents, bundleContents)
 		}},
 
-		caCertsTest{"go module", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"go module", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
@@ -383,7 +383,7 @@ func (m *Test) GetHttp(ctx context.Context) (string, error) {
 			require.Equal(t, "hello", strings.TrimSpace(out))
 		}},
 
-		caCertsTest{"python module", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"python module", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
@@ -405,7 +405,7 @@ class Test:
 			require.Equal(t, "hello", strings.TrimSpace(out))
 		}},
 
-		caCertsTest{"typescript module", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"typescript module", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
@@ -446,7 +446,7 @@ export class Test {
 			require.Equal(t, "hello", strings.TrimSpace(out))
 		}},
 
-		caCertsTest{"terminal", func(t *testctx.T, _ *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"terminal", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			modDir := t.TempDir()
 			err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(fmt.Sprintf(`package main
 
@@ -534,7 +534,7 @@ export class Test {
 
 type caCertsTest struct {
 	name string
-	run  func(*testctx.T, *dagger.Client, caCertsTestFixtures)
+	run  func(context.Context, *testctx.T, *dagger.Client, caCertsTestFixtures)
 }
 
 type caCertsTestFixtures struct {
@@ -582,7 +582,7 @@ func customCACertTests(
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(ctx context.Context, t *testctx.T) {
-			test.run(t, c2, caCertsTestFixtures{
+			test.run(ctx, t, c2, caCertsTestFixtures{
 				caCertContents: caCertContents,
 				engineEndpoint: endpoint,
 			})

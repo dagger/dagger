@@ -3,6 +3,5 @@
   "engineVersion": "v0.13.3",
   "sdk": {
     "source": "python"
-  },
-  "source": "."
+  }
 }

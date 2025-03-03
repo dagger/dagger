@@ -1,9 +1,13 @@
 {
   "name": "dagger-dev",
-  "engineVersion": "v0.15.4",
+  "engineVersion": "v0.16.1",
   "sdk": {
     "source": "go"
   },
+  "include": [
+    "engine/distconsts/**/*",
+    "sdk/typescript/runtime/**/*"
+  ],
   "dependencies": [
     {
       "name": "alpine",
@@ -67,6 +71,5 @@
       "source": "modules/wolfi"
     }
   ],
-  "source": ".dagger",
-  "include": ["engine/distconsts/**/*"]
+  "source": ".dagger"
 }

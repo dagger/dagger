@@ -9,7 +9,6 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/moby/buildkit/identity"
 	"go.opentelemetry.io/otel/codes"
-	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/build"
@@ -287,13 +286,6 @@ func (e *DaggerEngine) Publish(
 	// +optional
 	registryPassword *dagger.Secret,
 ) error {
-	for _, t := range tag {
-		if semver.IsValid(t) {
-			tag = append(tag, "latest")
-			break
-		}
-	}
-
 	// collect all the targets that we are trying to build together, along with
 	// where they need to go to
 	targetResults := make([]struct {

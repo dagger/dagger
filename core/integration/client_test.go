@@ -11,15 +11,16 @@ import (
 	"github.com/koron-go/prefixw"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
 
 	"github.com/dagger/dagger/internal/testutil"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 )
 
 type ClientSuite struct{}
 
 func TestClient(t *testing.T) {
-	testctx.Run(testCtx, t, ClientSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(ClientSuite{})
 }
 
 func (ClientSuite) TestClose(ctx context.Context, t *testctx.T) {
@@ -29,7 +30,7 @@ func (ClientSuite) TestClose(ctx context.Context, t *testctx.T) {
 }
 
 func (ClientSuite) TestMultiSameTrace(ctx context.Context, t *testctx.T) {
-	rootCtx, span := Tracer().Start(ctx, "root")
+	rootCtx, span := otel.Tracer("dagger").Start(ctx, "root")
 	defer span.End()
 
 	newClient := func(ctx context.Context, name string) (*dagger.Client, *safeBuffer) {
@@ -41,7 +42,7 @@ func (ClientSuite) TestMultiSameTrace(ctx context.Context, t *testctx.T) {
 		return c, out
 	}
 
-	ctx1, span := Tracer().Start(rootCtx, "client 1")
+	ctx1, span := otel.Tracer("dagger").Start(rootCtx, "client 1")
 	defer span.End()
 	c1, out1 := newClient(ctx1, "client 1")
 
@@ -74,7 +75,7 @@ func (ClientSuite) TestMultiSameTrace(ctx context.Context, t *testctx.T) {
 		return strings.Contains(out1.String(), "echoed: "+c1msg)
 	}, timeout, 10*time.Millisecond)
 
-	ctx2, span := Tracer().Start(rootCtx, "client 2")
+	ctx2, span := otel.Tracer("dagger").Start(rootCtx, "client 2")
 	defer span.End()
 
 	// the timeout has to be established before connecting, so we apply it to c2
@@ -89,7 +90,7 @@ func (ClientSuite) TestMultiSameTrace(ctx context.Context, t *testctx.T) {
 		return strings.Contains(out2.String(), "echoed: "+c2msg)
 	}, timeout, 10*time.Millisecond)
 
-	ctx3, span := Tracer().Start(rootCtx, "client 3")
+	ctx3, span := otel.Tracer("dagger").Start(rootCtx, "client 3")
 	defer span.End()
 	timeoutCtx3, cancelTimeout := context.WithTimeout(ctx3, timeout)
 	defer cancelTimeout()

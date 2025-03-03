@@ -156,6 +156,15 @@ defmodule Dagger.Directory do
     Client.execute(directory.client, query_builder)
   end
 
+  @doc "Returns the name of the directory."
+  @spec name(t()) :: {:ok, String.t()} | {:error, term()}
+  def name(%__MODULE__{} = directory) do
+    query_builder =
+      directory.query_builder |> QB.select("name")
+
+    Client.execute(directory.client, query_builder)
+  end
+
   @doc "Force evaluation in the engine."
   @spec sync(t()) :: {:ok, Dagger.Directory.t()} | {:error, term()}
   def sync(%__MODULE__{} = directory) do
@@ -332,5 +341,18 @@ defmodule Dagger.Directory do
       query_builder: query_builder,
       client: directory.client
     }
+  end
+end
+
+defimpl Jason.Encoder, for: Dagger.Directory do
+  def encode(directory, opts) do
+    {:ok, id} = Dagger.Directory.id(directory)
+    Jason.Encode.string(id, opts)
+  end
+end
+
+defimpl Nestru.Decoder, for: Dagger.Directory do
+  def decode_fields_hint(_struct, _context, id) do
+    {:ok, Dagger.Client.load_directory_from_id(Dagger.Global.dag(), id)}
   end
 end

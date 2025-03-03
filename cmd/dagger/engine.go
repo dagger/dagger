@@ -2,18 +2,55 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
+
+const (
+	GPUSupportEnv = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
+	RunnerHostEnv = "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
+)
+
+var (
+	// RunnerHost holds the host to connect to.
+	//
+	// Note: this is filled at link-time.
+	RunnerHost string
+)
+
+func init() {
+	if v, ok := os.LookupEnv(RunnerHostEnv); ok {
+		RunnerHost = v
+	}
+	if RunnerHost == "" {
+		RunnerHost = defaultRunnerHost()
+	}
+}
+
+func defaultRunnerHost() string {
+	tag := engine.Tag
+	if tag == "" {
+		// can happen during naive dev builds (so just fallback to something
+		// semi-reasonable)
+		return "docker-container://" + distconsts.EngineContainerName
+	}
+	if os.Getenv(GPUSupportEnv) != "" {
+		tag += "-gpu"
+	}
+	return fmt.Sprintf("docker-image://%s:%s", engine.EngineImageRepo, tag)
+}
 
 type runClientCallback func(context.Context, *client.Client) error
 
@@ -33,7 +70,7 @@ func withEngine(
 		}
 
 		if params.RunnerHost == "" {
-			params.RunnerHost = engine.RunnerHost()
+			params.RunnerHost = RunnerHost
 		}
 
 		params.DisableHostRW = disableHostRW
@@ -59,6 +96,35 @@ func withEngine(
 			return err
 		}
 		defer sess.Close()
+
+		// Automatically serve the module in the context directory if available.
+		if params.ServeModule {
+			mod, exist, err := initializeClientGeneratorModule(ctx, sess.Dagger(), ".")
+			if err != nil && !errors.Is(err, ErrConfigNotFound) {
+				return fmt.Errorf("failed to initialize current module: %w", err)
+			}
+
+			if exist {
+				for _, dep := range mod.Dependencies {
+					err := dep.AsModule().Serve(ctx)
+					if err != nil {
+						return fmt.Errorf("failed to serve dependency %w", err)
+					}
+				}
+
+				sdkSource, err := mod.Source.SDK().Source(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get module SDK source: %w", err)
+				}
+
+				if sdkSource != "" {
+					err := mod.Source.AsModule().Serve(ctx)
+					if err != nil {
+						return fmt.Errorf("failed to serve module source: %w", err)
+					}
+				}
+			}
+		}
 
 		return fn(ctx, sess)
 	})

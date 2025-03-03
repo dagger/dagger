@@ -120,7 +120,7 @@ const config: Config = {
     sidebarCollapsed: false,
     metadata: [{ name: "og:image", content: "/img/favicon.png" }],
     prism: {
-      additionalLanguages: ["php", "rust", "elixir", "bash", "toml", "powershell"],
+      additionalLanguages: ["php", "rust", "elixir", "bash", "toml", "powershell", "java"],
       theme: prismThemes.dracula,
     },
     navbar: {
@@ -133,104 +133,10 @@ const config: Config = {
       items: [
         {
           position: "left",
-          type: "dropdown",
-          label: "Platform",
-          className: "navbar-blog-link",
-          items: [
-            {
-              label: "Dagger Engine",
-              href: "https://dagger.io/dagger-engine",
-              target: "_self",
-            },
-            {
-              label: "Dagger Cloud",
-              href: "https://dagger.io/cloud",
-              target: "_self",
-            },
-            {
-              label: "Integrations",
-              href: "https://dagger.io/integrations",
-              target: "_self",
-            },
-            {
-              label: "Pricing",
-              href: "https://dagger.io/pricing",
-              target: "_self",
-            },
-          ],
-        },
-        {
-          position: "left",
           to: "https://daggerverse.dev/",
           label: "Daggerverse",
           className: "navbar-blog-link",
           target: "_self",
-        },
-        {
-          position: "left",
-          to: "https://dagger.io/resources",
-          label: "Resources",
-          className: "navbar-blog-link",
-          items: [
-            {
-              label: "Blog",
-              href: "https://dagger.io/blog",
-              target: "_self",
-            },
-            {
-              label: "Daggerized Projects",
-              href: "https://dagger.io/daggerized-projects",
-              target: "_self",
-            },
-            {
-              label: "Videos",
-              href: "https://dagger.io/videos",
-              target: "_self",
-            },
-            {
-              label: "Adopting Dagger",
-              href: "https://dagger.io/adopting-dagger",
-              target: "_self",
-            },
-            {
-              label: "Case Studies",
-              href: "https://dagger.io/case-studies",
-              target: "_self",
-            },
-            {
-              label: "Community Content",
-              href: "https://dagger.io/community-content",
-              target: "_self",
-            },
-          ],
-        },
-        {
-          position: "left",
-          type: "dropdown",
-          label: "Community",
-          className: "navbar-blog-link",
-          items: [
-            {
-              label: "Events",
-              href: "https://dagger.io/events",
-              target: "_self",
-            },
-            {
-              label: "Get Involved",
-              href: "https://dagger.io/community",
-              target: "_self",
-            },
-            {
-              label: "Dagger Love",
-              href: "https://dagger.io/dagger-love",
-              target: "_self",
-            },
-            {
-              label: "Dagger Commanders",
-              href: "https://dagger.io/commanders",
-              target: "_self",
-            },
-          ],
         },
         {
           position: "left",

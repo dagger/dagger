@@ -7,7 +7,7 @@
   "dependencies": [
     {
       "name": "dagger-dev",
-      "source": "../."
+      "source": ".."
     },
     {
       "name": "gh",
@@ -27,6 +27,5 @@
       "name": "version",
       "source": "../version"
     }
-  ],
-  "source": "."
+  ]
 }

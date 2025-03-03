@@ -11,7 +11,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -21,7 +21,7 @@ import (
 type ProvisionSuite struct{}
 
 func TestProvision(t *testing.T) {
-	testctx.Run(testCtx, t, ProvisionSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(ProvisionSuite{})
 }
 
 func (ProvisionSuite) TestDockerDriver(ctx context.Context, t *testctx.T) {
@@ -35,8 +35,6 @@ func (ProvisionSuite) TestDockerDriver(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 
 		out, err := dockerc.
-			// FIXME: #9505 upgraded minimum client version to 0.16.0 so need to temporarily force version compat
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v0.13.0").
 			WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{Stdin: "{version}"}).Stdout(ctx)
 		require.NoError(t, err)
 
@@ -49,11 +47,10 @@ func (ProvisionSuite) TestDockerDriver(ctx context.Context, t *testctx.T) {
 		dockerc := dockerSetup(ctx, t, "provisioner", c, "", nil)
 		dockerc = dockerc.WithMountedFile("/bin/dagger", daggerCliFile(t, c))
 
-		version := "v0.14.0"
+		version := "v0.16.1"
 		out, err := dockerc.
-			// FIXME: #9505 upgraded minimum client version to 0.16.0 so need to temporarily force version compat
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v0.13.0").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:"+version).
+			WithWorkdir("/work").
 			WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{Stdin: "{version}"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"version":"`+version+`"}`, out)
@@ -67,8 +64,6 @@ func (ProvisionSuite) TestDockerDriver(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 
 		out, err := dockerc.
-			// FIXME: #9505 upgraded minimum client version to 0.16.0 so need to temporarily force version compat
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v0.13.0").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev").
 			WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{Stdin: "{version}"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -90,8 +85,6 @@ func (ProvisionSuite) TestDockerDriverConfig(ctx context.Context, t *testctx.T) 
 	require.NoError(t, err)
 	dockerc = dockerc.
 		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
-		// FIXME: #9505 upgraded minimum client version to 0.16.0 so need to temporarily force version compat
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v0.13.0").
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev")
 
 	// check that the config was used by the engine
@@ -130,22 +123,20 @@ func (ProvisionSuite) TestDockerDriverGarbageCollectEngines(ctx context.Context,
 
 		require.Len(t, dockerPs(ctx, t, dockerc), 0)
 
-		version := "v0.13.0"
+		version := "v0.16.1"
 		out, err := dockerc.
-			// FIXME: #9505 upgraded minimum client version to 0.16.0 so need to temporarily force version compat
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v0.13.0").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:"+version).
+			WithWorkdir("/work").
 			WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{Stdin: "{version}"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"version":"`+version+`"}`, out)
 
 		require.Len(t, dockerPs(ctx, t, dockerc), 1)
 
-		version = "v0.14.0"
+		version = "v0.16.0"
 		out, err = dockerc.
-			// FIXME: #9505 upgraded minimum client version to 0.16.0 so need to temporarily force version compat
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v0.13.0").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:"+version).
+			WithWorkdir("/work").
 			WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{Stdin: "{version}"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"version":"`+version+`"}`, out)
@@ -161,22 +152,20 @@ func (ProvisionSuite) TestDockerDriverGarbageCollectEngines(ctx context.Context,
 
 		require.Len(t, dockerPs(ctx, t, dockerc), 0)
 
-		version := "v0.13.0"
+		version := "v0.16.1"
 		out, err := dockerc.
-			// FIXME: #9505 upgraded minimum client version to 0.16.0 so need to temporarily force version compat
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v0.13.0").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:"+version).
+			WithWorkdir("/work").
 			WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{Stdin: "{version}"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"version":"`+version+`"}`, out)
 
 		require.Len(t, dockerPs(ctx, t, dockerc), 1)
 
-		version = "v0.14.0"
+		version = "v0.16.0"
 		out, err = dockerc.
-			// FIXME: #9505 upgraded minimum client version to 0.16.0 so need to temporarily force version compat
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v0.13.0").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:"+version).
+			WithWorkdir("/work").
 			WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{Stdin: "{version}"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"version":"`+version+`"}`, out)

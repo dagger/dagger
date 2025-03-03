@@ -8,13 +8,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
 
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 )
 
 type JavaSuite struct{}
 
 func TestJava(t *testing.T) {
-	testctx.Run(testCtx, t, JavaSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(JavaSuite{})
 }
 
 func (JavaSuite) TestInit(_ context.Context, t *testctx.T) {
@@ -94,6 +94,41 @@ func (JavaSuite) TestDefaultValue(_ context.Context, t *testctx.T) {
 
 		out, err := javaModule(t, c, "defaults").
 			With(daggerCall("echo")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "default value", out)
+	})
+}
+
+func (JavaSuite) TestOptionalValue(_ context.Context, t *testctx.T) {
+	t.Run("can run without a value", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "defaults").
+			With(daggerCall("echo-else")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "default value if null", out)
+	})
+
+	t.Run("can set a value", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "defaults").
+			With(daggerCall("echo-else", "--value", "foo")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "foo", out)
+	})
+
+	t.Run("ensure Optional and @Default work together", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "defaults").
+			With(daggerCall("echo-opt-default")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -183,6 +218,30 @@ func (JavaSuite) TestIgnore(_ context.Context, t *testctx.T) {
 		require.NotContains(t, out, "dagger.json")
 		require.NotContains(t, out, "pom.xml")
 		require.Contains(t, out, "src")
+	})
+}
+
+func (JavaSuite) TestConstructor(_ context.Context, t *testctx.T) {
+	t.Run("value set", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "construct").
+			With(daggerCall("--value", "from cli", "echo")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "from cli", out)
+	})
+
+	t.Run("default value from constructor", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "construct").
+			With(daggerCall("echo")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "from constructor", out)
 	})
 }
 

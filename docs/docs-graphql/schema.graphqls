@@ -1291,6 +1291,9 @@ type Directory {
   """A unique identifier for this Directory."""
   id: DirectoryID!
 
+  """Returns the name of the directory."""
+  name: String!
+
   """Force evaluation in the engine."""
   sync: DirectoryID!
 
@@ -2286,6 +2289,18 @@ type ModuleSource {
   """The engine version of the module."""
   engineVersion: String!
 
+  """Generates a client for the module."""
+  generateClient(
+    """The generator to use"""
+    generator: String!
+
+    """Use local SDK dependency"""
+    localSdk: Boolean
+
+    """The output directory for the generated client."""
+    outputDir: String!
+  ): Directory!
+
   """
   The generated files and directories made on top of the module source's context directory.
   """
@@ -2320,6 +2335,11 @@ type ModuleSource {
   The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).
   """
   moduleOriginalName: String!
+
+  """
+  The original subpath used when instantiating this module source, relative to the context directory.
+  """
+  originalSubpath: String!
 
   """The pinned version of this module source."""
   pin: String!

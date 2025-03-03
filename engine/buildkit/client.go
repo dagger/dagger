@@ -54,6 +54,7 @@ type Opts struct {
 	BkSession            *bksession.Session
 	LLBBridge            bkfrontend.FrontendLLBBridge
 	Dialer               *net.Dialer
+	GetClientCaller      func(string) (bksession.Caller, error)
 	GetMainClientCaller  func() (bksession.Caller, error)
 	Entitlements         entitlements.Set
 	UpstreamCacheImports []bkgw.CacheOptionsEntry
@@ -627,9 +628,13 @@ func (c *Client) ListenHostToContainer(
 }
 
 func (c *Client) GetCredential(ctx context.Context, protocol, host, path string) (*session.CredentialInfo, error) {
-	caller, err := c.GetMainClientCaller()
+	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get main client caller: %w", err)
+		return nil, err
+	}
+	caller, err := c.GetClientCaller(md.ClientID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
 	}
 
 	response, err := session.NewGitCredentialClient(caller.Conn()).GetCredential(ctx, &session.GitCredentialRequest{

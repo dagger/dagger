@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
@@ -20,7 +20,7 @@ import (
 type HostSuite struct{}
 
 func TestHost(t *testing.T) {
-	testctx.Run(testCtx, t, HostSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(HostSuite{})
 }
 
 func (HostSuite) TestWorkdir(ctx context.Context, t *testctx.T) {

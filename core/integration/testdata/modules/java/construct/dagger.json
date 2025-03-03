@@ -1,0 +1,7 @@
+{
+  "name": "construct",
+  "engineVersion": "v0.16.0-010101000000-dev-fa7b6d7d95fe",
+  "sdk": {
+    "source": "../../sdk/java"
+  }
+}

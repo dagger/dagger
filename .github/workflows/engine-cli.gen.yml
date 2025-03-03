@@ -19,7 +19,7 @@ concurrency:
 jobs:
     cli-test-publish:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-4-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-4c' || 'ubuntu-latest' }}
         name: cli-test-publish
         steps:
             - name: Checkout
@@ -53,7 +53,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.15.4
+                DAGGER_VERSION: v0.16.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -208,7 +208,7 @@ jobs:
         timeout-minutes: 20
     engine-lint:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-4-16c-st' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-16c-st' || 'ubuntu-latest' }}
         name: engine-lint
         steps:
             - name: Checkout
@@ -242,7 +242,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.15.4
+                DAGGER_VERSION: v0.16.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -397,7 +397,7 @@ jobs:
         timeout-minutes: 20
     engine-test-publish:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-4-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-4c' || 'ubuntu-latest' }}
         name: engine-test-publish
         steps:
             - name: Checkout
@@ -431,7 +431,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.15.4
+                DAGGER_VERSION: v0.16.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -586,7 +586,7 @@ jobs:
         timeout-minutes: 20
     scan-engine:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-4-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-4c' || 'ubuntu-latest' }}
         name: scan-engine
         steps:
             - name: Checkout
@@ -620,7 +620,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.15.4
+                DAGGER_VERSION: v0.16.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -775,7 +775,7 @@ jobs:
         timeout-minutes: 20
     scripts-lint:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-4-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-4c' || 'ubuntu-latest' }}
         name: scripts-lint
         steps:
             - name: Checkout
@@ -809,7 +809,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.15.4
+                DAGGER_VERSION: v0.16.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -998,7 +998,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.15.4
+                DAGGER_VERSION: v0.16.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -1164,7 +1164,7 @@ jobs:
         timeout-minutes: 30
     test-cli-engine:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-4-16c-st' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-16c-st' || 'ubuntu-latest' }}
         name: test-cli-engine
         steps:
             - name: Checkout
@@ -1198,7 +1198,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.15.4
+                DAGGER_VERSION: v0.16.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -1361,7 +1361,7 @@ jobs:
         timeout-minutes: 30
     test-everything-else:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-4-32c-st' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-32c-st' || 'ubuntu-latest' }}
         name: test-everything-else
         steps:
             - name: Checkout
@@ -1395,7 +1395,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.15.4
+                DAGGER_VERSION: v0.16.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -1558,7 +1558,7 @@ jobs:
         timeout-minutes: 30
     test-module-runtimes:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-4-16c-st' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-16c-st' || 'ubuntu-latest' }}
         name: test-module-runtimes
         steps:
             - name: Checkout
@@ -1592,7 +1592,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.15.4
+                DAGGER_VERSION: v0.16.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -1755,7 +1755,7 @@ jobs:
         timeout-minutes: 30
     test-modules:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-4-16c-st' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-16c-st' || 'ubuntu-latest' }}
         name: test-modules
         steps:
             - name: Checkout
@@ -1789,7 +1789,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.15.4
+                DAGGER_VERSION: v0.16.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -1952,7 +1952,7 @@ jobs:
         timeout-minutes: 30
     testdev-container:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-4-32c-dind-st' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-32c-dind-st' || 'ubuntu-latest' }}
         name: testdev-container
         steps:
             - name: Checkout
@@ -1988,11 +1988,6 @@ jobs:
               env:
                 DAGGER_VERSION_FILE: dagger.json
               shell: bash
-            - name: Install go
-              uses: actions/setup-go@v5
-              with:
-                cache-dependency-path: .dagger/go.sum
-                go-version: "1.23"
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
               run: |
@@ -2010,25 +2005,24 @@ jobs:
                 fi
 
                 echo "::group::Starting dev engine"
+
                 if ! [[ -x "$(command -v docker)" ]]; then
                     echo "docker is not installed"
                     exit 1
                 fi
+                if ! [[ -x "$(command -v dagger)" ]]; then
+                    echo "dagger is not installed"
+                    exit 1
+                fi
 
-                (
-                    cd "$DAGGER_SOURCE"/.dagger/mage
-                    go run main.go -w ../.. engine:dev
-                ) \
-                | sed 's/^export //' \
-                | while IFS= read -r line; do
-                    eval echo "$line"
-                done \
-                | tee "${GITHUB_ENV}"
+                $DAGGER_SOURCE/hack/build
+                export PATH=$DAGGER_SOURCE/bin:$PATH
+                echo "PATH=$PATH" >>"${GITHUB_ENV}"
 
                 echo "::endgroup::"
               env:
                 _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ github.run_id }}-${{ github.job }}
-                _EXPERIMENTAL_DAGGER_DEV_OUTPUT: ./bin/dev-${{ github.run_id }}-${{ github.job }}
+                _EXPERIMENTAL_DAGGER_DEV_IMAGE: localhost/dagger-engine.dev:${{ github.run_id }}-${{ github.job }}
                 DAGGER_SOURCE: .
               shell: bash
             - name: scripts/warm-engine.sh
@@ -2203,7 +2197,7 @@ jobs:
         timeout-minutes: 30
     testdev-module-runtimes:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-4-32c-dind-st' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-32c-dind-st' || 'ubuntu-latest' }}
         name: testdev-module-runtimes
         steps:
             - name: Checkout
@@ -2239,11 +2233,6 @@ jobs:
               env:
                 DAGGER_VERSION_FILE: dagger.json
               shell: bash
-            - name: Install go
-              uses: actions/setup-go@v5
-              with:
-                cache-dependency-path: .dagger/go.sum
-                go-version: "1.23"
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
               run: |
@@ -2261,25 +2250,24 @@ jobs:
                 fi
 
                 echo "::group::Starting dev engine"
+
                 if ! [[ -x "$(command -v docker)" ]]; then
                     echo "docker is not installed"
                     exit 1
                 fi
+                if ! [[ -x "$(command -v dagger)" ]]; then
+                    echo "dagger is not installed"
+                    exit 1
+                fi
 
-                (
-                    cd "$DAGGER_SOURCE"/.dagger/mage
-                    go run main.go -w ../.. engine:dev
-                ) \
-                | sed 's/^export //' \
-                | while IFS= read -r line; do
-                    eval echo "$line"
-                done \
-                | tee "${GITHUB_ENV}"
+                $DAGGER_SOURCE/hack/build
+                export PATH=$DAGGER_SOURCE/bin:$PATH
+                echo "PATH=$PATH" >>"${GITHUB_ENV}"
 
                 echo "::endgroup::"
               env:
                 _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ github.run_id }}-${{ github.job }}
-                _EXPERIMENTAL_DAGGER_DEV_OUTPUT: ./bin/dev-${{ github.run_id }}-${{ github.job }}
+                _EXPERIMENTAL_DAGGER_DEV_IMAGE: localhost/dagger-engine.dev:${{ github.run_id }}-${{ github.job }}
                 DAGGER_SOURCE: .
               shell: bash
             - name: scripts/warm-engine.sh
@@ -2454,7 +2442,7 @@ jobs:
         timeout-minutes: 30
     testdev-modules:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-15-4-32c-dind-st' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-32c-dind-st' || 'ubuntu-latest' }}
         name: testdev-modules
         steps:
             - name: Checkout
@@ -2490,11 +2478,6 @@ jobs:
               env:
                 DAGGER_VERSION_FILE: dagger.json
               shell: bash
-            - name: Install go
-              uses: actions/setup-go@v5
-              with:
-                cache-dependency-path: .dagger/go.sum
-                go-version: "1.23"
             - name: scripts/start-dev-dagger.sh
               id: start-dev-dagger
               run: |
@@ -2512,25 +2495,24 @@ jobs:
                 fi
 
                 echo "::group::Starting dev engine"
+
                 if ! [[ -x "$(command -v docker)" ]]; then
                     echo "docker is not installed"
                     exit 1
                 fi
+                if ! [[ -x "$(command -v dagger)" ]]; then
+                    echo "dagger is not installed"
+                    exit 1
+                fi
 
-                (
-                    cd "$DAGGER_SOURCE"/.dagger/mage
-                    go run main.go -w ../.. engine:dev
-                ) \
-                | sed 's/^export //' \
-                | while IFS= read -r line; do
-                    eval echo "$line"
-                done \
-                | tee "${GITHUB_ENV}"
+                $DAGGER_SOURCE/hack/build
+                export PATH=$DAGGER_SOURCE/bin:$PATH
+                echo "PATH=$PATH" >>"${GITHUB_ENV}"
 
                 echo "::endgroup::"
               env:
                 _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ github.run_id }}-${{ github.job }}
-                _EXPERIMENTAL_DAGGER_DEV_OUTPUT: ./bin/dev-${{ github.run_id }}-${{ github.job }}
+                _EXPERIMENTAL_DAGGER_DEV_IMAGE: localhost/dagger-engine.dev:${{ github.run_id }}-${{ github.job }}
                 DAGGER_SOURCE: .
               shell: bash
             - name: scripts/warm-engine.sh

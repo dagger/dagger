@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"path"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -31,6 +32,8 @@ func (s *directorySchema) Install() {
 			ArgDoc("name", "Name of the sub-pipeline.").
 			ArgDoc("description", "Description of the sub-pipeline.").
 			ArgDoc("labels", "Labels to apply to the sub-pipeline."),
+		dagql.Func("name", s.name).
+			Doc(`Returns the name of the directory.`),
 		dagql.Func("entries", s.entries).
 			Doc(`Returns a list of files and directories at the given path.`).
 			ArgDoc("path", `Location of the directory to look at (e.g., "/src").`),
@@ -180,6 +183,10 @@ type dirWithTimestampsArgs struct {
 
 func (s *directorySchema) withTimestamps(ctx context.Context, parent *core.Directory, args dirWithTimestampsArgs) (*core.Directory, error) {
 	return parent.WithTimestamps(ctx, args.Timestamp)
+}
+
+func (s *directorySchema) name(ctx context.Context, parent *core.Directory, args struct{}) (dagql.String, error) {
+	return dagql.NewString(path.Base(parent.Dir)), nil
 }
 
 type entriesArgs struct {

@@ -6,7 +6,7 @@ import (
 
 	"dagger.io/dagger"
 
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
