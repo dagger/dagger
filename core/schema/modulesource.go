@@ -2015,7 +2015,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 				Field: "withDirectory",
 				Args: []dagql.NamedInput{
 					{
-						Name: "path",
+						Name:  "path",
 						Value: dagql.String("/"),
 					},
 					{
@@ -2269,7 +2269,6 @@ func (s *moduleSourceSchema) moduleSourceWithClient(
 
 	return src, nil
 }
-
 
 // find-up a given soughtName in curDirPath and its parent directories, return the dir
 // it was found in, if any
