@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
@@ -37,8 +38,9 @@ type DB struct {
 	OutputOf  map[string]map[string]struct{}
 	Intervals map[string]map[time.Time]*Span
 
-	CauseSpans  map[string]SpanSet
-	EffectSpans map[string]SpanSet
+	CauseSpans   map[string]SpanSet
+	EffectSpans  map[string]SpanSet
+	CreatorSpans map[string]SpanSet
 
 	CompletedEffects map[string]bool
 	FailedEffects    map[string]bool
@@ -47,6 +49,7 @@ type DB struct {
 	// NOTE: this is hard coded for Gauge int64 metricdata essentially right now,
 	// needs generalization as more metric types get added
 	MetricsByCall map[string]map[string][]metricdata.DataPoint[int64]
+	MetricsBySpan map[SpanID]map[string][]metricdata.DataPoint[int64]
 
 	// updatedSpans is a set of spans that have been updated since the last
 	// sync, which includes any parent spans whose overall active time intervals
@@ -73,10 +76,12 @@ func NewDB() *DB {
 		Outputs:   make(map[string]map[string]struct{}),
 		Intervals: make(map[string]map[time.Time]*Span),
 
+		CauseSpans:   make(map[string]SpanSet),
+		EffectSpans:  make(map[string]SpanSet),
+		CreatorSpans: make(map[string]SpanSet),
+
 		CompletedEffects: make(map[string]bool),
 		FailedEffects:    make(map[string]bool),
-		CauseSpans:       make(map[string]SpanSet),
-		EffectSpans:      make(map[string]SpanSet),
 
 		updatedSpans: NewSpanSet(),
 		seenSpans:    make(map[SpanID]struct{}),
@@ -264,31 +269,53 @@ type DBMetricExporter struct {
 func (db DBMetricExporter) Export(ctx context.Context, resourceMetrics *metricdata.ResourceMetrics) error {
 	for _, scopeMetric := range resourceMetrics.ScopeMetrics {
 		for _, metric := range scopeMetric.Metrics {
-			metricData, ok := metric.Data.(metricdata.Gauge[int64])
-			if !ok {
-				continue
+			// TODO: don't lose track of whether it's a Sum or a Gauge - it matters!
+			if metricData, ok := metric.Data.(metricdata.Sum[int64]); ok {
+				db.exportDataPoints(metric, metricData.DataPoints)
 			}
-
-			for _, point := range metricData.DataPoints {
-				callDigest, ok := point.Attributes.Value(telemetry.DagDigestAttr)
-				if !ok {
-					continue
-				}
-
-				if db.MetricsByCall == nil {
-					db.MetricsByCall = make(map[string]map[string][]metricdata.DataPoint[int64])
-				}
-				metricsByName, ok := db.MetricsByCall[callDigest.AsString()]
-				if !ok {
-					metricsByName = make(map[string][]metricdata.DataPoint[int64])
-					db.MetricsByCall[callDigest.AsString()] = metricsByName
-				}
-				metricsByName[metric.Name] = append(metricsByName[metric.Name], point)
+			if metricData, ok := metric.Data.(metricdata.Gauge[int64]); ok {
+				db.exportDataPoints(metric, metricData.DataPoints)
 			}
 		}
 	}
 
 	return nil
+}
+
+func (db DBMetricExporter) exportDataPoints(metric metricdata.Metrics, dataPoints []metricdata.DataPoint[int64]) {
+	for _, point := range dataPoints {
+		var metricsByName map[string][]metricdata.DataPoint[int64]
+		if callDigest, ok := point.Attributes.Value(telemetry.DagDigestAttr); ok {
+			if db.MetricsByCall == nil {
+				db.MetricsByCall = make(map[string]map[string][]metricdata.DataPoint[int64])
+			}
+			var ok bool
+			metricsByName, ok = db.MetricsByCall[callDigest.AsString()]
+			if !ok {
+				metricsByName = make(map[string][]metricdata.DataPoint[int64])
+				db.MetricsByCall[callDigest.AsString()] = metricsByName
+			}
+		} else if spanIDHex, ok := point.Attributes.Value(telemetry.MetricsSpanIDAttr); ok {
+			var spanID SpanID
+			var err error
+			if spanID.SpanID, err = trace.SpanIDFromHex(spanIDHex.AsString()); err != nil {
+				continue
+			}
+			if db.MetricsBySpan == nil {
+				db.MetricsBySpan = make(map[SpanID]map[string][]metricdata.DataPoint[int64])
+			}
+			var ok bool
+			metricsByName, ok = db.MetricsBySpan[spanID]
+			if !ok {
+				metricsByName = make(map[string][]metricdata.DataPoint[int64])
+				db.MetricsBySpan[spanID] = metricsByName
+			}
+		} else {
+			continue
+		}
+
+		metricsByName[metric.Name] = append(metricsByName[metric.Name], point)
+	}
 }
 
 // SetPrimarySpan allows the primary span to be explicitly set to a particular
@@ -648,7 +675,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		db.CompletedEffects[dig] = true
 	}
 
-	if span.CallDigest != "" {
+	if span.CallDigest != "" && span.Output != "" {
 		// parent -> child
 		if db.Outputs[span.CallDigest] == nil {
 			db.Outputs[span.CallDigest] = make(map[string]struct{})
@@ -660,6 +687,12 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			db.OutputOf[span.Output] = make(map[string]struct{})
 		}
 		db.OutputOf[span.Output][span.CallDigest] = struct{}{}
+
+		// output -> creator
+		if db.CreatorSpans[span.Output] == nil {
+			db.CreatorSpans[span.Output] = NewSpanSet()
+		}
+		db.CreatorSpans[span.Output].Add(span)
 	}
 
 	for _, id := range span.EffectIDs {
@@ -743,21 +776,35 @@ func (*DB) Close() error {
 }
 
 func (db *DB) Call(dig string) *callpbv1.Call {
-	cached, ok := db.Calls[dig]
-	if ok {
+	// First, check if we already have the call cached
+	if cached, ok := db.Calls[dig]; ok {
 		return cached
 	}
-	callPayload, ok := db.CallPayloads[dig]
-	if !ok {
-		return nil
+
+	// Next, try to decode from the call payload
+	if callPayload, ok := db.CallPayloads[dig]; ok {
+		var call callpbv1.Call
+		if err := call.Decode(callPayload); err != nil {
+			slog.Warn("failed to decode call", "err", err)
+		} else {
+			// Cache the decoded call for future use
+			db.Calls[dig] = &call
+			return &call
+		}
 	}
-	var call callpbv1.Call
-	if err := call.Decode(callPayload); err != nil {
-		slog.Warn("failed to decode call", "err", err)
-	} else {
-		db.Calls[dig] = &call
+
+	// Finally, try to find the call through creator spans
+	if creators, ok := db.CreatorSpans[dig]; ok {
+		// Try each creator in order
+		for _, creator := range creators.Order {
+			if creatorCall := db.Call(creator.CallDigest); creatorCall != nil {
+				return creatorCall
+			}
+		}
 	}
-	return &call
+
+	// No call found
+	return nil
 }
 
 func (db *DB) MustCall(dig string) *callpbv1.Call {

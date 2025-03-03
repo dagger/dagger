@@ -14,6 +14,12 @@ func Encapsulate() trace.SpanStartOption {
 	return trace.WithAttributes(attribute.Bool(UIEncapsulateAttr, true))
 }
 
+// Reveal can be applied to a span to indicate that this span should
+// collapse its children by default.
+func Reveal() trace.SpanStartOption {
+	return trace.WithAttributes(attribute.Bool(UIRevealAttr, true))
+}
+
 // Encapsulated can be applied to a child span to indicate that it should be
 // collapsed by default.
 func Encapsulated() trace.SpanStartOption {

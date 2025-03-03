@@ -49,6 +49,8 @@ type Server struct {
 	typeDefs    map[string]TypeDef
 	directives  map[string]DirectiveSpec
 	installLock *sync.Mutex
+	// FIXME: implement stacked middleware
+	middleware Middleware
 
 	// View is the view that is applied to all queries on this server
 	View string
@@ -58,6 +60,11 @@ type Server struct {
 	//
 	// TODO: copy-on-write
 	Cache Cache
+}
+
+type Middleware interface {
+	InstallObject(ObjectType, func(ObjectType))
+	// FIXME: add support for other install functions
 }
 
 // AroundFunc is a function that is called around every non-cached selection.
@@ -235,46 +242,53 @@ type Loadable interface {
 
 // InstallObject installs the given Object type into the schema.
 func (s *Server) InstallObject(class ObjectType) {
-	s.installLock.Lock()
-	defer s.installLock.Unlock()
+	// FIXME: shortcut to get our "agent" middleware to work
+	// s.installLock.Lock()
+	// defer s.installLock.Unlock()
 	s.installObject(class)
 }
 
-func (s *Server) installObject(class ObjectType) {
-	s.objects[class.TypeName()] = class
-
-	if idType, hasID := class.IDType(); hasID {
-		s.scalars[idType.TypeName()] = idType
-		s.Root().ObjectType().Extend(
-			FieldSpec{
-				Name:           fmt.Sprintf("load%sFromID", class.TypeName()),
-				Description:    fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
-				Type:           class.Typed(),
-				ImpurityReason: "The given ID ultimately determines the purity of its result.",
-				Args: []InputSpec{
-					{
-						Name: "id",
-						Type: idType,
+func (s *Server) installObject(o ObjectType) {
+	install := func(class ObjectType) {
+		s.objects[class.TypeName()] = class
+		if idType, hasID := class.IDType(); hasID {
+			s.scalars[idType.TypeName()] = idType
+			s.Root().ObjectType().Extend(
+				FieldSpec{
+					Name:           fmt.Sprintf("load%sFromID", class.TypeName()),
+					Description:    fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
+					Type:           class.Typed(),
+					ImpurityReason: "The given ID ultimately determines the purity of its result.",
+					Args: []InputSpec{
+						{
+							Name: "id",
+							Type: idType,
+						},
 					},
 				},
-			},
-			func(ctx context.Context, self Object, args map[string]Input) (Typed, error) {
-				idable, ok := args["id"].(IDable)
-				if !ok {
-					return nil, fmt.Errorf("expected IDable, got %T", args["id"])
-				}
-				id := idable.ID()
-				if id.Type().ToAST().NamedType != class.TypeName() {
-					return nil, fmt.Errorf("expected ID of type %q, got %q", class.TypeName(), id.Type().ToAST().NamedType)
-				}
-				res, err := s.Load(ctx, idable.ID())
-				if err != nil {
-					return nil, fmt.Errorf("load: %w", err)
-				}
-				return res, nil
-			},
-			nil,
-		)
+				func(ctx context.Context, self Object, args map[string]Input) (Typed, error) {
+					idable, ok := args["id"].(IDable)
+					if !ok {
+						return nil, fmt.Errorf("expected IDable, got %T", args["id"])
+					}
+					id := idable.ID()
+					if id.Type().ToAST().NamedType != class.TypeName() {
+						return nil, fmt.Errorf("expected ID of type %q, got %q", class.TypeName(), id.Type().ToAST().NamedType)
+					}
+					res, err := s.Load(ctx, idable.ID())
+					if err != nil {
+						return nil, fmt.Errorf("load: %w", err)
+					}
+					return res, nil
+				},
+				nil,
+			)
+		}
+	}
+	if middleware := s.middleware; middleware != nil {
+		middleware.InstallObject(o, install)
+	} else {
+		install(o)
 	}
 }
 
@@ -598,6 +612,18 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 		}
 	}
 	return assign(reflect.ValueOf(dest).Elem(), res)
+}
+
+// Attach a middleware to hook into object installation
+func (s *Server) SetMiddleware(middleware Middleware) {
+	s.installLock.Lock()
+	s.middleware = middleware
+	s.installLock.Unlock()
+}
+
+// Return the currently attached middleware (may be nil)
+func (s *Server) Middleware() Middleware {
+	return s.middleware
 }
 
 func (s *Server) SelectID(ctx context.Context, self Object, sels ...Selector) (*call.ID, error) {
@@ -1044,7 +1070,7 @@ func setInputObjectFields(obj any, vals map[string]any) error {
 		}
 		if input != nil { // will be nil for optional fields
 			if err := assign(fieldV, input); err != nil {
-				return fmt.Errorf("assign %q: %w", fieldT.Name, err)
+				return fmt.Errorf("assign input object %q as %+v (%T): %w", fieldT.Name, input, input, err)
 			}
 		}
 	}
