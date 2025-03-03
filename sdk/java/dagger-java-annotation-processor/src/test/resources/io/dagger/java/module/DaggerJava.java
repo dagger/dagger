@@ -13,12 +13,16 @@ import java.util.concurrent.ExecutionException;
 /** Dagger Java Module main object */
 @Object
 public class DaggerJava {
-  private String notExportedField;
+  private transient String notExportedField;
 
   /** Project source directory */
   public Directory source;
 
-  public String version;
+  // this field will also be exposed as a Dagger Field, even if private
+  private String version;
+
+  // this field will be serialized but not exposed as a field
+  @Internal private Container container;
 
   public DaggerJava() {}
 

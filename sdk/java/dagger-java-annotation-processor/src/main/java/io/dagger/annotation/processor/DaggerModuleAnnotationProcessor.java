@@ -139,10 +139,10 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           List<FieldInfo> fieldInfoInfos =
               typeElement.getEnclosedElements().stream()
                   .filter(elt -> elt.getKind() == ElementKind.FIELD)
-                  .filter(elt -> elt.getModifiers().contains(Modifier.PUBLIC))
-                  .filter(
-                      elt ->
-                          !elt.getModifiers().containsAll(List.of(Modifier.STATIC, Modifier.FINAL)))
+                  .filter(elt -> !elt.getModifiers().contains(Modifier.TRANSIENT))
+                  .filter(elt -> !elt.getModifiers().contains(Modifier.STATIC))
+                  .filter(elt -> !elt.getModifiers().contains(Modifier.FINAL))
+                  .filter(elt -> elt.getAnnotation(Internal.class) == null)
                   .map(
                       elt -> {
                         String fieldName = elt.getSimpleName().toString();
