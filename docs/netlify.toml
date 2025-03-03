@@ -416,12 +416,12 @@
 
 [[redirects]]
   from = "/manuals/administrator/ci"
-  to = "/integrations"
+  to = "/ci/integrations"
   status = 301
 
 [[redirects]]
   from = "/user-guide/ci"
-  to = "/integrations"
+  to = "/ci/integrations"
   status = 301
 
 [[redirects]]
@@ -482,7 +482,7 @@
 # redirects for integrations pages
 [[redirects]]
   from = "/integrations/containerd"
-  to = "/integrations/nerdctl"
+  to = "/ci/integrations/nerdctl"
   status = 301
 
 [[redirects]]
@@ -491,8 +491,13 @@
   status = 301
 
 [[redirects]]
+  from = "/integrations/java"
+  to = "/api/sdk"
+  status = 301
+
+[[redirects]]
   from = "/integrations/:docid/:slug"
-  to = "/integrations/:slug"
+  to = "/ci/integrations/:slug"
   status = 301
 
 [[redirects]]
