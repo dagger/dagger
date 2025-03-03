@@ -131,6 +131,7 @@ require (
 
 require (
 	github.com/charmbracelet/bubbles v0.20.0 // indirect
+	github.com/mark3labs/mcp-go v0.9.0 // indirect
 	github.com/sahilm/fuzzy v0.1.1 // indirect
 )
 

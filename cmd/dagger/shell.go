@@ -279,11 +279,11 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 	// Use stdin only when no file paths are provided
 	if len(args) == 0 {
 		// Example: `dagger shell`
-		if isatty.IsTerminal(os.Stdin.Fd()) {
+		if f, ok := h.stdin.(interface{ Fd() uintptr }); ok && isatty.IsTerminal(f.Fd()) {
 			return h.runInteractive(ctx)
 		}
 		// Example: `echo 'container | workdir' | dagger shell`
-		return h.run(ctx, os.Stdin, "-")
+		return h.run(ctx, h.stdin, "-")
 	}
 
 	// Example: `dagger shell job1.dsh job2.dsh`
