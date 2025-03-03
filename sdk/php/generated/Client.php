@@ -448,6 +448,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a ModuleConfigClient from its ID.
+     */
+    public function loadModuleConfigClientFromID(ModuleConfigClientId|ModuleConfigClient $id): ModuleConfigClient
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadModuleConfigClientFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\ModuleConfigClient($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Module from its ID.
      */
     public function loadModuleFromID(ModuleId|Module $id): Module
