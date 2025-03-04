@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/core/bbi"
+	"github.com/googleapis/gax-go/v2/apierror"
 	"google.golang.org/api/option"
 
 	genai "github.com/google/generative-ai-go/genai"
@@ -71,13 +72,8 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 	if len(history) == 0 {
 		return nil, fmt.Errorf("genai history cannot be empty")
 	}
-	userMessage := history[len(history)-1]
-	if userMessage.Role != "user" {
-		// Genai expects the last message to be a user message
-		return nil, fmt.Errorf("expected last message to be a user message, got %s", history[len(history)].Role)
-	}
-	// exclude the final user message
-	for _, msg := range history[:len(history)-1] {
+
+	for _, msg := range history {
 		// Valid Content.Role values are "user" and "model"
 		var role string
 		switch msg.Role {
@@ -124,16 +120,19 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 		genaiHistory = append(genaiHistory, content)
 	}
 
+	// Pop last message from history for SendMessage
+	userMessage := genaiHistory[len(genaiHistory)-1]
+	genaiHistory = genaiHistory[:len(genaiHistory)-1]
+
 	chat := model.StartChat()
 	chat.History = genaiHistory
 
-	userMessageStr := userMessage.Content.(string)
-	if userMessageStr == "" {
-		userMessageStr = " "
-	}
-
-	resp, err := chat.SendMessage(ctx, genai.Text(userMessageStr))
+	resp, err := chat.SendMessage(ctx, userMessage.Parts...)
 	if err != nil {
+		if apiErr, ok := err.(*apierror.APIError); ok {
+			// unwrap the APIError
+			return nil, fmt.Errorf("Google API error occurred: %v", apiErr.Unwrap())
+		}
 		return nil, err
 	}
 
