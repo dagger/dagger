@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/containerd/continuity/fs"
+	bkcache "github.com/moby/buildkit/cache"
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/gitutil"
 	"github.com/pkg/errors"
@@ -19,7 +21,6 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 )
@@ -385,65 +386,56 @@ func (ref *LocalGitRef) PBDefinitions(ctx context.Context) ([]*pb.Definition, er
 	return ref.Repo.PBDefinitions(ctx)
 }
 
-func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool) (*Directory, error) {
-	tmpDir, err := os.MkdirTemp("", "local-git-checkout")
+func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool) (_ *Directory, rerr error) {
+	op, ok := DagOpFromContext[FSDagOp](ctx)
+	if !ok {
+		return nil, fmt.Errorf("no dagop")
+	}
+	bkref, err := op.CreateRef(ctx, nil,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(op.Name()))
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if rerr != nil && bkref != nil {
+			bkref.Release(context.WithoutCancel(ctx))
+		}
+	}()
 
-	var headSha string
-	err = ref.Repo.mount(ctx, func(src string) error {
-		if _, err := gitCmd(ctx, tmpDir, "init"); err != nil {
-			return err
-		}
-		if _, err := gitCmd(ctx, tmpDir, "fetch", "--depth=1", "file://"+src, ref.Ref); err != nil {
-			return err
-		}
-		if _, err := gitCmd(ctx, tmpDir, "checkout", "FETCH_HEAD"); err != nil {
-			return err
-		}
-		out, err := gitCmd(ctx, tmpDir, "rev-parse", "HEAD")
-		if err != nil {
-			return err
-		}
-		headSha = out
+	err = op.Mount(ctx, bkref, func(checkout string) error {
+		return ref.Repo.mount(ctx, func(src string) error {
+			if _, err := gitCmd(ctx, checkout, "init"); err != nil {
+				return err
+			}
+			if _, err := gitCmd(ctx, checkout, "fetch", "--depth=1", "file://"+src, ref.Ref); err != nil {
+				return err
+			}
+			if _, err := gitCmd(ctx, checkout, "checkout", "FETCH_HEAD"); err != nil {
+				return err
+			}
 
-		return nil
+			if discardGitDir {
+				if err := os.RemoveAll(filepath.Join(checkout, ".git")); err != nil {
+					return err
+				}
+			}
+
+			return nil
+		})
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	var patterns []string
-	if discardGitDir {
-		patterns = append(patterns, "!.git")
-	}
-
-	bk, err := ref.Query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	localDef, err := ImportFromHost(bk, tmpDir, patterns,
-		llb.WithCustomName(fmt.Sprintf("git-import-%s", headSha)),
-		buildkit.WithTracePropagation(ctx),
-	).Marshal(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create llb definition for import git: %w", err)
-	}
-	def := localDef.ToPB()
-
-	// force-evaluate to get this definitely into the llb.Local cache
-	_, err = bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: def,
-		Evaluate:   true,
-	})
+	dir := NewDirectory(ref.Query, nil, "/", ref.Query.Platform(), nil)
+	snap, err := bkref.Commit(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	return NewDirectory(ref.Query, def, "/", ref.Query.Platform(), nil), nil
+	bkref = nil
+	dir.Result = snap
+	return dir, nil
 }
 
 func (ref *LocalGitRef) Commit(ctx context.Context) (string, error) {

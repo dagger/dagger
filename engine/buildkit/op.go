@@ -121,11 +121,12 @@ func (op *CustomOpWrapper) Exec(ctx context.Context, g bksession.Group, inputs [
 		return nil, fmt.Errorf("could not find dagql server: %w", err)
 	}
 
-	return op.Backend.Exec(ctx, g, inputs, OpOpts{
+	res, err := op.Backend.Exec(ctx, g, inputs, OpOpts{
 		Server: server,
 		Cache:  op.cacheAccessor,
 		Worker: op.worker,
 	})
+	return res, err
 }
 
 func (op *CustomOpWrapper) Acquire(ctx context.Context) (release solver.ReleaseFunc, err error) {
