@@ -1,8 +1,8 @@
 module github.com/dagger/dagger
 
-go 1.24
+go 1.23.0
 
-toolchain go1.24.1
+toolchain go1.23.6
 
 require (
 	dagger.io/dagger v0.16.2
@@ -95,7 +95,7 @@ require (
 	github.com/tonistiigi/fsutil v0.0.0-20240424095704-91a3fc46842c
 	github.com/urfave/cli v1.22.16
 	github.com/vektah/gqlparser/v2 v2.5.23
-	github.com/vito/bubbline v0.0.0-20250227004723-9472f5b7eb83
+	github.com/vito/bubbline v0.0.0-20250304164440-1d709bc8e9a2
 	github.com/vito/go-sse v1.1.2
 	github.com/vito/midterm v0.2.2
 	github.com/zeebo/xxh3 v1.0.2
@@ -129,11 +129,6 @@ require (
 	modernc.org/sqlite v1.36.0
 	mvdan.cc/sh/v3 v3.10.1-0.20250103084315-5e4be7920b8b
 	resenje.org/singleflight v0.4.3
-)
-
-require (
-	github.com/charmbracelet/bubbles v0.20.0 // indirect
-	github.com/sahilm/fuzzy v0.1.1 // indirect
 )
 
 require (
@@ -179,6 +174,7 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/charmbracelet/bubbles v0.20.0 // indirect
 	github.com/charmbracelet/x/ansi v0.8.0 // indirect
 	github.com/charmbracelet/x/term v0.2.1 // indirect
 	github.com/cloudflare/circl v1.6.0 // indirect
@@ -282,6 +278,7 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
+	github.com/sahilm/fuzzy v0.1.1 // indirect
 	github.com/samber/lo v1.47.0 // indirect
 	github.com/samber/slog-common v0.18.1 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.4.0 // indirect
