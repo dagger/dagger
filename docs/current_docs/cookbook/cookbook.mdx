@@ -259,7 +259,7 @@ When working with private Git repositories, ensure that [SSH authentication is p
 The following Dagger Function accepts a Git repository URL and a branch name, tag name or commit id. It copies the repository at the specified branch, tag or commit to the `/src` path in a container and returns the modified container.
 
 :::note
-If you need SSH-based cloning, including private or public Git repositories with an SSH ref format, select the (SSH) tabs below. This approach requires forwarding `SSH_AUTH_SOCK`. See [Security-by-Design Docs](/path/to/security-by-design) for why Dagger enforces this pattern. You could also directly use the `Directory` pattern as shown in the [Directory cookbook example](#)
+If you need SSH-based cloning, including private or public Git repositories with an SSH ref format, select the (SSH) tabs below. This approach requires forwarding `SSH_AUTH_SOCK`. See [Security-by-Design Docs](../api/security-model.mdx) for why Dagger enforces this pattern. You could also directly use the `Directory` pattern as shown in the [Directory cookbook example](#copy-a-directory-or-remote-repository-to-a-container)
 :::
 
 <Tabs groupId="language">
