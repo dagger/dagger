@@ -1,5 +1,7 @@
 package io.dagger.modules.mymodule;
 
+import io.dagger.client.Container;
+import io.dagger.client.Directory;
 import io.dagger.client.DaggerQueryException;
 import io.dagger.module.AbstractModule;
 import io.dagger.module.annotation.Function;
