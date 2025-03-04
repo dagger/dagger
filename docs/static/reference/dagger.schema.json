@@ -25,7 +25,7 @@
         },
         "localLibrary": {
           "type": "boolean",
-          "description": "Whether the client is generated using the local SDK."
+          "description": "Whether the client is generated in Dev mode or not. If set using an official SDK like Go or Typescript, the client will use the local SDK library instead of the published one."
         }
       },
       "additionalProperties": false,
