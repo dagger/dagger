@@ -36,6 +36,6 @@ jobs:
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         with:
-          function: bench all --prewarm
+          function: bench all --prewarm --discord-webhook="op://releng/Discord Webhook - Engine Benchmarks/credential"
           dev-engine: false
           upload-logs: true
