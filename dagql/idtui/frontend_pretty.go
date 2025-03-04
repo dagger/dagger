@@ -1417,7 +1417,7 @@ func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui
 func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, span *dagui.Span, depth int, prefix string) {
 	for _, span := range span.Errors().Order {
 		// only print the first line
-		for line := range strings.SplitSeq(span.Status.Description, "\n") {
+		for _, line := range strings.Split(span.Status.Description, "\n") {
 			if line == "" {
 				continue
 			}
