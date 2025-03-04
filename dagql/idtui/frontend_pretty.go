@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
+	"github.com/vito/bubbline/computil"
 	"github.com/vito/bubbline/editline"
 	"github.com/vito/bubbline/history"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -26,6 +27,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
+	"mvdan.cc/sh/v3/syntax"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -424,7 +426,7 @@ func (fe *frontendPretty) flush() tea.Cmd {
 			// we're a top-level completed span and we've seen EOF, so flush
 			shouldFlush = true
 		}
-		if row.Parent != nil && fe.flushed[row.Parent.ID] {
+		if row.Parent != nil && fe.flushed[row.Parent.Span.ID] {
 			// our parent flushed, so we should too
 			shouldFlush = true
 		}
@@ -936,9 +938,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		}
 
 		// if input ends with a pipe, then it's not complete
-		fe.editline.CheckInputComplete = func(entireInput [][]rune, line int, col int) bool {
-			return !strings.HasSuffix(string(entireInput[line][col:]), "|")
-		}
+		fe.editline.CheckInputComplete = shellIsComplete
 
 		// put the bowtie on
 		fe.updatePrompt()
@@ -1298,22 +1298,36 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 	if fe.flushed[row.Span.ID] && fe.editlineFocused {
 		return false
 	}
-	if fe.shell != nil && row.Depth == 0 {
-		// navigating history and there's a previous row
-		if (!fe.editlineFocused && row.Previous != nil) ||
-			(row.Previous != nil && !fe.flushed[row.Previous.Span.ID]) {
-			fmt.Fprintln(out, out.String(prefix))
-		}
-		fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
-		if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
-			logDepth := 0
-			if fe.Verbosity < dagui.ExpandCompletedVerbosity {
-				logDepth = -1
+	if fe.shell != nil {
+		defer func() {
+			if row.IsLastChild() {
+				root := row.Root()
+				if logs := fe.logs.Logs[root.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
+					logDepth := 0
+					if fe.Verbosity < dagui.ExpandCompletedVerbosity {
+						logDepth = -1
+					}
+					fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix, highlight)
+				}
 			}
-			fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix, highlight)
+		}()
+		if row.Depth == 0 {
+			// navigating history and there's a previous row
+			if (!fe.editlineFocused && row.Previous != nil) ||
+				(row.Previous != nil && !fe.flushed[row.Previous.Span.ID]) {
+				fmt.Fprintln(out, out.String(prefix))
+			}
+			fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
+			fe.renderStepError(out, r, row.Span, 0, prefix)
+			if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 && !row.ShowingChildren {
+				logDepth := 0
+				if fe.Verbosity < dagui.ExpandCompletedVerbosity {
+					logDepth = -1
+				}
+				fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix, highlight)
+			}
+			return true
 		}
-		fe.renderStepError(out, r, row.Span, 0, prefix)
-		return true
 	}
 	if row.Previous != nil &&
 		row.Previous.Depth >= row.Depth &&
@@ -1618,4 +1632,16 @@ func (bg *BackgroundWriter) Write(p []byte) (n int, err error) {
 
 func focusedBg(out TermOutput) TermOutput {
 	return NewBackgroundOutput(out, highlightBg)
+}
+
+func shellIsComplete(entireInput [][]rune, line int, col int) bool {
+	input, _ := computil.Flatten(entireInput, line, col)
+	_, err := syntax.NewParser().Parse(strings.NewReader(input), "")
+	if err != nil {
+		if syntax.IsIncomplete(err) {
+			// only return false here if it's incomplete
+			return false
+		}
+	}
+	return true
 }
