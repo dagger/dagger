@@ -80,7 +80,7 @@ func (s *gitSchema) Install() {
 	}.Install(s.srv)
 
 	dagql.Fields[*core.GitRef]{
-		dagql.NodeFunc("tree", DagOpDirectoryWrapper(s.srv, s.tree)).
+		dagql.NodeFunc("tree", DagOpDirectoryWrapper(s.srv, s.tree, nil)).
 			View(AllVersion).
 			Doc(`The filesystem tree at this ref.`).
 			ArgDoc("discardGitDir", `Set to true to discard .git directory.`),
@@ -424,7 +424,11 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef
 	if err != nil {
 		return inst, err
 	}
-	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, dir)
+	inst, err = dagql.NewInstanceForCurrentID(ctx, s.srv, parent, dir)
+	if err != nil {
+		return inst, err
+	}
+	return inst, nil
 }
 
 type treeArgsLegacy struct {

@@ -9,6 +9,7 @@ import (
 	"path"
 	"time"
 
+	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
@@ -25,7 +26,9 @@ import (
 type File struct {
 	Query *Query
 
-	LLB      *pb.Definition
+	LLB    *pb.Definition
+	Result bkcache.ImmutableRef // only valid when returned by dagop
+
 	File     string
 	Platform Platform
 
