@@ -12,18 +12,19 @@
     <properties>
         <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <dagger.module.deps>0.16.2-template-module</dagger.module.deps>
     </properties>
 
     <dependencies>
         <dependency>
             <groupId>io.dagger</groupId>
             <artifactId>dagger-java-sdk</artifactId>
-            <version>1.0.0-SNAPSHOT</version>
+            <version>${dagger.module.deps}</version>
         </dependency>
         <dependency>
             <groupId>io.dagger</groupId>
             <artifactId>dagger-java-annotation-processor</artifactId>
-            <version>1.0.0-SNAPSHOT</version>
+            <version>${dagger.module.deps}</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
@@ -75,7 +76,7 @@
                             <path>
                                 <groupId>io.dagger</groupId>
                                 <artifactId>dagger-java-annotation-processor</artifactId>
-                                <version>1.0.0-SNAPSHOT</version>
+                                <version>${dagger.module.deps}</version>
                             </path>
                         </annotationProcessorPaths>
                         <annotationProcessors>
