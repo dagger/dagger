@@ -9,9 +9,13 @@ with contextlib.suppress(ModuleNotFoundError):
 
 # Client bindings
 try:
+    # Custom extended API bindings (from modules) can be placed in user's
+    # src/dagger/gen/client.py.
+    # Note that src/dagger/gen shouldn't have a __init__.py file.
     from dagger.gen.client import *
 except ModuleNotFoundError:
-    from dagger.client._gen_placeholder import *
+    # Only core API bindings
+    from dagger.gen.core import *
 
 # Client connection
 from dagger.client._config import Retry as Retry

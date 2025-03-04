@@ -49,7 +49,6 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 		Exclude: []string{
 			"src/dagger/_engine/",
 			"src/dagger/provisioning/",
-			"src/dagger/gen/",
 		},
 	})
 
