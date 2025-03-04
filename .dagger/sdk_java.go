@@ -106,20 +106,43 @@ func (t JavaSDK) Publish(
 	return err
 }
 
-var javaVersionRe = regexp.MustCompile(`<daggerengine\.version>([0-9\.\-a-zA-Z]+)<\/daggerengine\.version>`)
+var stableVersionRe = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 
 // Bump the Java SDK's Engine dependency
 func (t JavaSDK) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
-	contents, err := t.Dagger.Source().File(javaSDKVersionPomPath).Contents(ctx)
-	if err != nil {
-		return nil, err
+	version = strings.TrimPrefix(version, "v")
+	v := version
+	if !stableVersionRe.MatchString(v) {
+		v = fmt.Sprintf("%s-SNAPSHOT", v)
+	}
+	bumpCtr := t.Maven(ctx).
+		WithExec([]string{
+			"mvn",
+			"versions:set",
+			"-DgenerateBackupPoms=false",
+			"-DnewVersion=" + v,
+		}).
+		WithExec([]string{
+			"mvn",
+			"versions:set-property",
+			"-DgenerateBackupPoms=false",
+			"-Dproperty=daggerengine.version",
+			"-DnewVersion=" + version,
+		})
+
+	poms := []string{
+		"/sdk/java/dagger-codegen-maven-plugin/pom.xml",
+		"/sdk/java/dagger-java-annotation-processor/pom.xml",
+		"/sdk/java/dagger-java-sdk/pom.xml",
+		"/sdk/java/dagger-java-samples/pom.xml",
+		"/sdk/java/pom.xml",
 	}
 
-	newVersion := fmt.Sprintf(`<daggerengine.version>%s</daggerengine.version>`, strings.TrimPrefix(version, "v"))
-	newContents := javaVersionRe.ReplaceAllString(contents, newVersion)
-
-	dir := dag.Directory().WithNewFile(javaSDKVersionPomPath, newContents)
-	return dir, nil
+	bumped := dag.Directory()
+	for _, pom := range poms {
+		bumped = bumped.WithFile(pom, bumpCtr.File(pom))
+	}
+	return bumped, nil
 }
 
 // Bump dependencies in the Java SDK
