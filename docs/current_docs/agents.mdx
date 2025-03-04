@@ -37,7 +37,7 @@ See also [this Twitter thread](https://x.com/solomonstre/status/1891205257516003
 
 Here are several example repositories containing examples of Dagger modules with agentic capabilities, which you can use as inspiration.
 
-- [toy-programmer](https://github.com/dagger/agents/tree/main/toy-programmer): a very, very simple programmer micro-agent for demo purposes
+- [toy-programmer](https://github.com/shykes/toy-programmer): a very, very simple programmer micro-agent for demo purposes
 - [melvin](https://github.com/dagger/agents/tree/main/melvin): Melvin is [Devin](https://devin.ai)'s little cousin 😄. An experimental open-source coding agent, made of small composable modules rather than one monolithic app.
 - [multiagent](https://github.com/dagger/agents/tree/main/multiagent-demo): a demo using multiple LLMs to solve a problem
 - [github-go-coder](https://github.com/dagger/agents/tree/main/github-go-coder): a Go programmer micro-agent that receives assignments from GitHub issues and creates PRs with it's solutions
@@ -143,7 +143,7 @@ Use the `dagger` CLI to load a module and call its functions.
 For example, to use the `toy-programmer` agent module:
 
 ```console
-dagger -m https://github.com/dagger/agents/toy-programmer
+dagger -m https://github.com/shykes/toy-programmer
 ```
 
 Then, run this command in the dagger shell:
@@ -179,7 +179,7 @@ dagger init
 For example, to install the toy-workspace module:
 
 ```console
-dagger install github.com/dagger/agents/toy-workspace
+dagger install github.com/shykes/toy-programmer/toy-workspace
 ```
 
 3. Install a generated client in your project
