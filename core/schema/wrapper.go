@@ -23,12 +23,16 @@ func DagOpWrapper[T dagql.Typed, A any, R dagql.Typed](srv *dagql.Server, fn dag
 	}
 }
 
+type PathFunc[T dagql.Typed] func(ctx context.Context, val dagql.Instance[T]) (string, error)
+
 // DagOpFileWrapper caches a file field as a buildkit operation - this is
 // more specialized than DagOpWrapper, since that serializes the value to
 // JSON, so we'd just end up with a cached ID instead of the actual content.
-func DagOpFileWrapper[T dagql.Typed, A any](srv *dagql.Server, fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]]) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]] {
+//
+//nolint:dupl
+func DagOpFileWrapper[T dagql.Typed, A any](srv *dagql.Server, fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]], pfn PathFunc[T]) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]] {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.File], err error) {
-		if _, ok := core.DagOpFromContext[core.DirectoryDagOp](ctx); ok {
+		if _, ok := core.DagOpFromContext[core.FSDagOp](ctx); ok {
 			return fn(ctx, self, args)
 		}
 
@@ -38,45 +42,32 @@ func DagOpFileWrapper[T dagql.Typed, A any](srv *dagql.Server, fn dagql.NodeFunc
 		}
 
 		filename := "file"
-		id, err := srv.SelectID(ctx, srv.Root(),
-			dagql.Selector{
-				Field: "directory",
-			},
-			dagql.Selector{
-				Field: "withFile",
-				Args: []dagql.NamedInput{
-					{
-						Name:  "path",
-						Value: dagql.String(filename),
-					},
-					{
-						Name:  "source",
-						Value: dagql.NewID[*core.File](dagql.CurrentID(ctx).WithTaint()),
-					},
-				},
-			},
-		)
-		if err != nil {
-			return inst, err
+		if pfn != nil {
+			// NOTE: if set, the path function must be *somewhat* stable -
+			// since it becomes part of the op, then any changes to this
+			// invalidate the cache
+			filename, err = pfn(ctx, self)
+			if err != nil {
+				return inst, err
+			}
 		}
 
-		dir, err := core.NewDirectoryDagOp(ctx, srv, id, deps)
+		id := dagql.CurrentID(ctx).WithTaint()
+		file, err := core.NewFileDagOp(ctx, srv, id, deps, filename)
 		if err != nil {
 			return inst, err
 		}
-		f, err := dir.File(ctx, filename)
-		if err != nil {
-			return inst, err
-		}
-		return dagql.NewInstanceForCurrentID(ctx, srv, self, f)
+		return dagql.NewInstanceForCurrentID(ctx, srv, self, file)
 	}
 }
 
 // DagOpDirectoryWrapper caches a directory field as a buildkit operation,
 // similar to DagOpFileWrapper.
-func DagOpDirectoryWrapper[T dagql.Typed, A any](srv *dagql.Server, fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]]) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]] {
+//
+//nolint:dupl
+func DagOpDirectoryWrapper[T dagql.Typed, A any](srv *dagql.Server, fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]], pfn PathFunc[T]) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]] {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.Directory], err error) {
-		if _, ok := core.DagOpFromContext[core.DirectoryDagOp](ctx); ok {
+		if _, ok := core.DagOpFromContext[core.FSDagOp](ctx); ok {
 			return fn(ctx, self, args)
 		}
 
@@ -85,29 +76,16 @@ func DagOpDirectoryWrapper[T dagql.Typed, A any](srv *dagql.Server, fn dagql.Nod
 			return inst, err
 		}
 
-		id, err := srv.SelectID(ctx, srv.Root(),
-			dagql.Selector{
-				Field: "directory",
-			},
-			dagql.Selector{
-				Field: "withDirectory",
-				Args: []dagql.NamedInput{
-					{
-						Name:  "path",
-						Value: dagql.String(""),
-					},
-					{
-						Name:  "source",
-						Value: dagql.NewID[*core.Directory](dagql.CurrentID(ctx).WithTaint()),
-					},
-				},
-			},
-		)
-		if err != nil {
-			return inst, err
+		filename := "/"
+		if pfn != nil {
+			filename, err = pfn(ctx, self)
+			if err != nil {
+				return inst, err
+			}
 		}
 
-		dir, err := core.NewDirectoryDagOp(ctx, srv, id, deps)
+		id := dagql.CurrentID(ctx).WithTaint()
+		dir, err := core.NewDirectoryDagOp(ctx, srv, id, deps, filename)
 		if err != nil {
 			return inst, err
 		}

@@ -9,6 +9,7 @@ import (
 	"path"
 	"time"
 
+	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
@@ -25,9 +26,11 @@ import (
 type File struct {
 	Query *Query
 
-	LLB      *pb.Definition `json:"llb"`
-	File     string         `json:"file"`
-	Platform Platform       `json:"platform"`
+	LLB    *pb.Definition       `json:"llb"`
+	Result bkcache.ImmutableRef // only valid when returned by dagop
+
+	File     string   `json:"file"`
+	Platform Platform `json:"platform"`
 
 	// Services necessary to provision the file.
 	Services ServiceBindings `json:"services,omitempty"`
@@ -95,13 +98,13 @@ func NewFileWithContents(
 	return dir.File(ctx, name)
 }
 
-func NewFileSt(ctx context.Context, query *Query, st llb.State, dir string, platform Platform, services ServiceBindings) (*File, error) {
+func NewFileSt(ctx context.Context, query *Query, st llb.State, file string, platform Platform, services ServiceBindings) (*File, error) {
 	def, err := st.Marshal(ctx, llb.Platform(platform.Spec()))
 	if err != nil {
 		return nil, err
 	}
 
-	return NewFile(query, def.ToPB(), dir, platform, services), nil
+	return NewFile(query, def.ToPB(), file, platform, services), nil
 }
 
 // Clone returns a deep copy of the container suitable for modifying in a
