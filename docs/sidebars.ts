@@ -197,7 +197,6 @@ module.exports = {
       items: [
         "ci/integrations/github",
         "ci/integrations/google-cloud-run",
-        "ci/integrations/java",
         "ci/integrations/kubernetes",
         "ci/integrations/nerdctl",
         "ci/integrations/openshift",

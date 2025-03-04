@@ -22,6 +22,7 @@ type Span struct {
 	ChildSpans    SpanSet `json:"-"`
 	RunningSpans  SpanSet `json:"-"`
 	FailedLinks   SpanSet `json:"-"`
+	CanceledLinks SpanSet `json:"-"`
 	RevealedSpans SpanSet `json:"-"`
 
 	callCache *callpbv1.Call
@@ -242,7 +243,7 @@ func sliceOf[T any](val any) []T {
 // NOTE: failed state only propagates to spans that installed the current
 // span's effect - it does _not_ propagate through the parent span.
 func (span *Span) PropagateStatusToParentsAndLinks() {
-	propagate := func(parent *Span, failure, activity bool) bool {
+	propagate := func(parent *Span, causal, activity bool) bool {
 		var changed bool
 		if span.IsRunningOrEffectsRunning() {
 			changed = parent.RunningSpans.Add(span)
@@ -252,8 +253,11 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 		if span.Reveal {
 			changed = parent.RevealedSpans.Add(span) || changed
 		}
-		if failure && span.IsFailed() {
+		if causal && span.IsFailed() {
 			changed = parent.FailedLinks.Add(span) || changed
+		}
+		if causal && span.IsCanceled() {
+			changed = parent.CanceledLinks.Add(span) || changed
 		}
 		if activity && parent.Activity.Add(span) {
 			changed = true
@@ -331,8 +335,7 @@ func (span *Span) IsFailedOrCausedFailure() bool {
 	if span.Final {
 		return span.Failed_
 	}
-	if span.Status.Code == codes.Error ||
-		len(span.FailedLinks.Order) > 0 {
+	if span.IsFailed() || len(span.FailedLinks.Order) > 0 {
 		return true
 	}
 	for _, effect := range span.EffectIDs {
@@ -348,7 +351,7 @@ func (span *Span) FailedReason() (bool, []string) {
 		return span.Failed_, span.FailedReason_
 	}
 	var reasons []string
-	if span.Status.Code == codes.Error {
+	if span.IsFailed() {
 		reasons = append(reasons, "span itself errored")
 	}
 	for _, failed := range span.FailedLinks.Order {
@@ -358,6 +361,25 @@ func (span *Span) FailedReason() (bool, []string) {
 		if span.db.FailedEffects[effect] {
 			reasons = append(reasons, "span installed failed effect: "+effect)
 		}
+	}
+	return len(reasons) > 0, reasons
+}
+
+func (span *Span) IsCanceled() bool {
+	canceled, _ := span.CanceledReason()
+	return canceled
+}
+
+func (span *Span) CanceledReason() (bool, []string) {
+	if span.Final {
+		return span.Canceled_, span.CanceledReason_
+	}
+	var reasons []string
+	if span.Canceled {
+		reasons = append(reasons, "span says it is canceled")
+	}
+	for _, canceled := range span.CanceledLinks.Order {
+		reasons = append(reasons, "span has canceled link: "+canceled.Name)
 	}
 	return len(reasons) > 0, reasons
 }
@@ -465,18 +487,10 @@ func (span *Span) EffectSpans(f func(*Span) bool) {
 }
 
 func (span *Span) IsRunningOrEffectsRunning() bool {
-	if span.Final {
-		return span.Activity.IsRunning()
-	}
-	if span.IsRunning() {
-		return true
-	}
-	for effect := range span.EffectSpans {
-		if effect.IsRunning() {
-			return true
-		}
-	}
-	return false
+	return span.IsRunning() ||
+		// leverage the work that goes into span.Activity, rather than having two
+		// sources of truth
+		span.Activity.IsRunning()
 }
 
 func (span *Span) IsPending() bool {
@@ -595,22 +609,6 @@ func (span *Span) HasParent(parent *Span) bool {
 
 func (span *Span) IsInternal() bool {
 	return span.Internal
-}
-
-func (span *Span) IsCanceled() bool {
-	canceled, _ := span.CanceledReason()
-	return canceled
-}
-
-func (span *Span) CanceledReason() (bool, []string) {
-	if span.Final {
-		return span.Canceled_, span.CanceledReason_
-	}
-	var reasons []string
-	if span.Canceled {
-		reasons = append(reasons, "span says it is canceled")
-	}
-	return len(reasons) > 0, reasons
 }
 
 func (span *Span) EndTimeOrFallback(fallbackEnd time.Time) time.Time {
