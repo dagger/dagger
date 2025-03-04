@@ -259,7 +259,7 @@ When working with private Git repositories, ensure that [SSH authentication is p
 The following Dagger Function accepts a Git repository URL and a branch name, tag name or commit id. It copies the repository at the specified branch, tag or commit to the `/src` path in a container and returns the modified container.
 
 :::note
-When working with private Git repositories, ensure that [SSH authentication is properly configured](../api/remote-modules.mdx#configuring-ssh-authentication) on your Dagger host.
+If you need SSH-based cloning, including private or public Git repositories with an SSH ref format, select the (SSH) tabs below. This approach requires forwarding `SSH_AUTH_SOCK`. See [Security-by-Design Docs](/path/to/security-by-design) for why Dagger enforces this pattern. You could also directly use the `Directory` pattern as shown in the [Directory cookbook example](#)
 :::
 
 <Tabs groupId="language">
@@ -269,9 +269,21 @@ When working with private Git repositories, ensure that [SSH authentication is p
 ```
 
 </TabItem>
+<TabItem value="Go (SSH)">
+
+```go file=./snippets/clone-git-repository-ssh/go/main.go
+```
+
+</TabItem>
 <TabItem value="Python">
 
-```python file=./snippets/clone-git-repository/python/main.py
+```python file=./snippets/clone-git-repository-ssh/python/main.py
+```
+
+</TabItem>
+<TabItem value="Python (SSH)">
+
+```python file=./snippets/clone-git-repository-ssh/python/main.py
 ```
 
 </TabItem>
@@ -281,11 +293,15 @@ When working with private Git repositories, ensure that [SSH authentication is p
 ```
 
 </TabItem>
+<TabItem value="TypeScript (SSH)">
+
+```typescript file=./snippets/clone-git-repository-ssh/typescript/index.ts
+```
+
+</TabItem>
 <TabItem value="PHP">
 
 ```php file=./snippets/clone-git-repository/php/src/MyModule.php
-```
-
 </TabItem>
 </Tabs>
 
@@ -362,6 +378,12 @@ When working with private Git repositories, ensure that [SSH authentication is p
     ```
     </TabItem>
     </Tabs>
+
+- Clone over SSH with socket forwarding:
+
+    ```shell
+    dagger call clone-with-ssh --repository=git@github.com:dagger/dagger.git --ref=196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 --sock $SSH_AUTH_SOCK terminal
+    ```
 
 ### Copy a local or remote file to a container
 
