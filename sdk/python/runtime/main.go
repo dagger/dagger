@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"path"
 	"python-sdk/internal/dagger"
+	"slices"
 	"strings"
 )
 
@@ -185,7 +186,7 @@ func (m *PythonSdk) Common(
 		return nil, err
 	}
 	return m.
-		WithSDK(introspectionJSON).
+		WithSDK(ctx, introspectionJSON).
 		WithTemplate().
 		WithSource().
 		WithUpdates(), nil
@@ -328,23 +329,33 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 //
 // This includes regenerating the client bindings for the current API schema
 // (codegen).
-func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
-	m.AddDirectory(GenDir, m.SdkSourceDir)
-
+func (m *PythonSdk) WithSDK(ctx context.Context, introspectionJSON *dagger.File) *PythonSdk {
 	// Allow empty introspection to facilitate debugging the container with a
 	// `dagger call module-runtime terminal` command.
 	if introspectionJSON != nil {
+		codegen := []string{"dist/codegen"}
+
+		dist, _ := m.SdkSourceDir.Directory("dist").Entries(ctx)
+
+		// When not using the bundled source we can revert to executing directly
+		if !slices.Contains(dist, "codegen") {
+			codegen = []string{
+				"uv", "run", "--isolated", "--frozen", "--package", "codegen",
+				"python", "-m", "codegen",
+			}
+		}
+
 		genFile := m.Container.
+			WithMountedCache("/root/.shiv", dag.CacheVolume("shiv")).
 			WithMountedDirectory("", m.SdkSourceDir).
 			WithMountedFile(SchemaPath, introspectionJSON).
-			WithExec([]string{
-				"uv", "run", "--isolated", "--frozen", "--package", "codegen",
-				"python", "-m", "codegen", "generate", "-i", SchemaPath, "-o", "/gen.py",
-			}).
+			WithExec(append(codegen, "generate", "-i", SchemaPath, "-o", "/gen.py")).
 			File("/gen.py")
 
 		m.AddFile(GenPath, genFile)
 	}
+
+	m.AddDirectory(GenDir, m.SdkSourceDir.WithoutDirectory("dist"))
 
 	return m
 }
