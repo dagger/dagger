@@ -273,7 +273,7 @@ func (s *Server) installObject(class ObjectType) {
 				return res, nil
 			},
 			CacheSpec{
-				DoNotCache: "The given ID ultimately determines the purity of its result.",
+				DoNotCache: "There's no point caching the loading call of an ID vs. letting the ID's calls cache on their own.",
 			},
 		)
 	}

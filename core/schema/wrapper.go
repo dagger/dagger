@@ -122,7 +122,7 @@ const runDagOpDigestMixin = "runDagOpDigestMixin"
 // It works by mixing in a constant value into the current ID's digest.
 func currentIDForDagOp(ctx context.Context) *call.ID {
 	currentID := dagql.CurrentID(ctx)
-	return currentID.WithMetadata(dagql.HashFrom(
+	return currentID.WithDigest(dagql.HashFrom(
 		currentID.Digest().String(),
 		runDagOpDigestMixin,
 	))

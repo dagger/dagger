@@ -2129,7 +2129,7 @@ func TestCustomDigest(t *testing.T) {
 				if err != nil {
 					return inst, err
 				}
-				return inst.WithMetadata(digest.Digest(strconv.Itoa(args.Val % 2))), nil
+				return inst.WithDigest(digest.Digest(strconv.Itoa(args.Val % 2))), nil
 			},
 			func(ctx context.Context, _ dagql.Instance[Query], _ argsType, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
 				cacheCfg.Digest = digest.Digest(identity.NewID())

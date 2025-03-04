@@ -349,7 +349,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			return iface.ConvertFromSDKResult(ctx, args["id"])
 		},
 		dagql.CacheSpec{
-			DoNotCache: "The given ID ultimately determines the purity of its result.",
+			DoNotCache: "There's no point caching the loading call of an ID vs. letting the ID's calls cache on their own.",
 		},
 	)
 

@@ -144,5 +144,5 @@ func (s *querySchema) schemaJSONFile(ctx context.Context, parent dagql.Instance[
 		return inst, err
 	}
 
-	return fileInst.WithMetadata(dgst), nil
+	return fileInst.WithDigest(dgst), nil
 }

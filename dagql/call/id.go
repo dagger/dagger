@@ -275,11 +275,10 @@ func (id *ID) Append(
 	return newID
 }
 
-// WithMetadata returns a new ID that's the same as before except with the
-// given metadata changed.
-// customDigest, if not empty string, will become the ID's digest.
-// tainted sets the ID's tainted flag.
-func (id *ID) WithMetadata(customDigest digest.Digest) *ID {
+// WithDigest returns a new ID that's the same as before except with the
+// given customDigest set as the ID's digest. If empty string, the default
+// digest for the call will be used (based on digest of encoded call pb).
+func (id *ID) WithDigest(customDigest digest.Digest) *ID {
 	return id.receiver.Append(
 		id.pb.Type.ToAST(),
 		id.pb.Field,

@@ -317,15 +317,15 @@ func (r Instance[T]) String() string {
 	return fmt.Sprintf("%s@%s", r.Type().Name(), r.Constructor.Digest())
 }
 
-// WithMetadata returns an updated instance with the given metadata set.
+// WithDigest returns an updated instance with the given metadata set.
 // customDigest overrides the default digest of the instance to the provided value.
 // NOTE: customDigest must be used with care as any instances with the same digest
 // will be considered equivalent and can thus replace each other in the cache.
 // Generally, customDigest should be used when there's a content-based digest available
 // that won't be caputured by the default, call-chain derived digest.
-func (r Instance[T]) WithMetadata(customDigest digest.Digest) Instance[T] {
+func (r Instance[T]) WithDigest(customDigest digest.Digest) Instance[T] {
 	return Instance[T]{
-		Constructor: r.Constructor.WithMetadata(customDigest),
+		Constructor: r.Constructor.WithDigest(customDigest),
 		Self:        r.Self,
 		Class:       r.Class,
 		Module:      r.Module,
@@ -438,7 +438,7 @@ func (r Instance[T]) preselect(ctx context.Context, sel Selector) (map[string]In
 		}
 
 		if cacheCfg.Digest != origDgst {
-			newID = newID.WithMetadata(cacheCfg.Digest)
+			newID = newID.WithDigest(cacheCfg.Digest)
 		}
 	}
 
