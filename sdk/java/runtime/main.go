@@ -195,8 +195,8 @@ func (m *JavaSdk) addTemplate(
 	}
 
 	changes := []repl{
-		{"dagger-module", kebabName},
-		{"daggermodule", pkgName},
+		{"dagger-module-placeholder", kebabName},
+		{"daggermoduleplaceholder", pkgName},
 	}
 
 	// Edit template content so that they match the dagger module name
