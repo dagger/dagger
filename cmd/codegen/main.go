@@ -28,8 +28,8 @@ var (
 
 	clientOnly bool
 
-	dev bool
-	isInit   bool
+	dev    bool
+	isInit bool
 )
 
 var rootCmd = &cobra.Command{
@@ -73,7 +73,7 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		Merge:      merge,
 		IsInit:     isInit,
 		ClientOnly: clientOnly,
-		Dev:   dev,
+		Dev:        dev,
 	}
 
 	if moduleName != "" {

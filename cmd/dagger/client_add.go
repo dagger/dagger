@@ -13,7 +13,7 @@ import (
 
 var (
 	generator string
-	dev  bool
+	dev       bool
 )
 
 func init() {
