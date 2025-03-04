@@ -128,6 +128,14 @@ func (t JavaSDK) Bump(ctx context.Context, version string) (*dagger.Directory, e
 			"-DgenerateBackupPoms=false",
 			"-Dproperty=daggerengine.version",
 			"-DnewVersion=" + version,
+		}).
+		WithWorkdir("runtime/template").
+		WithExec([]string{
+			"mvn",
+			"versions:set-property",
+			"-DgenerateBackupPoms=false",
+			"-Dproperty=dagger.module.deps",
+			"-DnewVersion=" + version + "-template-module",
 		})
 
 	poms := []string{
@@ -136,6 +144,7 @@ func (t JavaSDK) Bump(ctx context.Context, version string) (*dagger.Directory, e
 		"/sdk/java/dagger-java-sdk/pom.xml",
 		"/sdk/java/dagger-java-samples/pom.xml",
 		"/sdk/java/pom.xml",
+		"/sdk/java/runtime/template/pom.xml",
 	}
 
 	bumped := dag.Directory()

@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -100,7 +101,26 @@ func (m *JavaSdk) codegenBase(
 		// Set the working directory to the one containing the sources to build, not just the module root
 		WithWorkdir(m.moduleConfig.modulePath())
 	// Add a default template if there's no existing user code
-	return m.addTemplate(ctx, ctr)
+	ctr, err = m.addTemplate(ctx, ctr)
+	if err != nil {
+		return nil, err
+	}
+	// Ensure the version in the pom.xml is the same as the introspection file
+	// This is updating the pom.xml whatever it's coming from the template or the user module
+	version, err := m.getDaggerVersionForModule(ctx, introspectionJSON)
+	if err != nil {
+		return nil, err
+	}
+	ctr = ctr.
+		// set the version of the Dagger dependencies to the version of the introspection file
+		WithExec([]string{
+			"mvn",
+			"versions:set-property",
+			"-DgenerateBackupPoms=false",
+			"-Dproperty=dagger.module.deps",
+			fmt.Sprintf("-DnewVersion=%s", version),
+		})
+	return ctr, nil
 }
 
 // buildJavaDependencies builds and install the needed dependencies
@@ -115,6 +135,10 @@ func (m *JavaSdk) buildJavaDependencies(
 	if err != nil {
 		return nil, err
 	}
+	version, err := m.getDaggerVersionForModule(ctx, introspectionJSON)
+	if err != nil {
+		return nil, err
+	}
 	return ctr.
 		// Cache maven dependencies
 		WithMountedCache("/root/.m2", dag.CacheVolume("sdk-java-maven-m2")).
@@ -123,6 +147,13 @@ func (m *JavaSdk) buildJavaDependencies(
 		// Copy the SDK source directory, so all the files needed to build the dependencies
 		WithDirectory(GenPath, m.SDKSourceDir).
 		WithWorkdir(GenPath).
+		// Set the version of the dependencies we are building to the version of the introspection file
+		WithExec([]string{
+			"mvn",
+			"versions:set",
+			"-DgenerateBackupPoms=false",
+			fmt.Sprintf("-DnewVersion=%s", version),
+		}).
 		// Build and install the java modules one by one
 		// - dagger-codegen-maven-plugin: this plugin will be used to generate the SDK code, from the introspection file,
 		//   this means including the ability to call other projects (not part of the main dagger SDK)
@@ -215,7 +246,12 @@ func (m *JavaSdk) generateCode(
 		// set the module name as an environment variable so we ensure constructor is only on main object
 		WithEnvVariable("_DAGGER_JAVA_SDK_MODULE_NAME", m.moduleConfig.name).
 		// generate the entrypoint
-		WithExec([]string{"mvn", "clean", "compile"})
+		WithExec([]string{
+			"mvn",
+			"clean",
+			"compile",
+			// "-e", // this is just for debug purpose, uncomment if needed
+		})
 	return dag.
 		Directory().
 		// copy all user files
@@ -350,6 +386,26 @@ func (m *JavaSdk) setModuleConfig(ctx context.Context, modSource *dagger.ModuleS
 	}
 
 	return nil
+}
+
+func (m *JavaSdk) getDaggerVersionForModule(ctx context.Context, introspectionJSON *dagger.File) (string, error) {
+	content, err := introspectionJSON.Contents(ctx)
+	if err != nil {
+		return "", err
+	}
+	var introspectJSON IntrospectJSON
+	if err = json.Unmarshal([]byte(content), &introspectJSON); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(
+		"%s-%s-module",
+		strings.TrimPrefix(introspectJSON.SchemaVersion, "v"),
+		m.moduleConfig.name,
+	), nil
+}
+
+type IntrospectJSON struct {
+	SchemaVersion string `json:"__schemaVersion"`
 }
 
 type repl struct {
