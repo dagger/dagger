@@ -426,7 +426,7 @@ func (fe *frontendPretty) flush() tea.Cmd {
 			// we're a top-level completed span and we've seen EOF, so flush
 			shouldFlush = true
 		}
-		if row.Parent != nil && fe.flushed[row.Parent.ID] {
+		if row.Parent != nil && fe.flushed[row.Parent.Span.ID] {
 			// our parent flushed, so we should too
 			shouldFlush = true
 		}
@@ -1314,22 +1314,36 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 	if fe.flushed[row.Span.ID] && fe.editlineFocused {
 		return false
 	}
-	if fe.shell != nil && row.Depth == 0 {
-		// navigating history and there's a previous row
-		if (!fe.editlineFocused && row.Previous != nil) ||
-			(row.Previous != nil && !fe.flushed[row.Previous.Span.ID]) {
-			fmt.Fprintln(out, out.String(prefix))
-		}
-		fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
-		if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
-			logDepth := 0
-			if fe.Verbosity < dagui.ExpandCompletedVerbosity {
-				logDepth = -1
+	if fe.shell != nil {
+		defer func() {
+			if row.IsLastChild() {
+				root := row.Root()
+				if logs := fe.logs.Logs[root.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
+					logDepth := 0
+					if fe.Verbosity < dagui.ExpandCompletedVerbosity {
+						logDepth = -1
+					}
+					fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix, highlight)
+				}
 			}
-			fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix, highlight)
+		}()
+		if row.Depth == 0 {
+			// navigating history and there's a previous row
+			if (!fe.editlineFocused && row.Previous != nil) ||
+				(row.Previous != nil && !fe.flushed[row.Previous.Span.ID]) {
+				fmt.Fprintln(out, out.String(prefix))
+			}
+			fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
+			fe.renderStepError(out, r, row.Span, 0, prefix)
+			if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 && !row.ShowingChildren {
+				logDepth := 0
+				if fe.Verbosity < dagui.ExpandCompletedVerbosity {
+					logDepth = -1
+				}
+				fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix, highlight)
+			}
+			return true
 		}
-		fe.renderStepError(out, r, row.Span, 0, prefix)
-		return true
 	}
 	if row.Previous != nil &&
 		row.Previous.Depth >= row.Depth &&

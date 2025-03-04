@@ -104,6 +104,18 @@ func (v *Viztest) RevealedSpans(ctx context.Context) (res string, rerr error) {
 	return v.Echo(ctx, "hello from Go! it is currently "+time.Now().String())
 }
 
+func (v *Viztest) RevealAndLog(ctx context.Context) (res string, rerr error) {
+	ctx, span := Tracer().Start(ctx, "revealed span",
+		trace.WithAttributes(attribute.Bool("dagger.io/ui.reveal", true)))
+	res, err := v.Echo(ctx, "hello from Go! it is currently "+time.Now().String())
+	if err != nil {
+		return "", err
+	}
+	span.End()
+	fmt.Println("i did stuff, here's the result:", res)
+	return res, nil
+}
+
 func (*Viztest) ManySpans(
 	ctx context.Context,
 	n int,
