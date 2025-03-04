@@ -23,16 +23,13 @@ import (
 
 var PORT = os.Getenv("PORT")
 
-var dag *dagger.Client
-
 var mcpCmd = &cobra.Command{
 	Use:   "mcp",
 	Short: "Run the Dagger MCP server",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cmd.SetContext(idtui.WithPrintTraceLink(cmd.Context(), true))
 		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
-			dag = engineClient.Dagger()
-			return serveMCP(ctx)
+			return optionalModCmdWrapper(serveMCP, "")(cmd, args)
 		})
 	},
 	Hidden: true,
@@ -41,8 +38,9 @@ var mcpCmd = &cobra.Command{
 	},
 }
 
-func serveMCP(ctx context.Context) error {
+func serveMCP(ctx context.Context, engineClient *client.Client, _ *dagger.Module, cmd *cobra.Command, args []string) error {
 	s := server.NewMCPServer("Dagger", "0.0.1")
+	dag := engineClient.Dagger()
 
 	s.AddTool(
 		mcp.NewTool("dagger_version",
