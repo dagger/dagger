@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
@@ -26,7 +27,9 @@ import (
 type Directory struct {
 	Query *Query
 
-	LLB      *pb.Definition
+	LLB    *pb.Definition
+	Result bkcache.ImmutableRef // only valid when returned by dagop
+
 	Dir      string
 	Platform Platform
 
@@ -445,6 +448,7 @@ func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
 	return &File{
 		Query:    dir.Query,
 		LLB:      dir.LLB,
+		Result:   dir.Result,
 		File:     path.Join(dir.Dir, file),
 		Platform: dir.Platform,
 		Services: dir.Services,
