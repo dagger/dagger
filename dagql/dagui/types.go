@@ -33,14 +33,20 @@ type TraceTree struct {
 // it backwards and render only the parts that will fit on screen. Otherwise
 // large traces get giga slow.
 type TraceRow struct {
-	Index                   int
-	Span                    *Span
+	Index int
+
+	Span *Span
+
+	Parent   *TraceRow `json:"-"`
+	Previous *TraceRow `json:"-"`
+	Next     *TraceRow `json:"-"`
+
 	Chained                 bool
+	Final                   bool
 	Depth                   int
 	IsRunningOrChildRunning bool
-	Previous                *TraceRow
-	Parent                  *Span
 	HasChildren             bool
+	ShowingChildren         bool
 }
 
 type RowsView struct {
@@ -187,15 +193,18 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 	rows := &Rows{
 		BySpan: make(map[SpanID]*TraceRow, len(lv.Body)),
 	}
-	var walk func(*TraceTree, *Span, int)
-	walk = func(tree *TraceTree, parent *Span, depth int) {
+	var walk func(*TraceTree, *TraceRow, int) *TraceRow
+	walk = func(tree *TraceTree, parent *TraceRow, depth int) *TraceRow {
 		row := &TraceRow{
-			Index:                   len(rows.Order),
-			Span:                    tree.Span,
+			Index: len(rows.Order),
+			Span:  tree.Span,
+
+			Parent: parent,
+
 			Chained:                 tree.Chained,
+			Final:                   tree.Final,
 			Depth:                   depth,
 			IsRunningOrChildRunning: tree.IsRunningOrChildRunning,
-			Parent:                  parent,
 			HasChildren:             len(tree.Children) > 0,
 		}
 		if len(rows.Order) > 0 {
@@ -203,15 +212,25 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 		}
 		rows.Order = append(rows.Order, row)
 		rows.BySpan[tree.Span.ID] = row
-		if tree.RevealedChildren || tree.IsRunningOrChildRunning || tree.Span.IsFailedOrCausedFailure() || opts.Verbosity >= ExpandCompletedVerbosity {
+		if tree.RevealedChildren ||
+			tree.IsRunningOrChildRunning ||
+			tree.Span.IsFailedOrCausedFailure() ||
+			opts.Verbosity >= ExpandCompletedVerbosity {
+			var lastChild *TraceRow
 			for _, child := range tree.Children {
-				walk(child, row.Span, depth+1)
+				childRow := walk(child, row, depth+1)
+				if lastChild != nil {
+					childRow.Previous = lastChild
+					lastChild.Next = childRow
+				}
+				lastChild = childRow
 			}
+			row.ShowingChildren = row.HasChildren
 		}
+		return row
 	}
 	for _, row := range lv.Body {
-		// TODO: parent should be zoomed span?
-		walk(row, lv.Zoomed, 0)
+		walk(row, nil, 0)
 	}
 	return rows
 }
@@ -231,4 +250,15 @@ func (row *TraceTree) setRunning() {
 	if row.Parent != nil && !row.Parent.IsRunningOrChildRunning {
 		row.Parent.setRunning()
 	}
+}
+
+func (row *TraceRow) IsLastChild() bool {
+	return row.Next == nil && !row.ShowingChildren
+}
+
+func (row *TraceRow) Root() *TraceRow {
+	if row.Parent == nil {
+		return row
+	}
+	return row.Parent.Root()
 }

@@ -61,7 +61,6 @@ const (
 	ShowEncapsulatedVerbosity = 3
 	ShowSpammyVerbosity       = 4
 	ShowDigestsVerbosity      = 4
-	ShowMetricsVerbosity      = 3
 )
 
 func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {

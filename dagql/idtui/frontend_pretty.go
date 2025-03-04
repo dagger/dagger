@@ -18,15 +18,16 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
+	"github.com/vito/bubbline/computil"
 	"github.com/vito/bubbline/editline"
 	"github.com/vito/bubbline/history"
-	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
+	"mvdan.cc/sh/v3/syntax"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -73,7 +74,6 @@ type frontendPretty struct {
 	editline        *editline.Model
 	editlineFocused bool
 	flushed         map[dagui.SpanID]bool
-	sawEOF          map[dagui.SpanID]bool
 
 	// updated as events are written
 	db           *dagui.DB
@@ -131,7 +131,6 @@ func NewWithDB(db *dagui.DB) *frontendPretty {
 
 		// shell state
 		flushed: map[dagui.SpanID]bool{},
-		sawEOF:  map[dagui.SpanID]bool{},
 
 		// initial TUI state
 		window:     tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
@@ -385,14 +384,17 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 
 		if fe.msgPreFinalRender.Len() > 0 {
 			defer func() {
-				fmt.Fprintln(os.Stderr)
+				if fe.shell == nil {
+					// shell already prints blank line as it flushes
+					fmt.Fprintln(os.Stderr)
+				}
 				fmt.Fprintln(os.Stderr, fe.msgPreFinalRender.String())
 			}()
 		}
 	}
 
 	// If there are errors, show log output.
-	if fe.err != nil {
+	if fe.err != nil && fe.shell == nil {
 		// Counter-intuitively, we don't want to render the primary output
 		// when there's an error, because the error is better represented by
 		// the progress output and error summary.
@@ -420,11 +422,11 @@ func (fe *frontendPretty) flush() tea.Cmd {
 
 	for _, row := range fe.rows.Order {
 		var shouldFlush bool
-		if row.Depth == 0 && !row.IsRunningOrChildRunning && fe.sawEOF[row.Span.ID] {
+		if row.Depth == 0 && !row.IsRunningOrChildRunning && fe.logs.SawEOF[row.Span.ID] {
 			// we're a top-level completed span and we've seen EOF, so flush
 			shouldFlush = true
 		}
-		if row.Parent != nil && fe.flushed[row.Parent.ID] {
+		if row.Parent != nil && fe.flushed[row.Parent.Span.ID] {
 			// our parent flushed, so we should too
 			shouldFlush = true
 		}
@@ -481,22 +483,6 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 	}
 	if err := fe.logs.Export(ctx, logs); err != nil {
 		return err
-	}
-	for _, rec := range logs {
-		var eof bool
-		rec.WalkAttributes(func(attr log.KeyValue) bool {
-			if attr.Key == telemetry.StdioEOFAttr {
-				if attr.Value.AsBool() {
-					eof = true
-				}
-				return false
-			}
-			return true
-		})
-		if rec.SpanID().IsValid() && eof {
-			spanID := dagui.SpanID{SpanID: rec.SpanID()}
-			fe.sawEOF[spanID] = true
-		}
 	}
 	return nil
 }
@@ -952,9 +938,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		}
 
 		// if input ends with a pipe, then it's not complete
-		fe.editline.CheckInputComplete = func(entireInput [][]rune, line int, col int) bool {
-			return !strings.HasSuffix(string(entireInput[line][col:]), "|")
-		}
+		fe.editline.CheckInputComplete = shellIsComplete
 
 		// put the bowtie on
 		fe.updatePrompt()
@@ -1314,22 +1298,36 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 	if fe.flushed[row.Span.ID] && fe.editlineFocused {
 		return false
 	}
-	if fe.shell != nil && row.Depth == 0 {
-		// navigating history and there's a previous row
-		if (!fe.editlineFocused && row.Previous != nil) ||
-			(row.Previous != nil && !fe.flushed[row.Previous.Span.ID]) {
-			fmt.Fprintln(out, out.String(prefix))
-		}
-		fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
-		if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
-			logDepth := 0
-			if fe.Verbosity < dagui.ExpandCompletedVerbosity {
-				logDepth = -1
+	if fe.shell != nil {
+		defer func() {
+			if row.IsLastChild() {
+				root := row.Root()
+				if logs := fe.logs.Logs[root.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
+					logDepth := 0
+					if fe.Verbosity < dagui.ExpandCompletedVerbosity {
+						logDepth = -1
+					}
+					fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix, highlight)
+				}
 			}
-			fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix, highlight)
+		}()
+		if row.Depth == 0 {
+			// navigating history and there's a previous row
+			if (!fe.editlineFocused && row.Previous != nil) ||
+				(row.Previous != nil && !fe.flushed[row.Previous.Span.ID]) {
+				fmt.Fprintln(out, out.String(prefix))
+			}
+			fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
+			fe.renderStepError(out, r, row.Span, 0, prefix)
+			if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 && !row.ShowingChildren {
+				logDepth := 0
+				if fe.Verbosity < dagui.ExpandCompletedVerbosity {
+					logDepth = -1
+				}
+				fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix, highlight)
+			}
+			return true
 		}
-		fe.renderStepError(out, r, row.Span, 0, prefix)
-		return true
 	}
 	if row.Previous != nil &&
 		row.Previous.Depth >= row.Depth &&
@@ -1361,7 +1359,16 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 		}
 		fmt.Fprint(out, icon)
 		fmt.Fprint(out, out.String(" "))
-		fe.renderStepLogs(out, r, row, prefix, highlight)
+		if fe.renderStepLogs(out, r, row, prefix, highlight) {
+			r.indent(out, row.Depth)
+			fmt.Fprint(out, out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack))
+		} else {
+			// no logs were printed, so snug the duration up against the emoji
+			fmt.Fprint(out, "\b")
+		}
+		r.renderDuration(out, span)
+		r.renderMetrics(out, span)
+		fmt.Fprintln(out)
 	} else {
 		fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
 		if row.IsRunningOrChildRunning ||
@@ -1402,9 +1409,9 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 	fmt.Fprint(out, prefix+vt.View())
 }
 
-func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, highlight bool) {
+func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, highlight bool) bool {
 	if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
-		fe.renderLogs(out, r,
+		return fe.renderLogs(out, r,
 			logs,
 			row.Depth,
 			fe.window.Height/3,
@@ -1412,6 +1419,7 @@ func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui
 			highlight,
 		)
 	}
+	return false
 }
 
 func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, span *dagui.Span, depth int, prefix string) {
@@ -1449,7 +1457,7 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, span *dagui.Sp
 	return nil
 }
 
-func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, logs *Vterm, depth int, height int, prefix string, highlight bool) {
+func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, logs *Vterm, depth int, height int, prefix string, highlight bool) bool {
 	pipe := out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack)
 	if depth == -1 {
 		// clear prefix when zoomed
@@ -1473,12 +1481,18 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, logs *Vterm, d
 	} else {
 		logs.SetHeight(height)
 	}
-	fmt.Fprint(out, logs.View())
+	view := logs.View()
+	if view == "" {
+		return false
+	}
+	fmt.Fprint(out, view)
+	return true
 }
 
 type prettyLogs struct {
 	Logs     map[dagui.SpanID]*Vterm
 	LogWidth int
+	SawEOF   map[dagui.SpanID]bool
 	Profile  termenv.Profile
 }
 
@@ -1487,21 +1501,32 @@ func newPrettyLogs(profile termenv.Profile) *prettyLogs {
 		Logs:     make(map[dagui.SpanID]*Vterm),
 		LogWidth: -1,
 		Profile:  profile,
+		SawEOF:   make(map[dagui.SpanID]bool),
 	}
 }
 
 func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 	for _, log := range logs {
-		vterm := l.spanLogs(log.SpanID())
-
 		// Check for Markdown content type
 		contentType := ""
+		eof := false
 		for attr := range log.WalkAttributes {
 			if attr.Key == telemetry.ContentTypeAttr {
 				contentType = attr.Value.AsString()
 				break
 			}
+			if attr.Key == telemetry.StdioEOFAttr {
+				eof = attr.Value.AsBool()
+				break
+			}
 		}
+
+		if eof && log.SpanID().IsValid() {
+			l.SawEOF[dagui.SpanID{SpanID: log.SpanID()}] = true
+			continue
+		}
+
+		vterm := l.spanLogs(log.SpanID())
 
 		if contentType == "text/markdown" {
 			_, _ = vterm.WriteMarkdown([]byte(log.Body().AsString()))
@@ -1607,4 +1632,16 @@ func (bg *BackgroundWriter) Write(p []byte) (n int, err error) {
 
 func focusedBg(out TermOutput) TermOutput {
 	return NewBackgroundOutput(out, highlightBg)
+}
+
+func shellIsComplete(entireInput [][]rune, line int, col int) bool {
+	input, _ := computil.Flatten(entireInput, line, col)
+	_, err := syntax.NewParser().Parse(strings.NewReader(input), "")
+	if err != nil {
+		if syntax.IsIncomplete(err) {
+			// only return false here if it's incomplete
+			return false
+		}
+	}
+	return true
 }

@@ -1,14 +1,19 @@
 import dataclasses
+import json
 from functools import partial
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import cattrs
 from rich.console import Console
 from rich.panel import Panel
 
-from dagger import DaggerError
+from dagger import DaggerError, QueryError
 
 _console = Console(stderr=True, style="red")
+
+
+if TYPE_CHECKING:
+    from dagger import Error
 
 
 class ExtensionError(DaggerError):
@@ -44,6 +49,21 @@ class NameConflictError(UserError):
 
 class FunctionError(UserError):
     """An error while executing a user function."""
+
+    def __init__(self, exc: Exception):
+        super().__init__(exc)
+        self.cause = exc
+
+    def as_dagger(self) -> "Error":
+        # exceptions are imported before the client, so we need to import these here
+        from dagger import JSON, dag
+
+        e = dag.error(str(self.cause))
+        if isinstance(self.cause, QueryError):
+            for k, v in self.cause.error.extensions.items():
+                e = e.with_value(k, JSON(json.dumps(v)))
+
+        return e
 
 
 @dataclasses.dataclass(slots=True)
