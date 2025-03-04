@@ -1,7 +1,7 @@
-from dataclasses import dataclass, field
+import dataclasses
 
-import anyio
-from rich import get_console
+import anyio.to_thread
+import rich
 from rich.console import Console
 from rich.status import Status
 from typing_extensions import Self
@@ -9,10 +9,10 @@ from typing_extensions import Self
 asyncify = anyio.to_thread.run_sync
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class Progress:
-    console: Console = field(default_factory=get_console)
-    status: Status | None = field(default=None, init=False)
+    console: Console = dataclasses.field(default_factory=rich.get_console)
+    status: Status | None = dataclasses.field(default=None, init=False)
 
     async def start(self, status: str) -> None:
         self.status = Status(status, console=self.console)
