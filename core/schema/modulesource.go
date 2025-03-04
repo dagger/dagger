@@ -2041,7 +2041,6 @@ func (s *moduleSourceSchema) runClientGenerator(
 	return genDirInst, nil
 }
 
-//nolint:gocyclo
 func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 	ctx context.Context,
 	srcInst dagql.Instance[*core.ModuleSource],
