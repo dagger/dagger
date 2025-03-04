@@ -1,0 +1,104 @@
+---
+slug: /api/security-model
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Security by Design in Dagger
+
+Dagger is built to protect your host environment by default. This means that no module can access resources like your SSH agent, Docker socket, or local file system unless you explicitly grant permission.
+
+## Why Explicit Access Matters
+
+By requiring typed arguments such as `Directory`, `Socket`, and `Secret`, Dagger ensures users understand exactly what they are sharing with a module. This explicit access design helps prevent malicious or untrusted modules from inadvertently obtaining sensitive data. Whenever you provide a socket (e.g., via `SSH_AUTH_SOCK`) or a directory that points to an SSH-based Git reference, you are consciously deciding to give the **top-level module** the ability to interact with your SSH keys and credentials.
+
+**Important:** Dagger’s security model treats the top-level module (i.e., the main function or highest-level call) as the single place where sensitive resources are introduced. Only through this call can a user explicitly forward directories, sockets, or secrets. In turn, the top-level module may pass them along to other installed modules if needed, but there is never any implicit sharing behind the user’s back.
+
+## Common SSH Cloning Patterns
+
+### Passing a `Directory`
+One approach is to pre-resolve a private Git repository into a `Directory` at the top-level call. This allows you to decide exactly which repository (and branch or commit) is made available to downstream modules:
+```bash
+dagger call clone --dir git@github.com:private/secret-repo@main
+```
+
+In this setup, the module simply receives a Directory object and never directly accesses your SSH agent.
+
+### Using a Socket in a Function Parameter
+
+Alternatively, you can allow a function to perform the Git clone by passing in your SSH socket:
+
+```bash
+dagger call cloneWithSsh --repository git@github.com:private/secret-repo.git \
+  --ref main --sock "$SSH_AUTH_SOCK"
+```
+
+Here, you explicitly provide the SSH agent socket. This prevents hidden or unapproved use of your SSH credentials because the module cannot clone without the user granting that socket.
+
+## Module-Level Examples
+
+Below are two example TypeScript functions showing how to implement these patterns:
+
+### 1. Accepting a Directory
+
+```TypeScript
+import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
+
+@object()
+export class DaggerGitCloneOverSsh {
+  @func()
+  clone(dir: Directory): Container {
+    // The directory is already resolved from an SSH-based Git URL at the top level
+    return dag.container().withDirectory("/src", dir);
+  }
+}
+```
+
+In this pattern, the module receives the already-cloned Directory, and the SSH operations are handled as part of the user’s top-level CLI call.
+
+### 2. Accepting a Socket for SSH
+
+```TypeScript
+import { dag, Container, object, func, Socket } from "@dagger.io/dagger"
+
+@object()
+export class DaggerGitCloneOverSsh {
+  @func()
+  clone(source: string, ref: string, sock: Socket): Container {
+    // Here we explicitly pass in the sshAuthSocket, giving the module permission to clone
+    const dir = dag.git(source, { sshAuthSocket: sock }).branch(ref).tree();
+    return dag.container().withDirectory("/src", dir);
+  }
+}
+```
+
+When a socket is passed in, you make a conscious choice to grant SSH access, maintaining Dagger’s security-by-design approach.
+
+## Using Secrets
+
+In addition to directories and sockets, Dagger also supports typed secrets. These behave similarly: the top-level module must receive the secret from the user, and then explicitly pass it to any module needing it. Below is a simple example of how to consume a secret token:
+
+```TypeScript
+import { dag, Container, object, func, Secret } from "@dagger.io/dagger"
+
+@object()
+export class DaggerUseSecret {
+  @func()
+  buildWithSecret(token: Secret): Container {
+    // We can attach the secret as an environment variable for private API calls or other usage
+    return dag.container()
+      .from("alpine:latest")
+      .withSecretVariable("MY_PRIVATE_TOKEN", token)
+      .withExec(["sh", "-c", "echo Secure build steps here..."]);
+  }
+}
+```
+
+Since you must pass the secret at the top-level invocation, only modules that the main function calls and specifically shares the secret with will have access to it.
+
+## Security-by-Design Insights
+
+- Protecting Against Malicious Modules: Since a module never has default access to your SSH agent or file system, a malicious module cannot silently exfiltrate your data. It would need explicit resource forwarding, which the user would notice.
+- Typed Arguments: Dagger supports special typed arguments like Directory, Socket, and Secret. These types ensure that security-critical resources require user awareness before being accessed.
+
+With these patterns, you can safely build modules that clone private repositories or handle sensitive data, all while guaranteeing that only the user can decide what is shared with each module.
