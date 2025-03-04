@@ -157,7 +157,6 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 		}
 		authSock = sock.Self
 	} else if remote.Scheme == "ssh" && clientMetadata != nil && clientMetadata.SSHAuthSocketPath != "" {
-		// For SSH refs, try to load client's SSH socket if no explicit socket was provided
 		socketStore, err := parent.Self.Sockets(ctx)
 		if err != nil {
 			return inst, fmt.Errorf("failed to get socket store: %w", err)
