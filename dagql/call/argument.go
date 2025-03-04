@@ -34,11 +34,6 @@ func (arg *Argument) Value() Literal {
 	return arg.value
 }
 
-// Tainted returns true if the Call contains any tainted selectors.
-func (arg *Argument) Tainted() bool {
-	return arg.value.Tainted()
-}
-
 func (arg *Argument) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
 	if arg == nil || arg.isSensitive {
 		return

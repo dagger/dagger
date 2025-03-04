@@ -47,7 +47,7 @@ func MakeDirectoryContentHashed(
 		return retInst, fmt.Errorf("failed to get content hash: %w", err)
 	}
 
-	return dirInst.WithMetadata(dgst, true), nil
+	return dirInst.WithDigest(dgst), nil
 }
 
 func GetContentHashFromDef(

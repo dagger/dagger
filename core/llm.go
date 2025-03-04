@@ -763,7 +763,7 @@ func (s LlmMiddleware) extendLlmType(targetType dagql.ObjectType) error {
 			id := args["value"].(dagql.IDType)
 			return llm.WithState(ctx, id, s.Server)
 		},
-		nil,
+		dagql.CacheSpec{},
 	)
 	// Install <targetType>()
 	llmType.Extend(
@@ -776,7 +776,7 @@ func (s LlmMiddleware) extendLlmType(targetType dagql.ObjectType) error {
 			llm := self.(dagql.Instance[*Llm]).Self
 			return llm.State(ctx, s.Server)
 		},
-		nil,
+		dagql.CacheSpec{},
 	)
 	return nil
 }

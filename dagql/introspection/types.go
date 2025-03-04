@@ -14,16 +14,16 @@ import (
 
 func Install[T dagql.Typed](srv *dagql.Server) {
 	dagql.Fields[T]{
-		dagql.Func("__schema", func(ctx context.Context, self T, args struct{}) (*Schema, error) {
+		dagql.FuncWithCacheKey("__schema", func(ctx context.Context, self T, args struct{}) (*Schema, error) {
 			return WrapSchema(srv.Schema()), nil
-		}).Impure("A schema can be modified at runtime."),
+		}, dagql.CachePerCall),
 
 		// custom dagger field
 		dagql.Func("__schemaVersion", func(ctx context.Context, self T, args struct{}) (string, error) {
 			return srv.View, nil
 		}).View(dagql.AllView{}),
 
-		dagql.Func("__type", func(ctx context.Context, self T, args struct {
+		dagql.FuncWithCacheKey("__type", func(ctx context.Context, self T, args struct {
 			Name string
 		}) (*Type, error) {
 			def, ok := srv.Schema().Types[args.Name]
@@ -31,7 +31,7 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 				return nil, fmt.Errorf("unknown type: %q", args.Name)
 			}
 			return WrapTypeFromDef(srv.Schema(), def), nil
-		}).Impure("A type can be modified at runtime."),
+		}, dagql.CachePerCall),
 	}.Install(srv)
 
 	TypeKinds.Install(srv)
@@ -70,28 +70,28 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 	dagql.Fields[*Schema]{
 		dagql.Func("description", func(ctx context.Context, self *Schema, args struct{}) (string, error) {
 			return self.Description(), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("types", func(ctx context.Context, self *Schema, args struct{}) (dagql.Array[*Type], error) {
 			return self.Types(), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("queryType", func(ctx context.Context, self *Schema, args struct{}) (*Type, error) {
 			return self.QueryType(), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("mutationType", func(ctx context.Context, self *Schema, args struct{}) (dagql.Nullable[*Type], error) {
 			if self.MutationType() == nil {
 				return dagql.Null[*Type](), nil
 			}
 			return dagql.NonNull(self.MutationType()), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("subscriptionType", func(ctx context.Context, self *Schema, args struct{}) (dagql.Nullable[*Type], error) {
 			if self.SubscriptionType() == nil {
 				return dagql.Null[*Type](), nil
 			}
 			return dagql.NonNull(self.SubscriptionType()), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("directives", func(ctx context.Context, self *Schema, args struct{}) (dagql.Array[*Directive], error) {
 			return self.Directives(), nil
-		}),
+		}).DoNotCache("simple field selection"),
 	}.Install(srv)
 
 	dagql.Fields[*Type]{
@@ -101,32 +101,32 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 			} else {
 				return dagql.NonNull(dagql.NewString(*self.Name())), nil
 			}
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.NodeFunc("kind", func(ctx context.Context, self dagql.Instance[*Type], args struct{}) (TypeKind, error) {
 			return TypeKinds.Lookup(self.Self.Kind())
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("description", func(ctx context.Context, self *Type, args struct{}) (string, error) {
 			return self.Description(), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("fields", func(ctx context.Context, self *Type, args struct {
 			IncludeDeprecated dagql.Boolean `default:"false"`
 		}) (dagql.Array[*Field], error) {
 			return self.Fields(args.IncludeDeprecated.Bool()), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("inputFields", func(ctx context.Context, self *Type, _ struct{}) (dagql.Array[*InputValue], error) {
 			return self.InputFields(), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("interfaces", func(ctx context.Context, self *Type, args struct{}) (dagql.Array[*Type], error) {
 			return self.Interfaces(), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("possibleTypes", func(ctx context.Context, self *Type, args struct{}) (dagql.Array[*Type], error) {
 			return self.PossibleTypes(), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("enumValues", func(ctx context.Context, self *Type, args struct {
 			IncludeDeprecated dagql.Boolean `default:"false"`
 		}) (dagql.Array[*EnumValue], error) {
 			return self.EnumValues(args.IncludeDeprecated.Bool()), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.NodeFunc("ofType", func(ctx context.Context, self dagql.Instance[*Type], args struct{}) (dagql.Nullable[*Type], error) {
 			switch self.Self.Kind() {
 			case "LIST", "NON_NULL":
@@ -134,24 +134,24 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 			default:
 				return dagql.Null[*Type](), nil
 			}
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("specifiedByURL", func(ctx context.Context, self *Type, args struct{}) (*string, error) {
 			return self.SpecifiedByURL(), nil
-		}),
+		}).DoNotCache("simple field selection"),
 
 		// custom dagger field
 		dagql.Func("directives", func(ctx context.Context, self *Type, args struct{}) (dagql.Array[*DirectiveApplication], error) {
 			return self.Directives(), nil
-		}),
+		}).DoNotCache("simple field selection"),
 	}.Install(srv)
 
 	dagql.Fields[*Directive]{
 		dagql.Func("name", func(ctx context.Context, self *Directive, args struct{}) (dagql.String, error) {
 			return dagql.NewString(self.Name), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("description", func(ctx context.Context, self *Directive, args struct{}) (string, error) {
 			return self.Description(), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("locations", func(ctx context.Context, self *Directive, args struct{}) (dagql.Array[DirectiveLocation], error) {
 			var locations []DirectiveLocation
 			for _, loc := range self.Locations {
@@ -162,110 +162,110 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 				locations = append(locations, enum)
 			}
 			return locations, nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("args", func(ctx context.Context, self *Directive, _ struct{}) (dagql.Array[*InputValue], error) {
 			return self.Args, nil
-		}),
+		}).DoNotCache("simple field selection"),
 	}.Install(srv)
 
 	dagql.Fields[*Field]{
 		dagql.Func("name", func(ctx context.Context, self *Field, args struct{}) (dagql.String, error) {
 			return dagql.NewString(self.Name), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("description", func(ctx context.Context, self *Field, args struct{}) (string, error) {
 			return self.Description(), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("args", func(ctx context.Context, self *Field, _ struct{}) (dagql.Array[*InputValue], error) {
 			return self.Args, nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("type", func(ctx context.Context, self *Field, args struct{}) (*Type, error) {
 			return self.Type_, nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("isDeprecated", func(ctx context.Context, self *Field, args struct{}) (dagql.Boolean, error) {
 			return dagql.NewBoolean(self.IsDeprecated()), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("deprecationReason", func(ctx context.Context, self *Field, args struct{}) (*string, error) {
 			return self.DeprecationReason(), nil
-		}),
+		}).DoNotCache("simple field selection"),
 
 		// custom dagger field
 		dagql.Func("directives", func(ctx context.Context, self *Field, args struct{}) (dagql.Array[*DirectiveApplication], error) {
 			return self.Directives(), nil
-		}),
+		}).DoNotCache("simple field selection"),
 	}.Install(srv)
 
 	dagql.Fields[*InputValue]{
 		dagql.Func("name", func(ctx context.Context, self *InputValue, args struct{}) (dagql.String, error) {
 			return dagql.NewString(self.Name), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("description", func(ctx context.Context, self *InputValue, args struct{}) (string, error) {
 			return self.Description(), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("type", func(ctx context.Context, self *InputValue, args struct{}) (*Type, error) {
 			return self.Type_, nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("defaultValue", func(ctx context.Context, self *InputValue, args struct{}) (dagql.Nullable[dagql.String], error) {
 			if self.DefaultValue == nil {
 				return dagql.Null[dagql.String](), nil
 			} else {
 				return dagql.NonNull(dagql.NewString(*self.DefaultValue)), nil
 			}
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("isDeprecated", func(ctx context.Context, self *InputValue, args struct{}) (bool, error) {
 			return self.IsDeprecated(), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("deprecationReason", func(ctx context.Context, self *InputValue, args struct{}) (*string, error) {
 			return self.DeprecationReason(), nil
-		}),
+		}).DoNotCache("simple field selection"),
 
 		// custom dagger field
 		dagql.Func("directives", func(ctx context.Context, self *InputValue, args struct{}) (dagql.Array[*DirectiveApplication], error) {
 			return self.Directives(), nil
-		}),
+		}).DoNotCache("simple field selection"),
 	}.Install(srv)
 
 	dagql.Fields[*EnumValue]{
 		dagql.Func("name", func(ctx context.Context, self *EnumValue, args struct{}) (dagql.String, error) {
 			return dagql.NewString(self.Name), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("description", func(ctx context.Context, self *EnumValue, args struct{}) (string, error) {
 			return self.Description(), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("isDeprecated", func(ctx context.Context, self *EnumValue, args struct{}) (dagql.Boolean, error) {
 			return dagql.NewBoolean(self.IsDeprecated()), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("deprecationReason", func(ctx context.Context, self *EnumValue, args struct{}) (*string, error) {
 			return self.DeprecationReason(), nil
-		}),
+		}).DoNotCache("simple field selection"),
 
 		// custom dagger field
 		dagql.Func("directives", func(ctx context.Context, self *EnumValue, args struct{}) (dagql.Array[*DirectiveApplication], error) {
 			return self.Directives(), nil
-		}),
+		}).DoNotCache("simple field selection"),
 	}.Install(srv)
 
 	// custom dagger type
 	dagql.Fields[*DirectiveApplication]{
 		dagql.Func("name", func(ctx context.Context, self *DirectiveApplication, args struct{}) (dagql.String, error) {
 			return dagql.NewString(self.Name), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("args", func(ctx context.Context, self *DirectiveApplication, _ struct{}) (dagql.Array[*DirectiveApplicationArg], error) {
 			return self.Args, nil
-		}),
+		}).DoNotCache("simple field selection"),
 	}.Install(srv)
 
 	// custom dagger type
 	dagql.Fields[*DirectiveApplicationArg]{
 		dagql.Func("name", func(ctx context.Context, self *DirectiveApplicationArg, args struct{}) (dagql.String, error) {
 			return dagql.NewString(self.Name), nil
-		}),
+		}).DoNotCache("simple field selection"),
 		dagql.Func("value", func(ctx context.Context, self *DirectiveApplicationArg, args struct{}) (dagql.Nullable[dagql.String], error) {
 			if self.Value == nil {
 				return dagql.Null[dagql.String](), nil
 			} else {
 				return dagql.NonNull(dagql.NewString(self.Value.Raw)), nil
 			}
-		}),
+		}).DoNotCache("simple field selection"),
 	}.Install(srv)
 }
 

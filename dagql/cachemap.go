@@ -74,6 +74,13 @@ func (m *cacheMap[K, T]) GetOrInitializeWithPostCall(
 	key K,
 	fn func(ctx context.Context) (T, func(context.Context) error, error),
 ) (T, bool, func(context.Context) error, error) {
+	var zeroKey K
+	if key == zeroKey {
+		// don't cache, don't dedupe calls, just call it
+		val, postCall, err := fn(ctx)
+		return val, false, postCall, err
+	}
+
 	if v := ctx.Value(cacheMapContextKey[K, T]{key: key, m: m}); v != nil {
 		var zero T
 		return zero, false, nil, ErrCacheMapRecursiveCall
