@@ -2243,7 +2243,7 @@ func (s *moduleSourceSchema) moduleSourceWithClient(
 	args struct {
 		Generator dagql.String
 		OutputDir dagql.String
-		Dev  dagql.Optional[dagql.Boolean]
+		Dev       dagql.Optional[dagql.Boolean]
 	},
 ) (*core.ModuleSource, error) {
 	src = src.Clone()
