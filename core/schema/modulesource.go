@@ -1704,14 +1704,9 @@ func (s *moduleSourceSchema) moduleSourceWithoutDependencies(
 	return parentSrc, nil
 }
 
-//nolint:gocyclo
-func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
-	ctx context.Context,
-	srcInst dagql.Instance[*core.ModuleSource],
-	args struct{},
-) (genDirInst dagql.Instance[*core.Directory], err error) {
-	src := srcInst.Self
-
+func (s *moduleSourceSchema) loadModuleSourceConfig(
+	src *core.ModuleSource,
+) (*modules.ModuleConfigWithUserFields, error) {
 	// construct the module config based on any config read during load and any settings changed via with* APIs
 	modCfg := &modules.ModuleConfigWithUserFields{
 		ModuleConfigUserFields: src.ModuleConfigUserFields,
@@ -1730,14 +1725,16 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 		}
 	}
 
+	// Check version compatibility.
 	if !engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion) {
-		return genDirInst, fmt.Errorf("module requires dagger %s, but support for that version has been removed", modCfg.EngineVersion)
+		return nil, fmt.Errorf("module requires dagger %s, but support for that version has been removed", modCfg.EngineVersion)
 	}
 	if !engine.CheckMaxVersionCompatibility(modCfg.EngineVersion, engine.BaseVersion(engine.Version)) {
-		return genDirInst, fmt.Errorf("module requires dagger %s, but you have %s", modCfg.EngineVersion, engine.Version)
+		return nil, fmt.Errorf("module requires dagger %s, but you have %s", modCfg.EngineVersion, engine.Version)
 	}
 
-	switch srcInst.Self.SourceSubpath {
+	// Load the module config source based on sourcePath.
+	switch src.SourceSubpath {
 	case "":
 		// leave unset
 	default:
@@ -1747,7 +1744,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 			filepath.Join("/", src.SourceSubpath),
 		)
 		if err != nil {
-			return genDirInst, fmt.Errorf("failed to get relative path from source root to source: %w", err)
+			return nil, fmt.Errorf("failed to get relative path from source root to source: %w", err)
 		}
 		// if source is ".", leave it unset in dagger.json as that's the default
 		if modCfg.Source == "." {
@@ -1755,6 +1752,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 		}
 	}
 
+	// Load configuration for each dependencies.
 	modCfg.Dependencies = make([]*modules.ModuleConfigDependency, len(src.Dependencies))
 	for i, depSrc := range src.Dependencies {
 		depCfg := &modules.ModuleConfigDependency{
@@ -1762,7 +1760,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 		}
 		modCfg.Dependencies[i] = depCfg
 
-		switch srcInst.Self.Kind {
+		switch src.Kind {
 		case core.ModuleSourceKindLocal:
 			switch depSrc.Self.Kind {
 			case core.ModuleSourceKindLocal:
@@ -1771,7 +1769,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 				depSrcRoot := filepath.Join(depSrc.Self.Local.ContextDirectoryPath, depSrc.Self.SourceRootSubpath)
 				depSrcRoot, err := pathutil.LexicalRelativePath(parentSrcRoot, depSrcRoot)
 				if err != nil {
-					return genDirInst, fmt.Errorf("failed to get relative path: %w", err)
+					return nil, fmt.Errorf("failed to get relative path: %w", err)
 				}
 				depCfg.Source = depSrcRoot
 
@@ -1781,24 +1779,24 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 				depCfg.Pin = depSrc.Self.Git.Pin
 
 			default:
-				return genDirInst, fmt.Errorf("unhandled module source kind: %s", srcInst.Self.Kind.HumanString())
+				return nil, fmt.Errorf("unhandled module source kind: %s", src.Kind.HumanString())
 			}
 
 		case core.ModuleSourceKindGit:
 			switch depSrc.Self.Kind {
 			case core.ModuleSourceKindLocal:
 				// parent=git, dep=local
-				return genDirInst, fmt.Errorf("cannot add local module source as dependency of git module source")
+				return nil, fmt.Errorf("cannot add local module source as dependency of git module source")
 
 			case core.ModuleSourceKindGit:
 				// parent=git, dep=git
 				// check if the dep is the same git repo + pin as the parent, if so make it a local dep
-				if srcInst.Self.Git.CloneRef == depSrc.Self.Git.CloneRef && srcInst.Self.Git.Pin == depSrc.Self.Git.Pin {
+				if src.Git.CloneRef == depSrc.Self.Git.CloneRef && src.Git.Pin == depSrc.Self.Git.Pin {
 					parentSrcRoot := filepath.Join("/", src.SourceRootSubpath)
 					depSrcRoot := filepath.Join("/", depSrc.Self.SourceRootSubpath)
 					depSrcRoot, err := pathutil.LexicalRelativePath(parentSrcRoot, depSrcRoot)
 					if err != nil {
-						return genDirInst, fmt.Errorf("failed to get relative path: %w", err)
+						return nil, fmt.Errorf("failed to get relative path: %w", err)
 					}
 					depCfg.Source = depSrcRoot
 				} else {
@@ -1807,7 +1805,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 				}
 
 			default:
-				return genDirInst, fmt.Errorf("unhandled module source kind: %s", srcInst.Self.Kind.HumanString())
+				return nil, fmt.Errorf("unhandled module source kind: %s", src.Kind.HumanString())
 			}
 
 		case core.ModuleSourceKindDir:
@@ -1822,7 +1820,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 				depSrcRoot := filepath.Join("/", depSrc.Self.SourceRootSubpath)
 				depSrcRoot, err := pathutil.LexicalRelativePath(parentSrcRoot, depSrcRoot)
 				if err != nil {
-					return genDirInst, fmt.Errorf("failed to get relative path: %w", err)
+					return nil, fmt.Errorf("failed to get relative path: %w", err)
 				}
 				depCfg.Source = depSrcRoot
 
@@ -1834,25 +1832,30 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 			default:
 				// Local not supported since there's nothing we could plausibly put in the dagger.json for
 				// a Dir-kind module source to depend on a Local-kind module source
-				return genDirInst, fmt.Errorf("parent module source kind %s cannot have dependency of kind %s",
-					srcInst.Self.Kind.HumanString(),
+				return nil, fmt.Errorf("parent module source kind %s cannot have dependency of kind %s",
+					src.Kind.HumanString(),
 					depSrc.Self.Kind.HumanString(),
 				)
 			}
 
 		default:
-			return genDirInst, fmt.Errorf("unhandled module source kind: %s", srcInst.Self.Kind.HumanString())
+			return nil, fmt.Errorf("unhandled module source kind: %s", src.Kind.HumanString())
 		}
 	}
 
-	// run codegen too if we have a name and SDK
-	genDirInst = src.ContextDirectory
-	if modCfg.Name != "" && modCfg.SDK != nil && modCfg.SDK.Source != "" {
-		// load the deps as actual Modules
-		deps, err := s.loadDependencyModules(ctx, srcInst.Self)
-		if err != nil {
-			return genDirInst, fmt.Errorf("failed to load dependencies as modules: %w", err)
-		}
+	return modCfg, nil
+}
+
+func (s *moduleSourceSchema) runCodegen(
+	ctx context.Context,
+	srcInst dagql.Instance[*core.ModuleSource],
+	genDirInst dagql.Instance[*core.Directory],
+) (dagql.Instance[*core.Directory], error) {
+	// load the deps as actual Modules
+	deps, err := s.loadDependencyModules(ctx, srcInst.Self)
+	if err != nil {
+		return genDirInst, fmt.Errorf("failed to load dependencies as modules: %w", err)
+	}
 
 		// cache the current source instance by it's digest before passing to codegen
 		// this scopes the cache key of codegen calls to an exact content hash detached
@@ -1863,187 +1866,225 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 		}
 		srcInstContentHashed := srcInst.WithDigest(digest.Digest(srcInst.Self.Digest))
 
-		// run codegen to get the generated context directory
-		generatedCode, err := srcInst.Self.SDKImpl.Codegen(ctx, deps, srcInstContentHashed)
+	// run codegen to get the generated context directory
+	generatedCode, err := srcInst.Self.SDKImpl.Codegen(ctx, deps, srcInstContentHashed)
+	if err != nil {
+		return genDirInst, fmt.Errorf("failed to generate code: %w", err)
+	}
+	genDirInst = generatedCode.Code
+
+	// update .gitattributes in the generated context directory
+	// (linter thinks this chunk of code is too similar to the below, but not clear abstraction is worth it)
+	//nolint:dupl
+	if len(generatedCode.VCSGeneratedPaths) > 0 {
+		gitAttrsPath := filepath.Join(srcInst.Self.SourceSubpath, ".gitattributes")
+		var gitAttrsContents []byte
+		gitAttrsFile, err := srcInst.Self.ContextDirectory.Self.File(ctx, gitAttrsPath)
+		if err == nil {
+			gitAttrsContents, err = gitAttrsFile.Contents(ctx)
+			if err != nil {
+				return genDirInst, fmt.Errorf("failed to get git attributes file contents: %w", err)
+			}
+			if !bytes.HasSuffix(gitAttrsContents, []byte("\n")) {
+				gitAttrsContents = append(gitAttrsContents, []byte("\n")...)
+			}
+		}
+		for _, fileName := range generatedCode.VCSGeneratedPaths {
+			if bytes.Contains(gitAttrsContents, []byte(fileName)) {
+				// already has some config for the file
+				continue
+			}
+			fileName := strings.TrimPrefix(fileName, "/")
+			gitAttrsContents = append(gitAttrsContents,
+				[]byte(fmt.Sprintf("/%s linguist-generated\n", fileName))...,
+			)
+		}
+
+		err = s.dag.Select(ctx, genDirInst, &genDirInst,
+			dagql.Selector{
+				Field: "withNewFile",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(gitAttrsPath)},
+					{Name: "contents", Value: dagql.String(gitAttrsContents)},
+					{Name: "permissions", Value: dagql.Int(0o600)},
+				},
+			},
+		)
 		if err != nil {
-			return genDirInst, fmt.Errorf("failed to generate code: %w", err)
+			return genDirInst, fmt.Errorf("failed to add vcs generated file: %w", err)
 		}
-		genDirInst = generatedCode.Code
+	}
 
-		// update .gitattributes in the generated context directory
-		// (linter thinks this chunk of code is too similar to the below, but not clear abstraction is worth it)
-		//nolint:dupl
-		if len(generatedCode.VCSGeneratedPaths) > 0 {
-			gitAttrsPath := filepath.Join(srcInst.Self.SourceSubpath, ".gitattributes")
-			var gitAttrsContents []byte
-			gitAttrsFile, err := srcInst.Self.ContextDirectory.Self.File(ctx, gitAttrsPath)
-			if err == nil {
-				gitAttrsContents, err = gitAttrsFile.Contents(ctx)
-				if err != nil {
-					return genDirInst, fmt.Errorf("failed to get git attributes file contents: %w", err)
-				}
-				if !bytes.HasSuffix(gitAttrsContents, []byte("\n")) {
-					gitAttrsContents = append(gitAttrsContents, []byte("\n")...)
-				}
-			}
-			for _, fileName := range generatedCode.VCSGeneratedPaths {
-				if bytes.Contains(gitAttrsContents, []byte(fileName)) {
-					// already has some config for the file
-					continue
-				}
-				fileName := strings.TrimPrefix(fileName, "/")
-				gitAttrsContents = append(gitAttrsContents,
-					[]byte(fmt.Sprintf("/%s linguist-generated\n", fileName))...,
-				)
-			}
-
-			err = s.dag.Select(ctx, genDirInst, &genDirInst,
-				dagql.Selector{
-					Field: "withNewFile",
-					Args: []dagql.NamedInput{
-						{Name: "path", Value: dagql.String(gitAttrsPath)},
-						{Name: "contents", Value: dagql.String(gitAttrsContents)},
-						{Name: "permissions", Value: dagql.Int(0o600)},
-					},
-				},
-			)
+	// update .gitignore in the generated context directory
+	writeGitignore := true // default to true if not set
+	if srcInst.Self.CodegenConfig != nil && srcInst.Self.CodegenConfig.AutomaticGitignore != nil {
+		writeGitignore = *srcInst.Self.CodegenConfig.AutomaticGitignore
+	}
+	// (linter thinks this chunk of code is too similar to the above, but not clear abstraction is worth it)
+	//nolint:dupl
+	if writeGitignore && len(generatedCode.VCSIgnoredPaths) > 0 {
+		gitIgnorePath := filepath.Join(srcInst.Self.SourceSubpath, ".gitignore")
+		var gitIgnoreContents []byte
+		gitIgnoreFile, err := srcInst.Self.ContextDirectory.Self.File(ctx, gitIgnorePath)
+		if err == nil {
+			gitIgnoreContents, err = gitIgnoreFile.Contents(ctx)
 			if err != nil {
-				return genDirInst, fmt.Errorf("failed to add vcs generated file: %w", err)
+				return genDirInst, fmt.Errorf("failed to get .gitignore file contents: %w", err)
+			}
+			if !bytes.HasSuffix(gitIgnoreContents, []byte("\n")) {
+				gitIgnoreContents = append(gitIgnoreContents, []byte("\n")...)
 			}
 		}
-
-		// update .gitignore in the generated context directory
-		writeGitignore := true // default to true if not set
-		if srcInst.Self.CodegenConfig != nil && srcInst.Self.CodegenConfig.AutomaticGitignore != nil {
-			writeGitignore = *srcInst.Self.CodegenConfig.AutomaticGitignore
-		}
-		// (linter thinks this chunk of code is too similar to the above, but not clear abstraction is worth it)
-		//nolint:dupl
-		if writeGitignore && len(generatedCode.VCSIgnoredPaths) > 0 {
-			gitIgnorePath := filepath.Join(srcInst.Self.SourceSubpath, ".gitignore")
-			var gitIgnoreContents []byte
-			gitIgnoreFile, err := srcInst.Self.ContextDirectory.Self.File(ctx, gitIgnorePath)
-			if err == nil {
-				gitIgnoreContents, err = gitIgnoreFile.Contents(ctx)
-				if err != nil {
-					return genDirInst, fmt.Errorf("failed to get .gitignore file contents: %w", err)
-				}
-				if !bytes.HasSuffix(gitIgnoreContents, []byte("\n")) {
-					gitIgnoreContents = append(gitIgnoreContents, []byte("\n")...)
-				}
+		for _, fileName := range generatedCode.VCSIgnoredPaths {
+			if bytes.Contains(gitIgnoreContents, []byte(fileName)) {
+				continue
 			}
-			for _, fileName := range generatedCode.VCSIgnoredPaths {
-				if bytes.Contains(gitIgnoreContents, []byte(fileName)) {
-					continue
-				}
-				fileName := strings.TrimPrefix(fileName, "/")
-				gitIgnoreContents = append(gitIgnoreContents,
-					[]byte(fmt.Sprintf("/%s\n", fileName))...,
-				)
-			}
-
-			err = s.dag.Select(ctx, genDirInst, &genDirInst,
-				dagql.Selector{
-					Field: "withNewFile",
-					Args: []dagql.NamedInput{
-						{Name: "path", Value: dagql.String(gitIgnorePath)},
-						{Name: "contents", Value: dagql.String(gitIgnoreContents)},
-						{Name: "permissions", Value: dagql.Int(0o600)},
-					},
-				},
+			fileName := strings.TrimPrefix(fileName, "/")
+			gitIgnoreContents = append(gitIgnoreContents,
+				[]byte(fmt.Sprintf("/%s\n", fileName))...,
 			)
-			if err != nil {
-				return genDirInst, fmt.Errorf("failed to add vcs ignore file: %w", err)
-			}
+		}
+
+		err = s.dag.Select(ctx, genDirInst, &genDirInst,
+			dagql.Selector{
+				Field: "withNewFile",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(gitIgnorePath)},
+					{Name: "contents", Value: dagql.String(gitIgnoreContents)},
+					{Name: "permissions", Value: dagql.Int(0o600)},
+				},
+			},
+		)
+		if err != nil {
+			return genDirInst, fmt.Errorf("failed to add vcs ignore file: %w", err)
+		}
+	}
+
+	return genDirInst, nil
+}
+
+func (s *moduleSourceSchema) runClientGenerator(
+	ctx context.Context,
+	srcInst dagql.Instance[*core.ModuleSource],
+	genDirInst dagql.Instance[*core.Directory],
+	clientGeneratorConfig *modules.ModuleConfigClient,
+) (dagql.Instance[*core.Directory], error) {
+	src := srcInst.Self
+
+	generator, err := newSDKLoader(s.dag).sdkForModule(
+		ctx,
+		src.Query,
+		&core.SDKConfig{
+			Source: clientGeneratorConfig.Generator,
+		},
+		src,
+	)
+	if err != nil {
+		return genDirInst, fmt.Errorf("failed to load generator module %s: %w", clientGeneratorConfig.Generator, err)
+	}
+
+	requiredClientGenerationFiles, err := generator.RequiredClientGenerationFiles(ctx)
+	if err != nil {
+		return genDirInst, fmt.Errorf("failed to get required client generation files: %w", err)
+	}
+
+	// Add extra files required to correctly generate the client
+	var source dagql.Instance[*core.ModuleSource]
+	err = s.dag.Select(ctx, srcInst, &source, dagql.Selector{
+		Field: "withIncludes",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "patterns",
+				Value: dagql.ArrayInput[dagql.String](requiredClientGenerationFiles),
+			},
+		},
+	})
+	if err != nil {
+		return genDirInst, fmt.Errorf("failed to add module source required files: %w", err)
+	}
+
+	deps, err := s.loadDependencyModules(ctx, srcInst.Self)
+	if err != nil {
+		return genDirInst, fmt.Errorf("failed to load dependencies of this modules: %w", err)
+	}
+
+	// If the current module source has sources, we can transform it into a module
+	// to generate self bindings.
+	if srcInst.Self.SDK != nil {
+		var mod dagql.Instance[*core.Module]
+		err = s.dag.Select(ctx, srcInst, &mod, dagql.Selector{
+			Field: "asModule",
+		})
+		if err != nil {
+			return genDirInst, fmt.Errorf("failed to transform module source into module: %w", err)
+		}
+
+		deps = mod.Self.Deps.Append(mod.Self)
+	}
+
+	dev := dagql.Boolean(false)
+	if clientGeneratorConfig.Dev != nil {
+		dev = dagql.Boolean(*clientGeneratorConfig.Dev)
+	}
+
+	generatedClientDir, err := generator.GenerateClient(
+		ctx,
+		source,
+		deps,
+		clientGeneratorConfig.Directory,
+		dev.Bool(),
+	)
+	if err != nil {
+		return genDirInst, fmt.Errorf("failed to generate clients: %w", err)
+	}
+
+	// Merge the generated client to the current generated instance
+	err = s.dag.Select(ctx, genDirInst, &genDirInst,
+		dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.String("/"),
+				},
+				{
+					Name:  "directory",
+					Value: dagql.NewID[*core.Directory](generatedClientDir.ID()),
+				},
+			},
+		})
+	if err != nil {
+		return genDirInst, fmt.Errorf("failed to add client generated to generated directory: %w", err)
+	}
+
+	return genDirInst, nil
+}
+
+//nolint:gocyclo
+func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
+	ctx context.Context,
+	srcInst dagql.Instance[*core.ModuleSource],
+	args struct{},
+) (genDirInst dagql.Instance[*core.Directory], err error) {
+	modCfg, err := s.loadModuleSourceConfig(srcInst.Self)
+	if err != nil {
+		return genDirInst, fmt.Errorf("failed to load module source config: %w", err)
+	}
+
+	// run codegen too if we have a name and SDK
+	genDirInst = srcInst.Self.ContextDirectory
+	if modCfg.Name != "" && modCfg.SDK != nil && modCfg.SDK.Source != "" {
+		genDirInst, err = s.runCodegen(ctx, srcInst, genDirInst)
+		if err != nil {
+			return genDirInst, fmt.Errorf("failed to run codegen: %w", err)
 		}
 	}
 
 	// Generate clients
 	for _, client := range modCfg.Clients {
-		generator, err := newSDKLoader(s.dag).sdkForModule(
-			ctx,
-			src.Query,
-			&core.SDKConfig{
-				Source: client.Generator,
-			},
-			src,
-		)
+		genDirInst, err = s.runClientGenerator(ctx, srcInst, genDirInst, client)
 		if err != nil {
-			return genDirInst, fmt.Errorf("failed to load generator module %s: %w", client.Generator, err)
-		}
-
-		requiredClientGenerationFiles, err := generator.RequiredClientGenerationFiles(ctx)
-		if err != nil {
-			return genDirInst, fmt.Errorf("failed to get required client generation files: %w", err)
-		}
-
-		// Add extra files required to correctly generate the client
-		var source dagql.Instance[*core.ModuleSource]
-		err = s.dag.Select(ctx, srcInst, &source, dagql.Selector{
-			Field: "withIncludes",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "patterns",
-					Value: dagql.ArrayInput[dagql.String](requiredClientGenerationFiles),
-				},
-			},
-		})
-		if err != nil {
-			return genDirInst, fmt.Errorf("failed to add module source required files: %w", err)
-		}
-
-		deps, err := s.loadDependencyModules(ctx, srcInst.Self)
-		if err != nil {
-			return genDirInst, fmt.Errorf("failed to load dependencies of this modules: %w", err)
-		}
-
-		// If the current module source has sources, we can transform it into a module
-		// to generate self bindings.
-		if srcInst.Self.SDK != nil {
-			var mod dagql.Instance[*core.Module]
-			err = s.dag.Select(ctx, srcInst, &mod, dagql.Selector{
-				Field: "asModule",
-			})
-			if err != nil {
-				return genDirInst, fmt.Errorf("failed to transform module source into module: %w", err)
-			}
-
-			deps = mod.Self.Deps.Append(mod.Self)
-		}
-
-		dev := dagql.Boolean(false)
-		if client.Dev != nil {
-			dev = dagql.Boolean(*client.Dev)
-		}
-
-		generatedClientDir, err := generator.GenerateClient(
-			ctx,
-			source,
-			deps,
-			client.Directory,
-			dev.Bool(),
-		)
-		if err != nil {
-			return genDirInst, fmt.Errorf("failed to generate clients: %w", err)
-		}
-
-		// Merge the generated client to the current generated instance
-		err = s.dag.Select(ctx, genDirInst, &genDirInst,
-			dagql.Selector{
-				Field: "withDirectory",
-				Args: []dagql.NamedInput{
-					{
-						Name:  "path",
-						Value: dagql.String("/"),
-					},
-					{
-						Name:  "directory",
-						Value: dagql.NewID[*core.Directory](generatedClientDir.ID()),
-					},
-				},
-			})
-		if err != nil {
-			return genDirInst, fmt.Errorf("failed to add client generated to generated directory: %w", err)
+			return genDirInst, fmt.Errorf("failed to run client generator %s: %w", client.Generator, err)
 		}
 	}
 
@@ -2053,7 +2094,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 		return genDirInst, fmt.Errorf("failed to encode module config: %w", err)
 	}
 	modCfgBytes = append(modCfgBytes, '\n')
-	modCfgPath := filepath.Join(src.SourceRootSubpath, modules.Filename)
+	modCfgPath := filepath.Join(srcInst.Self.SourceRootSubpath, modules.Filename)
 	err = s.dag.Select(ctx, genDirInst, &genDirInst,
 		dagql.Selector{
 			Field: "withNewFile",
@@ -2069,7 +2110,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 	}
 
 	// return just the diff of what we generated relative to the original context directory
-	err = s.dag.Select(ctx, src.ContextDirectory, &genDirInst,
+	err = s.dag.Select(ctx, srcInst.Self.ContextDirectory, &genDirInst,
 		dagql.Selector{
 			Field: "diff",
 			Args: []dagql.NamedInput{
