@@ -384,10 +384,8 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 
 		if fe.msgPreFinalRender.Len() > 0 {
 			defer func() {
-				if fe.shell == nil {
-					// shell already prints blank line as it flushes
-					fmt.Fprintln(os.Stderr)
-				}
+				// shell already prints blank line as it flushes
+				fmt.Fprintln(os.Stderr)
 				fmt.Fprintln(os.Stderr, fe.msgPreFinalRender.String())
 			}()
 		}
