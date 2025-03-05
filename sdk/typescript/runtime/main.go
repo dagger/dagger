@@ -647,7 +647,7 @@ func (t *TypescriptSdk) installDependencies(ctr *dagger.Container) (*dagger.Cont
 			WithExec([]string{"npm", "ci"}), nil
 	case BunManager:
 		return ctr.
-			WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--frozen-lockfile"}), nil
+			WithExec([]string{"bun", "install", "--no-verify", "--no-progress"}), nil
 	default:
 		return nil, fmt.Errorf("detected unknown package manager: %s", t.moduleConfig.packageManager)
 	}
