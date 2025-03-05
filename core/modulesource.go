@@ -282,7 +282,7 @@ func (src *ModuleSource) CalcDigest() digest.Digest {
 			inputs = append(inputs, fmt.Sprintf("%t", *client.Dev))
 		}
 	}
-	
+
 	return dagql.HashFrom(inputs...)
 }
 
