@@ -544,6 +544,19 @@ defmodule Dagger.Client do
     }
   end
 
+  @doc "Load a ModuleConfigClient from its ID."
+  @spec load_module_config_client_from_id(t(), Dagger.ModuleConfigClientID.t()) ::
+          Dagger.ModuleConfigClient.t()
+  def load_module_config_client_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadModuleConfigClientFromID") |> QB.put_arg("id", id)
+
+    %Dagger.ModuleConfigClient{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
   @doc "Load a Module from its ID."
   @spec load_module_from_id(t(), Dagger.ModuleID.t()) :: Dagger.Module.t()
   def load_module_from_id(%__MODULE__{} = client, id) do

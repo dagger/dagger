@@ -54,9 +54,9 @@ type Config struct {
 	// ClientOnly indicates that the codegen should only generate the client code.
 	ClientOnly bool
 
-	// LocalSDK indicates that the codegen should use the local SDK instead of the published one.
+	// Dev indicates that the codegen should use the local SDK instead of the published one.
 	// This is only relevant when ClientOnly is true.
-	LocalSDK bool
+	Dev bool
 }
 
 type Generator interface {

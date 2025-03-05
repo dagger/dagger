@@ -173,7 +173,7 @@ func (t *TypescriptSdk) GenerateClient(
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
 	outputDir string,
-	useLocalSdk bool,
+	dev bool,
 ) (*dagger.Directory, error) {
 	workdirPath := "/module"
 
@@ -181,8 +181,6 @@ func (t *TypescriptSdk) GenerateClient(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module source root subpath: %w", err)
 	}
-
-	curentModuleDirectory := modSource.ContextDirectory().Directory(currentModuleDirectoryPath)
 
 	ctr := dag.Container().
 		From(tsdistconsts.DefaultNodeImageRef).
@@ -197,36 +195,35 @@ func (t *TypescriptSdk) GenerateClient(
 		WithExec([]string{"ln", "-s", "/usr/local/lib/node_modules/tsx/dist/cli.mjs", "/usr/local/bin/tsx"}).
 		// Add dagger codegen binary.
 		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
-		WithDirectory("/ctx", modSource.ContextDirectory()).
 		// Mount the introspection file.
 		WithMountedFile(schemaPath, introspectionJSON).
 		// Mount the current module directory.
-		WithDirectory(workdirPath, curentModuleDirectory).
-		WithWorkdir(workdirPath).
+		WithDirectory(workdirPath, modSource.ContextDirectory()).
+		WithWorkdir(filepath.Join(workdirPath, currentModuleDirectoryPath)).
 		// Execute the code generator using the given introspection file.
 		WithExec([]string{
 			codegenBinPath,
 			"--lang", "typescript",
 			"--output", outputDir,
 			"--introspection-json-path", schemaPath,
-			fmt.Sprintf("--local-sdk=%t", useLocalSdk),
+			fmt.Sprintf("--dev=%t", dev),
 			"--client-only",
 		}, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 
-	if useLocalSdk {
+	if dev {
 		ctr = ctr.WithDirectory("./sdk", t.SDKSourceDir.
 			WithoutDirectory("codegen").
 			WithoutDirectory("runtime").
 			WithoutDirectory("tsx_module"),
 		).
 			WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=./sdk"}).
-			WithExec([]string{"tsx", "/opt/__tsclientconfig.updator.ts", "--local-sdk=true", fmt.Sprintf("--library-dir=%s", outputDir)})
+			WithExec([]string{"tsx", "/opt/__tsclientconfig.updator.ts", "--dev=true", fmt.Sprintf("--library-dir=%s", outputDir)})
 	} else {
 		ctr = ctr.
 			WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=@dagger.io/dagger"}).
-			WithExec([]string{"tsx", "/opt/__tsclientconfig.updator.ts", "--local-sdk=false", fmt.Sprintf("--library-dir=%s", outputDir)})
+			WithExec([]string{"tsx", "/opt/__tsclientconfig.updator.ts", "--dev=false", fmt.Sprintf("--library-dir=%s", outputDir)})
 	}
 
 	return dag.Directory().WithDirectory("/", ctr.Directory(workdirPath)), nil
