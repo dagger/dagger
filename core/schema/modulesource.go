@@ -1316,7 +1316,7 @@ func (s *moduleSourceSchema) moduleSourceRepoRootPath(
 func (s *moduleSourceSchema) introspectionJSONFile(
 	ctx context.Context,
 	src dagql.Instance[*core.ModuleSource],
-	args struct{
+	args struct {
 		IncludeSelf dagql.Optional[dagql.Boolean]
 	},
 ) (*core.File, error) {
