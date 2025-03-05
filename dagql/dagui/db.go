@@ -145,12 +145,17 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 }
 
 func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
-	for _, snapshot := range snapshots {
+	spans := make([]*Span, len(snapshots))
+	for i, snapshot := range snapshots {
 		span := db.findOrAllocSpan(snapshot.ID)
 		span.Received = true
 		snapshot.Version += span.Version // don't reset the version
 		span.SpanSnapshot = snapshot
 		db.integrateSpan(span)
+		spans[i] = span
+	}
+	for _, span := range spans {
+		span.PropagateStatusToParentsAndLinks()
 	}
 }
 
@@ -212,9 +217,13 @@ func (db *DB) RemainingSnapshots() []SpanSnapshot {
 
 var _ sdktrace.SpanExporter = (*DB)(nil)
 
-func (db *DB) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
+func (db *DB) ExportSpans(ctx context.Context, otelSpans []sdktrace.ReadOnlySpan) error {
+	spans := make([]*Span, len(otelSpans))
+	for i, otelSpan := range otelSpans {
+		spans[i] = db.recordOTelSpan(otelSpan)
+	}
 	for _, span := range spans {
-		db.recordOTelSpan(span)
+		span.PropagateStatusToParentsAndLinks()
 	}
 	return nil
 }
@@ -360,7 +369,7 @@ func (db *DB) newSpan(spanID SpanID) *Span {
 	}
 }
 
-func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) {
+func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) *Span {
 	spanID := SpanID{span.SpanContext().SpanID()}
 
 	// mark the span as updated so we sync it to the frontend,
@@ -400,6 +409,7 @@ func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) {
 
 	// integrate the span's data into the DB's live objects
 	db.integrateSpan(spanData)
+	return spanData
 }
 
 type Activity struct {
@@ -704,9 +714,6 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		}
 		db.CauseSpans[id].Add(span)
 	}
-
-	// update span states, propagating them up through parents, too
-	span.PropagateStatusToParentsAndLinks()
 
 	// finally, install the span if we don't already have it
 	//
