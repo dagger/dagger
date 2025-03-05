@@ -7,14 +7,23 @@ import (
 )
 
 type Cache[K comparable, V any] interface {
+	// Using the given key, either return an already cached value for that key or initialize
+	// an entry in the cache with the given value for that key.
 	GetOrInitializeValue(context.Context, K, V) (Result[K, V], error)
 
+	// Using the given key, either return an already cached value for that key or initialize a
+	// new value using the given function. If the function returns an error, the error is returned.
 	GetOrInitialize(
 		context.Context,
 		K,
 		func(context.Context) (V, error),
 	) (Result[K, V], error)
 
+	// Using the given key, either return an already cached value for that key or initialize a
+	// new value using the given function. If the function returns an error, the error is returned.
+	// The function can also return an optional post call function that will be set on the returned
+	// result so callers of this function can call it when post-processing of all results (cached or
+	// not) is needed.
 	GetOrInitializeWithPostCall(
 		context.Context,
 		K,
