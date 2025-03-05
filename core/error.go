@@ -3,7 +3,7 @@ package core
 import "github.com/vektah/gqlparser/v2/ast"
 
 type Error struct {
-	Query *Query `json:"-"`
+	Query *Query
 
 	Message string `field:"true" doc:"A description of the error."`
 

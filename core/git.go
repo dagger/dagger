@@ -15,18 +15,18 @@ import (
 type GitRepository struct {
 	Query *Query
 
-	URL string `json:"url"`
+	URL string
 
-	DiscardGitDir bool `json:"discardGitDir"`
+	DiscardGitDir bool
 
-	SSHKnownHosts string  `json:"sshKnownHosts"`
-	SSHAuthSocket *Socket `json:"sshAuthSocket"`
+	SSHKnownHosts string
+	SSHAuthSocket *Socket
 
-	Services ServiceBindings `json:"services"`
-	Platform Platform        `json:"platform,omitempty"`
+	Services ServiceBindings
+	Platform Platform
 
-	AuthToken  *Secret `json:"authToken"`
-	AuthHeader *Secret `json:"authHeader"`
+	AuthToken  *Secret
+	AuthHeader *Secret
 }
 
 func (*GitRepository) Type() *ast.Type {
@@ -43,8 +43,8 @@ func (*GitRepository) TypeDescription() string {
 type GitRef struct {
 	Query *Query
 
-	Ref  string         `json:"ref"`
-	Repo *GitRepository `json:"repository"`
+	Ref  string
+	Repo *GitRepository
 }
 
 func (*GitRef) Type() *ast.Type {
