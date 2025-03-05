@@ -19,6 +19,9 @@ var (
 func init() {
 	clientAddCmd.Flags().StringVar(&generator, "generator", "", "Generator to use to generate the client")
 	clientAddCmd.Flags().BoolVar(&dev, "dev", false, "Generate in developer mode")
+
+	// Hide `dev` flag since it's only for maintainers.
+	_ = clientAddCmd.Flags().MarkHidden("dev")
 }
 
 var clientAddCmd = &cobra.Command{
