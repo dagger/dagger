@@ -7,7 +7,9 @@ import (
 
 	"github.com/containerd/containerd/content"
 	bkclient "github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/util/leaseutil"
+	"github.com/moby/locker"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/trace"
 
@@ -88,6 +90,9 @@ type Server interface {
 	// The content store for the engine as a whole
 	OCIStore() content.Store
 
+	// The dns configuration for the engine as a whole
+	DNS() *oci.DNSConfig
+
 	// The lease manager for the engine as a whole
 	LeaseManager() *leaseutil.Manager
 
@@ -99,6 +104,9 @@ type Server interface {
 
 	// The default local cache policy to use for automatic local cache GC.
 	EngineLocalCachePolicy() *bkclient.PruneInfo
+
+	// XXX: doc
+	Locker() *locker.Locker
 }
 
 func NewRoot(srv Server) *Query {
