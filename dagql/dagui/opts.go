@@ -73,6 +73,9 @@ func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
 		// debug reveals all
 		return true
 	}
+	if span.Reveal {
+		return true
+	}
 	if opts.FocusedSpan == span.ID {
 		// prevent focused span from disappearing
 		return true

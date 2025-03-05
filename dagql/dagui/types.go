@@ -83,6 +83,17 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	return view
 }
 
+// break glass
+// var dbg *log.Logger
+
+// func init() {
+// 	f, err := os.Create("/tmp/llm.log")
+// 	if err != nil {
+// 		log.Fatal(err)
+// 	}
+// 	dbg = log.New(f, "", 0)
+// }
+
 func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceTree)) {
 	var lastTree *TraceTree
 	seen := make(map[SpanID]bool)
@@ -159,7 +170,16 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 		if verbosity < ShowSpammyVerbosity {
 			// Process revealed spans before normal children
 			for _, revealed := range span.RevealedSpans.Order {
-				walk(revealed, tree)
+				if revealed.Passthrough {
+					for _, child := range revealed.ChildSpans.Order {
+						// HACK: it's hacky to mutate the span snapshot directly here, the intent
+						// is for ShouldShow to pick it up.
+						child.Reveal = true
+						walk(child, tree)
+					}
+				} else {
+					walk(revealed, tree)
+				}
 				tree.RevealedChildren = true
 			}
 		}
