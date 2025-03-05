@@ -30,6 +30,8 @@ func TestGit(t *testing.T) {
 func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
+	// XXX: add test to check branches/tags/states are clean
+
 	testGitCheckout := func(ctx context.Context, t *testctx.T, git *dagger.GitRepository) {
 		// head
 		byHead := git.Head()
@@ -54,6 +56,15 @@ func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "9ea5ea7c848fef2a2c47cce0716d5fcb8d6bedeb", commit)
 		readme, err = byTag.Tree().File("README.md").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, readme, "Dagger")
+
+		// v0.6.1 (annotated tag)
+		byAnnotatedTag := git.Tag("v0.6.1")
+		commit, err = byAnnotatedTag.Commit(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "6ed6264f1c4efbf84d310a104b57ef1bc57d57b0", commit)
+		readme, err = byAnnotatedTag.Tree().File("README.md").Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, readme, "Dagger")
 
@@ -90,7 +101,12 @@ func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {
 		// tags
 		tags, err := git.Tags(ctx)
 		require.NoError(t, err)
-		require.Subset(t, tags, []string{"v0.14.0", "v0.15.0"})
+		require.Subset(t, tags, []string{
+			// tags
+			"v0.14.0", "v0.15.0",
+			// annotated tags
+			"v0.6.1",
+		})
 	}
 
 	t.Run("remote", func(ctx context.Context, t *testctx.T) {
