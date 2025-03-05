@@ -6096,6 +6096,12 @@ pub struct ModuleSourceGenerateClientOpts {
     #[builder(setter(into, strip_option), default)]
     pub local_sdk: Option<bool>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleSourceIntrospectionJsonFileOpts {
+    /// Include the schema of the current module in the result
+    #[builder(setter(into, strip_option), default)]
+    pub include_self: Option<bool>,
+}
 impl ModuleSource {
     /// Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
     pub fn as_module(&self) -> Module {
@@ -6237,6 +6243,38 @@ impl ModuleSource {
     pub async fn id(&self) -> Result<ModuleSourceId, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// A JSON file of the GraphQL schema of every dependencies installed in this module
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn introspection_json_file(&self) -> File {
+        let query = self.selection.select("introspectionJSONFile");
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// A JSON file of the GraphQL schema of every dependencies installed in this module
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn introspection_json_file_opts(
+        &self,
+        opts: ModuleSourceIntrospectionJsonFileOpts,
+    ) -> File {
+        let mut query = self.selection.select("introspectionJSONFile");
+        if let Some(include_self) = opts.include_self {
+            query = query.arg("includeSelf", include_self);
+        }
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// The kind of module source (currently local, git or dir).
     pub async fn kind(&self) -> Result<ModuleSourceKind, DaggerError> {
