@@ -500,7 +500,7 @@ func (r Instance[T]) call(
 	if doNotCache {
 		callCacheKey = ""
 	}
-	val, _, postCall, err := s.Cache.GetOrInitializeWithPostCall(ctx, callCacheKey, func(ctx context.Context) (innerVal Typed, postCall func(context.Context) error, innerErr error) {
+	res, err := s.Cache.GetOrInitializeWithPostCall(ctx, callCacheKey, func(ctx context.Context) (innerVal Typed, postCall func(context.Context) error, innerErr error) {
 		if s.telemetry != nil {
 			wrappedCtx, done := s.telemetry(ctx, r, newID)
 			defer func() { done(innerVal, false, innerErr) }()
@@ -541,11 +541,10 @@ func (r Instance[T]) call(
 	if err != nil {
 		return nil, nil, err
 	}
-	if postCall != nil {
-		if err := postCall(ctx); err != nil {
-			return nil, nil, fmt.Errorf("post-call error: %w", err)
-		}
+	if err := res.PostCall(ctx); err != nil {
+		return nil, nil, fmt.Errorf("post-call error: %w", err)
 	}
+	val := res.Result()
 
 	// If the returned val is IDable and has a different digest than the original, then
 	// add that different digest as a cache key for this val.
@@ -565,7 +564,7 @@ func (r Instance[T]) call(
 
 		if digestChanged && matchesType {
 			newID = valID
-			_, _, err := s.Cache.GetOrInitializeValue(ctx, valID.Digest(), val)
+			_, err := s.Cache.GetOrInitializeValue(ctx, valID.Digest(), val)
 			if err != nil {
 				return nil, nil, err
 			}
