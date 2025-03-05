@@ -19,6 +19,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/opencontainers/go-digest"
@@ -113,7 +114,7 @@ func (s *moduleSourceSchema) Install() {
 		dagql.Func("localContextDirectoryPath", s.moduleSourceLocalContextDirectoryPath).
 			Doc(`The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.`),
 
-		dagql.NodeFunc("asModule", s.moduleSourceAsModule).
+		dagql.NodeFuncWithCacheKey("asModule", s.moduleSourceAsModule, s.moduleSourceAsModuleCacheKey).
 			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`),
 
 		dagql.Func("directory", s.moduleSourceDirectory).
@@ -936,7 +937,7 @@ func resolveDepToSource(
 			}
 			err = dag.Select(ctx, dag.Root(), &inst, selectors...)
 			if err != nil {
-				if errors.Is(err, dagql.ErrCacheMapRecursiveCall) {
+				if errors.Is(err, cache.ErrCacheRecursiveCall) {
 					return inst, fmt.Errorf("module %q has a circular dependency on itself through dependency %q", parentSrc.ModuleName, depName)
 				}
 				return inst, fmt.Errorf("failed to load local dep: %w", err)
@@ -1853,7 +1854,7 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 		// cache the current source instance by it's digest before passing to codegen
 		// this scopes the cache key of codegen calls to an exact content hash detached
 		// from irrelevant details like specific host paths, specific git repos+commits, etc.
-		_, _, err = s.dag.Cache.GetOrInitializeValue(ctx, digest.Digest(srcInst.Self.Digest), srcInst)
+		_, err = s.dag.Cache.GetOrInitializeValue(ctx, digest.Digest(srcInst.Self.Digest), srcInst)
 		if err != nil {
 			return genDirInst, fmt.Errorf("failed to get or initialize instance: %w", err)
 		}
@@ -1991,6 +1992,22 @@ func (s *moduleSourceSchema) moduleSourceGeneratedContextDirectory(
 	return genDirInst, nil
 }
 
+func (s *moduleSourceSchema) moduleSourceAsModuleCacheKey(
+	ctx context.Context,
+	src dagql.Instance[*core.ModuleSource],
+	args struct{},
+	cacheCfg dagql.CacheConfig,
+) (*dagql.CacheConfig, error) {
+	// TODO: this works just fine, but feels fiddly to use a string inline,
+	// Would benefit from some standard re-usable util to ensure future uses
+	// are consistent and correct. e.g. this works cause no args, but other
+	// uses should digest the args too
+
+	// TODO: doc why
+	cacheCfg.Digest = dagql.HashFrom(src.Self.Digest, "asModule")
+	return &cacheCfg, nil
+}
+
 func (s *moduleSourceSchema) moduleSourceAsModule(
 	ctx context.Context,
 	src dagql.Instance[*core.ModuleSource],
@@ -2029,7 +2046,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	// cache the current source instance by it's digest before passing to codegen
 	// this scopes the cache key of codegen calls to an exact content hash detached
 	// from irrelevant details like specific host paths, specific git repos+commits, etc.
-	_, _, err = s.dag.Cache.GetOrInitializeValue(ctx, digest.Digest(src.Self.Digest), src)
+	_, err = s.dag.Cache.GetOrInitializeValue(ctx, digest.Digest(src.Self.Digest), src)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get or initialize instance: %w", err)
 	}

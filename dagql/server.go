@@ -23,6 +23,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/cache"
 )
 
 func init() {
@@ -70,20 +71,10 @@ type AroundFunc func(
 	*call.ID,
 ) (context.Context, func(res Typed, cached bool, err error))
 
-// Cache stores results of pure selections against Server.
-type Cache interface {
-	GetOrInitialize(
-		context.Context,
-		digest.Digest,
-		func(context.Context) (Typed, error),
-	) (Typed, bool, error)
-	GetOrInitializeWithPostCall(
-		context.Context,
-		digest.Digest,
-		func(context.Context) (Typed, func(context.Context) error, error),
-	) (Typed, bool, func(context.Context) error, error)
-	GetOrInitializeValue(context.Context, digest.Digest, Typed) (Typed, bool, error)
-}
+// TODO: docs
+type Cache = cache.Cache[digest.Digest, Typed]
+
+type TypedResult = cache.Result[digest.Digest, Typed]
 
 // TypeDef is a type whose sole practical purpose is to define a GraphQL type,
 // so it explicitly includes the Definitive interface.
@@ -93,7 +84,7 @@ type TypeDef interface {
 }
 
 // NewServer returns a new Server with the given root object.
-func NewServer[T Typed](root T) *Server {
+func NewServer[T Typed](root T, c Cache) *Server {
 	rootClass := NewClass(ClassOpts[T]{
 		// NB: there's nothing actually stopping this from being a thing, except it
 		// currently confuses the Dagger Go SDK. could be a nifty way to pass
@@ -101,7 +92,7 @@ func NewServer[T Typed](root T) *Server {
 		NoIDs: true,
 	})
 	srv := &Server{
-		Cache: NewCache(),
+		Cache: c,
 		root: Instance[T]{
 			Self:  root,
 			Class: rootClass,
