@@ -1,10 +1,11 @@
 package io.dagger.modules.hellodagger;
 
+import static io.dagger.client.Dagger.dag;
+
 import io.dagger.client.Container;
 import io.dagger.client.DaggerQueryException;
 import io.dagger.client.Directory;
 import io.dagger.client.CacheVolume;
-import io.dagger.module.AbstractModule;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
@@ -12,7 +13,7 @@ import java.util.concurrent.ExecutionException;
 
 /** HelloDagger main object */
 @Object
-public class HelloDagger extends AbstractModule {
+public class HelloDagger {
   /** Publish the application container after building and testing it on-the-fly */
   @Function
   public String publish(Directory source)
@@ -30,7 +31,7 @@ public class HelloDagger extends AbstractModule {
         .buildEnv(source)
         .withExec(List.of("npm", "run", "build"))
         .directory("./dist");
-    return dag.container()
+    return dag().container()
         .from("nginx:1.25-alpine")
         .withDirectory("/usr/share/nginx/html", build)
         .withExposedPort(80);
@@ -50,8 +51,8 @@ public class HelloDagger extends AbstractModule {
   @Function
   public Container buildEnv(Directory source)
       throws InterruptedException, ExecutionException, DaggerQueryException {
-    CacheVolume nodeCache = dag.cacheVolume("node");
-    return dag.container()
+    CacheVolume nodeCache = dag().cacheVolume("node");
+    return dag().container()
         .from("node:21-slim")
         .withDirectory("/src", source)
         .withMountedCache("/root/.npm", nodeCache)

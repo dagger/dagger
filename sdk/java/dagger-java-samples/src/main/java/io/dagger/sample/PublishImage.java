@@ -1,12 +1,8 @@
 package io.dagger.sample;
 
-import io.dagger.client.Client;
+import io.dagger.client.*;
 import io.dagger.client.Client.ContainerArguments;
-import io.dagger.client.Container;
 import io.dagger.client.Container.WithNewFileArguments;
-import io.dagger.client.Dagger;
-import io.dagger.client.Platform;
-import io.dagger.client.Secret;
 
 @Description("Publish a container image to a remote registry")
 public class PublishImage {
@@ -20,7 +16,7 @@ public class PublishImage {
     if (password == null) {
       password = new String(System.console().readPassword("Docker Hub password: "));
     }
-    try (Client client = Dagger.connect()) {
+    try (AutoCloseableClient client = Dagger.connect()) {
       // set secret as string value
       Secret secret = client.setSecret("password", password);
 

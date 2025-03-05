@@ -1,19 +1,20 @@
 package io.dagger.modules.mymodule;
 
+import static io.dagger.client.Dagger.dag;
+
 import io.dagger.client.Container;
 import io.dagger.client.DaggerQueryException;
 import io.dagger.client.Service;
-import io.dagger.module.AbstractModule;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 @Object
-public class MyModule extends AbstractModule {
+public class MyModule {
   @Function
   public Service services() throws ExecutionException, DaggerQueryException, InterruptedException {
-    Service svcA = dag.container()
+    Service svcA = dag().container()
         .from("nginx")
         .withExposedPort(80)
         .asService(new Container.AsServiceArguments()
@@ -21,7 +22,7 @@ public class MyModule extends AbstractModule {
         .withHostname("svca");
     svcA.start();
 
-    Service svcB = dag.container()
+    Service svcB = dag().container()
         .from("nginx")
         .withExposedPort(80)
         .asService(new Container.AsServiceArguments()

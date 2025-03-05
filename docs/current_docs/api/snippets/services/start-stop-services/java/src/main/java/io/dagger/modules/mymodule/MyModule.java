@@ -1,9 +1,10 @@
 package io.dagger.modules.mymodule;
 
+import static io.dagger.client.Dagger.dag;
+
 import io.dagger.client.Container;
 import io.dagger.client.DaggerQueryException;
 import io.dagger.client.Service;
-import io.dagger.module.AbstractModule;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
@@ -11,13 +12,13 @@ import java.util.concurrent.ExecutionException;
 import java.util.stream.Stream;
 
 @Object
-public class MyModule extends AbstractModule {
+public class MyModule {
   /** Explicitly start and stop a Redis service */
   @Function
   public String redisService()
       throws ExecutionException, DaggerQueryException, InterruptedException {
     Service redisSrv =
-        dag.container()
+        dag().container()
             .from("redis")
             .withExposedPort(6379)
             .asService(new Container.AsServiceArguments().withUseEntrypoint(true));
@@ -26,7 +27,7 @@ public class MyModule extends AbstractModule {
       // start Redis ahead of time to it stays up for the duration of the test
       redisSrv = redisSrv.start();
 
-      Container redisCli = dag.container().from("redis").withServiceBinding("redis-srv", redisSrv);
+      Container redisCli = dag().container().from("redis").withServiceBinding("redis-srv", redisSrv);
 
       List<String> args = List.of("redis-cli", "-h", "redis-srv");
 

@@ -3,7 +3,6 @@ package io.dagger.modules.defaults;
 import io.dagger.client.DaggerQueryException;
 import io.dagger.client.Directory;
 import io.dagger.client.File;
-import io.dagger.module.AbstractModule;
 import io.dagger.module.annotation.Default;
 import io.dagger.module.annotation.DefaultPath;
 import io.dagger.module.annotation.Function;
@@ -13,10 +12,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.Optional;
 
 @Object
-public class Defaults extends AbstractModule {
-  public Defaults() {
-    super();
-  }
+public class Defaults {
+  public Defaults() {}
 
   @Function
   public String echo(@Default("default value") String value) {

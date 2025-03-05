@@ -1,16 +1,17 @@
 package io.dagger.modules.mymodule;
 
+import static io.dagger.client.Dagger.dag;
+
 import io.dagger.client.Container;
 import io.dagger.client.DaggerQueryException;
 import io.dagger.client.Service;
-import io.dagger.module.AbstractModule;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 @Object
-public class MyModule extends AbstractModule {
+public class MyModule {
   private Container.WithExecArguments execOpts =
       new Container.WithExecArguments().withUseEntrypoint(true);
 
@@ -18,15 +19,15 @@ public class MyModule extends AbstractModule {
   @Function
   public Container redis() {
     Service redisSrv =
-        dag.container()
+        dag().container()
             .from("redis")
             .withExposedPort(6379)
-            .withMountedCache("/data", dag.cacheVolume("my-redis"))
+            .withMountedCache("/data", dag().cacheVolume("my-redis"))
             .withWorkdir("/data")
             .asService(new Container.AsServiceArguments().withUseEntrypoint(true));
 
     Container redisCli =
-        dag.container()
+        dag().container()
             .from("redis")
             .withServiceBinding("redis-srv", redisSrv)
             .withEntrypoint(List.of("redis-cli", "-h", "redis-srv"));

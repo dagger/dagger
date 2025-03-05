@@ -17,7 +17,7 @@ public class ClientIT {
 
   @Test
   public void testDirectory() throws Exception {
-    try (Client client = Dagger.connect()) {
+    try (AutoCloseableClient client = Dagger.connect()) {
       Directory dir = client.directory();
       String content = dir.withNewFile("/hello.txt", "world").file("/hello.txt").contents();
       assertEquals("world", content);
@@ -26,7 +26,7 @@ public class ClientIT {
 
   @Test
   public void testGit() throws Exception {
-    try (Client client = Dagger.connect()) {
+    try (AutoCloseableClient client = Dagger.connect()) {
       Directory tree = client.git("github.com/dagger/dagger").branch("main").tree();
       List<String> files = tree.entries();
       assertTrue(files.contains("README.md"));
@@ -45,7 +45,7 @@ public class ClientIT {
 
   @Test
   public void testContainer() throws Exception {
-    try (Client client = Dagger.connect()) {
+    try (AutoCloseableClient client = Dagger.connect()) {
       Container alpine = client.container().from("alpine:3.16.2");
       String contents = alpine.rootfs().file("/etc/alpine-release").contents();
       assertEquals("3.16.2\n", contents);
@@ -62,7 +62,7 @@ public class ClientIT {
 
   @Test
   public void testError() throws Exception {
-    try (Client client = Dagger.connect()) {
+    try (AutoCloseableClient client = Dagger.connect()) {
       try {
         client.container().from("fake.invalid:latest").id();
       } catch (DaggerQueryException dqe) {
@@ -80,7 +80,7 @@ public class ClientIT {
 
   @Test
   public void testList() throws Exception {
-    try (Client client = Dagger.connect()) {
+    try (AutoCloseableClient client = Dagger.connect()) {
       List<EnvVariable> envs =
           client
               .container()

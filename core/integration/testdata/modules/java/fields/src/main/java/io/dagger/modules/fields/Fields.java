@@ -1,16 +1,13 @@
 package io.dagger.modules.fields;
 
-import io.dagger.module.AbstractModule;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 
 @Object
-public class Fields extends AbstractModule {
+public class Fields {
   public String version;
 
-  public Fields() {
-    super();
-  }
+  public Fields() {}
 
   @Function
   public Fields withVersion(String version) {
