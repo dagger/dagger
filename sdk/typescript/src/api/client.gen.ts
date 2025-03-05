@@ -1038,6 +1038,13 @@ export type ModuleSourceWithClientOpts = {
   dev?: boolean
 }
 
+export type ModuleSourceIntrospectionJsonfileOpts = {
+  /**
+   * Include the schema of the current module in the result
+   */
+  includeSelf?: boolean
+}
+
 /**
  * The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
  */
@@ -5705,6 +5712,17 @@ export class ModuleSource extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * A JSON file of the GraphQL schema of every dependencies installed in this module
+   * @param opts.includeSelf Include the schema of the current module in the result
+   */
+  introspectionJSONFile = (
+    opts?: ModuleSourceIntrospectionJsonfileOpts,
+  ): File => {
+    const ctx = this._ctx.select("introspectionJSONFile", { ...opts })
+    return new File(ctx)
   }
 
   /**

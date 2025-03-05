@@ -6049,6 +6049,25 @@ class ModuleSource(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(ModuleSourceID)
 
+    def introspection_json_file(
+        self,
+        *,
+        include_self: bool | None = None,
+    ) -> File:
+        """A JSON file of the GraphQL schema of every dependencies installed in
+        this module
+
+        Parameters
+        ----------
+        include_self:
+            Include the schema of the current module in the result
+        """
+        _args = [
+            Arg("includeSelf", include_self, None),
+        ]
+        _ctx = self._select("introspectionJSONFile", _args)
+        return File(_ctx)
+
     async def kind(self) -> ModuleSourceKind:
         """The kind of module source (currently local, git or dir).
 
