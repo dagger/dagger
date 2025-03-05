@@ -3,7 +3,6 @@ package io.dagger.java.module;
 import static io.dagger.client.Dagger.dag;
 
 import io.dagger.client.*;
-import io.dagger.module.AbstractModule;
 import io.dagger.module.annotation.*;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
