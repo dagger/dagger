@@ -9,6 +9,7 @@ import (
 	"path"
 	"time"
 
+	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
@@ -25,9 +26,11 @@ import (
 type File struct {
 	Query *Query
 
-	LLB      *pb.Definition `json:"llb"`
-	File     string         `json:"file"`
-	Platform Platform       `json:"platform"`
+	LLB    *pb.Definition       `json:"llb"`
+	Result bkcache.ImmutableRef // only valid when returned by dagop
+
+	File     string   `json:"file"`
+	Platform Platform `json:"platform"`
 
 	// Services necessary to provision the file.
 	Services ServiceBindings `json:"services,omitempty"`

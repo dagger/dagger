@@ -1257,7 +1257,7 @@ func (DirectorySuite) TestDirectoryName(ctx context.Context, t *testctx.T) {
 		t.Run("root directory", func(ctx context.Context, t *testctx.T) {
 			rootName, err := dir.Name(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".", rootName)
+			require.Equal(t, "/", rootName)
 		})
 
 		t.Run("nested hidden directory", func(ctx context.Context, t *testctx.T) {
