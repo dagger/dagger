@@ -25,12 +25,12 @@ import (
 type File struct {
 	Query *Query
 
-	LLB      *pb.Definition `json:"llb"`
-	File     string         `json:"file"`
-	Platform Platform       `json:"platform"`
+	LLB      *pb.Definition
+	File     string
+	Platform Platform
 
 	// Services necessary to provision the file.
-	Services ServiceBindings `json:"services,omitempty"`
+	Services ServiceBindings
 }
 
 func (*File) Type() *ast.Type {

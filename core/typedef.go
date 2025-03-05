@@ -1096,7 +1096,7 @@ func (k TypeDefKind) ToLiteral() call.Literal {
 }
 
 type FunctionCall struct {
-	Query *Query `json:"-"`
+	Query *Query
 
 	Name       string                  `field:"true" doc:"The name of the function being called."`
 	ParentName string                  `field:"true" doc:"The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module."`

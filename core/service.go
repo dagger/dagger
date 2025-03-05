@@ -45,15 +45,15 @@ type Service struct {
 	CustomHostname string
 
 	// Container is the container to run as a service.
-	Container *Container `json:"container"`
+	Container *Container
 
 	// TunnelUpstream is the service that this service is tunnelling to.
-	TunnelUpstream *dagql.Instance[*Service] `json:"upstream,omitempty"`
+	TunnelUpstream *dagql.Instance[*Service]
 	// TunnelPorts configures the port forwarding rules for the tunnel.
-	TunnelPorts []PortForward `json:"tunnel_ports,omitempty"`
+	TunnelPorts []PortForward
 
 	// The sockets on the host to reverse tunnel
-	HostSockets []*Socket `json:"host_sockets,omitempty"`
+	HostSockets []*Socket
 }
 
 func (*Service) Type() *ast.Type {
@@ -772,9 +772,9 @@ type ServiceBindings []ServiceBinding
 
 type ServiceBinding struct {
 	ID       *call.ID
-	Service  *Service `json:"service"`
-	Hostname string   `json:"hostname"`
-	Aliases  AliasSet `json:"aliases"`
+	Service  *Service
+	Hostname string
+	Aliases  AliasSet
 }
 
 type AliasSet []string
