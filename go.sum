@@ -687,8 +687,8 @@ github.com/vishvananda/netlink v1.3.0 h1:X7l42GfcV4S6E4vHTsw48qbrV+9PVojNfIhZcwQ
 github.com/vishvananda/netlink v1.3.0/go.mod h1:i6NetklAujEcC6fK0JPjT8qSwWyO0HLn4UKG+hGqeJs=
 github.com/vishvananda/netns v0.0.4 h1:Oeaw1EM2JMxD51g9uhtC0D7erkIjgmj8+JZc26m1YX8=
 github.com/vishvananda/netns v0.0.4/go.mod h1:SpkAiCQRtJ6TvvxPnOSyH3BMl6unz3xZlaprSwhNNJM=
-github.com/vito/bubbline v0.0.0-20250227004723-9472f5b7eb83 h1:BmivYZTJJQXAVZjJaRTVZWH2a3vbFchE/e09pf2jVAo=
-github.com/vito/bubbline v0.0.0-20250227004723-9472f5b7eb83/go.mod h1:+6KVEQP/dL1Q/ZPb7eegi9el3oH/dkwYDXqyKeqmiNE=
+github.com/vito/bubbline v0.0.0-20250304164440-1d709bc8e9a2 h1:2lAjmi6JYUtxLvNqliMGv8tHFye8vmtzZjGqSsX0DtY=
+github.com/vito/bubbline v0.0.0-20250304164440-1d709bc8e9a2/go.mod h1:/641L6H9ILAQTmBZrVkUCCNpp1H1vOoQIQzBvQ6Fm7o=
 github.com/vito/go-sse v1.1.2 h1:FLQ1J0tMGN7pKa3KOyZCHojYDR0Z/L/y+3ejUO3P+tM=
 github.com/vito/go-sse v1.1.2/go.mod h1:2wkcaQ+jtlZ94Uve8gYZjFpL68luAjssTINA2hpgcZs=
 github.com/vito/midterm v0.2.2 h1:Uo+nk1n/GYbh29Ha0y+NdIfMuzcUyTvRreurs4YQLYM=
