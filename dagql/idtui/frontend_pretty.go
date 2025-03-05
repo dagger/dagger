@@ -1297,8 +1297,8 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 		return false
 	}
 	if fe.shell != nil {
-		defer func() {
-			if row.IsLastChild() {
+		if row.IsLastChild() {
+			defer func() {
 				root := row.Root()
 				if logs := fe.logs.Logs[root.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
 					logDepth := 0
@@ -1307,8 +1307,8 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 					}
 					fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix, highlight)
 				}
-			}
-		}()
+			}()
+		}
 		if row.Depth == 0 {
 			// navigating history and there's a previous row
 			if (!fe.editlineFocused && row.Previous != nil) ||
@@ -1317,13 +1317,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 			}
 			fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
 			fe.renderStepError(out, r, row.Span, 0, prefix)
-			if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 && !row.ShowingChildren {
-				logDepth := 0
-				if fe.Verbosity < dagui.ExpandCompletedVerbosity {
-					logDepth = -1
-				}
-				fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix, highlight)
-			}
+			fe.renderDebug(out, row.Span, prefix+Block25+" ")
 			return true
 		}
 	}
@@ -1402,6 +1396,12 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 					vt.WriteMarkdown([]byte("  - " + effect.Name + "\n"))
 				}
 			}
+		}
+	}
+	if len(span.RevealedSpans.Order) > 0 {
+		vt.WriteMarkdown([]byte("\n\n## Revealed spans\n\n"))
+		for _, revealed := range span.RevealedSpans.Order {
+			vt.WriteMarkdown([]byte("- " + revealed.Name + "\n"))
 		}
 	}
 	fmt.Fprint(out, prefix+vt.View())
