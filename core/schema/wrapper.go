@@ -10,7 +10,7 @@ import (
 )
 
 // DagOpWrapper caches an arbitrary dagql field as a buildkit operation
-func DagOpWrapper[T dagql.Typed, A any, R dagql.Typed](srv *dagql.Server, fn dagql.NodeFuncHandler[T, A, R]) dagql.NodeFuncHandler[T, A, R] {
+func DagOpWrapper[T dagql.Typed, A any, R dagql.Typed](srv *dagql.Server, fn func(ctx context.Context, self dagql.Instance[T], args A) (R, error)) func(ctx context.Context, self dagql.Instance[T], args A) (R, error) {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst R, err error) {
 		if _, ok := core.DagOpFromContext[core.RawDagOp](ctx); ok {
 			return fn(ctx, self, args)
@@ -27,7 +27,9 @@ func DagOpWrapper[T dagql.Typed, A any, R dagql.Typed](srv *dagql.Server, fn dag
 // DagOpFileWrapper caches a file field as a buildkit operation - this is
 // more specialized than DagOpWrapper, since that serializes the value to
 // JSON, so we'd just end up with a cached ID instead of the actual content.
-func DagOpFileWrapper[T dagql.Typed, A any](srv *dagql.Server, fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]]) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]] {
+//
+// func DagOpFileWrapper[T dagql.Typed, A any](srv *dagql.Server, fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]]) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]] {
+func DagOpFileWrapper[T dagql.Typed, A any](srv *dagql.Server, fn func(ctx context.Context, self dagql.Instance[T], args A) (dagql.Instance[*core.File], error)) func(ctx context.Context, self dagql.Instance[T], args A) (dagql.Instance[*core.File], error) {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.File], err error) {
 		if _, ok := core.DagOpFromContext[core.DirectoryDagOp](ctx); ok {
 			return fn(ctx, self, args)
@@ -75,7 +77,9 @@ func DagOpFileWrapper[T dagql.Typed, A any](srv *dagql.Server, fn dagql.NodeFunc
 
 // DagOpDirectoryWrapper caches a directory field as a buildkit operation,
 // similar to DagOpFileWrapper.
-func DagOpDirectoryWrapper[T dagql.Typed, A any](srv *dagql.Server, fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]]) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]] {
+//
+// func DagOpDirectoryWrapper[T dagql.Typed, A any](srv *dagql.Server, fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]]) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]] {
+func DagOpDirectoryWrapper[T dagql.Typed, A any](srv *dagql.Server, fn func(ctx context.Context, self dagql.Instance[T], args A) (dagql.Instance[*core.Directory], error)) func(ctx context.Context, self dagql.Instance[T], args A) (dagql.Instance[*core.Directory], error) {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.Directory], err error) {
 		if _, ok := core.DagOpFromContext[core.DirectoryDagOp](ctx); ok {
 			return fn(ctx, self, args)

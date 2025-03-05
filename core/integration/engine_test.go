@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -658,4 +660,109 @@ func (EngineSuite) TestModuleVersionCompatInvalid(ctx context.Context, t *testct
 		Stdout(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, `module requires dagger v100.0.0, but you have`)
+}
+
+func (EngineSuite) TestConcurrentCallContextCanceled(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	l, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		l.Close()
+	})
+	port := l.Addr().(*net.TCPAddr).Port
+
+	hitCh := make(chan struct{}, 1)
+	allDoneCh := make(chan struct{})
+	httpSrv := http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			select {
+			case hitCh <- struct{}{}:
+			default:
+			}
+
+			select {
+			case <-allDoneCh:
+				w.Write([]byte("done"))
+			default:
+				w.Write([]byte("hi"))
+			}
+		}),
+		BaseContext: func(net.Listener) context.Context {
+			return ctx
+		},
+	}
+	go httpSrv.Serve(l)
+
+	httpSvc := c.Host().Service([]dagger.PortForward{{
+		Backend:  port,
+		Frontend: port,
+	}})
+
+	ctr, err := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "curl"}).
+		WithServiceBinding("srv", httpSvc).
+		WithEnvVariable("PORT", fmt.Sprintf("%d", port)).
+		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		Sync(ctx)
+	require.NoError(t, err)
+	ctr = ctr.WithExec([]string{"sh", "-c",
+		// request http://srv:$PORT/ in a loop until it returns "done"
+		"until [ \"$(curl -s http://srv:$PORT/)\" = \"done\" ]; do sleep 1; done",
+	})
+
+	ctx1, cancel1 := context.WithCancel(ctx)
+	errCh1 := make(chan error, 1)
+	go func() {
+		defer close(errCh1)
+		_, err := ctr.Sync(ctx1)
+		errCh1 <- err
+	}()
+	// wait for the first hit to the server so we know the exec is running
+	select {
+	case <-hitCh:
+	case <-time.After(60 * time.Second): // extremely generous for when the engine is very slow under load
+	}
+
+	// start the second duped exec
+	errCh2 := make(chan error, 1)
+	go func() {
+		defer close(errCh2)
+		_, err := ctr.Sync(ctx)
+		errCh2 <- err
+	}()
+
+	// give the second dupe exec some time to start running
+	for range 3 {
+		select {
+		case <-hitCh:
+		case <-time.After(60 * time.Second):
+		}
+	}
+
+	// cancel the first exec, verify it errors
+	cancel1()
+	select {
+	case err := <-errCh1:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(60 * time.Second):
+		t.Fatal("timed out waiting for errCh1")
+	}
+
+	// make sure the exec is still running despite cancelation of first client
+	for range 2 {
+		select {
+		case <-hitCh:
+		case <-time.After(60 * time.Second):
+		}
+	}
+
+	// tell the exec to break its loop and exit, verify no error despite earlier cancelation
+	close(allDoneCh)
+	select {
+	case err := <-errCh2:
+		require.NoError(t, err)
+	case <-time.After(60 * time.Second):
+		t.Fatal("timed out waiting for errCh2")
+	}
 }

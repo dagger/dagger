@@ -47,7 +47,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/cache"
+	"github.com/dagger/dagger/engine/cache/cachemanager"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -264,7 +264,7 @@ func (srv *Server) initializeDaggerSession(
 				engine.Version,
 				runtime.GOOS,
 				runtime.GOARCH,
-				srv.SolverCache.ID() != cache.LocalCacheID,
+				srv.SolverCache.ID() != cachemanager.LocalCacheID,
 			),
 		CloudToken: clientMetadata.CloudToken,
 	})

@@ -23,6 +23,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/cache"
 )
 
 func init() {
@@ -78,19 +79,9 @@ type AroundFunc func(
 ) (context.Context, func(res Typed, cached bool, err error))
 
 // Cache stores results of pure selections against Server.
-type Cache interface {
-	GetOrInitialize(
-		context.Context,
-		digest.Digest,
-		func(context.Context) (Typed, error),
-	) (Typed, bool, error)
-	GetOrInitializeWithPostCall(
-		context.Context,
-		digest.Digest,
-		func(context.Context) (Typed, func(context.Context) error, error),
-	) (Typed, bool, func(context.Context) error, error)
-	GetOrInitializeValue(context.Context, digest.Digest, Typed) (Typed, bool, error)
-}
+type Cache = cache.Cache[digest.Digest, Typed]
+
+type TypedResult = cache.Result[digest.Digest, Typed]
 
 // TypeDef is a type whose sole practical purpose is to define a GraphQL type,
 // so it explicitly includes the Definitive interface.
@@ -127,6 +118,10 @@ func NewServer[T Typed](root T) *Server {
 		srv.InstallDirective(directive)
 	}
 	return srv
+}
+
+func NewCache() Cache {
+	return cache.NewCache[digest.Digest, Typed]()
 }
 
 func NewDefaultHandler(es graphql.ExecutableSchema) *handler.Server {

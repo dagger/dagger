@@ -1,6 +1,8 @@
 module github.com/dagger/dagger
 
-go 1.24.0
+go 1.23.0
+
+toolchain go1.23.6
 
 require (
 	dagger.io/dagger v0.16.2
@@ -55,6 +57,7 @@ require (
 	github.com/google/go-github/v59 v59.0.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/google/uuid v1.6.0
+	github.com/googleapis/gax-go/v2 v2.12.5
 	github.com/goproxy/goproxy v0.19.2
 	github.com/hashicorp/vault/api v1.16.0
 	github.com/hashicorp/vault/api/auth/approle v0.9.0
@@ -97,7 +100,7 @@ require (
 	github.com/tonistiigi/fsutil v0.0.0-20240424095704-91a3fc46842c
 	github.com/urfave/cli v1.22.16
 	github.com/vektah/gqlparser/v2 v2.5.23
-	github.com/vito/bubbline v0.0.0-20250227004723-9472f5b7eb83
+	github.com/vito/bubbline v0.0.0-20250304164440-1d709bc8e9a2
 	github.com/vito/go-sse v1.1.2
 	github.com/vito/midterm v0.2.2
 	github.com/zeebo/xxh3 v1.0.2
@@ -144,7 +147,6 @@ require (
 	github.com/charmbracelet/bubbles v0.20.0 // indirect
 	github.com/google/s2a-go v0.1.7 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
-	github.com/googleapis/gax-go/v2 v2.12.5 // indirect
 	github.com/sahilm/fuzzy v0.1.1 // indirect
 )
 

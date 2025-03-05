@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/moby/buildkit/cache"
+	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/filesync"
@@ -29,11 +29,12 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/client/pathutil"
 )
 
 type Opt struct {
-	CacheAccessor cache.Accessor
+	CacheAccessor bkcache.Accessor
 }
 
 func NewSource(opt Opt) (source.Source, error) {
@@ -46,7 +47,7 @@ func NewSource(opt Opt) (source.Source, error) {
 }
 
 type localSource struct {
-	cm cache.Accessor
+	cm bkcache.Accessor
 
 	refs        map[string]*filesyncCacheRef
 	mu          sync.RWMutex
@@ -145,7 +146,7 @@ func (ls *localSourceHandler) CacheKey(ctx context.Context, g session.Group, ind
 	return "session:" + ls.src.Name + ":" + digest.FromBytes(dt).String(), digest.FromBytes(dt).String(), nil, true, nil
 }
 
-func (ls *localSourceHandler) Snapshot(ctx context.Context, g session.Group) (cache.ImmutableRef, error) {
+func (ls *localSourceHandler) Snapshot(ctx context.Context, g session.Group) (bkcache.ImmutableRef, error) {
 	sessionID := ls.src.SessionID
 	if sessionID == "" {
 		// should only happen in Dockerfile cases
@@ -168,8 +169,8 @@ func (ls *localSourceHandler) Snapshot(ctx context.Context, g session.Group) (ca
 	return ref, nil
 }
 
-func (ls *localSourceHandler) snapshotWithAnySession(ctx context.Context, g session.Group) (cache.ImmutableRef, error) {
-	var ref cache.ImmutableRef
+func (ls *localSourceHandler) snapshotWithAnySession(ctx context.Context, g session.Group) (bkcache.ImmutableRef, error) {
+	var ref bkcache.ImmutableRef
 	err := ls.sm.Any(ctx, g, func(ctx context.Context, _ string, c session.Caller) error {
 		r, err := ls.snapshot(ctx, g, c)
 		if err != nil {
@@ -190,7 +191,7 @@ func newSpan(ctx context.Context, name string) (context.Context, trace.Span) {
 	return tr.Start(ctx, name)
 }
 
-func (ls *localSourceHandler) snapshot(ctx context.Context, session session.Group, caller session.Caller) (_ cache.ImmutableRef, rerr error) {
+func (ls *localSourceHandler) snapshot(ctx context.Context, session session.Group, caller session.Caller) (_ bkcache.ImmutableRef, rerr error) {
 	ctx, span := newSpan(ctx, "filesync")
 	defer telemetry.End(span, func() error { return rerr })
 
@@ -246,7 +247,7 @@ func (ls *localSourceHandler) sync(
 	drive string, // only set for windows clients, otherwise ""
 	session session.Group,
 	caller session.Caller,
-) (_ cache.ImmutableRef, rerr error) {
+) (_ bkcache.ImmutableRef, rerr error) {
 	// first ensure that all the parent dirs under the client's rootfs (above the given clientPath) are synced in correctly
 	if err := ls.syncParentDirs(ctx, ref, clientPath, drive, caller); err != nil {
 		return nil, fmt.Errorf("failed to sync parent dirs: %w", err)
@@ -309,7 +310,7 @@ func (ls *localSourceHandler) syncParentDirs(
 }
 
 type filesyncCacheRef struct {
-	mutRef cache.MutableRef
+	mutRef bkcache.MutableRef
 
 	mounter snapshot.Mounter
 	mntPath string
@@ -364,9 +365,9 @@ func (ls *localSourceHandler) getRef(
 
 		if ref.mutRef == nil {
 			ref.mutRef, err = ls.cm.New(ctx, nil, nil,
-				cache.CachePolicyRetain,
-				cache.WithRecordType(bkclient.UsageRecordTypeLocalSource),
-				cache.WithDescription(fmt.Sprintf("local source for %s", ls.src.SharedKeyHint)),
+				bkcache.CachePolicyRetain,
+				bkcache.WithRecordType(bkclient.UsageRecordTypeLocalSource),
+				bkcache.WithDescription(fmt.Sprintf("local source for %s", ls.src.SharedKeyHint)),
 			)
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to create new mutable ref: %w", err)
@@ -389,7 +390,8 @@ func (ls *localSourceHandler) getRef(
 		}
 
 		ref.sharedState = &localFSSharedState{
-			rootPath: ref.mntPath,
+			rootPath:    ref.mntPath,
+			changeCache: cache.NewCache[string, *ChangeWithStat](),
 		}
 
 		ls.mu.Lock()
@@ -426,7 +428,7 @@ const (
 	sharedKeyIndex = keySharedKey + ":"
 )
 
-func searchSharedKey(ctx context.Context, store cache.MetadataStore, k string) ([]CacheRefMetadata, error) {
+func searchSharedKey(ctx context.Context, store bkcache.MetadataStore, k string) ([]CacheRefMetadata, error) {
 	var results []CacheRefMetadata
 	mds, err := store.Search(ctx, sharedKeyIndex+k, false)
 	if err != nil {
@@ -439,7 +441,7 @@ func searchSharedKey(ctx context.Context, store cache.MetadataStore, k string) (
 }
 
 type CacheRefMetadata struct {
-	cache.RefMetadata
+	bkcache.RefMetadata
 }
 
 func (md CacheRefMetadata) setSharedKey(key string) error {

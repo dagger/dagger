@@ -49,7 +49,7 @@ func GetHostIPSocketAccessor(ctx context.Context, query *Query, upstreamHost str
 	// want to include all PortForward values + upstreamHost for the unique accessor
 	jsonBytes, err := json.Marshal(struct {
 		HostEndpoint string      `json:"host_endpoint,omitempty"`
-		PortForward  PortForward `json:"port_forward,omitempty"`
+		PortForward  PortForward `json:"port_forward"`
 	}{upstreamHost, port})
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal host ip socket: %w", err)
