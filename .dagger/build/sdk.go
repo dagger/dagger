@@ -46,7 +46,52 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 			"LICENSE",
 			"README.md",
 		},
+		Exclude: []string{
+			"src/dagger/_engine/",
+			"src/dagger/provisioning/",
+		},
 	})
+
+	// bundle the codegen script and its dependencies into a single executable
+	base := dag.Directory().WithFile("", build.source.File("sdk/python/runtime/Dockerfile"))
+	rootfs = rootfs.WithFile(
+		"/dist/codegen",
+		base.DockerBuild(
+			dagger.DirectoryDockerBuildOpts{
+				Platform: build.platform,
+				Target:   "base",
+			}).
+			WithDirectory(
+				"/usr/local/bin",
+				base.DockerBuild(
+					dagger.DirectoryDockerBuildOpts{
+						Platform: build.platform,
+						Target:   "uv",
+					},
+				).Rootfs(),
+				dagger.ContainerWithDirectoryOpts{
+					Include: []string{"uv*"},
+				},
+			).
+			WithMountedDirectory("/src", rootfs.Directory("codegen")).
+			WithWorkdir("/src").
+			WithExec([]string{
+				"uv", "export",
+				"--no-hashes",
+				"--no-editable",
+				"--package", "codegen",
+				"-o", "/requirements.txt",
+			}).
+			WithExec([]string{
+				"uvx", "shiv==1.0.8", // this version doesn't need to be constantly updated
+				"--reproducible",
+				"--compressed",
+				"-e", "codegen.cli:main",
+				"-o", "/codegen",
+				"-r", "/requirements.txt",
+			}).
+			File("/codegen"),
+	)
 
 	sdkCtrTarball := dag.Container().
 		WithRootfs(rootfs).
@@ -132,7 +177,8 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 		WithExec([]string{"xx-go", "build", "std"}).
 		// pre-cache common deps
 		WithDirectory("/sdk", build.source.Directory("sdk/go")).
-		WithExec([]string{"xx-go", "list",
+		WithExec([]string{
+			"xx-go", "list",
 			"-C", "/sdk",
 			"-e",
 			"-export=true",
