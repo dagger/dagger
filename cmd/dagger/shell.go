@@ -59,11 +59,8 @@ var shellCmd = &cobra.Command{
 		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
 			handler := &shellCallHandler{
-				dag:    dag,
-				stdin:  cmd.InOrStdin(),
-				stdout: cmd.OutOrStdout(),
-				stderr: cmd.ErrOrStderr(),
-				debug:  debug,
+				dag:   dag,
+				debug: debug,
 			}
 			return handler.RunAll(ctx, args)
 		})
@@ -123,10 +120,6 @@ type shellCallHandler struct {
 	dag    *dagger.Client
 	runner *interp.Runner
 
-	stdin  io.Reader
-	stdout io.Writer
-	stderr io.Writer
-
 	// tty is set to true when running the TUI (pretty frontend)
 	tty bool
 
@@ -175,12 +168,37 @@ type shellCallHandler struct {
 func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 	h.tty = !silent && (hasTTY && progress == "auto" || progress == "tty")
 
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	h.stdoutWriter = newTerminalWriter(stdio.Stdout.Write)
-	h.stderrWriter = newTerminalWriter(stdio.Stderr.Write)
+	if err := h.Initialize(ctx); err != nil {
+		return err
+	}
 
+	// Example: `dagger shell -c 'container | workdir'`
+	if shellCode != "" {
+		return h.run(ctx, strings.NewReader(shellCode), "")
+	}
+
+	// Use stdin only when no file paths are provided
+	if len(args) == 0 {
+		// Example: `dagger shell`
+		if isatty.IsTerminal(os.Stdin.Fd()) {
+			return h.runInteractive(ctx)
+		}
+		// Example: `echo 'container | workdir' | dagger shell`
+		return h.run(ctx, os.Stdin, "-")
+	}
+
+	// Example: `dagger shell job1.dsh job2.dsh`
+	for _, path := range args {
+		if err := h.runPath(ctx, path); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (h *shellCallHandler) Initialize(ctx context.Context) error {
 	r, err := interp.New(
-		interp.StdIO(nil, h.stdoutWriter, h.stderrWriter),
 		interp.Params("-e", "-u", "-o", "pipefail"),
 
 		// The "Interactive" option is useful even when not running dagger shell
@@ -270,29 +288,6 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 	}
 
 	h.registerCommands()
-
-	// Example: `dagger shell -c 'container | workdir'`
-	if shellCode != "" {
-		return h.run(ctx, strings.NewReader(shellCode), "")
-	}
-
-	// Use stdin only when no file paths are provided
-	if len(args) == 0 {
-		// Example: `dagger shell`
-		if isatty.IsTerminal(os.Stdin.Fd()) {
-			return h.runInteractive(ctx)
-		}
-		// Example: `echo 'container | workdir' | dagger shell`
-		return h.run(ctx, os.Stdin, "-")
-	}
-
-	// Example: `dagger shell job1.dsh job2.dsh`
-	for _, path := range args {
-		if err := h.runPath(ctx, path); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -333,6 +328,41 @@ func (h *shellCallHandler) shellStateProcessor(ctx context.Context) func([]byte)
 	}
 }
 
+func (h *shellCallHandler) Eval(ctx context.Context, code string) (resp any, typeDef *modTypeDef, err error) {
+	file, err := parseShell(strings.NewReader(code), "")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	h.stdoutWriter = newTerminalWriter(stdio.Stdout.Write)
+	h.stderrWriter = newTerminalWriter(stdio.Stderr.Write)
+	interp.StdIO(nil, h.stdoutWriter, h.stderrWriter)(h.runner)
+
+	h.stdoutWriter.SetProcessFunc(func(b []byte) ([]byte, error) {
+		resp, typeDef, err = h.Result(ctx, bytes.NewReader(b), handleObjectLeaf)
+		if err != nil {
+			return nil, err
+		}
+		if typeDef != nil && typeDef.Kind == dagger.TypeDefKindVoidKind {
+			return nil, nil
+		}
+		buf := new(bytes.Buffer)
+		err = printResponse(buf, resp, typeDef)
+		return buf.Bytes(), err
+	})
+
+	err = h.runner.Run(ctx, file)
+	if exit, ok := interp.IsExitStatus(err); ok {
+		if int(exit) != shellHandlerExit {
+			return nil, nil, ExitError{Code: int(exit)}
+		}
+		err = nil
+	}
+
+	return resp, typeDef, err
+}
+
 // run parses code and executes the interpreter's Runner
 func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name string) error {
 	file, err := parseShell(reader, name)
@@ -340,6 +370,10 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 		return err
 	}
 
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	h.stdoutWriter = newTerminalWriter(stdio.Stdout.Write)
+	h.stderrWriter = newTerminalWriter(stdio.Stderr.Write)
+	interp.StdIO(nil, h.stdoutWriter, h.stderrWriter)(h.runner)
 	h.stdoutWriter.SetProcessFunc(h.shellStateProcessor(ctx))
 
 	err = h.runner.Run(ctx, file)

@@ -37,4 +37,5 @@ const (
 	IconFailure         = "✘"
 	IconCached          = "$" // cache money
 	Diamond             = "◆"
+	PromptSymbol        = "✱"
 )

@@ -38,12 +38,14 @@ func (s llmSchema) Install() {
 			ArgDoc("name", "The name of the variable").
 			ArgDoc("value", "The value of the variable"),
 		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.Instance[*core.Llm], _ struct{}) (dagql.ID[*core.Llm], error) {
-			_, err := self.Self.Sync(ctx, s.srv)
-			if err != nil {
-				var zero dagql.ID[*core.Llm]
+			var zero dagql.ID[*core.Llm]
+			var inst dagql.Instance[*core.Llm]
+			if err := s.srv.Select(ctx, self, &inst, dagql.Selector{
+				Field: "loop",
+			}); err != nil {
 				return zero, err
 			}
-			return dagql.NewID[*core.Llm](self.ID()), nil
+			return dagql.NewID[*core.Llm](inst.ID()), nil
 		}).
 			Doc("synchronize LLM state"),
 		dagql.Func("loop", s.loop).
