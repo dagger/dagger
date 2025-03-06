@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"regexp"
@@ -18,6 +17,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/server/resource"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -194,12 +194,12 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 
 	// For HTTP(S) refs, handle PAT auth if we're the main client
 	if (remote.Scheme == "https" || remote.Scheme == "http") && clientMetadata != nil {
-		mainClientCallerMetadata, err := parent.Self.NonModuleParentClientMetadata(ctx)
+		parentClientMetadata, err := parent.Self.NonModuleParentClientMetadata(ctx)
 		if err != nil {
-			return inst, fmt.Errorf("failed to retrieve mainClientCallerID: %w", err)
+			return inst, fmt.Errorf("failed to retrieve non-module parent client metadata: %w", err)
 		}
 
-		if clientMetadata.ClientID == mainClientCallerMetadata.ClientID {
+		if clientMetadata.ClientID == parentClientMetadata.ClientID {
 			// Check if repo is public
 			repo := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
 				Name: "origin",
@@ -207,9 +207,13 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 			})
 
 			_, err := repo.ListContext(ctx, &git.ListOptions{Auth: nil})
-			if err != nil && errors.Is(err, transport.ErrAuthenticationRequired) {
+			switch {
+			case err == nil:
+				// no auth needed
+
+			case errors.Is(err, transport.ErrAuthenticationRequired):
 				// Only proceed with auth if repo requires authentication
-				authCtx := engine.ContextWithClientMetadata(ctx, mainClientCallerMetadata)
+				authCtx := engine.ContextWithClientMetadata(ctx, parentClientMetadata)
 
 				bk, err := parent.Self.Buildkit(authCtx)
 				if err != nil {
@@ -218,7 +222,14 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 
 				// Retrieve credential from host
 				credentials, err := bk.GetCredential(authCtx, remote.Scheme, remote.Host, remote.Path)
-				if err == nil {
+				switch {
+				case err != nil:
+					slog.Warn("failed to retrieve git credentials, continuing without authentication", "error", err, "url", args.URL)
+
+				case credentials == nil || credentials.Password == "":
+					slog.Warn("no credentials found, continuing without authentication", "url", args.URL)
+
+				default:
 					// Credentials found, create and set auth token
 					hash := sha256.Sum256([]byte(credentials.Password))
 					secretName := hex.EncodeToString(hash[:])
@@ -241,9 +252,10 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 						return inst, fmt.Errorf("failed to create a new secret with the git auth token: %w", err)
 					}
 					authToken = secretAuthToken
-				} else {
-					slog.Warn(fmt.Sprintf("failed to retrieve git credentials, continuing without authentication: %s", err.Error()))
 				}
+
+			default:
+				slog.Warn("failed to list remote refs, continuing without authentication", "error", err, "url", args.URL)
 			}
 		}
 	}
