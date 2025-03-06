@@ -144,81 +144,142 @@ func ptr[T any](v T) *T {
 }
 
 // TODO: variations:
-// * does the same w/ git module source
-// * function calls that have secret inputs/outputs
+// * repro the WTF condition with secret transfer
 func (SecretSuite) TestCrossSessionGitAuthLeak(ctx context.Context, t *testctx.T) {
-	authTokenTestCase := getVCSTestCase(t, "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
-	require.NotEmpty(t, authTokenTestCase.token)
+	t.Run("core git", func(ctx context.Context, t *testctx.T) {
+		authTokenTestCase := getVCSTestCase(t, "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
+		require.NotEmpty(t, authTokenTestCase.token)
 
-	sshTestCase := getVCSTestCase(t, "git@bitbucket.org:dagger-modules/private-modules-test.git")
-	require.True(t, sshTestCase.sshKey)
+		sshTestCase := getVCSTestCase(t, "ssh://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
+		require.True(t, sshTestCase.sshKey)
 
-	runTest := func(ctx context.Context, t *testctx.T, testCase vcsTestCase, expectedErr string) {
-		var err error
+		runTest := func(ctx context.Context, t *testctx.T, testCase vcsTestCase, expectedErr string) {
+			var err error
 
-		// sanity test fail when no auth given
-		c1 := connect(ctx, t)
-		_, err = goGitBase(t, c1).
-			WithEnvVariable("CACHEBUST", identity.NewID()).
-			With(daggerExec("core",
-				"git",
-				"--url", testCase.gitTestRepoRef,
-				"head",
-				"tree",
-			)).
-			Sync(ctx)
-		requireErrOut(t, err, expectedErr)
+			// sanity test fail when no auth given
+			c1 := connect(ctx, t)
+			_, err = goGitBase(t, c1).
+				WithEnvVariable("CACHEBUST", identity.NewID()).
+				With(daggerExec("core",
+					"git",
+					"--url", testCase.gitTestRepoRef,
+					"head",
+					"tree",
+				)).
+				Sync(ctx)
+			requireErrOut(t, err, expectedErr)
 
-		// pull the git repo with auth token, get it into the cache
-		c2 := connect(ctx, t)
-		withRepo, withRepoCleanup := privateRepoSetup(c2, t, testCase)
-		t.Cleanup(withRepoCleanup)
-		_, err = goGitBase(t, c2).
-			WithEnvVariable("CACHEBUST", identity.NewID()).
-			With(withRepo).
-			With(daggerExec("core",
-				"git",
-				"--url", testCase.gitTestRepoRef,
-				"head",
-				"tree",
-			)).
-			Sync(ctx)
-		require.NoError(t, err)
+			// pull the git repo with auth, get it into the cache
+			c2 := connect(ctx, t)
+			withRepo, withRepoCleanup := privateRepoSetup(c2, t, testCase)
+			t.Cleanup(withRepoCleanup)
+			_, err = goGitBase(t, c2).
+				WithEnvVariable("CACHEBUST", identity.NewID()).
+				With(withRepo).
+				With(daggerExec("core",
+					"git",
+					"--url", testCase.gitTestRepoRef,
+					"head",
+					"tree",
+				)).
+				Sync(ctx)
+			require.NoError(t, err)
 
-		// try again with no auth, should fail
-		c3 := connect(ctx, t)
-		_, err = goGitBase(t, c3).
-			WithEnvVariable("CACHEBUST", identity.NewID()).
-			With(daggerExec("core",
-				"git",
-				"--url", testCase.gitTestRepoRef,
-				"head",
-				"tree",
-			)).
-			Sync(ctx)
-		requireErrOut(t, err, expectedErr)
+			// try again with no auth, should fail
+			c3 := connect(ctx, t)
+			_, err = goGitBase(t, c3).
+				WithEnvVariable("CACHEBUST", identity.NewID()).
+				With(daggerExec("core",
+					"git",
+					"--url", testCase.gitTestRepoRef,
+					"head",
+					"tree",
+				)).
+				Sync(ctx)
+			requireErrOut(t, err, expectedErr)
 
-		// try again on same session but with auth, should succeed now
-		withRepo, withRepoCleanup = privateRepoSetup(c3, t, testCase)
-		t.Cleanup(withRepoCleanup)
-		_, err = goGitBase(t, c3).
-			WithEnvVariable("CACHEBUST", identity.NewID()).
-			With(withRepo).
-			With(daggerExec("core",
-				"git",
-				"--url", testCase.gitTestRepoRef,
-				"head",
-				"tree",
-			)).
-			Sync(ctx)
-		require.NoError(t, err)
-	}
+			// try again on same session but with auth, should succeed now
+			withRepo, withRepoCleanup = privateRepoSetup(c3, t, testCase)
+			t.Cleanup(withRepoCleanup)
+			_, err = goGitBase(t, c3).
+				WithEnvVariable("CACHEBUST", identity.NewID()).
+				With(withRepo).
+				With(daggerExec("core",
+					"git",
+					"--url", testCase.gitTestRepoRef,
+					"head",
+					"tree",
+				)).
+				Sync(ctx)
+			require.NoError(t, err)
+		}
 
-	t.Run("auth token", func(ctx context.Context, t *testctx.T) {
-		runTest(ctx, t, authTokenTestCase, "HTTP Basic: Access denied")
+		t.Run("auth token", func(ctx context.Context, t *testctx.T) {
+			runTest(ctx, t, authTokenTestCase, "Failed to retrieve credentials")
+		})
+		t.Run("ssh key", func(ctx context.Context, t *testctx.T) {
+			runTest(ctx, t, sshTestCase, "SSH URLs are not supported without an SSH socket")
+		})
 	})
-	t.Run("ssh key", func(ctx context.Context, t *testctx.T) {
-		runTest(ctx, t, sshTestCase, "socket default not found")
+
+	t.Run("git module source", func(ctx context.Context, t *testctx.T) {
+		authTokenTestCase := getVCSTestCase(t, "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
+		require.NotEmpty(t, authTokenTestCase.token)
+
+		sshTestCase := getVCSTestCase(t, "ssh://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git")
+		require.True(t, sshTestCase.sshKey)
+
+		runTest := func(ctx context.Context, t *testctx.T, testCase vcsTestCase, expectedErr string) {
+			var err error
+
+			// sanity test fail when no auth given
+			c1 := connect(ctx, t)
+			_, err = goGitBase(t, c1).
+				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+				WithEnvVariable("CACHEBUST", identity.NewID()).
+				With(daggerExec("install", testGitModuleRef(testCase, "top-level"))).
+				Sync(ctx)
+			requireErrOut(t, err, expectedErr)
+
+			// pull the git repo with auth, get it into the cache
+			c2 := connect(ctx, t)
+			withRepo, withRepoCleanup := privateRepoSetup(c2, t, testCase)
+			t.Cleanup(withRepoCleanup)
+			_, err = goGitBase(t, c2).
+				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+				WithEnvVariable("CACHEBUST", identity.NewID()).
+				With(withRepo).
+				With(daggerExec("install", testGitModuleRef(testCase, "top-level"))).
+				Sync(ctx)
+			require.NoError(t, err)
+
+			// try again with no auth, should fail
+			c3 := connect(ctx, t)
+			_, err = goGitBase(t, c3).
+				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+				WithEnvVariable("CACHEBUST", identity.NewID()).
+				With(daggerExec("install", testGitModuleRef(testCase, "top-level"))).
+				Sync(ctx)
+			requireErrOut(t, err, expectedErr)
+
+			// try again on same session but with auth, should succeed now
+			withRepo, withRepoCleanup = privateRepoSetup(c3, t, testCase)
+			t.Cleanup(withRepoCleanup)
+			_, err = goGitBase(t, c3).
+				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+				WithEnvVariable("CACHEBUST", identity.NewID()).
+				With(withRepo).
+				With(daggerExec("install", testGitModuleRef(testCase, "top-level"))).
+				Sync(ctx)
+			require.NoError(t, err)
+		}
+
+		t.Run("auth token", func(ctx context.Context, t *testctx.T) {
+			runTest(ctx, t, authTokenTestCase, "Failed to retrieve credentials")
+		})
+		t.Run("ssh key", func(ctx context.Context, t *testctx.T) {
+			runTest(ctx, t, sshTestCase, "SSH URLs are not supported without an SSH socket")
+		})
 	})
 }
 
