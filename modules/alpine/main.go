@@ -259,8 +259,15 @@ func (m *Alpine) withPkgs(
 			Exclude: pkg.rmFileNames,
 		})
 		ctr = ctr.With(pkgscript("post-install", pkg.name, pkg.postInstall))
+		// HACK: quick fix for busybox trigger needing to be run before glibc trigger (which needs /usr/bin/sh symlink to busybox created)
+		if pkg.name == "busybox" {
+			ctr = ctr.With(pkgscript("trigger", pkg.name, pkg.trigger))
+		}
 	}
 	for _, pkg := range alpinePkgs {
+		if pkg.name == "busybox" {
+			continue
+		}
 		ctr = ctr.With(pkgscript("trigger", pkg.name, pkg.trigger))
 	}
 
