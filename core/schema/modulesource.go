@@ -1857,14 +1857,14 @@ func (s *moduleSourceSchema) runCodegen(
 		return genDirInst, fmt.Errorf("failed to load dependencies as modules: %w", err)
 	}
 
-		// cache the current source instance by it's digest before passing to codegen
-		// this scopes the cache key of codegen calls to an exact content hash detached
-		// from irrelevant details like specific host paths, specific git repos+commits, etc.
-		_, err = s.dag.Cache.GetOrInitializeValue(ctx, digest.Digest(srcInst.Self.Digest), srcInst)
-		if err != nil {
-			return genDirInst, fmt.Errorf("failed to get or initialize instance: %w", err)
-		}
-		srcInstContentHashed := srcInst.WithDigest(digest.Digest(srcInst.Self.Digest))
+	// cache the current source instance by it's digest before passing to codegen
+	// this scopes the cache key of codegen calls to an exact content hash detached
+	// from irrelevant details like specific host paths, specific git repos+commits, etc.
+	_, err = s.dag.Cache.GetOrInitializeValue(ctx, digest.Digest(srcInst.Self.Digest), srcInst)
+	if err != nil {
+		return genDirInst, fmt.Errorf("failed to get or initialize instance: %w", err)
+	}
+	srcInstContentHashed := srcInst.WithDigest(digest.Digest(srcInst.Self.Digest))
 
 	// run codegen to get the generated context directory
 	generatedCode, err := srcInst.Self.SDKImpl.Codegen(ctx, deps, srcInstContentHashed)
