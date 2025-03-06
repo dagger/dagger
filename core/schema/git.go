@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -131,7 +132,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 	}
 
 	// 3. Setup authentication
-	var authSock *core.Socket = nil
+	var authSock dagql.Instance[*core.Socket]
 	var authToken dagql.Instance[*core.Secret]
 
 	// First parse the ref scheme to determine auth strategy
@@ -142,15 +143,41 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 	if err != nil {
 		return inst, fmt.Errorf("failed to parse Git URL: %w", err)
 	}
+	if remote.Scheme == "ssh" && (remote.User == nil || remote.User.Username() == "") {
+		// default to git user for SSH, otherwise weird incorrect defaults like "root" can get
+		// applied in various places. This matches the git module source implementation.
+		if remote.User == nil {
+			remote.User = url.User("git")
+		}
+		pass, ok := remote.User.Password()
+		if ok {
+			remote.User = url.UserPassword(remote.User.Username(), pass)
+		}
+		fixedURL := &url.URL{
+			Scheme: remote.Scheme,
+			User:   remote.User,
+			Host:   remote.Host,
+			Path:   remote.Path,
+		}
+		if remote.Fragment != nil {
+			fixedURL.Fragment = remote.Fragment.Ref
+			if remote.Fragment.Subdir != "" {
+				fixedURL.Fragment += ":" + remote.Fragment.Subdir
+			}
+		}
+		args.URL = fixedURL.String()
+	}
 
 	// Handle explicit SSH socket if provided
-	if args.SSHAuthSocket.Valid {
+	switch {
+	case args.SSHAuthSocket.Valid:
 		sock, err := args.SSHAuthSocket.Value.Load(ctx, s.srv)
 		if err != nil {
 			return inst, err
 		}
-		authSock = sock.Self
-	} else if remote.Scheme == "ssh" && clientMetadata != nil && clientMetadata.SSHAuthSocketPath != "" {
+		authSock = sock
+
+	case remote.Scheme == "ssh" && clientMetadata != nil && clientMetadata.SSHAuthSocketPath != "":
 		// For SSH refs, try to load client's SSH socket if no explicit socket was provided
 		socketStore, err := parent.Self.Sockets(ctx)
 		if err != nil {
@@ -183,7 +210,11 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 		if err := socketStore.AddUnixSocket(sockInst.Self, clientMetadata.ClientID, clientMetadata.SSHAuthSocketPath); err != nil {
 			return inst, fmt.Errorf("failed to add unix socket to store: %w", err)
 		}
-		authSock = sockInst.Self
+		authSock = sockInst
+
+	case remote.Scheme == "ssh":
+		// TODO: ???
+		return inst, fmt.Errorf("SSH URLs are not supported without an SSH socket")
 	}
 
 	// For HTTP(S) refs, handle PAT auth if we're the main client
@@ -218,10 +249,10 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 				credentials, err := bk.GetCredential(authCtx, remote.Scheme, remote.Host, remote.Path)
 				switch {
 				case err != nil:
-					slog.Warn("failed to retrieve git credentials, continuing without authentication", "error", err, "url", args.URL)
+					return inst, fmt.Errorf("failed to retrieve git credentials: %w", err)
 
 				case credentials == nil || credentials.Password == "":
-					slog.Warn("no credentials found, continuing without authentication", "url", args.URL)
+					return inst, fmt.Errorf("no credentials found for git repository")
 
 				default:
 					// Credentials found, create and set auth token
@@ -249,7 +280,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 				}
 
 			default:
-				slog.Warn("failed to list remote refs, continuing without authentication", "error", err, "url", args.URL)
+				return inst, fmt.Errorf("failed to list remote refs: %w", err)
 			}
 		}
 	}
@@ -266,7 +297,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 			Query:         parent.Self,
 			URL:           args.URL,
 			SSHKnownHosts: args.SSHKnownHosts,
-			SSHAuthSocket: authSock,
+			SSHAuthSocket: authSock.Self,
 			Services:      svcs,
 			Platform:      parent.Self.Platform(),
 		},
@@ -297,15 +328,20 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 		inst = instWithToken
 	}
 
+	var resourceIDs []*resource.ID
 	if authToken.Self != nil {
-		secretTransferPostCall, err := core.SecretTransferPostCall(ctx, parent.Self, clientMetadata.ClientID, &resource.ID{
-			ID: *authToken.ID(),
-		})
+		resourceIDs = append(resourceIDs, &resource.ID{ID: *authToken.ID()})
+	}
+	if authSock.Self != nil {
+		resourceIDs = append(resourceIDs, &resource.ID{ID: *authSock.ID()})
+	}
+	if len(resourceIDs) > 0 {
+		postCall, err := core.ResourceTransferPostCall(ctx, parent.Self, clientMetadata.ClientID, resourceIDs...)
 		if err != nil {
-			return inst, fmt.Errorf("failed to create secret transfer post call: %w", err)
+			return inst, fmt.Errorf("failed to create post call: %w", err)
 		}
 
-		inst = inst.WithPostCall(secretTransferPostCall)
+		inst = inst.WithPostCall(postCall)
 	}
 	return inst, nil
 }

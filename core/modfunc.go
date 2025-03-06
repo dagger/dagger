@@ -414,7 +414,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	for _, id := range returnedIDs {
 		returnedIDsList = append(returnedIDsList, id)
 	}
-	secretTransferPostCall, err := SecretTransferPostCall(ctx, fn.root, clientID, returnedIDsList...)
+	secretTransferPostCall, err := ResourceTransferPostCall(ctx, fn.root, clientID, returnedIDsList...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create secret transfer post call: %w", err)
 	}

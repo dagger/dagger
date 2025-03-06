@@ -100,7 +100,7 @@ func GetContentHashFromDef(
 		}
 
 		ctx, span := Tracer(ctx).Start(ctx,
-			fmt.Sprintf("checksum def: %s", ref.ID()),
+			fmt.Sprintf("checksum def: %s", key),
 			telemetry.Internal(),
 		)
 		defer telemetry.End(span, func() error { return rerr })

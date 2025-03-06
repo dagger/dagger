@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/dagger/engine/server/resource"
 )
 
-func SecretTransferPostCall(
+func ResourceTransferPostCall(
 	ctx context.Context,
 	query *Query,
 	sourceClientID string,
