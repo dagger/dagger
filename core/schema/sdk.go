@@ -248,6 +248,28 @@ func (sdk *moduleSDK) RequiredClientGenerationFiles(
 	return res, nil
 }
 
+// Return true and the function typedef if the function is implemented by the SDK module.
+func (sdk *moduleSDK) isFunctionImplemented(name string) (*core.Function, bool) {
+	for _, def := range sdk.mod.Self.ObjectDefs {
+		if !def.AsObject.Valid {
+			continue
+		}
+
+		obj := def.AsObject.Value
+		if gqlFieldName(obj.Name) != gqlFieldName(sdk.mod.Self.OriginalName) {
+			continue
+		}
+
+		for _, fn := range obj.Functions {
+			if fn.Name == name {
+				return fn, true
+			}
+		}
+	}
+
+	return nil, false
+}
+
 func (sdk *moduleSDK) GenerateClient(
 	ctx context.Context,
 	modSource dagql.Instance[*core.ModuleSource],
@@ -260,26 +282,37 @@ func (sdk *moduleSDK) GenerateClient(
 		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
 	}
 
+	fct, implements := sdk.isFunctionImplemented("generateClient")
+	if !implements {
+		return inst, fmt.Errorf("generateClient is not implemented by this SDK")
+	}
+
+	generateClientsArgs := []dagql.NamedInput{
+		{
+			Name:  "modSource",
+			Value: dagql.NewID[*core.ModuleSource](modSource.ID()),
+		},
+		{
+			Name:  "introspectionJson",
+			Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
+		},
+		{
+			Name:  "outputDir",
+			Value: dagql.String(outputDir),
+		},
+	}
+
+	_, devFlagExist := fct.LookupArg("dev")
+	if devFlagExist {
+		generateClientsArgs = append(generateClientsArgs, dagql.NamedInput{
+			Name:  "dev",
+			Value: dagql.NewBoolean(dev),
+		})
+	}
+
 	err = sdk.dag.Select(ctx, sdk.sdk, &inst, dagql.Selector{
 		Field: "generateClient",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "modSource",
-				Value: dagql.NewID[*core.ModuleSource](modSource.ID()),
-			},
-			{
-				Name:  "introspectionJson",
-				Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
-			},
-			{
-				Name:  "outputDir",
-				Value: dagql.String(outputDir),
-			},
-			{
-				Name:  "dev",
-				Value: dagql.NewBoolean(dev),
-			},
-		},
+		Args:  generateClientsArgs,
 	})
 	if err != nil {
 		return inst, fmt.Errorf("failed to call sdk module generate client: %w", err)

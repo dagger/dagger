@@ -1007,6 +1007,7 @@ func (ClientGeneratorTest) TestCustomClientGenerator(ctx context.Context, t *tes
 	testCases := []testCase{
 		{
 			generatorSDK: "go",
+			// Omit `dev` from signature to verify that it works if it's not defined.
 			generatorSource: `package main
 
 import (
@@ -1024,13 +1025,13 @@ func (g *Generator) GenerateClient(
   ctx context.Context,
   modSource *dagger.ModuleSource,
   introspectionJSON *dagger.File,
-  dev bool,
 ) (*dagger.Directory, error) {
   return dag.Directory().WithNewFile("hello.txt", "hello world"), nil
 }`,
 		},
 		{
 			generatorSDK: "typescript",
+			// Omit `dev` from signature to verify that it works if it's not defined.
 			generatorSource: `import { dag, Directory, object, func, ModuleSource, File } from "@dagger.io/dagger"
 
 @object()
@@ -1044,7 +1045,6 @@ export class Generator {
   generateClient(
     modSource: ModuleSource,
     introspectionJSON: File,
-    dev: boolean,
   ): Directory {
     return dag.directory().withNewFile("hello.txt", "hello world")
   }
@@ -1065,7 +1065,7 @@ export class Generator {
 				With(sdkSource(tc.generatorSDK, tc.generatorSource)).
 				WithWorkdir("/work").
 				With(daggerExec("init")).
-				With(daggerClientAdd("./generator"))
+				With(daggerExec("client", "add", "--generator=./generator"))
 
 			out, err := moduleSrc.File("hello.txt").Contents(ctx)
 			require.NoError(t, err)
