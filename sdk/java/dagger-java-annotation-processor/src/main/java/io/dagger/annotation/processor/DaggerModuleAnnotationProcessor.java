@@ -16,7 +16,6 @@ import io.dagger.module.info.FunctionInfo;
 import io.dagger.module.info.ModuleInfo;
 import io.dagger.module.info.ObjectInfo;
 import io.dagger.module.info.ParameterInfo;
-import jakarta.json.bind.JsonbBuilder;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.util.*;
@@ -350,8 +349,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
               .addParameter(String.class, "parentName")
               .addParameter(String.class, "fnName")
               .addParameter(
-                  ParameterizedTypeName.get(Map.class, String.class, JSON.class), "inputArgs")
-              .beginControlFlow("try (var jsonb = $T.create())", JsonbBuilder.class);
+                  ParameterizedTypeName.get(Map.class, String.class, JSON.class), "inputArgs");
       var firstObj = true;
       for (var objectInfo : moduleInfo.objects()) {
         if (firstObj) {
@@ -397,8 +395,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           im.endControlFlow(); // functions
         }
       }
-      im.endControlFlow(); // objects
-      im.endControlFlow() // try json
+      im.endControlFlow() // objects
           .addStatement(
               "throw new $T(new $T(\"unknown function \" + fnName))",
               InvocationTargetException.class,
