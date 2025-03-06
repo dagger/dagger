@@ -49,7 +49,13 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 	}
 	socketIDs = filteredSocketIDs
 
-	srcClient, ok := srv.clientFromIDs(destClient.daggerSession.sessionID, sourceClientID)
+	// TODO: THIS RELIES ON VERY GOOD SYNC SUCH THAT CLIENT IS NEVER GONE WHEN WE USE IT
+	// TODO: THIS RELIES ON VERY GOOD SYNC SUCH THAT CLIENT IS NEVER GONE WHEN WE USE IT
+	// TODO: THIS RELIES ON VERY GOOD SYNC SUCH THAT CLIENT IS NEVER GONE WHEN WE USE IT
+	// TODO: THIS RELIES ON VERY GOOD SYNC SUCH THAT CLIENT IS NEVER GONE WHEN WE USE IT
+	// TODO: Probably need to move dagql cache release to beginning of session removal
+	// TODO: AND retain client secret store after client is removed from session
+	srcClient, ok := srv.clientFromAnySession(sourceClientID)
 	if !ok {
 		if id.Optional {
 			return nil // no errors for this case
@@ -62,6 +68,13 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 			err = errors.Join(err, errors.New("cached result contains unknown socket IDs"))
 		}
 		return err // if nil, that's fine, nothing more to do here
+	}
+
+	// TODO: this shouldn't be needed...
+	// TODO: this shouldn't be needed...
+	// TODO: this shouldn't be needed...
+	if srcClient.deps == nil {
+		return fmt.Errorf("WTF")
 	}
 
 	srcDag, err := srcClient.deps.Schema(ctx)

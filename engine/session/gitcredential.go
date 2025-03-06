@@ -85,8 +85,10 @@ func (s GitCredentialAttachable) GetCredential(ctx context.Context, req *GitCred
 
 	cmd.Env = append(os.Environ(),
 		"GIT_TERMINAL_PROMPT=0",
-		"SSH_ASKPASS=echo",
 	)
+	if req.Protocol != "http" && req.Protocol != "https" {
+		cmd.Env = append(cmd.Env, "SSH_ASKPASS=echo")
+	}
 
 	// Run the command
 	if err := cmd.Run(); err != nil {

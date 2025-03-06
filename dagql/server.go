@@ -84,7 +84,7 @@ type TypeDef interface {
 }
 
 // NewServer returns a new Server with the given root object.
-func NewServer[T Typed](root T) *Server {
+func NewServer[T Typed](root T, c Cache) *Server {
 	rootClass := NewClass(ClassOpts[T]{
 		// NB: there's nothing actually stopping this from being a thing, except it
 		// currently confuses the Dagger Go SDK. could be a nifty way to pass
@@ -92,7 +92,7 @@ func NewServer[T Typed](root T) *Server {
 		NoIDs: true,
 	})
 	srv := &Server{
-		Cache: NewCache(),
+		Cache: c,
 		root: Instance[T]{
 			Self:  root,
 			Class: rootClass,
@@ -111,10 +111,6 @@ func NewServer[T Typed](root T) *Server {
 		srv.InstallDirective(directive)
 	}
 	return srv
-}
-
-func NewCache() Cache {
-	return cache.NewCache[digest.Digest, Typed]()
 }
 
 func NewDefaultHandler(es graphql.ExecutableSchema) *handler.Server {
