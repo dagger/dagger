@@ -491,6 +491,20 @@ func (sdk *goSDK) GenerateClient(
 		"--client-only",
 	}
 
+	// Send the dependencies reference to the codegen so it can embed their loading.
+	dependenciesRef := []string{}
+	for _, dep := range modSource.Self.Dependencies {
+		if dep.Self.Kind == core.ModuleSourceKindGit {
+			dependenciesRef = append(dependenciesRef, dep.Self.AsString())
+		}
+	}
+	if len(dependenciesRef) > 0 {
+		codegenArgs = append(codegenArgs,
+			dagql.NewString("--dependencies-ref"),
+			dagql.NewString(strings.Join(dependenciesRef, ",")),
+		)
+	}
+
 	err = sdk.dag.Select(ctx, ctr, &ctr,
 		dagql.Selector{
 			Field: "withMountedFile",
