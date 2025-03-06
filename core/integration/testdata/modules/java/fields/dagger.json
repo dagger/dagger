@@ -1,5 +1,5 @@
 {
   "name": "fields",
-  "engineVersion": "v0.15.4-010101000000-dev-9fc7291f4b92",
-  "sdk": "java"
+  "engineVersion": "v0.16.2",
+  "sdk": "../../sdk/java"
 }
