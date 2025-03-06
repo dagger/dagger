@@ -44,7 +44,7 @@ func newGenaiClient(endpoint *LlmEndpoint, defaultSystemPrompt string) (*GenaiCl
 	}, err
 }
 
-func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, tools []bbi.Tool) (*LLMResponse, error) {
+func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, tools []bbi.Tool) (_ *LLMResponse, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
 		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 		attribute.String(telemetry.UIMessageAttr, "received"),
@@ -69,11 +69,6 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 	}
 
 	inputTokensCacheReads, err := m.Int64Gauge(telemetry.LLMInputTokensCacheReads)
-	if err != nil {
-		return nil, err
-	}
-
-	inputTokensCacheWrites, err := m.Int64Gauge(telemetry.LLMInputTokensCacheWrites)
 	if err != nil {
 		return nil, err
 	}
