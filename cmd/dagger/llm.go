@@ -63,17 +63,15 @@ func LLMLoop(ctx context.Context, engineClient *client.Client) error {
 	// start the shell loop
 	Frontend.Shell(shellCtx,
 		func(ctx context.Context, line string) (rerr error) {
-			if line == "exit" {
+			if line == "/exit" {
 				cancel()
 				return nil
 			}
-
-			var err error
-			s, err = s.Interpret(ctx, line)
+			new, err := s.Interpret(ctx, line)
 			if err != nil {
 				return err
 			}
-
+			s = new
 			return nil
 		},
 		s.Complete,
@@ -86,21 +84,23 @@ func LLMLoop(ctx context.Context, engineClient *client.Client) error {
 	return nil
 }
 
+type interpreterMode int
+
+const (
+	modePrompt interpreterMode = iota
+	modeShell
+)
+
 type LLMSession struct {
 	undo      *LLMSession
 	dag       *dagger.Client
 	llm       *dagger.Llm
-	llmId     dagger.LlmID
 	shell     *shellCallHandler
 	completer editline.AutoCompleteFn
+	mode      interpreterMode
 }
 
 func NewLLMSession(ctx context.Context, dag *dagger.Client, llm *dagger.Llm) (*LLMSession, error) {
-	id, err := llm.ID(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	shellHandler := &shellCallHandler{
 		dag:   dag,
 		debug: debug,
@@ -115,9 +115,9 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llm *dagger.Llm) (*L
 	return &LLMSession{
 		dag:       dag,
 		llm:       llm,
-		llmId:     id,
 		shell:     shellHandler,
 		completer: shellCompletion.Do,
+		mode:      modePrompt,
 	}, nil
 }
 
@@ -138,7 +138,31 @@ var slashCommands = []slashCommand{
 		desc:    "Undo the last command",
 		handler: (*LLMSession).Undo,
 	},
-	// TODO: /history, /compact, /shell, ???
+	{
+		name:    "/shell",
+		desc:    "Switch into shell mode",
+		handler: (*LLMSession).Shell,
+	},
+	{
+		name:    "/prompt",
+		desc:    "Switch into prompt mode",
+		handler: (*LLMSession).Prompt,
+	},
+	{
+		name:    "/clear",
+		desc:    "Clear the LLM history",
+		handler: (*LLMSession).Clear,
+	},
+	{
+		name:    "/compact",
+		desc:    "Compact the LLM history",
+		handler: (*LLMSession).Compact,
+	},
+	{
+		name:    "/history",
+		desc:    "Show the LLM history",
+		handler: (*LLMSession).History,
+	},
 }
 
 func (s *LLMSession) Interpret(ctx context.Context, input string) (_ *LLMSession, rerr error) {
@@ -148,8 +172,6 @@ func (s *LLMSession) Interpret(ctx context.Context, input string) (_ *LLMSession
 
 	ctx, span := Tracer().Start(ctx, input)
 	defer telemetry.End(span, func() error { return rerr })
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	defer stdio.Close()
 
 	if strings.HasPrefix(input, "/") {
 		for _, cmd := range slashCommands {
@@ -161,6 +183,17 @@ func (s *LLMSession) Interpret(ctx context.Context, input string) (_ *LLMSession
 		return s, fmt.Errorf("unknown slash command: %s", input)
 	}
 
+	switch s.mode {
+	case modePrompt:
+		return s.interpretPrompt(ctx, input)
+	case modeShell:
+		return s.interpretShell(ctx, input)
+	default:
+		return s, fmt.Errorf("unknown mode: %d", s.mode)
+	}
+}
+
+func (s *LLMSession) interpretPrompt(ctx context.Context, input string) (*LLMSession, error) {
 	s = s.Fork()
 
 	prompted, err := s.llm.WithPrompt(input).Sync(ctx)
@@ -170,6 +203,14 @@ func (s *LLMSession) Interpret(ctx context.Context, input string) (_ *LLMSession
 
 	s.llm = prompted
 
+	return s, nil
+}
+
+func (s *LLMSession) interpretShell(ctx context.Context, input string) (*LLMSession, error) {
+	_, _, err := s.shell.Eval(ctx, input)
+	if err != nil {
+		return s, err
+	}
 	return s, nil
 }
 
@@ -183,18 +224,22 @@ func (s *LLMSession) With(ctx context.Context, script string) (*LLMSession, erro
 		return s, err
 	}
 	if typeDef.AsFunctionProvider() != nil {
+		llmId, err := s.llm.ID(ctx)
+		if err != nil {
+			return s, err
+		}
 		s = s.Fork()
 		if err := s.dag.QueryBuilder().
 			Select("loadLlmFromID").
-			Arg("id", s.llmId).
+			Arg("id", llmId).
 			Select(fmt.Sprintf("with%s", typeDef.Name())).
 			Arg("value", resp).
 			Select("id").
-			Bind(&s.llmId).
+			Bind(&llmId).
 			Execute(ctx); err != nil {
 			return s, err
 		}
-		s.llm = s.dag.LoadLlmFromID(s.llmId)
+		s.llm = s.dag.LoadLlmFromID(llmId)
 		return s, nil
 	}
 	return s, fmt.Errorf("cannot change scope to %s - script must return an Object type", typeDef.Name())
@@ -224,6 +269,87 @@ func (s *LLMSession) IsComplete(entireInput [][]rune, line int, col int) bool {
 		return shellIsComplete(input, l, c)
 	}
 	return true
+}
+
+func (s *LLMSession) Clear(ctx context.Context, _ string) (_ *LLMSession, rerr error) {
+	s.llm = s.dag.Llm(dagger.LlmOpts{
+		Model: llmModel,
+	})
+	return s, nil
+}
+
+var compact = `Please summarize our conversation so far into a concise context that:
+
+1. Preserves all critical information including:
+   - Key questions asked and answers provided
+   - Important code snippets and their purposes
+   - Project structure and technical details
+   - Decisions made and rationales
+
+2. Condenses or removes:
+   - Verbose explanations
+   - Redundant information
+   - Preliminary explorations that didn't lead anywhere
+   - Courtesy exchanges and non-technical chat
+
+3. Maintains awareness of file changes:
+   - Track which files have been viewed, created, or modified
+   - Remember the current state of important files
+   - Preserve knowledge of project structure
+
+4. Formats the summary in a structured way:
+   - Project context (language, framework, objectives)
+   - Current task status
+   - Key technical details discovered
+   - Next steps or pending questions
+
+Present this summary in a compact form that retains all essential context needed to continue our work effectively, then continue our conversation from this point forward as if we had the complete conversation history.
+	
+This will be a note to yourself, not shown to the user, so prioritize your own understanding and don't ask any questions, because they won't be seen by anyone.
+`
+
+func (s *LLMSession) Compact(ctx context.Context, _ string) (_ *LLMSession, rerr error) {
+	ctx, span := Tracer().Start(ctx, "compact", telemetry.Internal(), telemetry.Encapsulate())
+	defer telemetry.End(span, func() error { return rerr })
+	summary, err := s.llm.WithPrompt(compact).LastReply(ctx)
+	if err != nil {
+		return s, err
+	}
+	fresh := s.dag.Llm(dagger.LlmOpts{
+		Model: llmModel,
+	})
+	compacted, err := fresh.WithPrompt(summary).Sync(ctx)
+	if err != nil {
+		return s, err
+	}
+	// TODO: restore previous state
+	s.llm = compacted
+	return s, nil
+}
+
+func (s *LLMSession) History(ctx context.Context, _ string) (*LLMSession, error) {
+	history, err := s.llm.History(ctx)
+	if err != nil {
+		return s, err
+	}
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
+	for _, h := range history {
+		fmt.Fprintln(stdio.Stdout, h)
+	}
+	return s, nil
+}
+
+func (s *LLMSession) Shell(ctx context.Context, _ string) (*LLMSession, error) {
+	s = s.Fork()
+	s.mode = modeShell
+	return s, nil
+}
+
+func (s *LLMSession) Prompt(ctx context.Context, _ string) (*LLMSession, error) {
+	s = s.Fork()
+	s.mode = modePrompt
+	return s, nil
 }
 
 func stripCommandPrefix(prefix string, entireInput [][]rune, line, col int) ([][]rune, int, int, bool) {
