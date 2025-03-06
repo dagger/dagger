@@ -6,16 +6,14 @@ import (
 	"strings"
 	"sync"
 
+	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
-)
-
-const (
-	llmPromptSymbol = "💬"
+	"github.com/vito/bubbline/editline"
 )
 
 // Variables for llm command flags
@@ -50,6 +48,7 @@ func LLMLoop(ctx context.Context, engineClient *client.Client) error {
 		dag:   dag,
 		debug: debug,
 	}
+	shellCompletion := &shellAutoComplete{shellHandler}
 
 	if err := shellHandler.Initialize(ctx); err != nil {
 		return err
@@ -60,9 +59,11 @@ func LLMLoop(ctx context.Context, engineClient *client.Client) error {
 	defer telemetry.End(shellSpan, func() error { return nil })
 	Frontend.SetPrimary(dagui.SpanID{SpanID: shellSpan.SpanContext().SpanID()})
 
-	// TODO: initialize LLM with current module, matching shell behavior?
+	llm := dag.Llm(dagger.LlmOpts{
+		Model: llmModel,
+	})
 
-	llm := dag.Llm()
+	// TODO: initialize LLM with current module, matching shell behavior?
 
 	mu := &sync.Mutex{}
 	Frontend.Shell(shellCtx,
@@ -120,11 +121,39 @@ func LLMLoop(ctx context.Context, engineClient *client.Client) error {
 
 			return nil
 		},
-		nil,
+		func(entireInput [][]rune, row, col int) (msg string, comp editline.Completions) {
+			if input, l, c, ok := stripCommandPrefix("/with ", entireInput, row, col); ok {
+				return shellCompletion.Do(input, l, c)
+			}
+			return "", nil
+		},
+		func(entireInput [][]rune, line int, col int) bool {
+			if input, l, c, ok := stripCommandPrefix("/with ", entireInput, line, col); ok {
+				return shellIsComplete(input, l, c)
+			}
+			return true
+		},
 		func(out idtui.TermOutput, fg termenv.Color) string {
 			return out.String(idtui.PromptSymbol + " ").Foreground(fg).String()
 		},
 	)
 
 	return nil
+}
+
+func stripCommandPrefix(prefix string, entireInput [][]rune, line, col int) ([][]rune, int, int, bool) {
+	if len(entireInput) == 0 {
+		return entireInput, line, col, false
+	}
+	firstLine := string(entireInput[0])
+	if strings.HasPrefix(firstLine, prefix) {
+		strippedLine := strings.TrimSpace(strings.TrimPrefix(firstLine, prefix))
+		strippedInput := [][]rune{[]rune(strippedLine)}
+		strippedInput = append(strippedInput, entireInput[1:]...)
+		if line == 0 {
+			col -= len(prefix)
+		}
+		return strippedInput, line, col, true
+	}
+	return entireInput, line, col, false
 }

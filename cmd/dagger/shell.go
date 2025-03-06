@@ -17,6 +17,7 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
+	"github.com/vito/bubbline/computil"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -467,6 +468,7 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 			return h.run(ctx, strings.NewReader(line), "")
 		},
 		complete.Do,
+		shellIsComplete,
 		h.prompt,
 	)
 
@@ -491,4 +493,16 @@ func (*shellCallHandler) Print(ctx context.Context, args ...any) error {
 	hctx := interp.HandlerCtx(ctx)
 	_, err := fmt.Fprintln(hctx.Stdout, args...)
 	return err
+}
+
+func shellIsComplete(entireInput [][]rune, line int, col int) bool {
+	input, _ := computil.Flatten(entireInput, line, col)
+	_, err := syntax.NewParser().Parse(strings.NewReader(input), "")
+	if err != nil {
+		if syntax.IsIncomplete(err) {
+			// only return false here if it's incomplete
+			return false
+		}
+	}
+	return true
 }
