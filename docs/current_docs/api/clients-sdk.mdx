@@ -544,6 +544,203 @@ Completed tests for PHP 8.3
 **********
 ```
 </TabItem>
+<TabItem value="Java">
+
+:::note
+The Dagger Java SDK requires [Java 17 or later](https://www.oracle.com/java/technologies/downloads/?er=221886).
+:::
+
+The Dagger Java SDK works with Java as well as other JVM languages like Kotlin or Clojure.
+
+Install the Dagger Java SDK in your project. The Dagger Java SDK is available on [Maven Central](https://central.sonatype.com/artifact/io.dagger/dagger-java-sdk), so you can add it to your dependency management tool:
+
+<Tabs groupId="java-build-system">
+<TabItem value="Maven">
+```xml
+<dependency>
+    <groupId>io.dagger</groupId>
+    <artifactId>dagger-java-sdk</artifactId>
+    <version>0.16.3</version>
+</dependency>
+```
+</TabItem>
+<TabItem value="Gradle">
+```groovy
+implementation 'io.dagger:dagger-java-sdk:0.16.3'
+```
+</TabItem>
+</Tabs>
+
+This example demonstrates how to test an application using the Java SDK.
+
+<Tabs groupId="jvm-variation">
+<TabItem value="Java/Maven">
+Generate an example Maven project using the following command:
+
+```shell
+mvn archetype:generate -DgroupId=com.mycompany.app -DartifactId=my-app -DarchetypeArtifactId=maven-archetype-quickstart -DarchetypeVersion=1.5 -DinteractiveMode=false
+```
+
+Add the `dagger-java-sdk` dependency to your project's `pom.xml` file:
+
+```xml
+<dependency>
+    <groupId>io.dagger</groupId>
+    <artifactId>dagger-java-sdk</artifactId>
+    <version>0.16.3</version>
+</dependency>
+```
+
+Create a new file named `Test.java` in the `src/main/java/com/mycompany/app` directory and add the following code to it:
+
+```java file=./snippets/clients-sdk/java/Test.java
+```
+
+This Java program imports the Dagger SDK and defines a class named `Test`.
+This class creates a Dagger client, which provides an interface to the Dagger API.
+It also defines a Java version matrix, consisting of Java versions `17` and `21` and `23`, and iterates over this matrix,
+downloading a Maven container image for each specified Java version and testing the source application within this image.
+
+Run the Java program by executing the command below from the project directory:
+
+```shell
+dagger run sh -c 'mvn compile exec:java -Dexec.mainClass="com.mycompany.app.Test"'
+```
+
+The `dagger run` command executes the specified command in a Dagger session and displays live progress.
+The program tests the application against each version and displays the following final output:
+
+```shell
+```
+
+</TabItem>
+<TabItem value="Java/Gradle">
+Generate an example Gradle project using the following command:
+
+```shell
+gradle init --type java-application --dsl groovy --project-name my-app --package com.mycompany.app --java-version 17 --use-defaults
+```
+
+Add the `dagger-java-sdk` dependency to your project's `app/build.gradle` file:
+
+```groovy
+implementation 'io.dagger:dagger-java-sdk:0.16.3'
+```
+
+Create a new file named `Test.java` in the `app/src/main/java/com/mycompany/app` directory and add the following code to it:
+
+```java file=./snippets/clients-sdk/java-gradle/Test.java
+```
+
+This Java program imports the Dagger SDK and defines a class named `Test`.
+This class creates a Dagger client, which provides an interface to the Dagger API.
+It also defines a Java version matrix, consisting of Java versions `17` and `21` and `23`, and iterates over this matrix,
+downloading a Gradle container image for each specified Java version and testing the source application within this image.
+
+Add the following code to the `app/build.gradle` file:
+
+```groovy
+tasks.register('rundagger', JavaExec) {
+    group = "application"
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.mycompany.app.Test'
+}
+```
+
+Run the Java program by executing the command below from the project directory:
+
+```shell
+dagger run gradle rundagger
+```
+
+The `dagger run` command executes the specified command in a Dagger session and displays live progress.
+The program tests the application against each version and displays the following final output:
+
+```shell
+```
+</TabItem>
+<TabItem value="Kotlin/Gradle">
+Generate an example Gradle project using the following command:
+
+```shell
+gradle init --type kotlin-application --dsl kotlin --project-name my-app --package com.mycompany.app --java-version 17 --use-defaults
+```
+
+Add the `dagger-java-sdk` dependency to your project's `app/build.gradle` file:
+
+```groovy
+implementation("io.dagger:dagger-java-sdk:0.16.3")
+```
+
+Create a new file named `Test.kt` in the `app/src/main/kotlin/com/mycompany/app` directory and add the following code to it:
+
+```java file=./snippets/clients-sdk/kotlin/Test.kt
+```
+
+This Kotlin program imports the Dagger SDK and defines an object named `Test` with a `main` function.
+This main function creates a Dagger client, which provides an interface to the Dagger API.
+It also defines a Java version matrix, consisting of Java versions `17` and `21` and `23`, and iterates over this matrix,
+downloading a Gradle container image for each specified Java version and testing the source application within this image.
+
+Add the following code to the `app/build.gradle.kts` file:
+
+```groovy
+tasks.register<JavaExec>("rundagger") {
+    group = "application"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.mycompany.app.Test")
+}
+```
+
+Run the Kotlin program by executing the command below from the project directory:
+
+```shell
+dagger run gradle rundagger
+```
+
+The `dagger run` command executes the specified command in a Dagger session and displays live progress.
+The program tests the application against each version and displays the following final output:
+
+```shell
+```
+</TabItem>
+<TabItem value="Clojure/Leiningen">
+Generate an example Clojure project using the following command:
+
+```shell
+lein new app my-app
+```
+
+Add the `dagger-java-sdk` dependency to your project's `project.clj` file:
+
+```clojure
+[io.dagger/dagger-java-sdk "0.16.3"]
+```
+
+Create a new file named `test.clj` in the `src/my_app` directory and add the following code to it:
+
+```java file=./snippets/clients-sdk/clojure/test.clj
+```
+
+This Clojure program imports the Dagger SDK and defines a `main` function.
+This main function creates a Dagger client, which provides an interface to the Dagger API.
+It also defines a Java version matrix, consisting of Java versions `17` and `21` and `23`, and iterates over this matrix,
+downloading a Clojure container image for each specified Java version and testing the source application within this image.
+
+Run the Clojure program by executing the command below from the project directory:
+
+```shell
+dagger run lein run -m my-app.test
+```
+
+The `dagger run` command executes the specified command in a Dagger session and displays live progress.
+The program tests the application against each version and displays the following final output:
+
+```shell
+```
+</TabItem>
+</Tabs>
+</TabItem>
 </Tabs>
 
 ## Differences
