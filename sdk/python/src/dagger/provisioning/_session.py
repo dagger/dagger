@@ -8,10 +8,11 @@ from importlib import metadata
 from pathlib import Path
 from typing import cast
 
-import dagger
 from dagger._managers import SyncResource
+from dagger.client._session import ConnectParams
 
-from .conn import ConnectParams
+from ._config import Config
+from ._exceptions import SessionError
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ def get_sdk_version():
         return "n/a"
 
 
-def start_cli_session(cfg: dagger.Config, path: str):
+def start_cli_session(cfg: Config, path: str):
     # TODO: Convert calling session subprocess to async.
     return SyncResource(start_cli_session_sync(cfg, path))
 
@@ -63,11 +64,11 @@ class Pclose(contextlib.AbstractContextManager):
         if self.proc.wait(self.timeout):
             # non-zero exit code
             msg = make_process_error_msg(self.proc, None, None)
-            raise dagger.SessionError(msg)
+            raise SessionError(msg)
 
 
 @contextlib.contextmanager
-def start_cli_session_sync(cfg: dagger.Config, path: str):
+def start_cli_session_sync(cfg: Config, path: str):
     """Start an engine session with a provided CLI path."""
     logger.debug("Starting session using %s", path)
     try:
@@ -77,10 +78,10 @@ def start_cli_session_sync(cfg: dagger.Config, path: str):
             stack.push(Pclose(proc))
             yield params
     except (OSError, ValueError, TypeError) as e:
-        raise dagger.SessionError(e) from e
+        raise SessionError(e) from e
 
 
-def run(cfg: dagger.Config, path: str) -> subprocess.Popen[str]:
+def run(cfg: Config, path: str) -> subprocess.Popen[str]:
     args = [
         path,
         "session",
@@ -121,7 +122,7 @@ def run(cfg: dagger.Config, path: str) -> subprocess.Popen[str]:
             return proc
 
     msg = "CLI busy"
-    raise dagger.SessionError(msg)
+    raise SessionError(msg)
 
 
 def get_connect_params(proc: subprocess.Popen[str]) -> ConnectParams:
@@ -134,17 +135,17 @@ def get_connect_params(proc: subprocess.Popen[str]) -> ConnectParams:
         stdout = conn + proc.stdout.read()
         stderr = proc.stderr.read() if proc.stderr and proc.stderr.readable() else None
         msg = make_process_error_msg(proc, stdout, stderr)
-        raise dagger.SessionError(msg)
+        raise SessionError(msg)
 
     if not conn:
         msg = "No connection params"
-        raise dagger.SessionError(msg)
+        raise SessionError(msg)
 
     try:
         return ConnectParams(**json.loads(conn))
     except (ValueError, TypeError) as e:
         msg = f"Invalid connection params: {conn}"
-        raise dagger.SessionError(msg) from e
+        raise SessionError(msg) from e
 
 
 def make_process_error_msg(
