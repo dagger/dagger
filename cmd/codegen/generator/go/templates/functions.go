@@ -85,6 +85,7 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"IsDevMode":               funcs.isDevMode,
 		"ModuleMainSrc":           funcs.moduleMainSrc,
 		"ModuleRelPath":           funcs.moduleRelPath,
+		"DependenciesRef":         funcs.dependenciesRef,
 	}
 }
 

@@ -20,7 +20,16 @@ export async function connection(
 ) {
   cfg.ServeCurrentModule = true
 
-  return await _connection(fct, cfg)
+  const wrapperFunc = async (): Promise<void> => {
+    {{ range $i, $dep := DependenciesRef }}
+    await dag.moduleSource("{{ $dep }}").asModule().serve()
+    {{ end }}
+
+    // Call the callback
+    await fct()
+  }
+
+  return await _connection(wrapperFunc, cfg)
 }
 
 export async function connect(
@@ -29,7 +38,18 @@ export async function connect(
 ) {
   cfg.ServeCurrentModule = true
 
-  return await _connect(fct, cfg)
+  // Serve remote dependencies before calling the callback
+  const wrapperFunc = async (client: Client): Promise<void> => {
+    {{ range $i, $dep := DependenciesRef }}
+    await client.moduleSource("{{ $dep }}").asModule().serve()
+    {{ end }}
+
+    // Call the callback with the client
+    // This requires to use `any`
+    await fct(client as any)
+  }
+
+  return await _connect(wrapperFunc as unknown as CallbackFct, cfg)
 }
 {{- end }}
 
