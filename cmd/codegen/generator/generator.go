@@ -57,6 +57,11 @@ type Config struct {
 	// Dev indicates that the codegen should use the local SDK instead of the published one.
 	// This is only relevant when ClientOnly is true.
 	Dev bool
+
+	// DependenciesRef is the list of all dependencies used by the module.
+	// This is used for client generator to automatically serves the dependencies
+	// on connection. 
+	DependenciesRef []string
 }
 
 type Generator interface {

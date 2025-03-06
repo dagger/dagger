@@ -55,6 +55,16 @@ func (d *ModDeps) Append(mods ...Mod) *ModDeps {
 	return NewModDeps(d.root, deps)
 }
 
+func (d *ModDeps) LookupDep(name string) bool {
+	for _, mod := range d.Mods {
+		if mod.Name() == name {
+			return true
+		}
+	}
+
+	return false
+}
+
 // The combined schema exposed by each mod in this set of dependencies
 func (d *ModDeps) Schema(ctx context.Context) (*dagql.Server, error) {
 	schema, _, err := d.lazilyLoadSchema(ctx)

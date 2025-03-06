@@ -38,6 +38,10 @@ func (funcs goTemplateFuncs) isDevMode() bool {
 	return funcs.cfg.Dev
 }
 
+func (funcs goTemplateFuncs) dependenciesRef() []string {
+	return funcs.cfg.DependenciesRef
+}
+
 func (funcs goTemplateFuncs) moduleRelPath(path string) string {
 	return filepath.Join(
 		// path to the root of this module (since we're probably in internal/dagger/)
