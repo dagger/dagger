@@ -5411,11 +5411,11 @@ func daggerNonNestedRun(args ...string) dagger.WithContainerFunc {
 }
 
 func daggerClientAdd(generator string) dagger.WithContainerFunc {
-	return daggerExec("client", "add", "--generator="+generator, "--local-sdk")
+	return daggerExec("client", "add", "--generator="+generator, "--dev")
 }
 
 func daggerClientAddAt(generator string, outputDirPath string) dagger.WithContainerFunc {
-	return daggerExec("client", "add", "--generator="+generator, "--local-sdk", outputDirPath)
+	return daggerExec("client", "add", "--generator="+generator, "--dev", outputDirPath)
 }
 
 func daggerQuery(query string, args ...any) dagger.WithContainerFunc {

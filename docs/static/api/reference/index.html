@@ -69,6 +69,7 @@
               <li><a href="#query-loadInterfaceTypeDefFromID">loadInterfaceTypeDefFromID</a></li>
               <li><a href="#query-loadLabelFromID">loadLabelFromID</a></li>
               <li><a href="#query-loadListTypeDefFromID">loadListTypeDefFromID</a></li>
+              <li><a href="#query-loadModuleConfigClientFromID">loadModuleConfigClientFromID</a></li>
               <li><a href="#query-loadModuleFromID">loadModuleFromID</a></li>
               <li><a href="#query-loadModuleSourceFromID">loadModuleSourceFromID</a></li>
               <li><a href="#query-loadObjectTypeDefFromID">loadObjectTypeDefFromID</a></li>
@@ -154,6 +155,8 @@
               <li><a href="#definition-ListTypeDef">ListTypeDef</a></li>
               <li><a href="#definition-ListTypeDefID">ListTypeDefID</a></li>
               <li><a href="#definition-Module">Module</a></li>
+              <li><a href="#definition-ModuleConfigClient">ModuleConfigClient</a></li>
+              <li><a href="#definition-ModuleConfigClientID">ModuleConfigClientID</a></li>
               <li><a href="#definition-ModuleID">ModuleID</a></li>
               <li><a href="#definition-ModuleSource">ModuleSource</a></li>
               <li><a href="#definition-ModuleSourceID">ModuleSourceID</a></li>
@@ -2335,6 +2338,59 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-ListTypeDefID"><code>ListTypeDefID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadModuleConfigClientFromID" class="operation operation-query" data-traverse-target="query-loadModuleConfigClientFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadModuleConfigClientFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a ModuleConfigClient from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-ModuleConfigClient"><code>ModuleConfigClient!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-ModuleConfigClientID"><code>ModuleConfigClientID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -7641,6 +7697,63 @@
               </div>
             </div>
           </section>
+          <section id="definition-ModuleConfigClient" class="definition definition-object" data-traverse-target="definition-ModuleConfigClient">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ModuleConfigClient</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The client generated for the module.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleConfigClient-dev" href="#ModuleConfigClient-dev"><code>dev</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span> </td>
+                        <td> If true, generate the client in developer mode. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleConfigClient-directory" href="#ModuleConfigClient-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The directory the client is generated in. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleConfigClient-generator" href="#ModuleConfigClient-generator"><code>generator</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The generator to use </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleConfigClient-id" href="#ModuleConfigClient-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ModuleConfigClientID"><code>ModuleConfigClientID!</code></a></span> </td>
+                        <td> A unique identifier for this ModuleConfigClient. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-ModuleConfigClientID" class="definition definition-scalar" data-traverse-target="definition-ModuleConfigClientID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ModuleConfigClientID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>ModuleConfigClientID</code> scalar type represents an identifier for an object of type ModuleConfigClient.</p>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="definition-ModuleID" class="definition definition-scalar" data-traverse-target="definition-ModuleID">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -7693,6 +7806,10 @@
                         <td> The resolved commit of the git repo this source points to. Only valid for git sources. </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-configClients" href="#ModuleSource-configClients"><code>configClients</code></a> - <span class="property-type"><a href="#definition-ModuleConfigClient"><code>[ModuleConfigClient!]!</code></a></span> </td>
+                        <td> The clients generated for the module. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-configExists" href="#ModuleSource-configExists"><code>configExists</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
                         <td> Whether an existing dagger.json for the module was found. </td>
                       </tr>
@@ -7728,31 +7845,6 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-engineVersion" href="#ModuleSource-engineVersion"><code>engineVersion</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The engine version of the module. </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-generateClient" href="#ModuleSource-generateClient"><code>generateClient</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
-                        <td> Generates a client for the module. </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>generator</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The generator to use</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>localSdk</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>Use local SDK dependency</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>outputDir</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The output directory for the generated client.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-generatedContextDirectory" href="#ModuleSource-generatedContextDirectory"><code>generatedContextDirectory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
@@ -7817,6 +7909,31 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-version" href="#ModuleSource-version"><code>version</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The specified version of the git repo this source points to. Only valid for git sources. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-withClient" href="#ModuleSource-withClient"><code>withClient</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Update the module source with a new client to generate. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>dev</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Generate in developer mode</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>generator</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The generator to use</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>outputDir</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The output directory for the generated client.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="ModuleSource-withDependencies" href="#ModuleSource-withDependencies"><code>withDependencies</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>

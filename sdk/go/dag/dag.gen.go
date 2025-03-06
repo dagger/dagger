@@ -294,6 +294,12 @@ func LoadListTypeDefFromID(id dagger.ListTypeDefID) *dagger.ListTypeDef {
 	return client.LoadListTypeDefFromID(id)
 }
 
+// Load a ModuleConfigClient from its ID.
+func LoadModuleConfigClientFromID(id dagger.ModuleConfigClientID) *dagger.ModuleConfigClient {
+	client := initClient()
+	return client.LoadModuleConfigClientFromID(id)
+}
+
 // Load a Module from its ID.
 func LoadModuleFromID(id dagger.ModuleID) *dagger.Module {
 	client := initClient()
