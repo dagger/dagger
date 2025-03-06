@@ -1,6 +1,6 @@
 {
   "name": "defaults",
-  "engineVersion": "v0.16.0-010101000000-dev-ccad89615976",
+  "engineVersion": "v0.16.2",
   "sdk": {
     "source": "../../sdk/java"
   }

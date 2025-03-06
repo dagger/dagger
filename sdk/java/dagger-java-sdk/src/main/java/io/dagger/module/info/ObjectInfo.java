@@ -8,4 +8,4 @@ public record ObjectInfo(
     String description,
     FieldInfo[] fields,
     FunctionInfo[] functions,
-    Optional<ConstructorInfo> constructor) {}
+    Optional<FunctionInfo> constructor) {}
