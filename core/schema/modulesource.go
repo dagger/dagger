@@ -174,7 +174,12 @@ type moduleSourceArgs struct {
 
 func (s *moduleSourceSchema) moduleSourceCacheKey(ctx context.Context, query dagql.Instance[*core.Query], args moduleSourceArgs, cacheCfg dagql.CacheConfig) (*dagql.CacheConfig, error) {
 	if fastModuleSourceKindCheck(args.RefString, args.RefPin) == core.ModuleSourceKindGit {
-		return &cacheCfg, nil
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// return &cacheCfg, nil
 	}
 
 	return dagql.CachePerClient(ctx, query, args, cacheCfg)
@@ -610,7 +615,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
-	secretTransferPostCall, err := core.SecretTransferPostCall(ctx, query.Self, clientMetadata.ClientID, &resource.ID{
+	secretTransferPostCall, err := core.ResourceTransferPostCall(ctx, query.Self, clientMetadata.ClientID, &resource.ID{
 		ID: *gitSrc.ContextDirectory.ID(),
 	})
 	if err != nil {
@@ -2139,7 +2144,7 @@ func (s *moduleSourceSchema) moduleSourceAsModuleCacheKey(
 	// uses should digest the args too
 
 	// TODO: doc why
-	cacheCfg.Digest = dagql.HashFrom(src.Self.Digest, "asModule")
+	cacheCfg.Digest = dagql.HashFrom(src.Self.Digest, src.Self.ModuleName, "asModule")
 	return &cacheCfg, nil
 }
 
