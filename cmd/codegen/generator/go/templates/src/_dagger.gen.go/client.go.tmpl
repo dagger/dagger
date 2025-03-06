@@ -95,6 +95,13 @@ func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 		client: gql,
 		conn:   conn,
 	}
+
+	{{ range $i, $dep := DependenciesRef }}
+	if err = c.ModuleSource("{{ $dep }}").AsModule().Serve(ctx); err != nil {
+		return nil, err
+	}
+	{{ end }}
+
 	return c, nil
 }
 

@@ -244,10 +244,18 @@ func Connect(ctx context.Context, opts ...dagger.ClientOpt) (*Client, error) {
 		return nil, err
 	}
 
-	return &Client{
+	c := &Client{
 		query:  dag.QueryBuilder(),
 		client: dag.GraphQLClient(),
-	}, nil
+	}
+
+	{{ range $i, $dep := DependenciesRef }}
+	if err = c.ModuleSource("{{ $dep }}").AsModule().Serve(ctx); err != nil {
+		return nil, err
+	}
+	{{ end }}
+
+	return c, nil
 }
 {{ end }}
 {{ end }}

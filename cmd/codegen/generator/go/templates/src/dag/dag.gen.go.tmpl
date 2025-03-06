@@ -33,6 +33,14 @@ func initClient() *dagger.Client {
 		if err != nil {
 			panic(err)
 		}
+
+    {{ if IsStandaloneClient }}
+	  {{- range $i, $dep := DependenciesRef }}
+	  if err = client.ModuleSource("{{ $dep }}").AsModule().Serve(ctx); err != nil {
+	    return nil, err
+	  }
+	  {{ end }}
+		{{- end }}
 	}
 	return client
 }
