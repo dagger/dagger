@@ -11,9 +11,6 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/dagger/dagger/core/bbi"
-	_ "github.com/dagger/dagger/core/bbi/empty"
-	_ "github.com/dagger/dagger/core/bbi/flat"
 	"github.com/dagger/dagger/dagql"
 	"github.com/joho/godotenv"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -40,15 +37,7 @@ type Llm struct {
 	calls      map[string]string
 	promptVars []string
 
-	// LLM state
-	// Can hold typed variables for all the types available in the schema
-	// This state is what gets extended by our graphql middleware
-	// FIXME: Agent.ref moves here
-	// FIXME: Agent.self moves here
-	// FIXME: Agent.selfType moves here
-	// FIXME: Agent.Self moves here
-	// state map[string]dagql.Typed
-	state dagql.Typed
+	env *LlmEnv
 }
 
 type LlmEndpoint struct {
@@ -63,7 +52,7 @@ type LlmProvider string
 
 // LLMClient interface defines the methods that each provider must implement
 type LLMClient interface {
-	SendQuery(ctx context.Context, history []ModelMessage, tools []bbi.Tool) (*LLMResponse, error)
+	SendQuery(ctx context.Context, history []ModelMessage, tools []LlmTool) (*LLMResponse, error)
 }
 
 type LLMResponse struct {
@@ -365,9 +354,11 @@ func NewLlm(ctx context.Context, query *Query, srv *dagql.Server, model string, 
 		Query:       query,
 		Endpoint:    endpoint,
 		maxAPICalls: maxAPICalls,
-		calls:       make(map[string]string),
-		// FIXME: support multiple variables in state
-		// state:  make(map[string]dagql.Typed),
+		calls:       map[string]string{},
+		env: &LlmEnv{
+			srv:  srv,
+			objs: map[string]dagql.Typed{},
+		},
 	}, nil
 }
 
@@ -383,19 +374,14 @@ func (llm *Llm) Clone() *Llm {
 	cp.history = cloneSlice(cp.history)
 	cp.promptVars = cloneSlice(cp.promptVars)
 	cp.calls = cloneMap(cp.calls)
-	// FIXME: support multiple variables in state
-	// cp.state = cloneMap(cp.state)
+	cp.env.objs = cloneMap(cp.env.objs)
 	return &cp
 }
 
-// Generate a human-readable documentation of tools available to the model via BBI
+// Generate a human-readable documentation of tools available to the model
 func (llm *Llm) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error) {
-	session, err := llm.BBI(srv)
-	if err != nil {
-		return "", err
-	}
 	var result string
-	for _, tool := range session.Tools() {
+	for _, tool := range llm.env.Tools() {
 		schema, err := json.MarshalIndent(tool.Schema, "", "  ")
 		if err != nil {
 			return "", err
@@ -432,19 +418,11 @@ func (llm *Llm) WithPrompt(
 	vars := llm.promptVars
 	if len(vars) > 0 {
 		prompt = os.Expand(prompt, func(key string) string {
-			// Iterate through vars array taking elements in pairs, looking
-			// for a key that matches the template variable being expanded
-			for i := 0; i < len(vars)-1; i += 2 {
-				if vars[i] == key {
-					return vars[i+1]
-				}
-			}
-			// If vars array has odd length and the last key has no value,
-			// return empty string when that key is looked up
-			if len(vars)%2 == 1 && vars[len(vars)-1] == key {
+			val, err := llm.env.Get(key)
+			if err != nil {
 				return ""
 			}
-			return key
+			return fmt.Sprintf("%s", val)
 		})
 	}
 	llm = llm.Clone()
@@ -520,16 +498,6 @@ func (llm *Llm) LastReply(ctx context.Context, dag *dagql.Server) (string, error
 	return reply, nil
 }
 
-// Start a new BBI (Brain-Body Interface) session.
-// BBI allows a LLM to consume the Dagger API via tool calls
-func (llm *Llm) BBI(srv *dagql.Server) (bbi.Session, error) {
-	var target dagql.Object
-	if llm.state != nil {
-		target = llm.state.(dagql.Object)
-	}
-	return bbi.NewSession("flat", target, srv)
-}
-
 // send the context to the LLM endpoint, process replies and tool calls; continue in a loop
 // Synchronize LLM state:
 // 1. Send context to LLM endpoint
@@ -540,18 +508,13 @@ func (llm *Llm) Sync(ctx context.Context, dag *dagql.Server) (*Llm, error) {
 		return llm, nil
 	}
 	llm = llm.Clone()
-	// Start a new BBI session
-	session, err := llm.BBI(dag)
-	if err != nil {
-		return nil, err
-	}
 	for {
 		if llm.maxAPICalls > 0 && llm.apiCalls >= llm.maxAPICalls {
 			return nil, fmt.Errorf("reached API call limit: %d", llm.apiCalls)
 		}
 		llm.apiCalls++
 
-		tools := session.Tools()
+		tools := llm.env.Tools()
 		res, err := llm.Endpoint.Client.SendQuery(ctx, llm.history, tools)
 		if err != nil {
 			return nil, err
@@ -580,12 +543,8 @@ func (llm *Llm) Sync(ctx context.Context, dag *dagql.Server) (*Llm, error) {
 						defer span.End()
 						result, err := tool.Call(ctx, toolCall.Function.Arguments)
 						if err != nil {
-							// If the BBI driver itself returned an error,
-							// send that error to the model
 							span.SetStatus(codes.Error, err.Error())
-
 							errResponse := err.Error()
-
 							// propagate error values to the model
 							if extErr, ok := err.(dagql.ExtendedError); ok {
 								var exts []string
@@ -614,7 +573,6 @@ func (llm *Llm) Sync(ctx context.Context, dag *dagql.Server) (*Llm, error) {
 									errResponse += "\n\n" + strings.Join(exts, "\n\n")
 								}
 							}
-
 							return errResponse, true
 						}
 						stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
@@ -646,7 +604,6 @@ func (llm *Llm) Sync(ctx context.Context, dag *dagql.Server) (*Llm, error) {
 			}
 		}
 	}
-	llm.state = session.Self()
 	llm.dirty = false
 	return llm, nil
 }
@@ -701,23 +658,40 @@ func (llm *Llm) messages() ([]ModelMessage, error) {
 	return messages, nil
 }
 
+func (llm *Llm) Set(ctx context.Context, key string, value dagql.Typed) (*Llm, error) {
+	if id, ok := value.(dagql.IDType); ok {
+		obj, err := llm.env.srv.Load(ctx, id.ID())
+		if err != nil {
+			return nil, err
+		}
+		value = obj
+	}
+	llm = llm.Clone()
+	llm.env.Set(key, value)
+	llm.dirty = true
+	return llm, nil
+}
+
+func (llm *Llm) Get(ctx context.Context, dag *dagql.Server, key string) (dagql.Typed, error) {
+	llm, err := llm.Sync(ctx, dag)
+	if err != nil {
+		return nil, err
+	}
+	return llm.env.Get(key)
+}
+
+// FIXME: deprecated
 func (llm *Llm) WithState(ctx context.Context, objID dagql.IDType, srv *dagql.Server) (*Llm, error) {
 	obj, err := srv.Load(ctx, objID.ID())
 	if err != nil {
 		return nil, err
 	}
-	llm = llm.Clone()
-	llm.state = obj
-	llm.dirty = true
-	return llm, nil
+	return llm.Set(ctx, "default", obj)
 }
 
+// FIXME: deprecated
 func (llm *Llm) State(ctx context.Context, dag *dagql.Server) (dagql.Typed, error) {
-	llm, err := llm.Sync(ctx, dag)
-	if err != nil {
-		return nil, err
-	}
-	return llm.state, nil
+	return llm.Get(ctx, dag, "default")
 }
 
 // Add this method to the Message type
@@ -726,9 +700,9 @@ func (msg ModelMessage) Text() (string, error) {
 	switch v := msg.Content.(type) {
 	case string:
 		return v, nil
-	case []interface{}:
+	case []any:
 		if len(v) > 0 {
-			if text, ok := v[0].(map[string]interface{})["text"].(string); ok {
+			if text, ok := v[0].(map[string]any)["text"].(string); ok {
 				return text, nil
 			}
 		}
@@ -766,30 +740,42 @@ func (s LlmMiddleware) ExtendLlmType(targetType dagql.ObjectType) error {
 	// Install with<TargetType>()
 	llmType.Extend(
 		dagql.FieldSpec{
-			Name:        "with" + typename,
-			Description: fmt.Sprintf("Set the llm state to a %s", typename),
+			Name:        "set" + typename,
+			Description: fmt.Sprintf("Set a variable of type %s in the llm environment", typename),
 			Type:        llmType.Typed(),
 			Args: dagql.InputSpecs{
 				{
+					Name:        "name",
+					Description: fmt.Sprintf("The name of the variable", typename),
+					Type:        dagql.NewString(""),
+				},
+				{
 					Name:        "value",
-					Description: fmt.Sprintf("The value of the %s to save", typename),
+					Description: fmt.Sprintf("The value of the variable", typename),
 					Type:        idType,
 				},
 			},
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			llm := self.(dagql.Instance[*Llm]).Self
-			id := args["value"].(dagql.IDType)
-			return llm.WithState(ctx, id, s.Server)
+			name := args["name"].(dagql.String).String()
+			value := args["value"].(dagql.Typed)
+			return llm.Set(ctx, name, value)
+			// id := args["value"].(dagql.IDType)
 		},
 		dagql.CacheSpec{},
 	)
 	// Install <targetType>()
 	llmType.Extend(
 		dagql.FieldSpec{
-			Name:        gqlFieldName(typename),
-			Description: fmt.Sprintf("Retrieve the llm state as a %s", typename),
+			Name:        "get" + typename,
+			Description: fmt.Sprintf("Retrieve a variable in the llm environment, of type %s", typename),
 			Type:        targetType.Typed(),
+			Args: dagql.InputSpecs{{
+				Name:        "name",
+				Description: fmt.Sprintf("The name of the variable", typename),
+				Type:        dagql.NewString(""),
+			}},
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			llm := self.(dagql.Instance[*Llm]).Self
