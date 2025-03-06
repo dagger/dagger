@@ -5480,7 +5480,7 @@ func privateRepoSetup(c *dagger.Client, t *testctx.T, tc vcsTestCase) (dagger.Wi
 				WithExec([]string{
 					"git", "config", "--global",
 					"credential.https://" + tc.expectedHost + ".helper",
-					`!f() { test "$1" = get && echo "password=` + token + `"; }; f`,
+					`!f() { test "$1" = get && echo -e "password=` + token + `\nusername=git"; }; f`,
 				})
 		}
 
