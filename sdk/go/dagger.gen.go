@@ -134,6 +134,9 @@ type EnvVariableID string
 // The `ErrorID` scalar type represents an identifier for an object of type Error.
 type ErrorID string
 
+// The `ErrorValueID` scalar type represents an identifier for an object of type ErrorValue.
+type ErrorValueID string
+
 // The `FieldTypeDefID` scalar type represents an identifier for an object of type FieldTypeDef.
 type FieldTypeDefID string
 
@@ -178,6 +181,9 @@ type LabelID string
 
 // The `ListTypeDefID` scalar type represents an identifier for an object of type ListTypeDef.
 type ListTypeDefID string
+
+// The `LlmID` scalar type represents an identifier for an object of type Llm.
+type LlmID string
 
 // The `ModuleID` scalar type represents an identifier for an object of type Module.
 type ModuleID string
@@ -3405,6 +3411,14 @@ type Error struct {
 	id      *ErrorID
 	message *string
 }
+type WithErrorFunc func(r *Error) *Error
+
+// With calls the provided function with current Error.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Error) With(f WithErrorFunc) *Error {
+	return f(r)
+}
 
 func (r *Error) WithGraphQLQuery(q *querybuilder.Selection) *Error {
 	return &Error{
@@ -3460,6 +3474,130 @@ func (r *Error) Message(ctx context.Context) (string, error) {
 	q := r.query.Select("message")
 
 	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The extensions of the error.
+func (r *Error) Values(ctx context.Context) ([]ErrorValue, error) {
+	q := r.query.Select("values")
+
+	q = q.Select("id")
+
+	type values struct {
+		Id ErrorValueID
+	}
+
+	convert := func(fields []values) []ErrorValue {
+		out := []ErrorValue{}
+
+		for i := range fields {
+			val := ErrorValue{id: &fields[i].Id}
+			val.query = q.Root().Select("loadErrorValueFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []values
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Add a value to the error.
+func (r *Error) WithValue(name string, value JSON) *Error {
+	q := r.query.Select("withValue")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Error{
+		query: q,
+	}
+}
+
+type ErrorValue struct {
+	query *querybuilder.Selection
+
+	id    *ErrorValueID
+	name  *string
+	value *JSON
+}
+
+func (r *ErrorValue) WithGraphQLQuery(q *querybuilder.Selection) *ErrorValue {
+	return &ErrorValue{
+		query: q,
+	}
+}
+
+// A unique identifier for this ErrorValue.
+func (r *ErrorValue) ID(ctx context.Context) (ErrorValueID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ErrorValueID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ErrorValue) XXX_GraphQLType() string {
+	return "ErrorValue"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ErrorValue) XXX_GraphQLIDType() string {
+	return "ErrorValueID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ErrorValue) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ErrorValue) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The name of the value.
+func (r *ErrorValue) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The value.
+func (r *ErrorValue) Value(ctx context.Context) (JSON, error) {
+	if r.value != nil {
+		return *r.value, nil
+	}
+	q := r.query.Select("value")
+
+	var response JSON
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -5248,6 +5386,795 @@ func (r *ListTypeDef) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+type Llm struct {
+	query *querybuilder.Selection
+
+	id        *LlmID
+	lastReply *string
+	model     *string
+	sync      *LlmID
+	tools     *string
+}
+type WithLlmFunc func(r *Llm) *Llm
+
+// With calls the provided function with current Llm.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Llm) With(f WithLlmFunc) *Llm {
+	return f(r)
+}
+
+func (r *Llm) WithGraphQLQuery(q *querybuilder.Selection) *Llm {
+	return &Llm{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a CacheVolume
+func (r *Llm) CacheVolume() *CacheVolume {
+	q := r.query.Select("cacheVolume")
+
+	return &CacheVolume{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a Container
+func (r *Llm) Container() *Container {
+	q := r.query.Select("container")
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a CurrentModule
+func (r *Llm) CurrentModule() *CurrentModule {
+	q := r.query.Select("currentModule")
+
+	return &CurrentModule{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a Directory
+func (r *Llm) Directory() *Directory {
+	q := r.query.Select("directory")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a EnumTypeDef
+func (r *Llm) EnumTypeDef() *EnumTypeDef {
+	q := r.query.Select("enumTypeDef")
+
+	return &EnumTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a EnumValueTypeDef
+func (r *Llm) EnumValueTypeDef() *EnumValueTypeDef {
+	q := r.query.Select("enumValueTypeDef")
+
+	return &EnumValueTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a Error
+func (r *Llm) Error() *Error {
+	q := r.query.Select("error")
+
+	return &Error{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a ErrorValue
+func (r *Llm) ErrorValue() *ErrorValue {
+	q := r.query.Select("errorValue")
+
+	return &ErrorValue{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a FieldTypeDef
+func (r *Llm) FieldTypeDef() *FieldTypeDef {
+	q := r.query.Select("fieldTypeDef")
+
+	return &FieldTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a File
+func (r *Llm) File() *File {
+	q := r.query.Select("file")
+
+	return &File{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a Function
+func (r *Llm) Function() *Function {
+	q := r.query.Select("function")
+
+	return &Function{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a FunctionArg
+func (r *Llm) FunctionArg() *FunctionArg {
+	q := r.query.Select("functionArg")
+
+	return &FunctionArg{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a FunctionCall
+func (r *Llm) FunctionCall() *FunctionCall {
+	q := r.query.Select("functionCall")
+
+	return &FunctionCall{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a FunctionCallArgValue
+func (r *Llm) FunctionCallArgValue() *FunctionCallArgValue {
+	q := r.query.Select("functionCallArgValue")
+
+	return &FunctionCallArgValue{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a GeneratedCode
+func (r *Llm) GeneratedCode() *GeneratedCode {
+	q := r.query.Select("generatedCode")
+
+	return &GeneratedCode{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a GitRef
+func (r *Llm) GitRef() *GitRef {
+	q := r.query.Select("gitRef")
+
+	return &GitRef{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a GitRepository
+func (r *Llm) GitRepository() *GitRepository {
+	q := r.query.Select("gitRepository")
+
+	return &GitRepository{
+		query: q,
+	}
+}
+
+// return the llm message history
+func (r *Llm) History(ctx context.Context) ([]string, error) {
+	q := r.query.Select("history")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Llm.
+func (r *Llm) ID(ctx context.Context) (LlmID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response LlmID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Llm) XXX_GraphQLType() string {
+	return "Llm"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Llm) XXX_GraphQLIDType() string {
+	return "LlmID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Llm) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Llm) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Retrieve the llm state as a InputTypeDef
+func (r *Llm) InputTypeDef() *InputTypeDef {
+	q := r.query.Select("inputTypeDef")
+
+	return &InputTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a InterfaceTypeDef
+func (r *Llm) InterfaceTypeDef() *InterfaceTypeDef {
+	q := r.query.Select("interfaceTypeDef")
+
+	return &InterfaceTypeDef{
+		query: q,
+	}
+}
+
+// return the last llm reply from the history
+func (r *Llm) LastReply(ctx context.Context) (string, error) {
+	if r.lastReply != nil {
+		return *r.lastReply, nil
+	}
+	q := r.query.Select("lastReply")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Retrieve the llm state as a ListTypeDef
+func (r *Llm) ListTypeDef() *ListTypeDef {
+	q := r.query.Select("listTypeDef")
+
+	return &ListTypeDef{
+		query: q,
+	}
+}
+
+// synchronize LLM state
+//
+// Deprecated: use sync
+func (r *Llm) Loop() *Llm {
+	q := r.query.Select("loop")
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// return the model used by the llm
+func (r *Llm) Model(ctx context.Context) (string, error) {
+	if r.model != nil {
+		return *r.model, nil
+	}
+	q := r.query.Select("model")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Retrieve the llm state as a Module
+func (r *Llm) Module() *Module {
+	q := r.query.Select("module")
+
+	return &Module{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a ModuleSource
+func (r *Llm) ModuleSource() *ModuleSource {
+	q := r.query.Select("moduleSource")
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a ObjectTypeDef
+func (r *Llm) ObjectTypeDef() *ObjectTypeDef {
+	q := r.query.Select("objectTypeDef")
+
+	return &ObjectTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a ScalarTypeDef
+func (r *Llm) ScalarTypeDef() *ScalarTypeDef {
+	q := r.query.Select("scalarTypeDef")
+
+	return &ScalarTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a SDKConfig
+func (r *Llm) Sdkconfig() *SDKConfig {
+	q := r.query.Select("sdkconfig")
+
+	return &SDKConfig{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a Secret
+func (r *Llm) Secret() *Secret {
+	q := r.query.Select("secret")
+
+	return &Secret{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a Service
+func (r *Llm) Service() *Service {
+	q := r.query.Select("service")
+
+	return &Service{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a Socket
+func (r *Llm) Socket() *Socket {
+	q := r.query.Select("socket")
+
+	return &Socket{
+		query: q,
+	}
+}
+
+// Retrieve the llm state as a SourceMap
+func (r *Llm) SourceMap() *SourceMap {
+	q := r.query.Select("sourceMap")
+
+	return &SourceMap{
+		query: q,
+	}
+}
+
+// synchronize LLM state
+func (r *Llm) Sync(ctx context.Context) (*Llm, error) {
+	q := r.query.Select("sync")
+
+	var id LlmID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Llm{
+		query: q.Root().Select("loadLlmFromID").Arg("id", id),
+	}, nil
+}
+
+// Retrieve the llm state as a Terminal
+func (r *Llm) Terminal() *Terminal {
+	q := r.query.Select("terminal")
+
+	return &Terminal{
+		query: q,
+	}
+}
+
+// print documentation for available tools
+func (r *Llm) Tools(ctx context.Context) (string, error) {
+	if r.tools != nil {
+		return *r.tools, nil
+	}
+	q := r.query.Select("tools")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Retrieve the llm state as a TypeDef
+func (r *Llm) TypeDef() *TypeDef {
+	q := r.query.Select("typeDef")
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// Set the llm state to a CacheVolume
+func (r *Llm) WithCacheVolume(value *CacheVolume) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withCacheVolume")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a Container
+func (r *Llm) WithContainer(value *Container) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withContainer")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a CurrentModule
+func (r *Llm) WithCurrentModule(value *CurrentModule) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withCurrentModule")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a Directory
+func (r *Llm) WithDirectory(value *Directory) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withDirectory")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a EnumTypeDef
+func (r *Llm) WithEnumTypeDef(value *EnumTypeDef) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withEnumTypeDef")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a EnumValueTypeDef
+func (r *Llm) WithEnumValueTypeDef(value *EnumValueTypeDef) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withEnumValueTypeDef")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a Error
+func (r *Llm) WithError(value *Error) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withError")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a ErrorValue
+func (r *Llm) WithErrorValue(value *ErrorValue) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withErrorValue")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a FieldTypeDef
+func (r *Llm) WithFieldTypeDef(value *FieldTypeDef) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withFieldTypeDef")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a File
+func (r *Llm) WithFile(value *File) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withFile")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a Function
+func (r *Llm) WithFunction(value *Function) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withFunction")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a FunctionArg
+func (r *Llm) WithFunctionArg(value *FunctionArg) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withFunctionArg")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a FunctionCall
+func (r *Llm) WithFunctionCall(value *FunctionCall) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withFunctionCall")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a FunctionCallArgValue
+func (r *Llm) WithFunctionCallArgValue(value *FunctionCallArgValue) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withFunctionCallArgValue")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a GeneratedCode
+func (r *Llm) WithGeneratedCode(value *GeneratedCode) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withGeneratedCode")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a GitRef
+func (r *Llm) WithGitRef(value *GitRef) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withGitRef")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a GitRepository
+func (r *Llm) WithGitRepository(value *GitRepository) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withGitRepository")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a InputTypeDef
+func (r *Llm) WithInputTypeDef(value *InputTypeDef) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withInputTypeDef")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a InterfaceTypeDef
+func (r *Llm) WithInterfaceTypeDef(value *InterfaceTypeDef) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withInterfaceTypeDef")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a ListTypeDef
+func (r *Llm) WithListTypeDef(value *ListTypeDef) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withListTypeDef")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a Module
+func (r *Llm) WithModule(value *Module) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withModule")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a ModuleSource
+func (r *Llm) WithModuleSource(value *ModuleSource) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withModuleSource")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a ObjectTypeDef
+func (r *Llm) WithObjectTypeDef(value *ObjectTypeDef) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withObjectTypeDef")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// append a prompt to the llm context
+func (r *Llm) WithPrompt(prompt string) *Llm {
+	q := r.query.Select("withPrompt")
+	q = q.Arg("prompt", prompt)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// append the contents of a file to the llm context
+func (r *Llm) WithPromptFile(file *File) *Llm {
+	assertNotNil("file", file)
+	q := r.query.Select("withPromptFile")
+	q = q.Arg("file", file)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// set a variable for expansion in the prompt
+func (r *Llm) WithPromptVar(name string, value string) *Llm {
+	q := r.query.Select("withPromptVar")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a SDKConfig
+func (r *Llm) WithSDKConfig(value *SDKConfig) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withSDKConfig")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a ScalarTypeDef
+func (r *Llm) WithScalarTypeDef(value *ScalarTypeDef) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withScalarTypeDef")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a Secret
+func (r *Llm) WithSecret(value *Secret) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withSecret")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a Service
+func (r *Llm) WithService(value *Service) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withService")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a Socket
+func (r *Llm) WithSocket(value *Socket) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withSocket")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a SourceMap
+func (r *Llm) WithSourceMap(value *SourceMap) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withSourceMap")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a Terminal
+func (r *Llm) WithTerminal(value *Terminal) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withTerminal")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a TypeDef
+func (r *Llm) WithTypeDef(value *TypeDef) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withTypeDef")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
 // A Dagger module.
 type Module struct {
 	query *querybuilder.Selection
@@ -6618,6 +7545,33 @@ func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	}
 }
 
+// LlmOpts contains options for Client.Llm
+type LlmOpts struct {
+	// Model to use
+	Model string
+	// Cap the number of API calls for this LLM
+	MaxAPICalls int
+}
+
+// Initialize a Large Language Model (LLM)
+func (r *Client) Llm(opts ...LlmOpts) *Llm {
+	q := r.query.Select("llm")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `model` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Model) {
+			q = q.Arg("model", opts[i].Model)
+		}
+		// `maxApiCalls` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxAPICalls) {
+			q = q.Arg("maxApiCalls", opts[i].MaxAPICalls)
+		}
+	}
+
+	return &Llm{
+		query: q,
+	}
+}
+
 // Load a CacheVolume from its ID.
 func (r *Client) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
 	q := r.query.Select("loadCacheVolumeFromID")
@@ -6734,6 +7688,16 @@ func (r *Client) LoadErrorFromID(id ErrorID) *Error {
 	q = q.Arg("id", id)
 
 	return &Error{
+		query: q,
+	}
+}
+
+// Load a ErrorValue from its ID.
+func (r *Client) LoadErrorValueFromID(id ErrorValueID) *ErrorValue {
+	q := r.query.Select("loadErrorValueFromID")
+	q = q.Arg("id", id)
+
+	return &ErrorValue{
 		query: q,
 	}
 }
@@ -6874,6 +7838,16 @@ func (r *Client) LoadListTypeDefFromID(id ListTypeDefID) *ListTypeDef {
 	q = q.Arg("id", id)
 
 	return &ListTypeDef{
+		query: q,
+	}
+}
+
+// Load a Llm from its ID.
+func (r *Client) LoadLlmFromID(id LlmID) *Llm {
+	q := r.query.Select("loadLlmFromID")
+	q = q.Arg("id", id)
+
+	return &Llm{
 		query: q,
 	}
 }

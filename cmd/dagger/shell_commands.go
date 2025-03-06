@@ -429,6 +429,41 @@ Without arguments, the current working directory is replaced by the initial cont
 			},
 		},
 		&ShellCommand{
+			Use:         ".refresh",
+			Description: `Refresh the schema and reload all module functions`,
+			GroupID:     moduleGroup.ID,
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, cmd *ShellCommand, args []string, st *ShellState) error {
+				// Get current module definition
+				def := h.GetDef(st)
+
+				// Re-initialize the module to get fresh schema
+				var newDef *moduleDef
+				var err error
+				if def.Source == nil {
+					newDef, err = initializeCore(ctx, h.dag)
+				} else {
+					newDef, err = initializeModule(ctx, h.dag, def.Source)
+				}
+				if err != nil {
+					return fmt.Errorf("failed to reinitialize module: %w", err)
+				}
+
+				// Update handler state with new definition
+				h.mu.Lock()
+				h.modDefs.Store(def.SourceDigest, newDef)
+				h.mu.Unlock()
+
+				// Reload type definitions
+				if err := newDef.loadTypeDefs(ctx, h.dag); err != nil {
+					return fmt.Errorf("failed to reload type definitions: %w", err)
+				}
+
+				return nil
+			},
+		},
+		&ShellCommand{
 			Use:         shellDepsCmdName,
 			Description: "Dependencies from the module loaded in the current context",
 			GroupID:     moduleGroup.ID,
@@ -489,6 +524,7 @@ Without arguments, the current working directory is replaced by the initial cont
 	for _, fn := range def.GetCoreFunctions() {
 		// TODO: Don't hardcode this list.
 		promoted := []string{
+			"llm",
 			"cache-volume",
 			"container",
 			"directory",

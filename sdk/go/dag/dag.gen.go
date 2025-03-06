@@ -138,6 +138,12 @@ func HTTP(url string, opts ...dagger.HTTPOpts) *dagger.File {
 	return client.HTTP(url, opts...)
 }
 
+// Initialize a Large Language Model (LLM)
+func Llm(opts ...dagger.LlmOpts) *dagger.Llm {
+	client := initClient()
+	return client.Llm(opts...)
+}
+
 // Load a CacheVolume from its ID.
 func LoadCacheVolumeFromID(id dagger.CacheVolumeID) *dagger.CacheVolume {
 	client := initClient()
@@ -208,6 +214,12 @@ func LoadEnvVariableFromID(id dagger.EnvVariableID) *dagger.EnvVariable {
 func LoadErrorFromID(id dagger.ErrorID) *dagger.Error {
 	client := initClient()
 	return client.LoadErrorFromID(id)
+}
+
+// Load a ErrorValue from its ID.
+func LoadErrorValueFromID(id dagger.ErrorValueID) *dagger.ErrorValue {
+	client := initClient()
+	return client.LoadErrorValueFromID(id)
 }
 
 // Load a FieldTypeDef from its ID.
@@ -292,6 +304,12 @@ func LoadLabelFromID(id dagger.LabelID) *dagger.Label {
 func LoadListTypeDefFromID(id dagger.ListTypeDefID) *dagger.ListTypeDef {
 	client := initClient()
 	return client.LoadListTypeDefFromID(id)
+}
+
+// Load a Llm from its ID.
+func LoadLlmFromID(id dagger.LlmID) *dagger.Llm {
+	client := initClient()
+	return client.LoadLlmFromID(id)
 }
 
 // Load a Module from its ID.

@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
@@ -48,6 +49,7 @@ type DB struct {
 	// NOTE: this is hard coded for Gauge int64 metricdata essentially right now,
 	// needs generalization as more metric types get added
 	MetricsByCall map[string]map[string][]metricdata.DataPoint[int64]
+	MetricsBySpan map[SpanID]map[string][]metricdata.DataPoint[int64]
 
 	// updatedSpans is a set of spans that have been updated since the last
 	// sync, which includes any parent spans whose overall active time intervals
@@ -143,12 +145,17 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 }
 
 func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
-	for _, snapshot := range snapshots {
+	spans := make([]*Span, len(snapshots))
+	for i, snapshot := range snapshots {
 		span := db.findOrAllocSpan(snapshot.ID)
 		span.Received = true
 		snapshot.Version += span.Version // don't reset the version
 		span.SpanSnapshot = snapshot
 		db.integrateSpan(span)
+		spans[i] = span
+	}
+	for _, span := range spans {
+		span.PropagateStatusToParentsAndLinks()
 	}
 }
 
@@ -210,9 +217,13 @@ func (db *DB) RemainingSnapshots() []SpanSnapshot {
 
 var _ sdktrace.SpanExporter = (*DB)(nil)
 
-func (db *DB) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
+func (db *DB) ExportSpans(ctx context.Context, otelSpans []sdktrace.ReadOnlySpan) error {
+	spans := make([]*Span, len(otelSpans))
+	for i, otelSpan := range otelSpans {
+		spans[i] = db.recordOTelSpan(otelSpan)
+	}
 	for _, span := range spans {
-		db.recordOTelSpan(span)
+		span.PropagateStatusToParentsAndLinks()
 	}
 	return nil
 }
@@ -267,31 +278,53 @@ type DBMetricExporter struct {
 func (db DBMetricExporter) Export(ctx context.Context, resourceMetrics *metricdata.ResourceMetrics) error {
 	for _, scopeMetric := range resourceMetrics.ScopeMetrics {
 		for _, metric := range scopeMetric.Metrics {
-			metricData, ok := metric.Data.(metricdata.Gauge[int64])
-			if !ok {
-				continue
+			// TODO: don't lose track of whether it's a Sum or a Gauge - it matters!
+			if metricData, ok := metric.Data.(metricdata.Sum[int64]); ok {
+				db.exportDataPoints(metric, metricData.DataPoints)
 			}
-
-			for _, point := range metricData.DataPoints {
-				callDigest, ok := point.Attributes.Value(telemetry.DagDigestAttr)
-				if !ok {
-					continue
-				}
-
-				if db.MetricsByCall == nil {
-					db.MetricsByCall = make(map[string]map[string][]metricdata.DataPoint[int64])
-				}
-				metricsByName, ok := db.MetricsByCall[callDigest.AsString()]
-				if !ok {
-					metricsByName = make(map[string][]metricdata.DataPoint[int64])
-					db.MetricsByCall[callDigest.AsString()] = metricsByName
-				}
-				metricsByName[metric.Name] = append(metricsByName[metric.Name], point)
+			if metricData, ok := metric.Data.(metricdata.Gauge[int64]); ok {
+				db.exportDataPoints(metric, metricData.DataPoints)
 			}
 		}
 	}
 
 	return nil
+}
+
+func (db DBMetricExporter) exportDataPoints(metric metricdata.Metrics, dataPoints []metricdata.DataPoint[int64]) {
+	for _, point := range dataPoints {
+		var metricsByName map[string][]metricdata.DataPoint[int64]
+		if callDigest, ok := point.Attributes.Value(telemetry.DagDigestAttr); ok {
+			if db.MetricsByCall == nil {
+				db.MetricsByCall = make(map[string]map[string][]metricdata.DataPoint[int64])
+			}
+			var ok bool
+			metricsByName, ok = db.MetricsByCall[callDigest.AsString()]
+			if !ok {
+				metricsByName = make(map[string][]metricdata.DataPoint[int64])
+				db.MetricsByCall[callDigest.AsString()] = metricsByName
+			}
+		} else if spanIDHex, ok := point.Attributes.Value(telemetry.MetricsSpanIDAttr); ok {
+			var spanID SpanID
+			var err error
+			if spanID.SpanID, err = trace.SpanIDFromHex(spanIDHex.AsString()); err != nil {
+				continue
+			}
+			if db.MetricsBySpan == nil {
+				db.MetricsBySpan = make(map[SpanID]map[string][]metricdata.DataPoint[int64])
+			}
+			var ok bool
+			metricsByName, ok = db.MetricsBySpan[spanID]
+			if !ok {
+				metricsByName = make(map[string][]metricdata.DataPoint[int64])
+				db.MetricsBySpan[spanID] = metricsByName
+			}
+		} else {
+			continue
+		}
+
+		metricsByName[metric.Name] = append(metricsByName[metric.Name], point)
+	}
 }
 
 // SetPrimarySpan allows the primary span to be explicitly set to a particular
@@ -336,7 +369,7 @@ func (db *DB) newSpan(spanID SpanID) *Span {
 	}
 }
 
-func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) {
+func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) *Span {
 	spanID := SpanID{span.SpanContext().SpanID()}
 
 	// mark the span as updated so we sync it to the frontend,
@@ -376,6 +409,7 @@ func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) {
 
 	// integrate the span's data into the DB's live objects
 	db.integrateSpan(spanData)
+	return spanData
 }
 
 type Activity struct {
@@ -680,9 +714,6 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		}
 		db.CauseSpans[id].Add(span)
 	}
-
-	// update span states, propagating them up through parents, too
-	span.PropagateStatusToParentsAndLinks()
 
 	// finally, install the span if we don't already have it
 	//

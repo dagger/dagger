@@ -97,8 +97,11 @@ func init() {
 		sessionCmd(),
 		newGenCmd(),
 		shellCmd,
+		llmCmd,
 		clientCmd,
 	)
+	
+	llmAddFlags(llmCmd)
 
 	rootCmd.AddGroup(moduleGroup)
 	rootCmd.AddGroup(execGroup)
