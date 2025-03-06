@@ -2,10 +2,17 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core/bbi"
 	"github.com/googleapis/gax-go/v2/apierror"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 
 	genai "github.com/google/generative-ai-go/genai"
@@ -38,6 +45,44 @@ func newGenaiClient(endpoint *LlmEndpoint, defaultSystemPrompt string) (*GenaiCl
 }
 
 func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, tools []bbi.Tool) (*LLMResponse, error) {
+	ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
+		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+		attribute.String(telemetry.UIMessageAttr, "received"),
+	))
+	defer telemetry.End(span, func() error { return rerr })
+
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+	defer stdio.Close()
+
+	m := telemetry.Meter(ctx, InstrumentationLibrary)
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetry.MetricsTraceIDAttr, span.SpanContext().TraceID().String()),
+		attribute.String(telemetry.MetricsSpanIDAttr, span.SpanContext().SpanID().String()),
+		attribute.String("model", c.endpoint.Model),
+		attribute.String("provider", string(c.endpoint.Provider)),
+	}
+
+	inputTokens, err := m.Int64Gauge(telemetry.LLMInputTokens)
+	if err != nil {
+		return nil, err
+	}
+
+	inputTokensCacheReads, err := m.Int64Gauge(telemetry.LLMInputTokensCacheReads)
+	if err != nil {
+		return nil, err
+	}
+
+	inputTokensCacheWrites, err := m.Int64Gauge(telemetry.LLMInputTokensCacheWrites)
+	if err != nil {
+		return nil, err
+	}
+
+	outputTokens, err := m.Int64Gauge(telemetry.LLMOutputTokens)
+	if err != nil {
+		return nil, err
+	}
+
 	// set model
 	model := c.client.GenerativeModel(c.endpoint.Model)
 
@@ -127,40 +172,59 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 	chat := model.StartChat()
 	chat.History = genaiHistory
 
-	resp, err := chat.SendMessage(ctx, userMessage.Parts...)
-	if err != nil {
-		if apiErr, ok := err.(*apierror.APIError); ok {
-			// unwrap the APIError
-			return nil, fmt.Errorf("google API error occurred: %w", apiErr.Unwrap())
-		}
-		return nil, err
-	}
+	stream := chat.SendMessageStream(ctx, userMessage.Parts...)
 
-	// TODO: add tracing
-
-	// process response
 	var content string
 	var toolCalls []ToolCall
-	if len(resp.Candidates) > 0 {
-		candidate := resp.Candidates[0]
-		if candidate.Content != nil {
-			for _, part := range candidate.Content.Parts {
-				// check if tool call
-				switch part := part.(type) {
-				case genai.FunctionCall:
-					toolCalls = append(toolCalls, ToolCall{
-						ID: part.Name,
-						Function: FuncCall{
-							Name:      part.Name,
-							Arguments: part.Args,
-						},
-						Type: "function",
-					})
-				case genai.Text:
-					content += string(part)
-				default:
-					return nil, fmt.Errorf("unexpected genai part type %T", part)
-				}
+	for {
+		res, err := stream.Next()
+		if err != nil {
+			if errors.Is(err, iterator.Done) {
+				break
+			}
+			if apiErr, ok := err.(*apierror.APIError); ok {
+				// unwrap the APIError
+				return nil, fmt.Errorf("Google API error occurred: %v", apiErr.Unwrap())
+			}
+			return nil, err
+		}
+
+		// Keep track of the token usage
+		if res.UsageMetadata != nil {
+			if res.UsageMetadata.CandidatesTokenCount > 0 {
+				outputTokens.Record(ctx, int64(res.UsageMetadata.CandidatesTokenCount), metric.WithAttributes(attrs...))
+			}
+			if res.UsageMetadata.PromptTokenCount > 0 {
+				inputTokens.Record(ctx, int64(res.UsageMetadata.PromptTokenCount), metric.WithAttributes(attrs...))
+			}
+			if res.UsageMetadata.CachedContentTokenCount > 0 {
+				inputTokensCacheReads.Record(ctx, int64(res.UsageMetadata.CachedContentTokenCount), metric.WithAttributes(attrs...))
+			}
+		}
+
+		if len(res.Candidates) == 0 {
+			return nil, fmt.Errorf("no response from model")
+		}
+		candidate := res.Candidates[0]
+		if candidate.Content == nil {
+			return nil, fmt.Errorf("no content?")
+		}
+
+		for _, part := range candidate.Content.Parts {
+			switch x := part.(type) {
+			case genai.Text:
+				fmt.Fprint(stdio.Stdout, x)
+			case genai.FunctionCall:
+				toolCalls = append(toolCalls, ToolCall{
+					ID: x.Name,
+					Function: FuncCall{
+						Name:      x.Name,
+						Arguments: x.Args,
+					},
+					Type: "function",
+				})
+			default:
+				return nil, fmt.Errorf("unexpected genai part type %T", part)
 			}
 		}
 	}
