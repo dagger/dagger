@@ -35,6 +35,8 @@ var base64EncodedPrivateKey string
 var base64EncodedPrivateKeyGitHub string
 
 func setupPrivateRepoSSHAgent(t *testctx.T) (string, func()) {
+	t.Helper()
+
 	decodedPrivateKey, err := base64.StdEncoding.DecodeString(base64EncodedPrivateKey)
 	require.NoError(t, err, "Failed to decode base64 private key")
 
