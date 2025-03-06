@@ -70,6 +70,13 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 		return err // if nil, that's fine, nothing more to do here
 	}
 
+	// TODO: this shouldn't be needed...
+	// TODO: this shouldn't be needed...
+	// TODO: this shouldn't be needed...
+	if srcClient.deps == nil {
+		return fmt.Errorf("WTF")
+	}
+
 	srcDag, err := srcClient.deps.Schema(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get source schema: %w", err)
