@@ -224,6 +224,7 @@ func (op RawDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.
 	}
 
 	ref, err := opt.Cache.New(ctx, nil, g,
+		bkcache.CachePolicyRetain,
 		bkcache.WithRecordType(client.UsageRecordTypeRegular),
 		bkcache.WithDescription(op.Name()))
 	if err != nil {
