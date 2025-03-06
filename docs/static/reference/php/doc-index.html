@@ -200,7 +200,9 @@
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::cloneRef</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The ref to clone the root of the git repo from. Only valid for git sources.</p></dd><dt><a href="Dagger/ModuleSource.html#method_commit">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::commit</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>The resolved commit of the git repo this source points to. Only valid for git sources.</p></dd><dt><a href="Dagger/ModuleSource.html#method_configExists">
+                    <dd><p>The resolved commit of the git repo this source points to. Only valid for git sources.</p></dd><dt><a href="Dagger/ModuleSource.html#method_configClients">
+<abbr title="Dagger\ModuleSource">ModuleSource</abbr>::configClients</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
+                    <dd><p>The clients generated for the module.</p></dd><dt><a href="Dagger/ModuleSource.html#method_configExists">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::configExists</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>Whether an existing dagger.json for the module was found.</p></dd><dt><a href="Dagger/ModuleSource.html#method_contextDirectory">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::contextDirectory</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -268,7 +270,11 @@
 <abbr title="Dagger\Module">Module</abbr>::dependencies</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
                     <dd><p>The dependencies of the module.</p></dd><dt><a href="Dagger/Module.html#method_description">
 <abbr title="Dagger\Module">Module</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
-                    <dd><p>The doc string of the module, if any</p></dd><dt><a href="Dagger/ModuleSource.html#method_dependencies">
+                    <dd><p>The doc string of the module, if any</p></dd><dt><a href="Dagger/ModuleConfigClient.html#method_dev">
+<abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr>::dev</a>() &mdash; <em>Method in class <a href="Dagger/ModuleConfigClient.html"><abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a></em></dt>
+                    <dd><p>If true, generate the client in developer mode.</p></dd><dt><a href="Dagger/ModuleConfigClient.html#method_directory">
+<abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr>::directory</a>() &mdash; <em>Method in class <a href="Dagger/ModuleConfigClient.html"><abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a></em></dt>
+                    <dd><p>The directory the client is generated in.</p></dd><dt><a href="Dagger/ModuleSource.html#method_dependencies">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::dependencies</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The dependencies of the module source.</p></dd><dt><a href="Dagger/ModuleSource.html#method_digest">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::digest</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -425,9 +431,9 @@
 <abbr title="Dagger\Llm">Llm</abbr>::gitRepository</a>() &mdash; <em>Method in class <a href="Dagger/Llm.html"><abbr title="Dagger\Llm">Llm</abbr></a></em></dt>
                     <dd><p>Retrieve the llm state as a GitRepository</p></dd><dt><a href="Dagger/Module.html#method_generatedContextDirectory">
 <abbr title="Dagger\Module">Module</abbr>::generatedContextDirectory</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
-                    <dd><p>The generated files and directories made on top of the module source's context directory.</p></dd><dt><a href="Dagger/ModuleSource.html#method_generateClient">
-<abbr title="Dagger\ModuleSource">ModuleSource</abbr>::generateClient</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>Generates a client for the module.</p></dd><dt><a href="Dagger/ModuleSource.html#method_generatedContextDirectory">
+                    <dd><p>The generated files and directories made on top of the module source's context directory.</p></dd><dt><a href="Dagger/ModuleConfigClient.html#method_generator">
+<abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr>::generator</a>() &mdash; <em>Method in class <a href="Dagger/ModuleConfigClient.html"><abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a></em></dt>
+                    <dd><p>The generator to use</p></dd><dt><a href="Dagger/ModuleSource.html#method_generatedContextDirectory">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::generatedContextDirectory</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The generated files and directories made on top of the module source's context directory.</p></dd>        </dl><h2 id="letterH">H</h2>
         <dl id="indexH"><dt><a href="Dagger/Client.html#method_host">
@@ -529,7 +535,9 @@
 <abbr title="Dagger\Module">Module</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
                     <dd><p>A unique identifier for this Module.</p></dd><dt><a href="Dagger/Module.html#method_interfaces">
 <abbr title="Dagger\Module">Module</abbr>::interfaces</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
-                    <dd><p>Interfaces served by this module.</p></dd><dt><a href="Dagger/ModuleSource.html#method_id">
+                    <dd><p>Interfaces served by this module.</p></dd><dt><a href="Dagger/ModuleConfigClient.html#method_id">
+<abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/ModuleConfigClient.html"><abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this ModuleConfigClient.</p></dd><dt><a href="Dagger/ModuleSource.html#method_id">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>A unique identifier for this ModuleSource.</p></dd><dt><a href="Dagger/ObjectTypeDef.html#method_id">
 <abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/ObjectTypeDef.html"><abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr></a></em></dt>
@@ -564,7 +572,9 @@
 <abbr title="Dagger\TypeDef">TypeDef</abbr>::kind</a>() &mdash; <em>Method in class <a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></em></dt>
                     <dd><p>The kind of type this is (e.g. primitive, list, object).</p></dd>        </dl><h2 id="letterL">L</h2>
         <dl id="indexL"><dt><a href="Dagger/Attribute/ListOfType.html"><abbr title="Dagger\Attribute\ListOfType">ListOfType</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Attribute.html">Dagger\Attribute</a></em></dt>
-                    <dd></dd><dt><a href="Dagger/Client.html#method_loadCacheVolumeFromID">
+                    <dd></dd><dt><a href="Dagger/Client.html#method_llm">
+<abbr title="Dagger\Client">Client</abbr>::llm</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>Initialize a Large Language Model (LLM)</p></dd><dt><a href="Dagger/Client.html#method_loadCacheVolumeFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadCacheVolumeFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a CacheVolume from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadContainerFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadContainerFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -588,7 +598,9 @@
 <abbr title="Dagger\Client">Client</abbr>::loadEnvVariableFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a EnvVariable from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadErrorFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadErrorFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Load a Error from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadFieldTypeDefFromID">
+                    <dd><p>Load a Error from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadErrorValueFromID">
+<abbr title="Dagger\Client">Client</abbr>::loadErrorValueFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>Load a ErrorValue from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadFieldTypeDefFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadFieldTypeDefFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a FieldTypeDef from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadFileFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadFileFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -616,7 +628,9 @@
 <abbr title="Dagger\Client">Client</abbr>::loadLabelFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a Label from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadListTypeDefFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadListTypeDefFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Load a ListTypeDef from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadModuleFromID">
+                    <dd><p>Load a ListTypeDef from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadLlmFromID">
+<abbr title="Dagger\Client">Client</abbr>::loadLlmFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>Load a Llm from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadModuleFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadModuleFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a Module from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadModuleSourceFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadModuleSourceFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -690,7 +704,9 @@
                     <dd><p>Retrieve the llm state as a Module</p></dd><dt><a href="Dagger/Llm.html#method_moduleSource">
 <abbr title="Dagger\Llm">Llm</abbr>::moduleSource</a>() &mdash; <em>Method in class <a href="Dagger/Llm.html"><abbr title="Dagger\Llm">Llm</abbr></a></em></dt>
                     <dd><p>Retrieve the llm state as a ModuleSource</p></dd><dt><a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>A Dagger module.</p></dd><dt><a href="Dagger/ModuleId.html"><abbr title="Dagger\ModuleId">ModuleId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A Dagger module.</p></dd><dt><a href="Dagger/ModuleConfigClient.html"><abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>The client generated for the module.</p></dd><dt><a href="Dagger/ModuleConfigClientId.html"><abbr title="Dagger\ModuleConfigClientId">ModuleConfigClientId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>The <code>ModuleConfigClientID</code> scalar type represents an identifier for an object of type ModuleConfigClient.</p></dd><dt><a href="Dagger/ModuleId.html"><abbr title="Dagger\ModuleId">ModuleId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>ModuleID</code> scalar type represents an identifier for an object of type Module.</p></dd><dt><a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.</p></dd><dt><a href="Dagger/ModuleSource.html#method_moduleName">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::moduleName</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -961,7 +977,9 @@
 <abbr title="Dagger\EnumTypeDef">EnumTypeDef</abbr>::values</a>() &mdash; <em>Method in class <a href="Dagger/EnumTypeDef.html"><abbr title="Dagger\EnumTypeDef">EnumTypeDef</abbr></a></em></dt>
                     <dd><p>The values of the enum.</p></dd><dt><a href="Dagger/EnvVariable.html#method_value">
 <abbr title="Dagger\EnvVariable">EnvVariable</abbr>::value</a>() &mdash; <em>Method in class <a href="Dagger/EnvVariable.html"><abbr title="Dagger\EnvVariable">EnvVariable</abbr></a></em></dt>
-                    <dd><p>The environment variable value.</p></dd><dt><a href="Dagger/ErrorValue.html#method_value">
+                    <dd><p>The environment variable value.</p></dd><dt><a href="Dagger/Error.html#method_values">
+<abbr title="Dagger\Error">Error</abbr>::values</a>() &mdash; <em>Method in class <a href="Dagger/Error.html"><abbr title="Dagger\Error">Error</abbr></a></em></dt>
+                    <dd><p>The extensions of the error.</p></dd><dt><a href="Dagger/ErrorValue.html#method_value">
 <abbr title="Dagger\ErrorValue">ErrorValue</abbr>::value</a>() &mdash; <em>Method in class <a href="Dagger/ErrorValue.html"><abbr title="Dagger\ErrorValue">ErrorValue</abbr></a></em></dt>
                     <dd><p>The value.</p></dd><dt><a href="Dagger/FunctionCallArgValue.html#method_value">
 <abbr title="Dagger\FunctionCallArgValue">FunctionCallArgValue</abbr>::value</a>() &mdash; <em>Method in class <a href="Dagger/FunctionCallArgValue.html"><abbr title="Dagger\FunctionCallArgValue">FunctionCallArgValue</abbr></a></em></dt>
@@ -1076,7 +1094,9 @@
 <abbr title="Dagger\Directory">Directory</abbr>::withoutFile</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
                     <dd><p>Retrieves this directory with the file at the given path removed.</p></dd><dt><a href="Dagger/Directory.html#method_withoutFiles">
 <abbr title="Dagger\Directory">Directory</abbr>::withoutFiles</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
-                    <dd><p>Retrieves this directory with the files at the given paths removed.</p></dd><dt><a href="Dagger/File.html#method_withName">
+                    <dd><p>Retrieves this directory with the files at the given paths removed.</p></dd><dt><a href="Dagger/Error.html#method_withValue">
+<abbr title="Dagger\Error">Error</abbr>::withValue</a>() &mdash; <em>Method in class <a href="Dagger/Error.html"><abbr title="Dagger\Error">Error</abbr></a></em></dt>
+                    <dd><p>Add a value to the error.</p></dd><dt><a href="Dagger/File.html#method_withName">
 <abbr title="Dagger\File">File</abbr>::withName</a>() &mdash; <em>Method in class <a href="Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></em></dt>
                     <dd><p>Retrieves this file with its name set to the given name.</p></dd><dt><a href="Dagger/File.html#method_withTimestamps">
 <abbr title="Dagger\File">File</abbr>::withTimestamps</a>() &mdash; <em>Method in class <a href="Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></em></dt>
@@ -1172,7 +1192,9 @@
 <abbr title="Dagger\Module">Module</abbr>::withInterface</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
                     <dd><p>This module plus the given Interface type and associated functions</p></dd><dt><a href="Dagger/Module.html#method_withObject">
 <abbr title="Dagger\Module">Module</abbr>::withObject</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
-                    <dd><p>This module plus the given Object type and associated functions.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withDependencies">
+                    <dd><p>This module plus the given Object type and associated functions.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withClient">
+<abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withClient</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
+                    <dd><p>Update the module source with a new client to generate.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withDependencies">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withDependencies</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>Append the provided dependencies to the module source's dependency list.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withEngineVersion">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withEngineVersion</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>

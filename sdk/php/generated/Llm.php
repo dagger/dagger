@@ -245,6 +245,15 @@ class Llm extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the llm state as a ModuleConfigClient
+     */
+    public function moduleConfigClient(): ModuleConfigClient
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleConfigClient');
+        return new \Dagger\ModuleConfigClient($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the llm state as a ModuleSource
      */
     public function moduleSource(): ModuleSource
@@ -567,6 +576,16 @@ class Llm extends Client\AbstractObject implements Client\IdAble
     public function withModule(ModuleId|Module $value): Llm
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withModule');
+        $innerQueryBuilder->setArgument('value', $value);
+        return new \Dagger\Llm($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Set the llm state to a ModuleConfigClient
+     */
+    public function withModuleConfigClient(ModuleConfigClientId|ModuleConfigClient $value): Llm
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withModuleConfigClient');
         $innerQueryBuilder->setArgument('value', $value);
         return new \Dagger\Llm($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

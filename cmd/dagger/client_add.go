@@ -13,12 +13,15 @@ import (
 
 var (
 	generator string
-	localSDK  bool
+	dev       bool
 )
 
 func init() {
 	clientAddCmd.Flags().StringVar(&generator, "generator", "", "Generator to use to generate the client")
-	clientAddCmd.Flags().BoolVar(&localSDK, "local-sdk", false, "Use local SDK dependency")
+	clientAddCmd.Flags().BoolVar(&dev, "dev", false, "Generate in developer mode")
+
+	// Hide `dev` flag since it's only for maintainers.
+	_ = clientAddCmd.Flags().MarkHidden("dev")
 }
 
 var clientAddCmd = &cobra.Command{
@@ -75,9 +78,17 @@ func (c *clientAddHandler) Run(ctx context.Context) (rerr error) {
 		return fmt.Errorf("failed to initialize client generator module: %w", err)
 	}
 
-	_, err = mod.Source.GenerateClient(generator, c.outputPath, dagger.ModuleSourceGenerateClientOpts{
-		LocalSDK: localSDK,
-	}).Export(ctx, ".")
+	contextDirPath, err := mod.Source.LocalContextDirectoryPath(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get local context directory path: %w", err)
+	}
+
+	_, err = mod.Source.
+		WithClient(generator, c.outputPath, dagger.ModuleSourceWithClientOpts{
+			Dev: dev,
+		}).
+		GeneratedContextDirectory().
+		Export(ctx, contextDirPath)
 	if err != nil {
 		return fmt.Errorf("failed to export client: %w", err)
 	}

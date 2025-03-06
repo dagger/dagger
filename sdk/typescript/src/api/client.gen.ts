@@ -1032,15 +1032,20 @@ export type ListTypeDefID = string & { __ListTypeDefID: never }
 export type LlmID = string & { __LlmID: never }
 
 /**
+ * The `ModuleConfigClientID` scalar type represents an identifier for an object of type ModuleConfigClient.
+ */
+export type ModuleConfigClientID = string & { __ModuleConfigClientID: never }
+
+/**
  * The `ModuleID` scalar type represents an identifier for an object of type Module.
  */
 export type ModuleID = string & { __ModuleID: never }
 
-export type ModuleSourceGenerateClientOpts = {
+export type ModuleSourceWithClientOpts = {
   /**
-   * Use local SDK dependency
+   * Generate in developer mode
    */
-  localSdk?: boolean
+  dev?: boolean
 }
 
 /**
@@ -5477,6 +5482,14 @@ export class Llm extends BaseClient {
   }
 
   /**
+   * Retrieve the llm state as a ModuleConfigClient
+   */
+  moduleConfigClient = (): ModuleConfigClient => {
+    const ctx = this._ctx.select("moduleConfigClient")
+    return new ModuleConfigClient(ctx)
+  }
+
+  /**
    * Retrieve the llm state as a ModuleSource
    */
   moduleSource = (): ModuleSource => {
@@ -5768,6 +5781,15 @@ export class Llm extends BaseClient {
    */
   withModule = (value: Module_): Llm => {
     const ctx = this._ctx.select("withModule", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a ModuleConfigClient
+   * @param value The value of the ModuleConfigClient to save
+   */
+  withModuleConfigClient = (value: ModuleConfigClient): Llm => {
+    const ctx = this._ctx.select("withModuleConfigClient", { value })
     return new Llm(ctx)
   }
 
@@ -6138,6 +6160,94 @@ export class Module_ extends BaseClient {
 }
 
 /**
+ * The client generated for the module.
+ */
+export class ModuleConfigClient extends BaseClient {
+  private readonly _id?: ModuleConfigClientID = undefined
+  private readonly _dev?: boolean = undefined
+  private readonly _directory?: string = undefined
+  private readonly _generator?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ModuleConfigClientID,
+    _dev?: boolean,
+    _directory?: string,
+    _generator?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._dev = _dev
+    this._directory = _directory
+    this._generator = _generator
+  }
+
+  /**
+   * A unique identifier for this ModuleConfigClient.
+   */
+  id = async (): Promise<ModuleConfigClientID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ModuleConfigClientID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * If true, generate the client in developer mode.
+   */
+  dev = async (): Promise<boolean> => {
+    if (this._dev) {
+      return this._dev
+    }
+
+    const ctx = this._ctx.select("dev")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The directory the client is generated in.
+   */
+  directory = async (): Promise<string> => {
+    if (this._directory) {
+      return this._directory
+    }
+
+    const ctx = this._ctx.select("directory")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The generator to use
+   */
+  generator = async (): Promise<string> => {
+    if (this._generator) {
+      return this._generator
+    }
+
+    const ctx = this._ctx.select("generator")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
  * The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
  */
 export class ModuleSource extends BaseClient {
@@ -6281,6 +6391,23 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * The clients generated for the module.
+   */
+  configClients = async (): Promise<ModuleConfigClient[]> => {
+    type configClients = {
+      id: ModuleConfigClientID
+    }
+
+    const ctx = this._ctx.select("configClients").select("id")
+
+    const response: Awaited<configClients[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadModuleConfigClientFromID(r.id),
+    )
+  }
+
+  /**
    * Whether an existing dagger.json for the module was found.
    */
   configExists = async (): Promise<boolean> => {
@@ -6357,25 +6484,6 @@ export class ModuleSource extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
-  }
-
-  /**
-   * Generates a client for the module.
-   * @param generator The generator to use
-   * @param outputDir The output directory for the generated client.
-   * @param opts.localSdk Use local SDK dependency
-   */
-  generateClient = (
-    generator: string,
-    outputDir: string,
-    opts?: ModuleSourceGenerateClientOpts,
-  ): Directory => {
-    const ctx = this._ctx.select("generateClient", {
-      generator,
-      outputDir,
-      ...opts,
-    })
-    return new Directory(ctx)
   }
 
   /**
@@ -6583,6 +6691,25 @@ export class ModuleSource extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Update the module source with a new client to generate.
+   * @param generator The generator to use
+   * @param outputDir The output directory for the generated client.
+   * @param opts.dev Generate in developer mode
+   */
+  withClient = (
+    generator: string,
+    outputDir: string,
+    opts?: ModuleSourceWithClientOpts,
+  ): ModuleSource => {
+    const ctx = this._ctx.select("withClient", {
+      generator,
+      outputDir,
+      ...opts,
+    })
+    return new ModuleSource(ctx)
   }
 
   /**
@@ -7320,6 +7447,16 @@ export class Client extends BaseClient {
   loadLlmFromID = (id: LlmID): Llm => {
     const ctx = this._ctx.select("loadLlmFromID", { id })
     return new Llm(ctx)
+  }
+
+  /**
+   * Load a ModuleConfigClient from its ID.
+   */
+  loadModuleConfigClientFromID = (
+    id: ModuleConfigClientID,
+  ): ModuleConfigClient => {
+    const ctx = this._ctx.select("loadModuleConfigClientFromID", { id })
+    return new ModuleConfigClient(ctx)
   }
 
   /**

@@ -312,6 +312,18 @@ defmodule Dagger.Llm do
     }
   end
 
+  @doc "Retrieve the llm state as a ModuleConfigClient"
+  @spec module_config_client(t()) :: Dagger.ModuleConfigClient.t()
+  def module_config_client(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("moduleConfigClient")
+
+    %Dagger.ModuleConfigClient{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
   @doc "Retrieve the llm state as a ModuleSource"
   @spec module_source(t()) :: Dagger.ModuleSource.t()
   def module_source(%__MODULE__{} = llm) do
@@ -732,6 +744,20 @@ defmodule Dagger.Llm do
   def with_module(%__MODULE__{} = llm, value) do
     query_builder =
       llm.query_builder |> QB.select("withModule") |> QB.put_arg("value", Dagger.ID.id!(value))
+
+    %Dagger.Llm{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc "Set the llm state to a ModuleConfigClient"
+  @spec with_module_config_client(t(), Dagger.ModuleConfigClient.t()) :: Dagger.Llm.t()
+  def with_module_config_client(%__MODULE__{} = llm, value) do
+    query_builder =
+      llm.query_builder
+      |> QB.select("withModuleConfigClient")
+      |> QB.put_arg("value", Dagger.ID.id!(value))
 
     %Dagger.Llm{
       query_builder: query_builder,

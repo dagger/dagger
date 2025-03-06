@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="robots" content="index, follow, all" />
-    <title>Dagger\Error | API</title>
+    <title>Dagger\ModuleConfigClient | API</title>
 
             <link rel="stylesheet" type="text/css" href="../css/bootstrap.min.css">
         <link rel="stylesheet" type="text/css" href="../css/bootstrap-theme.min.css">
@@ -19,7 +19,7 @@
 
     </head>
 
-    <body id="class" data-name="class:Dagger_Error" data-root-path="../" data-search-index-url="../doctum-search.json">
+    <body id="class" data-name="class:Dagger_ModuleConfigClient" data-root-path="../" data-search-index-url="../doctum-search.json">
             <div id="content">
         <div id="left-column">
                 <div id="control-panel">
@@ -75,24 +75,26 @@
                         <div class="namespace-breadcrumbs">
             <ol class="breadcrumb">
                 <li><span class="label label-default">class</span></li>
-                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>Error</li>
+                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>ModuleConfigClient</li>
             </ol>
         </div>
                 <div id="page-content">
     <div class="page-header">
-        <h1>Error    
+        <h1>ModuleConfigClient    
             </h1>
     </div>
 
     
     <p>        class
-    <strong>Error</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
+    <strong>ModuleConfigClient</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
 </p>
 
         
     
         
 
+            <div class="description">
+            <p><p>The client generated for the module.</p></p>                    </div>
             
         
     
@@ -141,12 +143,12 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
+                    bool
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_id">id</a>()
+                    <a href="#method_dev">dev</a>()
         
-                                            <p><p>A unique identifier for this Error.</p></p>                </div>
+                                            <p><p>If true, generate the client in developer mode.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -154,29 +156,29 @@
                     string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_message">message</a>()
+                    <a href="#method_directory">directory</a>()
         
-                                            <p><p>A description of the error.</p></p>                </div>
+                                            <p><p>The directory the client is generated in.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    array
+                    string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_values">values</a>()
+                    <a href="#method_generator">generator</a>()
         
-                                            <p><p>The extensions of the error.</p></p>                </div>
+                                            <p><p>The generator to use</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Error.html"><abbr title="Dagger\Error">Error</abbr></a>
+                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withValue">withValue</a>(string $name, <a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a> $value)
+                    <a href="#method_id">id</a>()
         
-                                            <p><p>Add a value to the error.</p></p>                </div>
+                                            <p><p>A unique identifier for this ModuleConfigClient.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -275,10 +277,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_id">
-        <div class="location">at line 16</div>
-        <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
-    <strong>id</strong>()
+                    <h3 id="method_dev">
+        <div class="location">at line 19</div>
+        <code>                    bool
+    <strong>dev</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -286,7 +288,7 @@
             
 
         <div class="method-description">
-                            <p><p>A unique identifier for this Error.</p></p>                        
+                            <p><p>If true, generate the client in developer mode.</p></p>                        
         </div>
         <div class="tags">
             
@@ -294,7 +296,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a></td>
+            <td>bool</td>
             <td></td>
         </tr>
     </table>
@@ -307,10 +309,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_message">
-        <div class="location">at line 25</div>
+                    <h3 id="method_directory">
+        <div class="location">at line 28</div>
         <code>                    string
-    <strong>message</strong>()
+    <strong>directory</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -318,7 +320,7 @@
             
 
         <div class="method-description">
-                            <p><p>A description of the error.</p></p>                        
+                            <p><p>The directory the client is generated in.</p></p>                        
         </div>
         <div class="tags">
             
@@ -339,10 +341,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_values">
-        <div class="location">at line 34</div>
-        <code>                    array
-    <strong>values</strong>()
+                    <h3 id="method_generator">
+        <div class="location">at line 37</div>
+        <code>                    string
+    <strong>generator</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -350,7 +352,7 @@
             
 
         <div class="method-description">
-                            <p><p>The extensions of the error.</p></p>                        
+                            <p><p>The generator to use</p></p>                        
         </div>
         <div class="tags">
             
@@ -358,7 +360,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td>array</td>
+            <td>string</td>
             <td></td>
         </tr>
     </table>
@@ -371,10 +373,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_withValue">
-        <div class="location">at line 43</div>
-        <code>                    <a href="../Dagger/Error.html"><abbr title="Dagger\Error">Error</abbr></a>
-    <strong>withValue</strong>(string $name, <a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a> $value)
+                    <h3 id="method_id">
+        <div class="location">at line 46</div>
+        <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
+    <strong>id</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -382,30 +384,15 @@
             
 
         <div class="method-description">
-                            <p><p>Add a value to the error.</p></p>                        
+                            <p><p>A unique identifier for this ModuleConfigClient.</p></p>                        
         </div>
         <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$name</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td><a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a></td>
-                <td>$value</td>
-                <td></td>
-            </tr>
-            </table>
-
             
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Error.html"><abbr title="Dagger\Error">Error</abbr></a></td>
+            <td><a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a></td>
             <td></td>
         </tr>
     </table>

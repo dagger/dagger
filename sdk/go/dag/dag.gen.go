@@ -312,6 +312,12 @@ func LoadLlmFromID(id dagger.LlmID) *dagger.Llm {
 	return client.LoadLlmFromID(id)
 }
 
+// Load a ModuleConfigClient from its ID.
+func LoadModuleConfigClientFromID(id dagger.ModuleConfigClientID) *dagger.ModuleConfigClient {
+	client := initClient()
+	return client.LoadModuleConfigClientFromID(id)
+}
+
 // Load a Module from its ID.
 func LoadModuleFromID(id dagger.ModuleID) *dagger.Module {
 	client := initClient()

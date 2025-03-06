@@ -248,38 +248,71 @@ func (sdk *moduleSDK) RequiredClientGenerationFiles(
 	return res, nil
 }
 
+// Return true and the function typedef if the function is implemented by the SDK module.
+func (sdk *moduleSDK) isFunctionImplemented(name string) (*core.Function, bool) {
+	for _, def := range sdk.mod.Self.ObjectDefs {
+		if !def.AsObject.Valid {
+			continue
+		}
+
+		obj := def.AsObject.Value
+		if gqlFieldName(obj.Name) != gqlFieldName(sdk.mod.Self.OriginalName) {
+			continue
+		}
+
+		for _, fn := range obj.Functions {
+			if fn.Name == name {
+				return fn, true
+			}
+		}
+	}
+
+	return nil, false
+}
+
 func (sdk *moduleSDK) GenerateClient(
 	ctx context.Context,
 	modSource dagql.Instance[*core.ModuleSource],
 	deps *core.ModDeps,
 	outputDir string,
-	useLocalSDK bool,
+	dev bool,
 ) (inst dagql.Instance[*core.Directory], err error) {
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
 	}
 
+	fct, implements := sdk.isFunctionImplemented("generateClient")
+	if !implements {
+		return inst, fmt.Errorf("generateClient is not implemented by this SDK")
+	}
+
+	generateClientsArgs := []dagql.NamedInput{
+		{
+			Name:  "modSource",
+			Value: dagql.NewID[*core.ModuleSource](modSource.ID()),
+		},
+		{
+			Name:  "introspectionJson",
+			Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
+		},
+		{
+			Name:  "outputDir",
+			Value: dagql.String(outputDir),
+		},
+	}
+
+	_, devFlagExist := fct.LookupArg("dev")
+	if devFlagExist {
+		generateClientsArgs = append(generateClientsArgs, dagql.NamedInput{
+			Name:  "dev",
+			Value: dagql.NewBoolean(dev),
+		})
+	}
+
 	err = sdk.dag.Select(ctx, sdk.sdk, &inst, dagql.Selector{
 		Field: "generateClient",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "modSource",
-				Value: dagql.NewID[*core.ModuleSource](modSource.ID()),
-			},
-			{
-				Name:  "introspectionJson",
-				Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
-			},
-			{
-				Name:  "outputDir",
-				Value: dagql.String(outputDir),
-			},
-			{
-				Name:  "useLocalSdk",
-				Value: dagql.NewBoolean(useLocalSDK),
-			},
-		},
+		Args:  generateClientsArgs,
 	})
 	if err != nil {
 		return inst, fmt.Errorf("failed to call sdk module generate client: %w", err)
@@ -436,7 +469,7 @@ func (sdk *goSDK) GenerateClient(
 	modSource dagql.Instance[*core.ModuleSource],
 	deps *core.ModDeps,
 	outputDir string,
-	useLocalSDK bool,
+	dev bool,
 ) (inst dagql.Instance[*core.Directory], err error) {
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
 	if err != nil {
@@ -448,31 +481,14 @@ func (sdk *goSDK) GenerateClient(
 		return inst, fmt.Errorf("failed to get base container during module client generation: %w", err)
 	}
 
-	workdirPath := "/module"
+	contextDir := modSource.Self.ContextDirectory
+	rootSourcePath := modSource.Self.SourceRootSubpath
 
 	codegenArgs := dagql.ArrayInput[dagql.String]{
 		"--output", dagql.String(outputDir),
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
-		dagql.String(fmt.Sprintf("--local-sdk=%t", useLocalSDK)),
+		dagql.String(fmt.Sprintf("--dev=%t", dev)),
 		"--client-only",
-	}
-
-	var currentModuleDirectory dagql.Instance[*core.Directory]
-	err = sdk.dag.Select(ctx, modSource, &currentModuleDirectory,
-		dagql.Selector{
-			Field: "contextDirectory",
-		},
-		dagql.Selector{
-			Field: "directory",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.String(modSource.Self.SourceRootSubpath),
-				},
-			},
-		})
-	if err != nil {
-		return inst, fmt.Errorf("failed to get module source root directory: %w", err)
 	}
 
 	err = sdk.dag.Select(ctx, ctr, &ctr,
@@ -493,15 +509,15 @@ func (sdk *goSDK) GenerateClient(
 			Field: "withoutDefaultArgs",
 		},
 		dagql.Selector{
-			Field: "withDirectory",
+			Field: "withMountedDirectory",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "path",
-					Value: dagql.String(workdirPath),
+					Value: dagql.String(goSDKUserModContextDirPath),
 				},
 				{
-					Name:  "directory",
-					Value: dagql.NewID[*core.Directory](currentModuleDirectory.ID()),
+					Name:  "source",
+					Value: dagql.NewID[*core.Directory](contextDir.ID()),
 				},
 			},
 		},
@@ -510,7 +526,7 @@ func (sdk *goSDK) GenerateClient(
 			Args: []dagql.NamedInput{
 				{
 					Name:  "path",
-					Value: dagql.String(workdirPath),
+					Value: dagql.NewString(filepath.Join(goSDKUserModContextDirPath, rootSourcePath)),
 				},
 			},
 		},
@@ -536,7 +552,7 @@ func (sdk *goSDK) GenerateClient(
 		Args: []dagql.NamedInput{
 			{
 				Name:  "path",
-				Value: dagql.String(workdirPath),
+				Value: dagql.String(goSDKUserModContextDirPath),
 			},
 		},
 	}); err != nil {
