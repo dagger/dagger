@@ -89,21 +89,21 @@ func LLMLoop(ctx context.Context, engineClient *client.Client) error {
 					return err
 				}
 				if typeDef.AsFunctionProvider() != nil {
-					llmId, err := llm.ID(ctx)
+					llmID, err := llm.ID(ctx)
 					if err != nil {
 						return err
 					}
 					if err := dag.QueryBuilder().
 						Select("loadLlmFromID").
-						Arg("id", llmId).
+						Arg("id", llmID).
 						Select(fmt.Sprintf("with%s", typeDef.Name())).
 						Arg("value", resp).
 						Select("id").
-						Bind(&llmId).
+						Bind(&llmID).
 						Execute(ctx); err != nil {
 						return err
 					}
-					llm = dag.LoadLlmFromID(llmId)
+					llm = dag.LoadLlmFromID(llmID)
 				}
 				return nil
 			}

@@ -227,6 +227,22 @@ defmodule Dagger.Client do
     }
   end
 
+  @doc "Initialize a Large Language Model (LLM)"
+  @spec llm(t(), [{:model, String.t() | nil}, {:max_api_calls, integer() | nil}]) ::
+          Dagger.Llm.t()
+  def llm(%__MODULE__{} = client, optional_args \\ []) do
+    query_builder =
+      client.query_builder
+      |> QB.select("llm")
+      |> QB.maybe_put_arg("model", optional_args[:model])
+      |> QB.maybe_put_arg("maxAPICalls", optional_args[:max_api_calls])
+
+    %Dagger.Llm{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
   @doc "Load a CacheVolume from its ID."
   @spec load_cache_volume_from_id(t(), Dagger.CacheVolumeID.t()) :: Dagger.CacheVolume.t()
   def load_cache_volume_from_id(%__MODULE__{} = client, id) do
@@ -369,6 +385,18 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadErrorFromID") |> QB.put_arg("id", id)
 
     %Dagger.Error{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc "Load a ErrorValue from its ID."
+  @spec load_error_value_from_id(t(), Dagger.ErrorValueID.t()) :: Dagger.ErrorValue.t()
+  def load_error_value_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadErrorValueFromID") |> QB.put_arg("id", id)
+
+    %Dagger.ErrorValue{
       query_builder: query_builder,
       client: client.client
     }
@@ -539,6 +567,18 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadListTypeDefFromID") |> QB.put_arg("id", id)
 
     %Dagger.ListTypeDef{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc "Load a Llm from its ID."
+  @spec load_llm_from_id(t(), Dagger.LlmID.t()) :: Dagger.Llm.t()
+  def load_llm_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadLlmFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Llm{
       query_builder: query_builder,
       client: client.client
     }

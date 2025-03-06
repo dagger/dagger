@@ -233,7 +233,7 @@ func (s *Session) tools(typedef *ast.Definition, toplevel bool, objectTypes map[
 				// FIXME: gotta lookup the IDs from digests when receiving them..
 				idDigest := id.Digest().String()
 				s.IDs[idDigest] = id
-				//return fmt.Sprintf("<%[1]sID>%s</%[1]sID>", field.Type.Name(), idDigest), nil
+				// return fmt.Sprintf("<%[1]sID>%s</%[1]sID>", field.Type.Name(), idDigest), nil
 				return idDigest, nil
 			}
 			// Track the return type so that we can extract that type's tools later

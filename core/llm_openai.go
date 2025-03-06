@@ -106,7 +106,7 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 
 	params := openai.ChatCompletionNewParams{
 		Seed:     openai.Int(0),
-		Model:    openai.F(openai.ChatModel(c.endpoint.Model)),
+		Model:    openai.F(c.endpoint.Model),
 		Messages: openai.F(openAIMessages),
 	}
 

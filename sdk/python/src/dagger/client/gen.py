@@ -7775,7 +7775,7 @@ class Client(Root):
         """
         _args = [
             Arg("model", model, None),
-            Arg("maxApiCalls", max_api_calls, None),
+            Arg("maxAPICalls", max_api_calls, None),
         ]
         _ctx = self._select("llm", _args)
         return Llm(_ctx)

@@ -50,6 +50,7 @@ const maxAnthropicCacheBlocks = 4
 // so we don't waste cache breakpoints.
 const anthropicCacheThreshold = 2048
 
+//nolint:gocyclo
 func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage, tools []bbi.Tool) (res *LLMResponse, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
 		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
@@ -206,8 +207,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 		}
 
 		// Check if the event delta contains text and trace it.
-		switch delta := event.Delta.(type) {
-		case anthropic.ContentBlockDeltaEventDelta:
+		if delta, ok := event.Delta.(anthropic.ContentBlockDeltaEventDelta); ok {
 			if delta.Text != "" {
 				// Lazily initialize telemetry/logging on first text response.
 				fmt.Fprint(stdio.Stdout, delta.Text)

@@ -18,7 +18,7 @@ func (s llmSchema) Install() {
 		dagql.Func("llm", s.llm).
 			Doc(`Initialize a Large Language Model (LLM)`).
 			ArgDoc("model", "Model to use").
-			ArgDoc("maxApiCalls", "Cap the number of API calls for this LLM"),
+			ArgDoc("maxAPICalls", "Cap the number of API calls for this LLM"),
 	}.Install(s.srv)
 	llmType := dagql.Fields[*core.Llm]{
 		dagql.Func("model", s.model).
@@ -102,17 +102,17 @@ func (s *llmSchema) loop(ctx context.Context, llm *core.Llm, args struct{}) (*co
 
 func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
 	Model       dagql.Optional[dagql.String]
-	MaxApiCalls dagql.Optional[dagql.Int]
+	MaxAPICalls dagql.Optional[dagql.Int] `name:"maxAPICalls"`
 }) (*core.Llm, error) {
 	var model string
 	if args.Model.Valid {
 		model = args.Model.Value.String()
 	}
-	var maxApiCalls int
-	if args.MaxApiCalls.Valid {
-		maxApiCalls = args.MaxApiCalls.Value.Int()
+	var maxAPICalls int
+	if args.MaxAPICalls.Valid {
+		maxAPICalls = args.MaxAPICalls.Value.Int()
 	}
-	return core.NewLlm(ctx, parent, s.srv, model, maxApiCalls)
+	return core.NewLlm(ctx, parent, s.srv, model, maxAPICalls)
 }
 
 func (s *llmSchema) history(ctx context.Context, llm *core.Llm, _ struct{}) (dagql.Array[dagql.String], error) {

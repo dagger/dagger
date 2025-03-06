@@ -100,7 +100,7 @@ func init() {
 		llmCmd,
 		clientCmd,
 	)
-	
+
 	llmAddFlags(llmCmd)
 
 	rootCmd.AddGroup(moduleGroup)

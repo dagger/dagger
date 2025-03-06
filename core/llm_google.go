@@ -131,7 +131,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 	if err != nil {
 		if apiErr, ok := err.(*apierror.APIError); ok {
 			// unwrap the APIError
-			return nil, fmt.Errorf("Google API error occurred: %v", apiErr.Unwrap())
+			return nil, fmt.Errorf("google API error occurred: %w", apiErr.Unwrap())
 		}
 		return nil, err
 	}
@@ -146,18 +146,18 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 		if candidate.Content != nil {
 			for _, part := range candidate.Content.Parts {
 				// check if tool call
-				switch part.(type) {
+				switch part := part.(type) {
 				case genai.FunctionCall:
 					toolCalls = append(toolCalls, ToolCall{
-						ID: part.(genai.FunctionCall).Name,
+						ID: part.Name,
 						Function: FuncCall{
-							Name:      part.(genai.FunctionCall).Name,
-							Arguments: part.(genai.FunctionCall).Args,
+							Name:      part.Name,
+							Arguments: part.Args,
 						},
 						Type: "function",
 					})
 				case genai.Text:
-					content += string(part.(genai.Text))
+					content += string(part)
 				default:
 					return nil, fmt.Errorf("unexpected genai part type %T", part)
 				}

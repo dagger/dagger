@@ -27,7 +27,7 @@ import (
 type Llm struct {
 	Query *Query
 
-	maxApiCalls int
+	maxAPICalls int
 	apiCalls    int
 	Model       string
 	Endpoint    *LlmEndpoint
@@ -112,15 +112,17 @@ const (
 
 // A LLM routing configuration
 type LlmRouter struct {
-	ANTHROPIC_API_KEY  string
-	ANTHROPIC_BASE_URL string
-	ANTHROPIC_MODEL    string
-	OPENAI_API_KEY     string
-	OPENAI_BASE_URL    string
-	OPENAI_MODEL       string
-	GEMINI_API_KEY     string
-	GEMINI_BASE_URL    string
-	GEMINI_MODEL       string
+	AnthropicAPIKey  string
+	AnthropicBaseURL string
+	AnthropicModel   string
+
+	OpenAIAPIKey  string
+	OpenAIBaseURL string
+	OpenAIModel   string
+
+	GeminiAPIKey  string
+	GeminiBaseURL string
+	GeminiModel   string
 }
 
 func (r *LlmRouter) isAnthropicModel(model string) bool {
@@ -139,15 +141,11 @@ func (r *LlmRouter) isMistralModel(model string) bool {
 	return strings.HasPrefix(model, "mistral-") || strings.HasPrefix(model, "mistral/")
 }
 
-func (r *LlmRouter) isLlamaModel(model string) bool {
-	return strings.HasPrefix(model, "llama-") || strings.HasPrefix(model, "meta/")
-}
-
 func (r *LlmRouter) routeAnthropicModel() *LlmEndpoint {
 	defaultSystemPrompt := "You are a helpful AI assistant. You can use tools to accomplish the user's requests"
 	endpoint := &LlmEndpoint{
-		BaseURL:  r.ANTHROPIC_BASE_URL,
-		Key:      r.ANTHROPIC_API_KEY,
+		BaseURL:  r.AnthropicBaseURL,
+		Key:      r.AnthropicAPIKey,
 		Provider: Anthropic,
 	}
 	endpoint.Client = newAnthropicClient(endpoint, defaultSystemPrompt)
@@ -157,8 +155,8 @@ func (r *LlmRouter) routeAnthropicModel() *LlmEndpoint {
 
 func (r *LlmRouter) routeOpenAIModel() *LlmEndpoint {
 	endpoint := &LlmEndpoint{
-		BaseURL:  r.OPENAI_BASE_URL,
-		Key:      r.OPENAI_API_KEY,
+		BaseURL:  r.OpenAIBaseURL,
+		Key:      r.OpenAIAPIKey,
 		Provider: OpenAI,
 	}
 	endpoint.Client = newOpenAIClient(endpoint)
@@ -169,8 +167,8 @@ func (r *LlmRouter) routeOpenAIModel() *LlmEndpoint {
 func (r *LlmRouter) routeGoogleModel() (*LlmEndpoint, error) {
 	defaultSystemPrompt := "You are a helpful AI assistant. You can use tools to accomplish the user's requests"
 	endpoint := &LlmEndpoint{
-		BaseURL:  r.GEMINI_BASE_URL,
-		Key:      r.GEMINI_API_KEY,
+		BaseURL:  r.GeminiBaseURL,
+		Key:      r.GeminiAPIKey,
 		Provider: Google,
 	}
 	client, err := newGenaiClient(endpoint, defaultSystemPrompt)
@@ -185,8 +183,8 @@ func (r *LlmRouter) routeGoogleModel() (*LlmEndpoint, error) {
 func (r *LlmRouter) routeOtherModel() *LlmEndpoint {
 	// default to openAI compat from other providers
 	endpoint := &LlmEndpoint{
-		BaseURL:  r.OPENAI_BASE_URL,
-		Key:      r.OPENAI_API_KEY,
+		BaseURL:  r.OpenAIBaseURL,
+		Key:      r.OpenAIAPIKey,
 		Provider: Other,
 	}
 	endpoint.Client = newOpenAIClient(endpoint)
@@ -196,21 +194,21 @@ func (r *LlmRouter) routeOtherModel() *LlmEndpoint {
 
 // Return a default model, if configured
 func (r *LlmRouter) DefaultModel() string {
-	for _, model := range []string{r.OPENAI_MODEL, r.ANTHROPIC_MODEL, r.GEMINI_MODEL} {
+	for _, model := range []string{r.OpenAIModel, r.AnthropicModel, r.GeminiModel} {
 		if model != "" {
 			return model
 		}
 	}
-	if r.OPENAI_API_KEY != "" {
+	if r.OpenAIAPIKey != "" {
 		return "gpt-4o"
 	}
-	if r.ANTHROPIC_API_KEY != "" {
+	if r.AnthropicAPIKey != "" {
 		return anthropic.ModelClaude3_5SonnetLatest
 	}
-	if r.OPENAI_BASE_URL != "" {
+	if r.OpenAIBaseURL != "" {
 		return "llama-3.2"
 	}
-	if r.GEMINI_API_KEY != "" {
+	if r.GeminiAPIKey != "" {
 		return "gemini-2.0-flash"
 	}
 	return ""
@@ -234,7 +232,7 @@ func (r *LlmRouter) Route(model string) (*LlmEndpoint, error) {
 		}
 		endpoint = googleEndpoint
 	} else if r.isMistralModel(model) {
-		return nil, fmt.Errorf("Mistral models are not yet supported")
+		return nil, fmt.Errorf("mistral models are not yet supported")
 	} else {
 		endpoint = r.routeOtherModel()
 	}
@@ -242,46 +240,46 @@ func (r *LlmRouter) Route(model string) (*LlmEndpoint, error) {
 	return endpoint, nil
 }
 
-func (cfg *LlmRouter) LoadConfig(ctx context.Context, getenv func(context.Context, string) (string, error)) error {
+func (r *LlmRouter) LoadConfig(ctx context.Context, getenv func(context.Context, string) (string, error)) error {
 	if getenv == nil {
 		getenv = func(ctx context.Context, key string) (string, error) {
 			return os.Getenv(key), nil
 		}
 	}
 	var err error
-	cfg.ANTHROPIC_API_KEY, err = getenv(ctx, "ANTHROPIC_API_KEY")
+	r.AnthropicAPIKey, err = getenv(ctx, "ANTHROPIC_API_KEY")
 	if err != nil {
 		return err
 	}
-	cfg.ANTHROPIC_BASE_URL, err = getenv(ctx, "ANTHROPIC_BASE_URL")
+	r.AnthropicBaseURL, err = getenv(ctx, "ANTHROPIC_BASE_URL")
 	if err != nil {
 		return err
 	}
-	cfg.ANTHROPIC_MODEL, err = getenv(ctx, "ANTHROPIC_MODEL")
+	r.AnthropicModel, err = getenv(ctx, "ANTHROPIC_MODEL")
 	if err != nil {
 		return err
 	}
-	cfg.OPENAI_API_KEY, err = getenv(ctx, "OPENAI_API_KEY")
+	r.OpenAIAPIKey, err = getenv(ctx, "OPENAI_API_KEY")
 	if err != nil {
 		return err
 	}
-	cfg.OPENAI_BASE_URL, err = getenv(ctx, "OPENAI_BASE_URL")
+	r.OpenAIBaseURL, err = getenv(ctx, "OPENAI_BASE_URL")
 	if err != nil {
 		return err
 	}
-	cfg.OPENAI_MODEL, err = getenv(ctx, "OPENAI_MODEL")
+	r.OpenAIModel, err = getenv(ctx, "OPENAI_MODEL")
 	if err != nil {
 		return err
 	}
-	cfg.GEMINI_API_KEY, err = getenv(ctx, "GEMINI_API_KEY")
+	r.GeminiAPIKey, err = getenv(ctx, "GEMINI_API_KEY")
 	if err != nil {
 		return err
 	}
-	cfg.GEMINI_BASE_URL, err = getenv(ctx, "GEMINI_BASE_URL")
+	r.GeminiBaseURL, err = getenv(ctx, "GEMINI_BASE_URL")
 	if err != nil {
 		return err
 	}
-	cfg.GEMINI_MODEL, err = getenv(ctx, "GEMINI_MODEL")
+	r.GeminiModel, err = getenv(ctx, "GEMINI_MODEL")
 	if err != nil {
 		return err
 	}
@@ -314,7 +312,7 @@ func NewLlmRouter(ctx context.Context, srv *dagql.Server) (*LlmRouter, error) {
 	env := make(map[string]string)
 	// Load .env from current directory, if it exists
 	if envFile, err := loadSecret(ctx, "file://.env"); err == nil {
-		if e, err := godotenv.Unmarshal(string(envFile)); err == nil {
+		if e, err := godotenv.Unmarshal(envFile); err == nil {
 			env = e
 		}
 	}
@@ -333,7 +331,7 @@ func NewLlmRouter(ctx context.Context, srv *dagql.Server) (*LlmRouter, error) {
 	return router, err
 }
 
-func NewLlm(ctx context.Context, query *Query, srv *dagql.Server, model string, maxApiCalls int) (*Llm, error) {
+func NewLlm(ctx context.Context, query *Query, srv *dagql.Server, model string, maxAPICalls int) (*Llm, error) {
 	var router *LlmRouter
 	{
 		// Don't leak this context, it's specific to querying the parent client for llm config secrets
@@ -355,17 +353,17 @@ func NewLlm(ctx context.Context, query *Query, srv *dagql.Server, model string, 
 		return nil, err
 	}
 	if endpoint.Model == "" {
-		return nil, fmt.Errorf("No valid LLM endpoint configuration")
+		return nil, fmt.Errorf("no valid LLM endpoint configuration")
 	}
 	// FIXME: merge model into endpoint
 	return &Llm{
 		Query:       query,
 		Model:       model,
 		Endpoint:    endpoint,
-		maxApiCalls: maxApiCalls,
+		maxAPICalls: maxAPICalls,
 		calls:       make(map[string]string),
 		// FIXME: support multiple variables in state
-		//state:  make(map[string]dagql.Typed),
+		// state:  make(map[string]dagql.Typed),
 	}, nil
 }
 
@@ -527,7 +525,7 @@ func (llm *Llm) Sync(ctx context.Context, dag *dagql.Server) (*Llm, error) {
 		return nil, err
 	}
 	for {
-		if llm.maxApiCalls > 0 && llm.apiCalls >= llm.maxApiCalls {
+		if llm.maxAPICalls > 0 && llm.apiCalls >= llm.maxAPICalls {
 			return nil, fmt.Errorf("reached API call limit: %d", llm.apiCalls)
 		}
 		llm.apiCalls++
@@ -682,8 +680,8 @@ func (llm *Llm) messages() ([]ModelMessage, error) {
 	return messages, nil
 }
 
-func (llm *Llm) WithState(ctx context.Context, objId dagql.IDType, srv *dagql.Server) (*Llm, error) {
-	obj, err := srv.Load(ctx, objId.ID())
+func (llm *Llm) WithState(ctx context.Context, objID dagql.IDType, srv *dagql.Server) (*Llm, error) {
+	obj, err := srv.Load(ctx, objID.ID())
 	if err != nil {
 		return nil, err
 	}

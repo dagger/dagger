@@ -7561,9 +7561,9 @@ func (r *Client) Llm(opts ...LlmOpts) *Llm {
 		if !querybuilder.IsZeroValue(opts[i].Model) {
 			q = q.Arg("model", opts[i].Model)
 		}
-		// `maxApiCalls` optional argument
+		// `maxAPICalls` optional argument
 		if !querybuilder.IsZeroValue(opts[i].MaxAPICalls) {
-			q = q.Arg("maxApiCalls", opts[i].MaxAPICalls)
+			q = q.Arg("maxAPICalls", opts[i].MaxAPICalls)
 		}
 	}
 

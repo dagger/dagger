@@ -830,6 +830,11 @@ export type EnvVariableID = string & { __EnvVariableID: never }
 export type ErrorID = string & { __ErrorID: never }
 
 /**
+ * The `ErrorValueID` scalar type represents an identifier for an object of type ErrorValue.
+ */
+export type ErrorValueID = string & { __ErrorValueID: never }
+
+/**
  * The `FieldTypeDefID` scalar type represents an identifier for an object of type FieldTypeDef.
  */
 export type FieldTypeDefID = string & { __FieldTypeDefID: never }
@@ -1022,6 +1027,11 @@ export type LabelID = string & { __LabelID: never }
 export type ListTypeDefID = string & { __ListTypeDefID: never }
 
 /**
+ * The `LlmID` scalar type represents an identifier for an object of type Llm.
+ */
+export type LlmID = string & { __LlmID: never }
+
+/**
  * The `ModuleID` scalar type represents an identifier for an object of type Module.
  */
 export type ModuleID = string & { __ModuleID: never }
@@ -1137,6 +1147,18 @@ export type ClientHttpOpts = {
    * A service which must be started before the URL is fetched.
    */
   experimentalServiceHost?: Service
+}
+
+export type ClientLlmOpts = {
+  /**
+   * Model to use
+   */
+  model?: string
+
+  /**
+   * Cap the number of API calls for this LLM
+   */
+  maxAPICalls?: number
 }
 
 export type ClientLoadSecretFromNameOpts = {
@@ -3692,6 +3714,109 @@ export class Error extends BaseClient {
 
     return response
   }
+
+  /**
+   * The extensions of the error.
+   */
+  values = async (): Promise<ErrorValue[]> => {
+    type values = {
+      id: ErrorValueID
+    }
+
+    const ctx = this._ctx.select("values").select("id")
+
+    const response: Awaited<values[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadErrorValueFromID(r.id),
+    )
+  }
+
+  /**
+   * Add a value to the error.
+   * @param name The name of the value.
+   * @param value The value to store on the error.
+   */
+  withValue = (name: string, value: JSON): Error => {
+    const ctx = this._ctx.select("withValue", { name, value })
+    return new Error(ctx)
+  }
+
+  /**
+   * Call the provided function with current Error.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Error) => Error) => {
+    return arg(this)
+  }
+}
+
+export class ErrorValue extends BaseClient {
+  private readonly _id?: ErrorValueID = undefined
+  private readonly _name?: string = undefined
+  private readonly _value?: JSON = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ErrorValueID,
+    _name?: string,
+    _value?: JSON,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._name = _name
+    this._value = _value
+  }
+
+  /**
+   * A unique identifier for this ErrorValue.
+   */
+  id = async (): Promise<ErrorValueID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ErrorValueID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The name of the value.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The value.
+   */
+  value = async (): Promise<JSON> => {
+    if (this._value) {
+      return this._value
+    }
+
+    const ctx = this._ctx.select("value")
+
+    const response: Awaited<JSON> = await ctx.execute()
+
+    return response
+  }
 }
 
 /**
@@ -5091,6 +5216,689 @@ export class ListTypeDef extends BaseClient {
   }
 }
 
+export class Llm extends BaseClient {
+  private readonly _id?: LlmID = undefined
+  private readonly _lastReply?: string = undefined
+  private readonly _model?: string = undefined
+  private readonly _sync?: LlmID = undefined
+  private readonly _tools?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: LlmID,
+    _lastReply?: string,
+    _model?: string,
+    _sync?: LlmID,
+    _tools?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._lastReply = _lastReply
+    this._model = _model
+    this._sync = _sync
+    this._tools = _tools
+  }
+
+  /**
+   * A unique identifier for this Llm.
+   */
+  id = async (): Promise<LlmID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<LlmID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Retrieve the llm state as a CacheVolume
+   */
+  cacheVolume = (): CacheVolume => {
+    const ctx = this._ctx.select("cacheVolume")
+    return new CacheVolume(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a Container
+   */
+  container = (): Container => {
+    const ctx = this._ctx.select("container")
+    return new Container(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a CurrentModule
+   */
+  currentModule = (): CurrentModule => {
+    const ctx = this._ctx.select("currentModule")
+    return new CurrentModule(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a Directory
+   */
+  directory = (): Directory => {
+    const ctx = this._ctx.select("directory")
+    return new Directory(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a EnumTypeDef
+   */
+  enumTypeDef = (): EnumTypeDef => {
+    const ctx = this._ctx.select("enumTypeDef")
+    return new EnumTypeDef(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a EnumValueTypeDef
+   */
+  enumValueTypeDef = (): EnumValueTypeDef => {
+    const ctx = this._ctx.select("enumValueTypeDef")
+    return new EnumValueTypeDef(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a Error
+   */
+  error = (): Error => {
+    const ctx = this._ctx.select("error")
+    return new Error(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a ErrorValue
+   */
+  errorValue = (): ErrorValue => {
+    const ctx = this._ctx.select("errorValue")
+    return new ErrorValue(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a FieldTypeDef
+   */
+  fieldTypeDef = (): FieldTypeDef => {
+    const ctx = this._ctx.select("fieldTypeDef")
+    return new FieldTypeDef(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a File
+   */
+  file = (): File => {
+    const ctx = this._ctx.select("file")
+    return new File(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a Function
+   */
+  function_ = (): Function_ => {
+    const ctx = this._ctx.select("function")
+    return new Function_(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a FunctionArg
+   */
+  functionArg = (): FunctionArg => {
+    const ctx = this._ctx.select("functionArg")
+    return new FunctionArg(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a FunctionCall
+   */
+  functionCall = (): FunctionCall => {
+    const ctx = this._ctx.select("functionCall")
+    return new FunctionCall(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a FunctionCallArgValue
+   */
+  functionCallArgValue = (): FunctionCallArgValue => {
+    const ctx = this._ctx.select("functionCallArgValue")
+    return new FunctionCallArgValue(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a GeneratedCode
+   */
+  generatedCode = (): GeneratedCode => {
+    const ctx = this._ctx.select("generatedCode")
+    return new GeneratedCode(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a GitRef
+   */
+  gitRef = (): GitRef => {
+    const ctx = this._ctx.select("gitRef")
+    return new GitRef(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a GitRepository
+   */
+  gitRepository = (): GitRepository => {
+    const ctx = this._ctx.select("gitRepository")
+    return new GitRepository(ctx)
+  }
+
+  /**
+   * return the llm message history
+   */
+  history = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("history")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Retrieve the llm state as a InputTypeDef
+   */
+  inputTypeDef = (): InputTypeDef => {
+    const ctx = this._ctx.select("inputTypeDef")
+    return new InputTypeDef(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a InterfaceTypeDef
+   */
+  interfaceTypeDef = (): InterfaceTypeDef => {
+    const ctx = this._ctx.select("interfaceTypeDef")
+    return new InterfaceTypeDef(ctx)
+  }
+
+  /**
+   * return the last llm reply from the history
+   */
+  lastReply = async (): Promise<string> => {
+    if (this._lastReply) {
+      return this._lastReply
+    }
+
+    const ctx = this._ctx.select("lastReply")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Retrieve the llm state as a ListTypeDef
+   */
+  listTypeDef = (): ListTypeDef => {
+    const ctx = this._ctx.select("listTypeDef")
+    return new ListTypeDef(ctx)
+  }
+
+  /**
+   * synchronize LLM state
+   * @deprecated use sync
+   */
+  loop = (): Llm => {
+    const ctx = this._ctx.select("loop")
+    return new Llm(ctx)
+  }
+
+  /**
+   * return the model used by the llm
+   */
+  model = async (): Promise<string> => {
+    if (this._model) {
+      return this._model
+    }
+
+    const ctx = this._ctx.select("model")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Retrieve the llm state as a Module
+   */
+  module_ = (): Module_ => {
+    const ctx = this._ctx.select("module")
+    return new Module_(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a ModuleSource
+   */
+  moduleSource = (): ModuleSource => {
+    const ctx = this._ctx.select("moduleSource")
+    return new ModuleSource(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a ObjectTypeDef
+   */
+  objectTypeDef = (): ObjectTypeDef => {
+    const ctx = this._ctx.select("objectTypeDef")
+    return new ObjectTypeDef(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a ScalarTypeDef
+   */
+  scalarTypeDef = (): ScalarTypeDef => {
+    const ctx = this._ctx.select("scalarTypeDef")
+    return new ScalarTypeDef(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a SDKConfig
+   */
+  sdkconfig = (): SDKConfig => {
+    const ctx = this._ctx.select("sdkconfig")
+    return new SDKConfig(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a Secret
+   */
+  secret = (): Secret => {
+    const ctx = this._ctx.select("secret")
+    return new Secret(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a Service
+   */
+  service = (): Service => {
+    const ctx = this._ctx.select("service")
+    return new Service(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a Socket
+   */
+  socket = (): Socket => {
+    const ctx = this._ctx.select("socket")
+    return new Socket(ctx)
+  }
+
+  /**
+   * Retrieve the llm state as a SourceMap
+   */
+  sourceMap = (): SourceMap => {
+    const ctx = this._ctx.select("sourceMap")
+    return new SourceMap(ctx)
+  }
+
+  /**
+   * synchronize LLM state
+   */
+  sync = async (): Promise<Llm> => {
+    const ctx = this._ctx.select("sync")
+
+    const response: Awaited<LlmID> = await ctx.execute()
+
+    return new Client(ctx.copy()).loadLlmFromID(response)
+  }
+
+  /**
+   * Retrieve the llm state as a Terminal
+   */
+  terminal = (): Terminal => {
+    const ctx = this._ctx.select("terminal")
+    return new Terminal(ctx)
+  }
+
+  /**
+   * print documentation for available tools
+   */
+  tools = async (): Promise<string> => {
+    if (this._tools) {
+      return this._tools
+    }
+
+    const ctx = this._ctx.select("tools")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Retrieve the llm state as a TypeDef
+   */
+  typeDef = (): TypeDef => {
+    const ctx = this._ctx.select("typeDef")
+    return new TypeDef(ctx)
+  }
+
+  /**
+   * Set the llm state to a CacheVolume
+   * @param value The value of the CacheVolume to save
+   */
+  withCacheVolume = (value: CacheVolume): Llm => {
+    const ctx = this._ctx.select("withCacheVolume", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a Container
+   * @param value The value of the Container to save
+   */
+  withContainer = (value: Container): Llm => {
+    const ctx = this._ctx.select("withContainer", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a CurrentModule
+   * @param value The value of the CurrentModule to save
+   */
+  withCurrentModule = (value: CurrentModule): Llm => {
+    const ctx = this._ctx.select("withCurrentModule", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a Directory
+   * @param value The value of the Directory to save
+   */
+  withDirectory = (value: Directory): Llm => {
+    const ctx = this._ctx.select("withDirectory", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a EnumTypeDef
+   * @param value The value of the EnumTypeDef to save
+   */
+  withEnumTypeDef = (value: EnumTypeDef): Llm => {
+    const ctx = this._ctx.select("withEnumTypeDef", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a EnumValueTypeDef
+   * @param value The value of the EnumValueTypeDef to save
+   */
+  withEnumValueTypeDef = (value: EnumValueTypeDef): Llm => {
+    const ctx = this._ctx.select("withEnumValueTypeDef", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a Error
+   * @param value The value of the Error to save
+   */
+  withError = (value: Error): Llm => {
+    const ctx = this._ctx.select("withError", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a ErrorValue
+   * @param value The value of the ErrorValue to save
+   */
+  withErrorValue = (value: ErrorValue): Llm => {
+    const ctx = this._ctx.select("withErrorValue", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a FieldTypeDef
+   * @param value The value of the FieldTypeDef to save
+   */
+  withFieldTypeDef = (value: FieldTypeDef): Llm => {
+    const ctx = this._ctx.select("withFieldTypeDef", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a File
+   * @param value The value of the File to save
+   */
+  withFile = (value: File): Llm => {
+    const ctx = this._ctx.select("withFile", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a Function
+   * @param value The value of the Function to save
+   */
+  withFunction = (value: Function_): Llm => {
+    const ctx = this._ctx.select("withFunction", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a FunctionArg
+   * @param value The value of the FunctionArg to save
+   */
+  withFunctionArg = (value: FunctionArg): Llm => {
+    const ctx = this._ctx.select("withFunctionArg", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a FunctionCall
+   * @param value The value of the FunctionCall to save
+   */
+  withFunctionCall = (value: FunctionCall): Llm => {
+    const ctx = this._ctx.select("withFunctionCall", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a FunctionCallArgValue
+   * @param value The value of the FunctionCallArgValue to save
+   */
+  withFunctionCallArgValue = (value: FunctionCallArgValue): Llm => {
+    const ctx = this._ctx.select("withFunctionCallArgValue", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a GeneratedCode
+   * @param value The value of the GeneratedCode to save
+   */
+  withGeneratedCode = (value: GeneratedCode): Llm => {
+    const ctx = this._ctx.select("withGeneratedCode", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a GitRef
+   * @param value The value of the GitRef to save
+   */
+  withGitRef = (value: GitRef): Llm => {
+    const ctx = this._ctx.select("withGitRef", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a GitRepository
+   * @param value The value of the GitRepository to save
+   */
+  withGitRepository = (value: GitRepository): Llm => {
+    const ctx = this._ctx.select("withGitRepository", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a InputTypeDef
+   * @param value The value of the InputTypeDef to save
+   */
+  withInputTypeDef = (value: InputTypeDef): Llm => {
+    const ctx = this._ctx.select("withInputTypeDef", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a InterfaceTypeDef
+   * @param value The value of the InterfaceTypeDef to save
+   */
+  withInterfaceTypeDef = (value: InterfaceTypeDef): Llm => {
+    const ctx = this._ctx.select("withInterfaceTypeDef", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a ListTypeDef
+   * @param value The value of the ListTypeDef to save
+   */
+  withListTypeDef = (value: ListTypeDef): Llm => {
+    const ctx = this._ctx.select("withListTypeDef", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a Module
+   * @param value The value of the Module to save
+   */
+  withModule = (value: Module_): Llm => {
+    const ctx = this._ctx.select("withModule", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a ModuleSource
+   * @param value The value of the ModuleSource to save
+   */
+  withModuleSource = (value: ModuleSource): Llm => {
+    const ctx = this._ctx.select("withModuleSource", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a ObjectTypeDef
+   * @param value The value of the ObjectTypeDef to save
+   */
+  withObjectTypeDef = (value: ObjectTypeDef): Llm => {
+    const ctx = this._ctx.select("withObjectTypeDef", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * append a prompt to the llm context
+   * @param prompt The prompt to send
+   */
+  withPrompt = (prompt: string): Llm => {
+    const ctx = this._ctx.select("withPrompt", { prompt })
+    return new Llm(ctx)
+  }
+
+  /**
+   * append the contents of a file to the llm context
+   * @param file The file to read the prompt from
+   */
+  withPromptFile = (file: File): Llm => {
+    const ctx = this._ctx.select("withPromptFile", { file })
+    return new Llm(ctx)
+  }
+
+  /**
+   * set a variable for expansion in the prompt
+   * @param name The name of the variable
+   * @param value The value of the variable
+   */
+  withPromptVar = (name: string, value: string): Llm => {
+    const ctx = this._ctx.select("withPromptVar", { name, value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a SDKConfig
+   * @param value The value of the SDKConfig to save
+   */
+  withSDKConfig = (value: SDKConfig): Llm => {
+    const ctx = this._ctx.select("withSDKConfig", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a ScalarTypeDef
+   * @param value The value of the ScalarTypeDef to save
+   */
+  withScalarTypeDef = (value: ScalarTypeDef): Llm => {
+    const ctx = this._ctx.select("withScalarTypeDef", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a Secret
+   * @param value The value of the Secret to save
+   */
+  withSecret = (value: Secret): Llm => {
+    const ctx = this._ctx.select("withSecret", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a Service
+   * @param value The value of the Service to save
+   */
+  withService = (value: Service): Llm => {
+    const ctx = this._ctx.select("withService", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a Socket
+   * @param value The value of the Socket to save
+   */
+  withSocket = (value: Socket): Llm => {
+    const ctx = this._ctx.select("withSocket", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a SourceMap
+   * @param value The value of the SourceMap to save
+   */
+  withSourceMap = (value: SourceMap): Llm => {
+    const ctx = this._ctx.select("withSourceMap", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a Terminal
+   * @param value The value of the Terminal to save
+   */
+  withTerminal = (value: Terminal): Llm => {
+    const ctx = this._ctx.select("withTerminal", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a TypeDef
+   * @param value The value of the TypeDef to save
+   */
+  withTypeDef = (value: TypeDef): Llm => {
+    const ctx = this._ctx.select("withTypeDef", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Call the provided function with current Llm.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Llm) => Llm) => {
+    return arg(this)
+  }
+}
+
 /**
  * A Dagger module.
  */
@@ -6277,6 +7085,16 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Initialize a Large Language Model (LLM)
+   * @param opts.model Model to use
+   * @param opts.maxAPICalls Cap the number of API calls for this LLM
+   */
+  llm = (opts?: ClientLlmOpts): Llm => {
+    const ctx = this._ctx.select("llm", { ...opts })
+    return new Llm(ctx)
+  }
+
+  /**
    * Load a CacheVolume from its ID.
    */
   loadCacheVolumeFromID = (id: CacheVolumeID): CacheVolume => {
@@ -6372,6 +7190,14 @@ export class Client extends BaseClient {
   loadErrorFromID = (id: ErrorID): Error => {
     const ctx = this._ctx.select("loadErrorFromID", { id })
     return new Error(ctx)
+  }
+
+  /**
+   * Load a ErrorValue from its ID.
+   */
+  loadErrorValueFromID = (id: ErrorValueID): ErrorValue => {
+    const ctx = this._ctx.select("loadErrorValueFromID", { id })
+    return new ErrorValue(ctx)
   }
 
   /**
@@ -6486,6 +7312,14 @@ export class Client extends BaseClient {
   loadListTypeDefFromID = (id: ListTypeDefID): ListTypeDef => {
     const ctx = this._ctx.select("loadListTypeDefFromID", { id })
     return new ListTypeDef(ctx)
+  }
+
+  /**
+   * Load a Llm from its ID.
+   */
+  loadLlmFromID = (id: LlmID): Llm => {
+    const ctx = this._ctx.select("loadLlmFromID", { id })
+    return new Llm(ctx)
   }
 
   /**
