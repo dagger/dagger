@@ -199,16 +199,49 @@ func (t *TypescriptSdk) GenerateClient(
 		WithMountedFile(schemaPath, introspectionJSON).
 		// Mount the current module directory.
 		WithDirectory(workdirPath, modSource.ContextDirectory()).
-		WithWorkdir(filepath.Join(workdirPath, currentModuleDirectoryPath)).
+		WithWorkdir(filepath.Join(workdirPath, currentModuleDirectoryPath))
+
+	dependenciesRefs := []string{}
+	dependencies, err := modSource.Dependencies(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module dependencies: %w", err)
+	}
+	for _, dep := range dependencies {
+		depKind, err := dep.Source().Kind(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get dependency kind: %w", err)
+		}
+
+		if depKind != dagger.GitSource {
+			continue
+		}
+
+		depRef, err := dep.Source().AsString(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get module dependency ref: %w", err)
+		}
+
+		dependenciesRefs = append(dependenciesRefs, depRef)
+	}
+
+	codegenArgs := []string{
+		"--lang", "typescript",
+		"--output", outputDir,
+		"--introspection-json-path", schemaPath,
+		fmt.Sprintf("--dev=%t", dev),
+		"--client-only",
+	}
+
+	if len(dependenciesRefs) > 0 {
+		codegenArgs = append(codegenArgs,
+			"--dependencies-ref",
+			strings.Join(dependenciesRefs, ","),
+		)
+	}
+
+	ctr = ctr.
 		// Execute the code generator using the given introspection file.
-		WithExec([]string{
-			codegenBinPath,
-			"--lang", "typescript",
-			"--output", outputDir,
-			"--introspection-json-path", schemaPath,
-			fmt.Sprintf("--dev=%t", dev),
-			"--client-only",
-		}, dagger.ContainerWithExecOpts{
+		WithExec(codegenArgs, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 
