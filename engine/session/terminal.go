@@ -14,6 +14,16 @@ import (
 	codes "google.golang.org/grpc/codes"
 )
 
+var toto *os.File
+
+func init() {
+	var err error
+	toto, err = os.Create("/tmp/toto.log")
+	if err != nil {
+		panic(fmt.Sprintf("🧠 |%+v|", err))
+	}
+}
+
 type WithTerminalFunc func(func(stdin io.Reader, stdout, stderr io.Writer) error) error
 
 var _ TerminalServer = &TerminalAttachable{}
@@ -111,6 +121,8 @@ func (s TerminalAttachable) sendSize(srv Terminal_SessionServer, stdout io.Write
 		return fmt.Errorf("get terminal size: %w", err)
 	}
 
+	fmt.Fprintf(toto, "😈 resize\n")
+
 	return srv.Send(&SessionResponse{
 		Msg: &SessionResponse_Resize{
 			Resize: &Resize{
@@ -125,6 +137,10 @@ func (s TerminalAttachable) forwardStdin(ctx context.Context, srv Terminal_Sessi
 	if stdin == nil {
 		return
 	}
+	fmt.Fprintf(toto, "😈 resize |%#v|\n", stdin)
+	fmt.Fprintf(toto, "😈 resize |%#v|\n", os.Stdin)
+	fmt.Fprintf(toto, "😈😈 resize |%+v|\n", os.Stdin)
+	fmt.Fprintf(toto, "😈😈 resize |%+v|\n", stdin)
 
 	// In order to stop reading from stdin when the context is cancelled,
 	// we proxy the reads through a Pipe which we can close without closing
@@ -143,7 +159,9 @@ func (s TerminalAttachable) forwardStdin(ctx context.Context, srv Terminal_Sessi
 
 	b := make([]byte, 512)
 	for {
+		fmt.Fprintf(toto, "😈 pipe read\n")
 		n, err := pipeR.Read(b)
+		fmt.Fprintf(toto, "😈 pipe read passed |%+v|%+v|\n", n, err)
 		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) {
 				return
@@ -157,6 +175,7 @@ func (s TerminalAttachable) forwardStdin(ctx context.Context, srv Terminal_Sessi
 				Stdin: b[:n],
 			},
 		})
+		fmt.Fprintf(toto, "😈 we sent session response |%+v|%+v|\n", n, err)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "forward stdin: %v\n", err)
 			return

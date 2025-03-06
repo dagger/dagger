@@ -774,7 +774,9 @@ func (c *Client) OpenTerminal(
 		defer close(errCh)
 		defer close(resizeCh)
 		for {
+			bklog.G(ctx).Debugf("🔥 avant")
 			res, err := term.Recv()
+			bklog.G(ctx).Debugf("🔥 apres: |%+v|", err)
 			if err != nil {
 				if !errors.Is(err, io.EOF) {
 					bklog.G(ctx).Warnf("terminal recv err: %v", err)
@@ -784,17 +786,23 @@ func (c *Client) OpenTerminal(
 			}
 			switch msg := res.GetMsg().(type) {
 			case *session.SessionResponse_Stdin:
+				bklog.G(ctx).Debugf("🔥🔥 avant: |%q|", msg.Stdin)
 				_, err := stdinW.Write(msg.Stdin)
+				bklog.G(ctx).Debugf("🔥🔥 apres: |%+v|", err)
 				if err != nil {
 					bklog.G(ctx).Warnf("failed to write stdin: %v", err)
 					errCh <- err
 					return
 				}
 			case *session.SessionResponse_Resize:
+				bklog.G(ctx).Debugf("🔥🔥🔥 resize")
 				resizeCh <- bkgw.WinSize{
 					Rows: uint32(msg.Resize.Height),
 					Cols: uint32(msg.Resize.Width),
 				}
+				bklog.G(ctx).Debugf("🔥🔥🔥 resize apres")
+			default:
+				bklog.G(ctx).Debugf("🔥🔥🔥 apres: |%+v|", msg)
 			}
 		}
 	}()
