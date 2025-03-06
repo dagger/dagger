@@ -1,4 +1,4 @@
-package io.dagger.modules.daggermodule;
+package io.dagger.modules.daggermoduleplaceholder;
 
 import io.dagger.client.Container;
 import io.dagger.client.DaggerQueryException;

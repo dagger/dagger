@@ -12,18 +12,19 @@
     <properties>
         <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <dagger.module.deps>0.16.3-defaults-module</dagger.module.deps>
     </properties>
 
     <dependencies>
         <dependency>
             <groupId>io.dagger</groupId>
             <artifactId>dagger-java-sdk</artifactId>
-            <version>1.0.0-SNAPSHOT</version>
+            <version>${dagger.module.deps}</version>
         </dependency>
         <dependency>
             <groupId>io.dagger</groupId>
             <artifactId>dagger-java-annotation-processor</artifactId>
-            <version>1.0.0-SNAPSHOT</version>
+            <version>${dagger.module.deps}</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
@@ -63,6 +64,10 @@
                     <version>3.3.1</version>
                 </plugin>
                 <plugin>
+                    <!--
+                    This plugin configuration is required by Dagger to generate the module.
+                    Please do not remove or modify it.
+                    -->
                     <artifactId>maven-compiler-plugin</artifactId>
                     <version>3.13.0</version>
                     <configuration>
@@ -71,7 +76,7 @@
                             <path>
                                 <groupId>io.dagger</groupId>
                                 <artifactId>dagger-java-annotation-processor</artifactId>
-                                <version>1.0.0-SNAPSHOT</version>
+                                <version>${dagger.module.deps}</version>
                             </path>
                         </annotationProcessorPaths>
                         <annotationProcessors>
@@ -108,6 +113,35 @@
 
         <plugins>
             <plugin>
+                <!--
+                This plugin configuration helps VS Code editor (and others) to find
+                the generated code created by `dagger init` and `dagger develop` and
+                helps for code completion.
+                -->
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>3.3.0</version>
+                <executions>
+                    <execution>
+                        <id>add-generated-sources</id>
+                        <goals>
+                            <goal>add-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>${project.build.directory}/generated-sources/dagger-io</source>
+                                <source>${project.build.directory}/generated-sources/dagger-module</source>
+                                <source>${project.build.directory}/generated-sources/entrypoint</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <!--
+                This plugin configuration is required by Dagger to generate the module.
+                Please do not remove or modify it.
+                -->
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
                 <version>3.5.0</version>
