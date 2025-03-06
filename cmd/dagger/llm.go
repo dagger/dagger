@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
@@ -13,6 +12,8 @@ import (
 	"github.com/dagger/dagger/engine/client"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
+	"github.com/vito/bubbline/complete"
+	"github.com/vito/bubbline/computil"
 	"github.com/vito/bubbline/editline"
 )
 
@@ -22,7 +23,7 @@ var (
 )
 
 func llmAddFlags(cmd *cobra.Command) {
-	cmd.Flags().StringVarP(&llmModel, "model", "m", "", "LLM model to use (e.g., 'claude-3-5-sonnet', 'gpt-4o')")
+	cmd.Flags().StringVar(&llmModel, "model", "", "LLM model to use (e.g., 'claude-3-5-sonnet', 'gpt-4o')")
 }
 
 var llmCmd = &cobra.Command{
@@ -44,101 +45,185 @@ func LLMLoop(ctx context.Context, engineClient *client.Client) error {
 
 	dag := engineClient.Dagger()
 
-	shellHandler := &shellCallHandler{
-		dag:   dag,
-		debug: debug,
-	}
-	shellCompletion := &shellAutoComplete{shellHandler}
-
-	if err := shellHandler.Initialize(ctx); err != nil {
-		return err
-	}
-
 	// give ourselves a blank slate by zooming into a passthrough span
 	shellCtx, shellSpan := Tracer().Start(ctx, "llm", telemetry.Passthrough())
 	defer telemetry.End(shellSpan, func() error { return nil })
 	Frontend.SetPrimary(dagui.SpanID{SpanID: shellSpan.SpanContext().SpanID()})
 
-	llm := dag.Llm(dagger.LlmOpts{
+	// start a new LLM session, which we'll reassign throughout
+	s, err := NewLLMSession(ctx, dag, dag.Llm(dagger.LlmOpts{
 		Model: llmModel,
-	})
+	}))
+	if err != nil {
+		return err
+	}
 
 	// TODO: initialize LLM with current module, matching shell behavior?
 
-	mu := &sync.Mutex{}
+	// start the shell loop
 	Frontend.Shell(shellCtx,
 		func(ctx context.Context, line string) (rerr error) {
-			mu.Lock()
-			defer mu.Unlock()
-
 			if line == "exit" {
 				cancel()
 				return nil
 			}
 
-			ctx, span := Tracer().Start(ctx, line)
-			defer telemetry.End(span, func() error { return rerr })
-			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-			defer stdio.Close()
-
-			// if line starts with "/with", run shell and change to result
-			if strings.HasPrefix(line, "/with ") {
-				shell := strings.TrimSpace(strings.TrimPrefix(line, "/with "))
-				resp, typeDef, err := shellHandler.Eval(ctx, shell)
-				if err != nil {
-					return err
-				}
-				if typeDef.AsFunctionProvider() != nil {
-					llmID, err := llm.ID(ctx)
-					if err != nil {
-						return err
-					}
-					if err := dag.QueryBuilder().
-						Select("loadLlmFromID").
-						Arg("id", llmID).
-						Select(fmt.Sprintf("with%s", typeDef.Name())).
-						Arg("value", resp).
-						Select("id").
-						Bind(&llmID).
-						Execute(ctx); err != nil {
-						return err
-					}
-					llm = dag.LoadLlmFromID(llmID)
-				}
-				return nil
-			}
-
-			if strings.TrimSpace(line) == "" {
-				return nil
-			}
-
-			prompted, err := llm.WithPrompt(line).Sync(ctx)
+			var err error
+			s, err = s.Interpret(ctx, line)
 			if err != nil {
 				return err
 			}
 
-			llm = prompted
-
 			return nil
 		},
-		func(entireInput [][]rune, row, col int) (msg string, comp editline.Completions) {
-			if input, l, c, ok := stripCommandPrefix("/with ", entireInput, row, col); ok {
-				return shellCompletion.Do(input, l, c)
-			}
-			return "", nil
-		},
-		func(entireInput [][]rune, line int, col int) bool {
-			if input, l, c, ok := stripCommandPrefix("/with ", entireInput, line, col); ok {
-				return shellIsComplete(input, l, c)
-			}
-			return true
-		},
+		s.Complete,
+		s.IsComplete,
 		func(out idtui.TermOutput, fg termenv.Color) string {
 			return out.String(idtui.PromptSymbol + " ").Foreground(fg).String()
 		},
 	)
 
 	return nil
+}
+
+type LLMSession struct {
+	undo      *LLMSession
+	dag       *dagger.Client
+	llm       *dagger.Llm
+	llmId     dagger.LlmID
+	shell     *shellCallHandler
+	completer editline.AutoCompleteFn
+}
+
+func NewLLMSession(ctx context.Context, dag *dagger.Client, llm *dagger.Llm) (*LLMSession, error) {
+	id, err := llm.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	shellHandler := &shellCallHandler{
+		dag:   dag,
+		debug: debug,
+	}
+
+	shellCompletion := &shellAutoComplete{shellHandler}
+
+	if err := shellHandler.Initialize(ctx); err != nil {
+		return nil, err
+	}
+
+	return &LLMSession{
+		dag:       dag,
+		llm:       llm,
+		llmId:     id,
+		shell:     shellHandler,
+		completer: shellCompletion.Do,
+	}, nil
+}
+
+func (s *LLMSession) Fork() *LLMSession {
+	cp := *s
+	cp.undo = s
+	return &cp
+}
+
+var slashCommands = []slashCommand{
+	{
+		name:    "/with",
+		desc:    "Change the scope of the LLM",
+		handler: (*LLMSession).With,
+	},
+	{
+		name:    "/undo",
+		desc:    "Undo the last command",
+		handler: (*LLMSession).Undo,
+	},
+	// TODO: /history, /compact, /shell, ???
+}
+
+func (s *LLMSession) Interpret(ctx context.Context, input string) (_ *LLMSession, rerr error) {
+	if strings.TrimSpace(input) == "" {
+		return s, nil
+	}
+
+	ctx, span := Tracer().Start(ctx, input)
+	defer telemetry.End(span, func() error { return rerr })
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
+
+	if strings.HasPrefix(input, "/") {
+		for _, cmd := range slashCommands {
+			if strings.HasPrefix(input, cmd.name) {
+				input = strings.TrimSpace(strings.TrimPrefix(input, cmd.name))
+				return cmd.handler(s, ctx, input)
+			}
+		}
+		return s, fmt.Errorf("unknown slash command: %s", input)
+	}
+
+	s = s.Fork()
+
+	prompted, err := s.llm.WithPrompt(input).Sync(ctx)
+	if err != nil {
+		return s, err
+	}
+
+	s.llm = prompted
+
+	return s, nil
+}
+
+func (s *LLMSession) Undo(ctx context.Context, _ string) (*LLMSession, error) {
+	return s.undo, nil
+}
+
+func (s *LLMSession) With(ctx context.Context, script string) (*LLMSession, error) {
+	resp, typeDef, err := s.shell.Eval(ctx, script)
+	if err != nil {
+		return s, err
+	}
+	if typeDef.AsFunctionProvider() != nil {
+		s = s.Fork()
+		if err := s.dag.QueryBuilder().
+			Select("loadLlmFromID").
+			Arg("id", s.llmId).
+			Select(fmt.Sprintf("with%s", typeDef.Name())).
+			Arg("value", resp).
+			Select("id").
+			Bind(&s.llmId).
+			Execute(ctx); err != nil {
+			return s, err
+		}
+		s.llm = s.dag.LoadLlmFromID(s.llmId)
+		return s, nil
+	}
+	return s, fmt.Errorf("cannot change scope to %s - script must return an Object type", typeDef.Name())
+}
+
+func (s *LLMSession) Complete(entireInput [][]rune, row, col int) (msg string, comp editline.Completions) {
+	if input, l, c, ok := stripCommandPrefix("/with ", entireInput, row, col); ok {
+		return s.completer(input, l, c)
+	}
+	word, wstart, wend := computil.FindWord(entireInput, row, col)
+	if !strings.HasPrefix(word, "/") {
+		return "", nil
+	}
+	var commands []slashCommand
+	for _, cmd := range slashCommands {
+		if strings.HasPrefix(cmd.name, string(word)) {
+			commands = append(commands, cmd)
+		}
+	}
+	return "", &slashCompletions{groups: []slashCommandGroup{
+		{name: "", commands: commands},
+	}, cursor: col, start: wstart, end: wend}
+}
+
+func (s *LLMSession) IsComplete(entireInput [][]rune, line int, col int) bool {
+	if input, l, c, ok := stripCommandPrefix("/with ", entireInput, line, col); ok {
+		return shellIsComplete(input, l, c)
+	}
+	return true
 }
 
 func stripCommandPrefix(prefix string, entireInput [][]rune, line, col int) ([][]rune, int, int, bool) {
@@ -156,4 +241,71 @@ func stripCommandPrefix(prefix string, entireInput [][]rune, line, col int) ([][
 		return strippedInput, line, col, true
 	}
 	return entireInput, line, col, false
+}
+
+type slashCommand struct {
+	name    string
+	desc    string
+	handler func(s *LLMSession, ctx context.Context, script string) (*LLMSession, error)
+}
+
+type slashCompletions struct {
+	groups             []slashCommandGroup
+	cursor, start, end int
+}
+
+type slashCommandGroup struct {
+	name     string
+	commands []slashCommand
+}
+
+var _ editline.Completions = (*slashCompletions)(nil)
+
+func (c *slashCompletions) NumCategories() int {
+	return len(c.groups)
+}
+
+func (c *slashCompletions) CategoryTitle(catIdx int) string {
+	return c.groups[catIdx].name
+}
+
+func (c *slashCompletions) NumEntries(catIdx int) int {
+	return len(c.groups[catIdx].commands)
+}
+
+func (c *slashCompletions) Entry(catIdx, entryIdx int) complete.Entry {
+	return &slashCompletion{c, &c.groups[catIdx].commands[entryIdx]}
+}
+
+func (c *slashCompletions) Candidate(e complete.Entry) editline.Candidate {
+	return e.(*slashCompletion)
+}
+
+type slashCompletion struct {
+	s   *slashCompletions
+	cmd *slashCommand
+}
+
+var _ complete.Entry = (*slashCompletion)(nil)
+
+func (c *slashCompletion) Title() string {
+	return c.cmd.name
+}
+
+func (c *slashCompletion) Description() string {
+	return c.cmd.desc
+}
+
+var _ editline.Candidate = (*slashCompletion)(nil)
+
+func (c *slashCompletion) Replacement() string {
+	return c.cmd.name
+}
+
+func (c *slashCompletion) MoveRight() int {
+	return c.s.end - c.s.cursor
+}
+
+func (c *slashCompletion) DeleteLeft() int {
+	return c.s.end - c.s.start
 }
