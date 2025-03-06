@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
@@ -106,7 +107,17 @@ func withEngine(
 
 			if exist {
 				for _, dep := range mod.Dependencies {
-					err := dep.AsModule().Serve(ctx)
+					depKind, err := dep.Kind(ctx)
+					if err != nil {
+						return fmt.Errorf("failed to get dependency kind: %w", err)
+					}
+
+					// Skip remote dependencies because they are already serves during the call to `Connect` 
+					if depKind == dagger.ModuleSourceKindGitSource {
+						continue
+					}
+
+					err = dep.AsModule().Serve(ctx)
 					if err != nil {
 						return fmt.Errorf("failed to serve dependency %w", err)
 					}

@@ -1257,6 +1257,13 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module) error {
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 
+	// don't add the same module twice
+	// This can happen with generated clients since all remote dependencies are added
+	// on each connection and this could happen multiple times.
+	if client.deps.LookupDep(mod.Name()) {
+		return nil
+	}
+
 	client.deps = client.deps.Append(mod)
 	return nil
 }
