@@ -341,10 +341,10 @@ func (s *SliceSet[T]) Append(element T) {
 	*s = append(*s, element)
 }
 
-// ImportFromHost is a hack to import data from a specified host directory into
+// ImportFromEngineHost is a hack to import data from a specified host directory into
 // buildkit - this is useful if we already have the content on the host - and
 // need to get it into buildkit somehow.
-func ImportFromHost(bk *buildkit.Client, path string, includePatterns []string, opts ...llb.ConstraintsOpt) llb.State {
+func ImportFromEngineHost(bk *buildkit.Client, path string, includePatterns []string, opts ...llb.ConstraintsOpt) llb.State {
 	localOpts := []llb.LocalOption{
 		llb.SessionID(bk.ID()), // see engine/server/bk_session.go, we have a special session that points to our engine host
 		llb.SharedKeyHint(bk.ID()),

@@ -1900,6 +1900,7 @@ func (s *containerSchema) asTarball(
 		return inst, fmt.Errorf("no dagop")
 	}
 	bkref, err := op.CreateRef(ctx, nil,
+		bkcache.CachePolicyRetain,
 		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
 		bkcache.WithDescription(op.Name()))
 	if err != nil {
