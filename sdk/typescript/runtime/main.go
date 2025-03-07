@@ -201,30 +201,8 @@ func (t *TypescriptSdk) GenerateClient(
 		WithDirectory(workdirPath, modSource.ContextDirectory()).
 		WithWorkdir(filepath.Join(workdirPath, currentModuleDirectoryPath))
 
-	dependenciesRefs := []string{}
-	dependencies, err := modSource.Dependencies(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get module dependencies: %w", err)
-	}
-	for _, dep := range dependencies {
-		depKind, err := dep.Source().Kind(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get dependency kind: %w", err)
-		}
-
-		if depKind != dagger.GitSource {
-			continue
-		}
-
-		depRef, err := dep.Source().AsString(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get module dependency ref: %w", err)
-		}
-
-		dependenciesRefs = append(dependenciesRefs, depRef)
-	}
-
 	codegenArgs := []string{
+		"/codegen",
 		"--lang", "typescript",
 		"--output", outputDir,
 		"--introspection-json-path", schemaPath,
@@ -232,10 +210,30 @@ func (t *TypescriptSdk) GenerateClient(
 		"--client-only",
 	}
 
-	if len(dependenciesRefs) > 0 {
+	dependencies, err := modSource.Dependencies(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module dependencies: %w", err)
+	}
+
+	// Add remote dependency reference to the codegen arguments.
+	for _, dep := range dependencies {
+		depKind, err := dep.Kind(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get dependency kind: %w", err)
+		}
+
+		if depKind != dagger.ModuleSourceKindGitSource {
+			continue
+		}
+
+		depRef, err := dep.AsString(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get module dependency ref: %w", err)
+		}
+
 		codegenArgs = append(codegenArgs,
 			"--dependencies-ref",
-			strings.Join(dependenciesRefs, ","),
+			depRef,
 		)
 	}
 
@@ -354,7 +352,7 @@ func (t *TypescriptSdk) Base() (*dagger.Container, error) {
 		return ctr.
 			WithoutEntrypoint().
 			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", tsdistconsts.DefaultBunVersion)), dagger.ContainerWithMountedCacheOpts{
-				Sharing: dagger.Private,
+				Sharing: dagger.CacheSharingModePrivate,
 			}), nil
 	case Node:
 		return ctr.
