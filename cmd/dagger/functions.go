@@ -529,7 +529,7 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 // RunE is the final command in the function chain, where the API request is made.
 func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
-		q, err := handleObjectLeaf(ctx, fc.q, fn.ReturnType)
+		q, err := handleObjectLeaf(fc.q, fn.ReturnType)
 		if err != nil {
 			return err
 		}
@@ -558,7 +558,7 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 	}
 }
 
-func handleObjectLeaf(ctx context.Context, q *querybuilder.Selection, typeDef *modTypeDef) (*querybuilder.Selection, error) {
+func handleObjectLeaf(q *querybuilder.Selection, typeDef *modTypeDef) (*querybuilder.Selection, error) {
 	obj := typeDef.AsFunctionProvider()
 	if obj == nil {
 		return q, nil

@@ -149,21 +149,10 @@ func (c *ShellCommand) Execute(ctx context.Context, h *shellCallHandler, args []
 			return fmt.Errorf("command %q %w\nusage: %s", c.Name(), err, c.Use)
 		}
 	}
-	// Resolve state values in arguments
-	a := make([]string, 0, len(args))
-	for i, arg := range args {
-		if strings.HasPrefix(arg, shellStatePrefix) {
-			w := strings.NewReader(arg)
-			v, _, err := h.Result(ctx, w, nil)
-			if err != nil {
-				return fmt.Errorf("cannot expand command argument at %d", i)
-			}
-			if v == nil {
-				return fmt.Errorf("unexpected nil value while expanding argument at %d", i)
-			}
-			arg = fmt.Sprintf("%v", v)
-		}
-		a = append(a, arg)
+	// sesolve state values in arguments
+	a, err := h.resolveResults(ctx, args)
+	if err != nil {
+		return err
 	}
 	if h.debug {
 		shellDebug(ctx, "Command: "+c.Name(), a, st)
@@ -222,7 +211,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 			Hidden: true,
 			Args:   NoArgs,
 			State:  NoState,
-			Run: func(_ context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
+			Run: func(_ context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
 				// Toggles debug mode, which can be useful when in interactive mode
 				h.debug = !h.debug
 				return nil
@@ -439,7 +428,7 @@ Without arguments, the current working directory is replaced by the initial cont
 				if err != nil {
 					return err
 				}
-				return h.NewDepsState().Write(ctx)
+				return h.Save(ctx, h.NewDepsState())
 			},
 			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
 				return &CompletionContext{
@@ -454,7 +443,7 @@ Without arguments, the current working directory is replaced by the initial cont
 			Args:        NoArgs,
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
-				return h.NewStdlibState().Write(ctx)
+				return h.Save(ctx, h.NewStdlibState())
 			},
 			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
 				return &CompletionContext{
@@ -468,7 +457,7 @@ Without arguments, the current working directory is replaced by the initial cont
 			Description: "Load any core Dagger type",
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-				return h.NewCoreState().Write(ctx)
+				return h.Save(ctx, h.NewCoreState())
 			},
 			Complete: func(ctx *CompletionContext, _ []string) *CompletionContext {
 				return &CompletionContext{
@@ -513,8 +502,8 @@ Without arguments, the current working directory is replaced by the initial cont
 					return h.FunctionDoc(def, fn)
 				},
 				Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
-					st := h.NewState()
-					st, err := h.functionCall(ctx, st, fn.CmdName(), args)
+					emptySt := h.NewState()
+					st, err := h.functionCall(ctx, &emptySt, fn.CmdName(), args)
 					if err != nil {
 						return err
 					}
@@ -523,7 +512,7 @@ Without arguments, the current working directory is replaced by the initial cont
 						shellDebug(ctx, "Stdout (stdlib)", fn.CmdName(), args, st)
 					}
 
-					return st.Write(ctx)
+					return h.Save(ctx, *st)
 				},
 				Complete: func(ctx *CompletionContext, args []string) *CompletionContext {
 					return &CompletionContext{
