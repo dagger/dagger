@@ -285,7 +285,7 @@ func (r *LlmRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	return nil
 }
 
-func NewLlmRouter(ctx context.Context, srv *dagql.Server) (*LlmRouter, error) {
+func NewLlmRouter(ctx context.Context, srv *dagql.Server) (_ *LlmRouter, rerr error) {
 	router := new(LlmRouter)
 	// Get the secret plaintext, from either a URI (provider lookup) or a plaintext (no-op)
 	loadSecret := func(ctx context.Context, uriOrPlaintext string) (string, error) {
@@ -308,6 +308,8 @@ func NewLlmRouter(ctx context.Context, srv *dagql.Server) (*LlmRouter, error) {
 		// If it's a regular plaintext:
 		return uriOrPlaintext, nil
 	}
+	ctx, span := Tracer(ctx).Start(ctx, "load LLM router config", telemetry.Internal(), telemetry.Encapsulate())
+	defer telemetry.End(span, func() error { return rerr })
 	env := make(map[string]string)
 	// Load .env from current directory, if it exists
 	if envFile, err := loadSecret(ctx, "file://.env"); err == nil {
