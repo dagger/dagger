@@ -175,19 +175,19 @@ func (r Recorder) GenerateQuickstartRecordings(
 		WithFile(
 			"buildenv.gif",
 			getTermcastWithQuickstart(base.Directory("daggerize/go")).
-				Exec("dagger call build-env --source=.", dagger.TermcastExecOpts{Fast: true}).
+				Exec("dagger -c 'build-env .'", dagger.TermcastExecOpts{Fast: true}).
 				Gif()).
 		// for https://docs.dagger.io/quickstart/test
 		WithFile(
 			"test.gif",
 			getTermcastWithQuickstart(base.Directory("daggerize/go")).
-				Exec("dagger call test --source=.", dagger.TermcastExecOpts{Fast: true}).
+				Exec("dagger -c 'test .'", dagger.TermcastExecOpts{Fast: true}).
 				Gif()).
 		// for https://docs.dagger.io/quickstart/build
 		WithFile(
 			"build.gif",
 			getTermcastWithQuickstart(base.Directory("daggerize/go")).
-				Exec("dagger call build --source=.", dagger.TermcastExecOpts{Fast: true}).
+				Exec("dagger -c 'build .'", dagger.TermcastExecOpts{Fast: true}).
 				Gif()).
 		/*
 			// for https://docs.dagger.io/quickstart/build
@@ -201,7 +201,7 @@ func (r Recorder) GenerateQuickstartRecordings(
 		WithFile(
 			"publish.gif",
 			getTermcastWithQuickstart(base.Directory("daggerize/go")).
-				Exec("dagger call publish --source=.", dagger.TermcastExecOpts{Fast: true}).
+				Exec("dagger -c 'publish .'", dagger.TermcastExecOpts{Fast: true}).
 				Gif()).
 		// for https://docs.dagger.io/quickstart/publish
 		WithFile(
