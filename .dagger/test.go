@@ -3,10 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/moby/buildkit/identity"
+	"github.com/sirupsen/logrus"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 	"github.com/dagger/dagger/engine/distconsts"
@@ -70,7 +74,7 @@ func (t *Test) Telemetry(
 	// +optional
 	verbose bool,
 ) (*dagger.Directory, error) {
-	cmd, err := t.testCmd(ctx)
+	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +107,7 @@ func (t *Test) Telemetry(
 
 // List all tests
 func (t *Test) List(ctx context.Context) (string, error) {
-	cmd, err := t.testCmd(ctx)
+	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -159,6 +163,52 @@ func (t *Test) Specific(
 	)
 }
 
+// Run specific tests
+func (t *Test) Dump(
+	ctx context.Context,
+	// Only run these tests
+	// +optional
+	run string,
+	// Skip these tests
+	// +optional
+	skip string,
+	// +optional
+	// +default="./..."
+	pkg string,
+	// Abort test run on first failure
+	// +optional
+	failfast bool,
+	// How many tests to run in parallel - defaults to the number of CPUs
+	// +optional
+	parallel int,
+	// How long before timing out the test run
+	// +optional
+	timeout string,
+	// +optional
+	race bool,
+	// +default=1
+	// +optional
+	count int,
+	// Enable verbose output
+	// +optional
+	testVerbose bool,
+) (*dagger.Directory, error) {
+	return t.testThenDump(
+		ctx,
+		&testOpts{
+			runTestRegex:  run,
+			skipTestRegex: skip,
+			pkg:           pkg,
+			failfast:      failfast,
+			parallel:      parallel,
+			timeout:       timeout,
+			race:          race,
+			count:         count,
+			testVerbose:   testVerbose,
+		},
+	)
+}
+
 type testOpts struct {
 	runTestRegex  string
 	skipTestRegex string
@@ -175,7 +225,7 @@ func (t *Test) test(
 	ctx context.Context,
 	opts *testOpts,
 ) error {
-	cmd, err := t.testCmd(ctx)
+	cmd, _, err := t.testCmd(ctx)
 	if err != nil {
 		return err
 	}
@@ -196,6 +246,105 @@ func (t *Test) test(
 		},
 	).Sync(ctx)
 	return err
+}
+
+func (t *Test) testThenDump(
+	ctx context.Context,
+	opts *testOpts,
+) (*dagger.Directory, error) {
+	cmd, debugEndpoint, err := t.testCmd(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a directory to store the heap dumps
+	dumps := dag.Directory()
+
+	testContainer := t.goTest(
+		cmd,
+		&goTestOpts{
+			runTestRegex:  opts.runTestRegex,
+			skipTestRegex: opts.skipTestRegex,
+			pkg:           opts.pkg,
+			failfast:      opts.failfast,
+			parallel:      opts.parallel,
+			timeout:       opts.timeout,
+			race:          opts.race,
+			count:         opts.count,
+			update:        false,
+			testVerbose:   opts.testVerbose,
+			bench:         false,
+		},
+	)
+
+	// Create a channel to receive heap dump data
+	heapDumpCh := make(chan []byte, 1)
+	errCh := make(chan error, 1)
+
+	// Start a goroutine to fetch the heap dump after a delay
+	go func() {
+		// Add a delay to ensure the engine is fully started
+		// before attempting to fetch the heap dump
+		time.Sleep(5 * time.Second)
+
+		heapData, err := fetchHeapDump(debugEndpoint)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		heapDumpCh <- heapData
+	}()
+
+	// Start the test execution
+	_, testErr := testContainer.Sync(ctx)
+
+	// Process the heap dump result
+	heapDumpFile := fmt.Sprintf("heap-dump-%s.prof", identity.NewID())
+
+	// Wait for either heap dump data or error
+	select {
+	case heapData := <-heapDumpCh:
+		// Add the heap dump to our directory
+		dumps = dumps.WithNewFile(heapDumpFile, string(heapData))
+	case err := <-errCh:
+		logrus.Warnf("Failed to fetch heap dump: %v", err)
+	case <-time.After(30 * time.Second): // Timeout for heap dump fetch
+		logrus.Warnf("Timeout waiting for heap dump")
+	}
+
+	// Return the test error if there was one
+	if testErr != nil {
+		return dumps, testErr // Still return dumps even if test fails
+	}
+
+	return dumps, nil
+}
+
+// fetchHeapDump fetches a heap profile from the debug HTTP endpoint and returns it as a byte array
+func fetchHeapDump(debugEndpoint string) ([]byte, error) {
+	url := fmt.Sprintf("%s/debug/pprof/heap", debugEndpoint)
+
+	// Create a client with a timeout
+	client := &http.Client{
+		Timeout: 20 * time.Second,
+	}
+
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch heap dump: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch heap dump, status code: %d", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read heap dump: %w", err)
+	}
+
+	return data, nil
 }
 
 type goTestOpts struct {
@@ -286,14 +435,14 @@ func (t *Test) goTest(
 		WithExec(args)
 }
 
-func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
+func (t *Test) testCmd(ctx context.Context) (*dagger.Container, string, error) {
 	engine := t.Dagger.Engine().
 		WithBuildkitConfig(`registry."registry:5000"`, `http = true`).
 		WithBuildkitConfig(`registry."privateregistry:5000"`, `http = true`).
 		WithBuildkitConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`)
 	devEngine, err := engine.Container(ctx, "", nil, false)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	// TODO: mitigation for https://github.com/dagger/dagger/issues/8031
@@ -338,12 +487,17 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 	// manually starting service to ensure it's not reaped between benchmark prewarm & run
 	devEngineSvc, err = devEngineSvc.Start(ctx)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	endpoint, err := devEngineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
 	if err != nil {
-		return nil, err
+		return nil, "", err
+	}
+
+	debugEndpoint, err := devEngineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 6060, Scheme: "http"})
+	if err != nil {
+		return nil, "", err
 	}
 
 	cliBinPath := "/.dagger-cli"
@@ -362,7 +516,7 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		With(t.Dagger.withDockerCfg) // this avoids rate limiting in our ci tests
-	return tests, nil
+	return tests, debugEndpoint, nil
 }
 
 func registry() *dagger.Service {
