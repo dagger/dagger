@@ -22,11 +22,14 @@ func initClient() *dagger.Client {
 			dagger.WithLogOutput(os.Stdout),
 		}
 
+		ctx := context.Background()
+
 		var err error
-		client, err = dagger.Connect(context.Background(), opts...)
+		client, err = dagger.Connect(ctx, opts...)
 		if err != nil {
 			panic(err)
 		}
+
 	}
 	return client
 }
