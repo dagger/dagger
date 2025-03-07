@@ -23,6 +23,8 @@ func (s llmSchema) Install() {
 	llmType := dagql.Fields[*core.Llm]{
 		dagql.Func("model", s.model).
 			Doc("return the model used by the llm"),
+		dagql.Func("provider", s.provider).
+			Doc("return the provider used by the llm"),
 		dagql.Func("history", s.history).
 			Doc("return the llm message history"),
 		dagql.Func("lastReply", s.lastReply).
@@ -61,12 +63,12 @@ func (s llmSchema) Install() {
 	s.srv.SetMiddleware(core.LlmMiddleware{Server: s.srv})
 }
 
-func (s *llmSchema) model(ctx context.Context, llm *core.Llm, args struct{}) (dagql.String, error) {
-	var provider string
-	if llm.Endpoint != nil {
-		provider = string(llm.Endpoint.Provider)
-	}
-	return dagql.NewString(llm.Endpoint.Model + "(" + provider + ")"), nil
+func (s *llmSchema) model(ctx context.Context, llm *core.Llm, args struct{}) (string, error) {
+	return llm.Endpoint.Model, nil
+}
+
+func (s *llmSchema) provider(ctx context.Context, llm *core.Llm, args struct{}) (string, error) {
+	return string(llm.Endpoint.Provider), nil
 }
 
 func (s *llmSchema) lastReply(ctx context.Context, llm *core.Llm, args struct{}) (dagql.String, error) {
