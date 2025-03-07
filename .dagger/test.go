@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,7 +11,6 @@ import (
 	"time"
 
 	"github.com/moby/buildkit/identity"
-	"github.com/sirupsen/logrus"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 	"github.com/dagger/dagger/engine/distconsts"
@@ -192,8 +192,24 @@ func (t *Test) Dump(
 	// Enable verbose output
 	// +optional
 	testVerbose bool,
+	// wait this long before starting to take dumps
+	// +optional
+	// +default="30s"
+	delay string,
+	// wait this long between dumps
+	// +optional
+	// +default="30s"
+	interval string,
 ) (*dagger.Directory, error) {
-	return t.testThenDump(
+	d, err := time.ParseDuration(delay)
+	if err != nil {
+		return nil, err
+	}
+	i, err := time.ParseDuration(interval)
+	if err != nil {
+		return nil, err
+	}
+	return t.testAndDump(
 		ctx,
 		&testOpts{
 			runTestRegex:  run,
@@ -206,6 +222,7 @@ func (t *Test) Dump(
 			count:         count,
 			testVerbose:   testVerbose,
 		},
+		d, i,
 	)
 }
 
@@ -248,17 +265,16 @@ func (t *Test) test(
 	return err
 }
 
-func (t *Test) testThenDump(
+func (t *Test) testAndDump(
 	ctx context.Context,
 	opts *testOpts,
+	delay time.Duration,
+	interval time.Duration,
 ) (*dagger.Directory, error) {
 	cmd, debugEndpoint, err := t.testCmd(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	// Create a directory to store the heap dumps
-	dumps := dag.Directory()
 
 	testContainer := t.goTest(
 		cmd,
@@ -277,46 +293,51 @@ func (t *Test) testThenDump(
 		},
 	)
 
-	// Create a channel to receive heap dump data
-	heapDumpCh := make(chan []byte, 1)
-	errCh := make(chan error, 1)
+	dumps := dag.Directory()
+	errs := []error{}
+	doneCh := make(chan struct{})
 
-	// Start a goroutine to fetch the heap dump after a delay
+	dumpCount := 0
 	go func() {
-		// Add a delay to ensure the engine is fully started
-		// before attempting to fetch the heap dump
-		time.Sleep(5 * time.Second)
+		time.Sleep(delay)
 
-		heapData, err := fetchHeapDump(debugEndpoint)
-		if err != nil {
-			errCh <- err
-			return
+		for {
+			select {
+			case <-doneCh:
+				return
+			default:
+				heapData, err := fetchHeapDump(debugEndpoint)
+				if err != nil {
+					errs = append(errs, err)
+				} else {
+					fileName := fmt.Sprintf("heap-dump-%d.prof", dumpCount)
+					dumps = dumps.WithNewFile(fileName, string(heapData))
+					dumpCount++
+				}
+
+				select {
+				case <-doneCh:
+					return
+				case <-time.After(interval):
+				}
+			}
 		}
-		heapDumpCh <- heapData
 	}()
 
-	// Start the test execution
 	_, testErr := testContainer.Sync(ctx)
 
-	// Process the heap dump result
-	heapDumpFile := fmt.Sprintf("heap-dump-%s.prof", identity.NewID())
+	doneCh <- struct{}{}
 
-	// Wait for either heap dump data or error
-	select {
-	case heapData := <-heapDumpCh:
-		// Add the heap dump to our directory
-		dumps = dumps.WithNewFile(heapDumpFile, string(heapData))
-	case err := <-errCh:
-		logrus.Warnf("Failed to fetch heap dump: %v", err)
-	case <-time.After(30 * time.Second): // Timeout for heap dump fetch
-		logrus.Warnf("Timeout waiting for heap dump")
-	}
-
-	// Return the test error if there was one
 	if testErr != nil {
-		return dumps, testErr // Still return dumps even if test fails
+		if dumpCount == 0 {
+			return nil, fmt.Errorf("no dumps collected and test failed: %w, %w", testErr, errors.Join(errs...))
+		}
+		return dumps, testErr
 	}
 
+	if dumpCount == 0 {
+		return nil, fmt.Errorf("test passed, but no dumps collected: %w", errors.Join(errs...))
+	}
 	return dumps, nil
 }
 
