@@ -130,11 +130,13 @@ main()`)
 
 	t.Run("use remote dependency", func(ctx context.Context, t *testctx.T) {
 		type testCase struct {
-			baseImage string
-			generator string
-			callCmd   []string
-			setup     dagger.WithContainerFunc
-			postSetup dagger.WithContainerFunc
+			baseImage      string
+			generator      string
+			callCmd        []string
+			setup          dagger.WithContainerFunc
+			postSetup      dagger.WithContainerFunc
+			isolateSetup   dagger.WithContainerFunc
+			isolateCallCmd []string
 		}
 
 		testCases := []testCase{
@@ -175,6 +177,12 @@ main()`)
 				postSetup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr
 				},
+				isolateSetup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.
+						WithExec([]string{"go", "build", "-o", "/bin/test"}).
+						WithWorkdir("/bin")
+				},
+				isolateCallCmd: []string{"./test"},
 			},
 			{
 				baseImage: nodeImage,
@@ -203,6 +211,10 @@ main()
 						WithExec([]string{"npm", "install"})
 				},
 				callCmd: []string{"tsx", "index.ts"},
+				isolateSetup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.WithoutFile("dagger.json")
+				},
+				isolateCallCmd: []string{"tsx", "index.ts"},
 			},
 		}
 
@@ -233,6 +245,26 @@ main()
 
 				t.Run(strings.Join(tc.callCmd, " "), func(ctx context.Context, t *testctx.T) {
 					out, err := moduleSrc.WithExec(tc.callCmd).Stdout(ctx)
+
+					require.NoError(t, err)
+					require.Equal(t, "result: hello, world!\n", out)
+				})
+
+				t.Run(fmt.Sprintf("isolated dagger run %s", strings.Join(tc.isolateCallCmd, " ")), func(ctx context.Context, t *testctx.T) {
+					out, err := moduleSrc.
+						With(tc.isolateSetup).
+						With(daggerNonNestedRun(tc.isolateCallCmd...)).
+						Stdout(ctx)
+
+					require.NoError(t, err)
+					require.Equal(t, "result: hello, world!\n", out)
+				})
+
+				t.Run(fmt.Sprintf("isolated %s", strings.Join(tc.isolateCallCmd, " ")), func(ctx context.Context, t *testctx.T) {
+					out, err := moduleSrc.
+						With(tc.isolateSetup).
+						WithExec(tc.isolateCallCmd).
+						Stdout(ctx)
 
 					require.NoError(t, err)
 					require.Equal(t, "result: hello, world!\n", out)
