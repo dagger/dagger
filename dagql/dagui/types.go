@@ -258,6 +258,11 @@ func (row *TraceTree) Depth() int {
 	return row.Parent.Depth() + 1
 }
 
+func (row *TraceTree) Rows(opts FrontendOpts) []*TraceRow {
+	view := &RowsView{Body: []*TraceTree{row}}
+	return view.Rows(opts).Order
+}
+
 func (row *TraceTree) setRunning() {
 	if row.IsRunningOrChildRunning {
 		return

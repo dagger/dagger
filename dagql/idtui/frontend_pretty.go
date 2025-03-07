@@ -940,22 +940,15 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		buf := new(strings.Builder)
 		out := NewOutput(buf, termenv.WithProfile(fe.profile))
 		r := newRenderer(fe.db, 100, fe.FrontendOpts)
-		for _, row := range fe.rows.Order {
-			var shouldFlush bool
-			if row.Depth == 0 && !row.IsRunningOrChildRunning && fe.logsDone(row.Span.ID, true) {
-				// we're a top-level completed span and we've seen EOF, so flush
-				shouldFlush = true
-			}
-			if row.Parent != nil && fe.flushed[row.Parent.Span.ID] && fe.logsDone(row.Span.ID, false) {
-				// our parent flushed, so we should too
-				shouldFlush = true
-			}
-			if !shouldFlush {
+		for _, tree := range fe.rowsView.Body {
+			if !fe.treeDone(tree, true) {
 				continue
 			}
-			if !fe.flushed[row.Span.ID] {
-				fe.renderRow(out, r, row, "", false)
-				fe.flushed[row.Span.ID] = true
+			for _, row := range tree.Rows(fe.FrontendOpts) {
+				if !fe.flushed[row.Span.ID] {
+					fe.renderRow(out, r, row, "", false)
+					fe.flushed[row.Span.ID] = true
+				}
 			}
 		}
 		if buf.Len() > 0 {
@@ -1488,6 +1481,21 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, logs *Vterm, d
 		return false
 	}
 	fmt.Fprint(out, view)
+	return true
+}
+
+func (fe *frontendPretty) treeDone(tree *dagui.TraceTree, waitForLogs bool) bool {
+	if tree.IsRunningOrChildRunning {
+		return false
+	}
+	if !fe.logsDone(tree.Span.ID, waitForLogs || tree.Span.Message != "") {
+		return false
+	}
+	for _, child := range tree.Children {
+		if !fe.treeDone(child, waitForLogs || child.Span.Message != "") {
+			return false
+		}
+	}
 	return true
 }
 
