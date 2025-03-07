@@ -63,8 +63,15 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	view := &RowsView{
 		BySpan: make(map[SpanID]*TraceTree),
 	}
-	if zoomed, ok := db.Spans.Map[opts.ZoomedSpan]; ok {
-		view.Zoomed = zoomed
+	if opts.ZoomedSpan.IsValid() {
+		if zoomed, ok := db.Spans.Map[opts.ZoomedSpan]; ok {
+			view.Zoomed = zoomed
+		} else {
+			// we haven't received the zoomed span yet, so don't render anything
+			//
+			// this happens when we create a span and immediately zoom to it
+			return view
+		}
 	}
 	var spans iter.Seq[*Span]
 	if view.Zoomed != nil {
@@ -82,17 +89,6 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	})
 	return view
 }
-
-// break glass
-// var dbg *log.Logger
-
-// func init() {
-// 	f, err := os.Create("/tmp/llm.log")
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-// 	dbg = log.New(f, "", 0)
-// }
 
 func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceTree)) {
 	var lastTree *TraceTree
@@ -249,8 +245,8 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 		}
 		return row
 	}
-	for _, row := range lv.Body {
-		walk(row, nil, 0)
+	for _, tree := range lv.Body {
+		walk(tree, nil, 0)
 	}
 	return rows
 }
