@@ -45,11 +45,6 @@ func LLMLoop(ctx context.Context, engineClient *client.Client) error {
 
 	dag := engineClient.Dagger()
 
-	// give ourselves a blank slate by zooming into a passthrough span
-	shellCtx, shellSpan := Tracer().Start(ctx, "llm", telemetry.Passthrough())
-	defer telemetry.End(shellSpan, func() error { return nil })
-	Frontend.SetPrimary(dagui.SpanID{SpanID: shellSpan.SpanContext().SpanID()})
-
 	// start a new LLM session, which we'll reassign throughout
 	s, err := NewLLMSession(ctx, dag, dag.Llm(dagger.LlmOpts{
 		Model: llmModel,
@@ -58,10 +53,15 @@ func LLMLoop(ctx context.Context, engineClient *client.Client) error {
 		return err
 	}
 
+	// give ourselves a blank slate by zooming into a passthrough span
+	ctx, span := Tracer().Start(ctx, "llm", telemetry.Passthrough())
+	defer telemetry.End(span, func() error { return nil })
+	Frontend.SetPrimary(dagui.SpanID{SpanID: span.SpanContext().SpanID()})
+
 	// TODO: initialize LLM with current module, matching shell behavior?
 
 	// start the shell loop
-	Frontend.Shell(shellCtx,
+	Frontend.Shell(ctx,
 		func(ctx context.Context, line string) (rerr error) {
 			if line == "/exit" {
 				cancel()
