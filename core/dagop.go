@@ -113,7 +113,7 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 	switch inst := obj.(type) {
 	case dagql.Instance[*Directory]:
 		if inst.Self.Result != nil {
-			ref := worker.NewWorkerRefResult(inst.Self.Result, opt.Worker)
+			ref := worker.NewWorkerRefResult(inst.Self.Result.Clone(), opt.Worker)
 			return []solver.Result{ref}, nil
 		}
 
@@ -129,7 +129,7 @@ func (op FSDagOp) Exec(ctx context.Context, g bksession.Group, inputs []solver.R
 
 	case dagql.Instance[*File]:
 		if inst.Self.Result != nil {
-			ref := worker.NewWorkerRefResult(inst.Self.Result, opt.Worker)
+			ref := worker.NewWorkerRefResult(inst.Self.Result.Clone(), opt.Worker)
 			return []solver.Result{ref}, nil
 		}
 
