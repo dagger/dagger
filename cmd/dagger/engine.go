@@ -112,7 +112,7 @@ func withEngine(
 						return fmt.Errorf("failed to get dependency kind: %w", err)
 					}
 
-					// Skip remote dependencies because they are already serves during the call to `Connect` 
+					// Skip remote dependencies because they are already serves during the call to `Connect`
 					if depKind == dagger.ModuleSourceKindGitSource {
 						continue
 					}

@@ -60,7 +60,7 @@ type Config struct {
 
 	// DependenciesRef is the list of all dependencies used by the module.
 	// This is used for client generator to automatically serves the dependencies
-	// on connection. 
+	// on connection.
 	DependenciesRef []string
 }
 
