@@ -19,10 +19,10 @@ public class DaggerJava {
   public Directory source;
 
   // this field will also be exposed as a Dagger Field, even if private
-  private String version;
+  @Function private String version;
 
   // this field will be serialized but not exposed as a field
-  @Internal private Container container;
+  private Container container;
 
   public DaggerJava() {}
 

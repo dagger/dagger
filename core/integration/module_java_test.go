@@ -76,7 +76,7 @@ func (JavaSuite) TestFields(_ context.Context, t *testctx.T) {
 		require.Contains(t, out, "a.b.c")
 	})
 
-	t.Run("can set and retrieve field using direct access to the field", func(ctx context.Context, t *testctx.T) {
+	t.Run("can set and retrieve field using direct access to the field when decorated", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "fields").
@@ -87,7 +87,18 @@ func (JavaSuite) TestFields(_ context.Context, t *testctx.T) {
 		require.Contains(t, out, "a.b.c")
 	})
 
-	t.Run("can set and retrieve internal field using custom function", func(ctx context.Context, t *testctx.T) {
+	t.Run("can set and retrieve public field using direct access to the field", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "fields").
+			With(daggerShell("with-version a.b.c | public-version")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, out, "a.b.c")
+	})
+
+	t.Run("can set and retrieve non exposed field using custom function", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "fields").
@@ -98,7 +109,7 @@ func (JavaSuite) TestFields(_ context.Context, t *testctx.T) {
 		require.Contains(t, out, "a.b.c")
 	})
 
-	t.Run("can set but not retrieve internal field using direct access to the field", func(ctx context.Context, t *testctx.T) {
+	t.Run("can set but not retrieve non exposed field using direct access to the field", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		_, err := javaModule(t, c, "fields").
