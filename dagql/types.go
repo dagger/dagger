@@ -12,6 +12,7 @@ import (
 	"golang.org/x/exp/constraints"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/cache"
 )
 
 // Typed is any value that knows its GraphQL type.
@@ -109,7 +110,13 @@ type Object interface {
 type PostCallable interface {
 	// Return the postcall func (or nil if not set) and the Typed value in case it was wrapped
 	// with a type used for attaching the postcall func
-	GetPostCall() (func(context.Context) error, Typed)
+	GetPostCall() (cache.PostCallFunc, Typed)
+}
+
+// A type that has a callback attached that needs to always run when the result is removed
+// from the cache
+type OnReleaser interface {
+	OnRelease(context.Context) error
 }
 
 // ScalarType represents a GraphQL Scalar type.

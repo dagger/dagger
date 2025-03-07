@@ -20,6 +20,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
@@ -104,6 +105,15 @@ func (dir *Directory) Clone() *Directory {
 	cp := *dir
 	cp.Services = cloneSlice(cp.Services)
 	return &cp
+}
+
+var _ dagql.OnReleaser = (*Directory)(nil)
+
+func (dir *Directory) OnRelease(ctx context.Context) error {
+	if dir.Result != nil {
+		return dir.Result.Release(ctx)
+	}
+	return nil
 }
 
 func (dir *Directory) State() (llb.State, error) {

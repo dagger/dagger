@@ -154,7 +154,9 @@ func (local *localFS) Sync( //nolint:gocyclo
 	var cachedResultsMu sync.Mutex
 	defer func() {
 		for _, cachedResult := range cachedResults {
-			cachedResult.Release()
+			if err := cachedResult.Release(ctx); err != nil {
+				rerr = errors.Join(rerr, fmt.Errorf("failed to release cached result: %w", err))
+			}
 		}
 	}()
 
@@ -485,7 +487,7 @@ func (local *localFS) RemoveAll(ctx context.Context, path string) (CachedChange,
 	}
 
 	if err := verifyExpectedChange(path, appliedChange.Result(), ChangeKindDelete, nil); err != nil {
-		appliedChange.Release()
+		err = errors.Join(err, appliedChange.Release(ctx))
 		return nil, err
 	}
 	return appliedChange, nil
@@ -532,7 +534,7 @@ func (local *localFS) Mkdir(ctx context.Context, expectedChangeKind ChangeKind, 
 	}
 
 	if err := verifyExpectedChange(path, appliedChange.Result(), expectedChangeKind, upperStat); err != nil {
-		appliedChange.Release()
+		err = errors.Join(err, appliedChange.Release(ctx))
 		return nil, err
 	}
 	return appliedChange, nil
@@ -572,7 +574,7 @@ func (local *localFS) Symlink(ctx context.Context, expectedChangeKind ChangeKind
 	}
 
 	if err := verifyExpectedChange(path, appliedChange.Result(), expectedChangeKind, upperStat); err != nil {
-		appliedChange.Release()
+		err = errors.Join(err, appliedChange.Release(ctx))
 		return nil, err
 	}
 	return appliedChange, nil
@@ -612,7 +614,7 @@ func (local *localFS) Hardlink(ctx context.Context, expectedChangeKind ChangeKin
 	}
 
 	if err := verifyExpectedChange(path, appliedChange.Result(), expectedChangeKind, upperStat); err != nil {
-		appliedChange.Release()
+		err = errors.Join(err, appliedChange.Release(ctx))
 		return nil, err
 	}
 	return appliedChange, nil
@@ -689,7 +691,7 @@ func (local *localFS) WriteFile(ctx context.Context, expectedChangeKind ChangeKi
 	}
 
 	if err := verifyExpectedChange(path, appliedChange.Result(), expectedChangeKind, upperStat); err != nil {
-		appliedChange.Release()
+		err = errors.Join(err, appliedChange.Release(ctx))
 		return nil, err
 	}
 	return appliedChange, nil
