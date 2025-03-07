@@ -188,7 +188,7 @@ func (env *LlmEnv) callCurrent(ctx context.Context, _ any) (any, error) {
 	return env.history[len(env.history)-1], nil
 }
 func (env *LlmEnv) Builtins() []LlmTool {
-	return []LlmTool{
+	builtins := []LlmTool{
 		{
 			Name:        "_objects",
 			Description: "List saved objects with their types",
@@ -256,6 +256,16 @@ func (env *LlmEnv) Builtins() []LlmTool {
 			},
 		},
 	}
+	// Attach builtin telemetry
+	for i := range builtins {
+		call := builtins[i].Call
+		builtins[i].Call = func(ctx context.Context, args any) (any, error) {
+			ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("🤖💻 %s %v", builtins[i].Name, args))
+			defer span.End()
+			return call(ctx, args)
+		}
+	}
+	return builtins
 }
 
 func fieldArgsToJSONSchema(field *ast.FieldDefinition) map[string]any {
