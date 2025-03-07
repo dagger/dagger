@@ -199,16 +199,47 @@ func (t *TypescriptSdk) GenerateClient(
 		WithMountedFile(schemaPath, introspectionJSON).
 		// Mount the current module directory.
 		WithDirectory(workdirPath, modSource.ContextDirectory()).
-		WithWorkdir(filepath.Join(workdirPath, currentModuleDirectoryPath)).
+		WithWorkdir(filepath.Join(workdirPath, currentModuleDirectoryPath))
+
+	codegenArgs := []string{
+		"/codegen",
+		"--lang", "typescript",
+		"--output", outputDir,
+		"--introspection-json-path", schemaPath,
+		fmt.Sprintf("--dev=%t", dev),
+		"--client-only",
+	}
+
+	dependencies, err := modSource.Dependencies(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module dependencies: %w", err)
+	}
+
+	// Add remote dependency reference to the codegen arguments.
+	for _, dep := range dependencies {
+		depKind, err := dep.Kind(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get dependency kind: %w", err)
+		}
+
+		if depKind != dagger.ModuleSourceKindGitSource {
+			continue
+		}
+
+		depRef, err := dep.AsString(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get module dependency ref: %w", err)
+		}
+
+		codegenArgs = append(codegenArgs,
+			"--dependencies-ref",
+			depRef,
+		)
+	}
+
+	ctr = ctr.
 		// Execute the code generator using the given introspection file.
-		WithExec([]string{
-			codegenBinPath,
-			"--lang", "typescript",
-			"--output", outputDir,
-			"--introspection-json-path", schemaPath,
-			fmt.Sprintf("--dev=%t", dev),
-			"--client-only",
-		}, dagger.ContainerWithExecOpts{
+		WithExec(codegenArgs, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 
@@ -321,7 +352,7 @@ func (t *TypescriptSdk) Base() (*dagger.Container, error) {
 		return ctr.
 			WithoutEntrypoint().
 			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", tsdistconsts.DefaultBunVersion)), dagger.ContainerWithMountedCacheOpts{
-				Sharing: dagger.Private,
+				Sharing: dagger.CacheSharingModePrivate,
 			}), nil
 	case Node:
 		return ctr.
