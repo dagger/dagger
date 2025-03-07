@@ -115,9 +115,10 @@ type LlmRouter struct {
 	AnthropicBaseURL string
 	AnthropicModel   string
 
-	OpenAIAPIKey  string
-	OpenAIBaseURL string
-	OpenAIModel   string
+	OpenAIAPIKey       string
+	OpenAIAzureVersion string
+	OpenAIBaseURL      string
+	OpenAIModel        string
 
 	GeminiAPIKey  string
 	GeminiBaseURL string
@@ -158,7 +159,7 @@ func (r *LlmRouter) routeOpenAIModel() *LlmEndpoint {
 		Key:      r.OpenAIAPIKey,
 		Provider: OpenAI,
 	}
-	endpoint.Client = newOpenAIClient(endpoint)
+	endpoint.Client = newOpenAIClient(endpoint, r.OpenAIAzureVersion)
 
 	return endpoint
 }
@@ -186,7 +187,7 @@ func (r *LlmRouter) routeOtherModel() *LlmEndpoint {
 		Key:      r.OpenAIAPIKey,
 		Provider: Other,
 	}
-	endpoint.Client = newOpenAIClient(endpoint)
+	endpoint.Client = newOpenAIClient(endpoint, r.OpenAIAzureVersion)
 
 	return endpoint
 }
@@ -259,6 +260,10 @@ func (r *LlmRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 		return err
 	}
 	r.OpenAIAPIKey, err = getenv(ctx, "OPENAI_API_KEY")
+	if err != nil {
+		return err
+	}
+	r.OpenAIAzureVersion, err = getenv(ctx, "OPENAI_AZURE_VERSION")
 	if err != nil {
 		return err
 	}

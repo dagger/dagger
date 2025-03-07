@@ -8,6 +8,7 @@ import (
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core/bbi"
 	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/azure"
 	"github.com/openai/openai-go/option"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -20,15 +21,25 @@ type OpenAIClient struct {
 	endpoint *LlmEndpoint
 }
 
-func newOpenAIClient(endpoint *LlmEndpoint) *OpenAIClient {
+func newOpenAIClient(endpoint *LlmEndpoint, azureVersion string) *OpenAIClient {
 	var opts []option.RequestOption
 	opts = append(opts, option.WithHeader("Content-Type", "application/json"))
+	if azureVersion != "" {
+		opts = append(opts, azure.WithEndpoint(endpoint.BaseURL, azureVersion))
+		if endpoint.Key != "" {
+			opts = append(opts, azure.WithAPIKey(endpoint.Key))
+		}
+		c := openai.NewClient(opts...)
+		return &OpenAIClient{client: c, endpoint: endpoint}
+	}
+
 	if endpoint.Key != "" {
 		opts = append(opts, option.WithAPIKey(endpoint.Key))
 	}
 	if endpoint.BaseURL != "" {
 		opts = append(opts, option.WithBaseURL(endpoint.BaseURL))
 	}
+
 	c := openai.NewClient(opts...)
 	return &OpenAIClient{client: c, endpoint: endpoint}
 }
