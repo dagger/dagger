@@ -73,6 +73,9 @@ type frontendPretty struct {
 	editline        *editline.Model
 	editlineFocused bool
 	flushed         map[dagui.SpanID]bool
+	scrollback      *strings.Builder
+	shellDone       bool
+	alt             bool
 
 	// updated as events are written
 	db           *dagui.DB
@@ -129,7 +132,8 @@ func NewWithDB(db *dagui.DB) *frontendPretty {
 		rows:     &dagui.Rows{BySpan: map[dagui.SpanID]*dagui.TraceRow{}},
 
 		// shell state
-		flushed: map[dagui.SpanID]bool{},
+		flushed:    map[dagui.SpanID]bool{},
+		scrollback: new(strings.Builder),
 
 		// initial TUI state
 		window:     tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
@@ -675,7 +679,7 @@ func (fe *frontendPretty) renderedRowLines(r *renderer, row *dagui.TraceRow, pre
 }
 
 func (fe *frontendPretty) hlProgress() bool {
-	return fe.shell != nil && !fe.editlineFocused
+	return fe.shell != nil // && !fe.editlineFocused
 }
 
 func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, full bool, height int, prefix string) (rendered bool) {
@@ -840,9 +844,18 @@ func (fe *frontendPretty) View() string {
 		return ""
 	}
 	if fe.shell != nil {
-		prog := strings.TrimSpace(fe.view.String())
-		if prog != "" {
-			// keep an extra line above the prompt
+		prog := ""
+		if fe.scrollback.Len() > 0 {
+			prog += fe.scrollback.String()
+			// prog += "> " + strings.ReplaceAll(
+			// 	strings.TrimSuffix(fe.scrollback.String(), "\n"),
+			// 	"\n",
+			// 	"\n> ",
+			// ) + "\n"
+		}
+		prog += "\n"
+		if view := strings.TrimSpace(fe.view.String()); view != "" {
+			prog += view
 			prog += "\n\n"
 		}
 		return prog + fe.editlineView()
@@ -932,8 +945,8 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 
 		return fe, tea.Batch(
 			tea.Printf(
-				`Experimental Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`+
-					"\n"),
+				`Experimental Dagger interactive shell.`+
+					`Type ".help" for more information. Press Ctrl+D to exit.`),
 			fe.editline.Focus(),
 			tea.DisableMouse,
 		)
@@ -996,10 +1009,24 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 
 			ctx, cancel := context.WithCancelCause(fe.shellCtx)
 			fe.shellInterrupt = cancel
+			fe.shellDone = false
 
-			return fe, func() tea.Msg {
-				return shellDoneMsg{fe.shell(ctx, value)}
+			cmds := []tea.Cmd{
+				func() tea.Msg {
+					return shellDoneMsg{fe.shell(ctx, value)}
+				},
 			}
+
+			if lipgloss.Height(fe.scrollback.String()) >
+				(fe.window.Height / 2) {
+				fe.alt = true
+				dbg.Println("!!! entering alt screen")
+				cmds = append(cmds, tea.EnterAltScreen)
+			} else {
+				dbg.Println("!!! NOT entering alt screen")
+			}
+
+			return fe, tea.Batch(cmds...)
 		}
 		return fe, nil
 
@@ -1010,6 +1037,9 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			fe.promptFg = termenv.ANSIRed
 		}
 		fe.updatePrompt()
+		// NOTE: we switch back from the alt screen only when the scrollback is
+		// written
+		fe.shellDone = true
 		return fe, nil
 
 	case tea.KeyMsg:
@@ -1148,10 +1178,11 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 
 	case frameMsg:
 		fe.renderLocked()
+		fe, flushCmd := fe.flushScrollback()
 		// NB: take care not to forward Frame downstream, since that will result
 		// in runaway ticks. instead inner components should send a SetFpsMsg to
 		// adjust the outermost layer.
-		return fe, frame(fe.fps)
+		return fe, tea.Batch(flushCmd, frame(fe.fps))
 
 	default:
 		return fe, nil
@@ -1162,78 +1193,120 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 	if fe.shell == nil {
 		return fe, nil
 	}
+	if fe.alt && !fe.shellDone {
+		// don't flush scrollback when in alt screen, because active progress
+		// may consume entire height and then disappear, placing the prompt at
+		// the top of the screen, which is exactly what we're trying to avoid
+		dbg.Println("alt screen and shell not done")
+		return fe, nil
+	}
 
 	// Calculate visible area height
 	visibleHeight := fe.window.Height
+	// if fe.view.Len() > 0 {
+	// 	visibleHeight -= lipgloss.Height(fe.view.String())
+	// 	visibleHeight-- // gap between scrollback and view
+	// }
 	if fe.editline != nil {
 		visibleHeight -= lipgloss.Height(fe.editlineView())
+		visibleHeight-- // gap between view and prompt
 	}
 
 	// Create buffer for flushing
-	buf := new(strings.Builder)
-	out := NewOutput(buf, termenv.WithProfile(fe.profile))
+	out := NewOutput(fe.scrollback, termenv.WithProfile(fe.profile))
 	r := newRenderer(fe.db, 100, fe.FrontendOpts)
 
-	// Track total height of rendered content
-	totalHeight := 0
-	heightByTree := make(map[*dagui.TraceTree]int)
-	contentByTree := make(map[*dagui.TraceTree]string)
-
-	// First pass - calculate heights for each tree
-	for _, tree := range fe.rowsView.Body {
-		if !fe.treeDone(tree, true) {
+	var anyNotFlushed bool
+	var anyFlushed bool
+	for _, row := range fe.rows.Order {
+		// Skip if row is already flushed
+		if fe.flushed[row.Span.ID] {
 			continue
 		}
-
-		// Skip if entire tree is already flushed
-		if fe.flushed[tree.Span.ID] {
-			continue
+		if row.IsRunningOrChildRunning || !fe.logsDone(row.Span.ID, row.Depth == 0) {
+			anyNotFlushed = true
+			break
 		}
-
-		// Calculate height for this tree
-		testBuf := new(strings.Builder)
-		testOut := NewOutput(testBuf, termenv.WithProfile(fe.profile))
-		for _, row := range tree.Rows(fe.FrontendOpts) {
-			fe.renderRow(testOut, r, row, "", false)
+		if row.Depth == 0 {
+			// NOTE: better to do this above a root span than after its last child,
+			// since we sometimes will have a child show up late if a tree finishes
+			// quickly.
+			fmt.Fprintln(out)
 		}
-		height := lipgloss.Height(testBuf.String())
-		heightByTree[tree] = height
-		contentByTree[tree] = testBuf.String()
-		totalHeight += height
+		fe.renderRow(out, r, row, "", false)
+		fe.flushed[row.Span.ID] = true
+		anyFlushed = true
+	}
+	if !anyFlushed {
+		dbg.Println("no flushed rows")
+		return fe, nil
+	}
+	if fe.alt && anyNotFlushed {
+		dbg.Println("alt screen and anyNotFlushed")
+		return fe, nil
 	}
 
-	var flushed bool
-	// Second pass - flush entire trees that won't fit
-	if totalHeight > visibleHeight {
-		heightToFlush := totalHeight - visibleHeight
-		flushedHeight := 0
+	// If nothing was written, we're done
+	if fe.scrollback.Len() == 0 {
+		dbg.Println("scrollback is empty")
+		return fe, nil
+	}
 
-		for _, tree := range fe.rowsView.Body {
-			if !fe.treeDone(tree, true) {
-				continue
-			}
+	// Calculate how many lines need to be flushed
+	scrollbackHeight := lipgloss.Height(fe.scrollback.String())
 
-			treeHeight := heightByTree[tree]
-			if flushedHeight < heightToFlush {
-				if flushed {
-					fmt.Fprintln(out)
+	var cmds []tea.Cmd
+	if scrollbackHeight > visibleHeight {
+		offscreenHeight := scrollbackHeight - visibleHeight
+		dbg.Printf("!!! height=%d, offscreenHeight=%d, visibleHeight=%d, scrollbackHeight=%d",
+			fe.window.Height,
+			offscreenHeight,
+			visibleHeight,
+			scrollbackHeight)
+		if offscreenHeight <= 0 {
+			dbg.Println("offscreen height is less than 0")
+			return fe, nil
+		}
+
+		// Split into lines, being careful to preserve empty lines
+		lines := strings.Split(fe.scrollback.String(), "\n")
+
+		// Build new buffers
+		offscreen := new(strings.Builder)
+		screen := new(strings.Builder)
+
+		// Write lines to appropriate buffers
+		for i, line := range lines {
+			if offscreenHeight > 0 {
+				fmt.Fprint(offscreen, line)
+				if i < len(lines)-1 {
+					fmt.Fprintln(offscreen)
 				}
-				// Flush entire tree
-				fmt.Fprint(out, contentByTree[tree])
-				flushedHeight += treeHeight
-				for _, row := range tree.Rows(fe.FrontendOpts) {
-					fe.flushed[row.Span.ID] = true
+				offscreenHeight--
+			} else {
+				fmt.Fprint(screen, line)
+				if i < len(lines)-1 {
+					fmt.Fprintln(screen)
 				}
-				flushed = true
 			}
 		}
+
+		// Replace scrollback with remaining visible lines
+		fe.scrollback = screen
+
+		// Return command to print offscreen lines
+		msg := strings.TrimSuffix(offscreen.String(), "\n")
+		dbg.Println("flushing offscreen lines", strconv.Quote(msg))
+		cmds = append(cmds, tea.Printf("%s", msg))
 	}
 
-	if buf.Len() > 0 {
-		dbg.Println("flushed", strconv.Quote(buf.String()))
-		return fe, tea.Printf("%s", strings.TrimLeft(buf.String(), "\n"))
+	if fe.alt {
+		dbg.Println("leaving alt screen")
+		fe.alt = false
+		cmds = append(cmds, tea.ExitAltScreen)
 	}
-	return fe, nil
+
+	return fe, tea.Batch(cmds...)
 }
 
 func (fe *frontendPretty) updatePrompt() {
@@ -1544,21 +1617,6 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, logs *Vterm, d
 		return false
 	}
 	fmt.Fprint(out, view)
-	return true
-}
-
-func (fe *frontendPretty) treeDone(tree *dagui.TraceTree, waitForLogs bool) bool {
-	if tree.IsRunningOrChildRunning {
-		return false
-	}
-	if !fe.logsDone(tree.Span.ID, waitForLogs || tree.Span.Message != "") {
-		return false
-	}
-	for _, child := range tree.Children {
-		if !fe.treeDone(child, waitForLogs || child.Span.Message != "") {
-			return false
-		}
-	}
 	return true
 }
 

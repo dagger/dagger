@@ -228,10 +228,7 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 		}
 		rows.Order = append(rows.Order, row)
 		rows.BySpan[tree.Span.ID] = row
-		if tree.RevealedChildren ||
-			tree.IsRunningOrChildRunning ||
-			tree.Span.IsFailedOrCausedFailure() ||
-			opts.Verbosity >= ExpandCompletedVerbosity {
+		if tree.Expand(opts) {
 			var lastChild *TraceRow
 			for _, child := range tree.Children {
 				childRow := walk(child, row, depth+1)
@@ -249,6 +246,13 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 		walk(tree, nil, 0)
 	}
 	return rows
+}
+
+func (row *TraceTree) Expand(opts FrontendOpts) bool {
+	return row.RevealedChildren ||
+		row.IsRunningOrChildRunning ||
+		row.Span.IsFailedOrCausedFailure() ||
+		opts.Verbosity >= ExpandCompletedVerbosity
 }
 
 func (row *TraceTree) Depth() int {
