@@ -1,14 +1,15 @@
 package io.dagger.modules.fields;
 
 import io.dagger.module.annotation.Function;
-import io.dagger.module.annotation.Internal;
 import io.dagger.module.annotation.Object;
 
 @Object
 public class Fields {
+  @Function
   private String version;
 
-  @Internal
+  public String publicVersion;
+
   private String internalVersion;
 
   public Fields() {}
@@ -17,6 +18,7 @@ public class Fields {
   public Fields withVersion(String version) {
     this.version = version;
     this.internalVersion = version;
+    this.publicVersion = version;
     return this;
   }
 

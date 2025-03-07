@@ -141,7 +141,10 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                   .filter(elt -> !elt.getModifiers().contains(Modifier.TRANSIENT))
                   .filter(elt -> !elt.getModifiers().contains(Modifier.STATIC))
                   .filter(elt -> !elt.getModifiers().contains(Modifier.FINAL))
-                  .filter(elt -> elt.getAnnotation(Internal.class) == null)
+                  .filter(
+                      elt ->
+                          elt.getModifiers().contains(Modifier.PUBLIC)
+                              || elt.getAnnotation(Function.class) != null)
                   .map(
                       elt -> {
                         String fieldName = elt.getSimpleName().toString();
