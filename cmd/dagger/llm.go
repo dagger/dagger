@@ -46,9 +46,7 @@ func LLMLoop(ctx context.Context, engineClient *client.Client) error {
 	dag := engineClient.Dagger()
 
 	// start a new LLM session, which we'll reassign throughout
-	s, err := NewLLMSession(ctx, dag, dag.Llm(dagger.LlmOpts{
-		Model: llmModel,
-	}))
+	s, err := NewLLMSession(ctx, dag, llmModel)
 	if err != nil {
 		return err
 	}
@@ -95,12 +93,13 @@ type LLMSession struct {
 	undo      *LLMSession
 	dag       *dagger.Client
 	llm       *dagger.Llm
+	llmModel  string
 	shell     *shellCallHandler
 	completer editline.AutoCompleteFn
 	mode      interpreterMode
 }
 
-func NewLLMSession(ctx context.Context, dag *dagger.Client, llm *dagger.Llm) (*LLMSession, error) {
+func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string) (*LLMSession, error) {
 	shellHandler := &shellCallHandler{
 		dag:   dag,
 		debug: debug,
@@ -114,7 +113,8 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llm *dagger.Llm) (*L
 
 	return &LLMSession{
 		dag:       dag,
-		llm:       llm,
+		llmModel:  llmModel,
+		llm:       dag.Llm(dagger.LlmOpts{Model: llmModel}),
 		shell:     shellHandler,
 		completer: shellCompletion.Do,
 		mode:      modePrompt,
@@ -280,7 +280,7 @@ func (s *LLMSession) IsComplete(entireInput [][]rune, line int, col int) bool {
 
 func (s *LLMSession) Clear(ctx context.Context, _ string) (_ *LLMSession, rerr error) {
 	s.llm = s.dag.Llm(dagger.LlmOpts{
-		Model: llmModel,
+		Model: s.llmModel,
 	})
 	return s, nil
 }
@@ -323,7 +323,7 @@ func (s *LLMSession) Compact(ctx context.Context, _ string) (_ *LLMSession, rerr
 		return s, err
 	}
 	fresh := s.dag.Llm(dagger.LlmOpts{
-		Model: llmModel,
+		Model: s.llmModel,
 	})
 	compacted, err := fresh.WithPrompt(summary).Sync(ctx)
 	if err != nil {
