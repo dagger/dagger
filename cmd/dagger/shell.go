@@ -47,7 +47,7 @@ var (
 
 func shellAddFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&shellCode, "code", "c", "", "Command to be executed")
-	cmd.Flags().BoolVar(&shellNoLoadModule, "no-mod", false, "Don't load module during shell startup (mutually exclusive with --mod)")
+	cmd.Flags().BoolVarP(&shellNoLoadModule, "no-mod", "n", false, "Don't load module during shell startup (mutually exclusive with --mod)")
 	cmd.MarkFlagsMutuallyExclusive("mod", "no-mod")
 }
 
