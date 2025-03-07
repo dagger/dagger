@@ -1,4 +1,4 @@
-package io.dagger.modules.daggermodule;
+package io.dagger.modules.daggermoduleplaceholder;
 
 import static io.dagger.client.Dagger.dag;
 
