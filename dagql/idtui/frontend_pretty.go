@@ -942,7 +942,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		r := newRenderer(fe.db, 100, fe.FrontendOpts)
 		for _, row := range fe.rows.Order {
 			var shouldFlush bool
-			if row.Depth == 0 && !row.IsRunningOrChildRunning && fe.logs.SawEOF[row.Span.ID] {
+			if row.Depth == 0 && !row.IsRunningOrChildRunning && fe.logsDone(row.Span.ID) {
 				// we're a top-level completed span and we've seen EOF, so flush
 				shouldFlush = true
 			}
@@ -1489,6 +1489,18 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, logs *Vterm, d
 	}
 	fmt.Fprint(out, view)
 	return true
+}
+
+func (fe *frontendPretty) logsDone(id dagui.SpanID) bool {
+	if fe.logs == nil {
+		// no logs to begin with
+		return true
+	}
+	if _, ok := fe.logs.Logs[id]; !ok {
+		// no logs to begin with
+		return true
+	}
+	return fe.logs.SawEOF[id]
 }
 
 type prettyLogs struct {
