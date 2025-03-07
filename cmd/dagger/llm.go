@@ -172,6 +172,8 @@ func (s *LLMSession) Interpret(ctx context.Context, input string) (_ *LLMSession
 
 	ctx, span := Tracer().Start(ctx, input)
 	defer telemetry.End(span, func() error { return rerr })
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
 
 	if strings.HasPrefix(input, "/") {
 		for _, cmd := range slashCommands {
@@ -333,7 +335,6 @@ func (s *LLMSession) History(ctx context.Context, _ string) (*LLMSession, error)
 		return s, err
 	}
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	defer stdio.Close()
 	for _, h := range history {
 		fmt.Fprintln(stdio.Stdout, h)
 	}
