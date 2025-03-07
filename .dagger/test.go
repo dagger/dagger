@@ -192,23 +192,33 @@ func (t *Test) Dump(
 	// Enable verbose output
 	// +optional
 	testVerbose bool,
-	// wait this long before starting to take dumps
+	// debug subroute to dump, like pprof/profile, pprof/heap, or requests
 	// +optional
-	// +default="30s"
+	// +default="pprof/heap"
+	route string,
+	// when true, take a final dump after the tests have completed
+	// +optional'
+	// +default=true
+	final bool,
+	// wait this long before starting to take dumps. delay does not include engine startup.
+	// +optional
+	// +default="1s"
 	delay string,
-	// wait this long between dumps
+	// wait this long between dumps. negative values will fetch exactly 1 dump excluding the one controlled by "final"
 	// +optional
-	// +default="30s"
+	// +default="-1s"
 	interval string,
 ) (*dagger.Directory, error) {
 	d, err := time.ParseDuration(delay)
 	if err != nil {
 		return nil, err
 	}
+
 	i, err := time.ParseDuration(interval)
 	if err != nil {
 		return nil, err
 	}
+
 	return t.testAndDump(
 		ctx,
 		&testOpts{
@@ -222,7 +232,10 @@ func (t *Test) Dump(
 			count:         count,
 			testVerbose:   testVerbose,
 		},
-		d, i,
+		route,
+		final,
+		d,
+		i,
 	)
 }
 
@@ -268,6 +281,8 @@ func (t *Test) test(
 func (t *Test) testAndDump(
 	ctx context.Context,
 	opts *testOpts,
+	route string,
+	final bool,
 	delay time.Duration,
 	interval time.Duration,
 ) (*dagger.Directory, error) {
@@ -292,11 +307,11 @@ func (t *Test) testAndDump(
 			bench:         false,
 		},
 	)
+	baseFileName := strings.ReplaceAll(route, "/", "-")
 
 	dumps := dag.Directory()
 	errs := []error{}
 	doneCh := make(chan struct{})
-
 	dumpCount := 0
 	go func() {
 		time.Sleep(delay)
@@ -306,13 +321,16 @@ func (t *Test) testAndDump(
 			case <-doneCh:
 				return
 			default:
-				heapData, err := fetchHeapDump(debugEndpoint)
+				heapData, err := fetchDump(debugEndpoint, route)
 				if err != nil {
 					errs = append(errs, err)
 				} else {
-					fileName := fmt.Sprintf("heap-dump-%d.prof", dumpCount)
+					fileName := fmt.Sprintf("%s-%d.pprof", baseFileName, dumpCount)
 					dumps = dumps.WithNewFile(fileName, string(heapData))
 					dumpCount++
+				}
+				if interval < 0 {
+					return
 				}
 
 				select {
@@ -326,7 +344,20 @@ func (t *Test) testAndDump(
 
 	_, testErr := testContainer.Sync(ctx)
 
-	doneCh <- struct{}{}
+	if interval >= 0 {
+		doneCh <- struct{}{}
+	}
+
+	if final {
+		heapData, err := fetchDump(debugEndpoint, route)
+		if err != nil {
+			errs = append(errs, err)
+		} else {
+			fileName := fmt.Sprintf("%s-final.pprof", baseFileName)
+			dumps = dumps.WithNewFile(fileName, string(heapData))
+			dumpCount++
+		}
+	}
 
 	if testErr != nil {
 		if dumpCount == 0 {
@@ -341,13 +372,12 @@ func (t *Test) testAndDump(
 	return dumps, nil
 }
 
-// fetchHeapDump fetches a heap profile from the debug HTTP endpoint and returns it as a byte array
-func fetchHeapDump(debugEndpoint string) ([]byte, error) {
-	url := fmt.Sprintf("%s/debug/pprof/heap", debugEndpoint)
+// fetchDump fetches from a debug HTTP endpoint and returns it as a byte array
+func fetchDump(debugEndpoint string, route string) ([]byte, error) {
+	url := fmt.Sprintf("%s/debug/%s", debugEndpoint, route)
 
-	// Create a client with a timeout
 	client := &http.Client{
-		Timeout: 20 * time.Second,
+		Timeout: 120 * time.Second, // for longer CPU profiles, this should be extended
 	}
 
 	resp, err := client.Get(url)
