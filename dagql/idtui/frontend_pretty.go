@@ -1496,10 +1496,11 @@ func (fe *frontendPretty) logsDone(id dagui.SpanID) bool {
 		// no logs to begin with
 		return true
 	}
-	if _, ok := fe.logs.Logs[id]; !ok {
-		// no logs to begin with
-		return true
-	}
+	// TODO: what if we just haven't seen any yet?
+	// if _, ok := fe.logs.Logs[id]; !ok {
+	// 	// no logs to begin with
+	// 	// return true
+	// }
 	return fe.logs.SawEOF[id]
 }
 
