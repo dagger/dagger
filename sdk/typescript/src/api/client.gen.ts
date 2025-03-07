@@ -1031,18 +1031,18 @@ export type ModuleConfigClientID = string & { __ModuleConfigClientID: never }
  */
 export type ModuleID = string & { __ModuleID: never }
 
-export type ModuleSourceWithClientOpts = {
-  /**
-   * Generate in developer mode
-   */
-  dev?: boolean
-}
-
 export type ModuleSourceIntrospectionJsonfileOpts = {
   /**
    * Include the schema of the current module in the result
    */
   includeSelf?: boolean
+}
+
+export type ModuleSourceWithClientOpts = {
+  /**
+   * Generate in developer mode
+   */
+  dev?: boolean
 }
 
 /**

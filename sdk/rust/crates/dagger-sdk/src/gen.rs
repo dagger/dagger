@@ -6163,16 +6163,16 @@ pub struct ModuleSource {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct ModuleSourceWithClientOpts {
-    /// Generate in developer mode
-    #[builder(setter(into, strip_option), default)]
-    pub dev: Option<bool>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct ModuleSourceIntrospectionJsonFileOpts {
     /// Include the schema of the current module in the result
     #[builder(setter(into, strip_option), default)]
     pub include_self: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleSourceWithClientOpts {
+    /// Generate in developer mode
+    #[builder(setter(into, strip_option), default)]
+    pub dev: Option<bool>,
 }
 impl ModuleSource {
     /// Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
