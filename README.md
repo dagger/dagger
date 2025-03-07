@@ -6,23 +6,19 @@ Dagger is an open-source runtime for composable workflows. It's perfect for syst
 
 ## Key Features
 
-- **Reproducible execution engine**, powered by containerized functions and a declarative DAG scheduler.
+- **Containerized Workflow Execution:** Transform code into containerized, composable operations. Build reproducible workflows in any language with custom environments, parallel processing, and seamless chaining.
 
-- **Universal type system**, for strongly typed composition and discovery, across platforms and languages.
+- **Universal Type System:** Mix and match components from any language with type-safe connections. Use the best tools from each ecosystem without translation headaches.
 
-- **Powerful data layer**: out-of-the-box caching, immutable state, and data tracability.
+- **Automatic Artifact Caching:** Operations produce cacheable, immutable artifacts — even for LLMs and API calls. Your workflows run faster and cost less.
 
-- **Native SDKs for 5 languages**. Go, Typescript, Python, PHP, Java - and more on the way.
+- **Built-in Observability:** Full visibility into operations with tracing, logs, and metrics. Debug complex workflows and know exactly what's happening.
 
-- **Open ecosystem**: [Thousands of modules](https://daggerverse.dev) at your fingertips, all interoperable across languages and platforms.
+- **Open Platform:** Works with any compute platform and tech stack — today and tomorrow. Ship faster, experiment freely, and don’t get locked into someone else's choices.
 
-- **Interactive command-line environment**, for rapid prototyping and debugging.
+- **LLM Augmentation:** Native integration of any LLM that automatically discovers and uses available functions in your workflow. Ship mind-blowing agents in just a few dozen lines of code.
 
-- **Batteries-included observability**. Deep tracing, metrics (including token count), and logs, all accessible from the CLI or a web UI.
-
-- **Adapts to you**. Seamlessly integrate with all major compute and storage platforms, CI systems, languages, and agent frameworks.
-
-- **LLM augmentation**. Connect to any LLM endpoint (OpenAI, Google, Anthropic, LLama, DeepSeek, etc.) and give it access to your Dagger objects. Dagger automatically handles the agentic loop. No complicated framework needed.
+- **Interactive Terminal:** Directly interact with your workflow or agents in real-time through your terminal. Prototype, test, debug, and ship even faster.
 
 <img src="docs/static/img/spider-robot-1.svg" width="15%">
 
