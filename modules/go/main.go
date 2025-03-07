@@ -54,6 +54,10 @@ func New(
 	// Enable race detector. Implies cgo=true
 	// +optional
 	race bool,
+
+	// Enable go experiments https://pkg.go.dev/internal/goexperiment
+	// +optional
+	experiment []string,
 ) Go {
 	if source == nil {
 		source = dag.Directory()
@@ -102,6 +106,7 @@ func New(
 		Values:      values,
 		Cgo:         cgo,
 		Race:        race,
+		Experiment:  experiment,
 	}
 }
 
@@ -133,6 +138,9 @@ type Go struct {
 
 	// Enable race detector
 	Race bool
+
+	// Enable go experiments
+	Experiment []string
 }
 
 // Download dependencies into the module cache
@@ -185,6 +193,13 @@ func (p Go) Env(
 				}
 			}
 			return c
+		}).
+		// Configure experiments
+		With(func(c *dagger.Container) *dagger.Container {
+			if len(p.Experiment) == 0 {
+				return c
+			}
+			return c.WithEnvVariable("GOEXPERIMENT", strings.Join(p.Experiment, ","))
 		}).
 		WithMountedDirectory("", p.Source)
 }
