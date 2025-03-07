@@ -26,7 +26,7 @@ var (
 	outputSchema string
 	merge        bool
 
-	clientOnly bool
+	clientOnly      bool
 	dependenciesRef []string
 
 	dev    bool
@@ -70,12 +70,12 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 	ctx = telemetry.InitEmbedded(ctx, nil)
 
 	cfg := generator.Config{
-		Lang:       generator.SDKLang(lang),
-		OutputDir:  outputDir,
-		Merge:      merge,
-		IsInit:     isInit,
-		ClientOnly: clientOnly,
-		Dev:        dev,
+		Lang:            generator.SDKLang(lang),
+		OutputDir:       outputDir,
+		Merge:           merge,
+		IsInit:          isInit,
+		ClientOnly:      clientOnly,
+		Dev:             dev,
 		DependenciesRef: dependenciesRef,
 	}
 
