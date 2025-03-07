@@ -259,15 +259,26 @@ func (m *Alpine) withPkgs(
 			Exclude: pkg.rmFileNames,
 		})
 		ctr = ctr.With(pkgscript("post-install", pkg.name, pkg.postInstall))
-		// HACK: quick fix for busybox trigger needing to be run before glibc trigger (which needs /usr/bin/sh symlink to busybox created)
-		if pkg.name == "busybox" {
+
+		if m.Distro == DistroWolfi && pkg.name == "busybox" {
+			// Need a bit of special casing here due to this change in wolfi's glibc package:
+			// https://github.com/wolfi-dev/os/commit/8229c0379cada98fb9504dd19a068dbbe2bd0d98
+			//
+			// That change requires that the busybox symlinks are created when glibc's trigger
+			// executes (otherwise `/usr/bin/sh` won't exist). However, that's tricky because
+			// the busybox actually has a dependency on glibc in wolfi.
+			//
+			// It turns out that change didn't affect apko because apko doesn't run any scripts
+			// (just installs them) and has an extra hardcoded step that manually creates busybox
+			// symlinks.
+			//
+			// We do run scripts, but to ensure that glibc's trigger can run successfully we run
+			// busybox's trigger right away after it's installed, ensuring the symlinks exist
+			// and glibc's trigger can run successfully later.
 			ctr = ctr.With(pkgscript("trigger", pkg.name, pkg.trigger))
 		}
 	}
 	for _, pkg := range alpinePkgs {
-		if pkg.name == "busybox" {
-			continue
-		}
 		ctr = ctr.With(pkgscript("trigger", pkg.name, pkg.trigger))
 	}
 
