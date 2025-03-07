@@ -6034,6 +6034,16 @@ func (r *Llm) WithListTypeDef(value *ListTypeDef) *Llm {
 	}
 }
 
+// swap out the llm model
+func (r *Llm) WithModel(model string) *Llm {
+	q := r.query.Select("withModel")
+	q = q.Arg("model", model)
+
+	return &Llm{
+		query: q,
+	}
+}
+
 // Set the llm state to a Module
 func (r *Llm) WithModule(value *Module) *Llm {
 	assertNotNil("value", value)

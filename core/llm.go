@@ -401,6 +401,23 @@ func (llm *Llm) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error)
 	return result, nil
 }
 
+func (llm *Llm) WithModel(ctx context.Context, model string, srv *dagql.Server) (*Llm, error) {
+	llm = llm.Clone()
+	router, err := NewLlmRouter(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	endpoint, err := router.Route(model)
+	if err != nil {
+		return nil, err
+	}
+	if endpoint.Model == "" {
+		return nil, fmt.Errorf("no valid LLM endpoint configuration")
+	}
+	llm.Endpoint = endpoint
+	return llm, nil
+}
+
 // Append a user message (prompt) to the message history
 func (llm *Llm) WithPrompt(
 	ctx context.Context,

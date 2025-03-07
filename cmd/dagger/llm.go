@@ -163,6 +163,11 @@ var slashCommands = []slashCommand{
 		desc:    "Show the LLM history",
 		handler: (*LLMSession).History,
 	},
+	{
+		name:    "/model",
+		desc:    "Swap out the LLM model",
+		handler: (*LLMSession).Model,
+	},
 }
 
 func (s *LLMSession) Interpret(ctx context.Context, input string) (_ *LLMSession, rerr error) {
@@ -350,6 +355,12 @@ func (s *LLMSession) Shell(ctx context.Context, _ string) (*LLMSession, error) {
 func (s *LLMSession) Prompt(ctx context.Context, _ string) (*LLMSession, error) {
 	s = s.Fork()
 	s.mode = modePrompt
+	return s, nil
+}
+
+func (s *LLMSession) Model(ctx context.Context, model string) (*LLMSession, error) {
+	s = s.Fork()
+	s.llm = s.llm.WithModel(model)
 	return s, nil
 }
 
