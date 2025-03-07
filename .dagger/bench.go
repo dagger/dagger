@@ -127,7 +127,7 @@ func (b *Bench) bench(
 		)
 	}
 
-	cmd, err := b.Test.testCmd(ctx)
+	cmd, _, err := b.Test.testCmd(ctx)
 	if err != nil {
 		return err
 	}
