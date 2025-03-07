@@ -195,19 +195,29 @@ func (s GitAttachable) GetConfig(ctx context.Context, req *GitConfigRequest) (*G
 
 	cmd.Env = append(os.Environ(),
 		"GIT_TERMINAL_PROMPT=0",
-		"SSH_ASKPASS=echo",
 	)
 
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return newGitConfigErrorResponse(TIMEOUT, "Git config command timed out"), nil
 		}
+
+		if IsNoChildProcesses(err) {
+			return &GitConfigResponse{
+				Result: &GitConfigResponse_Config{
+					Config: &GitConfig{
+						Entries: []*GitConfigEntry{},
+					},
+				},
+			}, nil
+		}
+
 		return newGitConfigErrorResponse(CONFIG_RETRIEVAL_FAILED, fmt.Sprintf("Failed to retrieve config: %v. stdout: %q, stderr: %q", err, stdout.String(), stderr.String())), nil
 	}
 
 	list, err := parseGitConfigOutput(stdout.Bytes())
 	if err != nil {
-		return newGitConfigErrorResponse(CONFIG_RETRIEVAL_FAILED, fmt.Sprintf("Failed to parse config (%q): %v", stdout.String, err)), nil
+		return newGitConfigErrorResponse(CONFIG_RETRIEVAL_FAILED, fmt.Sprintf("Failed to parse config (%q): %v", stdout.String(), err)), nil
 	}
 
 	return &GitConfigResponse{
@@ -263,4 +273,12 @@ func newGitConfigErrorResponse(errorType ErrorInfo_ErrorType, message string) *G
 			},
 		},
 	}
+}
+
+func IsNoChildProcesses(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	return strings.HasSuffix(err.Error(), ": no child processes")
 }
