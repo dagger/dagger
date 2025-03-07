@@ -72,10 +72,15 @@ func LLMLoop(ctx context.Context, engineClient *client.Client) error {
 			s = new
 			return nil
 		},
-		s.Complete,
-		s.IsComplete,
+		// NOTE: these close over s
+		func(entireInput [][]rune, row, col int) (msg string, comp editline.Completions) {
+			return s.Complete(entireInput, row, col)
+		},
+		func(entireInput [][]rune, row, col int) bool {
+			return s.IsComplete(entireInput, row, col)
+		},
 		func(out idtui.TermOutput, fg termenv.Color) string {
-			return out.String(idtui.PromptSymbol + " ").Foreground(fg).String()
+			return s.Prompt(out, fg)
 		},
 	)
 
@@ -111,10 +116,16 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string) (*L
 		return nil, err
 	}
 
+	llm := dag.Llm(dagger.LlmOpts{Model: llmModel})
+	model, err := llm.Model(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	return &LLMSession{
 		dag:       dag,
-		llmModel:  llmModel,
-		llm:       dag.Llm(dagger.LlmOpts{Model: llmModel}),
+		llm:       llm,
+		llmModel:  model,
 		shell:     shellHandler,
 		completer: shellCompletion.Do,
 		mode:      modePrompt,
@@ -141,12 +152,12 @@ var slashCommands = []slashCommand{
 	{
 		name:    "/shell",
 		desc:    "Switch into shell mode",
-		handler: (*LLMSession).Shell,
+		handler: (*LLMSession).ShellMode,
 	},
 	{
 		name:    "/prompt",
 		desc:    "Switch into prompt mode",
-		handler: (*LLMSession).Prompt,
+		handler: (*LLMSession).PromptMode,
 	},
 	{
 		name:    "/clear",
@@ -346,21 +357,42 @@ func (s *LLMSession) History(ctx context.Context, _ string) (*LLMSession, error)
 	return s, nil
 }
 
-func (s *LLMSession) Shell(ctx context.Context, _ string) (*LLMSession, error) {
+func (s *LLMSession) ShellMode(ctx context.Context, _ string) (*LLMSession, error) {
 	s = s.Fork()
 	s.mode = modeShell
 	return s, nil
 }
 
-func (s *LLMSession) Prompt(ctx context.Context, _ string) (*LLMSession, error) {
+func (s *LLMSession) PromptMode(ctx context.Context, _ string) (*LLMSession, error) {
 	s = s.Fork()
 	s.mode = modePrompt
 	return s, nil
 }
 
+func (s *LLMSession) Prompt(out idtui.TermOutput, fg termenv.Color) string {
+	switch s.mode {
+	case modePrompt:
+		sb := new(strings.Builder)
+		sb.WriteString(out.String(s.llmModel).Bold().Foreground(termenv.ANSICyan).String())
+		sb.WriteString(out.String(" ").String())
+		sb.WriteString(out.String(idtui.LLMPrompt).Bold().Foreground(fg).String())
+		sb.WriteString(out.String(out.String(" ").String()).String())
+		return sb.String()
+	case modeShell:
+		return s.shell.prompt(out, fg)
+	default:
+		return fmt.Sprintf("unknown mode: %d", s.mode)
+	}
+}
+
 func (s *LLMSession) Model(ctx context.Context, model string) (*LLMSession, error) {
 	s = s.Fork()
 	s.llm = s.llm.WithModel(model)
+	model, err := s.llm.Model(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.llmModel = model
 	return s, nil
 }
 

@@ -29,7 +29,6 @@ type Llm struct {
 
 	maxAPICalls int
 	apiCalls    int
-	Model       string
 	Endpoint    *LlmEndpoint
 
 	// If true: has un-synced state
@@ -355,10 +354,8 @@ func NewLlm(ctx context.Context, query *Query, srv *dagql.Server, model string, 
 	if endpoint.Model == "" {
 		return nil, fmt.Errorf("no valid LLM endpoint configuration")
 	}
-	// FIXME: merge model into endpoint
 	return &Llm{
 		Query:       query,
-		Model:       model,
 		Endpoint:    endpoint,
 		maxAPICalls: maxAPICalls,
 		calls:       make(map[string]string),

@@ -23,13 +23,6 @@ import (
 )
 
 const (
-	// We need a prompt that conveys the unique nature of the Dagger shell. Per gpt4:
-	// The ⋈ symbol, known as the bowtie, has deep roots in relational databases and set theory,
-	// where it denotes a join operation. This makes it especially fitting for a DAG environment,
-	// as it suggests the idea of dependencies, intersections, and points where separate paths
-	// or data sets come together.
-	shellPromptSymbol = "⋈"
-
 	// shellInternalCmd is the command that is used internally to avoid conflicts
 	// with interpreter builtins. For example when `echo` is used, the command becomes
 	// `__dag echo`. Otherwise we can't have a function named `echo`.
@@ -483,7 +476,7 @@ func (h *shellCallHandler) prompt(out idtui.TermOutput, fg termenv.Color) string
 		sb.WriteString(out.String(" ").String())
 	}
 
-	sb.WriteString(out.String(shellPromptSymbol).Bold().Foreground(fg).String())
+	sb.WriteString(out.String(idtui.ShellPrompt).Bold().Foreground(fg).String())
 	sb.WriteString(out.String(out.String(" ").String()).String())
 
 	return sb.String()

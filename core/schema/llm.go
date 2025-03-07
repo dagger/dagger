@@ -66,7 +66,7 @@ func (s *llmSchema) model(ctx context.Context, llm *core.Llm, args struct{}) (da
 	if llm.Endpoint != nil {
 		provider = string(llm.Endpoint.Provider)
 	}
-	return dagql.NewString(llm.Model + "(" + provider + ")"), nil
+	return dagql.NewString(llm.Endpoint.Model + "(" + provider + ")"), nil
 }
 
 func (s *llmSchema) lastReply(ctx context.Context, llm *core.Llm, args struct{}) (dagql.String, error) {
