@@ -942,11 +942,11 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		r := newRenderer(fe.db, 100, fe.FrontendOpts)
 		for _, row := range fe.rows.Order {
 			var shouldFlush bool
-			if row.Depth == 0 && !row.IsRunningOrChildRunning && fe.logsDone(row.Span.ID) {
+			if row.Depth == 0 && !row.IsRunningOrChildRunning && fe.logsDone(row.Span.ID, true) {
 				// we're a top-level completed span and we've seen EOF, so flush
 				shouldFlush = true
 			}
-			if row.Parent != nil && fe.flushed[row.Parent.Span.ID] {
+			if row.Parent != nil && fe.flushed[row.Parent.Span.ID] && fe.logsDone(row.Span.ID, false) {
 				// our parent flushed, so we should too
 				shouldFlush = true
 			}
@@ -1491,16 +1491,15 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, logs *Vterm, d
 	return true
 }
 
-func (fe *frontendPretty) logsDone(id dagui.SpanID) bool {
+func (fe *frontendPretty) logsDone(id dagui.SpanID, waitForLogs bool) bool {
 	if fe.logs == nil {
 		// no logs to begin with
 		return true
 	}
-	// TODO: what if we just haven't seen any yet?
-	// if _, ok := fe.logs.Logs[id]; !ok {
-	// 	// no logs to begin with
-	// 	// return true
-	// }
+	if _, ok := fe.logs.Logs[id]; !ok && !waitForLogs {
+		// no logs to begin with
+		return true
+	}
 	return fe.logs.SawEOF[id]
 }
 
@@ -1528,11 +1527,9 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 		for attr := range log.WalkAttributes {
 			if attr.Key == telemetry.ContentTypeAttr {
 				contentType = attr.Value.AsString()
-				break
 			}
 			if attr.Key == telemetry.StdioEOFAttr {
 				eof = attr.Value.AsBool()
-				break
 			}
 		}
 
