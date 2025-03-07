@@ -14,7 +14,7 @@ The best way to understand how Dagger works is by creating a delivery pipeline u
 :::tip DAGGERIZING
 1. Choose a Dagger SDK and bootstrap a new Dagger module for your application's pipeline with `dagger init`.
 2. Construct the pipeline by creating and combining one or more Dagger Functions to produce the desired results. Your Dagger Functions can use the core Dagger API and/or call Dagger Functions from third-party Daggerverse modules.
-3. Use `dagger call` to run and test your pipeline locally. Once you're satisfied, transfer your Dagger module and your `dagger call` commands to your CI configuration.
+3. Use `dagger` to run and test your pipeline locally. Once you're satisfied, transfer your Dagger module and your `dagger` commands to your CI configuration.
 :::
 
 ### Get the example application
@@ -203,7 +203,7 @@ The Dagger module's class name is automatically generated based on the name of t
 Call a Dagger Function to run the pipeline:
 
 ```shell
-dagger call publish --source=.
+dagger -c 'publish .'
 ```
 
 This single command runs the application's tests, then builds and publishes it as a container image to the [ttl.sh container registry](https://ttl.sh). Here's what you should see:
