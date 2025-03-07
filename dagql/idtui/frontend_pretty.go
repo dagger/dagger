@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -584,7 +585,7 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 
 	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
 
-	if fe.shell != nil {
+	if fe.hlProgress() {
 		out = focusedBg(out)
 	}
 
@@ -597,7 +598,7 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 
 	below := new(strings.Builder)
 	var countOut TermOutput = NewOutput(below, termenv.WithProfile(fe.profile))
-	if fe.shell != nil {
+	if fe.hlProgress() {
 		countOut = focusedBg(countOut)
 	}
 
@@ -663,14 +664,18 @@ func (fe *frontendPretty) recalculateViewLocked() {
 func (fe *frontendPretty) renderedRowLines(r *renderer, row *dagui.TraceRow, prefix string) []string {
 	buf := new(strings.Builder)
 	var out TermOutput = NewOutput(buf, termenv.WithProfile(fe.profile))
-	if fe.shell != nil {
+	if fe.hlProgress() {
 		out = focusedBg(out)
 	}
-	fe.renderRow(out, r, row, prefix, fe.shell != nil)
+	fe.renderRow(out, r, row, prefix, fe.hlProgress())
 	if buf.String() == "" {
 		return nil
 	}
 	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
+}
+
+func (fe *frontendPretty) hlProgress() bool {
+	return fe.shell != nil && !fe.editlineFocused
 }
 
 func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, full bool, height int, prefix string) (rendered bool) {
@@ -682,7 +687,7 @@ func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, full bool,
 
 	if full {
 		for _, row := range rows.Order {
-			if fe.renderRow(out, r, row, "", fe.shell != nil) {
+			if fe.renderRow(out, r, row, "", fe.hlProgress()) {
 				rendered = true
 			}
 		}
@@ -934,27 +939,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		)
 
 	case flushMsg:
-		if fe.shell == nil {
-			return fe, nil
-		}
-		buf := new(strings.Builder)
-		out := NewOutput(buf, termenv.WithProfile(fe.profile))
-		r := newRenderer(fe.db, 100, fe.FrontendOpts)
-		for _, tree := range fe.rowsView.Body {
-			if !fe.treeDone(tree, true) {
-				continue
-			}
-			for _, row := range tree.Rows(fe.FrontendOpts) {
-				if !fe.flushed[row.Span.ID] {
-					fe.renderRow(out, r, row, "", false)
-					fe.flushed[row.Span.ID] = true
-				}
-			}
-		}
-		if buf.Len() > 0 {
-			return fe, tea.Printf("%s", strings.TrimLeft(buf.String(), "\n"))
-		}
-		return fe, nil
+		return fe.flushScrollback()
 
 	case backgroundMsg:
 		fe.backgrounded = true
@@ -1171,6 +1156,84 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 	default:
 		return fe, nil
 	}
+}
+
+func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
+	if fe.shell == nil {
+		return fe, nil
+	}
+
+	// Calculate visible area height
+	visibleHeight := fe.window.Height
+	if fe.editline != nil {
+		visibleHeight -= lipgloss.Height(fe.editlineView())
+	}
+
+	// Create buffer for flushing
+	buf := new(strings.Builder)
+	out := NewOutput(buf, termenv.WithProfile(fe.profile))
+	r := newRenderer(fe.db, 100, fe.FrontendOpts)
+
+	// Track total height of rendered content
+	totalHeight := 0
+	heightByTree := make(map[*dagui.TraceTree]int)
+	contentByTree := make(map[*dagui.TraceTree]string)
+
+	// First pass - calculate heights for each tree
+	for _, tree := range fe.rowsView.Body {
+		if !fe.treeDone(tree, true) {
+			continue
+		}
+
+		// Skip if entire tree is already flushed
+		if fe.flushed[tree.Span.ID] {
+			continue
+		}
+
+		// Calculate height for this tree
+		testBuf := new(strings.Builder)
+		testOut := NewOutput(testBuf, termenv.WithProfile(fe.profile))
+		for _, row := range tree.Rows(fe.FrontendOpts) {
+			fe.renderRow(testOut, r, row, "", false)
+		}
+		height := lipgloss.Height(testBuf.String())
+		heightByTree[tree] = height
+		contentByTree[tree] = testBuf.String()
+		totalHeight += height
+	}
+
+	var flushed bool
+	// Second pass - flush entire trees that won't fit
+	if totalHeight > visibleHeight {
+		heightToFlush := totalHeight - visibleHeight
+		flushedHeight := 0
+
+		for _, tree := range fe.rowsView.Body {
+			if !fe.treeDone(tree, true) {
+				continue
+			}
+
+			treeHeight := heightByTree[tree]
+			if flushedHeight < heightToFlush {
+				if flushed {
+					fmt.Fprintln(out)
+				}
+				// Flush entire tree
+				fmt.Fprint(out, contentByTree[tree])
+				flushedHeight += treeHeight
+				for _, row := range tree.Rows(fe.FrontendOpts) {
+					fe.flushed[row.Span.ID] = true
+				}
+				flushed = true
+			}
+		}
+	}
+
+	if buf.Len() > 0 {
+		dbg.Println("flushed", strconv.Quote(buf.String()))
+		return fe, tea.Printf("%s", strings.TrimLeft(buf.String(), "\n"))
+	}
+	return fe, nil
 }
 
 func (fe *frontendPretty) updatePrompt() {
