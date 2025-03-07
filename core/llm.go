@@ -415,8 +415,7 @@ func (llm *Llm) WithPrompt(
 	prompt string,
 	srv *dagql.Server,
 ) (*Llm, error) {
-	vars := llm.promptVars
-	if len(vars) > 0 {
+	if len(llm.env.objs) > 0 {
 		prompt = os.Expand(prompt, func(key string) string {
 			val, err := llm.env.Get(key)
 			if err != nil {
