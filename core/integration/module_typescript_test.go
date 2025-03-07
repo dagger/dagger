@@ -648,6 +648,30 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"bun"}}`, out)
 	})
 
+	t.Run("should detect bun.lock", func(ctx context.Context, t *testctx.T) {
+		modGen := c.Container().From("oven/bun:1.2.4-alpine").
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=Runtime-Detection", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+        import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
+
+        @object()
+        export class RuntimeDetection {
+          @func()
+          echoRuntime(): string {
+          const isBunRuntime = typeof Bun === "object";
+          return isBunRuntime ? "bun" : "node";
+          }
+        }
+      `)).
+			WithExec([]string{"bun", "install"})
+
+		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"bun"}}`, out)
+	})
+
 	t.Run("should prioritize package.json config over file detection", func(ctx context.Context, t *testctx.T) {
 		modGen := c.Container().From("node:20-alpine").
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -737,14 +761,14 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 func (TypescriptSuite) TestCustomBaseImage(ctx context.Context, t *testctx.T) {
 	script := `
     import { object, func } from "@dagger.io/dagger"
-    
+
     @object()
     export class Test {
       @func()
       runtime(): string {
         const isBunRuntime = typeof Bun === "object";
         const runtime = isBunRuntime ? "bun" : "node";
-    
+
         switch (runtime) {
           case "bun":
             return runtime + "@" + Bun.version
@@ -763,7 +787,7 @@ func (TypescriptSuite) TestCustomBaseImage(ctx context.Context, t *testctx.T) {
 			WithWorkdir("/work").
 			WithNewFile("package.json", `{
       "dagger": {
-        "baseImage": "oven/bun:1.1.37-alpine@sha256:aa3c07503fe8097fd185aa1fa7a55ec99c1d9041586b0efb1ed6fc0bd6923803",
+        "baseImage": "oven/bun:1.2.4-alpine@sha256:66169513f6c6c653b207a4f198695a3a9750ed0ae7b1088d4a8fc09a3a0d41dc",
         "runtime": "bun"
       }
     }`).
@@ -772,7 +796,7 @@ func (TypescriptSuite) TestCustomBaseImage(ctx context.Context, t *testctx.T) {
 
 		out, err := modGen.With(daggerCall("runtime")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "bun@1.1.37", out)
+		require.Equal(t, "bun@1.2.4", out)
 	})
 
 	t.Run("should use custom base image if base image is set - node", func(ctx context.Context, t *testctx.T) {
@@ -1495,23 +1519,23 @@ func (TypescriptSuite) TestTypeKeyword(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--name=test", "--sdk=typescript")).
 			With(sdkSource("typescript", `
 import { func, object } from "@dagger.io/dagger"
-  
+
 export type Text = string
 export type Integer = number
 export type Online = boolean
-  
+
 @object()
 export class Test {
   @func()
   str(s: Text): Text {
     return s
   }
-  
+
   @func()
   integer(n: Integer): Integer {
     return n
   }
-  
+
   @func()
   bool(arg: Online): Online {
     return arg
@@ -1589,7 +1613,7 @@ export type Person = {
    * Age
    */
   age: number
-  
+
   /**
    * Name
    */
@@ -1634,7 +1658,7 @@ export class Test {
 			With(daggerExec("init", "--name=test", "--sdk=typescript")).
 			With(sdkSource("typescript", `
 import { func, object } from "@dagger.io/dagger"
-  
+
 export type Organisation = {
   name: string
   members: Person[]
@@ -1644,7 +1668,7 @@ export type Person = {
   age: number
   name: string
 }
-  
+
 @object()
 export class Test {
   _orgs: Organisation[]
@@ -1725,7 +1749,7 @@ export class Test {
   _fs: FileSystem;
 
   constructor() {
-    this._fs = 
+    this._fs =
       {
         name: "school",
         Dirs: [
@@ -1800,7 +1824,7 @@ class Test {
   foo(): string {
     return "bar"
   }
-}      
+}
 `,
 			))
 
@@ -1874,7 +1898,7 @@ export class Test {
     return 4.4
   }
 }
-		
+
 		`))
 
 		_, err := modGen.With(daggerCall("test")).Stdout(ctx)
