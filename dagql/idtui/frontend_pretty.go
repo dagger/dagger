@@ -1203,10 +1203,6 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 
 	// Calculate visible area height
 	visibleHeight := fe.window.Height
-	// if fe.view.Len() > 0 {
-	// 	visibleHeight -= lipgloss.Height(fe.view.String())
-	// 	visibleHeight-- // gap between scrollback and view
-	// }
 	if fe.editline != nil {
 		visibleHeight -= lipgloss.Height(fe.editlineView())
 		visibleHeight-- // gap between view and prompt
@@ -1263,10 +1259,6 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 			offscreenHeight,
 			visibleHeight,
 			scrollbackHeight)
-		if offscreenHeight <= 0 {
-			dbg.Println("offscreen height is less than 0")
-			return fe, nil
-		}
 
 		// Split into lines, being careful to preserve empty lines
 		lines := strings.Split(fe.scrollback.String(), "\n")
