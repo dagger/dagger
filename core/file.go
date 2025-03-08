@@ -9,6 +9,7 @@ import (
 	"path"
 	"time"
 
+	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
@@ -18,6 +19,7 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core/reffs"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
@@ -25,7 +27,9 @@ import (
 type File struct {
 	Query *Query
 
-	LLB      *pb.Definition
+	LLB    *pb.Definition
+	Result bkcache.ImmutableRef // only valid when returned by dagop
+
 	File     string
 	Platform Platform
 
@@ -63,6 +67,15 @@ func (file *File) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 		defs = append(defs, ctrDefs...)
 	}
 	return defs, nil
+}
+
+var _ dagql.OnReleaser = (*File)(nil)
+
+func (file *File) OnRelease(ctx context.Context) error {
+	if file.Result != nil {
+		return file.Result.Release(ctx)
+	}
+	return nil
 }
 
 func NewFile(query *Query, def *pb.Definition, file string, platform Platform, services ServiceBindings) *File {

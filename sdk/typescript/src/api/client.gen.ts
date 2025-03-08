@@ -2732,6 +2732,14 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Converts this directory into a git repository
+   */
+  asGit = (): GitRepository => {
+    const ctx = this._ctx.select("asGit")
+    return new GitRepository(ctx)
+  }
+
+  /**
    * Load the directory as a Dagger module source
    * @param opts.sourceRootPath An optional subpath of the directory which contains the module's configuration file.
    *

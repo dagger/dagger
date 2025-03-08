@@ -72,9 +72,9 @@ type AroundFunc func(
 ) (context.Context, func(res Typed, cached bool, err error))
 
 // Cache stores results of pure selections against Server.
-type Cache = cache.Cache[digest.Digest, Typed]
+type Cache = *cache.CacheWithResults[digest.Digest, Typed]
 
-type TypedResult = cache.Result[digest.Digest, Typed]
+type CacheValWithCallbacks = cache.ValueWithCallbacks[Typed]
 
 // TypeDef is a type whose sole practical purpose is to define a GraphQL type,
 // so it explicitly includes the Definitive interface.
@@ -114,7 +114,7 @@ func NewServer[T Typed](root T) *Server {
 }
 
 func NewCache() Cache {
-	return cache.NewCache[digest.Digest, Typed]()
+	return cache.NewCacheWithResults[digest.Digest, Typed](cache.NewCache[digest.Digest, Typed]())
 }
 
 func NewDefaultHandler(es graphql.ExecutableSchema) *handler.Server {

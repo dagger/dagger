@@ -4033,6 +4033,15 @@ pub struct DirectoryWithNewFileOpts {
     pub permissions: Option<isize>,
 }
 impl Directory {
+    /// Converts this directory into a git repository
+    pub fn as_git(&self) -> GitRepository {
+        let query = self.selection.select("asGit");
+        GitRepository {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Load the directory as a Dagger module source
     ///
     /// # Arguments
