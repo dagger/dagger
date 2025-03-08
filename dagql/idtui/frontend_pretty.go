@@ -75,7 +75,6 @@ type frontendPretty struct {
 	flushed         map[dagui.SpanID]bool
 	scrollback      *strings.Builder
 	shellDone       bool
-	alt             bool
 
 	// updated as events are written
 	db           *dagui.DB
@@ -1011,22 +1010,9 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			fe.shellInterrupt = cancel
 			fe.shellDone = false
 
-			cmds := []tea.Cmd{
-				func() tea.Msg {
-					return shellDoneMsg{fe.shell(ctx, value)}
-				},
+			return fe, func() tea.Msg {
+				return shellDoneMsg{fe.shell(ctx, value)}
 			}
-
-			if lipgloss.Height(fe.scrollback.String()) >
-				(fe.window.Height / 2) {
-				fe.alt = true
-				dbg.Println("!!! entering alt screen")
-				cmds = append(cmds, tea.EnterAltScreen)
-			} else {
-				dbg.Println("!!! NOT entering alt screen")
-			}
-
-			return fe, tea.Batch(cmds...)
 		}
 		return fe, nil
 
@@ -1193,7 +1179,7 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 	if fe.shell == nil {
 		return fe, nil
 	}
-	if fe.alt && !fe.shellDone {
+	if !fe.shellDone {
 		// don't flush scrollback when in alt screen, because active progress
 		// may consume entire height and then disappear, placing the prompt at
 		// the top of the screen, which is exactly what we're trying to avoid
@@ -1205,14 +1191,12 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 	visibleHeight := fe.window.Height
 	if fe.editline != nil {
 		visibleHeight -= lipgloss.Height(fe.editlineView())
-		visibleHeight-- // gap between view and prompt
 	}
 
 	// Create buffer for flushing
 	out := NewOutput(fe.scrollback, termenv.WithProfile(fe.profile))
 	r := newRenderer(fe.db, 100, fe.FrontendOpts)
 
-	var anyNotFlushed bool
 	var anyFlushed bool
 	for _, row := range fe.rows.Order {
 		// Skip if row is already flushed
@@ -1220,7 +1204,6 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 			continue
 		}
 		if row.IsRunningOrChildRunning || !fe.logsDone(row.Span.ID, row.Depth == 0) {
-			anyNotFlushed = true
 			break
 		}
 		if row.Depth == 0 {
@@ -1237,10 +1220,6 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 		dbg.Println("no flushed rows")
 		return fe, nil
 	}
-	if fe.alt && anyNotFlushed {
-		dbg.Println("alt screen and anyNotFlushed")
-		return fe, nil
-	}
 
 	// If nothing was written, we're done
 	if fe.scrollback.Len() == 0 {
@@ -1250,55 +1229,47 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 
 	// Calculate how many lines need to be flushed
 	scrollbackHeight := lipgloss.Height(fe.scrollback.String())
+	if scrollbackHeight < visibleHeight {
+		return fe, nil
+	}
 
-	var cmds []tea.Cmd
-	if scrollbackHeight > visibleHeight {
-		offscreenHeight := scrollbackHeight - visibleHeight
-		dbg.Printf("!!! height=%d, offscreenHeight=%d, visibleHeight=%d, scrollbackHeight=%d",
-			fe.window.Height,
-			offscreenHeight,
-			visibleHeight,
-			scrollbackHeight)
+	offscreenHeight := scrollbackHeight - visibleHeight
+	dbg.Printf("!!! height=%d, offscreenHeight=%d, visibleHeight=%d, scrollbackHeight=%d",
+		fe.window.Height,
+		offscreenHeight,
+		visibleHeight,
+		scrollbackHeight)
 
-		// Split into lines, being careful to preserve empty lines
-		lines := strings.Split(fe.scrollback.String(), "\n")
+	// Split into lines, being careful to preserve empty lines
+	lines := strings.Split(fe.scrollback.String(), "\n")
 
-		// Build new buffers
-		offscreen := new(strings.Builder)
-		screen := new(strings.Builder)
+	// Build new buffers
+	offscreen := new(strings.Builder)
+	screen := new(strings.Builder)
 
-		// Write lines to appropriate buffers
-		for i, line := range lines {
-			if offscreenHeight > 0 {
-				fmt.Fprint(offscreen, line)
-				if i < len(lines)-1 {
-					fmt.Fprintln(offscreen)
-				}
-				offscreenHeight--
-			} else {
-				fmt.Fprint(screen, line)
-				if i < len(lines)-1 {
-					fmt.Fprintln(screen)
-				}
+	// Write lines to appropriate buffers
+	for i, line := range lines {
+		if offscreenHeight > 0 {
+			fmt.Fprint(offscreen, line)
+			if i < len(lines)-1 {
+				fmt.Fprintln(offscreen)
+			}
+			offscreenHeight--
+		} else {
+			fmt.Fprint(screen, line)
+			if i < len(lines)-1 {
+				fmt.Fprintln(screen)
 			}
 		}
-
-		// Replace scrollback with remaining visible lines
-		fe.scrollback = screen
-
-		// Return command to print offscreen lines
-		msg := strings.TrimSuffix(offscreen.String(), "\n")
-		dbg.Println("flushing offscreen lines", strconv.Quote(msg))
-		cmds = append(cmds, tea.Printf("%s", msg))
 	}
 
-	if fe.alt {
-		dbg.Println("leaving alt screen")
-		fe.alt = false
-		cmds = append(cmds, tea.ExitAltScreen)
-	}
+	// Replace scrollback with remaining visible lines
+	fe.scrollback = screen
 
-	return fe, tea.Batch(cmds...)
+	// Return command to print offscreen lines
+	msg := strings.TrimSuffix(offscreen.String(), "\n")
+	dbg.Println("flushing offscreen lines", strconv.Quote(msg))
+	return fe, tea.Printf("%s", msg)
 }
 
 func (fe *frontendPretty) updatePrompt() {
