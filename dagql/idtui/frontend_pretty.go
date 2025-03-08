@@ -678,7 +678,7 @@ func (fe *frontendPretty) renderedRowLines(r *renderer, row *dagui.TraceRow, pre
 }
 
 func (fe *frontendPretty) hlProgress() bool {
-	return fe.shell != nil // && !fe.editlineFocused
+	return fe.shell != nil && !fe.editlineFocused
 }
 
 func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, full bool, height int, prefix string) (rendered bool) {
