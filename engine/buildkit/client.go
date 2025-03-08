@@ -774,9 +774,7 @@ func (c *Client) OpenTerminal(
 		defer close(errCh)
 		defer close(resizeCh)
 		for {
-			bklog.G(ctx).Debugf("🔥 avant")
 			res, err := term.Recv()
-			bklog.G(ctx).Debugf("🔥 apres: |%+v|", err)
 			if err != nil {
 				if !errors.Is(err, io.EOF) {
 					bklog.G(ctx).Warnf("terminal recv err: %v", err)
@@ -786,23 +784,18 @@ func (c *Client) OpenTerminal(
 			}
 			switch msg := res.GetMsg().(type) {
 			case *session.SessionResponse_Stdin:
-				bklog.G(ctx).Debugf("🔥🔥 avant: |%q|", msg.Stdin)
 				_, err := stdinW.Write(msg.Stdin)
-				bklog.G(ctx).Debugf("🔥🔥 apres: |%+v|", err)
 				if err != nil {
 					bklog.G(ctx).Warnf("failed to write stdin: %v", err)
 					errCh <- err
 					return
 				}
 			case *session.SessionResponse_Resize:
-				bklog.G(ctx).Debugf("🔥🔥🔥 resize")
 				resizeCh <- bkgw.WinSize{
 					Rows: uint32(msg.Resize.Height),
 					Cols: uint32(msg.Resize.Width),
 				}
-				bklog.G(ctx).Debugf("🔥🔥🔥 resize apres")
 			default:
-				bklog.G(ctx).Debugf("🔥🔥🔥 apres: |%+v|", msg)
 			}
 		}
 	}()
@@ -825,6 +818,100 @@ func (c *Client) OpenTerminal(
 			if err != nil {
 				return fmt.Errorf("failed to close terminal: %w", err)
 			}
+			return nil
+		}),
+	}, nil
+}
+
+type PipeClient struct {
+	Stdin  io.ReadCloser
+	Stdout io.WriteCloser
+	ErrCh  chan error
+	Close  func() error
+}
+
+func (c *Client) OpenPipe(
+	ctx context.Context,
+) (*PipeClient, error) {
+	caller, err := c.GetMainClientCaller()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get main client caller: %w", err)
+	}
+
+	pipeClient := session.NewPipeClient(caller.Conn())
+	if err != nil {
+		return nil, fmt.Errorf("open terminal error: %w", err)
+	}
+
+	pipeIO, err := pipeClient.IO(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open pipe: %w", err)
+	}
+
+	var (
+		stdoutR, stdoutW = io.Pipe()
+		stdinR, stdinW   = io.Pipe()
+	)
+
+	forwardFD := func(r io.ReadCloser, fn func([]byte) *session.Data) error {
+		defer r.Close()
+		b := make([]byte, 2048)
+		for {
+			n, err := r.Read(b)
+			if err != nil {
+				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) {
+					return nil
+				}
+				return fmt.Errorf("error reading fd: %w", err)
+			}
+
+			if err := pipeIO.Send(fn(b[:n])); err != nil {
+				return fmt.Errorf("error forwarding fd: %w", err)
+			}
+		}
+	}
+
+	go forwardFD(stdoutR, func(stdout []byte) *session.Data {
+		return &session.Data{
+			Data: stdout,
+		}
+	})
+
+	errCh := make(chan error, 1)
+	go func() {
+		defer stdinW.Close()
+		defer close(errCh)
+		for {
+			bklog.G(ctx).Debugf("🔥 avant")
+			res, err := pipeIO.Recv()
+			bklog.G(ctx).Debugf("🔥 apres: |%+v|", err)
+			if err != nil {
+				if !errors.Is(err, io.EOF) {
+					bklog.G(ctx).Warnf("terminal recv err: %v", err)
+					errCh <- err
+				}
+				return
+			}
+			data := res.GetData()
+			bklog.G(ctx).Debugf("🔥🔥 avant: |%q|", data)
+			_, err = stdinW.Write(data)
+			bklog.G(ctx).Debugf("🔥🔥 apres: |%+v|", err)
+			if err != nil {
+				bklog.G(ctx).Warnf("failed to write stdin: %v", err)
+				errCh <- err
+				return
+			}
+		}
+	}()
+
+	return &PipeClient{
+		Stdin:    stdinR,
+		Stdout:   stdoutW,
+		ErrCh:    errCh,
+		Close:    sync.OnceValue(func() error {
+			defer stdinR.Close()
+			defer stdoutW.Close()
+			defer pipeIO.CloseSend()
 			return nil
 		}),
 	}, nil
