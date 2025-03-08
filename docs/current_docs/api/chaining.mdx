@@ -57,7 +57,7 @@ Just-in-time artifacts such as containers, directories and files can be exported
 Here is an example of exporting the build directory returned by a Go builder Dagger Function to the `./my-build` directory on the host:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.1 -c 'build ./cmd/dagger --source https://github.com/dagger/dagger  | export ./my-build'
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.1 -c 'build ./cmd/dagger --source=https://github.com/dagger/dagger  | export ./my-build'
 ```
 
 By default, the `Directory.export()` method exports the files that exist in the returned directory to the host, but it does not modify or delete any files that already exist at that host path. To replace the contents of the target host directory, such that it exactly matches the directory being exported, add the optional `--wipe` argument.
@@ -65,13 +65,13 @@ By default, the `Directory.export()` method exports the files that exist in the 
 Here is an example of exporting the build directory returned by the same Dagger Function above, deleting and replacing files as needed in the `./my-build` directory on the host:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.1 -c 'build ./cmd/dagger --source https://github.com/dagger/dagger  | export ./my-build --wipe'
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.1 -c 'build ./cmd/dagger --source=https://github.com/dagger/dagger  | export ./my-build --wipe'
 ```
 
 Instead of exporting an entire directory, you can also export a file. Here is an example of exporting the compiled binary file from the build directory, as `./my-file` on the host:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.1 -c 'build ./cmd/dagger --source https://github.com/dagger/dagger  | file ./dagger | export ./my-file'
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.1 -c 'build ./cmd/dagger --source=https://github.com/dagger/dagger  | file ./dagger | export ./my-file'
 ```
 
 Here is another example, this time exporting the results of a `ruff` linter Dagger Function as `/tmp/report.json` on the host:
@@ -92,7 +92,7 @@ Here is an example of listing the contents of a directory returned by a Dagger F
 
 ```shell
 git clone https://github.com/golang/example
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.1 -c 'build . --source=./example/hello' | directory . | entries'
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.1 -c 'build . --source=./example/hello | directory . | entries'
 ```
 
 Here is an example of using the `File.contents()` method to print the JSON report of a linter run:
