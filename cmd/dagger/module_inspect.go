@@ -16,6 +16,7 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/iancoleman/strcase"
 	"github.com/spf13/pflag"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // initializeCore loads the core type definitions only
@@ -142,6 +143,8 @@ type moduleDef struct {
 	SourceRoot        string
 	SourceRootSubpath string
 	SourceDigest      string
+	SourceCommit      string
+	SourceVersion     string
 
 	Dependencies []*moduleDef
 }
@@ -182,6 +185,8 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 			Digest            string
 			AsString          string
 			SourceRootSubpath string
+			Commit            string
+			Version           string
 			Module            struct {
 				Name         string
 				Description  string
@@ -236,6 +241,27 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 		Name:              res.Source.Module.Name,
 		Description:       res.Source.Module.Description,
 		Dependencies:      deps,
+	}
+
+	if res.Source.Commit != "" {
+		def.SourceCommit = res.Source.Commit
+	}
+	if res.Source.Version != "" {
+		def.SourceVersion = res.Source.Version
+	}
+
+	span.SetAttributes(attribute.String(telemetry.ModuleKindAttr, string(def.SourceKind)))
+	// only set git attributes if the module is a git kind
+	if def.SourceKind == dagger.ModuleSourceKindGitSource {
+		span.SetAttributes(attribute.String(telemetry.ModuleRootAttr, def.SourceRoot))
+		if def.SourceCommit != "" {
+			span.SetAttributes(attribute.String(telemetry.ModuleCommitAttr, def.SourceCommit))
+		}
+		if def.SourceVersion != "" {
+			span.SetAttributes(attribute.String(telemetry.ModuleVersionAttr, def.SourceVersion))
+		}
+	} else if def.SourceKind == dagger.ModuleSourceKindLocalSource {
+		span.SetAttributes(attribute.String(telemetry.ModuleSubpathAttr, def.SourceRootSubpath))
 	}
 
 	return def, nil
