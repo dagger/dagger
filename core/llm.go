@@ -753,7 +753,7 @@ var TypesHiddenFromModuleSDKs = []dagql.Typed{
 	&EngineCacheEntrySet{},
 }
 
-func (s LlmMiddleware) extendLlmType(targetType dagql.ObjectType) error {
+func (s LlmMiddleware) ExtendLlmType(targetType dagql.ObjectType) error {
 	llmType, ok := s.Server.ObjectType(new(Llm).Type().Name())
 	if !ok {
 		return fmt.Errorf("failed to lookup llm type")
@@ -819,7 +819,7 @@ func (s LlmMiddleware) InstallObject(targetType dagql.ObjectType, install func(d
 		}
 	}
 
-	if err := s.extendLlmType(targetType); err != nil {
+	if err := s.ExtendLlmType(targetType); err != nil {
 		panic(err)
 	}
 }
@@ -835,7 +835,7 @@ func (s LlmMiddleware) ModuleWithObject(ctx context.Context, mod *Module, target
 	if !ok {
 		return nil, fmt.Errorf("can't retrieve object type %s", typename)
 	}
-	if err := s.extendLlmType(targetType); err != nil {
+	if err := s.ExtendLlmType(targetType); err != nil {
 		return nil, err
 	}
 	return mod, nil
