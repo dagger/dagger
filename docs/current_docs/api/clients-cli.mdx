@@ -1,17 +1,21 @@
 ---
 slug: /api/cli
 ---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
 # Dagger CLI
 
-The Dagger CLI lets you call both the core and extended Dagger API (the core APIs plus the new APIs provided by Dagger Functions) directly from the command-line via the `dagger core` and `dagger call` commands.
+The Dagger CLI lets you call both the core and extended Dagger API (the core APIs plus the new APIs provided by Dagger Functions) directly from the command-line via the `dagger shell`, `dagger core` and `dagger call` commands.
 
 ## Core Dagger API functions
 
-The `dagger core` command lets you call the core Dagger API, without needing to first load a Dagger [module](../features/modules.mdx). This is useful in some scenarios:
+The `dagger shell` and `dagger core` commands let you call the core Dagger API, without needing to first load a Dagger [module](../features/modules.mdx). This is useful in some scenarios:
 
 - You want to use Dagger for simple pipelines that are fully satisfied by the core Dagger API.
 
+    <Tabs>
+    <TabItem value="dagger shell">
     ```shell
     dagger core container from --address="cgr.dev/chainguard/wolfi-base" \
       with-exec --args="apk","add","go" \
@@ -21,77 +25,117 @@ The `dagger core` command lets you call the core Dagger API, without needing to 
       file --path="./hello" \
       export --path="./hello-from-dagger"
     ```
+    </TabItem>
+    <TabItem value="dagger core">
+    ```shell
+    dagger shell -c 'container \
+      | from cgr.dev/chainguard/wolfi-base \
+      | with-exec apk,add, go \
+      | with-directory /src https://github.com/golang/example#master \
+      | with-workdir /src/hello \
+      | with-exec go,build,-o,hello,. \
+      | file ./hello \
+      | export ./hello-from-dagger'
+    ```
+    </TabItem>
+    </Tabs>
 
 - You want to experiment with Dagger without having to program a Dagger module.
 
+    <Tabs>
+    <TabItem value="dagger shell">
+    ```shell
+    dagger shell -c 'container | from alpine | file /etc/os-release | contents'
+    ```
+    </TabItem>
+    <TabItem value="dagger core">
     ```shell
     dagger core container from --address=alpine file --path=/etc/os-release contents
     ```
+    </TabItem>
+    </Tabs>
 
 - You want a nice alternative to `docker run`.
 
+    <Tabs>
+    <TabItem value="dagger shell">
+    ```shell
+    dagger shell -c 'container | from cgr.dev/chainguard/wolfi-base | terminal'
+    ```
+    </TabItem>
+    <TabItem value="dagger core">
     ```shell
     dagger core container from --address=cgr.dev/chainguard/wolfi-base terminal
     ```
+    </TabItem>
+    </Tabs>
 
 ## Custom Dagger functions
 
-The Dagger API can be extended with Dagger [modules](../features/modules.mdx). The `dagger call` command lets you call Dagger functions from Dagger modules, either remotely or after installing them locally with `dagger install`.
+The Dagger API can be extended with Dagger [modules](../features/modules.mdx). The `dagger shell` and `dagger call` commands let you call Dagger Functions from Dagger modules, either remotely or after installing them locally with `dagger install`.
 
-- The `dagger call` command lets you invoke a Dagger Function.
+Here is an example of calling one of the auto-generated Dagger Functions:
 
-    Here is an example of using it to call one of the auto-generated Dagger Functions:
+<Tabs>
+<TabItem value="dagger shell">
+```shell
+dagger shell -c 'container-echo "Welcome to Dagger!" | stdout'
+```
+</TabItem>
+<TabItem value="dagger call">
+```shell
+dagger call container-echo --string-arg="Welcome to Dagger!" stdout
+```
+</TabItem>
+</Tabs>
 
-    ```shell
-    dagger call container-echo --string-arg="Welcome to Dagger!" stdout
-    ```
+Here's what you should see:
 
-    Here's what you should see:
+```shell
+Welcome to Dagger!
+```
 
-    ```shell
-    Welcome to Dagger!
-    ```
+:::tip
+When using `dagger call` and `dagger shell`, all names (functions, arguments, struct fields, etc) are converted into a shell-friendly "kebab-case" style.
+:::
 
-    :::tip
-    When using `dagger call`, all names (functions, arguments, struct fields, etc) are converted into a shell-friendly "kebab-case" style.
-    :::
+Modules don't need to be installed locally. Dagger lets you consume modules from GitHub repositories as well. You can use Dagger Functions from external modules in exactly the same way as you would use them locally.
 
-- Modules don't need to be installed locally. Dagger lets you consume modules from GitHub repositories as well. You can use Dagger Functions from external modules in exactly the same way as you would use them locally.
+Here is an example of calling a Dagger Function from an external module, which scans container images for vulnerabilities.
 
-    Here is an example of calling a Dagger Function from an external module, which scans container images for vulnerabilities.
+<Tabs>
+<TabItem value="dagger shell">
+```shell
+dagger -m github.com/jpadams/daggerverse/trivy@v0.5.0 shell -c 'scan-image ubuntu:latest'
+```
+</TabItem>
+<TabItem value="dagger call">
+```shell
+dagger -m github.com/jpadams/daggerverse/trivy@v0.5.0 call scan-image --image-ref=ubuntu:latest
+```
+</TabItem>
+</Tabs>
 
-    ```shell
-    dagger -m github.com/jpadams/daggerverse/trivy@v0.5.0 call scan-image --image-ref=ubuntu:latest
-    ```
+Here's what you should see:
 
-    Here's what you should see:
+```shell
+ubuntu:latest (ubuntu 24.04)
+============================
+Total: 10 (UNKNOWN: 0, LOW: 8, MEDIUM: 2, HIGH: 0, CRITICAL: 0)
+...
+```
 
-    ```shell
-    ubuntu:latest (ubuntu 24.04)
-    ============================
-    Total: 10 (UNKNOWN: 0, LOW: 8, MEDIUM: 2, HIGH: 0, CRITICAL: 0)
-    ...
-    ```
+Context-sensitive help is available to list all the arguments accepted by a function:
 
-- The Dagger Functions available in a Dagger module are listed with `dagger functions`.
-
-    Here is an example of listing Dagger Functions in an external module:
-
-    ```shell
-    dagger -m github.com/jpadams/daggerverse/trivy@v0.5.0 functions
-    ```
-
-    Here's what you should see:
-
-    ```shell
-    Name             Description
-    base             Return a Container from the official trivy image.
-    scan-container   Scan a Dagger Container.
-    scan-image       Scan an image ref.
-    ```
-
-- To list all the arguments accepted by a function, add the `--help` suffix at any point in the `dagger call` command to obtain context-sensitive help. Here is an example:
-
-    ```shell
-    dagger -m github.com/jpadams/daggerverse/trivy@v0.5.0 call scan-image --help
-    ```
+<Tabs>
+<TabItem value="dagger shell">
+```shell
+dagger -m github.com/jpadams/daggerverse/trivy@v0.5.0 shell -c '.help'
+```
+</TabItem>
+<TabItem value="dagger call">
+```shell
+dagger -m github.com/jpadams/daggerverse/trivy@v0.5.0 call scan-image --image-ref=ubuntu:latest
+```
+</TabItem>
+</Tabs>
