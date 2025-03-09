@@ -124,7 +124,7 @@ func (env *LlmEnv) Tools(srv *dagql.Server) []LlmTool {
 					}
 					env.objsByHash[obj.ID().Digest()] = obj
 					env.history = append(env.history, obj)
-					return obj.Type().Name() + "@" + id.Digest().String(), nil
+					return env.describe(obj), nil
 				}
 				return val, nil
 			},
@@ -212,7 +212,7 @@ func (env *LlmEnv) call(ctx context.Context,
 func (env *LlmEnv) callObjects(ctx context.Context, _ any) (any, error) {
 	var result string
 	for name, obj := range env.objs {
-		result += "- " + name + " (" + obj.Type().Name() + ")\n"
+		result += "- " + name + " (" + env.describe(obj) + ")\n"
 	}
 	return result, nil
 }
@@ -224,7 +224,7 @@ func (env *LlmEnv) callLoad(ctx context.Context, args any) (any, error) {
 		return nil, err
 	}
 	env.history = append(env.history, value)
-	return value, nil
+	return fmt.Sprintf("Switched context to %s.", env.describe(value)), nil
 }
 
 func (env *LlmEnv) callSave(ctx context.Context, args any) (any, error) {
@@ -256,6 +256,14 @@ func (env *LlmEnv) callCurrent(ctx context.Context, _ any) (any, error) {
 		return "", nil
 	}
 	return env.history[len(env.history)-1], nil
+}
+
+// describe returns a string representation of a typed object
+func (env *LlmEnv) describe(obj dagql.Typed) string {
+	if obj, ok := dagql.UnwrapAs[dagql.Object](obj); ok {
+		return obj.Type().Name() + "@" + obj.ID().Digest().String()
+	}
+	return obj.Type().Name()
 }
 
 func (env *LlmEnv) Builtins() []LlmTool {
