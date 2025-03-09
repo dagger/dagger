@@ -1200,7 +1200,7 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 		if fe.flushed[row.Span.ID] {
 			continue
 		}
-		if row.IsRunningOrChildRunning || !fe.logsDone(row.Span.ID, row.Depth == 0) {
+		if row.IsRunningOrChildRunning || !fe.logsDone(row.Span.ID, row.Depth == 0) || row.Span.IsPending() {
 			break
 		}
 		if row.Depth == 0 {
