@@ -132,10 +132,10 @@ func (s *moduleSourceSchema) Install() {
 			Doc(`The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources.`),
 
 		dagql.Func("version", s.moduleSourceVersion).
-			Doc(`The specified version of the git repo this source points to. Only valid for git sources.`),
+			Doc(`The specified version of the git repo this source points to.`),
 
 		dagql.Func("commit", s.moduleSourceCommit).
-			Doc(`The resolved commit of the git repo this source points to. Only valid for git sources.`),
+			Doc(`The resolved commit of the git repo this source points to.`),
 
 		dagql.Func("repoRootPath", s.moduleSourceRepoRootPath).
 			Doc(`The import path corresponding to the root of the git repo this source points to. Only valid for git sources.`),
@@ -1279,7 +1279,7 @@ func (s *moduleSourceSchema) moduleSourceVersion(
 	args struct{},
 ) (string, error) {
 	if src.Kind != core.ModuleSourceKindGit {
-		return "", fmt.Errorf("module source is not a git module: %s", src.Kind)
+		return "", nil
 	}
 
 	return src.Git.Version, nil
@@ -1291,7 +1291,7 @@ func (s *moduleSourceSchema) moduleSourceCommit(
 	args struct{},
 ) (string, error) {
 	if src.Kind != core.ModuleSourceKindGit {
-		return "", fmt.Errorf("module source is not a git module: %s", src.Kind)
+		return "", nil
 	}
 
 	return src.Git.Commit, nil
