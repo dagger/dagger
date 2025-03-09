@@ -57,9 +57,11 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 	))
 	defer telemetry.End(span, func() error { return rerr })
 
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	defer stdio.Close()
+
+	markdownW := telemetry.NewWriter(ctx, InstrumentationLibrary,
+		log.String(telemetry.ContentTypeAttr, "text/markdown"))
 
 	m := telemetry.Meter(ctx, InstrumentationLibrary)
 	attrs := []attribute.KeyValue{
@@ -209,7 +211,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 		if delta, ok := event.Delta.(anthropic.ContentBlockDeltaEventDelta); ok {
 			if delta.Text != "" {
 				// Lazily initialize telemetry/logging on first text response.
-				fmt.Fprint(stdio.Stdout, delta.Text)
+				fmt.Fprint(markdownW, delta.Text)
 			}
 		}
 	}

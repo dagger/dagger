@@ -157,8 +157,8 @@ var llmPrompt string
 
 func (s *LLMSession) reset() {
 	s.llm = s.dag.
-		Llm(dagger.LlmOpts{Model: s.llmModel}).
-		WithPrompt(llmPrompt)
+		Llm(dagger.LlmOpts{Model: s.llmModel})
+	// WithPrompt(llmPrompt)
 }
 
 func (s *LLMSession) Fork() *LLMSession {
@@ -541,13 +541,19 @@ func (s *LLMSession) History(ctx context.Context, _ string) (*LLMSession, error)
 	return s, nil
 }
 
-func (s *LLMSession) ShellMode(ctx context.Context, _ string) (*LLMSession, error) {
+func (s *LLMSession) ShellMode(ctx context.Context, script string) (*LLMSession, error) {
+	if script != "" {
+		return s.interpretShell(ctx, script)
+	}
 	s = s.Fork()
 	s.mode = modeShell
 	return s, nil
 }
 
-func (s *LLMSession) PromptMode(ctx context.Context, _ string) (*LLMSession, error) {
+func (s *LLMSession) PromptMode(ctx context.Context, prompt string) (*LLMSession, error) {
+	if prompt != "" {
+		return s.interpretPrompt(ctx, prompt)
+	}
 	s = s.Fork()
 	s.mode = modePrompt
 	return s, nil

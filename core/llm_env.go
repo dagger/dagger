@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -23,11 +26,22 @@ type LlmTool struct {
 }
 
 type LlmEnv struct {
+	srv *dagql.Server
+
 	// History of values. Current selection is last. Remove last N values to rewind last N changes
 	history []dagql.Typed
 	// Saved objects
 	objs map[string]dagql.Typed
-	srv  *dagql.Server
+	// Saved objects by type + hash
+	objsByHash map[digest.Digest]dagql.Typed
+}
+
+func NewLlmEnv(srv *dagql.Server) *LlmEnv {
+	return &LlmEnv{
+		srv:        srv,
+		objs:       map[string]dagql.Typed{},
+		objsByHash: map[digest.Digest]dagql.Typed{},
+	}
 }
 
 // Lookup dagql typedef for a given dagql value
@@ -46,15 +60,32 @@ func (env *LlmEnv) Current() dagql.Typed {
 // Save a value at the given key
 func (env *LlmEnv) Set(key string, value dagql.Typed) {
 	env.objs[key] = value
+	if obj, ok := dagql.UnwrapAs[dagql.Object](value); ok {
+		env.objsByHash[obj.ID().Digest()] = value
+	}
 }
 
 // Get a value saved at the given key
 func (env *LlmEnv) Get(key string) (dagql.Typed, error) {
-	val, exists := env.objs[key]
-	if !exists {
-		return nil, fmt.Errorf("object not found: %s", key)
+	if val, exists := env.objs[key]; exists {
+		return val, nil
 	}
-	return val, nil
+	if _, hash, ok := strings.Cut(key, "@"); ok {
+		// strip Type@ prefix if present
+		// TODO: figure out the best place to do this
+		key = hash
+	}
+	if val, exists := env.objsByHash[digest.Digest(key)]; exists {
+		return val, nil
+	}
+	var dbg string
+	for k, v := range env.objsByHash {
+		dbg += fmt.Sprintf("hash %s: %s\n", k, v.Type().Name())
+	}
+	for k, v := range env.objs {
+		dbg += fmt.Sprintf("var %s: %s\n", k, v.Type().Name())
+	}
+	return nil, fmt.Errorf("object not found: %s\n\n%s", key, dbg)
 }
 
 // Unset a saved value
@@ -64,14 +95,21 @@ func (env *LlmEnv) Unset(key string) {
 
 func (env *LlmEnv) Tools() []LlmTool {
 	tools := env.Builtins()
-	if current := env.Current(); current != nil {
-		typedef := env.typedef(current)
+	typedefs := make(map[string]*ast.Definition)
+	for _, val := range env.objs {
+		typedef := env.typedef(val)
+		typedefs[typedef.Name] = typedef
+	}
+	for typeName, typedef := range typedefs {
 		for _, field := range typedef.Fields {
 			tools = append(tools, LlmTool{
-				Name:        field.Name,
+				Name:        typeName + "_" + field.Name,
 				Description: field.Description,
 				Schema:      fieldArgsToJSONSchema(field),
-				Call: func(ctx context.Context, args any) (any, error) {
+				Call: func(ctx context.Context, args any) (_ any, rerr error) {
+					ctx, span := Tracer(ctx).Start(ctx,
+						fmt.Sprintf("🤖💻 %s %v", typeName+"."+field.Name, args))
+					defer telemetry.End(span, func() error { return rerr })
 					val, id, err := env.call(ctx, field, args)
 					if err != nil {
 						return nil, err
@@ -81,8 +119,9 @@ func (env *LlmEnv) Tools() []LlmTool {
 						if err != nil {
 							return nil, err
 						}
+						env.objsByHash[obj.ID().Digest()] = obj
 						env.history = append(env.history, obj)
-						return "", nil
+						return id.Digest().String(), nil
 					}
 					return val, nil
 				},
@@ -99,14 +138,23 @@ func (env *LlmEnv) call(ctx context.Context,
 	// The arguments to the call. Example: {"args": ["go", "build"], "redirectStderr", "/dev/null"}
 	args any,
 ) (dagql.Typed, *call.ID, error) {
-	target, ok := env.Current().(dagql.Object)
-	if target == nil || !ok {
-		return nil, nil, fmt.Errorf("function not found: %s", fieldDef.Name)
-	}
 	// 1. CONVERT CALL INPUTS (BRAIN -> BODY)
 	argsMap, ok := args.(map[string]any)
 	if !ok {
 		return nil, nil, fmt.Errorf("tool call: %s: expected arguments to be a map - got %#v", fieldDef.Name, args)
+	}
+	var target dagql.Object
+	if varOrDigest, ok := argsMap["self"].(string); ok {
+		val, err := env.Get(varOrDigest)
+		if err != nil {
+			return nil, nil, fmt.Errorf("tool call: %s: failed to get self: %w", fieldDef.Name, err)
+		}
+		if obj, ok := dagql.UnwrapAs[dagql.Object](val); ok {
+			target = obj
+		}
+	}
+	if target == nil {
+		return nil, nil, fmt.Errorf("function not found: %s", fieldDef.Name)
 	}
 	targetObjType, ok := env.srv.ObjectType(target.Type().Name())
 	if !ok {
@@ -126,9 +174,28 @@ func (env *LlmEnv) call(ctx context.Context,
 		if !ok {
 			continue
 		}
+		if _, ok := dagql.UnwrapAs[dagql.IDable](arg.Type); ok {
+			if idStr, ok := val.(string); ok {
+				envVal, err := env.Get(idStr)
+				if err != nil {
+					return nil, nil, fmt.Errorf("tool call: %s: failed to get self: %w", fieldDef.Name, err)
+				}
+				if obj, ok := dagql.UnwrapAs[dagql.Object](envVal); ok {
+					enc, err := obj.ID().Encode()
+					if err != nil {
+						return nil, nil, fmt.Errorf("tool call: %s: failed to encode ID: %w", fieldDef.Name, err)
+					}
+					val = enc
+				} else {
+					return nil, nil, fmt.Errorf("tool call: %s: expected object, got %T", fieldDef.Name, val)
+				}
+			} else {
+				return nil, nil, fmt.Errorf("tool call: %s: expected string, got %T", fieldDef.Name, val)
+			}
+		}
 		input, err := arg.Type.Decoder().DecodeInput(val)
 		if err != nil {
-			return nil, nil, fmt.Errorf("decode arg %q: %w", arg.Name, err)
+			return nil, nil, fmt.Errorf("decode arg %q (%T): %w", arg.Name, val, err)
 		}
 		sel.Args = append(sel.Args, dagql.NamedInput{
 			Name:  arg.Name,
@@ -201,7 +268,7 @@ func (env *LlmEnv) Builtins() []LlmTool {
 		},
 		{
 			Name:        "_load",
-			Description: "Load a saved object",
+			Description: "Load a saved object's functions/tools",
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -214,7 +281,7 @@ func (env *LlmEnv) Builtins() []LlmTool {
 		},
 		{
 			Name:        "_save",
-			Description: "Save the current object",
+			Description: "Save the current object as a named variable",
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -272,9 +339,9 @@ func (env *LlmEnv) Builtins() []LlmTool {
 	// Attach builtin telemetry
 	for i := range builtins {
 		call := builtins[i].Call
-		builtins[i].Call = func(ctx context.Context, args any) (any, error) {
+		builtins[i].Call = func(ctx context.Context, args any) (_ any, rerr error) {
 			ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("🤖💻 %s %v", builtins[i].Name, args))
-			defer span.End()
+			defer telemetry.End(span, func() error { return rerr })
 			return call(ctx, args)
 		}
 	}
@@ -283,11 +350,16 @@ func (env *LlmEnv) Builtins() []LlmTool {
 
 func fieldArgsToJSONSchema(field *ast.FieldDefinition) map[string]any {
 	schema := map[string]any{
-		"type":       "object",
-		"properties": map[string]any{},
+		"type": "object",
+		"properties": map[string]any{
+			"self": map[string]any{
+				"type":        "string",
+				"description": "The object receiving the tool call",
+			},
+		},
 	}
 	properties := schema["properties"].(map[string]any)
-	required := []string{}
+	required := []string{"self"}
 	for _, arg := range field.Arguments {
 		argSchema := typeToJSONSchema(arg.Type)
 

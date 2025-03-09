@@ -229,7 +229,9 @@ func (term *Vterm) redraw() {
 		)
 
 		rendered, err := renderer.Render(term.markdownBuf.String())
-		if err == nil {
+		if err != nil {
+			fmt.Fprintf(term.viewBuf, "Error rendering Markdown: %s\n", err)
+		} else {
 			// Remove leading and trailing newlines
 			rendered = strings.TrimSpace(rendered)
 			// Add prefix to each line of rendered Markdown
@@ -240,7 +242,6 @@ func (term *Vterm) redraw() {
 				}
 				fmt.Fprintln(term.viewBuf, line)
 			}
-			return
 		}
 	}
 

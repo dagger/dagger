@@ -355,10 +355,7 @@ func NewLlm(ctx context.Context, query *Query, srv *dagql.Server, model string, 
 		Endpoint:    endpoint,
 		maxAPICalls: maxAPICalls,
 		calls:       map[string]string{},
-		env: &LlmEnv{
-			srv:  srv,
-			objs: map[string]dagql.Typed{},
-		},
+		env:         NewLlmEnv(srv),
 	}, nil
 }
 
@@ -667,6 +664,17 @@ func (llm *Llm) Set(ctx context.Context, key string, value dagql.Typed) (*Llm, e
 	}
 	llm = llm.Clone()
 	llm.env.Set(key, value)
+	// if obj, ok := dagql.UnwrapAs[dagql.Object](value); ok {
+	// 	llm.history = append(llm.history, ModelMessage{
+	// 		Role:    "user",
+	// 		Content: fmt.Sprintf("The variable %s is set to %s@%s.", key, value.Type().Name(), obj.ID().Digest()),
+	// 	})
+	// } else {
+	// 	llm.history = append(llm.history, ModelMessage{
+	// 		Role:    "user",
+	// 		Content: fmt.Sprintf("The variable %s is set to %v.", key, value),
+	// 	})
+	// }
 	llm.dirty = true
 	return llm, nil
 }
