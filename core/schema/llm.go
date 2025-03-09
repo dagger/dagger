@@ -38,10 +38,10 @@ func (s llmSchema) Install() {
 		dagql.Func("withPromptFile", s.withPromptFile).
 			Doc("append the contents of a file to the llm context").
 			ArgDoc("file", "The file to read the prompt from"),
-		dagql.Func("withPromptVar", s.withPromptVar).
-			Doc("set a variable for expansion in the prompt").
-			ArgDoc("name", "The name of the variable").
-			ArgDoc("value", "The value of the variable"),
+		dagql.Func("setString", s.setString).
+			Doc("Add a string variable to the LLM's environment").
+			ArgDoc("name", "The variable name").
+			ArgDoc("value", "The variable value"),
 		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.Instance[*core.Llm], _ struct{}) (dagql.ID[*core.Llm], error) {
 			var zero dagql.ID[*core.Llm]
 			var inst dagql.Instance[*core.Llm]
@@ -97,11 +97,11 @@ func (s *llmSchema) withPrompt(ctx context.Context, llm *core.Llm, args struct {
 	return llm.WithPrompt(ctx, args.Prompt, s.srv)
 }
 
-func (s *llmSchema) withPromptVar(ctx context.Context, llm *core.Llm, args struct {
+func (s *llmSchema) setString(ctx context.Context, llm *core.Llm, args struct {
 	Name  dagql.String
 	Value dagql.String
 }) (*core.Llm, error) {
-	return llm.WithPromptVar(args.Name.String(), args.Value.String()), nil
+	return llm.Set(ctx, args.Name.String(), args.Value)
 }
 
 func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.Llm, args struct {

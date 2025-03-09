@@ -2,10 +2,15 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
+	"io"
+	"log"
+	"os"
 	"strings"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/querybuilder"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
@@ -95,13 +100,14 @@ const (
 )
 
 type LLMSession struct {
-	undo      *LLMSession
-	dag       *dagger.Client
-	llm       *dagger.Llm
-	llmModel  string
-	shell     *shellCallHandler
-	completer editline.AutoCompleteFn
-	mode      interpreterMode
+	undo       *LLMSession
+	dag        *dagger.Client
+	llm        *dagger.Llm
+	llmModel   string
+	shell      *shellCallHandler
+	completer  editline.AutoCompleteFn
+	mode       interpreterMode
+	syncedVars map[string]string
 }
 
 func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string) (*LLMSession, error) {
@@ -116,20 +122,43 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string) (*L
 		return nil, err
 	}
 
-	llm := dag.Llm(dagger.LlmOpts{Model: llmModel})
-	model, err := llm.Model(ctx)
+	initialVars := make(map[string]string)
+	// HACK: pretend we synced the initial env, we don't want to just toss the
+	// entire os.Environ into the LLM
+	for k, v := range shellHandler.runner.Env.Each {
+		initialVars[k] = v.String()
+	}
+	for k, v := range shellHandler.runner.Vars {
+		initialVars[k] = v.String()
+	}
+
+	s := &LLMSession{
+		dag:        dag,
+		llmModel:   llmModel,
+		shell:      shellHandler,
+		completer:  shellCompletion.Do,
+		mode:       modePrompt,
+		syncedVars: initialVars,
+	}
+	s.reset()
+
+	// figure out what the model resolved to
+	model, err := s.llm.Model(ctx)
 	if err != nil {
 		return nil, err
 	}
+	s.llmModel = model
 
-	return &LLMSession{
-		dag:       dag,
-		llm:       llm,
-		llmModel:  model,
-		shell:     shellHandler,
-		completer: shellCompletion.Do,
-		mode:      modePrompt,
-	}, nil
+	return s, nil
+}
+
+//go:embed llm.md
+var llmPrompt string
+
+func (s *LLMSession) reset() {
+	s.llm = s.dag.
+		Llm(dagger.LlmOpts{Model: s.llmModel}).
+		WithPrompt(llmPrompt)
 }
 
 func (s *LLMSession) Fork() *LLMSession {
@@ -139,11 +168,11 @@ func (s *LLMSession) Fork() *LLMSession {
 }
 
 var slashCommands = []slashCommand{
-	{
-		name:    "/with",
-		desc:    "Change the scope of the LLM",
-		handler: (*LLMSession).With,
-	},
+	// {
+	// 	name:    "/with",
+	// 	desc:    "Change the scope of the LLM",
+	// 	handler: (*LLMSession).With,
+	// },
 	{
 		name:    "/undo",
 		desc:    "Undo the last command",
@@ -229,39 +258,194 @@ func (s *LLMSession) interpretShell(ctx context.Context, input string) (*LLMSess
 	if err != nil {
 		return s, err
 	}
+	// if typeDef == nil {
+	// 	dbg.Printf("interpretShell: %s: %+v\n", input, resp)
+	// 	return s, nil
+	// }
+	// if typeDef.AsFunctionProvider() != nil {
+	// 	llmId, err := s.llm.ID(ctx)
+	// 	if err != nil {
+	// 		return s, err
+	// 	}
+	// 	s = s.Fork()
+	// 	if err := s.dag.QueryBuilder().
+	// 		Select("loadLlmFromID").
+	// 		Arg("id", llmId).
+	// 		Select(fmt.Sprintf("set%s", typeDef.Name())).
+	// 		Arg("name", "_").
+	// 		Arg("value", resp).
+	// 		Select("id").
+	// 		Bind(&llmId).
+	// 		Execute(ctx); err != nil {
+	// 		return s, err
+	// 	}
+	// 	s.llm = s.dag.LoadLlmFromID(llmId)
+	// }
+	return s.syncEnv(ctx)
+}
+
+var dbg *log.Logger
+
+func init() {
+	if fn := os.Getenv("DAGUI_DEBUG"); fn != "" {
+		debugFile, _ := os.Create(fn)
+		dbg = log.New(debugFile, "", 0)
+	} else {
+		dbg = log.New(io.Discard, "", 0)
+	}
+}
+
+var skipEnv = map[string]bool{
+	// these vars are set by the sh package
+	"GID":    true,
+	"UID":    true,
+	"EUID":   true,
+	"OPTIND": true,
+	"IFS":    true,
+	// the rest should be picked up from os.Environ
+}
+
+func (s *LLMSession) syncEnv(ctx context.Context) (*LLMSession, error) {
+	oldVars := s.syncedVars
+	s = s.Fork()
+	s.syncedVars = make(map[string]string)
+	// TODO: overlay? bad scaling characteristics. maybe overkill anyway
+	for k, v := range oldVars {
+		s.syncedVars[k] = v
+	}
+
+	llmId, err := s.llm.ID(ctx)
+	if err != nil {
+		return s, err
+	}
+	syncedLlmQ := s.dag.QueryBuilder().
+		Select("loadLlmFromID").
+		Arg("id", llmId)
+
+	var changed bool
+	for name, value := range s.shell.runner.Vars {
+		if s.syncedVars[name] == value.String() {
+			continue
+		}
+		if skipEnv[name] {
+			continue
+		}
+
+		dbg.Printf("syncEnv var diff: %s=%s (%+v)\n", name, value.String(), value)
+		s.syncedVars[name] = value.String()
+
+		changed = true
+
+		if strings.HasPrefix(value.String(), shellStatePrefix) {
+			w := strings.NewReader(value.String())
+			v, t, err := s.shell.Result(ctx, w, func(_ context.Context, q *querybuilder.Selection, t *modTypeDef) (*querybuilder.Selection, error) {
+				// When an argument returns an object, assume we want its ID
+				if t.AsFunctionProvider() != nil {
+					q = q.Select("id")
+				}
+				return q, nil
+			})
+			if err != nil {
+				return s, err
+			}
+			dbg.Printf("syncEnv var %q: %T %+v\n", name, v, v)
+			if v == nil {
+				return s, fmt.Errorf("unexpected nil value for var %q", name)
+			}
+			if t.AsFunctionProvider() != nil {
+				typeName := t.Name()
+				syncedLlmQ = syncedLlmQ.
+					Select(fmt.Sprintf("set%s", typeName)).
+					Arg("name", name).
+					Arg("value", v)
+			}
+		} else {
+			syncedLlmQ = syncedLlmQ.
+				Select("setString").
+				Arg("name", name).
+				Arg("value", value.String())
+		}
+	}
+	if !changed {
+		return s, nil
+	}
+	if err := syncedLlmQ.Select("id").Bind(&llmId).Execute(ctx); err != nil {
+		return s, err
+	}
+	s.llm = s.dag.LoadLlmFromID(llmId)
 	return s, nil
 }
 
 func (s *LLMSession) Undo(ctx context.Context, _ string) (*LLMSession, error) {
+	if s.undo == nil {
+		return s, nil
+	}
 	return s.undo, nil
 }
 
-func (s *LLMSession) With(ctx context.Context, script string) (*LLMSession, error) {
-	resp, typeDef, err := s.shell.Eval(ctx, script)
-	if err != nil {
-		return s, err
-	}
-	if typeDef.AsFunctionProvider() != nil {
-		llmId, err := s.llm.ID(ctx)
-		if err != nil {
-			return s, err
-		}
-		s = s.Fork()
-		if err := s.dag.QueryBuilder().
-			Select("loadLlmFromID").
-			Arg("id", llmId).
-			Select(fmt.Sprintf("with%s", typeDef.Name())).
-			Arg("value", resp).
-			Select("id").
-			Bind(&llmId).
-			Execute(ctx); err != nil {
-			return s, err
-		}
-		s.llm = s.dag.LoadLlmFromID(llmId)
-		return s, nil
-	}
-	return s, fmt.Errorf("cannot change scope to %s - script must return an Object type", typeDef.Name())
-}
+// TODO: maybe these go away and instead we sync the env
+// func (s *LLMSession) With(ctx context.Context, args string) (*LLMSession, error) {
+// 	s, err := s.Set(ctx, "_ "+args)
+// 	if err != nil {
+// 		return s, err
+// 	}
+// 	return s.Get(ctx, "_")
+// }
+
+// TODO: maybe these go away and instead we sync the env
+// func (s *LLMSession) Set(ctx context.Context, args string) (*LLMSession, error) {
+// 	name, script, ok := strings.Cut(args, " ")
+// 	if !ok {
+// 		return s, fmt.Errorf("expected name and script")
+// 	}
+// 	resp, typeDef, err := s.shell.Eval(ctx, script)
+// 	if err != nil {
+// 		return s, err
+// 	}
+// 	if typeDef.AsFunctionProvider() != nil {
+// 		llmId, err := s.llm.ID(ctx)
+// 		if err != nil {
+// 			return s, err
+// 		}
+// 		s = s.Fork()
+// 		if err := s.dag.QueryBuilder().
+// 			Select("loadLlmFromID").
+// 			Arg("id", llmId).
+// 			Select(fmt.Sprintf("set%s", typeDef.Name())).
+// 			Arg("name", name).
+// 			Arg("value", resp).
+// 			Select("id").
+// 			Bind(&llmId).
+// 			Execute(ctx); err != nil {
+// 			return s, err
+// 		}
+// 		s.llm = s.dag.LoadLlmFromID(llmId)
+// 		return s, nil
+// 	}
+// 	return s, fmt.Errorf("cannot change scope to %s - script must return an Object type", typeDef.Name())
+// }
+
+// TODO: maybe these go away and instead we sync the env
+// func (s *LLMSession) Get(ctx context.Context, name string) (*LLMSession, error) {
+// 	s = s.Fork()
+// 	llmId, err := s.llm.ID(ctx)
+// 	if err != nil {
+// 		return s, err
+// 	}
+// 	s = s.Fork()
+// 	if err := s.dag.QueryBuilder().
+// 		Select("loadLlmFromID").
+// 		Arg("id", llmId).
+// 		Select(fmt.Sprintf("get%s", typeDef.Name())).
+// 		Arg("name", name).
+// 		Select("id").
+// 		Bind(&llmId).
+// 		Execute(ctx); err != nil {
+// 		return s, err
+// 	}
+// 	s.llm = s.dag.LoadLlmFromID(llmId)
+// 	return s, nil
+// }
 
 func (s *LLMSession) Complete(entireInput [][]rune, row, col int) (msg string, comp editline.Completions) {
 	if input, l, c, ok := stripCommandPrefix("/with ", entireInput, row, col); ok {

@@ -8,7 +8,6 @@ import (
 	"dagger.io/dagger/telemetry"
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/dagger/dagger/core/bbi"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
@@ -51,7 +50,7 @@ const maxAnthropicCacheBlocks = 4
 const anthropicCacheThreshold = 2048
 
 //nolint:gocyclo
-func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage, tools []bbi.Tool) (res *LLMResponse, rerr error) {
+func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage, tools []LlmTool) (res *LLMResponse, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
 		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 		attribute.String(telemetry.UIMessageAttr, "received"),

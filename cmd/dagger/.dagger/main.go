@@ -13,7 +13,7 @@ func New(
 
 	// +optional
 	// +defaultPath="/"
-	// +ignore=["*", ".*", "!/cmd/dagger/*", "!**/go.sum", "!**/go.mod", "!**/*.go", "!**.graphql"]
+	// +ignore=["*", ".*", "!cmd/dagger/*", "!**/go.sum", "!**/go.mod", "!**/*.go", "!**.graphql"]
 	source *dagger.Directory,
 	// Base image for go build environment
 	// +optional
