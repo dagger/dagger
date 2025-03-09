@@ -778,7 +778,8 @@ func (s LlmMiddleware) ExtendLlmType(targetType dagql.ObjectType) error {
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			llm := self.(dagql.Instance[*Llm]).Self
-			return llm.State(ctx, s.Server)
+			name := args["name"].(dagql.String).String()
+			return llm.Get(ctx, s.Server, name)
 		},
 		dagql.CacheSpec{},
 	)

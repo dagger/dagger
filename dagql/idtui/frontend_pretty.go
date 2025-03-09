@@ -74,7 +74,7 @@ type frontendPretty struct {
 	editlineFocused bool
 	flushed         map[dagui.SpanID]bool
 	scrollback      *strings.Builder
-	shellDone       bool
+	shellRunning    bool
 
 	// updated as events are written
 	db           *dagui.DB
@@ -1008,7 +1008,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 
 			ctx, cancel := context.WithCancelCause(fe.shellCtx)
 			fe.shellInterrupt = cancel
-			fe.shellDone = false
+			fe.shellRunning = true
 
 			return fe, func() tea.Msg {
 				return shellDoneMsg{fe.shell(ctx, value)}
@@ -1025,7 +1025,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		fe.updatePrompt()
 		// NOTE: we switch back from the alt screen only when the scrollback is
 		// written
-		fe.shellDone = true
+		fe.shellRunning = false
 		return fe, nil
 
 	case tea.KeyMsg:
@@ -1179,11 +1179,8 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 	if fe.shell == nil {
 		return fe, nil
 	}
-	if !fe.shellDone {
-		// don't flush scrollback when in alt screen, because active progress
-		// may consume entire height and then disappear, placing the prompt at
-		// the top of the screen, which is exactly what we're trying to avoid
-		dbg.Println("alt screen and shell not done")
+	if fe.shellRunning {
+		// there won't be anything to flush so long as the shell is running
 		return fe, nil
 	}
 
@@ -1217,7 +1214,6 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 		anyFlushed = true
 	}
 	if !anyFlushed {
-		dbg.Println("no flushed rows")
 		return fe, nil
 	}
 
@@ -1420,9 +1416,16 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 	if row.Previous != nil &&
 		row.Previous.Depth >= row.Depth &&
 		!row.Chained &&
-		(row.Previous.Depth > row.Depth || row.Span.Call() != nil ||
+		( // ensure gaps after last nested child
+		row.Previous.Depth > row.Depth ||
+			// ensure gaps before unchained calls
+			row.Span.Call() != nil ||
+			// ensure gaps between calls and non-calls
 			(row.Previous.Span.Call() != nil && row.Span.Call() == nil) ||
-			row.Previous.Span.Message != "") {
+			// ensure gaps between messages
+			(row.Previous.Span.Message != "" && row.Span.Message != "") ||
+			// ensure gaps going from tool calls to messages
+			(row.Previous.Span.Message == "" && row.Span.Message != "")) {
 		fmt.Fprint(out, prefix)
 		r.indent(out, row.Depth)
 		fmt.Fprintln(out)

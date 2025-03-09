@@ -187,13 +187,17 @@ func (env *LlmEnv) callCurrent(ctx context.Context, _ any) (any, error) {
 	}
 	return env.history[len(env.history)-1], nil
 }
+
 func (env *LlmEnv) Builtins() []LlmTool {
 	builtins := []LlmTool{
 		{
 			Name:        "_objects",
 			Description: "List saved objects with their types",
-			Schema:      map[string]any{},
-			Call:        env.callObjects,
+			Schema: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{},
+			},
+			Call: env.callObjects,
 		},
 		{
 			Name:        "_load",
@@ -224,8 +228,11 @@ func (env *LlmEnv) Builtins() []LlmTool {
 		{
 			Name:        "_undo",
 			Description: "Roll back the last action",
-			Schema:      map[string]any{},
-			Call:        env.callUndo,
+			Schema: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{},
+			},
+			Call: env.callUndo,
 		},
 		{
 			Name:        "_type",
@@ -243,13 +250,19 @@ func (env *LlmEnv) Builtins() []LlmTool {
 		{
 			Name:        "_current",
 			Description: "Print the value of the current object",
-			Schema:      map[string]any{},
-			Call:        env.callCurrent,
+			Schema: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{},
+			},
+			Call: env.callCurrent,
 		},
 		{
 			Name:        "_scratch",
 			Description: "Clear the current object selection",
-			Schema:      map[string]any{},
+			Schema: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{},
+			},
 			Call: func(ctx context.Context, _ any) (any, error) {
 				env.history = append(env.history, nil)
 				return nil, nil

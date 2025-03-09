@@ -239,6 +239,9 @@ func (h *shellCallHandler) Initialize(ctx context.Context) error {
 	}
 	h.runner = r
 
+	// collect initial env + vars
+	h.runner.Reset()
+
 	// TODO: use `--workdir` and `--no-workdir` flags
 	ref, _ := getExplicitModuleSourceRef()
 	if ref == "" {
