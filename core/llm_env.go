@@ -108,7 +108,9 @@ func (env *LlmEnv) Tools() []LlmTool {
 				Schema:      fieldArgsToJSONSchema(field),
 				Call: func(ctx context.Context, args any) (_ any, rerr error) {
 					ctx, span := Tracer(ctx).Start(ctx,
-						fmt.Sprintf("🤖💻 %s %v", typeName+"."+field.Name, args))
+						fmt.Sprintf("🤖💻 %s %v", typeName+"."+field.Name, args),
+						telemetry.Passthrough(),
+						telemetry.Reveal())
 					defer telemetry.End(span, func() error { return rerr })
 					val, id, err := env.call(ctx, field, args)
 					if err != nil {
