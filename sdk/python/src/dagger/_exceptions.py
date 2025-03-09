@@ -101,8 +101,10 @@ class QueryError(ClientError):
             msg = "Errors list is empty"
             raise ValueError(msg)
         super().__init__(errors[0])
-        self.errors: list[QueryErrorValue] = errors
         self.query = query
+        self.error = errors[0]
+        # TODO: deprecate
+        self.errors = errors
 
     def debug_query(self):
         """Return GraphQL query for debugging purposes.
@@ -118,8 +120,8 @@ class QueryError(ClientError):
         # count number of digits from line count
         pad = len(str(len(lines)))
         locations = (
-            {loc.line: loc.column for loc in self.errors[0].locations}
-            if self.errors[0].locations
+            {loc.line: loc.column for loc in self.error.locations}
+            if self.error.locations
             else {}
         )
         res = []
@@ -168,11 +170,10 @@ class ExecError(QueryError):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.message = self.error.message
 
-        error: QueryErrorValue = self.args[0]
-        ext = error.extensions
+        ext = self.error.extensions
         self.command = ext["cmd"]
-        self.message = error.message
         self.exit_code = ext["exitCode"]
         self.stdout = ext["stdout"]
         self.stderr = ext["stderr"]

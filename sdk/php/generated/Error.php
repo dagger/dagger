@@ -27,4 +27,24 @@ class Error extends Client\AbstractObject implements Client\IdAble
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('message');
         return (string)$this->queryLeaf($leafQueryBuilder, 'message');
     }
+
+    /**
+     * The extensions of the error.
+     */
+    public function values(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('values');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'values');
+    }
+
+    /**
+     * Add a value to the error.
+     */
+    public function withValue(string $name, Json $value): Error
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withValue');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        return new \Dagger\Error($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
 }

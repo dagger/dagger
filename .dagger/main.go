@@ -162,12 +162,12 @@ func (dev *DaggerDev) Scripts() *Scripts {
 	return &Scripts{Dagger: dev}
 }
 
-// Run all tests
+// Find test suites to run
 func (dev *DaggerDev) Test() *Test {
 	return &Test{Dagger: dev}
 }
 
-// Run all benchmarks
+// Find benchmark suites to run
 func (dev *DaggerDev) Bench() *Bench {
 	return &Bench{Test: dev.Test()}
 }

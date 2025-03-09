@@ -17,7 +17,7 @@ func TestCoreModTypeDefs(t *testing.T) {
 	coreMod := &CoreMod{Dag: dag}
 	coreModDeps := core.NewModDeps(root, []core.Mod{coreMod})
 	require.NoError(t, coreMod.Install(ctx, dag))
-	typeDefs, err := coreModDeps.TypeDefs(ctx)
+	typeDefs, err := coreModDeps.TypeDefs(ctx, dag)
 	require.NoError(t, err)
 
 	typeByName := make(map[string]*core.TypeDef)
