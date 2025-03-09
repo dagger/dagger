@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"dagger.io/dagger/telemetry"
-	"github.com/dagger/dagger/core/bbi"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/azure"
 	"github.com/openai/openai-go/option"
@@ -44,7 +43,7 @@ func newOpenAIClient(endpoint *LlmEndpoint, azureVersion string) *OpenAIClient {
 	return &OpenAIClient{client: c, endpoint: endpoint}
 }
 
-func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, tools []bbi.Tool) (_ *LLMResponse, rerr error) {
+func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, tools []LlmTool) (_ *LLMResponse, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
 		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 		attribute.String(telemetry.UIMessageAttr, "received"),
@@ -122,6 +121,8 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 		StreamOptions: openai.F(openai.ChatCompletionStreamOptionsParam{
 			IncludeUsage: openai.F(true),
 		}),
+		// call tools one at a time, or else chaining breaks
+		ParallelToolCalls: openai.F(false),
 	}
 
 	if len(tools) > 0 {

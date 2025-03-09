@@ -8,7 +8,6 @@ import (
 	"dagger.io/dagger/telemetry"
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/dagger/dagger/core/bbi"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
@@ -51,16 +50,18 @@ const maxAnthropicCacheBlocks = 4
 const anthropicCacheThreshold = 2048
 
 //nolint:gocyclo
-func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage, tools []bbi.Tool) (res *LLMResponse, rerr error) {
+func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage, tools []LlmTool) (res *LLMResponse, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
 		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 		attribute.String(telemetry.UIMessageAttr, "received"),
 	))
 	defer telemetry.End(span, func() error { return rerr })
 
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
-		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	defer stdio.Close()
+
+	markdownW := telemetry.NewWriter(ctx, InstrumentationLibrary,
+		log.String(telemetry.ContentTypeAttr, "text/markdown"))
 
 	m := telemetry.Meter(ctx, InstrumentationLibrary)
 	attrs := []attribute.KeyValue{
@@ -210,7 +211,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 		if delta, ok := event.Delta.(anthropic.ContentBlockDeltaEventDelta); ok {
 			if delta.Text != "" {
 				// Lazily initialize telemetry/logging on first text response.
-				fmt.Fprint(stdio.Stdout, delta.Text)
+				fmt.Fprint(markdownW, delta.Text)
 			}
 		}
 	}

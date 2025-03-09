@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"dagger.io/dagger/telemetry"
-	"github.com/dagger/dagger/core/bbi"
 	"github.com/googleapis/gax-go/v2/apierror"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -44,7 +43,7 @@ func newGenaiClient(endpoint *LlmEndpoint, defaultSystemPrompt string) (*GenaiCl
 	}, err
 }
 
-func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, tools []bbi.Tool) (_ *LLMResponse, rerr error) {
+func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, tools []LlmTool) (_ *LLMResponse, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
 		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 		attribute.String(telemetry.UIMessageAttr, "received"),
