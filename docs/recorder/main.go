@@ -29,7 +29,7 @@ func New(
 func getTermcast(wdir *dagger.Directory) *dagger.Termcast {
 	return dag.Termcast(dagger.TermcastOpts{
 		Container: dag.Wolfi().
-			Container(dagger.WolfiContainerOpts{Packages: []string{"docker-cli"}}).
+			Container(dagger.WolfiContainerOpts{Packages: []string{"docker-cli", "curl"}}).
 			WithFile("/bin/dagger", dag.DaggerCli().Binary()).
 			WithWorkdir("/src").
 			WithMountedDirectory(".", wdir).
@@ -57,7 +57,6 @@ func getTermcastWithQuickstart(wdir *dagger.Directory) *dagger.Termcast {
 	ctr := getTermcast(dag.Directory()).Container().
 		WithMountedDirectory("/src", repo).
 		WithMountedDirectory("/module", wdir).
-		WithExec([]string{"apk", "add", "curl"}).
 		WithExec([]string{"cp", "-R", "/module", "/src/dagger"}).
 		WithExec([]string{"mv", "/src/dagger/dagger.json", "/src/dagger.json"}).
 		WithExec([]string{"sh", "-c", `sed -i 's/"source": "."/"source": "dagger"/' /src/dagger.json`}).
