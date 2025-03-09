@@ -97,35 +97,38 @@ func (env *LlmEnv) Tools(srv *dagql.Server) []LlmTool {
 		typedef := env.typedef(srv, val)
 		typedefs[typedef.Name] = typedef
 	}
-	for typeName, typedef := range typedefs {
-		for _, field := range typedef.Fields {
-			tools = append(tools, LlmTool{
-				Name:        typeName + "_" + field.Name,
-				Description: field.Description,
-				Schema:      fieldArgsToJSONSchema(field),
-				Call: func(ctx context.Context, args any) (_ any, rerr error) {
-					ctx, span := Tracer(ctx).Start(ctx,
-						fmt.Sprintf("🤖💻 %s %v", typeName+"."+field.Name, args),
-						telemetry.Passthrough(),
-						telemetry.Reveal())
-					defer telemetry.End(span, func() error { return rerr })
-					val, id, err := env.call(ctx, srv, field, args)
+	if env.Current() == nil {
+		return tools
+	}
+	typedef := env.typedef(srv, env.Current())
+	typeName := typedef.Name
+	for _, field := range typedef.Fields {
+		tools = append(tools, LlmTool{
+			Name:        typeName + "_" + field.Name,
+			Description: field.Description,
+			Schema:      fieldArgsToJSONSchema(field),
+			Call: func(ctx context.Context, args any) (_ any, rerr error) {
+				ctx, span := Tracer(ctx).Start(ctx,
+					fmt.Sprintf("🤖💻 %s %v", typeName+"."+field.Name, args),
+					telemetry.Passthrough(),
+					telemetry.Reveal())
+				defer telemetry.End(span, func() error { return rerr })
+				val, id, err := env.call(ctx, srv, field, args)
+				if err != nil {
+					return nil, err
+				}
+				if env.isObjectType(srv, field.Type) {
+					obj, err := srv.Load(ctx, id)
 					if err != nil {
 						return nil, err
 					}
-					if env.isObjectType(srv, field.Type) {
-						obj, err := srv.Load(ctx, id)
-						if err != nil {
-							return nil, err
-						}
-						env.objsByHash[obj.ID().Digest()] = obj
-						env.history = append(env.history, obj)
-						return obj.Type().Name() + "@" + id.Digest().String(), nil
-					}
-					return val, nil
-				},
-			})
-		}
+					env.objsByHash[obj.ID().Digest()] = obj
+					env.history = append(env.history, obj)
+					return obj.Type().Name() + "@" + id.Digest().String(), nil
+				}
+				return val, nil
+			},
+		})
 	}
 	return tools
 }
@@ -267,7 +270,7 @@ func (env *LlmEnv) Builtins() []LlmTool {
 			Call: env.callObjects,
 		},
 		{
-			Name:        "_load",
+			Name:        "_selectTools",
 			Description: "Load a saved object's functions/tools",
 			Schema: map[string]any{
 				"type": "object",
@@ -276,6 +279,7 @@ func (env *LlmEnv) Builtins() []LlmTool {
 						"type": "string",
 					},
 				},
+				"required": []string{"name"},
 			},
 			Call: env.callLoad,
 		},
@@ -289,6 +293,7 @@ func (env *LlmEnv) Builtins() []LlmTool {
 						"type": "string",
 					},
 				},
+				"required": []string{"name"},
 			},
 			Call: env.callSave,
 		},
@@ -380,9 +385,7 @@ func fieldArgsToJSONSchema(field *ast.FieldDefinition) map[string]any {
 			required = append(required, arg.Name)
 		}
 	}
-	if len(required) > 0 {
-		schema["required"] = required
-	}
+	schema["required"] = required
 	return schema
 }
 
