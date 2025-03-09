@@ -121,6 +121,8 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 		StreamOptions: openai.F(openai.ChatCompletionStreamOptionsParam{
 			IncludeUsage: openai.F(true),
 		}),
+		// call tools one at a time, or else chaining breaks
+		ParallelToolCalls: openai.F(false),
 	}
 
 	if len(tools) > 0 {
