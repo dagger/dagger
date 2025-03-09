@@ -123,7 +123,7 @@ func (env *LlmEnv) Tools() []LlmTool {
 						}
 						env.objsByHash[obj.ID().Digest()] = obj
 						env.history = append(env.history, obj)
-						return id.Digest().String(), nil
+						return obj.Type().Name() + "@" + id.Digest().String(), nil
 					}
 					return val, nil
 				},
