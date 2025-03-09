@@ -279,7 +279,7 @@ func (env *LlmEnv) Builtins() []LlmTool {
 		},
 		{
 			Name:        "_selectTools",
-			Description: "Load a saved object's functions/tools",
+			Description: "Load an object's functions/tools",
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
