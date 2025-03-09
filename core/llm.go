@@ -326,7 +326,7 @@ func NewLlmRouter(ctx context.Context, srv *dagql.Server) (_ *LlmRouter, rerr er
 	return router, err
 }
 
-func NewLlm(ctx context.Context, query *Query, srv *dagql.Server, model string, maxAPICalls int) (*Llm, error) {
+func NewLlm(ctx context.Context, query *Query, model string, maxAPICalls int) (*Llm, error) {
 	var router *LlmRouter
 	{
 		// Don't leak this context, it's specific to querying the parent client for llm config secrets
@@ -355,7 +355,7 @@ func NewLlm(ctx context.Context, query *Query, srv *dagql.Server, model string, 
 		Endpoint:    endpoint,
 		maxAPICalls: maxAPICalls,
 		calls:       map[string]string{},
-		env:         NewLlmEnv(srv),
+		env:         NewLlmEnv(),
 	}, nil
 }
 
@@ -378,7 +378,7 @@ func (llm *Llm) Clone() *Llm {
 // Generate a human-readable documentation of tools available to the model
 func (llm *Llm) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error) {
 	var result string
-	for _, tool := range llm.env.Tools() {
+	for _, tool := range llm.env.Tools(srv) {
 		schema, err := json.MarshalIndent(tool.Schema, "", "  ")
 		if err != nil {
 			return "", err
@@ -510,7 +510,7 @@ func (llm *Llm) Sync(ctx context.Context, dag *dagql.Server) (*Llm, error) {
 		}
 		llm.apiCalls++
 
-		tools := llm.env.Tools()
+		tools := llm.env.Tools(dag)
 		res, err := llm.Endpoint.Client.SendQuery(ctx, llm.history, tools)
 		if err != nil {
 			return nil, err
@@ -654,9 +654,9 @@ func (llm *Llm) messages() ([]ModelMessage, error) {
 	return messages, nil
 }
 
-func (llm *Llm) Set(ctx context.Context, key string, value dagql.Typed) (*Llm, error) {
+func (llm *Llm) Set(ctx context.Context, dag *dagql.Server, key string, value dagql.Typed) (*Llm, error) {
 	if id, ok := value.(dagql.IDType); ok {
-		obj, err := llm.env.srv.Load(ctx, id.ID())
+		obj, err := dag.Load(ctx, id.ID())
 		if err != nil {
 			return nil, err
 		}
@@ -693,7 +693,7 @@ func (llm *Llm) WithState(ctx context.Context, objID dagql.IDType, srv *dagql.Se
 	if err != nil {
 		return nil, err
 	}
-	return llm.Set(ctx, "default", obj)
+	return llm.Set(ctx, srv, "default", obj)
 }
 
 // FIXME: deprecated
@@ -767,7 +767,7 @@ func (s LlmMiddleware) ExtendLlmType(targetType dagql.ObjectType) error {
 			llm := self.(dagql.Instance[*Llm]).Self
 			name := args["name"].(dagql.String).String()
 			value := args["value"].(dagql.Typed)
-			return llm.Set(ctx, name, value)
+			return llm.Set(ctx, s.Server, name, value)
 			// id := args["value"].(dagql.IDType)
 		},
 		dagql.CacheSpec{},

@@ -26,8 +26,6 @@ type LlmTool struct {
 }
 
 type LlmEnv struct {
-	srv *dagql.Server
-
 	// History of values. Current selection is last. Remove last N values to rewind last N changes
 	history []dagql.Typed
 	// Saved objects
@@ -36,17 +34,16 @@ type LlmEnv struct {
 	objsByHash map[digest.Digest]dagql.Typed
 }
 
-func NewLlmEnv(srv *dagql.Server) *LlmEnv {
+func NewLlmEnv() *LlmEnv {
 	return &LlmEnv{
-		srv:        srv,
 		objs:       map[string]dagql.Typed{},
 		objsByHash: map[digest.Digest]dagql.Typed{},
 	}
 }
 
 // Lookup dagql typedef for a given dagql value
-func (env *LlmEnv) typedef(val dagql.Typed) *ast.Definition {
-	return env.srv.Schema().Types[val.Type().Name()]
+func (env *LlmEnv) typedef(srv *dagql.Server, val dagql.Typed) *ast.Definition {
+	return srv.Schema().Types[val.Type().Name()]
 }
 
 // Return the current selection
@@ -93,11 +90,11 @@ func (env *LlmEnv) Unset(key string) {
 	delete(env.objs, key)
 }
 
-func (env *LlmEnv) Tools() []LlmTool {
+func (env *LlmEnv) Tools(srv *dagql.Server) []LlmTool {
 	tools := env.Builtins()
 	typedefs := make(map[string]*ast.Definition)
 	for _, val := range env.objs {
-		typedef := env.typedef(val)
+		typedef := env.typedef(srv, val)
 		typedefs[typedef.Name] = typedef
 	}
 	for typeName, typedef := range typedefs {
@@ -112,12 +109,12 @@ func (env *LlmEnv) Tools() []LlmTool {
 						telemetry.Passthrough(),
 						telemetry.Reveal())
 					defer telemetry.End(span, func() error { return rerr })
-					val, id, err := env.call(ctx, field, args)
+					val, id, err := env.call(ctx, srv, field, args)
 					if err != nil {
 						return nil, err
 					}
-					if env.isObjectType(field.Type) {
-						obj, err := env.srv.Load(ctx, id)
+					if env.isObjectType(srv, field.Type) {
+						obj, err := srv.Load(ctx, id)
 						if err != nil {
 							return nil, err
 						}
@@ -135,6 +132,7 @@ func (env *LlmEnv) Tools() []LlmTool {
 
 // Low-level function call plumbing
 func (env *LlmEnv) call(ctx context.Context,
+	srv *dagql.Server,
 	// The definition of the dagql field to call. Example: Container.withExec
 	fieldDef *ast.FieldDefinition,
 	// The arguments to the call. Example: {"args": ["go", "build"], "redirectStderr", "/dev/null"}
@@ -158,7 +156,7 @@ func (env *LlmEnv) call(ctx context.Context,
 	if target == nil {
 		return nil, nil, fmt.Errorf("function not found: %s", fieldDef.Name)
 	}
-	targetObjType, ok := env.srv.ObjectType(target.Type().Name())
+	targetObjType, ok := srv.ObjectType(target.Type().Name())
 	if !ok {
 		return nil, nil, fmt.Errorf("dagql object type not found: %s", target.Type().Name())
 	}
@@ -205,7 +203,7 @@ func (env *LlmEnv) call(ctx context.Context,
 		})
 	}
 	// 2. MAKE THE CALL
-	return target.Select(ctx, env.srv, sel)
+	return target.Select(ctx, srv, sel)
 }
 
 func (env *LlmEnv) callObjects(ctx context.Context, _ any) (any, error) {
@@ -421,8 +419,8 @@ func typeToJSONSchema(t *ast.Type) map[string]any {
 }
 
 // Return true if the given type is an object
-func (env *LlmEnv) isObjectType(t *ast.Type) bool {
-	objType, ok := env.srv.Schema().Types[t.Name()]
+func (env *LlmEnv) isObjectType(srv *dagql.Server, t *ast.Type) bool {
+	objType, ok := srv.Schema().Types[t.Name()]
 	if !ok {
 		return false
 	}

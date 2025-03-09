@@ -101,7 +101,7 @@ func (s *llmSchema) setString(ctx context.Context, llm *core.Llm, args struct {
 	Name  dagql.String
 	Value dagql.String
 }) (*core.Llm, error) {
-	return llm.Set(ctx, args.Name.String(), args.Value)
+	return llm.Set(ctx, s.srv, args.Name.String(), args.Value)
 }
 
 func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.Llm, args struct {
@@ -130,7 +130,7 @@ func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
 	if args.MaxAPICalls.Valid {
 		maxAPICalls = args.MaxAPICalls.Value.Int()
 	}
-	return core.NewLlm(ctx, parent, s.srv, model, maxAPICalls)
+	return core.NewLlm(ctx, parent, model, maxAPICalls)
 }
 
 func (s *llmSchema) history(ctx context.Context, llm *core.Llm, _ struct{}) (dagql.Array[dagql.String], error) {
