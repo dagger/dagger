@@ -284,7 +284,8 @@ func (env *LlmEnv) Builtins() []LlmTool {
 				"type": "object",
 				"properties": map[string]any{
 					"name": map[string]any{
-						"type": "string",
+						"type":        "string",
+						"description": "Variable name or hash of the object to load",
 					},
 				},
 				"required": []string{"name"},
@@ -298,7 +299,8 @@ func (env *LlmEnv) Builtins() []LlmTool {
 				"type": "object",
 				"properties": map[string]any{
 					"name": map[string]any{
-						"type": "string",
+						"type":        "string",
+						"description": "Variable name to save the object as",
 					},
 				},
 				"required": []string{"name"},
@@ -314,19 +316,21 @@ func (env *LlmEnv) Builtins() []LlmTool {
 			},
 			Call: env.callUndo,
 		},
-		{
-			Name:        "_type",
-			Description: "Print the type of a saved object",
-			Schema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"name": map[string]any{
-						"type": "string",
-					},
-				},
-			},
-			Call: env.callType,
-		},
+		// TODO: don't think we need this
+		// {
+		// 	Name:        "_type",
+		// 	Description: "Print the type of a saved object",
+		// 	Schema: map[string]any{
+		// 		"type": "object",
+		// 		"properties": map[string]any{
+		// 			"name": map[string]any{
+		// 				"type":        "string",
+		// 				"description": "Variable name to print the type of",
+		// 			},
+		// 		},
+		// 	},
+		// 	Call: env.callType,
+		// },
 		{
 			Name:        "_current",
 			Description: "Print the value of the current object",
