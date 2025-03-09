@@ -119,6 +119,9 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 		Seed:     openai.Int(0),
 		Model:    openai.F(c.endpoint.Model),
 		Messages: openai.F(openAIMessages),
+		StreamOptions: openai.F(openai.ChatCompletionStreamOptionsParam{
+			IncludeUsage: openai.F(true),
+		}),
 	}
 
 	if len(tools) > 0 {
