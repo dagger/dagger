@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
+	"github.com/vito/bubbline/computil"
 	"github.com/vito/bubbline/editline"
 	"github.com/vito/bubbline/history"
 	"go.opentelemetry.io/otel/log"
@@ -27,6 +28,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
+	"mvdan.cc/sh/v3/syntax"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -405,41 +407,10 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	return renderPrimaryOutput(fe.db)
 }
 
-func (fe *frontendPretty) flush() tea.Cmd {
-	if fe.shell == nil {
-		return nil
+func (fe *frontendPretty) flush() {
+	if fe.program != nil {
+		go fe.program.Send(flushMsg{})
 	}
-	buf := new(strings.Builder)
-	out := NewOutput(buf, termenv.WithProfile(fe.profile))
-
-	// unfocus, so we don't print a permanently focused one
-	// (but also because we'll have a new thing to focus on anyway)
-	fe.FocusedSpan = dagui.SpanID{}
-
-	r := newRenderer(fe.db, 100, fe.FrontendOpts)
-
-	for _, row := range fe.rows.Order {
-		var shouldFlush bool
-		if row.Depth == 0 && !row.IsRunningOrChildRunning && fe.sawEOF[row.Span.ID] {
-			// we're a top-level completed span and we've seen EOF, so flush
-			shouldFlush = true
-		}
-		if row.Parent != nil && fe.flushed[row.Parent.ID] {
-			// our parent flushed, so we should too
-			shouldFlush = true
-		}
-		if !shouldFlush {
-			continue
-		}
-		if !fe.flushed[row.Span.ID] {
-			fe.renderRow(out, r, row, "", false)
-			fe.flushed[row.Span.ID] = true
-		}
-	}
-	if buf.Len() > 0 {
-		return tea.Printf("%s", strings.TrimLeft(buf.String(), "\n"))
-	}
-	return nil
 }
 
 func (fe *frontendPretty) SpanExporter() sdktrace.SpanExporter {
@@ -450,9 +421,15 @@ type prettySpanExporter struct {
 	*frontendPretty
 }
 
+// flushMsg is sent after spans are exported and the view is recalculated. When
+// this message is received, top-level finished spans are printed to the
+// scrollback.
+type flushMsg struct{}
+
 func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
+	defer fe.flush()
 	defer fe.recalculateViewLocked() // recalculate view *after* updating the db
 	slog.Debug("frontend exporting spans", "spans", len(spans))
 	return fe.db.ExportSpans(ctx, spans)
@@ -476,6 +453,7 @@ type prettyLogExporter struct {
 func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
+	defer fe.flush()
 	if err := fe.db.LogExporter().Export(ctx, logs); err != nil {
 		return err
 	}
@@ -952,9 +930,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		}
 
 		// if input ends with a pipe, then it's not complete
-		fe.editline.CheckInputComplete = func(entireInput [][]rune, line int, col int) bool {
-			return !strings.HasSuffix(string(entireInput[line][col:]), "|")
-		}
+		fe.editline.CheckInputComplete = shellIsComplete
 
 		// put the bowtie on
 		fe.updatePrompt()
@@ -971,6 +947,36 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			fe.editline.Focus(),
 			tea.DisableMouse,
 		)
+
+	case flushMsg:
+		if fe.shell == nil {
+			return fe, nil
+		}
+		buf := new(strings.Builder)
+		out := NewOutput(buf, termenv.WithProfile(fe.profile))
+		r := newRenderer(fe.db, 100, fe.FrontendOpts)
+		for _, row := range fe.rows.Order {
+			var shouldFlush bool
+			if row.Depth == 0 && !row.IsRunningOrChildRunning && fe.sawEOF[row.Span.ID] {
+				// we're a top-level completed span and we've seen EOF, so flush
+				shouldFlush = true
+			}
+			if row.Parent != nil && fe.flushed[row.Parent.Span.ID] {
+				// our parent flushed, so we should too
+				shouldFlush = true
+			}
+			if !shouldFlush {
+				continue
+			}
+			if !fe.flushed[row.Span.ID] {
+				fe.renderRow(out, r, row, "", false)
+				fe.flushed[row.Span.ID] = true
+			}
+		}
+		if buf.Len() > 0 {
+			return fe, tea.Printf("%s", strings.TrimLeft(buf.String(), "\n"))
+		}
+		return fe, nil
 
 	case backgroundMsg:
 		fe.backgrounded = true
@@ -1028,14 +1034,9 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			ctx, cancel := context.WithCancelCause(fe.shellCtx)
 			fe.shellInterrupt = cancel
 
-			return fe, tea.Batch(
-				// flush the progress to the scrollback
-				fe.flush(),
-				// run the shell command
-				func() tea.Msg {
-					return shellDoneMsg{fe.shell(ctx, value)}
-				},
-			)
+			return fe, func() tea.Msg {
+				return shellDoneMsg{fe.shell(ctx, value)}
+			}
 		}
 		return fe, nil
 
@@ -1314,22 +1315,30 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 	if fe.flushed[row.Span.ID] && fe.editlineFocused {
 		return false
 	}
-	if fe.shell != nil && row.Depth == 0 {
-		// navigating history and there's a previous row
-		if (!fe.editlineFocused && row.Previous != nil) ||
-			(row.Previous != nil && !fe.flushed[row.Previous.Span.ID]) {
-			fmt.Fprintln(out, out.String(prefix))
+	if fe.shell != nil {
+		if row.IsLastChild() {
+			defer func() {
+				root := row.Root()
+				if logs := fe.logs.Logs[root.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
+					logDepth := 0
+					if fe.Verbosity < dagui.ExpandCompletedVerbosity {
+						logDepth = -1
+					}
+					fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix, highlight)
+				}
+			}()
 		}
-		fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
-		if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
-			logDepth := 0
-			if fe.Verbosity < dagui.ExpandCompletedVerbosity {
-				logDepth = -1
+		if row.Depth == 0 {
+			// navigating history and there's a previous row
+			if (!fe.editlineFocused && row.Previous != nil) ||
+				(row.Previous != nil && !fe.flushed[row.Previous.Span.ID]) {
+				fmt.Fprintln(out, out.String(prefix))
 			}
-			fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix, highlight)
+			fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
+			fe.renderStepError(out, r, row.Span, 0, prefix)
+			fe.renderDebug(out, row.Span, prefix+Block25+" ")
+			return true
 		}
-		fe.renderStepError(out, r, row.Span, 0, prefix)
-		return true
 	}
 	if row.Previous != nil &&
 		row.Previous.Depth >= row.Depth &&
@@ -1397,6 +1406,12 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 					vt.WriteMarkdown([]byte("  - " + effect.Name + "\n"))
 				}
 			}
+		}
+	}
+	if len(span.RevealedSpans.Order) > 0 {
+		vt.WriteMarkdown([]byte("\n\n## Revealed spans\n\n"))
+		for _, revealed := range span.RevealedSpans.Order {
+			vt.WriteMarkdown([]byte("- " + revealed.Name + "\n"))
 		}
 	}
 	fmt.Fprint(out, prefix+vt.View())
@@ -1607,4 +1622,16 @@ func (bg *BackgroundWriter) Write(p []byte) (n int, err error) {
 
 func focusedBg(out TermOutput) TermOutput {
 	return NewBackgroundOutput(out, highlightBg)
+}
+
+func shellIsComplete(entireInput [][]rune, line int, col int) bool {
+	input, _ := computil.Flatten(entireInput, line, col)
+	_, err := syntax.NewParser().Parse(strings.NewReader(input), "")
+	if err != nil {
+		if syntax.IsIncomplete(err) {
+			// only return false here if it's incomplete
+			return false
+		}
+	}
+	return true
 }
