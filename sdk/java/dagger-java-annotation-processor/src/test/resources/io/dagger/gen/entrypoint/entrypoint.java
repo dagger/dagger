@@ -17,7 +17,6 @@ import io.dagger.client.Platform;
 import io.dagger.client.TypeDef;
 import io.dagger.client.TypeDefKind;
 import io.dagger.java.module.DaggerJava;
-import jakarta.json.bind.JsonbBuilder;
 import java.lang.Class;
 import java.lang.Error;
 import java.lang.Exception;
@@ -146,139 +145,137 @@ public class Entrypoint {
 
   private JSON invoke(JSON parentJson, String parentName, String fnName,
       Map<String, JSON> inputArgs) throws Exception {
-    try (var jsonb = JsonbBuilder.create()) {
-      if (parentName.equals("DaggerJava")) {
-        if (fnName.equals("containerEcho")) {
-          Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
-          DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
-          String stringArg = null;
-          if (inputArgs.get("stringArg") != null) {
-            stringArg = (String) JsonConverter.fromJSON(inputArgs.get("stringArg"), String.class);
-          }
-          Objects.requireNonNull(stringArg, "stringArg must not be null");
-          Container res = obj.containerEcho(stringArg);
-          return JsonConverter.toJSON(res);
-        } else if (fnName.equals("grepDir")) {
-          Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
-          DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
-          Directory directoryArg = null;
-          if (inputArgs.get("directoryArg") != null) {
-            directoryArg = (Directory) JsonConverter.fromJSON(inputArgs.get("directoryArg"), Directory.class);
-          }
-          Objects.requireNonNull(directoryArg, "directoryArg must not be null");
-          String pattern = null;
-          if (inputArgs.get("pattern") != null) {
-            pattern = (String) JsonConverter.fromJSON(inputArgs.get("pattern"), String.class);
-          }
-          var pattern_opt = Optional.ofNullable(pattern);
-          String res = obj.grepDir(directoryArg, pattern_opt);
-          return JsonConverter.toJSON(res);
-        } else if (fnName.equals("itself")) {
-          Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
-          DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
-          DaggerJava res = obj.itself();
-          return JsonConverter.toJSON(res);
-        } else if (fnName.equals("isZero")) {
-          Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
-          DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
-          int value = 0;
-          if (inputArgs.get("value") != null) {
-            value = (int) JsonConverter.fromJSON(inputArgs.get("value"), int.class);
-          }
-          boolean res = obj.isZero(value);
-          return JsonConverter.toJSON(res);
-        } else if (fnName.equals("doThings")) {
-          Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
-          DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
-          String[] stringArray = null;
-          if (inputArgs.get("stringArray") != null) {
-            stringArray = (String[]) JsonConverter.fromJSON(inputArgs.get("stringArray"), String[].class);
-          }
-          Objects.requireNonNull(stringArray, "stringArray must not be null");
-          List ints = null;
-          if (inputArgs.get("ints") != null) {
-            ints = (List) JsonConverter.fromJSON(inputArgs.get("ints"), List.class);
-          }
-          Objects.requireNonNull(ints, "ints must not be null");
-          List containers = null;
-          if (inputArgs.get("containers") != null) {
-            containers = (List) JsonConverter.fromJSON(inputArgs.get("containers"), List.class);
-          }
-          Objects.requireNonNull(containers, "containers must not be null");
-          int[] res = obj.doThings(stringArray, ints, containers);
-          return JsonConverter.toJSON(res);
-        } else if (fnName.equals("nonNullableNoDefault")) {
-          Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
-          DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
-          String stringArg = null;
-          if (inputArgs.get("stringArg") != null) {
-            stringArg = (String) JsonConverter.fromJSON(inputArgs.get("stringArg"), String.class);
-          }
-          Objects.requireNonNull(stringArg, "stringArg must not be null");
-          String res = obj.nonNullableNoDefault(stringArg);
-          return JsonConverter.toJSON(res);
-        } else if (fnName.equals("nonNullableDefault")) {
-          Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
-          DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
-          String stringArg = null;
-          if (inputArgs.get("stringArg") != null) {
-            stringArg = (String) JsonConverter.fromJSON(inputArgs.get("stringArg"), String.class);
-          }
-          Objects.requireNonNull(stringArg, "stringArg must not be null");
-          String res = obj.nonNullableDefault(stringArg);
-          return JsonConverter.toJSON(res);
-        } else if (fnName.equals("nullable")) {
-          Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
-          DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
-          String stringArg = null;
-          if (inputArgs.get("stringArg") != null) {
-            stringArg = (String) JsonConverter.fromJSON(inputArgs.get("stringArg"), String.class);
-          }
-          var stringArg_opt = Optional.ofNullable(stringArg);
-          String res = obj.nullable(stringArg_opt);
-          return JsonConverter.toJSON(res);
-        } else if (fnName.equals("nullableDefault")) {
-          Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
-          DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
-          String stringArg = null;
-          if (inputArgs.get("stringArg") != null) {
-            stringArg = (String) JsonConverter.fromJSON(inputArgs.get("stringArg"), String.class);
-          }
-          var stringArg_opt = Optional.ofNullable(stringArg);
-          String res = obj.nullableDefault(stringArg_opt);
-          return JsonConverter.toJSON(res);
-        } else if (fnName.equals("defaultPlatform")) {
-          Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
-          DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
-          Platform res = obj.defaultPlatform();
-          return JsonConverter.toJSON(res);
-        } else if (fnName.equals("addFloat")) {
-          Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
-          DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
-          float a = 0;
-          if (inputArgs.get("a") != null) {
-            a = (float) JsonConverter.fromJSON(inputArgs.get("a"), float.class);
-          }
-          float b = 0;
-          if (inputArgs.get("b") != null) {
-            b = (float) JsonConverter.fromJSON(inputArgs.get("b"), float.class);
-          }
-          float res = obj.addFloat(a, b);
-          return JsonConverter.toJSON(res);
-        } if (fnName.equals("")) {
-          Directory source = null;
-          if (inputArgs.get("source") != null) {
-            source = (Directory) JsonConverter.fromJSON(inputArgs.get("source"), Directory.class);
-          }
-          var source_opt = Optional.ofNullable(source);
-          String version = null;
-          if (inputArgs.get("version") != null) {
-            version = (String) JsonConverter.fromJSON(inputArgs.get("version"), String.class);
-          }
-          Objects.requireNonNull(version, "version must not be null");
-          DaggerJava res = new DaggerJava(source_opt, version);
-          return JsonConverter.toJSON(res);
+    if (parentName.equals("DaggerJava")) {
+      if (fnName.equals("containerEcho")) {
+        Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
+        DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
+        String stringArg = null;
+        if (inputArgs.get("stringArg") != null) {
+          stringArg = (String) JsonConverter.fromJSON(inputArgs.get("stringArg"), String.class);
         }
+        Objects.requireNonNull(stringArg, "stringArg must not be null");
+        Container res = obj.containerEcho(stringArg);
+        return JsonConverter.toJSON(res);
+      } else if (fnName.equals("grepDir")) {
+        Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
+        DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
+        Directory directoryArg = null;
+        if (inputArgs.get("directoryArg") != null) {
+          directoryArg = (Directory) JsonConverter.fromJSON(inputArgs.get("directoryArg"), Directory.class);
+        }
+        Objects.requireNonNull(directoryArg, "directoryArg must not be null");
+        String pattern = null;
+        if (inputArgs.get("pattern") != null) {
+          pattern = (String) JsonConverter.fromJSON(inputArgs.get("pattern"), String.class);
+        }
+        var pattern_opt = Optional.ofNullable(pattern);
+        String res = obj.grepDir(directoryArg, pattern_opt);
+        return JsonConverter.toJSON(res);
+      } else if (fnName.equals("itself")) {
+        Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
+        DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
+        DaggerJava res = obj.itself();
+        return JsonConverter.toJSON(res);
+      } else if (fnName.equals("isZero")) {
+        Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
+        DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
+        int value = 0;
+        if (inputArgs.get("value") != null) {
+          value = (int) JsonConverter.fromJSON(inputArgs.get("value"), int.class);
+        }
+        boolean res = obj.isZero(value);
+        return JsonConverter.toJSON(res);
+      } else if (fnName.equals("doThings")) {
+        Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
+        DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
+        String[] stringArray = null;
+        if (inputArgs.get("stringArray") != null) {
+          stringArray = (String[]) JsonConverter.fromJSON(inputArgs.get("stringArray"), String[].class);
+        }
+        Objects.requireNonNull(stringArray, "stringArray must not be null");
+        List ints = null;
+        if (inputArgs.get("ints") != null) {
+          ints = (List) JsonConverter.fromJSON(inputArgs.get("ints"), List.class);
+        }
+        Objects.requireNonNull(ints, "ints must not be null");
+        List containers = null;
+        if (inputArgs.get("containers") != null) {
+          containers = (List) JsonConverter.fromJSON(inputArgs.get("containers"), List.class);
+        }
+        Objects.requireNonNull(containers, "containers must not be null");
+        int[] res = obj.doThings(stringArray, ints, containers);
+        return JsonConverter.toJSON(res);
+      } else if (fnName.equals("nonNullableNoDefault")) {
+        Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
+        DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
+        String stringArg = null;
+        if (inputArgs.get("stringArg") != null) {
+          stringArg = (String) JsonConverter.fromJSON(inputArgs.get("stringArg"), String.class);
+        }
+        Objects.requireNonNull(stringArg, "stringArg must not be null");
+        String res = obj.nonNullableNoDefault(stringArg);
+        return JsonConverter.toJSON(res);
+      } else if (fnName.equals("nonNullableDefault")) {
+        Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
+        DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
+        String stringArg = null;
+        if (inputArgs.get("stringArg") != null) {
+          stringArg = (String) JsonConverter.fromJSON(inputArgs.get("stringArg"), String.class);
+        }
+        Objects.requireNonNull(stringArg, "stringArg must not be null");
+        String res = obj.nonNullableDefault(stringArg);
+        return JsonConverter.toJSON(res);
+      } else if (fnName.equals("nullable")) {
+        Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
+        DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
+        String stringArg = null;
+        if (inputArgs.get("stringArg") != null) {
+          stringArg = (String) JsonConverter.fromJSON(inputArgs.get("stringArg"), String.class);
+        }
+        var stringArg_opt = Optional.ofNullable(stringArg);
+        String res = obj.nullable(stringArg_opt);
+        return JsonConverter.toJSON(res);
+      } else if (fnName.equals("nullableDefault")) {
+        Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
+        DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
+        String stringArg = null;
+        if (inputArgs.get("stringArg") != null) {
+          stringArg = (String) JsonConverter.fromJSON(inputArgs.get("stringArg"), String.class);
+        }
+        var stringArg_opt = Optional.ofNullable(stringArg);
+        String res = obj.nullableDefault(stringArg_opt);
+        return JsonConverter.toJSON(res);
+      } else if (fnName.equals("defaultPlatform")) {
+        Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
+        DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
+        Platform res = obj.defaultPlatform();
+        return JsonConverter.toJSON(res);
+      } else if (fnName.equals("addFloat")) {
+        Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
+        DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
+        float a = 0;
+        if (inputArgs.get("a") != null) {
+          a = (float) JsonConverter.fromJSON(inputArgs.get("a"), float.class);
+        }
+        float b = 0;
+        if (inputArgs.get("b") != null) {
+          b = (float) JsonConverter.fromJSON(inputArgs.get("b"), float.class);
+        }
+        float res = obj.addFloat(a, b);
+        return JsonConverter.toJSON(res);
+      } if (fnName.equals("")) {
+        Directory source = null;
+        if (inputArgs.get("source") != null) {
+          source = (Directory) JsonConverter.fromJSON(inputArgs.get("source"), Directory.class);
+        }
+        var source_opt = Optional.ofNullable(source);
+        String version = null;
+        if (inputArgs.get("version") != null) {
+          version = (String) JsonConverter.fromJSON(inputArgs.get("version"), String.class);
+        }
+        Objects.requireNonNull(version, "version must not be null");
+        DaggerJava res = new DaggerJava(source_opt, version);
+        return JsonConverter.toJSON(res);
       }
     }
     throw new InvocationTargetException(new Error("unknown function " + fnName));
