@@ -149,7 +149,7 @@ func (c *ShellCommand) Execute(ctx context.Context, h *shellCallHandler, args []
 			return fmt.Errorf("command %q %w\nusage: %s", c.Name(), err, c.Use)
 		}
 	}
-	// sesolve state values in arguments
+	// resolve state values in arguments
 	a, err := h.resolveResults(ctx, args)
 	if err != nil {
 		return err
