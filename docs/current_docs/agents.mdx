@@ -73,16 +73,33 @@ v0.17.0-llm.7
 
 ### 2.Configure LLM endpoints
 
-Dagger uses your system's standard environment variables to route LLM requests. Currently these variables are supported:
+Dagger uses your system's standard environment variables to route LLM requests.
+Check the [source code](https://github.com/dagger/dagger/blob/llm/core/llm.go#L250) for the latest, but these are the most-commonly used variables:
 
-- `OPENAI_API_KEY`
-- `OPENAI_BASE_URL`
-- `OPENAI_MODEL`
-- `ANTHROPIC_API_KEY`
-- `ANTHROPIC_BASE_URL`
-- `ANTHROPIC_MODEL`
+#### Anthropic
+- `ANTHROPIC_API_KEY`: required
+- `ANTHROPIC_MODEL`: if unset, defaults to latest Claude 4.5 Sonnet
+additional option
+- `ANTHROPIC_BASE_URL`: tbd
+
+#### OpenAI
+- `OPENAI_API_KEY`: required
+- `OPENAI_MODEL`: if unset, defaults to `"gpt-4o"`
+- `OPENAI_BASE_URL`: for alternative OpenAI-compatible endpoints like Azure or local models
+- `OPENAI_AZURE_VERSION`: for use with [Azure's API to OpenAI](https://learn.microsoft.com/en-us/azure/ai-services/openai/overview). See below.
+
+#### OpenAI-compatible Google Gemini API
+- `GEMINI_API_KEY`: required
+- `GEMINI_BASE_URL`: see the [Google documentation](https://ai.google.dev/gemini-api/docs/openai)
+- `GEMINI_MODEL`: default `"gemini-2.0-flash"`
 
 Dagger will look for these variables in your environment, or in a `.env` file in the current directory (`.env` files in parent directories are not yet supported).
+
+Secrets in the `.env` file can use Dagger Secrets management, for example:
+```
+# key stored in 1Password
+OPENAI_API_KEY="op://Private/OpenAI API Key/password"
+```
 
 #### Using with Ollama
 
@@ -135,6 +152,8 @@ ollama pull llama3.2
 
 Note that to successfully give the LLM Dagger's API to use as a tool, the model should support tools.
 Here's a list curated by Ollama of models that support tools: [Ollama models supporting tools](https://ollama.com/search?c=tools)
+
+#### Using with Amazon Bedrock (tbd)
 
 #### Using with Azure OpenAI Service
 
