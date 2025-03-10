@@ -83,7 +83,7 @@ Bun runtime support is still experimental. Unexpected results may occur in some 
 When a runtime is not explicitly defined within the `package.json` file, Dagger automatically identifies the appropriate runtime by examining the project's lock files inside the project's `dagger` directory.
 
 - If Dagger finds any of the following lock files : `package-lock.json`, `yarn.lock`, or `pnpm-lock.yaml`, it automatically selects `node` as the runtime.
-- In the absence of the lock files mentioned above, if a `bun.lockb` file is present, Dagger will choose `bun` as the runtime.
+- In the absence of the lock files mentioned above, if a `bun.lock` or `bun.lockb` file is present, Dagger will choose `bun` as the runtime.
 - If no or only unknown lock files are present, `node` is chosen.
 
 :::warning
@@ -158,7 +158,7 @@ Setting the `runtime` property to `bun` will use the Bun runtime and its package
 When a package manager is not explicitly defined within the `package.json` file, Dagger automatically identifies the appropriate package manager by examining the project's lock files inside the project's `.dagger` directory.
 
 - If Dagger finds any of the following lock files : `package-lock.json`, `yarn.lock`, or `pnpm-lock.yaml`, it automatically selects the corresponding package manager with a predefined default version: `npm@10.7.0`, `yarn@1.22.22` or `pnpm@8.15.4`.
-- If none of the above mentioned lock files are present, but a `bun.lockb` file is present, Dagger will choose `bun` as the runtime and package manager with a predefined default version: `bun@1.0.11`.
+- If none of the above mentioned lock files are present, but a `bun.lock` or `bun.lockb` file is present, Dagger will choose `bun` as the runtime and package manager with a predefined default version: `bun@1.0.11`.
 - `yarn@1.22.22` is the last default, when nothing mentioned above applies.
 
 :::warning
