@@ -12,7 +12,7 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
-	"github.com/dagger/dagger/cmd/dagger/rand"
+	"github.com/dagger/dagger/core/rand"
 	"golang.org/x/sync/errgroup"
 	"mvdan.cc/sh/v3/interp"
 )
