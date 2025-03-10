@@ -1,23 +1,177 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
+	"iter"
+	"maps"
+	"regexp"
+	"slices"
+	"strings"
+	"sync"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/dagger/core/rand"
+	"golang.org/x/sync/errgroup"
 	"mvdan.cc/sh/v3/interp"
 )
 
-const (
-	// shellStatePrefix is the prefix that identifies a shell state in input/output
-	shellStatePrefix = "DSH:"
-)
+// shellStatePattern is a regular expression to match state tokens.
+var shellStatePattern = regexp.MustCompile(`\{DSH:([A-Z2-7]+)\}`)
+
+// newStateToken returns a new state token for the given key.
+func newStateToken(key string) string {
+	return "{DSH:" + key + "}"
+}
+
+// HasState returns true if the input string contains a state token.
+func HasState(s string) bool {
+	return shellStatePattern.MatchString(s)
+}
+
+// FindStateTokens returns all state tokens in the input string, if any.
+func FindStateTokens(s string) []string {
+	return shellStatePattern.FindAllString(s, -1)
+}
+
+// FindStateKeys returns an iterator over all state keys in the input string.
+func FindStateKeys(s string) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		for _, m := range shellStatePattern.FindAllStringSubmatch(s, -1) {
+			if !yield(m[1]) {
+				return
+			}
+		}
+	}
+}
+
+// GetStateKey returns the state key from a token.
+//
+// If input is not exactly a token, returns an empty string.
+func GetStateKey(in string) string {
+	m := shellStatePattern.FindAllStringSubmatch(in, -1)
+	if len(m) != 1 {
+		return ""
+	}
+	token, key := m[0][0], m[0][1]
+	if token != in {
+		return ""
+	}
+	return key
+}
+
+// ShellStateStore manages state instances in memory concurrently.
+type ShellStateStore struct {
+	data   map[string]ShellState
+	mu     sync.RWMutex
+	runner *interp.Runner
+}
+
+func NewStateStore(runner *interp.Runner) *ShellStateStore {
+	return &ShellStateStore{
+		data:   make(map[string]ShellState),
+		runner: runner,
+	}
+}
+
+// Store saves a state instance and returns its key.
+//
+// This always generates a new key for immutability.
+func (s *ShellStateStore) Store(st ShellState) string {
+	st.Key = rand.Text()
+	s.mu.Lock()
+	s.data[st.Key] = st
+	s.mu.Unlock()
+	return st.Key
+}
+
+// Get returns a state instance by key.
+func (s *ShellStateStore) Get(key string) (ShellState, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	st, exists := s.data[key]
+	return st, exists
+}
+
+// Delete removes a state instance by key.
+//
+// The state won't be deleted if in use by a variable.
+func (s *ShellStateStore) Delete(key string) {
+	if s.isUsed(key) {
+		return
+	}
+	s.mu.Lock()
+	delete(s.data, key)
+	s.mu.Unlock()
+}
+
+// Load is like [Get] but returns an error if the key is not found or if
+// the state represents an error.
+func (s *ShellStateStore) Load(key string) (*ShellState, error) {
+	if key == "" {
+		return nil, nil
+	}
+	st, exists := s.Get(key)
+	if !exists {
+		return nil, fmt.Errorf("tried to access non-existent state %q", key)
+	}
+	return &st, st.Error
+}
+
+// Extract is like [Load] but also deletes the state from memory.
+//
+// This is expected to be used when the state is being resolved rather than
+// just passed around.
+func (s *ShellStateStore) Extract(key string) (*ShellState, error) {
+	defer s.Delete(key)
+	return s.Load(key)
+}
+
+// isUsed returns true if a state key is being used in a variable.
+func (s *ShellStateStore) isUsed(key string) bool {
+	if s.runner == nil {
+		return false
+	}
+	for _, v := range s.runner.Vars {
+		if strings.Contains(v.String(), newStateToken(key)) {
+			return true
+		}
+	}
+	return false
+}
+
+// Prune removes all state instances that are not in use by a variable.
+//
+// This can be used at the end of a run to avoid
+func (s *ShellStateStore) Prune() int {
+	used := make(map[string]struct{})
+
+	if s.runner != nil {
+		for _, v := range s.runner.Vars {
+			for key := range FindStateKeys(v.String()) {
+				used[key] = struct{}{}
+			}
+		}
+	}
+
+	count := 0
+	s.mu.Lock()
+	for key := range s.data {
+		if _, exists := used[key]; !exists {
+			count++
+			delete(s.data, key)
+		}
+	}
+	s.mu.Unlock()
+	return count
+}
+
+func (s *ShellStateStore) debug(ctx context.Context) {
+	s.mu.RLock()
+	shellDebug(ctx, "State dump", slices.Collect(maps.Values(s.data)))
+	s.mu.RUnlock()
+}
 
 // ShellState is an intermediate representation of a query
 //
@@ -33,6 +187,9 @@ const (
 // one's stdin. Each handler in the chain should add a corresponding FunctionCall
 // to the state and write it to stdout for the next handler to read.
 type ShellState struct {
+	// Key is the state store key
+	Key string `json:"key"`
+
 	// ModDigest is the module source digest for the current state
 	//
 	// If empty, it must fall back to the default context.
@@ -46,7 +203,7 @@ type ShellState struct {
 	Calls []FunctionCall `json:"calls,omitempty"`
 
 	// Error is non-nil if the previous command failed
-	Error *string `json:"error,omitempty"`
+	Error error `json:"error,omitempty"`
 }
 
 func (st ShellState) IsError() bool {
@@ -86,29 +243,17 @@ type FunctionCall struct {
 	ReturnObject string         `json:"returnObject"`
 }
 
-// Write serializes the shell state to the current exec handler's stdout
-func (st ShellState) Write(ctx context.Context) error {
-	return st.WriteTo(interp.HandlerCtx(ctx).Stdout)
-}
-
-func (st ShellState) WriteTo(w io.Writer) error {
-	var buf bytes.Buffer
-
-	// Encode state in base64 to avoid issues with spaces being turned into
-	// multiple arguments when the result of a command subsitution.
-	bEnc := base64.NewEncoder(base64.StdEncoding, &buf)
-	jEnc := json.NewEncoder(bEnc)
-
-	if err := jEnc.Encode(st); err != nil {
-		return err
+// Save the shell state in the state store so it can be retrieved by the
+// next call in the chain
+func (h *shellCallHandler) Save(ctx context.Context, st ShellState) error {
+	if st.Key != "" {
+		// Replace instead of mutate otherwise it's harder to manage
+		// when it's saved in a var.
+		defer h.state.Delete(st.Key)
 	}
-	if err := bEnc.Close(); err != nil {
-		return err
-	}
-
-	// Use a single write call so we can decode it in the runner's stdout write handler
-	_, err := w.Write(append([]byte(shellStatePrefix), buf.Bytes()...))
-
+	nkey := h.state.Store(st)
+	w := interp.HandlerCtx(ctx).Stdout
+	_, err := w.Write([]byte(newStateToken(nkey)))
 	return err
 }
 
@@ -124,18 +269,16 @@ func (st ShellState) Function() FunctionCall {
 }
 
 // WithCall returns a new state with the given function call added to the chain
-func (st ShellState) WithCall(fn *modFunction, argValues map[string]any) *ShellState {
+func (st ShellState) WithCall(fn *modFunction, argValues map[string]any) ShellState {
 	prev := st.Function()
-	return &ShellState{
-		Cmd:       st.Cmd,
-		ModDigest: st.ModDigest,
-		Calls: append(st.Calls, FunctionCall{
-			Object:       prev.ReturnObject,
-			Name:         fn.Name,
-			ReturnObject: fn.ReturnType.Name(),
-			Arguments:    argValues,
-		}),
-	}
+	next := st
+	next.Calls = append(next.Calls, FunctionCall{
+		Object:       prev.ReturnObject,
+		Name:         fn.Name,
+		ReturnObject: fn.ReturnType.Name(),
+		Arguments:    argValues,
+	})
+	return next
 }
 
 // QueryBuilder returns a querybuilder.Selection from the shell state
@@ -178,67 +321,124 @@ func (f FunctionCall) GetNextDef(modDef *moduleDef, name string) (*modFunction, 
 	return modDef.GetObjectFunction(f.ReturnObject, name)
 }
 
-// readShellState deserializes shell state
-//
-// We use an hardcoded prefix when writing and reading state to make it easy
-// to detect if a given input is a shell state or not. This way we can tell
-// the difference between a serialized state that failed to unmarshal and
-// non-state data.
-func readShellState(r io.Reader) (*ShellState, []byte, error) {
-	if r == nil {
-		return nil, nil, nil
+func (h *shellCallHandler) stateResolver(ctx context.Context) func([]byte) ([]byte, error) {
+	return func(b []byte) ([]byte, error) {
+		s := string(b)
+		if !HasState(s) {
+			return b, nil
+		}
+		r, err := h.resolveResult(ctx, s)
+		if err != nil {
+			return nil, err
+		}
+		return []byte(r), nil
 	}
-	b, err := io.ReadAll(r)
+}
+
+// resolveResults replaces state keys with their resolved values in any of the
+// input arguments
+func (h *shellCallHandler) resolveResults(ctx context.Context, args []string) ([]string, error) {
+	var mu sync.Mutex
+
+	eg, gctx := errgroup.WithContext(ctx)
+
+	results := make([]string, len(args))
+
+	for i, arg := range args {
+		if !HasState(arg) {
+			mu.Lock()
+			results[i] = arg
+			mu.Unlock()
+			continue
+		}
+		eg.Go(func() error {
+			r, err := h.resolveResult(gctx, arg)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			results[i] = r
+			mu.Unlock()
+			return nil
+		})
+	}
+
+	err := eg.Wait()
+
+	if h.debug {
+		shellDebug(ctx, "resolve results", args, results)
+	}
+
+	return results, err
+}
+
+// resolveResult replaces state keys with their resolved values in the input string
+func (h *shellCallHandler) resolveResult(ctx context.Context, in string) (res string, rerr error) {
+	matches := shellStatePattern.FindAllStringSubmatch(in, -1)
+	if len(matches) == 0 {
+		return in, nil
+	}
+
+	var mu sync.Mutex
+
+	eg, gctx := errgroup.WithContext(ctx)
+	for i, match := range matches {
+		eg.Go(func() error {
+			r, err := h.resolveState(gctx, match[1])
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			matches[i][1] = r
+			mu.Unlock()
+
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return in, err
+	}
+
+	return strings.NewReplacer(slices.Concat(matches...)...).Replace(in), nil
+}
+
+// resolveState returns the resolved value of a state instance given its key
+func (h *shellCallHandler) resolveState(ctx context.Context, key string) (string, error) {
+	st, err := h.state.Extract(key)
 	if err != nil {
-		return nil, nil, err
+		return "", err
 	}
-	p := []byte(shellStatePrefix)
-	if !bytes.HasPrefix(b, p) {
-		return nil, b, nil
+	r, err := h.StateResult(ctx, st)
+	if err != nil {
+		return "", err
 	}
-	encoded := bytes.TrimPrefix(b, p)
-	decoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader(encoded))
-	jsonDec := json.NewDecoder(decoder)
-	jsonDec.UseNumber()
-
-	var s ShellState
-	if err := jsonDec.Decode(&s); err != nil {
-		return nil, b, fmt.Errorf("decode state: %w", err)
-	}
-	if s.IsError() {
-		return &s, nil, errors.New(*s.Error)
-	}
-	return &s, nil, nil
+	return r.String()
 }
 
-func shellState(ctx context.Context) (*ShellState, []byte, error) {
-	return readShellState(interp.HandlerCtx(ctx).Stdin)
-}
-
-func (h *shellCallHandler) newModState(dig string) *ShellState {
-	return &ShellState{
+func (h *shellCallHandler) newModState(dig string) ShellState {
+	return ShellState{
 		ModDigest: dig,
 	}
 }
 
-func (h *shellCallHandler) NewState() *ShellState {
-	return &ShellState{}
+func (h *shellCallHandler) NewState() ShellState {
+	return ShellState{}
 }
 
-func (h *shellCallHandler) NewStdlibState() *ShellState {
-	return &ShellState{
+func (h *shellCallHandler) NewStdlibState() ShellState {
+	return ShellState{
 		Cmd: shellStdlibCmdName,
 	}
 }
 
-func (h *shellCallHandler) NewCoreState() *ShellState {
-	return &ShellState{
+func (h *shellCallHandler) NewCoreState() ShellState {
+	return ShellState{
 		Cmd: shellCoreCmdName,
 	}
 }
 
-func (h *shellCallHandler) NewDepsState() *ShellState {
-	return &ShellState{
+func (h *shellCallHandler) NewDepsState() ShellState {
+	return ShellState{
 		Cmd: shellDepsCmdName,
 	}
 }
