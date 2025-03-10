@@ -120,6 +120,10 @@ func extractLLBDependencies(ctx context.Context, val any) ([]llb.State, error) {
 	}
 	deps := make([]llb.State, 0, len(depsDefs))
 	for _, def := range depsDefs {
+		if def == nil || def.Def == nil {
+			deps = append(deps, llb.Scratch())
+			continue
+		}
 		op, err := llb.NewDefinitionOp(def)
 		if err != nil {
 			return nil, err

@@ -173,9 +173,7 @@ func (op FSDagOp) Mount(ctx context.Context, ref bkcache.Ref, f func(string) err
 // allows for efficiently caching the result.
 func NewRawDagOp[T dagql.Typed](ctx context.Context, srv *dagql.Server, id *call.ID, inputs []llb.State) (t T, err error) {
 	dagOp := RawDagOp{ID: id, Filename: "output.json"}
-	st, err := buildkit.NewCustomLLB(ctx, dagOp, inputs,
-		llb.WithCustomNamef("%s %s", dagOp.Name(), id.Name()),
-		buildkit.WithPassthrough())
+	st, err := newDagOpLLB(ctx, dagOp, id, inputs)
 	if err != nil {
 		return t, err
 	}
