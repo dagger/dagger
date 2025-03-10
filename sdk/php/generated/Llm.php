@@ -218,6 +218,15 @@ class Llm extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the llm state as a Llm
+     */
+    public function llm(): Llm
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('llm');
+        return new \Dagger\Llm($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * synchronize LLM state
      */
     public function loop(): Llm
@@ -278,6 +287,15 @@ class Llm extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('phpSdk');
         return new \Dagger\PhpSdk($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * return the provider used by the llm
+     */
+    public function provider(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('provider');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'provider');
     }
 
     /**
@@ -567,6 +585,26 @@ class Llm extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withListTypeDef');
         $innerQueryBuilder->setArgument('value', $value);
+        return new \Dagger\Llm($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Set the llm state to a Llm
+     */
+    public function withLlm(LlmId|Llm $value): Llm
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLlm');
+        $innerQueryBuilder->setArgument('value', $value);
+        return new \Dagger\Llm($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * swap out the llm model
+     */
+    public function withModel(string $model): Llm
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withModel');
+        $innerQueryBuilder->setArgument('model', $model);
         return new \Dagger\Llm($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

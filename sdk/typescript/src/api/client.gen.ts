@@ -5225,6 +5225,7 @@ export class Llm extends BaseClient {
   private readonly _id?: LlmID = undefined
   private readonly _lastReply?: string = undefined
   private readonly _model?: string = undefined
+  private readonly _provider?: string = undefined
   private readonly _sync?: LlmID = undefined
   private readonly _tools?: string = undefined
 
@@ -5236,6 +5237,7 @@ export class Llm extends BaseClient {
     _id?: LlmID,
     _lastReply?: string,
     _model?: string,
+    _provider?: string,
     _sync?: LlmID,
     _tools?: string,
   ) {
@@ -5244,6 +5246,7 @@ export class Llm extends BaseClient {
     this._id = _id
     this._lastReply = _lastReply
     this._model = _model
+    this._provider = _provider
     this._sync = _sync
     this._tools = _tools
   }
@@ -5450,6 +5453,14 @@ export class Llm extends BaseClient {
   }
 
   /**
+   * Retrieve the llm state as a Llm
+   */
+  llm = (): Llm => {
+    const ctx = this._ctx.select("llm")
+    return new Llm(ctx)
+  }
+
+  /**
    * synchronize LLM state
    * @deprecated use sync
    */
@@ -5503,6 +5514,21 @@ export class Llm extends BaseClient {
   objectTypeDef = (): ObjectTypeDef => {
     const ctx = this._ctx.select("objectTypeDef")
     return new ObjectTypeDef(ctx)
+  }
+
+  /**
+   * return the provider used by the llm
+   */
+  provider = async (): Promise<string> => {
+    if (this._provider) {
+      return this._provider
+    }
+
+    const ctx = this._ctx.select("provider")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**
@@ -5772,6 +5798,24 @@ export class Llm extends BaseClient {
    */
   withListTypeDef = (value: ListTypeDef): Llm => {
     const ctx = this._ctx.select("withListTypeDef", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * Set the llm state to a Llm
+   * @param value The value of the Llm to save
+   */
+  withLlm = (value: Llm): Llm => {
+    const ctx = this._ctx.select("withLlm", { value })
+    return new Llm(ctx)
+  }
+
+  /**
+   * swap out the llm model
+   * @param model The model to use
+   */
+  withModel = (model: string): Llm => {
+    const ctx = this._ctx.select("withModel", { model })
     return new Llm(ctx)
   }
 

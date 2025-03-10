@@ -278,6 +278,18 @@ defmodule Dagger.Llm do
     }
   end
 
+  @doc "Retrieve the llm state as a Llm"
+  @spec llm(t()) :: Dagger.Llm.t()
+  def llm(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("llm")
+
+    %Dagger.Llm{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
   @deprecated "use sync"
   @doc "synchronize LLM state"
   @spec loop(t()) :: Dagger.Llm.t()
@@ -346,6 +358,15 @@ defmodule Dagger.Llm do
       query_builder: query_builder,
       client: llm.client
     }
+  end
+
+  @doc "return the provider used by the llm"
+  @spec provider(t()) :: {:ok, String.t()} | {:error, term()}
+  def provider(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("provider")
+
+    Client.execute(llm.client, query_builder)
   end
 
   @doc "Retrieve the llm state as a ScalarTypeDef"
@@ -732,6 +753,30 @@ defmodule Dagger.Llm do
       llm.query_builder
       |> QB.select("withListTypeDef")
       |> QB.put_arg("value", Dagger.ID.id!(value))
+
+    %Dagger.Llm{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc "Set the llm state to a Llm"
+  @spec with_llm(t(), Dagger.Llm.t()) :: Dagger.Llm.t()
+  def with_llm(%__MODULE__{} = llm, value) do
+    query_builder =
+      llm.query_builder |> QB.select("withLlm") |> QB.put_arg("value", Dagger.ID.id!(value))
+
+    %Dagger.Llm{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc "swap out the llm model"
+  @spec with_model(t(), String.t()) :: Dagger.Llm.t()
+  def with_model(%__MODULE__{} = llm, model) do
+    query_builder =
+      llm.query_builder |> QB.select("withModel") |> QB.put_arg("model", model)
 
     %Dagger.Llm{
       query_builder: query_builder,

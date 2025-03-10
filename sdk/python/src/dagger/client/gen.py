@@ -5710,6 +5710,12 @@ class Llm(Type):
         _ctx = self._select("listTypeDef", _args)
         return ListTypeDef(_ctx)
 
+    def llm(self) -> Self:
+        """Retrieve the llm state as a Llm"""
+        _args: list[Arg] = []
+        _ctx = self._select("llm", _args)
+        return Llm(_ctx)
+
     def loop(self) -> Self:
         """synchronize LLM state
 
@@ -5769,6 +5775,27 @@ class Llm(Type):
         _args: list[Arg] = []
         _ctx = self._select("objectTypeDef", _args)
         return ObjectTypeDef(_ctx)
+
+    async def provider(self) -> str:
+        """return the provider used by the llm
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("provider", _args)
+        return await _ctx.execute(str)
 
     def scalar_type_def(self) -> "ScalarTypeDef":
         """Retrieve the llm state as a ScalarTypeDef"""
@@ -6136,6 +6163,34 @@ class Llm(Type):
             Arg("value", value),
         ]
         _ctx = self._select("withListTypeDef", _args)
+        return Llm(_ctx)
+
+    def with_llm(self, value: Self) -> Self:
+        """Set the llm state to a Llm
+
+        Parameters
+        ----------
+        value:
+            The value of the Llm to save
+        """
+        _args = [
+            Arg("value", value),
+        ]
+        _ctx = self._select("withLlm", _args)
+        return Llm(_ctx)
+
+    def with_model(self, model: str) -> Self:
+        """swap out the llm model
+
+        Parameters
+        ----------
+        model:
+            The model to use
+        """
+        _args = [
+            Arg("model", model),
+        ]
+        _ctx = self._select("withModel", _args)
         return Llm(_ctx)
 
     def with_module(self, value: "Module") -> Self:

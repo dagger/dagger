@@ -5395,6 +5395,7 @@ type Llm struct {
 	id        *LlmID
 	lastReply *string
 	model     *string
+	provider  *string
 	sync      *LlmID
 	tools     *string
 }
@@ -5656,6 +5657,15 @@ func (r *Llm) ListTypeDef() *ListTypeDef {
 	}
 }
 
+// Retrieve the llm state as a Llm
+func (r *Llm) Llm() *Llm {
+	q := r.query.Select("llm")
+
+	return &Llm{
+		query: q,
+	}
+}
+
 // synchronize LLM state
 //
 // Deprecated: use sync
@@ -5714,6 +5724,19 @@ func (r *Llm) ObjectTypeDef() *ObjectTypeDef {
 	return &ObjectTypeDef{
 		query: q,
 	}
+}
+
+// return the provider used by the llm
+func (r *Llm) Provider(ctx context.Context) (string, error) {
+	if r.provider != nil {
+		return *r.provider, nil
+	}
+	q := r.query.Select("provider")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Retrieve the llm state as a ScalarTypeDef
@@ -6027,6 +6050,17 @@ func (r *Llm) WithInterfaceTypeDef(value *InterfaceTypeDef) *Llm {
 func (r *Llm) WithListTypeDef(value *ListTypeDef) *Llm {
 	assertNotNil("value", value)
 	q := r.query.Select("withListTypeDef")
+	q = q.Arg("value", value)
+
+	return &Llm{
+		query: q,
+	}
+}
+
+// Set the llm state to a Llm
+func (r *Llm) WithLlm(value *Llm) *Llm {
+	assertNotNil("value", value)
+	q := r.query.Select("withLlm")
 	q = q.Arg("value", value)
 
 	return &Llm{

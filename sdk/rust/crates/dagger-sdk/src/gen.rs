@@ -6269,6 +6269,15 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Retrieve the llm state as a Llm
+    pub fn llm(&self) -> Llm {
+        let query = self.selection.select("llm");
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// synchronize LLM state
     pub fn r#loop(&self) -> Llm {
         let query = self.selection.select("loop");
@@ -6318,6 +6327,11 @@ impl Llm {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    /// return the provider used by the llm
+    pub async fn provider(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("provider");
+        query.execute(self.graphql_client.clone()).await
     }
     /// Retrieve the llm state as a ScalarTypeDef
     pub fn scalar_type_def(&self) -> ScalarTypeDef {
@@ -6795,6 +6809,40 @@ impl Llm {
                 Box::pin(async move { value.into_id().await.unwrap().quote() })
             }),
         );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Set the llm state to a Llm
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value of the Llm to save
+    pub fn with_llm(&self, value: impl IntoID<LlmId>) -> Llm {
+        let mut query = self.selection.select("withLlm");
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// swap out the llm model
+    ///
+    /// # Arguments
+    ///
+    /// * `model` - The model to use
+    pub fn with_model(&self, model: impl Into<String>) -> Llm {
+        let mut query = self.selection.select("withModel");
+        query = query.arg("model", model.into());
         Llm {
             proc: self.proc.clone(),
             selection: query,

@@ -242,22 +242,22 @@ func (s *LLMSession) With(ctx context.Context, script string) (*LLMSession, erro
 		return s, err
 	}
 	if typeDef.AsFunctionProvider() != nil {
-		llmId, err := s.llm.ID(ctx)
+		llmID, err := s.llm.ID(ctx)
 		if err != nil {
 			return s, err
 		}
 		s = s.Fork()
 		if err := s.dag.QueryBuilder().
 			Select("loadLlmFromID").
-			Arg("id", llmId).
+			Arg("id", llmID).
 			Select(fmt.Sprintf("with%s", typeDef.Name())).
 			Arg("value", resp).
 			Select("id").
-			Bind(&llmId).
+			Bind(&llmID).
 			Execute(ctx); err != nil {
 			return s, err
 		}
-		s.llm = s.dag.LoadLlmFromID(llmId)
+		s.llm = s.dag.LoadLlmFromID(llmID)
 		return s, nil
 	}
 	return s, fmt.Errorf("cannot change scope to %s - script must return an Object type", typeDef.Name())
@@ -273,7 +273,7 @@ func (s *LLMSession) Complete(entireInput [][]rune, row, col int) (msg string, c
 	}
 	var commands []slashCommand
 	for _, cmd := range slashCommands {
-		if strings.HasPrefix(cmd.name, string(word)) {
+		if strings.HasPrefix(cmd.name, word) {
 			commands = append(commands, cmd)
 		}
 	}
