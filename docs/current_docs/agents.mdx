@@ -79,18 +79,16 @@ Check the [source code](https://github.com/dagger/dagger/blob/llm/core/llm.go#L2
 #### Anthropic
 - `ANTHROPIC_API_KEY`: required
 - `ANTHROPIC_MODEL`: if unset, defaults to latest Claude 4.5 Sonnet
-additional option
-- `ANTHROPIC_BASE_URL`: tbd
 
 #### OpenAI
 - `OPENAI_API_KEY`: required
 - `OPENAI_MODEL`: if unset, defaults to `"gpt-4o"`
-- `OPENAI_BASE_URL`: for alternative OpenAI-compatible endpoints like Azure or local models
-- `OPENAI_AZURE_VERSION`: for use with [Azure's API to OpenAI](https://learn.microsoft.com/en-us/azure/ai-services/openai/overview). See below.
+- **optional extras**
+  - `OPENAI_BASE_URL`: for alternative OpenAI-compatible endpoints like Azure or local models
+  - `OPENAI_AZURE_VERSION`: for use with [Azure's API to OpenAI](https://learn.microsoft.com/en-us/azure/ai-services/openai/overview). See below.
 
-#### OpenAI-compatible Google Gemini API
+#### Google Gemini
 - `GEMINI_API_KEY`: required
-- `GEMINI_BASE_URL`: see the [Google documentation](https://ai.google.dev/gemini-api/docs/openai)
 - `GEMINI_MODEL`: default `"gemini-2.0-flash"`
 
 Dagger will look for these variables in your environment, or in a `.env` file in the current directory (`.env` files in parent directories are not yet supported).
