@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
+	"github.com/vito/bubbline/editline"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -116,6 +117,15 @@ func NewPlain() Frontend {
 		done:   make(chan struct{}),
 		ticker: time.NewTicker(50 * time.Millisecond),
 	}
+}
+
+func (fe *frontendPlain) Shell(
+	ctx context.Context,
+	fn func(ctx context.Context, input string) error,
+	autocomplete editline.AutoCompleteFn,
+	prompt func(out TermOutput, fg termenv.Color) string,
+) {
+	fmt.Fprintln(os.Stderr, "Shell not supported in plain mode")
 }
 
 func (fe *frontendPlain) ConnectedToEngine(ctx context.Context, name string, version string, clientID string) {
@@ -498,12 +508,12 @@ func (fe *frontendPlain) renderStep(span *dagui.Span, depth int, done bool) {
 	r := newRenderer(fe.db, plainMaxLiteralLen, fe.FrontendOpts)
 
 	prefix := fe.stepPrefix(span, spanDt)
-	if span.Call != nil {
+	if spanCall := span.Call(); spanCall != nil {
 		call := &callpbv1.Call{
-			Field:          span.Call.Field,
-			Args:           span.Call.Args,
-			Type:           span.Call.Type,
-			ReceiverDigest: span.Call.ReceiverDigest,
+			Field:          spanCall.Field,
+			Args:           spanCall.Args,
+			Type:           spanCall.Type,
+			ReceiverDigest: spanCall.ReceiverDigest,
 		}
 		if done {
 			call.Args = nil
@@ -676,14 +686,14 @@ func sampleContext(rows []*dagui.TraceTree) []int {
 	for i := range len(rows) {
 		row := rows[i]
 		result = append(result, i)
-		if row.Span.Call != nil {
+		if row.Span.Call() != nil {
 			break
 		}
 	}
 	// iterate backwards to find the last call
 	for i := len(rows) - 1; i > result[len(result)-1]; i-- {
 		row := rows[i]
-		if row.Span.Call != nil {
+		if row.Span.Call() != nil {
 			result = append(result, i)
 			break
 		}

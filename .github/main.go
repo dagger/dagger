@@ -9,11 +9,11 @@ import (
 )
 
 const (
-	daggerVersion      = "v0.15.3"
+	daggerVersion      = "v0.16.2"
 	upstreamRepository = "dagger/dagger"
 	defaultRunner      = "ubuntu-latest"
 	publicToken        = "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
-	timeoutMinutes     = 10
+	timeoutMinutes     = 20
 )
 
 type CI struct {
@@ -174,7 +174,7 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 			{"modules", []string{"TestModule"}, &dagger.GhaJobOpts{
 				Runner: []string{GoldRunner(false)},
 			}},
-			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP"}, &dagger.GhaJobOpts{
+			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"}, &dagger.GhaJobOpts{
 				Runner: []string{GoldRunner(false)},
 			}},
 			{"cli-engine", []string{"TestCLI", "TestEngine"}, &dagger.GhaJobOpts{
@@ -194,7 +194,7 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 			{"modules", []string{"TestModule"}, &dagger.GhaJobOpts{
 				Runner: []string{PlatinumRunner(true)},
 			}},
-			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP"}, &dagger.GhaJobOpts{
+			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"}, &dagger.GhaJobOpts{
 				Runner: []string{PlatinumRunner(true)},
 			}},
 			{"container", []string{"TestContainer"}, &dagger.GhaJobOpts{

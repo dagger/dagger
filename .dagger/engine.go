@@ -9,7 +9,6 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/moby/buildkit/identity"
 	"go.opentelemetry.io/otel/codes"
-	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/build"
@@ -27,21 +26,14 @@ const (
 type DaggerEngine struct {
 	Dagger *DaggerDev // +private
 
-	Args   []string // +private
-	Config []string // +private
-
-	Trace bool // +private
+	BuildkitConfig []string // +private
+	LogLevel       string   // +private
 
 	Race bool // +private
 }
 
-func (e *DaggerEngine) WithConfig(key, value string) *DaggerEngine {
-	e.Config = append(e.Config, key+"="+value)
-	return e
-}
-
-func (e *DaggerEngine) WithArg(key, value string) *DaggerEngine {
-	e.Args = append(e.Args, key+"="+value)
+func (e *DaggerEngine) WithBuildkitConfig(key, value string) *DaggerEngine {
+	e.BuildkitConfig = append(e.BuildkitConfig, key+"="+value)
 	return e
 }
 
@@ -50,8 +42,8 @@ func (e *DaggerEngine) WithRace() *DaggerEngine {
 	return e
 }
 
-func (e *DaggerEngine) WithTrace() *DaggerEngine {
-	e.Trace = true
+func (e *DaggerEngine) WithLogLevel(level string) *DaggerEngine {
+	e.LogLevel = level
 	return e
 }
 
@@ -66,11 +58,15 @@ func (e *DaggerEngine) Container(
 	// +optional
 	gpuSupport bool,
 ) (*dagger.Container, error) {
-	cfg, err := generateConfig(e.Trace, e.Config)
+	cfg, err := generateConfig(e.LogLevel)
 	if err != nil {
 		return nil, err
 	}
-	entrypoint, err := generateEntrypoint(e.Args)
+	bkcfg, err := generateBKConfig(e.BuildkitConfig)
+	if err != nil {
+		return nil, err
+	}
+	entrypoint, err := generateEntrypoint()
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +103,8 @@ func (e *DaggerEngine) Container(
 		return nil, err
 	}
 	ctr = ctr.
-		WithFile(engineTomlPath, cfg).
+		WithFile(engineJSONPath, cfg).
+		WithFile(engineTOMLPath, bkcfg).
 		WithFile(engineEntrypointPath, entrypoint).
 		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
 
@@ -148,10 +145,6 @@ func (e *DaggerEngine) Service(
 		}
 	}
 
-	e = e.
-		WithConfig("grpc", `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`).
-		WithArg(`network-name`, `dagger-dev`).
-		WithArg(`network-cidr`, `10.88.0.0/16`)
 	devEngine, err := e.Container(ctx, "", image, gpuSupport)
 	if err != nil {
 		return nil, err
@@ -166,6 +159,11 @@ func (e *DaggerEngine) Service(
 		})
 
 	return devEngine.AsService(dagger.ContainerAsServiceOpts{
+		Args: []string{
+			"--addr", "tcp://0.0.0.0:1234",
+			"--network-name", "dagger-dev",
+			"--network-cidr", "10.88.0.0/16",
+		},
 		UseEntrypoint:            true,
 		InsecureRootCapabilities: true,
 	}), nil
@@ -288,13 +286,6 @@ func (e *DaggerEngine) Publish(
 	// +optional
 	registryPassword *dagger.Secret,
 ) error {
-	for _, t := range tag {
-		if semver.IsValid(t) {
-			tag = append(tag, "latest")
-			break
-		}
-	}
-
 	// collect all the targets that we are trying to build together, along with
 	// where they need to go to
 	targetResults := make([]struct {

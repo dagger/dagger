@@ -8,11 +8,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/exp/constraints"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/cache"
 )
 
 // Typed is any value that knows its GraphQL type.
@@ -49,7 +49,9 @@ type ObjectType interface {
 	// Unlike natively added fields, the extended func is limited to the external
 	// Object interface.
 	// cacheKeyFun is optional, if not set the default dagql ID cache key will be used.
-	Extend(spec FieldSpec, fun FieldFunc, cacheKeyFun FieldCacheKeyFunc)
+	Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec)
+	// FieldSpec looks up a field spec by name.
+	FieldSpec(name string, views ...string) (FieldSpec, bool)
 }
 
 type IDType interface {
@@ -62,11 +64,6 @@ type IDType interface {
 // to the object's external interface.
 type FieldFunc func(context.Context, Object, map[string]Input) (Typed, error)
 
-// FieldCacheKeyFunc is a function that computes a cache key for a field on an object. The cache key
-// will be used to cache the result of the field call in dagql's cache and serve as the digest of the
-// call's ID.
-type FieldCacheKeyFunc func(context.Context, Object, map[string]Input, digest.Digest) (digest.Digest, error)
-
 type IDable interface {
 	// ID returns the ID of the value.
 	ID() *call.ID
@@ -77,6 +74,8 @@ type IDable interface {
 type Object interface {
 	Typed
 	IDable
+	PostCallable
+
 	// ObjectType returns the type of the object.
 	ObjectType() ObjectType
 
@@ -95,6 +94,29 @@ type Object interface {
 	//
 	// Any Nullable values are automatically unwrapped.
 	Select(context.Context, *Server, Selector) (Typed, *call.ID, error)
+
+	// ReturnType gets the return type of the field selected by the given
+	// selector.
+	//
+	// The returned value is the raw Typed value returned from the field; it must
+	// be instantiated with a class for further selection.
+	//
+	// Any Nullable values are automatically unwrapped.
+	ReturnType(context.Context, Selector) (Typed, *call.ID, error)
+}
+
+// A type that has a callback attached that needs to always run before returned to a caller
+// whether or not the type is being returned from cache or not
+type PostCallable interface {
+	// Return the postcall func (or nil if not set) and the Typed value in case it was wrapped
+	// with a type used for attaching the postcall func
+	GetPostCall() (cache.PostCallFunc, Typed)
+}
+
+// A type that has a callback attached that needs to always run when the result is removed
+// from the cache
+type OnReleaser interface {
+	OnRelease(context.Context) error
 }
 
 // ScalarType represents a GraphQL Scalar type.
@@ -130,6 +152,27 @@ type Setter interface {
 type InputDecoder interface {
 	// Decode converts a value to the Input type, if possible.
 	DecodeInput(any) (Input, error)
+}
+
+// Wrapper is an interface for types that wrap another type.
+type Wrapper interface {
+	Unwrap() Typed
+}
+
+// UnwrapAs attempts casting val to T, unwrapping as necessary.
+//
+// NOTE: the order of operations is important here - it's important to first
+// check compatibility with T before unwrapping, since sometimes T also
+// implements Wrapper.
+func UnwrapAs[T any](val any) (T, bool) {
+	t, ok := val.(T)
+	if ok {
+		return t, true
+	}
+	if wrapper, ok := val.(Wrapper); ok {
+		return UnwrapAs[T](wrapper.Unwrap())
+	}
+	return t, false
 }
 
 // Int is a GraphQL Int scalar.
@@ -727,6 +770,8 @@ func (i ID[T]) Load(ctx context.Context, server *Server) (Instance[T], error) {
 
 // Enumerable is a value that has a length and allows indexing.
 type Enumerable interface {
+	// Element returns the element of the Enumerable.
+	Element() Typed
 	// Len returns the number of elements in the Enumerable.
 	Len() int
 	// Nth returns the Nth element of the Enumerable, with 1 representing the
@@ -862,6 +907,11 @@ func (i Array[T]) Type() *ast.Type {
 }
 
 var _ Enumerable = Array[Typed]{}
+
+func (arr Array[T]) Element() Typed {
+	var t T
+	return t
+}
 
 func (arr Array[T]) Len() int {
 	return len(arr)

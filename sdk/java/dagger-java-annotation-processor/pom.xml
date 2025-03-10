@@ -40,7 +40,7 @@
         <dependency>
             <groupId>org.testng</groupId>
             <artifactId>testng</artifactId>
-            <version>7.10.2</version>
+            <version>7.11.0</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -52,6 +52,12 @@
             <groupId>com.google.testing.compile</groupId>
             <artifactId>compile-testing</artifactId>
             <version>0.21.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>uk.org.webcompere</groupId>
+            <artifactId>system-stubs-jupiter</artifactId>
+            <version>2.1.7</version>
             <scope>test</scope>
         </dependency>
         <dependency>

@@ -7,3 +7,5 @@
 # This file can also be left empty - if it is, then the next version is
 # automagically determined from release note entries (and then adding to the
 # patch release).
+
+v0.16.3

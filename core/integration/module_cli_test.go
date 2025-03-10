@@ -10,7 +10,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/modules"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -18,7 +18,7 @@ import (
 type CLISuite struct{}
 
 func TestCLI(t *testing.T) {
-	testctx.Run(testCtx, t, CLISuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(CLISuite{})
 }
 
 func (CLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
@@ -150,7 +150,7 @@ func (CLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 
 		_, err := ctr.Stdout(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "source subdir path \"../..\" escapes context")
+		requireErrOut(t, err, "source subpath \"../..\" escapes source root")
 	})
 }
 
@@ -508,14 +508,14 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		t.Run("fails on git", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+			privateSetup, cleanup := privateRepoSetup(c, t, tc)
 			defer cleanup()
 
 			_, err := goGitBase(t, c).
-				With(mountedSocket).
+				With(privateSetup).
 				With(daggerExec("develop", "-m", testGitModuleRef(tc, "top-level"))).
 				Sync(ctx)
-			requireErrOut(t, err, `module must be local`)
+			requireErrRegexp(t, err, `module source ".*" kind must be "local", got "git"`)
 		})
 	})
 
@@ -699,7 +699,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 			With(daggerExec("install", "./dep2", "--name=dep")).
 			Sync(ctx)
 
-		requireErrOut(t, err, "two or more dependencies are trying to use the same name")
+		requireErrOut(t, err, fmt.Sprintf("duplicate dependency name %q", "dep"))
 	})
 
 	t.Run("installing a dependency with implicit duplicate name is not allowed", func(ctx context.Context, t *testctx.T) {
@@ -724,7 +724,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 			With(daggerExec("install", "./dep2")).
 			Sync(ctx)
 
-		requireErrOut(t, err, "two or more dependencies are trying to use the same name")
+		requireErrOut(t, err, fmt.Sprintf("duplicate dependency name %q", "dep"))
 	})
 
 	t.Run("install dep from various places", func(ctx context.Context, t *testctx.T) {
@@ -857,7 +857,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/work/test").
 				With(daggerExec("install", "../../play/dep")).
 				Sync(ctx)
-			requireErrOut(t, err, `local module dep source path "../play/dep" escapes context "/work"`)
+			requireErrOut(t, err, `local module dependency context directory "/play/dep" is not in parent context directory "/work"`)
 		})
 
 		t.Run("from src dir with absolute path", func(ctx context.Context, t *testctx.T) {
@@ -865,7 +865,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/work/test").
 				With(daggerExec("install", "/play/dep")).
 				Sync(ctx)
-			requireErrOut(t, err, `local module dep source path "../play/dep" escapes context "/work"`)
+			requireErrOut(t, err, `local module dependency context directory "/play/dep" is not in parent context directory "/work"`)
 		})
 
 		t.Run("from dep dir", func(ctx context.Context, t *testctx.T) {
@@ -873,7 +873,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/play/dep").
 				With(daggerExec("install", "-m=../../work/test", ".")).
 				Sync(ctx)
-			requireErrOut(t, err, `module dep source path "../play/dep" escapes context "/work"`)
+			requireErrOut(t, err, `local module dependency context directory "/play/dep" is not in parent context directory "/work"`)
 		})
 
 		t.Run("from dep dir with absolute path", func(ctx context.Context, t *testctx.T) {
@@ -881,7 +881,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/play/dep").
 				With(daggerExec("install", "-m=/work/test", ".")).
 				Sync(ctx)
-			requireErrOut(t, err, `module dep source path "../play/dep" escapes context "/work"`)
+			requireErrOut(t, err, `local module dependency context directory "/play/dep" is not in parent context directory "/work"`)
 		})
 
 		t.Run("from root", func(ctx context.Context, t *testctx.T) {
@@ -889,7 +889,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/").
 				With(daggerExec("install", "-m=work/test", "play/dep")).
 				Sync(ctx)
-			requireErrOut(t, err, `module dep source path "../play/dep" escapes context "/work"`)
+			requireErrOut(t, err, `local module dependency context directory "/play/dep" is not in parent context directory "/work"`)
 		})
 
 		t.Run("from root with absolute path", func(ctx context.Context, t *testctx.T) {
@@ -897,7 +897,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/").
 				With(daggerExec("install", "-m=/work/test", "play/dep")).
 				Sync(ctx)
-			requireErrOut(t, err, `module dep source path "../play/dep" escapes context "/work"`)
+			requireErrOut(t, err, `local module dependency context directory "/play/dep" is not in parent context directory "/work"`)
 		})
 	})
 
@@ -905,11 +905,11 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 		t.Run("git", func(ctx context.Context, t *testctx.T) {
 			t.Run("happy", func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
-				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+				privateSetup, cleanup := privateRepoSetup(c, t, tc)
 				defer cleanup()
 
 				out, err := goGitBase(t, c).
-					With(mountedSocket).
+					With(privateSetup).
 					WithWorkdir("/work").
 					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
 					With(daggerExec("install", testGitModuleRef(tc, "top-level"))).
@@ -932,11 +932,11 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 
 			t.Run("sad", func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
-				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+				privateSetup, cleanup := privateRepoSetup(c, t, tc)
 				defer cleanup()
 
 				_, err := goGitBase(t, c).
-					With(mountedSocket).
+					With(privateSetup).
 					WithWorkdir("/work").
 					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
 					With(daggerExec("install", testGitModuleRef(tc, "../../"))).
@@ -944,21 +944,21 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 				requireErrOut(t, err, `git module source subpath points out of root: "../.."`)
 
 				_, err = goGitBase(t, c).
-					With(mountedSocket).
+					With(privateSetup).
 					WithWorkdir("/work").
 					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
 					With(daggerExec("install", testGitModuleRef(tc, "this/just/does/not/exist"))).
 					Sync(ctx)
-				requireErrOut(t, err, `module "test" dependency "" with source root path "this/just/does/not/exist" does not exist or does not have a configuration file`)
+				requireErrRegexp(t, err, `git module source .* does not contain a dagger config file`)
 			})
 
 			t.Run("unpinned gets pinned", func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
-				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+				privateSetup, cleanup := privateRepoSetup(c, t, tc)
 				defer cleanup()
 
 				out, err := goGitBase(t, c).
-					With(mountedSocket).
+					With(privateSetup).
 					WithWorkdir("/work").
 					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
 					With(daggerExec("install", tc.gitTestRepoRef)).
@@ -1185,6 +1185,14 @@ func (m *OtherObj) FnE() *dagger.Container {
 		require.Contains(t, lines, "other-field-c   doc for OtherFieldC")
 		require.Contains(t, lines, "other-field-d   doc for OtherFieldD")
 		require.Contains(t, lines, "fn-e            doc for FnE")
+	})
+
+	t.Run("no module present errors nicely", func(ctx context.Context, t *testctx.T) {
+		_, err := ctr.
+			WithWorkdir("/empty").
+			With(daggerFunctions()).
+			Stdout(ctx)
+		requireErrOut(t, err, `module not found`)
 	})
 }
 
@@ -1636,4 +1644,24 @@ func (CLISuite) TestDaggerUpdate(ctx context.Context, t *testctx.T) {
 			}
 		})
 	}
+}
+
+func (CLISuite) TestInvalidModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("normal context dir", func(ctx context.Context, t *testctx.T) {
+		modGen := goGitBase(t, c).
+			WithNewFile("dagger.json", `{"name": "broke", "engineVersion": "v100.0.0", "sdk": 666}`)
+
+		_, err := modGen.With(daggerQuery(`{version}`)).Stdout(ctx)
+		requireErrOut(t, err, `failed to check if module exists`)
+	})
+
+	t.Run("fallback context dir", func(ctx context.Context, t *testctx.T) {
+		modGen := daggerCliBase(t, c).
+			WithNewFile("dagger.json", `{"name": "broke", "engineVersion": "v100.0.0", "sdk": 666}`)
+
+		_, err := modGen.With(daggerQuery(`{version}`)).Stdout(ctx)
+		requireErrOut(t, err, `failed to check if module exists`)
+	})
 }

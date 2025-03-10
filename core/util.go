@@ -14,8 +14,8 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/llbsolver/provenance"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/moby/sys/user"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/opencontainers/runc/libcontainer/user"
 	"github.com/pkg/errors"
 
 	"github.com/dagger/dagger/core/reffs"
@@ -339,4 +339,19 @@ func (s *SliceSet[T]) Append(element T) {
 		return
 	}
 	*s = append(*s, element)
+}
+
+// ImportFromEngineHost is a hack to import data from a specified host directory into
+// buildkit - this is useful if we already have the content on the host - and
+// need to get it into buildkit somehow.
+func ImportFromEngineHost(bk *buildkit.Client, path string, includePatterns []string, opts ...llb.ConstraintsOpt) llb.State {
+	localOpts := []llb.LocalOption{
+		llb.SessionID(bk.ID()), // see engine/server/bk_session.go, we have a special session that points to our engine host
+		llb.SharedKeyHint(bk.ID()),
+		llb.IncludePatterns(includePatterns),
+	}
+	for _, opt := range opts {
+		localOpts = append(localOpts, opt)
+	}
+	return llb.Local(path, localOpts...)
 }

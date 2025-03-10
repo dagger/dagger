@@ -6,42 +6,16 @@ defmodule Dagger.ModuleSource do
   alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
-
+  @derive Dagger.Sync
   defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
-  @doc "If the source is a of kind git, the git source representation of it."
-  @spec as_git_source(t()) :: Dagger.GitModuleSource.t() | nil
-  def as_git_source(%__MODULE__{} = module_source) do
-    query_builder =
-      module_source.query_builder |> QB.select("asGitSource")
-
-    %Dagger.GitModuleSource{
-      query_builder: query_builder,
-      client: module_source.client
-    }
-  end
-
-  @doc "If the source is of kind local, the local source representation of it."
-  @spec as_local_source(t()) :: Dagger.LocalModuleSource.t() | nil
-  def as_local_source(%__MODULE__{} = module_source) do
-    query_builder =
-      module_source.query_builder |> QB.select("asLocalSource")
-
-    %Dagger.LocalModuleSource{
-      query_builder: query_builder,
-      client: module_source.client
-    }
-  end
-
   @doc "Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation"
-  @spec as_module(t(), [{:engine_version, String.t() | nil}]) :: Dagger.Module.t()
-  def as_module(%__MODULE__{} = module_source, optional_args \\ []) do
+  @spec as_module(t()) :: Dagger.Module.t()
+  def as_module(%__MODULE__{} = module_source) do
     query_builder =
-      module_source.query_builder
-      |> QB.select("asModule")
-      |> QB.maybe_put_arg("engineVersion", optional_args[:engine_version])
+      module_source.query_builder |> QB.select("asModule")
 
     %Dagger.Module{
       query_builder: query_builder,
@@ -58,7 +32,45 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "Returns whether the module source has a configuration file."
+  @doc "The ref to clone the root of the git repo from. Only valid for git sources."
+  @spec clone_ref(t()) :: {:ok, String.t()} | {:error, term()}
+  def clone_ref(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("cloneRef")
+
+    Client.execute(module_source.client, query_builder)
+  end
+
+  @doc "The resolved commit of the git repo this source points to. Only valid for git sources."
+  @spec commit(t()) :: {:ok, String.t()} | {:error, term()}
+  def commit(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("commit")
+
+    Client.execute(module_source.client, query_builder)
+  end
+
+  @doc "The clients generated for the module."
+  @spec config_clients(t()) :: {:ok, [Dagger.ModuleConfigClient.t()]} | {:error, term()}
+  def config_clients(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("configClients") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(module_source.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.ModuleConfigClient{
+           query_builder:
+             QB.query()
+             |> QB.select("loadModuleConfigClientFromID")
+             |> QB.put_arg("id", id),
+           client: module_source.client
+         }
+       end}
+    end
+  end
+
+  @doc "Whether an existing dagger.json for the module was found."
   @spec config_exists(t()) :: {:ok, boolean()} | {:error, term()}
   def config_exists(%__MODULE__{} = module_source) do
     query_builder =
@@ -67,7 +79,7 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "The directory containing everything needed to load and use the module."
+  @doc "The full directory loaded for the module source, including the source code as a subdirectory."
   @spec context_directory(t()) :: Dagger.Directory.t()
   def context_directory(%__MODULE__{} = module_source) do
     query_builder =
@@ -79,8 +91,8 @@ defmodule Dagger.ModuleSource do
     }
   end
 
-  @doc "The effective module source dependencies from the configuration, and calls to withDependencies and withoutDependencies."
-  @spec dependencies(t()) :: {:ok, [Dagger.ModuleDependency.t()]} | {:error, term()}
+  @doc "The dependencies of the module source."
+  @spec dependencies(t()) :: {:ok, [Dagger.ModuleSource.t()]} | {:error, term()}
   def dependencies(%__MODULE__{} = module_source) do
     query_builder =
       module_source.query_builder |> QB.select("dependencies") |> QB.select("id")
@@ -88,10 +100,10 @@ defmodule Dagger.ModuleSource do
     with {:ok, items} <- Client.execute(module_source.client, query_builder) do
       {:ok,
        for %{"id" => id} <- items do
-         %Dagger.ModuleDependency{
+         %Dagger.ModuleSource{
            query_builder:
              QB.query()
-             |> QB.select("loadModuleDependencyFromID")
+             |> QB.select("loadModuleSourceFromID")
              |> QB.put_arg("id", id),
            client: module_source.client
          }
@@ -99,7 +111,7 @@ defmodule Dagger.ModuleSource do
     end
   end
 
-  @doc "Return the module source's content digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine."
+  @doc "A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance."
   @spec digest(t()) :: {:ok, String.t()} | {:error, term()}
   def digest(%__MODULE__{} = module_source) do
     query_builder =
@@ -120,6 +132,45 @@ defmodule Dagger.ModuleSource do
     }
   end
 
+  @doc "The engine version of the module."
+  @spec engine_version(t()) :: {:ok, String.t()} | {:error, term()}
+  def engine_version(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("engineVersion")
+
+    Client.execute(module_source.client, query_builder)
+  end
+
+  @doc "The generated files and directories made on top of the module source's context directory."
+  @spec generated_context_directory(t()) :: Dagger.Directory.t()
+  def generated_context_directory(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("generatedContextDirectory")
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc "The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources."
+  @spec html_repo_url(t()) :: {:ok, String.t()} | {:error, term()}
+  def html_repo_url(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("htmlRepoURL")
+
+    Client.execute(module_source.client, query_builder)
+  end
+
+  @doc "The URL to the source's git repo in a web browser. Only valid for git sources."
+  @spec html_url(t()) :: {:ok, String.t()} | {:error, term()}
+  def html_url(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("htmlURL")
+
+    Client.execute(module_source.client, query_builder)
+  end
+
   @doc "A unique identifier for this ModuleSource."
   @spec id(t()) :: {:ok, Dagger.ModuleSourceID.t()} | {:error, term()}
   def id(%__MODULE__{} = module_source) do
@@ -129,7 +180,7 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "The kind of source (e.g. local, git, etc.)"
+  @doc "The kind of module source (currently local, git or dir)."
   @spec kind(t()) :: {:ok, Dagger.ModuleSourceKind.t()} | {:error, term()}
   def kind(%__MODULE__{} = module_source) do
     query_builder =
@@ -141,7 +192,16 @@ defmodule Dagger.ModuleSource do
     end
   end
 
-  @doc "If set, the name of the module this source references, including any overrides at runtime by callers."
+  @doc "The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources."
+  @spec local_context_directory_path(t()) :: {:ok, String.t()} | {:error, term()}
+  def local_context_directory_path(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("localContextDirectoryPath")
+
+    Client.execute(module_source.client, query_builder)
+  end
+
+  @doc "The name of the module, including any setting via the withName API."
   @spec module_name(t()) :: {:ok, String.t()} | {:error, term()}
   def module_name(%__MODULE__{} = module_source) do
     query_builder =
@@ -150,11 +210,20 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "The original name of the module this source references, as defined in the module configuration."
+  @doc "The original name of the module as read from the module's dagger.json (or set for the first time with the withName API)."
   @spec module_original_name(t()) :: {:ok, String.t()} | {:error, term()}
   def module_original_name(%__MODULE__{} = module_source) do
     query_builder =
       module_source.query_builder |> QB.select("moduleOriginalName")
+
+    Client.execute(module_source.client, query_builder)
+  end
+
+  @doc "The original subpath used when instantiating this module source, relative to the context directory."
+  @spec original_subpath(t()) :: {:ok, String.t()} | {:error, term()}
+  def original_subpath(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("originalSubpath")
 
     Client.execute(module_source.client, query_builder)
   end
@@ -168,61 +237,28 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "The path to the module source's context directory on the caller's filesystem. Only valid for local sources."
-  @spec resolve_context_path_from_caller(t()) :: {:ok, String.t()} | {:error, term()}
-  def resolve_context_path_from_caller(%__MODULE__{} = module_source) do
+  @doc "The import path corresponding to the root of the git repo this source points to. Only valid for git sources."
+  @spec repo_root_path(t()) :: {:ok, String.t()} | {:error, term()}
+  def repo_root_path(%__MODULE__{} = module_source) do
     query_builder =
-      module_source.query_builder |> QB.select("resolveContextPathFromCaller")
+      module_source.query_builder |> QB.select("repoRootPath")
 
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "Resolve the provided module source arg as a dependency relative to this module source."
-  @spec resolve_dependency(t(), Dagger.ModuleSource.t()) :: Dagger.ModuleSource.t()
-  def resolve_dependency(%__MODULE__{} = module_source, dep) do
+  @doc "The SDK configuration of the module."
+  @spec sdk(t()) :: Dagger.SDKConfig.t() | nil
+  def sdk(%__MODULE__{} = module_source) do
     query_builder =
-      module_source.query_builder
-      |> QB.select("resolveDependency")
-      |> QB.put_arg("dep", Dagger.ID.id!(dep))
+      module_source.query_builder |> QB.select("sdk")
 
-    %Dagger.ModuleSource{
+    %Dagger.SDKConfig{
       query_builder: query_builder,
       client: module_source.client
     }
   end
 
-  @doc "Load a directory from the caller optionally with a given view applied."
-  @spec resolve_directory_from_caller(t(), String.t(), [
-          {:view_name, String.t() | nil},
-          {:ignore, [String.t()]}
-        ]) :: Dagger.Directory.t()
-  def resolve_directory_from_caller(%__MODULE__{} = module_source, path, optional_args \\ []) do
-    query_builder =
-      module_source.query_builder
-      |> QB.select("resolveDirectoryFromCaller")
-      |> QB.put_arg("path", path)
-      |> QB.maybe_put_arg("viewName", optional_args[:view_name])
-      |> QB.maybe_put_arg("ignore", optional_args[:ignore])
-
-    %Dagger.Directory{
-      query_builder: query_builder,
-      client: module_source.client
-    }
-  end
-
-  @doc "Load the source from its path on the caller's filesystem, including only needed+configured files and directories. Only valid for local sources."
-  @spec resolve_from_caller(t()) :: Dagger.ModuleSource.t()
-  def resolve_from_caller(%__MODULE__{} = module_source) do
-    query_builder =
-      module_source.query_builder |> QB.select("resolveFromCaller")
-
-    %Dagger.ModuleSource{
-      query_builder: query_builder,
-      client: module_source.client
-    }
-  end
-
-  @doc "The path relative to context of the root of the module source, which contains dagger.json. It also contains the module implementation source code, but that may or may not being a subdir of this root."
+  @doc "The path, relative to the context directory, that contains the module's dagger.json."
   @spec source_root_subpath(t()) :: {:ok, String.t()} | {:error, term()}
   def source_root_subpath(%__MODULE__{} = module_source) do
     query_builder =
@@ -231,7 +267,7 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "The path relative to context of the module implementation source code."
+  @doc "The path to the directory containing the module's source code, relative to the context directory."
   @spec source_subpath(t()) :: {:ok, String.t()} | {:error, term()}
   def source_subpath(%__MODULE__{} = module_source) do
     query_builder =
@@ -240,45 +276,43 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "Retrieve a named view defined for this module source."
-  @spec view(t(), String.t()) :: Dagger.ModuleSourceView.t()
-  def view(%__MODULE__{} = module_source, name) do
+  @doc "Forces evaluation of the module source, including any loading into the engine and associated validation."
+  @spec sync(t()) :: {:ok, Dagger.ModuleSource.t()} | {:error, term()}
+  def sync(%__MODULE__{} = module_source) do
     query_builder =
-      module_source.query_builder |> QB.select("view") |> QB.put_arg("name", name)
+      module_source.query_builder |> QB.select("sync")
 
-    %Dagger.ModuleSourceView{
-      query_builder: query_builder,
-      client: module_source.client
-    }
-  end
-
-  @doc "The named views defined for this module source, which are sets of directory filters that can be applied to directory arguments provided to functions."
-  @spec views(t()) :: {:ok, [Dagger.ModuleSourceView.t()]} | {:error, term()}
-  def views(%__MODULE__{} = module_source) do
-    query_builder =
-      module_source.query_builder |> QB.select("views") |> QB.select("id")
-
-    with {:ok, items} <- Client.execute(module_source.client, query_builder) do
+    with {:ok, id} <- Client.execute(module_source.client, query_builder) do
       {:ok,
-       for %{"id" => id} <- items do
-         %Dagger.ModuleSourceView{
-           query_builder:
-             QB.query()
-             |> QB.select("loadModuleSourceViewFromID")
-             |> QB.put_arg("id", id),
-           client: module_source.client
-         }
-       end}
+       %Dagger.ModuleSource{
+         query_builder:
+           QB.query()
+           |> QB.select("loadModuleSourceFromID")
+           |> QB.put_arg("id", id),
+         client: module_source.client
+       }}
     end
   end
 
-  @doc "Update the module source with a new context directory. Only valid for local sources."
-  @spec with_context_directory(t(), Dagger.Directory.t()) :: Dagger.ModuleSource.t()
-  def with_context_directory(%__MODULE__{} = module_source, dir) do
+  @doc "The specified version of the git repo this source points to. Only valid for git sources."
+  @spec version(t()) :: {:ok, String.t()} | {:error, term()}
+  def version(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("version")
+
+    Client.execute(module_source.client, query_builder)
+  end
+
+  @doc "Update the module source with a new client to generate."
+  @spec with_client(t(), String.t(), String.t(), [{:dev, boolean() | nil}]) ::
+          Dagger.ModuleSource.t()
+  def with_client(%__MODULE__{} = module_source, generator, output_dir, optional_args \\ []) do
     query_builder =
       module_source.query_builder
-      |> QB.select("withContextDirectory")
-      |> QB.put_arg("dir", Dagger.ID.id!(dir))
+      |> QB.select("withClient")
+      |> QB.put_arg("generator", generator)
+      |> QB.put_arg("outputDir", output_dir)
+      |> QB.maybe_put_arg("dev", optional_args[:dev])
 
     %Dagger.ModuleSource{
       query_builder: query_builder,
@@ -287,7 +321,7 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc "Append the provided dependencies to the module source's dependency list."
-  @spec with_dependencies(t(), [Dagger.ModuleDependencyID.t()]) :: Dagger.ModuleSource.t()
+  @spec with_dependencies(t(), [Dagger.ModuleSourceID.t()]) :: Dagger.ModuleSource.t()
   def with_dependencies(%__MODULE__{} = module_source, dependencies) do
     query_builder =
       module_source.query_builder
@@ -300,13 +334,25 @@ defmodule Dagger.ModuleSource do
     }
   end
 
-  @doc "Sets module init arguments"
-  @spec with_init(t(), [{:merge, boolean() | nil}]) :: Dagger.ModuleSource.t()
-  def with_init(%__MODULE__{} = module_source, optional_args \\ []) do
+  @doc "Upgrade the engine version of the module to the given value."
+  @spec with_engine_version(t(), String.t()) :: Dagger.ModuleSource.t()
+  def with_engine_version(%__MODULE__{} = module_source, version) do
     query_builder =
       module_source.query_builder
-      |> QB.select("withInit")
-      |> QB.maybe_put_arg("merge", optional_args[:merge])
+      |> QB.select("withEngineVersion")
+      |> QB.put_arg("version", version)
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc "Update the module source with additional include patterns for files+directories from its context that are required for building it"
+  @spec with_includes(t(), [String.t()]) :: Dagger.ModuleSource.t()
+  def with_includes(%__MODULE__{} = module_source, patterns) do
+    query_builder =
+      module_source.query_builder |> QB.select("withIncludes") |> QB.put_arg("patterns", patterns)
 
     %Dagger.ModuleSource{
       query_builder: query_builder,
@@ -364,21 +410,6 @@ defmodule Dagger.ModuleSource do
     }
   end
 
-  @doc "Update the module source with a new named view."
-  @spec with_view(t(), String.t(), [String.t()]) :: Dagger.ModuleSource.t()
-  def with_view(%__MODULE__{} = module_source, name, patterns) do
-    query_builder =
-      module_source.query_builder
-      |> QB.select("withView")
-      |> QB.put_arg("name", name)
-      |> QB.put_arg("patterns", patterns)
-
-    %Dagger.ModuleSource{
-      query_builder: query_builder,
-      client: module_source.client
-    }
-  end
-
   @doc "Remove the provided dependencies from the module source's dependency list."
   @spec without_dependencies(t(), [String.t()]) :: Dagger.ModuleSource.t()
   def without_dependencies(%__MODULE__{} = module_source, dependencies) do
@@ -391,5 +422,18 @@ defmodule Dagger.ModuleSource do
       query_builder: query_builder,
       client: module_source.client
     }
+  end
+end
+
+defimpl Jason.Encoder, for: Dagger.ModuleSource do
+  def encode(module_source, opts) do
+    {:ok, id} = Dagger.ModuleSource.id(module_source)
+    Jason.Encode.string(id, opts)
+  end
+end
+
+defimpl Nestru.Decoder, for: Dagger.ModuleSource do
+  def decode_fields_hint(_struct, _context, id) do
+    {:ok, Dagger.Client.load_module_source_from_id(Dagger.Global.dag(), id)}
   end
 end

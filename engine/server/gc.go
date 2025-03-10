@@ -16,7 +16,7 @@ import (
 	"github.com/dagger/dagger/core"
 )
 
-func (srv *Server) EngineLocalCachePolicy() bkclient.PruneInfo {
+func (srv *Server) EngineLocalCachePolicy() *bkclient.PruneInfo {
 	return srv.workerDefaultGCPolicy
 }
 
@@ -170,10 +170,13 @@ func getGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, root string) []bkcl
 	return out
 }
 
-func getDefaultGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, root string) bkclient.PruneInfo {
+func getDefaultGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, root string) *bkclient.PruneInfo {
 	// the last policy is the default one
 	policies := getGCPolicy(cfg, bkcfg, root)
-	return policies[len(policies)-1]
+	if len(policies) == 0 {
+		return nil
+	}
+	return &policies[len(policies)-1]
 }
 
 func defaultGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, dstat disk.DiskStat) []config.GCPolicy {

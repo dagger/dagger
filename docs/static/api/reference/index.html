@@ -62,7 +62,6 @@
               <li><a href="#query-loadFunctionCallFromID">loadFunctionCallFromID</a></li>
               <li><a href="#query-loadFunctionFromID">loadFunctionFromID</a></li>
               <li><a href="#query-loadGeneratedCodeFromID">loadGeneratedCodeFromID</a></li>
-              <li><a href="#query-loadGitModuleSourceFromID">loadGitModuleSourceFromID</a></li>
               <li><a href="#query-loadGitRefFromID">loadGitRefFromID</a></li>
               <li><a href="#query-loadGitRepositoryFromID">loadGitRepositoryFromID</a></li>
               <li><a href="#query-loadHostFromID">loadHostFromID</a></li>
@@ -70,11 +69,9 @@
               <li><a href="#query-loadInterfaceTypeDefFromID">loadInterfaceTypeDefFromID</a></li>
               <li><a href="#query-loadLabelFromID">loadLabelFromID</a></li>
               <li><a href="#query-loadListTypeDefFromID">loadListTypeDefFromID</a></li>
-              <li><a href="#query-loadLocalModuleSourceFromID">loadLocalModuleSourceFromID</a></li>
-              <li><a href="#query-loadModuleDependencyFromID">loadModuleDependencyFromID</a></li>
+              <li><a href="#query-loadModuleConfigClientFromID">loadModuleConfigClientFromID</a></li>
               <li><a href="#query-loadModuleFromID">loadModuleFromID</a></li>
               <li><a href="#query-loadModuleSourceFromID">loadModuleSourceFromID</a></li>
-              <li><a href="#query-loadModuleSourceViewFromID">loadModuleSourceViewFromID</a></li>
               <li><a href="#query-loadObjectTypeDefFromID">loadObjectTypeDefFromID</a></li>
               <li><a href="#query-loadPortFromID">loadPortFromID</a></li>
               <li><a href="#query-loadSDKConfigFromID">loadSDKConfigFromID</a></li>
@@ -87,7 +84,6 @@
               <li><a href="#query-loadTerminalFromID">loadTerminalFromID</a></li>
               <li><a href="#query-loadTypeDefFromID">loadTypeDefFromID</a></li>
               <li><a href="#query-module">module</a></li>
-              <li><a href="#query-moduleDependency">moduleDependency</a></li>
               <li><a href="#query-moduleSource">moduleSource</a></li>
               <li><a href="#query-secret">secret</a></li>
               <li><a href="#query-setSecret">setSecret</a></li>
@@ -140,8 +136,6 @@
               <li><a href="#definition-FunctionID">FunctionID</a></li>
               <li><a href="#definition-GeneratedCode">GeneratedCode</a></li>
               <li><a href="#definition-GeneratedCodeID">GeneratedCodeID</a></li>
-              <li><a href="#definition-GitModuleSource">GitModuleSource</a></li>
-              <li><a href="#definition-GitModuleSourceID">GitModuleSourceID</a></li>
               <li><a href="#definition-GitRef">GitRef</a></li>
               <li><a href="#definition-GitRefID">GitRefID</a></li>
               <li><a href="#definition-GitRepository">GitRepository</a></li>
@@ -160,17 +154,13 @@
               <li><a href="#definition-LabelID">LabelID</a></li>
               <li><a href="#definition-ListTypeDef">ListTypeDef</a></li>
               <li><a href="#definition-ListTypeDefID">ListTypeDefID</a></li>
-              <li><a href="#definition-LocalModuleSource">LocalModuleSource</a></li>
-              <li><a href="#definition-LocalModuleSourceID">LocalModuleSourceID</a></li>
               <li><a href="#definition-Module">Module</a></li>
-              <li><a href="#definition-ModuleDependency">ModuleDependency</a></li>
-              <li><a href="#definition-ModuleDependencyID">ModuleDependencyID</a></li>
+              <li><a href="#definition-ModuleConfigClient">ModuleConfigClient</a></li>
+              <li><a href="#definition-ModuleConfigClientID">ModuleConfigClientID</a></li>
               <li><a href="#definition-ModuleID">ModuleID</a></li>
               <li><a href="#definition-ModuleSource">ModuleSource</a></li>
               <li><a href="#definition-ModuleSourceID">ModuleSourceID</a></li>
               <li><a href="#definition-ModuleSourceKind">ModuleSourceKind</a></li>
-              <li><a href="#definition-ModuleSourceView">ModuleSourceView</a></li>
-              <li><a href="#definition-ModuleSourceViewID">ModuleSourceViewID</a></li>
               <li><a href="#definition-NetworkProtocol">NetworkProtocol</a></li>
               <li><a href="#definition-ObjectTypeDef">ObjectTypeDef</a></li>
               <li><a href="#definition-ObjectTypeDefID">ObjectTypeDefID</a></li>
@@ -1994,59 +1984,6 @@
               </div>
             </div>
           </section>
-          <section id="query-loadGitModuleSourceFromID" class="operation operation-query" data-traverse-target="query-loadGitModuleSourceFromID">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>loadGitModuleSourceFromID</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Load a GitModuleSource from its ID.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-GitModuleSource"><code>GitModuleSource!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-GitModuleSourceID"><code>GitModuleSourceID!</code></a></span>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
           <section id="query-loadGitRefFromID" class="operation operation-query" data-traverse-target="query-loadGitRefFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -2418,18 +2355,18 @@
               </div>
             </div>
           </section>
-          <section id="query-loadLocalModuleSourceFromID" class="operation operation-query" data-traverse-target="query-loadLocalModuleSourceFromID">
+          <section id="query-loadModuleConfigClientFromID" class="operation operation-query" data-traverse-target="query-loadModuleConfigClientFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
             </div>
             <h2 class="operation-heading ">
-              <code>loadLocalModuleSourceFromID</code>
+              <code>loadModuleConfigClientFromID</code>
             </h2>
             <div class="doc-row">
               <div class="doc-copy">
                 <div class="operation-description doc-copy-section">
                   <h5>Description</h5>
-                  <p>Load a LocalModuleSource from its ID.</p>
+                  <p>Load a ModuleConfigClient from its ID.</p>
                 </div>
               </div>
             </div>
@@ -2438,7 +2375,7 @@
                 <div class="operation-response doc-copy-section">
                   <h5>Type</h5>
                   <p>
-                    <a href="#definition-LocalModuleSource"><code>LocalModuleSource!</code></a>
+                    <a href="#definition-ModuleConfigClient"><code>ModuleConfigClient!</code></a>
                   </p>
                 </div>
                 <div class="operation-arguments test doc-copy-section">
@@ -2453,60 +2390,7 @@
                     <tbody>
                       <tr>
                         <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-LocalModuleSourceID"><code>LocalModuleSourceID!</code></a></span>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="query-loadModuleDependencyFromID" class="operation operation-query" data-traverse-target="query-loadModuleDependencyFromID">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>loadModuleDependencyFromID</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Load a ModuleDependency from its ID.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-ModuleDependency"><code>ModuleDependency!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-ModuleDependencyID"><code>ModuleDependencyID!</code></a></span>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-ModuleConfigClientID"><code>ModuleConfigClientID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -2613,59 +2497,6 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-ModuleSourceID"><code>ModuleSourceID!</code></a></span>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="query-loadModuleSourceViewFromID" class="operation operation-query" data-traverse-target="query-loadModuleSourceViewFromID">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>loadModuleSourceViewFromID</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Load a ModuleSourceView from its ID.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-ModuleSourceView"><code>ModuleSourceView!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-ModuleSourceViewID"><code>ModuleSourceViewID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -3306,64 +3137,6 @@
               </div>
             </div>
           </section>
-          <section id="query-moduleDependency" class="operation operation-query" data-traverse-target="query-moduleDependency">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>moduleDependency</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Create a new module dependency configuration from a module source and name</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-ModuleDependency"><code>ModuleDependency!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
-                        </td>
-                        <td> If set, the name to use for the dependency. Otherwise, once installed to a parent module, the name of the dependency module will be used by default. Default = <code>""</code> </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>source</code></span> - <span class="property-type"><a href="#definition-ModuleSourceID"><code>ModuleSourceID!</code></a></span>
-                        </td>
-                        <td> The source of the dependency </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
           <section id="query-moduleSource" class="operation operation-query" data-traverse-target="query-moduleSource">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -3375,7 +3148,7 @@
               <div class="doc-copy">
                 <div class="operation-description doc-copy-section">
                   <h5>Description</h5>
-                  <p>Create a new module source instance from a source ref string.</p>
+                  <p>Create a new module source instance from a source ref string</p>
                 </div>
               </div>
             </div>
@@ -3399,6 +3172,18 @@
                     <tbody>
                       <tr>
                         <td>
+                          <span class="property-name"><code>allowNotExists</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span>
+                        </td>
+                        <td> If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet. Default = <code>false</code> </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>disableFindUp</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span>
+                        </td>
+                        <td> If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources. Default = <code>false</code> </td>
+                      </tr>
+                      <tr>
+                        <td>
                           <span class="property-name"><code>refPin</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
                         </td>
                         <td> The pinned version of the module source. Default = <code>""</code> </td>
@@ -3411,15 +3196,9 @@
                       </tr>
                       <tr>
                         <td>
-                          <span class="property-name"><code>relHostPath</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
+                          <span class="property-name"><code>requireKind</code></span> - <span class="property-type"><a href="#definition-ModuleSourceKind"><code>ModuleSourceKind</code></a></span>
                         </td>
-                        <td> The relative path to the module root from the host directory. Default = <code>""</code> </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>stable</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span>
-                        </td>
-                        <td> If true, enforce that the source is a stable version for source kinds that support versioning. Default = <code>false</code> </td>
+                        <td> If set, error out if the ref string is not of the provided requireKind. </td>
                       </tr>
                     </tbody>
                   </table>
@@ -5434,9 +5213,13 @@
                       </tr>
                     </thead>
                     <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Directory-asGit" href="#Directory-asGit"><code>asGit</code></a> - <span class="property-type"><a href="#definition-GitRepository"><code>GitRepository!</code></a></span> </td>
+                        <td> Converts this directory into a git repository </td>
+                      </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-asModule" href="#Directory-asModule"><code>asModule</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
-                        <td> Load the directory as a Dagger module </td>
+                        <td> Load the directory as a Dagger module source </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -5444,13 +5227,26 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>engineVersion</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>The engine version to upgrade to.</p>
+                                <h6 class="field-argument-name"><span class="property-name"><code>sourceRootPath</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>An optional subpath of the directory which contains the module&#39;s configuration file.</p>
+                                <p>If not set, the module source code is loaded from the root of the directory.</p>
                               </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Directory-asModuleSource" href="#Directory-asModuleSource"><code>asModuleSource</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Load the directory as a Dagger module source </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>sourceRootPath</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>An optional subpath of the directory which contains the module&#39;s configuration file.</p>
-                                <p>This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.</p>
                                 <p>If not set, the module source code is loaded from the root of the directory.</p>
                               </div>
                             </div>
@@ -5604,6 +5400,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Directory-id" href="#Directory-id"><code>id</code></a> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span> </td>
                         <td> A unique identifier for this Directory. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Directory-name" href="#Directory-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Returns the name of the directory. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Directory-sync" href="#Directory-sync"><code>sync</code></a> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span> </td>
@@ -6974,83 +6774,6 @@
               </div>
             </div>
           </section>
-          <section id="definition-GitModuleSource" class="definition definition-object" data-traverse-target="definition-GitModuleSource">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">GitModuleSource</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Module source originating from a git repo.</p>
-                </div>
-                <div class="definition-properties doc-copy-section">
-                  <h5>Fields</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Field Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="GitModuleSource-cloneRef" href="#GitModuleSource-cloneRef"><code>cloneRef</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The ref to clone the root of the git repo from </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="GitModuleSource-commit" href="#GitModuleSource-commit"><code>commit</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The resolved commit of the git repo this source points to. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="GitModuleSource-contextDirectory" href="#GitModuleSource-contextDirectory"><code>contextDirectory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
-                        <td> The directory containing everything needed to load load and use the module. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="GitModuleSource-htmlRepoURL" href="#GitModuleSource-htmlRepoURL"><code>htmlRepoURL</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket) </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="GitModuleSource-htmlURL" href="#GitModuleSource-htmlURL"><code>htmlURL</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The URL to the source's git repo in a web browser </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="GitModuleSource-id" href="#GitModuleSource-id"><code>id</code></a> - <span class="property-type"><a href="#definition-GitModuleSourceID"><code>GitModuleSourceID!</code></a></span> </td>
-                        <td> A unique identifier for this GitModuleSource. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="GitModuleSource-root" href="#GitModuleSource-root"><code>root</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The clean module name of the root of the module </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="GitModuleSource-rootSubpath" href="#GitModuleSource-rootSubpath"><code>rootSubpath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory). </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="GitModuleSource-version" href="#GitModuleSource-version"><code>version</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The specified version of the git repo this source points to. </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-GitModuleSourceID" class="definition definition-scalar" data-traverse-target="definition-GitModuleSourceID">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">GitModuleSourceID</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The <code>GitModuleSourceID</code> scalar type represents an identifier for an object of type GitModuleSource.</p>
-                </div>
-              </div>
-            </div>
-          </section>
           <section id="definition-GitRef" class="definition definition-object" data-traverse-target="definition-GitRef">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -7831,63 +7554,6 @@
               </div>
             </div>
           </section>
-          <section id="definition-LocalModuleSource" class="definition definition-object" data-traverse-target="definition-LocalModuleSource">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">LocalModuleSource</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Module source that that originates from a path locally relative to an arbitrary directory.</p>
-                </div>
-                <div class="definition-properties doc-copy-section">
-                  <h5>Fields</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Field Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LocalModuleSource-contextDirectory" href="#LocalModuleSource-contextDirectory"><code>contextDirectory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory</code></a></span> </td>
-                        <td> The directory containing everything needed to load load and use the module. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LocalModuleSource-id" href="#LocalModuleSource-id"><code>id</code></a> - <span class="property-type"><a href="#definition-LocalModuleSourceID"><code>LocalModuleSourceID!</code></a></span> </td>
-                        <td> A unique identifier for this LocalModuleSource. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LocalModuleSource-relHostPath" href="#LocalModuleSource-relHostPath"><code>relHostPath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The relative path to the module root from the host directory </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LocalModuleSource-rootSubpath" href="#LocalModuleSource-rootSubpath"><code>rootSubpath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory). </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-LocalModuleSourceID" class="definition definition-scalar" data-traverse-target="definition-LocalModuleSourceID">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">LocalModuleSourceID</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The <code>LocalModuleSourceID</code> scalar type represents an identifier for an object of type LocalModuleSource.</p>
-                </div>
-              </div>
-            </div>
-          </section>
           <section id="definition-Module" class="definition definition-object" data-traverse-target="definition-Module">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -7911,11 +7577,7 @@
                     <tbody>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Module-dependencies" href="#Module-dependencies"><code>dependencies</code></a> - <span class="property-type"><a href="#definition-Module"><code>[Module!]!</code></a></span> </td>
-                        <td> Modules used by this module. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Module-dependencyConfig" href="#Module-dependencyConfig"><code>dependencyConfig</code></a> - <span class="property-type"><a href="#definition-ModuleDependency"><code>[ModuleDependency!]!</code></a></span> </td>
-                        <td> The dependencies as configured by the module. </td>
+                        <td> The dependencies of the module. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Module-description" href="#Module-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -7926,20 +7588,12 @@
                         <td> Enumerations served by this module. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Module-generatedContextDiff" href="#Module-generatedContextDiff"><code>generatedContextDiff</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
-                        <td> The generated files and directories made on top of the module source's context directory. </td>
-                      </tr>
-                      <tr>
                         <td data-property-name=""><a class="property-name" id="Module-generatedContextDirectory" href="#Module-generatedContextDirectory"><code>generatedContextDirectory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
-                        <td> The module source's context plus any configuration and source files created by codegen. </td>
+                        <td> The generated files and directories made on top of the module source's context directory. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Module-id" href="#Module-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ModuleID"><code>ModuleID!</code></a></span> </td>
                         <td> A unique identifier for this Module. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Module-initialize" href="#Module-initialize"><code>initialize</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
-                        <td> Retrieves the module with the objects loaded via its SDK. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Module-interfaces" href="#Module-interfaces"><code>interfaces</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>[TypeDef!]!</code></a></span> </td>
@@ -7971,6 +7625,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Module-source" href="#Module-source"><code>source</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
                         <td> The source for the module. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Module-sync" href="#Module-sync"><code>sync</code></a> - <span class="property-type"><a href="#definition-ModuleID"><code>ModuleID!</code></a></span> </td>
+                        <td> Forces evaluation of the module, including any loading into the engine and associated validation. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Module-withDescription" href="#Module-withDescription"><code>withDescription</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
@@ -8037,43 +7695,22 @@
                           </div>
                         </td>
                       </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Module-withSource" href="#Module-withSource"><code>withSource</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
-                        <td> Retrieves the module with basic configuration loaded if present. </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>engineVersion</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>The engine version to upgrade to.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>source</code></span> - <span class="property-type"><a href="#definition-ModuleSourceID"><code>ModuleSourceID!</code></a></span></h6>
-                                <p>The module source to initialize from.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
                     </tbody>
                   </table>
                 </div>
               </div>
             </div>
           </section>
-          <section id="definition-ModuleDependency" class="definition definition-object" data-traverse-target="definition-ModuleDependency">
+          <section id="definition-ModuleConfigClient" class="definition definition-object" data-traverse-target="definition-ModuleConfigClient">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
             </div>
-            <h2 class="definition-heading">ModuleDependency</h2>
+            <h2 class="definition-heading">ModuleConfigClient</h2>
             <div class="doc-row">
               <div class="doc-copy">
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
-                  <p>The configuration of dependency of a module.</p>
+                  <p>The client generated for the module.</p>
                 </div>
                 <div class="definition-properties doc-copy-section">
                   <h5>Fields</h5>
@@ -8086,16 +7723,20 @@
                     </thead>
                     <tbody>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleDependency-id" href="#ModuleDependency-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ModuleDependencyID"><code>ModuleDependencyID!</code></a></span> </td>
-                        <td> A unique identifier for this ModuleDependency. </td>
+                        <td data-property-name=""><a class="property-name" id="ModuleConfigClient-dev" href="#ModuleConfigClient-dev"><code>dev</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span> </td>
+                        <td> If true, generate the client in developer mode. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleDependency-name" href="#ModuleDependency-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The name of the dependency module. </td>
+                        <td data-property-name=""><a class="property-name" id="ModuleConfigClient-directory" href="#ModuleConfigClient-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The directory the client is generated in. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleDependency-source" href="#ModuleDependency-source"><code>source</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> The source for the dependency module. </td>
+                        <td data-property-name=""><a class="property-name" id="ModuleConfigClient-generator" href="#ModuleConfigClient-generator"><code>generator</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The generator to use </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleConfigClient-id" href="#ModuleConfigClient-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ModuleConfigClientID"><code>ModuleConfigClientID!</code></a></span> </td>
+                        <td> A unique identifier for this ModuleConfigClient. </td>
                       </tr>
                     </tbody>
                   </table>
@@ -8103,16 +7744,16 @@
               </div>
             </div>
           </section>
-          <section id="definition-ModuleDependencyID" class="definition definition-scalar" data-traverse-target="definition-ModuleDependencyID">
+          <section id="definition-ModuleConfigClientID" class="definition definition-scalar" data-traverse-target="definition-ModuleConfigClientID">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
             </div>
-            <h2 class="definition-heading">ModuleDependencyID</h2>
+            <h2 class="definition-heading">ModuleConfigClientID</h2>
             <div class="doc-row">
               <div class="doc-copy">
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
-                  <p>The <code>ModuleDependencyID</code> scalar type represents an identifier for an object of type ModuleDependency.</p>
+                  <p>The <code>ModuleConfigClientID</code> scalar type represents an identifier for an object of type ModuleConfigClient.</p>
                 </div>
               </div>
             </div>
@@ -8153,49 +7794,40 @@
                     </thead>
                     <tbody>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-asGitSource" href="#ModuleSource-asGitSource"><code>asGitSource</code></a> - <span class="property-type"><a href="#definition-GitModuleSource"><code>GitModuleSource</code></a></span> </td>
-                        <td> If the source is a of kind git, the git source representation of it. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-asLocalSource" href="#ModuleSource-asLocalSource"><code>asLocalSource</code></a> - <span class="property-type"><a href="#definition-LocalModuleSource"><code>LocalModuleSource</code></a></span> </td>
-                        <td> If the source is of kind local, the local source representation of it. </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="ModuleSource-asModule" href="#ModuleSource-asModule"><code>asModule</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
                         <td> Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>engineVersion</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>The engine version to upgrade to.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-asString" href="#ModuleSource-asString"><code>asString</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> A human readable ref string representation of this module source. </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-cloneRef" href="#ModuleSource-cloneRef"><code>cloneRef</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The ref to clone the root of the git repo from. Only valid for git sources. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-commit" href="#ModuleSource-commit"><code>commit</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The resolved commit of the git repo this source points to. Only valid for git sources. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-configClients" href="#ModuleSource-configClients"><code>configClients</code></a> - <span class="property-type"><a href="#definition-ModuleConfigClient"><code>[ModuleConfigClient!]!</code></a></span> </td>
+                        <td> The clients generated for the module. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-configExists" href="#ModuleSource-configExists"><code>configExists</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
-                        <td> Returns whether the module source has a configuration file. </td>
+                        <td> Whether an existing dagger.json for the module was found. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-contextDirectory" href="#ModuleSource-contextDirectory"><code>contextDirectory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
-                        <td> The directory containing everything needed to load and use the module. </td>
+                        <td> The full directory loaded for the module source, including the source code as a subdirectory. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-dependencies" href="#ModuleSource-dependencies"><code>dependencies</code></a> - <span class="property-type"><a href="#definition-ModuleDependency"><code>[ModuleDependency!]!</code></a></span> </td>
-                        <td> The effective module source dependencies from the configuration, and calls to withDependencies and withoutDependencies. </td>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-dependencies" href="#ModuleSource-dependencies"><code>dependencies</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>[ModuleSource!]!</code></a></span> </td>
+                        <td> The dependencies of the module source. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-digest" href="#ModuleSource-digest"><code>digest</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> Return the module source's content digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine. </td>
+                        <td> A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="ModuleSource-directory" href="#ModuleSource-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
@@ -8208,11 +7840,27 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The path from the source directory to select.</p>
+                                <p>A subpath from the source directory to select.</p>
                               </div>
                             </div>
                           </div>
                         </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-engineVersion" href="#ModuleSource-engineVersion"><code>engineVersion</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The engine version of the module. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-generatedContextDirectory" href="#ModuleSource-generatedContextDirectory"><code>generatedContextDirectory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td> The generated files and directories made on top of the module source's context directory. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-htmlRepoURL" href="#ModuleSource-htmlRepoURL"><code>htmlRepoURL</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-htmlURL" href="#ModuleSource-htmlURL"><code>htmlURL</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The URL to the source's git repo in a web browser. Only valid for git sources. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-id" href="#ModuleSource-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ModuleSourceID"><code>ModuleSourceID!</code></a></span> </td>
@@ -8220,102 +7868,55 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-kind" href="#ModuleSource-kind"><code>kind</code></a> - <span class="property-type"><a href="#definition-ModuleSourceKind"><code>ModuleSourceKind!</code></a></span> </td>
-                        <td> The kind of source (e.g. local, git, etc.) </td>
+                        <td> The kind of module source (currently local, git or dir). </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-localContextDirectoryPath" href="#ModuleSource-localContextDirectoryPath"><code>localContextDirectoryPath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-moduleName" href="#ModuleSource-moduleName"><code>moduleName</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> If set, the name of the module this source references, including any overrides at runtime by callers. </td>
+                        <td> The name of the module, including any setting via the withName API. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-moduleOriginalName" href="#ModuleSource-moduleOriginalName"><code>moduleOriginalName</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The original name of the module this source references, as defined in the module configuration. </td>
+                        <td> The original name of the module as read from the module's dagger.json (or set for the first time with the withName API). </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-originalSubpath" href="#ModuleSource-originalSubpath"><code>originalSubpath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The original subpath used when instantiating this module source, relative to the context directory. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-pin" href="#ModuleSource-pin"><code>pin</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The pinned version of this module source. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-resolveContextPathFromCaller" href="#ModuleSource-resolveContextPathFromCaller"><code>resolveContextPathFromCaller</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The path to the module source's context directory on the caller's filesystem. Only valid for local sources. </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-resolveDependency" href="#ModuleSource-resolveDependency"><code>resolveDependency</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Resolve the provided module source arg as a dependency relative to this module source. </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>dep</code></span> - <span class="property-type"><a href="#definition-ModuleSourceID"><code>ModuleSourceID!</code></a></span></h6>
-                                <p>The dependency module source to resolve.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-resolveDirectoryFromCaller" href="#ModuleSource-resolveDirectoryFromCaller"><code>resolveDirectoryFromCaller</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
-                        <td> Load a directory from the caller optionally with a given view applied. </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>ignore</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
-                                <p>Patterns to ignore when loading the directory.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The path on the caller&#39;s filesystem to load.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>viewName</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>If set, the name of the view to apply to the path.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-repoRootPath" href="#ModuleSource-repoRootPath"><code>repoRootPath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The import path corresponding to the root of the git repo this source points to. Only valid for git sources. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-resolveFromCaller" href="#ModuleSource-resolveFromCaller"><code>resolveFromCaller</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Load the source from its path on the caller's filesystem, including only needed+configured files and directories. Only valid for local sources. </td>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-sdk" href="#ModuleSource-sdk"><code>sdk</code></a> - <span class="property-type"><a href="#definition-SDKConfig"><code>SDKConfig</code></a></span> </td>
+                        <td> The SDK configuration of the module. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-sourceRootSubpath" href="#ModuleSource-sourceRootSubpath"><code>sourceRootSubpath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The path relative to context of the root of the module source, which contains dagger.json. It also contains the module implementation source code, but that may or may not being a subdir of this root. </td>
+                        <td> The path, relative to the context directory, that contains the module's dagger.json. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-sourceSubpath" href="#ModuleSource-sourceSubpath"><code>sourceSubpath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The path relative to context of the module implementation source code. </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-view" href="#ModuleSource-view"><code>view</code></a> - <span class="property-type"><a href="#definition-ModuleSourceView"><code>ModuleSourceView!</code></a></span> </td>
-                        <td> Retrieve a named view defined for this module source. </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the view to retrieve.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
+                        <td> The path to the directory containing the module's source code, relative to the context directory. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-views" href="#ModuleSource-views"><code>views</code></a> - <span class="property-type"><a href="#definition-ModuleSourceView"><code>[ModuleSourceView!]!</code></a></span> </td>
-                        <td> The named views defined for this module source, which are sets of directory filters that can be applied to directory arguments provided to functions. </td>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-sync" href="#ModuleSource-sync"><code>sync</code></a> - <span class="property-type"><a href="#definition-ModuleSourceID"><code>ModuleSourceID!</code></a></span> </td>
+                        <td> Forces evaluation of the module source, including any loading into the engine and associated validation. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-version" href="#ModuleSource-version"><code>version</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The specified version of the git repo this source points to. Only valid for git sources. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-withContextDirectory" href="#ModuleSource-withContextDirectory"><code>withContextDirectory</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Update the module source with a new context directory. Only valid for local sources. </td>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-withClient" href="#ModuleSource-withClient"><code>withClient</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Update the module source with a new client to generate. </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -8323,8 +7924,16 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>dir</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span></h6>
-                                <p>The directory to set as the context directory.</p>
+                                <h6 class="field-argument-name"><span class="property-name"><code>dev</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Generate in developer mode</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>generator</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The generator to use</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>outputDir</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The output directory for the generated client.</p>
                               </div>
                             </div>
                           </div>
@@ -8340,7 +7949,7 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>dependencies</code></span> - <span class="property-type"><a href="#definition-ModuleDependencyID"><code>[ModuleDependencyID!]!</code></a></span></h6>
+                                <h6 class="field-argument-name"><span class="property-name"><code>dependencies</code></span> - <span class="property-type"><a href="#definition-ModuleSourceID"><code>[ModuleSourceID!]!</code></a></span></h6>
                                 <p>The dependencies to append.</p>
                               </div>
                             </div>
@@ -8348,8 +7957,8 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-withInit" href="#ModuleSource-withInit"><code>withInit</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Sets module init arguments </td>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-withEngineVersion" href="#ModuleSource-withEngineVersion"><code>withEngineVersion</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Upgrade the engine version of the module to the given value. </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -8357,8 +7966,25 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>merge</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>Merge module dependencies into the current project&#39;s</p>
+                                <h6 class="field-argument-name"><span class="property-name"><code>version</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The engine version to upgrade to.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-withIncludes" href="#ModuleSource-withIncludes"><code>withIncludes</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Update the module source with additional include patterns for files+directories from its context that are required for building it </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>patterns</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span></h6>
+                                <p>The new additional include patterns.</p>
                               </div>
                             </div>
                           </div>
@@ -8426,7 +8052,7 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The path to set as the source subpath.</p>
+                                <p>The path to set as the source subpath. Must be relative to the module source&#39;s source root directory.</p>
                               </div>
                             </div>
                           </div>
@@ -8444,27 +8070,6 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>dependencies</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span></h6>
                                 <p>The dependencies to update.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-withView" href="#ModuleSource-withView"><code>withView</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Update the module source with a new named view. </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the view to set.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>patterns</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span></h6>
-                                <p>The patterns to set as the view filters.</p>
                               </div>
                             </div>
                           </div>
@@ -8525,6 +8130,13 @@
                         <td>
                         </td>
                       </tr>
+                      <tr>
+                        <td>
+                          <p><code>DIR_SOURCE</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -8538,59 +8150,6 @@
 </code></pre>
                     </body>
                   </html>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-ModuleSourceView" class="definition definition-object" data-traverse-target="definition-ModuleSourceView">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">ModuleSourceView</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>A named set of path filters that can be applied to directory arguments provided to functions.</p>
-                </div>
-                <div class="definition-properties doc-copy-section">
-                  <h5>Fields</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Field Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleSourceView-id" href="#ModuleSourceView-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ModuleSourceViewID"><code>ModuleSourceViewID!</code></a></span> </td>
-                        <td> A unique identifier for this ModuleSourceView. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleSourceView-name" href="#ModuleSourceView-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The name of the view </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleSourceView-patterns" href="#ModuleSourceView-patterns"><code>patterns</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
-                        <td> The patterns of the view used to filter paths </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-ModuleSourceViewID" class="definition definition-scalar" data-traverse-target="definition-ModuleSourceViewID">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">ModuleSourceViewID</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The <code>ModuleSourceViewID</code> scalar type represents an identifier for an object of type ModuleSourceView.</p>
                 </div>
               </div>
             </div>

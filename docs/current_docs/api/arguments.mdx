@@ -14,7 +14,7 @@ When calling a Dagger Function from the CLI, its arguments are exposed as comman
 Dagger Functions execute in containers and thus do not have default access to your host environment (host files, directories, environment variables, etc.). Access to these host resources can only be granted by explicitly passing them as argument values to the Dagger Function.
 - Files and directories: Dagger Functions can accept arguments of type `File` or `Directory`. Pass files and directories on your host by specifying their path as the value of the argument when using `dagger call`.
 - Environment variables: Pass environment variable values as argument values when invoking a function by just using the standard shell convention of using `$ENV_VAR_NAME` when using `dagger call`.
-- Local network services: Dagger Functions that accept an argument of type `Service` can be passed local network services in the form `tcp://<host>:<port>`.
+- Local network services: Dagger Functions that accept an argument of type `Service` can be passed local network services in the form `tcp://HOST:PORT`.
 :::
 
 ## String arguments
@@ -70,6 +70,21 @@ def hello(self):
 ```typescript file=./snippets/functions/arguments-string/typescript/index.ts
 ```
 </TabItem>
+<TabItem value="PHP">
+```php file=./snippets/functions/arguments-string/php/src/MyModule.php
+```
+
+Even though PHP doesn't enforce [type annotations][typing] at runtime,
+it's important to define them with Dagger Functions. The PHP SDK needs the
+typing information at runtime to correctly report to the API.
+
+[typing]: https://www.php.net/manual/en/language.types.type-system.php
+
+</TabItem>
+<TabItem value="Java">
+```java file=./snippets/functions/arguments-string/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
 </Tabs>
 
 Here is an example call for this Dagger Function:
@@ -119,6 +134,18 @@ Here is an example of a Dagger Function that accepts a Boolean argument:
 ```typescript file=./snippets/functions/arguments-boolean/typescript/index.ts
 ```
 </TabItem>
+<TabItem value="PHP">
+```php file=./snippets/functions/arguments-boolean/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="Java">
+:::note
+You can either use the primitive `boolean` type or the boxed `java.lang.Boolean` type.
+:::
+
+```java file=./snippets/functions/arguments-boolean/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
 </Tabs>
 
 Here is an example call for this Dagger Function:
@@ -153,6 +180,20 @@ Here is an example of a Dagger function that accepts an integer argument:
 
 <TabItem value="TypeScript">
 ```typescript file=./snippets/functions/arguments-return-values-integer/typescript/index.ts
+```
+</TabItem>
+
+<TabItem value="PHP">
+```php file=./snippets/functions/arguments-return-values-integer/php/src/MyModule.php
+```
+</TabItem>
+
+<TabItem value="Java">
+:::note
+You can either use the primitive `int` type or the boxed `java.lang.Integer` type.
+:::
+
+```java file=./snippets/functions/arguments-return-values-integer/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 </TabItem>
 
@@ -199,6 +240,22 @@ The imported `float` type is a `number` underneath, so you can use it as you wou
 ```typescript file=./snippets/functions/arguments-return-values-float/typescript/index.ts
 ```
 </TabItem>
+
+<TabItem value="PHP">
+
+```php file=./snippets/functions/arguments-return-values-float/php/src/MyModule.php
+```
+</TabItem>
+
+<TabItem value="Java">
+:::note
+You can either use the primitive `float` type or the boxed `java.lang.Float` type.
+:::
+
+```java file=./snippets/functions/arguments-return-values-float/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
+
 </Tabs>
 
 Here is an example call for this Dagger Function:
@@ -228,6 +285,25 @@ To pass an array argument to a Dagger Function, add the corresponding flag, foll
 </TabItem>
 <TabItem value="TypeScript">
 ```typescript file=./snippets/functions/arguments-array/typescript/index.ts
+```
+</TabItem>
+<TabItem value="PHP">
+:::note
+Lists must have their subtype specified by adding the `#[ListOfType]` attribute to the relevant function argument.
+
+The PHP SDK needs the typing information at runtime to correctly report to the API.
+:::
+
+```php file=./snippets/functions/arguments-array/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="Java">
+:::note
+You can also use the `java.util.List` interface to represent a list of values.
+For instance instead of the `String[] names` argument in the example, you can have `List<String> names`.
+:::
+
+```java file=./snippets/functions/arguments-array/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 </TabItem>
 </Tabs>
@@ -263,6 +339,14 @@ Here's an example of a Dagger Function that accepts a `Directory` as argument. T
 </TabItem>
 <TabItem value="TypeScript">
 ```typescript file=./snippets/functions/arguments-directory/typescript/index.ts
+```
+</TabItem>
+<TabItem value="PHP">
+```php file=./snippets/functions/arguments-directory/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="Java">
+```java file=./snippets/functions/arguments-directory/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 </TabItem>
 </Tabs>
@@ -309,8 +393,12 @@ dagger core container \
   stdout
 ```
 
-:::tip
 For more information about remote repository access, refer to the documentation on [reference schemes](#reference-schemes-for-remote-repositories) and [authentication methods](./remote-modules.mdx#authentication-methods).
+
+:::note
+Dagger offers two important features for working with `Directory` arguments:
+- [Default paths](./default-paths.mdx): Set a default directory path to use no value is specified for the argument.
+- [Filters](./fs-filters.mdx): Control which files and directories are uploaded to a Dagger Function.
 :::
 
 ## File arguments
@@ -332,6 +420,14 @@ Here's an example of a Dagger Function that accepts a `File` as argument, reads 
 ```typescript file=./snippets/functions/arguments-file/typescript/index.ts
 ```
 </TabItem>
+<TabItem value="PHP">
+```php file=./snippets/functions/arguments-file/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="Java">
+```java file=./snippets/functions/arguments-file/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
 </Tabs>
 
 Here is an example of passing a local file to this Dagger Function as argument:
@@ -346,8 +442,12 @@ And here is an example of passing a file from a remote Git repository as argumen
 dagger call read-file --source=https://github.com/dagger/dagger.git#main:README.md
 ```
 
-:::tip
 For more information about remote repository access, refer to the documentation on [reference schemes](#reference-schemes-for-remote-repositories) and [authentication methods](./remote-modules.mdx#authentication-methods).
+
+:::note
+Dagger offers two important features for working with `File` arguments:
+- [Default paths](./default-paths.mdx): Set a default file path to use no value is specified for the argument.
+- [Filters](./fs-filters.mdx): Control which files are uploaded to a Dagger Function.
 :::
 
 ## Container arguments
@@ -367,6 +467,14 @@ Here is an example of a Dagger Function that accepts a container image reference
 </TabItem>
 <TabItem value="TypeScript">
 ```typescript file=./snippets/functions/arguments-container/typescript/index.ts
+```
+</TabItem>
+<TabItem value="PHP">
+```php file=./snippets/functions/arguments-container/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="Java">
+```java file=./snippets/functions/arguments-container/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 </TabItem>
 </Tabs>
@@ -415,28 +523,65 @@ Secrets can be passed to Dagger Functions as arguments using the `Secret` core t
 ```
 
 </TabItem>
+<TabItem value="PHP">
+
+```php file=../cookbook/snippets/secret-variable/php/src/MyModule.php
+```
+
+</TabItem>
+<TabItem value="Java">
+
+```java file=../cookbook/snippets/secret-variable/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 The result will be a JSON-formatted list of issues from Dagger's repository.
 
-When invoking the Dagger Function using the Dagger CLI, secrets can be sourced from host environment variables (`env:`), the host filesystem (`file:`) or the result of host command execution (`cmd:`).
+When invoking the Dagger Function using the Dagger CLI, secrets can be sourced from multiple providers. Dagger can read secrets from the host environment, the host filesystem, and the result of host command execution, as well as from external secret managers [1Password](https://1password.com/) and [Vault](https://www.hashicorp.com/products/vault).
 
-Here is an example call for this Dagger Function, with the secret sourced from a host environment variable named `GITHUB_API_TOKEN`:
+### Host secret providers
+
+Here is an example call for this Dagger Function, with the secret sourced from a host environment variable named `GITHUB_API_TOKEN` via the `env` provider:
 
 ```shell
-dagger call github-api --token=env:GITHUB_API_TOKEN
+dagger call github-api --token=env://GITHUB_API_TOKEN
 ```
 
-Secrets can also be passed from a host file using the `file` source:
+Secrets can also be passed from a host file using the `file` provider:
 
 ```shell
-dagger call github-api --token=file:./github.txt
+dagger call github-api --token=file://./github.txt
 ```
 
-...or as the result of executing a command on the host using the `cmd` source:
+...or as the result of executing a command on the host using the `cmd` provider:
 
 ```shell
-dagger call github-api --token=cmd:"gh auth token"
+dagger call github-api --token=cmd://"gh auth token"
+```
+
+### External secret providers
+
+Secrets can also be sourced from external secret managers. Currently, Dagger supports 1Password and Vault.
+
+1Password requires creating a [service account](https://developer.1password.com/docs/service-accounts/get-started) and then setting the `OP_SERVICE_ACCOUNT_TOKEN` environment variable. Alternatively, if no `OP_SERVICE_ACCOUNT_TOKEN` is provided, the integration will attempt to execute the (official) `op` CLI if installed in the system.
+
+1Password [secret references](https://developer.1password.com/docs/cli/secret-references/), in the format `op://VAULT-NAME/ITEM-NAME/[SECTION-NAME/]FIELD-NAME` are supported. Here is an example:
+
+```shell
+OP_SERVICE_ACCOUNT_TOKEN="mytoken" dagger call github-api --token=op://infra/github/credential
+```
+
+Vault can be authenticated with either token or AppRole methods. The Vault host can be specified by setting the environment variable `VAULT_ADDR`. For token authentication, set the environment variable `VAULT_TOKEN`. For AppRole authentication, set the environment variables `VAULT_APPROLE_ROLE_ID` and `VAULT_APPROLE_SECRET_ID`. Additional client configuration can be specified by the default environment variables accepted by Vault.
+
+Vault KvV2 secrets are accessed with the scheme `vault://PATH/TO/SECRET.ITEM`. If your KvV2 is not mounted at `/secret`, specify the mount location with the environment variable `VAULT_PATH_PREFIX`. Here is an example:
+
+```shell
+VAULT_ADDR='https://example.com:8200' VAULT_TOKEN=abcd_1234 dagger call github-api --token=vault://infra/github.credential
+
+```shell
+dagger call github-api --token=vault://credentials.github
 ```
 
 ## Service arguments
@@ -445,7 +590,7 @@ Host network services or sockets can be passed to Dagger Functions as arguments.
 
 ### TCP and UDP services
 
-To pass host TCP or UDP network services as arguments when invoking a Dagger Function, specify them in the form `tcp://<host>:<port>` or `udp://<host>:<port>`.
+To pass host TCP or UDP network services as arguments when invoking a Dagger Function, specify them in the form `tcp://HOST:PORT` or `udp://HOST:PORT`.
 
 Assume that you have a PostgresQL database running locally on port 5432, as with:
 
@@ -488,6 +633,29 @@ Here's an example of a Dagger Function with an optional argument:
 </TabItem>
 <TabItem value="TypeScript">
 ```typescript file=./snippets/functions/arguments-optional/typescript/index.ts
+```
+</TabItem>
+<TabItem value="PHP">
+:::note
+The definition of optional varies between Dagger and PHP.
+
+An optional argument to PHP is one that has a default value.
+
+An optional argument to Dagger can be omitted entirely. It is truly optional.
+
+To specify a function argument as optional, simply make it nullable. When using the Dagger CLI, if the argument is omitted; the PHP SDK will treat this as receiving the value `null`.
+:::
+```php file=./snippets/functions/arguments-optional/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="Java">
+:::note
+Because of the usage of `Optional`, primitive types can not be marked as optional. You have to use the boxed types like `Integer` or `Boolean`.
+
+When an argument is not set as optional, Dagger will ensure the value is not `null` by adding a call to `Objects.requireNonNull` against the argument.
+:::
+
+```java file=./snippets/functions/arguments-optional/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 </TabItem>
 </Tabs>
@@ -535,6 +703,23 @@ Here's an example of a Dagger Function with a default value for a string argumen
 ```typescript file=./snippets/functions/arguments-default-string/typescript/index.ts
 ```
 </TabItem>
+<TabItem value="PHP">
+```php file=./snippets/functions/arguments-default-string/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="Java">
+:::note
+The default value provided must be a valid JSON string representation of the type.
+
+For instance if the argument is of type `Integer` and the default value is `123`, then the annotation must be `@Default("123")`.
+If the argument is of type `String` and the default value is `world`, then the annotation should be `@Default("\"world\"")`.
+In order to simplify this very specific case, if the argument is of type `String` and the value doesn't start with an escaped quote,
+then the SDK will automatically add the escaped quotes for you. That way you can simply write `@Default("world")`.
+:::
+
+```java file=./snippets/functions/arguments-default-string/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
 </Tabs>
 
 Here is an example call for this Dagger Function, without the required argument:
@@ -550,6 +735,10 @@ Hello, world
 ```
 
 Passing null to an optional argument signals that no default value should be used.
+
+:::note
+Dagger supports [default paths](./default-paths.mdx) for `Directory` or `File` arguments. Dagger will automatically use this default path when no value is specified for the corresponding argument.
+:::
 
 ## Reference schemes for remote repositories
 

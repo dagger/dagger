@@ -183,7 +183,7 @@ func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callab
 		}, nil
 	}
 	if fun, ok := t.typeDef.FunctionByName(name); ok {
-		return newModFunction(
+		return NewModFunction(
 			ctx,
 			mod.Query,
 			mod,
@@ -214,14 +214,15 @@ var _ HasPBDefinitions = (*ModuleObject)(nil)
 func (obj *ModuleObject) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	defs := []*pb.Definition{}
 	objDef := obj.TypeDef
-	for name, val := range obj.Fields {
-		fieldDef, ok := objDef.FieldByOriginalName(name)
+	for _, field := range objDef.Fields {
+		// TODO: we skip over private fields, we can't convert them anyways (this is a bug)
+		name := field.OriginalName
+		val, ok := obj.Fields[name]
 		if !ok {
-			// TODO: must be a private field; skip, since we can't convert it anyhow.
-			// (this is a bug)
+			// missing field
 			continue
 		}
-		fieldType, ok, err := obj.Module.ModTypeFor(ctx, fieldDef.TypeDef, true)
+		fieldType, ok, err := obj.Module.ModTypeFor(ctx, field.TypeDef, true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get mod type for field %q: %w", name, err)
 		}
@@ -311,7 +312,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 					Fields:  map[string]any{},
 				}, nil
 			},
-			nil, // no cache key, empty constructor calls will thus be cached across dagql sessions
+			dagql.CacheSpec{}, // no cache key, empty constructor calls will thus be cached in dagql per-session and buildkit cross-session
 		)
 		return nil
 	}
@@ -325,7 +326,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		return fmt.Errorf("constructor function for object %s must return that object", objDef.OriginalName)
 	}
 
-	fn, err := newModFunction(ctx, mod.Query, mod, objDef, mod.Runtime, fnTypeDef)
+	fn, err := NewModFunction(ctx, mod.Query, mod, objDef, mod.Runtime, fnTypeDef)
 	if err != nil {
 		return fmt.Errorf("failed to create function: %w", err)
 	}
@@ -366,8 +367,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 				Server:       dag,
 			})
 		},
-		// cache constructor calls per client; a given client will hit cache when making the same call repeatedly
-		CachePerClientObject,
+		dagql.CacheSpec{},
 	)
 
 	return nil
@@ -425,7 +425,7 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 
 func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Function, dag *dagql.Server) (dagql.Field[*ModuleObject], error) {
 	var f dagql.Field[*ModuleObject]
-	modFun, err := newModFunction(
+	modFun, err := NewModFunction(
 		ctx,
 		mod.Query,
 		mod,
@@ -476,11 +476,6 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 			})
 			return modFun.Call(ctx, opts)
 		},
-		// Cache calls per client; a given client will hit cache when making the same call repeatedly.
-		// We can't *quite* mark them as fully cached across clients in a session, since Call has special
-		// logic for transferring secrets between cached calls (covered by TestModule/TestSecretNested
-		// integ tests).
-		CacheKeyFunc: CachePerClient[*ModuleObject, map[string]dagql.Input],
 	}, nil
 }
 
@@ -495,7 +490,11 @@ func (f *CallableField) Call(ctx context.Context, opts *CallOpts) (dagql.Typed, 
 	if !ok {
 		return nil, fmt.Errorf("field %q not found on object %q", f.Field.Name, opts.ParentFields)
 	}
-	return f.Return.ConvertFromSDKResult(ctx, val)
+	typed, err := f.Return.ConvertFromSDKResult(ctx, val)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert field %q: %w", f.Field.Name, err)
+	}
+	return typed, nil
 }
 
 func (f *CallableField) ReturnType() (ModType, error) {

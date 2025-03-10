@@ -20,6 +20,31 @@ const (
 	phpSDKComposerImage = "composer:2@sha256:6d2b5386580c3ba67399c6ccfb50873146d68fcd7c31549f8802781559bed709"
 	phpSDKGeneratedDir  = "generated"
 	phpSDKVersionFile   = "src/Connection/version.php"
+	phpDoctumVersion    = "5.5.4"
+	phpDoctumConfig     = `<?php
+
+use Doctum\Doctum;
+use Symfony\Component\Finder\Finder;
+
+$iterator = Finder::create()
+    ->files()
+    ->name("*.php")
+    ->exclude(".changes")
+    ->exclude("docker")
+    ->exclude("dev")
+    ->exclude("runtime")
+    ->exclude("tests")
+    ->exclude("src/Codegen/")
+    ->exclude("src/Command/")
+    ->exclude("src/Connection/")
+    ->exclude("src/Exception/")
+    ->exclude("src/GraphQl/")
+    ->exclude("src/Service/")
+    ->exclude("src/ValueObject/")
+    ->exclude("vendor")
+    ->in("/src/sdk/php");
+
+return new Doctum($iterator);`
 )
 
 type PHPSDK struct {
@@ -39,7 +64,7 @@ func (t PHPSDK) Lint(ctx context.Context) error {
 			span.End()
 		}()
 		src := t.Dagger.Source().Directory(phpSDKPath)
-		_, err := dag.PhpSDKDev().Lint(src).Sync(ctx)
+		_, err := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Source: src}).Lint().Sync(ctx)
 		return err
 	})
 
@@ -76,8 +101,8 @@ func (t PHPSDK) Test(ctx context.Context) error {
 		With(installer).
 		WithEnvVariable("PATH", "./vendor/bin:$PATH", dagger.ContainerWithEnvVariableOpts{Expand: true})
 
-	dev := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Container: base})
-	_, err = dev.Test(src).Sync(ctx)
+	dev := dag.PhpSDKDev(dagger.PhpSDKDevOpts{Container: base, Source: src})
+	_, err = dev.Test().Sync(ctx)
 	return err
 }
 
@@ -96,7 +121,21 @@ func (t PHPSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 			"$_EXPERIMENTAL_DAGGER_CLI_BIN run ./scripts/codegen.php",
 		)).
 		Directory(".")
-	return dag.Directory().WithDirectory(phpSDKPath, generated), nil
+
+	return dag.Directory().
+		WithDirectory(phpSDKPath, generated).
+		WithDirectory(generatedPhpReferencePath, t.GenerateSdkReference()), nil
+}
+
+// Generate the PHP SDK API reference documentation
+func (t PHPSDK) GenerateSdkReference() *dagger.Directory {
+	return t.phpBase().
+		WithExec([]string{"apk", "add", "--no-cache", "curl"}).
+		WithExec([]string{"curl", "-o", "/usr/bin/doctum", "-O", fmt.Sprintf("https://doctum.long-term.support/releases/%s/doctum.phar", phpDoctumVersion)}).
+		WithExec([]string{"chmod", "+x", "/usr/bin/doctum"}).
+		WithNewFile("/tmp/doctum-config.php", phpDoctumConfig).
+		WithExec([]string{"doctum", "update", "/tmp/doctum-config.php", "-v"}).
+		Directory("/src/sdk/php/build")
 }
 
 // Test the publishing process

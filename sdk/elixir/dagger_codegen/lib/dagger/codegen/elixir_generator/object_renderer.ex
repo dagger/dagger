@@ -14,7 +14,11 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
   Render object type into module.
   """
   def render(type) do
-    Renderer.render_module(type, render_module_body(type))
+    [
+      Renderer.render_module(type, render_module_body(type)),
+      ?\n,
+      maybe_render_protocol_implementations(type)
+    ]
   end
 
   def render_module_body(type) do
@@ -40,6 +44,42 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
         ]
       end
     ]
+  end
+
+  def maybe_render_protocol_implementations(type) do
+    if Enum.any?(type.fields, &(&1.name == "id")) do
+      module_name = Formatter.format_module(type.name)
+      module_var = Formatter.format_var_name(type.name)
+
+      [
+        render_json_encoder(module_name, module_var),
+        ?\n,
+        render_nestru_decoder(module_name, module_var)
+      ]
+    else
+      []
+    end
+  end
+
+  defp render_json_encoder(module_name, module_var) do
+    """
+    defimpl Jason.Encoder, for: #{module_name} do
+      def encode(#{module_var}, opts) do
+        {:ok, id} = #{module_name}.id(#{module_var})
+        Jason.Encode.string(id, opts)
+      end
+    end
+    """
+  end
+
+  defp render_nestru_decoder(module_name, module_var) do
+    """
+    defimpl Nestru.Decoder, for: #{module_name} do
+      def decode_fields_hint(_struct, _context, id) do
+        {:ok, Dagger.Client.load_#{module_var}_from_id(Dagger.Global.dag(), id)}
+      end
+    end
+    """
   end
 
   def render_function(type, field, module_var) do

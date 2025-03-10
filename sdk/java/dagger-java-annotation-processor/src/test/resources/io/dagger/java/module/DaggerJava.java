@@ -1,21 +1,36 @@
 package io.dagger.java.module;
 
-import io.dagger.client.Container;
-import io.dagger.client.DaggerQueryException;
-import io.dagger.client.Directory;
-import io.dagger.module.AbstractModule;
-import io.dagger.module.annotation.Default;
+import static io.dagger.client.Dagger.dag;
+
+import io.dagger.client.*;
+import io.dagger.module.annotation.*;
 import io.dagger.module.annotation.Function;
-import io.dagger.module.annotation.Nullable;
 import io.dagger.module.annotation.Object;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
 /** Dagger Java Module main object */
 @Object
-public class DaggerJava extends AbstractModule {
-  public DaggerJava() {
-    super();
+public class DaggerJava {
+  private String notExportedField;
+
+  /** Project source directory */
+  public Directory source;
+
+  public String version;
+
+  public DaggerJava() {}
+
+  /**
+   * Initialize the DaggerJava Module
+   *
+   * @param source Project source directory
+   * @param version Go version
+   */
+  public DaggerJava(Optional<Directory> source, @Default("1.23.2") String version) {
+    this.source = source.orElseGet(() -> dag().currentModule().source());
+    this.version = version;
   }
 
   /**
@@ -26,7 +41,7 @@ public class DaggerJava extends AbstractModule {
    */
   @Function
   public Container containerEcho(@Default("Hello Dagger") String stringArg) {
-    return dag.container().from("alpine:latest").withExec(List.of("echo", stringArg));
+    return dag().container().from("alpine:latest").withExec(List.of("echo", stringArg));
   }
 
   /**
@@ -37,16 +52,17 @@ public class DaggerJava extends AbstractModule {
    * @return Standard output of the grep command
    */
   @Function
-  public String grepDir(Directory directoryArg, @Nullable String pattern)
+  public String grepDir(
+      @DefaultPath("sdk/java") @Ignore({"**", "!*.java"}) Directory directoryArg,
+      Optional<String> pattern)
       throws InterruptedException, ExecutionException, DaggerQueryException {
-    if (pattern == null) {
-      pattern = "dagger";
-    }
-    return dag.container()
+    String grepPattern = pattern.orElse("dagger");
+    return dag()
+        .container()
         .from("alpine:latest")
         .withMountedDirectory("/mnt", directoryArg)
         .withWorkdir("/mnt")
-        .withExec(List.of("grep", "-R", pattern, "."))
+        .withExec(List.of("grep", "-R", grepPattern, "."))
         .stdout();
   }
 
@@ -55,7 +71,12 @@ public class DaggerJava extends AbstractModule {
     return this;
   }
 
-  @Function
+  /**
+   * Return true if the value is 0.
+   *
+   * <p>This description should not be exposed to dagger.
+   */
+  @Function(description = "but this description should be exposed")
   public boolean isZero(int value) {
     return value == 0;
   }
@@ -91,19 +112,25 @@ public class DaggerJava extends AbstractModule {
    * set to null.
    */
   @Function
-  public String nullable(@Default("null") String stringArg) {
-    if (stringArg == null) {
-      stringArg = "was a null value";
-    }
-    return stringArg;
+  public String nullable(Optional<String> stringArg) {
+    return stringArg.orElse("was a null value");
   }
 
   /** Set a default value in case the user doesn't provide a value and allow for null value. */
   @Function
-  public String nullableDefault(@Nullable @Default("Foo") String stringArg) {
-    if (stringArg == null) {
-      stringArg = "was a null value by default";
-    }
-    return stringArg;
+  public String nullableDefault(@Default("Foo") Optional<String> stringArg) {
+    return stringArg.orElse("was a null value by default");
+  }
+
+  /** return the default platform as a Scalar value */
+  @Function
+  public Platform defaultPlatform()
+      throws InterruptedException, ExecutionException, DaggerQueryException {
+    return dag().defaultPlatform();
+  }
+
+  @Function
+  public float addFloat(float a, float b) {
+    return a + b;
   }
 }

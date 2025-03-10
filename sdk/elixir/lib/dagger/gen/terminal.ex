@@ -42,3 +42,16 @@ defmodule Dagger.Terminal do
     end
   end
 end
+
+defimpl Jason.Encoder, for: Dagger.Terminal do
+  def encode(terminal, opts) do
+    {:ok, id} = Dagger.Terminal.id(terminal)
+    Jason.Encode.string(id, opts)
+  end
+end
+
+defimpl Nestru.Decoder, for: Dagger.Terminal do
+  def decode_fields_hint(_struct, _context, id) do
+    {:ok, Dagger.Client.load_terminal_from_id(Dagger.Global.dag(), id)}
+  end
+end

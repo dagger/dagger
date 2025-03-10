@@ -10,17 +10,15 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
-
-	"github.com/dagger/dagger/internal/testutil"
-	"github.com/dagger/dagger/testctx"
 )
 
 // LegacySuite contains tests for module versioning compatibility
 type LegacySuite struct{}
 
 func TestLegacy(t *testing.T) {
-	testctx.Run(testCtx, t, LegacySuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(LegacySuite{})
 }
 
 func (LegacySuite) TestLegacyExportAbsolutePath(ctx context.Context, t *testctx.T) {
@@ -329,34 +327,28 @@ func (LegacySuite) TestExecWithSkipEntrypointCompat(ctx context.Context, t *test
 	// Doesn't work on Go because it can't distinguish between unset and
 	// empty value.
 
-	res := struct {
-		Container struct {
-			From struct {
-				WithEntrypoint struct {
-					WithExec struct {
-						Stdout string
-					}
-				}
-			}
-		}
-	}{}
-	err := testutil.Query(t,
-		`{
-            container {
-                from(address: "`+alpineImage+`") {
-                    withEntrypoint(args: ["sh", "-c"]) {
-                        withExec(args: ["echo $HOME"], skipEntrypoint: false) {
-                            stdout
-                        }
-                    }
-                }
-			}
-		}`, &res, &testutil.QueryOptions{
-			Version: "v0.12.6",
-		})
+	c := connect(ctx, t)
+
+	out, err := goGitBase(t, c).
+		With(daggerExec("init", "--name=test", "--sdk=python", "--source=.")).
+		WithWorkdir("/work").
+		WithNewFile("dagger.json", `{"name": "test", "sdk": "python", "source": ".", "engineVersion": "v0.12.6"}`).
+		With(pythonSource(`
+import dagger
+from dagger import dag
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    async def fn(self) -> str:
+        return await dag.container().from_("alpine").with_entrypoint(["sh", "-c"]).with_exec(["echo $HOME"], skip_entrypoint=False).stdout()
+
+`)).
+		With(daggerCall("fn")).
+		Stdout(ctx)
 
 	require.NoError(t, err)
-	require.Equal(t, "/root\n", res.Container.From.WithEntrypoint.WithExec.Stdout)
+	require.Equal(t, "/root\n", out)
 }
 
 func (LegacySuite) TestLegacyNoExec(ctx context.Context, t *testctx.T) {
@@ -454,7 +446,7 @@ func (m *Dep) Dummy() error {
 `,
 		)).
 		WithWorkdir("/work").
-		With(daggerExec("install", "./dep")).
+		With(daggerExec("install", "./dep", "--compat=skip")).
 		With(daggerQuery(`{test{test}}`)).
 		Stdout(ctx)
 
@@ -509,23 +501,28 @@ func (LegacySuite) TestPipeline(ctx context.Context, t *testctx.T) {
 	// Changed in dagger/dagger#8281
 	//
 	// Ensure that pipeline still exists in old schemas.
+	c := connect(ctx, t)
 
-	res := struct {
-		Pipeline struct {
-			Version string
-		}
-	}{}
-	err := testutil.Query(t,
-		`{
-			pipeline(name: "foo") {
-				version
-			}
-		}`, &res, &testutil.QueryOptions{
-			Version: "v0.12.6",
-		})
+	out, err := goGitBase(t, c).
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		WithWorkdir("/work").
+		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.12.7"}`).
+		WithNewFile("main.go", `package main
+
+import "context"
+
+type Test struct {}
+
+func (m *Test) Fn(ctx context.Context) (string, error) {
+	return dag.Pipeline("foo").Version(ctx)
+}
+`,
+		).
+		With(daggerCall("fn")).
+		Stdout(ctx)
 
 	require.NoError(t, err)
-	require.NotEmpty(t, res.Pipeline.Version)
+	require.NotEmpty(t, out)
 }
 
 func (LegacySuite) TestModuleSourceCloneURL(ctx context.Context, t *testctx.T) {
@@ -533,29 +530,28 @@ func (LegacySuite) TestModuleSourceCloneURL(ctx context.Context, t *testctx.T) {
 	//
 	// Ensure that cloneURL still exists in old schemas.
 
-	res := struct {
-		ModuleSource struct {
-			AsGitSource struct {
-				CloneRef string
-				CloneURL string
-			}
-		}
-	}{}
-	err := testutil.Query(t,
-		`{
-			moduleSource(refString: "https://github.com/dagger/dagger.git@v0.12.6") {
-				asGitSource {
-					cloneRef
-					cloneURL
-				}
-			}
-		}`, &res, &testutil.QueryOptions{
-			Version: "v0.12.6",
-		})
+	c := connect(ctx, t)
+
+	out, err := goGitBase(t, c).
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		WithWorkdir("/work").
+		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.12.7"}`).
+		WithNewFile("main.go", `package main
+
+import "context"
+
+type Test struct {}
+
+func (m *Test) Fn(ctx context.Context) (string, error) {
+	return dag.ModuleSource("https://github.com/dagger/dagger.git@v0.12.6").CloneURL(ctx)
+}
+`,
+		).
+		With(daggerCall("fn")).
+		Stdout(ctx)
 
 	require.NoError(t, err)
-	require.Equal(t, "https://github.com/dagger/dagger.git", res.ModuleSource.AsGitSource.CloneRef)
-	require.Equal(t, res.ModuleSource.AsGitSource.CloneRef, res.ModuleSource.AsGitSource.CloneURL)
+	require.Equal(t, "https://github.com/dagger/dagger.git", out)
 }
 
 func (LegacySuite) TestGoCodegenOptionals(ctx context.Context, t *testctx.T) {
@@ -596,7 +592,7 @@ class Dep:
 `,
 		)).
 		WithWorkdir("/work").
-		With(daggerExec("install", "./dep")).
+		With(daggerExec("install", "./dep", "--compat=skip")).
 		With(daggerCall("greet")).
 		Stdout(ctx)
 
@@ -635,6 +631,10 @@ func (m *Test) GetCommit(ctx context.Context, cmtID string) (string, error) {
 func (m *Test) GetContents(ctx context.Context, cmtID string) (string, error) {
 	return dag.Git("github.com/dagger/dagger", dagger.GitOpts{KeepGitDir: true}).Commit(cmtID).Tree().File(".git/HEAD").Contents(ctx)
 }
+
+func (m *Test) GetContentsNoKeepGitDirOpt(ctx context.Context, cmtID string) (string, error) {
+	return dag.Git("github.com/dagger/dagger").Commit(cmtID).Tree().File(".git/HEAD").Contents(ctx)
+}
 `)
 
 		out, err := ctr.With(daggerCall("get-commit", "--cmtID=c80ac2c13df7d573a069938e01ca13f7a81f0345")).Stdout(ctx)
@@ -644,39 +644,12 @@ func (m *Test) GetContents(ctx context.Context, cmtID string) (string, error) {
 		out, err = ctr.With(daggerCall("get-contents", "--cmtID=c80ac2c13df7d573a069938e01ca13f7a81f0345")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "c80ac2c13df7d573a069938e01ca13f7a81f0345\n", out)
-	}
 
-	type result struct {
-		Commit string
-		Tree   struct {
-			File struct {
-				Contents string
-			}
+		if version == "0.12.6" {
+			_, err = ctr.With(daggerCall("get-contents-no-keep-git-dir-opt", "--cmtID=c80ac2c13df7d573a069938e01ca13f7a81f0345")).Stdout(ctx)
+			requireErrRegexp(t, err, ".*\\.git/HEAD: no such file or directory.*")
 		}
 	}
-
-	res := struct {
-		Git struct {
-			Commit result
-		}
-	}{}
-
-	err := testutil.Query(t,
-		`{
-			git(url: "github.com/dagger/dagger") {
-				commit(id: "c80ac2c13df7d573a069938e01ca13f7a81f0345") {
-					commit
-					tree {
-						file(path: ".git/HEAD") {
-							contents
-						}
-					}
-				}
-			}
-		}`, &res, &testutil.QueryOptions{
-			Version: "v0.12.6",
-		})
-	requireErrOut(t, err, ".git/HEAD: no such file or directory")
 }
 
 func (LegacySuite) TestGoUnscopedEnumValues(ctx context.Context, t *testctx.T) {
@@ -737,24 +710,33 @@ func (LegacySuite) TestContainerWithFocus(ctx context.Context, t *testctx.T) {
 	//
 	// Ensure that the old schemas still have withFocus/withoutFocus.
 
-	var res any
-	err := testutil.Query(t,
-		`{
-			container {
-				from(address: "alpine") {
-					withFocus {
-						withoutFocus {
-							withExec(args: ["echo", "hello world"]) {
-								sync
-							}
-						}
-					}
-				}
-			}
-		}`, &res, &testutil.QueryOptions{
-			Version: "v0.13.3",
-		})
+	c := connect(ctx, t)
+
+	out, err := goGitBase(t, c).
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		WithWorkdir("/work").
+		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.13.3"}`).
+		WithNewFile("main.go", `package main
+
+import "context"
+
+type Test struct {}
+
+func (m *Test) Fn(ctx context.Context) (string, error) {
+	return dag.Container().
+		From("alpine").
+		WithFocus().
+		WithoutFocus().
+		WithExec([]string{"echo", "hello world"}).
+		Stdout(ctx)
+}
+`,
+		).
+		With(daggerCall("fn")).
+		Stdout(ctx)
+
 	require.NoError(t, err)
+	require.Equal(t, "hello world\n", out)
 }
 
 func (LegacySuite) TestContainerAsService(ctx context.Context, t *testctx.T) {

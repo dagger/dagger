@@ -1,17 +1,19 @@
 query ModuleConfig($source: ModuleSourceID!) {
   source: loadModuleSourceFromID(id: $source) {
+    kind
+    digest
     asString
+    sourceRootSubpath
     module: asModule {
       name
-      initialize {
-        description
-      }
+      description
       dependencies {
         name
         description
         source {
+          id
           asString
-          pin
+          digest
         }
       }
     }

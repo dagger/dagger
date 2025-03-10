@@ -69,19 +69,19 @@ type ClientMetadata struct {
 	InteractiveCommand []string `json:"interactive_command"`
 
 	// Import configuration for Buildkit's remote cache
-	UpstreamCacheImportConfig []*controlapi.CacheOptionsEntry
+	UpstreamCacheImportConfig []*controlapi.CacheOptionsEntry `json:"upstream_cache_import_config"`
 
 	// Export configuration for Buildkit's remote cache
-	UpstreamCacheExportConfig []*controlapi.CacheOptionsEntry
+	UpstreamCacheExportConfig []*controlapi.CacheOptionsEntry `json:"upstream_cache_export_config"`
 
 	// Dagger Cloud Token
-	CloudToken string
+	CloudToken string `json:"cloud_token"`
 
 	// Disable analytics
-	DoNotTrack bool
+	DoNotTrack bool `json:"do_not_track"`
 
 	// SSH auth socket path
-	SSHAuthSocketPath string
+	SSHAuthSocketPath string `json:"ssh_auth_socket_path"`
 }
 
 type clientMetadataCtxKey struct{}
@@ -140,6 +140,7 @@ type LocalImportOpts struct {
 	StatPathOnly       bool     `json:"stat_path_only"`
 	StatReturnAbsPath  bool     `json:"stat_return_abs_path"`
 	StatResolvePath    bool     `json:"stat_resolve_path"`
+	GetAbsPathOnly     bool     `json:"get_abs_path_only"`
 }
 
 func (o LocalImportOpts) ToGRPCMD() metadata.MD {

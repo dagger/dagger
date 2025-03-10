@@ -36,6 +36,13 @@ When working with private Git repositories, ensure that [SSH authentication is p
 ```
 
 </TabItem>
+
+<TabItem value="PHP">
+
+```php file=./snippets/copy-dir/php/src/MyModule.php
+```
+
+</TabItem>
 </Tabs>
 
 #### Examples
@@ -95,6 +102,12 @@ When working with private Git repositories, ensure that [SSH authentication is p
 ```
 
 </TabItem>
+<TabItem value="PHP">
+
+```php file=./snippets/copy-modify-dir/php/src/MyModule.php
+```
+
+</TabItem>
 </Tabs>
 
 #### Examples
@@ -147,6 +160,12 @@ When working with private Git repositories, ensure that [SSH authentication is p
 <TabItem value="TypeScript">
 
 ```typescript file=./snippets/clone-git-repository/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="PHP">
+
+```php file=./snippets/clone-git-repository/php/src/MyModule.php
 ```
 
 </TabItem>
@@ -393,6 +412,51 @@ This is an example of [pre-call filtering](../api/fs-filters.mdx#pre-call-filter
     dagger call copy-directory-with-exclusions --source=https://github.com/dagger/dagger#main directory --path=/src entries
     ```
 
+### Set a module-wide default path
+
+The following Dagger module uses a constructor to set a module-wide `Directory` argument and point it to a default path on the host. This eliminates the need to pass a common `Directory` argument individually to each Dagger Function in the module. If required, the default path can be overridden by specifying a different `Directory` value at call time.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/set-common-default-path/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/set-common-default-path/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/set-common-default-path/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="PHP">
+
+```php file=./snippets/set-common-default-path/php/src/MyModule.php
+```
+
+</TabItem>
+</Tabs>
+
+#### Examples
+
+- Call the Dagger Function without arguments. The default path (the current directory `.`) is used:
+
+    ```shell
+    dagger call foo
+    ```
+
+- Call the Dagger Function with a constructor argument. The specified directory (`/src/myapp`) is used:
+
+    ```shell
+    dagger call --source=/src/myapp foo
+    ```
+
 ## Builds
 
 ### Perform a multi-stage build
@@ -415,6 +479,12 @@ The following Dagger Function performs a multi-stage build.
 <TabItem value="TypeScript">
 
 ```typescript file=./snippets/builds/multi-stage-build/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="PHP">
+
+```php file=./snippets/builds/multi-stage-build/php/src/MyModule.php
 ```
 
 </TabItem>
@@ -448,6 +518,12 @@ The following Dagger Function performs a matrix build.
 <TabItem value="TypeScript">
 
 ```typescript file=./snippets/builds/matrix-build/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="PHP">
+
+```php file=./snippets/builds/matrix-build/php/src/MyModule.php
 ```
 
 </TabItem>
@@ -574,13 +650,19 @@ The following Dagger Function builds an image from a Dockerfile.
 ```
 
 </TabItem>
+<TabItem value="PHP">
+
+```php file=./snippets/builds/dockerfile/php/src/MyModule.php
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
 Build and publish an image from an existing Dockerfile
 
 ```shell
-dagger call build --src https://github.com/dockersamples/python-flask-redis
+dagger call build --src=https://github.com/dockersamples/python-flask-redis
 ```
 
 ### Build image from Dockerfile using different build context
@@ -712,6 +794,12 @@ The following function demonstrates how to invalidate the Dagger layer cache and
 ```
 
 </TabItem>
+<TabItem value="PHP">
+
+```php file=./snippets/builds/cache/php/src/MyModule.php
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -726,7 +814,7 @@ dagger call build
 
 ### Use secret variables
 
-The following Dagger Function accepts a GitHub personal access token as a `Secret`, and uses the `Secret` to authorize a request to the GitHub API. The secret may be sourced from a host environment variable, host file, or host command execution.
+The following Dagger Function accepts a GitHub personal access token as a `Secret`, and uses the `Secret` to authorize a request to the GitHub API. The secret may be sourced from the host (via an environment variable, host file, or host command) or from an external secrets manager (1Password or Vault):
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -751,22 +839,46 @@ The following Dagger Function accepts a GitHub personal access token as a `Secre
 
 #### Examples
 
-- Query the API using a secret sourced from an environment variable:
+- Use a secret sourced from an environment variable:
 
     ```shell
-    dagger call github-api --token=env:GITHUB_API_TOKEN
+    dagger call github-api --token=env://GITHUB_API_TOKEN
     ```
 
-- Query the API using a secret sourced from a file:
+- Use a secret sourced from a file:
 
     ```shell
-    dagger call github-api --token=file:./github.txt
+    dagger call github-api --token=file://./github.txt
     ```
 
-- Query the API using a secret sourced from a command:
+- Use a secret sourced from a command:
 
     ```shell
-    dagger call github-api --token=cmd:"gh auth token"
+    dagger call github-api --token=cmd://"gh auth token"
+    ```
+
+- Use a secret from 1Password:
+
+    ```shell
+    dagger call github-api --token=op://infra/github/credential
+    ```
+
+  [1Password service accounts](https://developer.1password.com/docs/service-accounts/) are also supported:
+
+    ```shell
+    OP_SERVICE_ACCOUNT_TOKEN="mytoken" dagger call github-api --token=op://infra/github/credential
+    ```
+
+- Use a secret from Vault:
+
+    ```shell
+    VAULT_ADDR="https://127.0.0.1:8200" VAULT_TOKEN="gue55me7" dagger call github-api --token=vault://credentials.github
+    ```
+
+  [Vault AppRole authentication](https://developer.hashicorp.com/vault/docs/auth/approle) is also supported:
+
+    ```shell
+    VAULT_ADDR="https://127.0.0.1:8200" VAULT_APPROLE_ROLE_ID="ROLE-ID" VAULT_APPROLE_SECRET_ID="SECRET-ID" dagger call github-api --token=vault://credentials.github
     ```
 
 ### Mount files as secrets
@@ -796,11 +908,10 @@ The following Dagger Function accepts a GitHub hosts configuration file as a `Se
 
 #### Example
 
-Query the GitHub API using a mounted secret file:
+Use a mounted secret file:
 
 ```shell
-dagger call github-auth \
-    --gh-creds=file:$HOME/.config/gh/hosts.yml
+dagger call github-auth --gh-creds=file://$HOME/.config/gh/hosts.yml
 ```
 
 ### Use secret in Dockerfile build
@@ -841,10 +952,10 @@ RUN --mount=type=secret,id=gh-secret \
 
 #### Example
 
-Build from a Dockerfile with a mounted secret:
+Build from a Dockerfile with a mounted secret from the host environment:
 
 ```shell
-dagger call build --source=. --secret=env:GITHUB_API_TOKEN
+dagger call build --source=. --secret=env://GITHUB_API_TOKEN
 ```
 
 ## Services
@@ -1245,6 +1356,12 @@ The default location for the cache directory depends on the package manager (`~/
 ```
 
 </TabItem>
+<TabItem value="PHP">
+
+```php file=./snippets/cache-dependencies/php/src/MyModule.php
+```
+
+</TabItem>
 </Tabs>
 
 #### Example
@@ -1275,6 +1392,12 @@ The following Dagger Function demonstrates how to set a single environment varia
 <TabItem value="TypeScript">
 
 ```typescript file=./snippets/set-env-var/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="PHP">
+
+```php file=./snippets/set-env-var/php/src/MyModule.php
 ```
 
 </TabItem>

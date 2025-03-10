@@ -9,6 +9,8 @@ import (
 	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"github.com/vito/midterm"
@@ -21,24 +23,45 @@ type Vterm struct {
 
 	Prefix string
 
+	Background termenv.Color
+	Profile    termenv.Profile
+
 	vt *midterm.Terminal
 
+	// Separate buffer for Markdown content
+	markdownBuf *bytes.Buffer
+	// Regular terminal buffer
 	viewBuf     *bytes.Buffer
 	needsRedraw bool
 
 	mu *sync.Mutex
 }
 
-func NewVterm() *Vterm {
+func NewVterm(profile termenv.Profile) *Vterm {
 	return &Vterm{
-		vt:      midterm.NewAutoResizingTerminal(),
-		viewBuf: new(bytes.Buffer),
-		mu:      new(sync.Mutex),
+		Profile:     profile,
+		vt:          midterm.NewAutoResizingTerminal(),
+		viewBuf:     new(bytes.Buffer),
+		markdownBuf: new(bytes.Buffer),
+		mu:          new(sync.Mutex),
 	}
 }
 
 func (term *Vterm) Term() *midterm.Terminal {
 	return term.vt
+}
+
+func (term *Vterm) WriteMarkdown(p []byte) (int, error) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+
+	n, err := term.markdownBuf.Write(p)
+	if err != nil {
+		return n, err
+	}
+
+	term.needsRedraw = true
+	return n, nil
 }
 
 func (term *Vterm) Write(p []byte) (int, error) {
@@ -110,6 +133,16 @@ func (term *Vterm) SetPrefix(prefix string) {
 	term.needsRedraw = true
 }
 
+func (term *Vterm) SetBackground(background termenv.Color) {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	if background == term.Background {
+		return
+	}
+	term.Background = background
+	term.needsRedraw = true
+}
+
 func (term *Vterm) Init() tea.Cmd {
 	return nil
 }
@@ -143,7 +176,7 @@ func (term *Vterm) ScrollPercent() float64 {
 const reset = termenv.CSI + termenv.ResetSeq + "m"
 
 // View returns the output for the current region of the terminal, with ANSI
-// formatting.
+// formatting or rendered Markdown if present.
 func (term *Vterm) View() string {
 	term.mu.Lock()
 	defer term.mu.Unlock()
@@ -154,8 +187,59 @@ func (term *Vterm) View() string {
 	return term.viewBuf.String()
 }
 
+var style = styles.LightStyleConfig
+
+func init() {
+	if isDark {
+		style = styles.DarkStyleConfig
+	}
+	style.Document.Margin = nil
+}
+
 func (term *Vterm) redraw() {
 	term.viewBuf.Reset()
+
+	// First render any Markdown content
+	if term.markdownBuf.Len() > 0 {
+		st := style
+		// HACK: we want "0" or "255", but termenv.Color doesn't have a
+		// String() method, only Sequence(bool) which prints the ANSI
+		// formatting sequence.
+		if term.Background != nil {
+			switch x := term.Background.(type) {
+			case termenv.ANSIColor, termenv.ANSI256Color:
+				// annoyingly, there's no clean conversion from termenv.Color
+				// back to the value that lipgloss wants, because ANSI 0
+				// translates to "#000000" and we want "0"
+				bg := fmt.Sprintf("%d", x)
+				st.Document.BackgroundColor = &bg
+			default:
+				bg := fmt.Sprint(term.Background)
+				st.Document.BackgroundColor = &bg
+			}
+		}
+		renderer, _ := glamour.NewTermRenderer(
+			glamour.WithWordWrap(term.Width-lipgloss.Width(term.Prefix)),
+			glamour.WithStyles(st),
+		)
+
+		rendered, err := renderer.Render(term.markdownBuf.String())
+		if err == nil {
+			// Remove leading and trailing newlines
+			rendered = strings.TrimSpace(rendered)
+			// Add prefix to each line of rendered Markdown
+			lines := strings.Split(rendered, "\n")
+			for i, line := range lines {
+				if i > 0 {
+					fmt.Fprint(term.viewBuf, term.Prefix)
+				}
+				fmt.Fprintln(term.viewBuf, line)
+			}
+			return
+		}
+	}
+
+	// Then render regular terminal content
 	term.Render(term.viewBuf, term.Offset, term.Height)
 }
 
@@ -167,6 +251,13 @@ func (term *Vterm) Render(w io.Writer, offset, height int) {
 		return
 	}
 
+	var vt TermOutput = NewOutput(w, termenv.WithProfile(term.Profile))
+	if term.Background != nil {
+		vt = NewBackgroundOutput(vt, term.Background)
+	}
+
+	w = vt
+
 	var lines int
 	for row := range term.vt.Content {
 		if row < offset {
@@ -176,8 +267,8 @@ func (term *Vterm) Render(w io.Writer, offset, height int) {
 			break
 		}
 
-		fmt.Fprint(w, term.Prefix)
-		term.vt.RenderLine(w, row)
+		fmt.Fprint(w, vt.String(term.Prefix))
+		term.vt.RenderLineFgBg(w, row, nil, term.Background)
 		fmt.Fprintln(w)
 		lines++
 

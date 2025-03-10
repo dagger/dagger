@@ -2,7 +2,7 @@
 defmodule Dagger.ModuleSourceKind do
   @moduledoc "The kind of module source."
 
-  @type t() :: :LOCAL_SOURCE | :GIT_SOURCE
+  @type t() :: :LOCAL_SOURCE | :GIT_SOURCE | :DIR_SOURCE
 
   @spec local_source() :: :LOCAL_SOURCE
   def local_source(), do: :LOCAL_SOURCE
@@ -10,10 +10,14 @@ defmodule Dagger.ModuleSourceKind do
   @spec git_source() :: :GIT_SOURCE
   def git_source(), do: :GIT_SOURCE
 
+  @spec dir_source() :: :DIR_SOURCE
+  def dir_source(), do: :DIR_SOURCE
+
   @doc false
   @spec from_string(String.t()) :: t()
   def from_string(string)
 
   def from_string("LOCAL_SOURCE"), do: :LOCAL_SOURCE
   def from_string("GIT_SOURCE"), do: :GIT_SOURCE
+  def from_string("DIR_SOURCE"), do: :DIR_SOURCE
 end

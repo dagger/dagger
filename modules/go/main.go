@@ -23,7 +23,7 @@ func New(
 	source *dagger.Directory,
 	// Go version
 	// +optional
-	// +default="1.23.2"
+	// +default="1.23.6"
 	version string,
 	// Use a custom module cache
 	// +optional
@@ -81,6 +81,7 @@ func New(
 				// The specific version is dictated by Dagger's own requirement
 				// FIXME: make this optional with overlay support
 				"protoc~3.21.12",
+				"ca-certificates",
 			}}).
 			WithEnvVariable("GOLANG_VERSION", version).
 			WithEnvVariable("GOPATH", "/go").
@@ -396,7 +397,7 @@ func (p Go) Lint(
 	ctx context.Context,
 	packages []string, // +optional
 ) error {
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 	for _, pkg := range packages {
 		eg.Go(func() (rerr error) {
 			ctx, span := Tracer().Start(ctx, "lint "+path.Clean(pkg))

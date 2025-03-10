@@ -12,13 +12,13 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/modules"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 )
 
 type ConfigSuite struct{}
 
 func TestConfig(t *testing.T) {
-	testctx.Run(testCtx, t, ConfigSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(ConfigSuite{})
 }
 
 func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
@@ -39,7 +39,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			func (m *Test) Fn() string { return "wowzas" }
 			`,
 			).
-			WithNewFile("/work/dagger.json", `{"name": "test", "sdk": "go", "include": ["foo"], "exclude": ["blah"], "dependencies": ["foo"]}`)
+			WithNewFile("/work/dagger.json", `{"name": "test", "sdk": "go", "include": ["foo"], "exclude": ["blah", "!bar"], "dependencies": ["foo"]}`)
 
 		// verify develop updates config to new format
 		baseWithNewConfig := baseWithOldConfig.With(daggerExec("develop"))
@@ -49,8 +49,8 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 		require.NoError(t, json.Unmarshal([]byte(confContents), &modCfg))
 		require.Equal(t, "test", modCfg.Name)
 		require.Equal(t, &modules.SDK{Source: "go"}, modCfg.SDK)
-		require.Equal(t, []string{"foo"}, modCfg.Include)
-		require.Equal(t, []string{"blah"}, modCfg.Exclude)
+		require.Equal(t, []string{"foo", "!blah", "bar"}, modCfg.Include)
+		require.Empty(t, modCfg.Exclude)
 		require.Len(t, modCfg.Dependencies, 1)
 		require.Equal(t, "foo", modCfg.Dependencies[0].Source)
 		require.Equal(t, "dep", modCfg.Dependencies[0].Name)
@@ -108,13 +108,13 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 					}))
 
 				_, err := base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
-				requireErrOut(t, err, `local module source path ".." escapes context "/work"`)
+				requireErrOut(t, err, `source path ".." contains parent directory components`)
 
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
-				requireErrOut(t, err, `local module source path ".." escapes context "/work"`)
+				requireErrOut(t, err, `source path ".." contains parent directory components`)
 
 				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
-				requireErrOut(t, err, `local module source path ".." escapes context "/work"`)
+				requireErrOut(t, err, `source path ".." contains parent directory components`)
 			})
 
 			t.Run("local with absolute path", func(ctx context.Context, t *testctx.T) {
@@ -142,10 +142,10 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 				t.Run("git", func(ctx context.Context, t *testctx.T) {
 					c := connect(ctx, t)
-					mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+					privateSetup, cleanup := privateRepoSetup(c, t, tc)
 					defer cleanup()
 
-					_, err := baseCtr(t, c).With(mountedSocket).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-source"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
+					_, err := baseCtr(t, c).With(privateSetup).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-source"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
 					requireErrOut(t, err, `source path "../../../" contains parent directory components`)
 				})
 			})
@@ -183,18 +183,18 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 						},
 						Dependencies: []*modules.ModuleConfigDependency{{
 							Name:   "escape",
-							Source: "../work/dep",
+							Source: "../tmp/foo",
 						}},
 					}))
 
 				_, err = base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
-				requireErrOut(t, err, `module dep source root path "../work/dep" escapes root`)
+				requireErrOut(t, err, `local module dep source path "../tmp/foo" escapes context "/work"`)
 
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
-				requireErrOut(t, err, `module dep source root path "../work/dep" escapes root`)
+				requireErrOut(t, err, `local module dep source path "../tmp/foo" escapes context "/work"`)
 
 				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
-				requireErrOut(t, err, `module dep source root path "../work/dep" escapes root`)
+				requireErrOut(t, err, `local module dep source path "../tmp/foo" escapes context "/work"`)
 			})
 
 			t.Run("local with absolute path", func(ctx context.Context, t *testctx.T) {
@@ -213,13 +213,13 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 					}))
 
 				_, err := base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
-				requireErrOut(t, err, `missing config file /work/tmp/foo/dagger.json`)
+				requireErrOut(t, err, `local module dep source path "/tmp/foo" is absolute`)
 
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
-				requireErrOut(t, err, `missing config file /work/tmp/foo/dagger.json`)
+				requireErrOut(t, err, `local module dep source path "/tmp/foo" is absolute`)
 
 				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
-				requireErrOut(t, err, `missing config file /work/tmp/foo/dagger.json`)
+				requireErrOut(t, err, `local module dep source path "/tmp/foo" is absolute`)
 
 				base = base.
 					With(configFile(".", &modules.ModuleConfig{
@@ -234,23 +234,23 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 					}))
 
 				_, err = base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
-				requireErrOut(t, err, `module dep source root path "../dep" escapes root`)
+				requireErrOut(t, err, `local module dep source path "/./dep" is absolute`)
 
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
-				requireErrOut(t, err, `module dep source root path "../dep" escapes root`)
+				requireErrOut(t, err, `local module dep source path "/./dep" is absolute`)
 
 				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
-				requireErrOut(t, err, `module dep source root path "../dep" escapes root`)
+				requireErrOut(t, err, `local module dep source path "/./dep" is absolute`)
 			})
 
 			testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 				t.Run("git", func(ctx context.Context, t *testctx.T) {
 					c := connect(ctx, t)
-					mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+					privateSetup, cleanup := privateRepoSetup(c, t, tc)
 					defer cleanup()
 
-					_, err := baseCtr(t, c).With(mountedSocket).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-dep"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
-					requireErrOut(t, err, `module dep source root path "../../../foo" escapes root`)
+					_, err := baseCtr(t, c).With(privateSetup).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-dep"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
+					requireErrRegexp(t, err, `git module source ".*" does not contain a dagger config file`)
 				})
 			})
 		})
@@ -518,8 +518,8 @@ func (ConfigSuite) TestDaggerConfig(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			require.Regexp(t, `Name:\s+test`, out)
 			require.Regexp(t, `SDK:\s+go`, out)
-			require.Regexp(t, `Root Directory:\s+/work`, out)
-			require.Regexp(t, `Source Directory:\s+/work/test`, out)
+			require.Regexp(t, `Context Directory:\s+/work`, out)
+			require.Regexp(t, `Source Root Directory:\s+/work/test`, out)
 		})
 	}
 }
@@ -597,18 +597,11 @@ func (m *Coolsdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJso
 }
 
 func (m *Coolsdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.GeneratedCode {
-	return dag.GeneratedCode(modSource.WithSDK("go").AsModule().GeneratedContextDirectory())
-}
-
-func (m *Coolsdk) RequiredPaths() []string {
-	return []string{
-		"**/go.mod",
-		"**/go.sum",
-		"**/go.work",
-		"**/go.work.sum",
-		"**/vendor/",
-		"**/*.go",
-	}
+	modSource = modSource.WithSDK("go")
+	return dag.GeneratedCode(
+		// apply generated diff over context directory
+		modSource.ContextDirectory().WithDirectory("/", modSource.GeneratedContextDirectory()),
+	)
 }
 `,
 		},
@@ -646,8 +639,7 @@ func (m *Coolsdk) RequiredPaths() []string {
 					SDK: &modules.SDK{
 						Source: tc.sdk,
 					},
-					Include: []string{"dagger/subdir/keepdir"},
-					Exclude: []string{"dagger/subdir/keepdir/rmdir"},
+					Include: []string{"dagger/subdir/keepdir", "!dagger/subdir/keepdir/rmdir"},
 					Source:  "dagger",
 				})).
 				WithDirectory("dagger/subdir/keepdir/rmdir", c.Directory())
@@ -737,8 +729,7 @@ func (m *%[1]s) ContextDirectory() ([]string, error) {
 				SDK: &modules.SDK{
 					Source: "go",
 				},
-				Include: []string{"**/foo"},
-				Exclude: []string{"**/bar"},
+				Include: []string{"**/foo", "!**/bar"},
 				Source:  ".dagger",
 			})).
 			WithWorkdir("..").
@@ -790,17 +781,6 @@ func (m *CoolSdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJso
 func (m *CoolSdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.GeneratedCode {
 	return dag.GeneratedCode(modSource.WithSDK("go").AsModule().GeneratedContextDirectory())
 }
-
-func (m *CoolSdk) RequiredPaths() []string {
-	return []string{
-		"**/go.mod",
-		"**/go.sum",
-		"**/go.work",
-		"**/go.work.sum",
-		"**/vendor/",
-		"**/*.go",
-	}
-}
 `,
 		).
 		WithWorkdir("/work").
@@ -849,7 +829,14 @@ type vcsTestCase struct {
 	expectedPathPrefix string
 	isPrivateRepo      bool
 	skipProxyTest      bool
+
+	// token is a based64 encoded read-only PAT
+	token string
+	// sshKey determines whether to propagate the host's ssh-key
+	sshKey bool
 }
+
+const vcsTestCaseCommit = "ca6493ac2a5ed309c44565121b7bdd20a17b1abb"
 
 var vcsTestCases = []vcsTestCase{
 	// Test cases for public repositories using Go-style references, without '.git' suffix (optional)
@@ -859,7 +846,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "GitHub public",
 		gitTestRepoRef:           "github.com/dagger/dagger-test-modules",
-		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
+		gitTestRepoCommit:        vcsTestCaseCommit,
 		expectedHost:             "github.com",
 		expectedBaseHTMLURL:      "github.com/dagger/dagger-test-modules",
 		expectedURLPathComponent: "tree",
@@ -868,7 +855,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "GitLab public",
 		gitTestRepoRef:           "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
-		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
+		gitTestRepoCommit:        vcsTestCaseCommit,
 		expectedHost:             "gitlab.com",
 		expectedBaseHTMLURL:      "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
 		expectedURLPathComponent: "tree",
@@ -877,7 +864,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "BitBucket public",
 		gitTestRepoRef:           "bitbucket.org/dagger-modules/dagger-test-modules-public",
-		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
+		gitTestRepoCommit:        vcsTestCaseCommit,
 		expectedHost:             "bitbucket.org",
 		expectedBaseHTMLURL:      "bitbucket.org/dagger-modules/dagger-test-modules-public",
 		expectedURLPathComponent: "src",
@@ -886,7 +873,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "Azure DevOps public",
 		gitTestRepoRef:           "dev.azure.com/daggere2e/public/_git/dagger-test-modules",
-		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
+		gitTestRepoCommit:        vcsTestCaseCommit,
 		expectedHost:             "dev.azure.com",
 		expectedBaseHTMLURL:      "dev.azure.com/daggere2e/public/_git/dagger-test-modules",
 		expectedURLPathComponent: "commit",
@@ -900,37 +887,53 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "SSH Private GitLab",
 		gitTestRepoRef:           "ssh://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git",
-		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
+		gitTestRepoCommit:        vcsTestCaseCommit,
 		expectedHost:             "gitlab.com",
 		expectedBaseHTMLURL:      "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private",
 		expectedURLPathComponent: "tree",
 		expectedPathPrefix:       "",
 		isPrivateRepo:            true,
 		skipProxyTest:            true,
+		sshKey:                   true,
+	},
+	// GitLab private repository using PAT
+	{
+		name:                     "Private GitLab",
+		gitTestRepoRef:           "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git",
+		gitTestRepoCommit:        vcsTestCaseCommit,
+		expectedHost:             "gitlab.com",
+		expectedBaseHTMLURL:      "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private",
+		expectedURLPathComponent: "tree",
+		expectedPathPrefix:       "",
+		isPrivateRepo:            true,
+		skipProxyTest:            true,
+		token:                    "Z2xwYXQtQXlHQU4zR0xOeEhfM3VSckNzck0K",
 	},
 	// BitBucket private repository using SCP-like SSH reference format
 	{
 		name:                     "SSH Private BitBucket",
 		gitTestRepoRef:           "git@bitbucket.org:dagger-modules/private-modules-test.git",
-		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
+		gitTestRepoCommit:        vcsTestCaseCommit,
 		expectedHost:             "bitbucket.org",
 		expectedBaseHTMLURL:      "bitbucket.org/dagger-modules/private-modules-test",
 		expectedURLPathComponent: "src",
 		expectedPathPrefix:       "",
 		isPrivateRepo:            true,
 		skipProxyTest:            true,
+		sshKey:                   true,
 	},
 	// GitHub public repository using SSH reference
 	// Note: This format is also valid for private GitHub repositories
 	{
 		name:                     "SSH Public GitHub",
 		gitTestRepoRef:           "git@github.com:dagger/dagger-test-modules.git",
-		gitTestRepoCommit:        "f1b295cc1bce8eeea33cc3f42f89452c6fb3429e",
+		gitTestRepoCommit:        vcsTestCaseCommit,
 		expectedHost:             "github.com",
 		expectedBaseHTMLURL:      "github.com/dagger/dagger-test-modules",
 		expectedURLPathComponent: "tree",
 		expectedPathPrefix:       "",
 		skipProxyTest:            true,
+		sshKey:                   true,
 	},
 	// Azure DevOps private repository using SSH reference
 	// Note: Currently commented out due to Azure DevOps limitations on scoped SSH keys at the repository level
@@ -956,6 +959,16 @@ func testOnMultipleVCS(t *testctx.T, testFunc func(ctx context.Context, t *testc
 	}
 }
 
+func getVCSTestCase(t *testctx.T, url string) vcsTestCase {
+	for _, tc := range vcsTestCases {
+		if tc.gitTestRepoRef == url {
+			return tc
+		}
+	}
+	require.Fail(t, "no test case found", url)
+	return vcsTestCase{}
+}
+
 func testGitModuleRef(tc vcsTestCase, subpath string) string {
 	url := tc.gitTestRepoRef
 	if subpath != "" {
@@ -974,7 +987,7 @@ func (ConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 		t.Run("root module", func(ctx context.Context, t *testctx.T) {
 			rootModSrc := c.ModuleSource(testGitModuleRef(tc, ""))
 
-			htmlURL, err := rootModSrc.AsGitSource().HTMLURL(ctx)
+			htmlURL, err := rootModSrc.HTMLURL(ctx)
 			require.NoError(t, err)
 			expectedURL := fmt.Sprintf("https://%s/%s/%s", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit)
 			require.Equal(t, expectedURL, htmlURL)
@@ -988,7 +1001,7 @@ func (ConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 				require.Equal(t, fmt.Sprintf("https://%s/%s/%s", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit), htmlURL)
 			}
 
-			commit, err := rootModSrc.AsGitSource().Commit(ctx)
+			commit, err := rootModSrc.Commit(ctx)
 			require.NoError(t, err)
 			require.Equal(t, tc.gitTestRepoCommit, commit)
 
@@ -999,7 +1012,7 @@ func (ConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 
 		t.Run("top-level module", func(ctx context.Context, t *testctx.T) {
 			topLevelModSrc := c.ModuleSource(testGitModuleRef(tc, "top-level"))
-			htmlURL, err := topLevelModSrc.AsGitSource().HTMLURL(ctx)
+			htmlURL, err := topLevelModSrc.HTMLURL(ctx)
 			require.NoError(t, err)
 			expectedURL := fmt.Sprintf("https://%s/%s/%s%s/top-level", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit, tc.expectedPathPrefix)
 			require.Equal(t, expectedURL, htmlURL)
@@ -1013,7 +1026,7 @@ func (ConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 				require.Equal(t, http.StatusOK, resp.StatusCode)
 			}
 
-			commit, err := topLevelModSrc.AsGitSource().Commit(ctx)
+			commit, err := topLevelModSrc.Commit(ctx)
 			require.NoError(t, err)
 			require.Equal(t, tc.gitTestRepoCommit, commit)
 
@@ -1024,7 +1037,7 @@ func (ConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 
 		t.Run("subdir dep2 module", func(ctx context.Context, t *testctx.T) {
 			subdirDepModSrc := c.ModuleSource(testGitModuleRef(tc, "subdir/dep2"))
-			htmlURL, err := subdirDepModSrc.AsGitSource().HTMLURL(ctx)
+			htmlURL, err := subdirDepModSrc.HTMLURL(ctx)
 			require.NoError(t, err)
 			expectedURL := fmt.Sprintf("https://%s/%s/%s%s/subdir/dep2", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit, tc.expectedPathPrefix)
 			require.Equal(t, expectedURL, htmlURL)
@@ -1038,25 +1051,13 @@ func (ConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 				require.Equal(t, http.StatusOK, resp.StatusCode)
 			}
 
-			commit, err := subdirDepModSrc.AsGitSource().Commit(ctx)
+			commit, err := subdirDepModSrc.Commit(ctx)
 			require.NoError(t, err)
 			require.Equal(t, tc.gitTestRepoCommit, commit)
 
 			refStr, err := subdirDepModSrc.AsString(ctx)
 			require.NoError(t, err)
 			require.Equal(t, testGitModuleRef(tc, "subdir/dep2"), refStr)
-		})
-
-		t.Run("stable arg", func(ctx context.Context, t *testctx.T) {
-			_, err := c.ModuleSource(tc.gitTestRepoRef, dagger.ModuleSourceOpts{
-				Stable: true,
-			}).AsString(ctx)
-			requireErrOut(t, err, fmt.Sprintf(`no version provided for stable remote ref: %s`, tc.gitTestRepoRef))
-
-			_, err = c.ModuleSource(testGitModuleRef(tc, "top-level"), dagger.ModuleSourceOpts{
-				Stable: true,
-			}).AsString(ctx)
-			require.NoError(t, err)
 		})
 	})
 }
@@ -1067,11 +1068,11 @@ func (ConfigSuite) TestDaggerGitWithSources(ctx context.Context, t *testctx.T) {
 			modSubpath := modSubpath
 			t.Run(modSubpath, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
-				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+				privateSetup, cleanup := privateRepoSetup(c, t, tc)
 				defer cleanup()
 
 				ctr := goGitBase(t, c).
-					With(mountedSocket).
+					With(privateSetup).
 					WithWorkdir("/work").
 					With(daggerExec("init", "--source=.")).
 					With(daggerExec("install", "--name", "foo", testGitModuleRef(tc, "various-source-values/"+modSubpath)))
@@ -1103,224 +1104,6 @@ func (m *Work) Fn(ctx context.Context) (string, error) {
 			})
 		}
 	})
-}
-
-func (ConfigSuite) TestViews(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	ctr := goGitBase(t, c).
-		WithWorkdir("/work").
-		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-		WithNewFile("main.go", `package main
-
-import (
-	"dagger/test/internal/dagger"
-)
-
-type Test struct {}
-
-func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
-	return dir
-}
-`,
-		).
-		WithDirectory("stuff", c.Directory().
-			WithNewFile("nice-file", "nice").
-			WithNewFile("mean-file", "mean").
-			WithNewFile("foo.txt", "foo").
-			WithDirectory("subdir", c.Directory().
-				WithNewFile("other-nice-file", "nice").
-				WithNewFile("other-mean-file", "mean").
-				WithNewFile("bar.txt", "bar"),
-			),
-		)
-
-	// setup nice-view
-	ctr = ctr.With(daggerExec("config", "views", "set", "-n", "nice-view", "nice-file", "subdir/other-nice-file"))
-	out, err := ctr.Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), "nice-file\nsubdir/other-nice-file")
-
-	out, err = ctr.With(daggerExec("config", "views", "-n", "nice-view")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), "nice-file\nsubdir/other-nice-file")
-
-	out, err = ctr.With(daggerExec("config", "views")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), "nice-file\nsubdir/other-nice-file")
-
-	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:nice-view", "entries")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "nice-file\nsubdir", strings.TrimSpace(out))
-
-	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:nice-view", "directory", "--path=subdir", "entries")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "other-nice-file", strings.TrimSpace(out))
-
-	// setup mean-view
-	ctr = ctr.With(daggerExec("config", "views", "--json", "set", "-n", "mean-view", "mean-file", "subdir/other-mean-file"))
-	out, err = ctr.Stdout(ctx)
-	require.NoError(t, err)
-	actual := []string{}
-	require.NoError(t, json.Unmarshal([]byte(out), &actual))
-	require.Equal(t, []string{"mean-file", "subdir/other-mean-file"}, actual)
-
-	out, err = ctr.With(daggerExec("config", "views", "-n", "mean-view")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), "mean-file\nsubdir/other-mean-file")
-
-	out, err = ctr.With(daggerExec("config", "views")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), "nice-file\nsubdir/other-nice-file")
-	require.Contains(t, strings.TrimSpace(out), "mean-file\nsubdir/other-mean-file")
-
-	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:nice-view", "entries")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "nice-file\nsubdir", strings.TrimSpace(out))
-
-	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:mean-view", "entries")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "mean-file\nsubdir", strings.TrimSpace(out))
-
-	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:mean-view", "directory", "--path=subdir", "entries")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "other-mean-file", strings.TrimSpace(out))
-
-	// setup txt-view
-	ctr = ctr.With(daggerExec("config", "views", "set", "-n", "txt-view", "**/*.txt"))
-	out, err = ctr.Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), "**/*.txt")
-
-	out, err = ctr.With(daggerExec("config", "views", "-n", "txt-view")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), "**/*.txt")
-
-	out, err = ctr.With(daggerExec("config", "views")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), "nice-file\nsubdir/other-nice-file")
-	require.Contains(t, strings.TrimSpace(out), "mean-file\nsubdir/other-mean-file")
-	require.Contains(t, strings.TrimSpace(out), "**/*.txt")
-
-	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:nice-view", "entries")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "nice-file\nsubdir", strings.TrimSpace(out))
-
-	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:mean-view", "entries")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "mean-file\nsubdir", strings.TrimSpace(out))
-
-	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:txt-view", "entries")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "foo.txt\nsubdir", strings.TrimSpace(out))
-
-	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:txt-view", "directory", "--path=subdir", "entries")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "bar.txt", strings.TrimSpace(out))
-
-	// setup no-subdir-txt-view
-	ctr = ctr.With(daggerExec("config", "views", "set", "-n", "no-subdir-txt-view", "**/*.txt", "!subdir"))
-	out, err = ctr.Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), "**/*.txt\n!subdir")
-
-	out, err = ctr.With(daggerExec("config", "views", "-n", "no-subdir-txt-view")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), "**/*.txt\n!subdir")
-
-	out, err = ctr.With(daggerExec("config", "views", "--json")).Stdout(ctx)
-	require.NoError(t, err)
-	{
-		actual := map[string]any{}
-		require.NoError(t, json.Unmarshal([]byte(out), &actual))
-		require.Equal(t, map[string]any{
-			"nice-view":          []any{"nice-file", "subdir/other-nice-file"},
-			"mean-view":          []any{"mean-file", "subdir/other-mean-file"},
-			"txt-view":           []any{"**/*.txt"},
-			"no-subdir-txt-view": []any{"**/*.txt", "!subdir"},
-		}, actual)
-	}
-
-	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:nice-view", "entries")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "nice-file\nsubdir", strings.TrimSpace(out))
-
-	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:mean-view", "entries")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "mean-file\nsubdir", strings.TrimSpace(out))
-
-	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:txt-view", "entries")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "foo.txt\nsubdir", strings.TrimSpace(out))
-
-	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:no-subdir-txt-view", "entries")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "foo.txt", strings.TrimSpace(out))
-
-	// add to txt-view
-	ctr = ctr.With(daggerExec("config", "views", "add", "-n", "txt-view", "nice-file", "!subdir"))
-	out, err = ctr.Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), "**/*.txt\nnice-file\n!subdir")
-
-	out, err = ctr.With(daggerExec("config", "views", "-n", "txt-view")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), "**/*.txt\nnice-file\n!subdir")
-
-	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:txt-view", "entries")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "foo.txt\nnice-file", strings.TrimSpace(out))
-
-	// remove from no-subdir-txt-view
-	ctr = ctr.With(daggerExec("config", "views", "remove", "-n", "no-subdir-txt-view", "!subdir"))
-	out, err = ctr.Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), "**/*.txt")
-
-	out, err = ctr.With(daggerExec("config", "views", "-n", "no-subdir-txt-view")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), "**/*.txt")
-
-	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:no-subdir-txt-view", "entries")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "foo.txt\nsubdir", strings.TrimSpace(out))
-
-	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:no-subdir-txt-view", "directory", "--path=subdir", "entries")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "bar.txt", strings.TrimSpace(out))
-
-	// remove mean-view
-	ctr = ctr.With(daggerExec("config", "views", "-n", "mean-view", "remove"))
-	out, err = ctr.Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), `View "mean-view" removed`)
-
-	_, err = ctr.With(daggerExec("config", "views", "-n", "mean-view")).Stdout(ctx)
-	requireErrOut(t, err, `view "mean-view" not found`)
-
-	out, err = ctr.With(daggerExec("config", "views")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), "nice-file\nsubdir/other-nice-file")
-	require.Contains(t, strings.TrimSpace(out), "**/*.txt\nnice-file\n!subdir")
-	require.Contains(t, strings.TrimSpace(out), "**/*.txt")
-
-	// remove all views
-	ctr = ctr.With(daggerExec("config", "views", "-n", "nice-view", "remove"))
-	out, err = ctr.Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), `View "nice-view" removed`)
-	ctr = ctr.With(daggerExec("config", "views", "-n", "txt-view", "remove"))
-	out, err = ctr.Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), `View "txt-view" removed`)
-	ctr = ctr.With(daggerExec("config", "views", "-n", "no-subdir-txt-view", "remove"))
-	out, err = ctr.Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), `View "no-subdir-txt-view" removed`)
-
-	out, err = ctr.With(daggerExec("config", "views")).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "", strings.TrimSpace(out))
 }
 
 func (ConfigSuite) TestDepPins(ctx context.Context, t *testctx.T) {

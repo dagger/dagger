@@ -13,7 +13,7 @@ inputs:
 
   version:
     description: "Dagger version to run against"
-    default: "v0.15.3"
+    default: "v0.16.2"
     required: false
 
   dev-engine:
@@ -59,33 +59,30 @@ runs:
           echo "::endgroup::"
         fi
 
-    - name: Install go
-      uses: actions/setup-go@v5
-      if: inputs.dev-engine == 'true'
-      with:
-        go-version: "1.23"
-        cache-dependency-path: ".dagger/go.sum"
-
     - name: Start dev dagger
       shell: bash
       if: inputs.dev-engine == 'true'
       run: |
         echo "::group::Starting dev engine"
+
         if ! [[ -x "$(command -v docker)" ]]; then
           echo "docker is not installed"
+          exit 1
+        fi
+        if ! [[ -x "$(command -v dagger)" ]]; then
+          echo "dagger is not installed"
           exit 1
         fi
 
         # put env variables in ${{ runner.temp }}/actions/call/local-envs instead of
         # $GITHUB_ENV to avoid leaking into parent workflow
-        (cd .dagger/mage; go run main.go -w ../.. engine:dev) | tee ${{ runner.temp }}/actions/call/local-envs
+        echo "export PATH=$PWD/bin:$PATH" >> ${{ runner.temp }}/actions/call/local-envs
 
         echo "::endgroup::"
       env:
-        # create separate outputs and containers for each workflow (to prevent
-        # collisions with shared docker containers). With `arc` the runner name
+        # create separate container for each workflow (to prevent collisions
+        # with shared docker containers). With `arc` the runner name
         # is the name of the pod, and each pod runs a single dedicated job.
-        _EXPERIMENTAL_DAGGER_DEV_OUTPUT: ./bin/dev-${{ runner.name }}
         _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ runner.name }}
 
     - name: Wait for dagger to be ready

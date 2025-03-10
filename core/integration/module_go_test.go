@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -15,7 +15,7 @@ import (
 type GoSuite struct{}
 
 func TestGo(t *testing.T) {
-	testctx.Run(testCtx, t, GoSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(GoSuite{})
 }
 
 func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
@@ -93,33 +93,6 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 		})
 	})
 
-	t.Run("respects existing go.mod", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			WithExec([]string{"go", "mod", "init", "example.com/test"}).
-			With(daggerExec("init", "--name=hasGoMod", "--merge", "--sdk=go", "--source=."))
-
-		out, err := modGen.
-			With(daggerQuery(`{hasGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"hasGoMod":{"containerEcho":{"stdout":"hello\n"}}}`, out)
-
-		t.Run("preserves module name", func(ctx context.Context, t *testctx.T) {
-			generated, err := modGen.File("go.mod").Contents(ctx)
-			require.NoError(t, err)
-			require.Contains(t, generated, "module example.com/test")
-		})
-
-		t.Run("no new go.mod", func(ctx context.Context, t *testctx.T) {
-			_, err := modGen.File("dagger/go.mod").Contents(ctx)
-			requireErrOut(t, err, "no such file or directory")
-		})
-	})
-
 	t.Run("respects existing go.work", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -142,30 +115,6 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 		})
 	})
 
-	t.Run("respects existing go.work with existing module", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			WithExec([]string{"go", "mod", "init", "example.com/test"}).
-			WithExec([]string{"go", "work", "init"}).
-			WithExec([]string{"go", "work", "use", "."}).
-			With(daggerExec("init", "--name=hasGoMod", "--sdk=go", "--merge", "--source=."))
-
-		out, err := modGen.
-			With(daggerQuery(`{hasGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"hasGoMod":{"containerEcho":{"stdout":"hello\n"}}}`, out)
-
-		t.Run("go.work is edited", func(ctx context.Context, t *testctx.T) {
-			generated, err := modGen.File("go.work").Contents(ctx)
-			require.NoError(t, err)
-			require.Contains(t, generated, "use .\n")
-		})
-	})
-
 	t.Run("respects go.work for subdir if git dir", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -173,7 +122,7 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithExec([]string{"go", "work", "init"}).
-			With(daggerExec("init", "--name=hasGoMod", "--sdk=go", "subdir"))
+			With(daggerExec("init", "--name=hasGoMod", "--sdk=go", "--include", "../go.work*", "subdir"))
 
 		out, err := modGen.
 			WithWorkdir("./subdir").
@@ -214,64 +163,6 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			require.NotContains(t, generated, "use")
 		})
-	})
-
-	t.Run("respects parent go.mod if root points to it", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		generated := goGitBase(t, c).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			WithExec([]string{"go", "mod", "init", "example.com/test"}).
-			WithNewFile("/work/foo.go", "package foo\n").
-			With(daggerExec("init", "--name=child", "--merge", "--sdk=go", "./child")).
-			WithWorkdir("/work/child").
-			// explicitly develop to see whether it makes a go.mod
-			With(daggerExec("develop")).
-			Directory("/work")
-
-		parentEntries, err := generated.Entries(ctx)
-		require.NoError(t, err)
-		require.Equal(t, []string{".git", "child", "foo.go", "go.mod", "go.sum"}, parentEntries)
-
-		childEntries, err := generated.Directory("child").Entries(ctx)
-		require.NoError(t, err)
-		require.NotContains(t, childEntries, "go.mod")
-
-		t.Run("preserves parent module name", func(ctx context.Context, t *testctx.T) {
-			goMod, err := generated.File("go.mod").Contents(ctx)
-			require.NoError(t, err)
-			require.Contains(t, goMod, "module example.com/test")
-		})
-	})
-
-	t.Run("respects existing go.mod even if root points to parent that has go.mod", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		generated := goGitBase(t, c).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			WithExec([]string{"git", "init"}).
-			WithExec([]string{"go", "mod", "init", "example.com/test"}).
-			WithNewFile("/work/foo.go", "package foo\n").
-			WithWorkdir("/work/child").
-			WithExec([]string{"go", "mod", "init", "my-mod"}).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--source=./child", "--merge", "--name=child", "--sdk=go", "./child")).
-			WithWorkdir("/work/child").
-			// explicitly develop to see whether it makes a go.mod
-			With(daggerExec("develop")).
-			Directory("/work")
-
-		parentEntries, err := generated.Entries(ctx)
-		require.NoError(t, err)
-		// no go.sum
-		require.Equal(t, []string{".git", "child", "foo.go", "go.mod"}, parentEntries)
-
-		childEntries, err := generated.Directory("child").Entries(ctx)
-		require.NoError(t, err)
-		require.Contains(t, childEntries, "go.mod")
-		require.Contains(t, childEntries, "go.sum")
 	})
 
 	t.Run("respects existing main.go", func(ctx context.Context, t *testctx.T) {
@@ -379,8 +270,8 @@ func (m *HasNotMainGo) Hello() string { return "Hello, world!" }
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithExec([]string{"go", "work", "init"}).
-			With(daggerExec("init", "--sdk=go", "foo")).
-			With(daggerExec("init", "--sdk=go", "bar"))
+			With(daggerExec("init", "--sdk=go", "--include", "../go.work*,../bar/", "foo")).
+			With(daggerExec("init", "--sdk=go", "--include", "../go.work*,../foo/", "bar"))
 
 		generated, err := modGen.File("go.work").Contents(ctx)
 		require.NoError(t, err)
@@ -437,7 +328,7 @@ func main() {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithExec([]string{"mkdir", "-p", ".git"}).
+			WithExec([]string{"mkdir", "-p", ".foo"}).
 			With(daggerExec("init", "--name=bare", "--sdk=go"))
 
 		daggerDirEnts, err := modGen.Directory("/work").Entries(ctx)
@@ -452,7 +343,7 @@ func main() {
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
 
-	t.Run("fails if go.mod exists without merge flag", func(ctx context.Context, t *testctx.T) {
+	t.Run("fails if go.mod exists", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
@@ -465,7 +356,7 @@ func main() {
 			With(daggerQuery(`{hasGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
 			Stdout(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "existing go.mod does not")
+		requireErrRegexp(t, err, `existing go.mod path ".*" does not match the module's name ".*"`)
 	})
 
 	t.Run("do not merge go.mod with parent", func(ctx context.Context, t *testctx.T) {

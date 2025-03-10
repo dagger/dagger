@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
@@ -19,7 +19,7 @@ import (
 type PythonSuite struct{}
 
 func TestPython(t *testing.T) {
-	testctx.Run(testCtx, t, PythonSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(PythonSuite{})
 }
 
 func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
@@ -93,28 +93,6 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 
 		require.NoError(t, err)
 		require.JSONEq(t, `{"helloWorld":{"message":"Hello, Monde!"}}`, out)
-	})
-
-	t.Run("fail if --merge is specified", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		_, err := daggerCliBase(t, c).
-			With(daggerInitPython("--name=hello-world", "--merge")).
-			With(pythonSource(`
-                from dagger import field, function, object_type
-
-                @object_type
-                class HelloWorld:
-                    my_name: str = field(default="World")
-
-                    @function
-                    def message(self) -> str:
-                        return f"Hello, {self.my_name}!"
-            `)).
-			With(daggerQuery(`{helloWorld(myName: "Monde"){message}}`)).
-			Stdout(ctx)
-
-		requireErrOut(t, err, "merge is only supported")
 	})
 
 	t.Run("init module in .dagger if files present in current dir", func(ctx context.Context, t *testctx.T) {
@@ -938,11 +916,11 @@ func (PythonSuite) TestPipLock(ctx context.Context, t *testctx.T) {
 
 		out, err := daggerCliBase(t, c).
 			With(pipLockMod(t, c, nil)).
-			With(daggerCall("--json")).
+			With(daggerCall()).
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "Test", gjson.Get(out, "_type").String())
+		require.Regexp(t, `Test@xxh3:[a-f0-9]{16}`, out)
 	})
 
 	t.Run("no uv.lock on develop", func(ctx context.Context, t *testctx.T) {

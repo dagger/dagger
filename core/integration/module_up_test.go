@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,7 +22,7 @@ func (ModuleSuite) TestDaggerUp(ctx context.Context, t *testctx.T) {
 		t.SkipNow()
 	}
 	// set timeout to 3m for each test
-	t = t.WithTimeout(3 * time.Minute)
+	t = t.Using(testctx.WithTimeout[*testing.T](3 * time.Minute))
 
 	const defaultTrafficPortForContainerTests = "23100"
 	const defaultTrafficPortForServiceTests = "23200"
@@ -72,6 +72,13 @@ func (ModuleSuite) TestDaggerUp(ctx context.Context, t *testctx.T) {
 			endpointFn:   daggerUpAndGetEndpoint,
 			trafficPort:  "23103",
 			daggerArgs:   []string{"call", "ctr", "without-exposed-port", "--port", defaultTrafficPortForContainerTests, "with-exposed-port", "--port", "23103", "up", "--args", "python,-m,http.server,23103", "--ports", "23103:23103"},
+			cachedModDir: modDirForAsContainerTests,
+		},
+		{
+			name:         "shell container port map",
+			endpointFn:   daggerUpAndGetEndpoint,
+			trafficPort:  "23104",
+			daggerArgs:   []string{"shell", "-c", fmt.Sprintf("ctr | up --ports 23104:%s", defaultTrafficPortForContainerTests)},
 			cachedModDir: modDirForAsContainerTests,
 		},
 		{

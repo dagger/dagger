@@ -1,42 +1,38 @@
 ## What is Dagger?
 
-Dagger is a tool that lets you replace your software project's artisanal scripts with a modern API and cross-language scripting engine.
+Dagger is an open-source runtime for composable workflows. It's perfect for systems with many moving parts and a strong need for **repeatability**, **modularity**, **observability** and **cross-platform support**. This makes it a great choice for AI agents and CI/CD workflows.
 
-1. Encapsulate all your project's tasks and workflows into simple functions, written in your programming language of choice
-2. Dagger packages your functions into a custom GraphQL API
-3. Run your functions from the CLI, your language interpreter, or a custom HTTP client
-4. Package your functions into a module, to reuse in your next project or share with the community
-5. Search the Daggerverse for existing modules, and import them into yours. All Dagger modules can reuse each other's functions - across language.
+<img src="docs/static/img/dagger-factory.jpg" width="75%">
 
-## Benefits to app teams
+## Key Features
 
-* Reduce complexity: even complex builds can be expressed as a few simple functions
-* No more "push and pray": everything CI can do, your dev environment can do too
-* Use the same language to develop your app and its scripts
-* Easy onboarding of new developers: if you can build, test and deploy - they can too.
-* Everything is cached by default: expect 2x to 10x speedups
-* Parity between dev and CI environments
-* Cross-team collaboration: reuse another team's workflows without learning their stack
+- **Containerized Workflow Execution:** Transform code into containerized, composable operations. Build reproducible workflows in any language with custom environments, parallel processing, and seamless chaining.
 
-## Benefits to platform teams
+- **Universal Type System:** Mix and match components from any language with type-safe connections. Use the best tools from each ecosystem without translation headaches.
 
-* Reduce CI lock-in. Dagger functions run on all major CI platforms - no proprietary DSL needed.
-* Don't be a bottleneck. Let app teams write their own functions. Enable standardization by providing them a library of reusable components.
-* Faster CI runs. CI pipelines that are "Daggerized" typically run 2x to 10x faster, thanks to caching and concurrency. This means developers waste less time waiting for CI, and you spend less money on CI compute.
-* A viable platform strategy. App teams need flexibility, and you need control. Dagger gives you a way to reconcile the two, in an incremental way that leverages the stack you already have.
+- **Automatic Artifact Caching:** Operations produce cacheable, immutable artifacts — even for LLMs and API calls. Your workflows run faster and cost less.
 
-## Learn more
+- **Built-in Observability:** Full visibility into operations with tracing, logs, and metrics. Debug complex workflows and know exactly what's happening.
 
-* [How does it work?](https://docs.dagger.io/#how-does-dagger-work)
-* [Quickstart](https://docs.dagger.io/quickstart)
-* [Cookbook](https://docs.dagger.io/cookbook)
+- **Open Platform:** Works with any compute platform and tech stack — today and tomorrow. Ship faster, experiment freely, and don’t get locked into someone else's choices.
+
+- **LLM Augmentation:** Native integration of any LLM that automatically discovers and uses available functions in your workflow. Ship mind-blowing agents in just a few dozen lines of code.
+
+- **Interactive Terminal:** Directly interact with your workflow or agents in real-time through your terminal. Prototype, test, debug, and ship even faster.
+
+<img src="docs/static/img/spider-robot-1.svg" width="15%">
+
+## Getting started
+
+- [Dagger for AI Agents](https://docs.dagger.io/ai-agents)
+- [Dagger for CI](https://docs.dagger.io/quickstart)
 
 ## Join the community
 
-* Join the [Dagger community server](https://discord.gg/ufnyBtc8uY)
-* Follow us on [Twitter](https://twitter.com/dagger_io)
-* Check out our [community activities](https://dagger.io/community)
-* Read more in our [documentation](https://docs.dagger.io)
+- Join the [Dagger community server](https://discord.gg/NpzVhsGnZu)
+- Follow us on [Twitter](https://twitter.com/dagger_io)
+- Check out our [community activities](https://dagger.io/community)
+- Read more in our [documentation](https://docs.dagger.io)
 
 ## Contributing
 

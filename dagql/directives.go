@@ -84,24 +84,3 @@ func deprecated(reason string) *ast.Directive {
 		},
 	}
 }
-
-func impure(reason string) *ast.Directive {
-	return &ast.Directive{
-		Name: "impure",
-		Arguments: []*ast.Argument{
-			{
-				Name: "reason",
-				Value: &ast.Value{
-					Kind: ast.StringValue,
-					Raw:  reason,
-				},
-			},
-		},
-	}
-}
-
-func meta() *ast.Directive {
-	return &ast.Directive{
-		Name: "meta",
-	}
-}

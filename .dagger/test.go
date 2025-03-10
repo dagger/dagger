@@ -14,14 +14,6 @@ import (
 
 type Test struct {
 	Dagger *DaggerDev // +private
-
-	CacheConfig string // +private
-}
-
-func (t *Test) WithCache(config string) *Test {
-	clone := *t
-	clone.CacheConfig = config
-	return &clone
 }
 
 // Run all engine tests
@@ -78,61 +70,13 @@ func (t *Test) Telemetry(
 	// +optional
 	verbose bool,
 ) (*dagger.Directory, error) {
-	engine := t.Dagger.Engine().
-		WithConfig(`registry."registry:5000"`, `http = true`).
-		WithConfig(`registry."privateregistry:5000"`, `http = true`).
-		WithConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`).
-		WithConfig(`grpc`, `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`).
-		WithArg(`network-name`, `dagger-dev`).
-		WithArg(`network-cidr`, `10.88.0.0/16`).
-		WithArg(`debugaddr`, `0.0.0.0:6060`)
-	devEngine, err := engine.Container(ctx, "", nil, false)
+	cmd, err := t.testCmd(ctx)
 	if err != nil {
 		return nil, err
-	}
-
-	devBinary := dag.DaggerCli().Binary()
-	registrySvc := registry()
-	devEngineSvc := devEngine.
-		WithServiceBinding("registry", registrySvc).
-		WithServiceBinding("privateregistry", privateRegistry()).
-		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-dev-engine-test-state"+identity.NewID())).
-		AsService(dagger.ContainerAsServiceOpts{
-			UseEntrypoint:            true,
-			InsecureRootCapabilities: true,
-		})
-
-	endpoint, err := devEngineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
-	if err != nil {
-		return nil, err
-	}
-
-	// installed into $PATH
-	cliBinPath := "/usr/local/bin/dagger"
-
-	tests := t.Dagger.Go().Env().
-		WithServiceBinding("dagger-engine", devEngineSvc).
-		WithServiceBinding("registry", registrySvc)
-
-	if t.CacheConfig != "" {
-		tests = tests.WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", t.CacheConfig)
-	}
-
-	tests = tests.
-		WithMountedFile(cliBinPath, devBinary).
-		WithEnvVariable("PATH", "/usr/local/bin:${PATH}", dagger.ContainerWithEnvVariableOpts{
-			Expand: true,
-		}).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint)
-	if t.Dagger.DockerCfg != nil {
-		// this avoids rate limiting in our ci tests
-		tests = tests.WithMountedSecret("/root/.docker/config.json", t.Dagger.DockerCfg)
 	}
 
 	ran := t.goTest(
-		tests,
+		cmd,
 		&goTestOpts{
 			runTestRegex:  run,
 			skipTestRegex: skip,
@@ -344,13 +288,9 @@ func (t *Test) goTest(
 
 func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 	engine := t.Dagger.Engine().
-		WithConfig(`registry."registry:5000"`, `http = true`).
-		WithConfig(`registry."privateregistry:5000"`, `http = true`).
-		WithConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`).
-		WithConfig(`grpc`, `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`).
-		WithArg(`network-name`, `dagger-dev`).
-		WithArg(`network-cidr`, `10.88.0.0/16`).
-		WithArg(`debugaddr`, `0.0.0.0:6060`)
+		WithBuildkitConfig(`registry."registry:5000"`, `http = true`).
+		WithBuildkitConfig(`registry."privateregistry:5000"`, `http = true`).
+		WithBuildkitConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`)
 	devEngine, err := engine.Container(ctx, "", nil, false)
 	if err != nil {
 		return nil, err
@@ -375,13 +315,22 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 			Permissions: 0755,
 		})
 
+	engineRunVol := dag.CacheVolume("dagger-dev-engine-test-varrun" + identity.NewID())
 	registrySvc := registry()
 	devEngineSvc := devEngine.
 		WithServiceBinding("registry", registrySvc).
 		WithServiceBinding("privateregistry", privateRegistry()).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-dev-engine-test-state"+identity.NewID())).
+		WithMountedCache("/run", engineRunVol).
 		AsService(dagger.ContainerAsServiceOpts{
+			Args: []string{
+				"--addr", "unix:///run/dagger-engine.sock",
+				"--addr", "tcp://0.0.0.0:1234",
+				"--network-name", "dagger-dev",
+				"--network-cidr", "10.88.0.0/16",
+				"--debugaddr", "0.0.0.0:6060",
+			},
 			UseEntrypoint:            true,
 			InsecureRootCapabilities: true,
 		})
@@ -403,12 +352,9 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 	tests := t.Dagger.Go().Env().
 		WithMountedDirectory(utilDirPath, testEngineUtils).
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).
-		WithServiceBinding("dagger-engine", devEngineSvc).
+		WithServiceBinding("daggerengine", devEngineSvc).
+		WithMountedCache("/run", engineRunVol).
 		WithServiceBinding("registry", registrySvc)
-
-	if t.CacheConfig != "" {
-		tests = tests.WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", t.CacheConfig)
-	}
 
 	// TODO: should use c.Dagger.installer (but this currently can't connect to services)
 	tests = tests.

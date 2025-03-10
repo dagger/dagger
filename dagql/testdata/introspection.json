@@ -636,17 +636,7 @@
             "args": [],
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "impure",
-                "args": [
-                  {
-                    "name": "reason",
-                    "value": "Because I said so."
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "loadIntrospectTestFromID",
@@ -677,17 +667,7 @@
             ],
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "impure",
-                "args": [
-                  {
-                    "name": "reason",
-                    "value": "The given ID ultimately determines the purity of its result."
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "loadLineFromID",
@@ -718,17 +698,7 @@
             ],
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "impure",
-                "args": [
-                  {
-                    "name": "reason",
-                    "value": "The given ID ultimately determines the purity of its result."
-                  }
-                ]
-              }
-            ]
+            "directives": []
           },
           {
             "name": "loadPointFromID",
@@ -759,37 +729,7 @@
             ],
             "isDeprecated": false,
             "deprecationReason": "",
-            "directives": [
-              {
-                "name": "impure",
-                "args": [
-                  {
-                    "name": "reason",
-                    "value": "The given ID ultimately determines the purity of its result."
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "name": "metaField",
-            "description": "",
-            "type": {
-              "kind": "NON_NULL",
-              "ofType": {
-                "kind": "SCALAR",
-                "name": "String"
-              }
-            },
-            "args": [],
-            "isDeprecated": false,
-            "deprecationReason": "",
-            "directives": [
-              {
-                "name": "meta",
-                "args": []
-              }
-            ]
+            "directives": []
           },
           {
             "name": "point",

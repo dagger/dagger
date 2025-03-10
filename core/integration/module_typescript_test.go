@@ -4,9 +4,10 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"strings"
 	"testing"
 
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -15,7 +16,7 @@ import (
 type TypescriptSuite struct{}
 
 func TestTypescript(t *testing.T) {
-	testctx.Run(testCtx, t, TypescriptSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(TypescriptSuite{})
 }
 
 func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
@@ -202,32 +203,6 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 		sourcePackageJSON, err := modGen.File("./dagger/package.json").Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, sourcePackageJSON, `"packageManager": "yarn@`) // We don't check the exact version because it's a SHA
-	})
-
-	t.Run("fail if --merge is specified", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			WithNewFile("/work/package.json", `{
-  "name": "my-module",
-  "version": "1.0.0",
-  "description": "My module",
-  "main": "index.js",
-  "scripts": {
-  "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "author": "John doe",
-  "license": "MIT"
-  }`,
-			).
-			With(daggerExec("init", "--source=.", "--merge", "--name=hasPkgJson", "--sdk=typescript"))
-
-		_, err := modGen.
-			With(daggerQuery(`{hasPkgJson{containerEcho(stringArg:"hello"){stdout}}}`)).
-			Stdout(ctx)
-		requireErrOut(t, err, "merge is only supported")
 	})
 
 	t.Run("init module in .dagger if files present in current dir", func(ctx context.Context, t *testctx.T) {
@@ -1639,7 +1614,7 @@ export class Test {
 
 		out, err := modGen.With(daggerCall("person", "--age", "42", "--name", "John")).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"_type": "TestPerson", "age": 42, "name": "John"}`, out)
+		require.Regexp(t, `TestPerson@xxh3:[a-f0-9]{16}`, out)
 
 		out, err = modGen.With(daggerCall("person", "--age", "42", "--name", "John", "age")).Stdout(ctx)
 		require.NoError(t, err)
@@ -1718,11 +1693,11 @@ export class Test {
 
 		out, err := modGen.With(daggerCall("orgs")).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `[{"_type": "TestOrganisation", "name": "dagger"}, {"_type": "TestOrganisation", "name": "GitHub"}]`, out)
+		require.Regexp(t, strings.Repeat(`- TestOrganisation@xxh3:[a-f0-9]{16}\n`, 2), out)
 
 		out, err = modGen.With(daggerCall("org-by-name", "--name", "GitHub", "members")).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `[{"_type": "TestPerson", "age": 42, "name": "John"}, {"_type": "TestPerson", "age": 24, "name": "Jane"}]`, out)
+		require.Regexp(t, strings.Repeat(`- TestPerson@xxh3:[a-f0-9]{16}\n`, 2), out)
 	})
 
 	t.Run("nested IDable object type definition", func(ctx context.Context, t *testctx.T) {
@@ -1773,7 +1748,7 @@ export class Test {
 
 		out, err := modGen.With(daggerCall("get-dirs")).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `[{"_type": "TestFolder", "name": "math"}, {"_type": "TestFolder", "name": "english"}]`, out)
+		require.Regexp(t, strings.Repeat(`- TestFolder@xxh3:[a-f0-9]{16}\n`, 2), out)
 
 		out, err = modGen.With(daggerCall("get-dir-by-name", "--name", "math", "entries")).Stdout(ctx)
 		require.NoError(t, err)

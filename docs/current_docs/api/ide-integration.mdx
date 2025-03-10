@@ -1,6 +1,10 @@
 ---
 slug: /api/ide-integration
 ---
+
+
+
+
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
@@ -214,5 +218,83 @@ When working with multiple inter-dependent Dagger modules, it can be challenging
 The TypeScript SDK automatically attaches source-maps to the module code. These are a record of the filename, the line number, and the column number that a type declaration corresponds to in the source code. The SDK analyzes the source code, and outputs these (as line comments of the form `./path/to/filename:line`) when creating the type definitions during module initialization.
 
 Most popular IDEs support source-maps, either natively or with an external plugin, such as the [Open file plugin](https://marketplace.visualstudio.com/items?itemName=Fr43nk.seito-openfile) for Visual Studio Code.
+</TabItem>
+<TabItem value="PHP">
+To get your IDE to recognize a Dagger PHP module, ensure your `composer.json` has a path configured to the generated `dagger/dagger` package. This is located in the `sdk` directory of your module.
+
+For Dagger modules initialized using `dagger init`, the default template is already configured this way:
+
+```json
+"repositories": [
+  {
+    "type": "path",
+    "url": "./sdk"
+  }
+],
+"require": {
+  "dagger/dagger": "*@dev"
+},
+```
+
+To get autocompletions and IntelliSense, the setup will vary depending on your IDE.
+
+<Tabs>
+<TabItem value="PhpStorm">
+PhpStorm is a very popular IDE for PHP projects. The simplest way for PhpStorm to recognize the `dagger` package is to open the IDE in the directory containing your module's `composer.json` file. You may also open it from any parent directory, such as a project containing the dagger module.
+
+</TabItem>
+<TabItem value="Visual Studio Code">
+
+The simplest way to get autocompletions and IntelliSense working is to install the [Intelephense](https://marketplace.visualstudio.com/items?itemName=bmewburn.vscode-intelephense-client) or the [Phpactor](https://marketplace.visualstudio.com/items?itemName=phpactor.vscode-phpactor) extension.
+
+Then open Visual Studio Code in the directory containing your module's `composer.json` file. You may also open it from any parent directory, such as a project containing the dagger module.
+
+</TabItem>
+<TabItem value="Emacs">
+The simplest way to get to get autocompletions and IntelliSense working is to use the built-in LSP client [Eglot](https://github.com/joaotavora/eglot).
+
+A PHP LSP (Language Server Protocol) will need to be installed separately such as [Phpactor](https://github.com/phpactor/phpactor).
+
+You may also want to install [PHP Mode](https://github.com/emacs-php/php-mode) for syntax highlighting and indentation.
+
+Assuming you've installed the above, adding the following snippet to your `init.el` file will automatically enable autocompletion and Intellisense when opening PHP files.
+
+```lisp
+(require 'eglot)
+(with-eval-after-load 'eglot
+  (add-to-list 'eglot-server-programs
+               '(php-mode . "phpactor"))
+  (add-hook 'php-mode-hook 'eglot-ensure))
+```
+
+Then open Emacs in any file within the scope of your module's `composer.json` file.
+
+</TabItem>
+</Tabs>
+</TabItem>
+<TabItem value="Java">
+When you generate a Dagger Java module, a `pom.xml` file is created in the module directory. For example, for a module name
+`your-module`, the example source code is created under `src/main/java/io/dagger/modules/yourmodule/YourModule.java`.
+
+The Dagger dependency code, especially the code generated based on the Dagger engine version and the different module
+dependencies you can have, is available under `target/generated-sources`.
+
+This creates a standard Maven project structure, and you can import the project into your favorite IDE as a Maven project.
+The IDE will automatically recognize the Dagger dependencies and provide code completion and other features out of the box.
+
+:::tip
+The `target` directory is added to the `.gitignore` file by default, so you don't need to worry about committing the generated code.
+This code is only to help the IDE provide code completion and other features. This code is not required to run the module.
+It can be refreshed by running `dagger develop` again.
+:::
+
+Most popular IDEs, like IntelliJ Idea or Visual Studio Code, support Maven projects, and will provide out-of-the-box code completion.
+
+:::note
+The provided `pom.xml` configures the `maven-compiler-plugin` to run the Dagger-specific annotation processor and the
+`maven-shade-plugin` to set the main class for the module and `build-helper-maven-plugin` to add generated Java files
+as sources to help for code completion. These configurations are necessary for the module to function correctly and
+should not be modified (although you can freely update other parts of the `pom.xml` file).
+:::
 </TabItem>
 </Tabs>

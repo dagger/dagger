@@ -1,6 +1,8 @@
 ---
 slug: /api/custom-functions
 ---
+
+
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import DaggerModuleInit from '../partials/_dagger_module_init.mdx';
@@ -55,6 +57,23 @@ Update the `src/index.ts` file with the following code:
 
 ```typescript file=./snippets/functions/functions-complex/typescript/index.ts
 ```
+</TabItem>
+<TabItem value="PHP">
+
+Update the `src/MyModule.php` file with the following code:
+
+```php file=./snippets/functions/functions-complex/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="Java">
+
+Update the `src/main/java/io/dagger/modules/mymodule/MyModule.java` file with the following code:
+
+```java file=./snippets/functions/functions-complex/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+
+Dagger Functions must be public. The function must be decorated with the `@Function` annotation
+and the class containing the functions must be decorated with the `@Object` annotation.
 </TabItem>
 </Tabs>
 

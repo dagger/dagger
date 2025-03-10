@@ -3,6 +3,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"dagger/releaser/internal/dagger"
 	_ "embed"
@@ -157,6 +158,7 @@ func (r *Releaser) Publish(
 	if semver.IsValid(tag) {
 		version = tag
 	}
+
 	report := ReleaseReport{
 		Date:    time.Now().UTC().Format(time.RFC822),
 		Ref:     tag,
@@ -169,7 +171,13 @@ func (r *Releaser) Publish(
 		Tag:    tag,
 		Notify: true,
 	}
-	err := r.Dagger.Engine().Publish(ctx, []string{tag, commit}, dagger.DaggerDevDaggerEnginePublishOpts{
+
+	tags := []string{tag, commit}
+	if semver.IsValid(version) && semver.Prerelease(version) == "" {
+		// this is a public release
+		tags = append(tags, "latest")
+	}
+	err := r.Dagger.Engine().Publish(ctx, tags, dagger.DaggerDevDaggerEnginePublishOpts{
 		Image:            registryImage,
 		RegistryUsername: registryUsername,
 		RegistryPassword: registryPassword,
@@ -185,7 +193,16 @@ func (r *Releaser) Publish(
 		Tag:  tag,
 	}
 	if !dryRun {
-		err = r.Dagger.Cli().Publish(ctx, tag, githubOrgName, githubToken, goreleaserKey, awsAccessKeyID, awsSecretAccessKey, awsRegion, awsBucket, artefactsFQDN)
+		_, err := r.Dagger.Cli().
+			Publish(tag, goreleaserKey, githubOrgName, dagger.DaggerDevCliPublishOpts{
+				GithubToken:        githubToken,
+				AwsAccessKeyID:     awsAccessKeyID,
+				AwsSecretAccessKey: awsSecretAccessKey,
+				AwsRegion:          awsRegion,
+				AwsBucket:          awsBucket,
+				ArtefactsFqdn:      artefactsFQDN,
+			}).
+			Sync(ctx)
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
@@ -202,7 +219,13 @@ func (r *Releaser) Publish(
 	report.Artifacts = append(report.Artifacts, artifact)
 
 	if report.hasErrors() {
-		// early-exit if engine or cli could not publish
+		// early-exit if engine / cli could not Publish
+		return &report, nil
+	}
+
+	isPrerelease := semver.IsValid(version) && semver.Prerelease(version) != ""
+	if isPrerelease {
+		// early-exit if this is a pre-release
 		return &report, nil
 	}
 
@@ -232,7 +255,7 @@ func (r *Releaser) Publish(
 			name: "🐹 Go SDK",
 			path: "sdk/go/",
 			tag:  "sdk/go/",
-			link: "https://pkg.go.dev/dagger.io/dagger@" + version,
+			link: "https://pkg.go.dev/dagger.io/dagger@" + cmp.Or(version, "main"),
 			dev:  true,
 			publish: func() error {
 				return r.Dagger.SDK().Go().Publish(ctx, tag, dagger.DaggerDevGoSDKPublishOpts{
@@ -282,7 +305,7 @@ func (r *Releaser) Publish(
 			name: "⚙️ Rust SDK",
 			path: "sdk/rust/",
 			tag:  "sdk/rust/",
-			link: "https://crates.io/crates/dagger-sdk/" + version,
+			link: "https://crates.io/crates/dagger-sdk/" + strings.TrimPrefix(version, "v"),
 			publish: func() error {
 				return r.Dagger.SDK().Rust().Publish(ctx, tag, dagger.DaggerDevRustSDKPublishOpts{
 					CargoRegistryToken: cargoRegistryToken,
@@ -294,7 +317,7 @@ func (r *Releaser) Publish(
 			name: "🐘 PHP SDK",
 			path: "sdk/php/",
 			tag:  "sdk/php/",
-			link: "https://packagist.org/packages/dagger/dagger#" + version,
+			link: "https://packagist.org/packages/dagger/dagger#" + cmp.Or(version, "dev-main"),
 			dev:  true,
 			publish: func() error {
 				return r.Dagger.SDK().Php().Publish(ctx, tag, dagger.DaggerDevPhpsdkPublishOpts{

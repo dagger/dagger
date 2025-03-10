@@ -11,19 +11,41 @@ defmodule Dagger.Directory do
 
   @type t() :: %__MODULE__{}
 
-  @doc "Load the directory as a Dagger module"
-  @spec as_module(t(), [
-          {:source_root_path, String.t() | nil},
-          {:engine_version, String.t() | nil}
-        ]) :: Dagger.Module.t()
+  @doc "Converts this directory into a git repository"
+  @spec as_git(t()) :: Dagger.GitRepository.t()
+  def as_git(%__MODULE__{} = directory) do
+    query_builder =
+      directory.query_builder |> QB.select("asGit")
+
+    %Dagger.GitRepository{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc "Load the directory as a Dagger module source"
+  @spec as_module(t(), [{:source_root_path, String.t() | nil}]) :: Dagger.Module.t()
   def as_module(%__MODULE__{} = directory, optional_args \\ []) do
     query_builder =
       directory.query_builder
       |> QB.select("asModule")
       |> QB.maybe_put_arg("sourceRootPath", optional_args[:source_root_path])
-      |> QB.maybe_put_arg("engineVersion", optional_args[:engine_version])
 
     %Dagger.Module{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc "Load the directory as a Dagger module source"
+  @spec as_module_source(t(), [{:source_root_path, String.t() | nil}]) :: Dagger.ModuleSource.t()
+  def as_module_source(%__MODULE__{} = directory, optional_args \\ []) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("asModuleSource")
+      |> QB.maybe_put_arg("sourceRootPath", optional_args[:source_root_path])
+
+    %Dagger.ModuleSource{
       query_builder: query_builder,
       client: directory.client
     }
@@ -142,6 +164,15 @@ defmodule Dagger.Directory do
   def id(%__MODULE__{} = directory) do
     query_builder =
       directory.query_builder |> QB.select("id")
+
+    Client.execute(directory.client, query_builder)
+  end
+
+  @doc "Returns the name of the directory."
+  @spec name(t()) :: {:ok, String.t()} | {:error, term()}
+  def name(%__MODULE__{} = directory) do
+    query_builder =
+      directory.query_builder |> QB.select("name")
 
     Client.execute(directory.client, query_builder)
   end
@@ -322,5 +353,18 @@ defmodule Dagger.Directory do
       query_builder: query_builder,
       client: directory.client
     }
+  end
+end
+
+defimpl Jason.Encoder, for: Dagger.Directory do
+  def encode(directory, opts) do
+    {:ok, id} = Dagger.Directory.id(directory)
+    Jason.Encode.string(id, opts)
+  end
+end
+
+defimpl Nestru.Decoder, for: Dagger.Directory do
+  def decode_fields_hint(_struct, _context, id) do
+    {:ok, Dagger.Client.load_directory_from_id(Dagger.Global.dag(), id)}
   end
 end

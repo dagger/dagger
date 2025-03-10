@@ -55,7 +55,7 @@ func (db *DB) getDotDag(focusField string, showInternal bool) *dotDag {
 	}
 
 	for _, span := range db.Spans.Order {
-		call := span.Call
+		call := span.Call()
 		if call == nil {
 			continue
 		}
@@ -75,7 +75,7 @@ func (db *DB) getDotDag(focusField string, showInternal bool) *dotDag {
 			edge.kind = edgeKindReceiver
 		} else if parentSpan := findParentSpanWithCall(vtx.span); parentSpan != nil {
 			// see if we can connect to a parent span (i.e. one module calling to another or to core, etc.)
-			parentVtx, _ := dag.getOrInitVtx(parentSpan.Call.Digest)
+			parentVtx, _ := dag.getOrInitVtx(parentSpan.Call().Digest)
 			edge := dag.getOrInitEdge(parentVtx, vtx)
 			if edge.kind == edgeKindUnset {
 				edge.kind = edgeKindSpan
@@ -277,7 +277,7 @@ func findParentSpanWithCall(span *Span) *Span {
 	if span.ParentSpan == nil {
 		return nil
 	}
-	if span.ParentSpan.Call != nil {
+	if span.ParentSpan.Call() != nil {
 		return span.ParentSpan
 	}
 	return findParentSpanWithCall(span.ParentSpan)

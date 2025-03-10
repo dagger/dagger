@@ -1,0 +1,14 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns="http://www.w3.org/2000/svg">
+<metadata>Material Design Icons</metadata>
+<defs>
+<font id="doctum" horiz-adv-x="1000" >
+<font-face font-family="doctum" font-weight="400" font-stretch="normal" units-per-em="1000" ascent="850" descent="-150" />
+<missing-glyph horiz-adv-x="1000" />
+<glyph glyph-name="search" unicode="&#xe800;" d="M396 725c149 0 271-121 271-271 0-67-25-129-65-176l11-11h33l208-209-62-62-209 208v33l-11 11c-47-40-109-65-176-65-150 0-271 122-271 271 0 150 121 271 271 271m0-83c-104 0-188-84-188-188 0-104 84-187 188-187 104 0 187 83 187 187 0 104-83 188-187 188z" horiz-adv-x="1000" />
+
+<glyph glyph-name="play" unicode="&#xe801;" d="M333 636v-583l459 291-459 292z" horiz-adv-x="1000" />
+</font>
+</defs>
+</svg>

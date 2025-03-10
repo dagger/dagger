@@ -57,7 +57,7 @@ func Generate(ctx context.Context, cfg generator.Config) (err error) {
 		for _, cmd := range generated.PostCommands {
 			cmd.Dir = cfg.OutputDir
 			if cfg.ModuleName != "" {
-				cmd.Dir = filepath.Join(cfg.OutputDir, cfg.ModuleContextPath)
+				cmd.Dir = filepath.Join(cfg.OutputDir, cfg.ModuleSourcePath)
 			}
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
@@ -102,5 +102,9 @@ func generate(ctx context.Context, introspectionSchema *introspection.Schema, in
 		return nil, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
 	}
 
-	return gen.Generate(ctx, introspectionSchema, introspectionSchemaVersion)
+	if cfg.ClientOnly {
+		return gen.GenerateClient(ctx, introspectionSchema, introspectionSchemaVersion)
+	}
+
+	return gen.GenerateModule(ctx, introspectionSchema, introspectionSchemaVersion)
 }

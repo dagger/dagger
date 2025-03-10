@@ -61,9 +61,9 @@ type ExecutionMetadata struct {
 	// Used when executing the module runtime itself.
 	Internal bool
 
-	// TODO: can rm EncodedModuleID now
 	CallID              *call.ID
 	EncodedModuleID     string
+	ModuleName          string
 	EncodedFunctionCall json.RawMessage
 	CallerClientID      string
 
@@ -453,7 +453,7 @@ func (s *forwardIO) Stderr() io.ReadCloser {
 	return nil
 }
 
-// newRuncProcKiller returns an abstraction for sending SIGKILL to the
+// newRunProcKiller returns an abstraction for sending SIGKILL to the
 // process inside the container initiated from `runc run`.
 func newRunProcKiller(runC *runc.Runc, id string) procKiller {
 	return procKiller{runC: runC, id: id}

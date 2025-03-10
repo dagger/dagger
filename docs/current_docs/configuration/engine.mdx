@@ -76,16 +76,6 @@ mounted to `/etc/dagger/engine.toml`. For example:
 {`    registry.dagger.io/engine:${daggerVersion}`}
 </CodeBlock>
 
-:::note
-The `registry.dagger.io/engine` container itself contains a default
-`engine.toml` configuration. When mounting `engine.toml`, you may
-want to extend the default configuration:
-
-<CodeBlock language="shell">
-{`docker run --rm --entrypoint sh registry.dagger.io/engine:${daggerVersion} cat /etc/dagger/engine.toml`}
-</CodeBlock>
-:::
-
 </TabItem>
 </Tabs>
 
@@ -175,13 +165,13 @@ To disable the use of `insecureRootCapabilities`:
 
 </TabItem>
 <TabItem value="engine.toml">
-To explicitly enable the use of `insecureRootCapabilities`:
+To explicitly enable the use of `insecureRootCapabilities` (the default):
 
 ```toml
 insecure-entitlements = ["security.insecure"]
 ```
 
-To disable the use of `insecureRootCapabilities`:
+To disable the use of `insecureRootCapabilities`, explicitly set `insecure-entitlements` to the empty array:
 
 ```toml
 insecure-entitlements = []

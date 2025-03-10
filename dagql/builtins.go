@@ -91,6 +91,10 @@ func (d DynamicArrayOutput) Type() *ast.Type {
 
 var _ Enumerable = DynamicArrayOutput{}
 
+func (d DynamicArrayOutput) Element() Typed {
+	return d.Elem
+}
+
 func (d DynamicArrayOutput) Len() int {
 	return len(d.Values)
 }
@@ -256,6 +260,10 @@ func (d DynamicArrayInput) SetField(val reflect.Value) error {
 }
 
 var _ Enumerable = DynamicArrayInput{}
+
+func (d DynamicArrayInput) Element() Typed {
+	return d.Elem
+}
 
 func (d DynamicArrayInput) Len() int {
 	return len(d.Values)

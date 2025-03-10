@@ -42,26 +42,18 @@ func (j *Job) installDaggerSteps() []api.JobStep {
 	}
 
 	// Interpret dagger version as a local source, and build it (dev engine)
-	engineCLI := "./bin/dev-${{ github.run_id }}-${{ github.job }}"
 	engineCtr := "dagger-engine.dev-${{ github.run_id }}-${{ github.job }}"
+	engineImage := "localhost/dagger-engine.dev:${{ github.run_id }}-${{ github.job }}"
 	return []api.JobStep{
 		// Install latest dagger to bootstrap dev dagger
 		// FIXME: let's daggerize this, using dagger in dagger :)
-		j.bashStep("install-dagger", map[string]string{"DAGGER_VERSION": "latest"}),
-		{
-			Name: "Install go",
-			Uses: "actions/setup-go@v5",
-			With: map[string]string{
-				"go-version":            "1.23",
-				"cache-dependency-path": ".dagger/go.sum",
-			},
-		},
+		j.bashStep("install-dagger", map[string]string{"DAGGER_VERSION_FILE": "dagger.json"}),
 		j.bashStep("start-dev-dagger", map[string]string{
 			"DAGGER_SOURCE": j.DaggerVersion,
 			// create separate outputs and containers for each job run (to prevent
 			// collisions with shared docker containers).
-			"_EXPERIMENTAL_DAGGER_DEV_OUTPUT":    engineCLI,
 			"_EXPERIMENTAL_DAGGER_DEV_CONTAINER": engineCtr,
+			"_EXPERIMENTAL_DAGGER_DEV_IMAGE":     engineImage,
 		}),
 	}
 }

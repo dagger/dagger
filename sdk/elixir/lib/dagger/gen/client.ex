@@ -459,19 +459,6 @@ defmodule Dagger.Client do
     }
   end
 
-  @doc "Load a GitModuleSource from its ID."
-  @spec load_git_module_source_from_id(t(), Dagger.GitModuleSourceID.t()) ::
-          Dagger.GitModuleSource.t()
-  def load_git_module_source_from_id(%__MODULE__{} = client, id) do
-    query_builder =
-      client.query_builder |> QB.select("loadGitModuleSourceFromID") |> QB.put_arg("id", id)
-
-    %Dagger.GitModuleSource{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
   @doc "Load a GitRef from its ID."
   @spec load_git_ref_from_id(t(), Dagger.GitRefID.t()) :: Dagger.GitRef.t()
   def load_git_ref_from_id(%__MODULE__{} = client, id) do
@@ -557,27 +544,14 @@ defmodule Dagger.Client do
     }
   end
 
-  @doc "Load a LocalModuleSource from its ID."
-  @spec load_local_module_source_from_id(t(), Dagger.LocalModuleSourceID.t()) ::
-          Dagger.LocalModuleSource.t()
-  def load_local_module_source_from_id(%__MODULE__{} = client, id) do
+  @doc "Load a ModuleConfigClient from its ID."
+  @spec load_module_config_client_from_id(t(), Dagger.ModuleConfigClientID.t()) ::
+          Dagger.ModuleConfigClient.t()
+  def load_module_config_client_from_id(%__MODULE__{} = client, id) do
     query_builder =
-      client.query_builder |> QB.select("loadLocalModuleSourceFromID") |> QB.put_arg("id", id)
+      client.query_builder |> QB.select("loadModuleConfigClientFromID") |> QB.put_arg("id", id)
 
-    %Dagger.LocalModuleSource{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
-  @doc "Load a ModuleDependency from its ID."
-  @spec load_module_dependency_from_id(t(), Dagger.ModuleDependencyID.t()) ::
-          Dagger.ModuleDependency.t()
-  def load_module_dependency_from_id(%__MODULE__{} = client, id) do
-    query_builder =
-      client.query_builder |> QB.select("loadModuleDependencyFromID") |> QB.put_arg("id", id)
-
-    %Dagger.ModuleDependency{
+    %Dagger.ModuleConfigClient{
       query_builder: query_builder,
       client: client.client
     }
@@ -602,19 +576,6 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadModuleSourceFromID") |> QB.put_arg("id", id)
 
     %Dagger.ModuleSource{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
-  @doc "Load a ModuleSourceView from its ID."
-  @spec load_module_source_view_from_id(t(), Dagger.ModuleSourceViewID.t()) ::
-          Dagger.ModuleSourceView.t()
-  def load_module_source_view_from_id(%__MODULE__{} = client, id) do
-    query_builder =
-      client.query_builder |> QB.select("loadModuleSourceViewFromID") |> QB.put_arg("id", id)
-
-    %Dagger.ModuleSourceView{
       query_builder: query_builder,
       client: client.client
     }
@@ -768,27 +729,12 @@ defmodule Dagger.Client do
     }
   end
 
-  @doc "Create a new module dependency configuration from a module source and name"
-  @spec module_dependency(t(), Dagger.ModuleSource.t(), [{:name, String.t() | nil}]) ::
-          Dagger.ModuleDependency.t()
-  def module_dependency(%__MODULE__{} = client, source, optional_args \\ []) do
-    query_builder =
-      client.query_builder
-      |> QB.select("moduleDependency")
-      |> QB.put_arg("source", Dagger.ID.id!(source))
-      |> QB.maybe_put_arg("name", optional_args[:name])
-
-    %Dagger.ModuleDependency{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
-  @doc "Create a new module source instance from a source ref string."
+  @doc "Create a new module source instance from a source ref string"
   @spec module_source(t(), String.t(), [
           {:ref_pin, String.t() | nil},
-          {:stable, boolean() | nil},
-          {:rel_host_path, String.t() | nil}
+          {:disable_find_up, boolean() | nil},
+          {:allow_not_exists, boolean() | nil},
+          {:require_kind, Dagger.ModuleSourceKind.t() | nil}
         ]) :: Dagger.ModuleSource.t()
   def module_source(%__MODULE__{} = client, ref_string, optional_args \\ []) do
     query_builder =
@@ -796,8 +742,9 @@ defmodule Dagger.Client do
       |> QB.select("moduleSource")
       |> QB.put_arg("refString", ref_string)
       |> QB.maybe_put_arg("refPin", optional_args[:ref_pin])
-      |> QB.maybe_put_arg("stable", optional_args[:stable])
-      |> QB.maybe_put_arg("relHostPath", optional_args[:rel_host_path])
+      |> QB.maybe_put_arg("disableFindUp", optional_args[:disable_find_up])
+      |> QB.maybe_put_arg("allowNotExists", optional_args[:allow_not_exists])
+      |> QB.maybe_put_arg("requireKind", optional_args[:require_kind])
 
     %Dagger.ModuleSource{
       query_builder: query_builder,

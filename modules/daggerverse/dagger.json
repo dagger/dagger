@@ -1,7 +1,9 @@
 {
   "name": "daggerverse",
   "engineVersion": "v0.15.1",
-  "sdk": "go",
+  "sdk": {
+    "source": "go"
+  },
   "dependencies": [
     {
       "name": "gh",
@@ -12,6 +14,5 @@
       "name": "go",
       "source": "../go"
     }
-  ],
-  "source": "."
+  ]
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/server/resource"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 func (srv *Server) AddClientResourcesFromID(ctx context.Context, id *resource.ID, sourceClientID string, skipTopLevel bool) error {
@@ -84,6 +85,12 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 			if err := destClient.secretStore.AddSecretFromOtherStore(secret, srcClient.secretStore); err != nil {
 				return fmt.Errorf("failed to add secret from source client %s: %w", srcClient.clientID, err)
 			}
+
+			name, _ := destClient.secretStore.GetSecretNameOrURI(secret.IDDigest)
+			slog.ExtraDebug("transferred secret",
+				"secret", name,
+				"src", srcClient.clientID,
+				"dest", destClient.clientID)
 		}
 	}
 

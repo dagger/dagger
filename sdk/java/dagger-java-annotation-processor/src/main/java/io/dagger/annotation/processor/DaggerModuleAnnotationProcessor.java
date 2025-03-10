@@ -19,13 +19,13 @@ import io.dagger.module.info.ParameterInfo;
 import jakarta.json.bind.JsonbBuilder;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.*;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.Processor;
@@ -38,6 +38,7 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
@@ -48,7 +49,7 @@ import javax.lang.model.util.Elements;
   "io.dagger.module.annotation.Function",
   "io.dagger.module.annotation.Optional",
   "io.dagger.module.annotation.Default",
-  "io.dagger.module.annotation.Nullable"
+  "io.dagger.module.annotation.DefaultPath"
 })
 @SupportedSourceVersion(SourceVersion.RELEASE_17)
 @AutoService(Processor.class)
@@ -63,17 +64,20 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
   }
 
   ModuleInfo generateModuleInfo(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
+    String moduleName = System.getenv("_DAGGER_JAVA_SDK_MODULE_NAME");
+
     String moduleDescription = null;
     Set<ObjectInfo> annotatedObjects = new HashSet<>();
+    boolean hasModuleAnnotation = false;
 
     for (TypeElement annotation : annotations) {
       for (Element element : roundEnv.getElementsAnnotatedWith(annotation)) {
         if (element.getKind() == ElementKind.PACKAGE) {
-          Module module = element.getAnnotation(Module.class);
-          moduleDescription = module.description();
-          if (moduleDescription.isEmpty()) {
-            moduleDescription = trimDoc(processingEnv.getElementUtils().getDocComment(element));
+          if (hasModuleAnnotation) {
+            throw new IllegalStateException("Only one @Module annotation is allowed");
           }
+          hasModuleAnnotation = true;
+          moduleDescription = parseModuleDescription(element);
         } else if (element.getKind() == ElementKind.CLASS
             || element.getKind() == ElementKind.RECORD) {
           TypeElement typeElement = (TypeElement) element;
@@ -82,6 +86,76 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           if (name.isEmpty()) {
             name = typeElement.getSimpleName().toString();
           }
+
+          boolean mainObject = areSimilar(name, moduleName);
+
+          if (!element.getModifiers().contains(Modifier.PUBLIC)) {
+            throw new RuntimeException(
+                "The class %s must be public if annotated with @Object".formatted(qName));
+          }
+
+          boolean hasDefaultConstructor =
+              typeElement.getEnclosedElements().stream()
+                      .filter(elt -> elt.getKind() == ElementKind.CONSTRUCTOR)
+                      .map(ExecutableElement.class::cast)
+                      .filter(constructor -> constructor.getModifiers().contains(Modifier.PUBLIC))
+                      .anyMatch(constructor -> constructor.getParameters().isEmpty())
+                  || typeElement.getEnclosedElements().stream()
+                      .noneMatch(elt -> elt.getKind() == ElementKind.CONSTRUCTOR);
+
+          if (!hasDefaultConstructor) {
+            throw new RuntimeException(
+                "The class %s must have a public no-argument constructor that calls super()"
+                    .formatted(qName));
+          }
+
+          Optional<FunctionInfo> constructorInfo = Optional.empty();
+          if (mainObject) {
+            List<? extends Element> constructorDefs =
+                typeElement.getEnclosedElements().stream()
+                    .filter(elt -> elt.getKind() == ElementKind.CONSTRUCTOR)
+                    .filter(elt -> !((ExecutableElement) elt).getParameters().isEmpty())
+                    .toList();
+            if (constructorDefs.size() == 1) {
+              Element elt = constructorDefs.get(0);
+              constructorInfo =
+                  Optional.of(
+                      new FunctionInfo(
+                          "<init>",
+                          "",
+                          parseFunctionDescription(elt),
+                          new TypeInfo(
+                              ((ExecutableElement) elt).getReturnType().toString(),
+                              ((ExecutableElement) elt).getReturnType().getKind().name()),
+                          parseParameters((ExecutableElement) elt).toArray(new ParameterInfo[0])));
+            } else if (constructorDefs.size() > 1) {
+              // There's more than one non-empty constructor, but Dagger only supports to expose a
+              // single one
+              throw new RuntimeException(
+                  "The class %s must have a single non-empty constructor".formatted(qName));
+            }
+          }
+
+          List<FieldInfo> fieldInfoInfos =
+              typeElement.getEnclosedElements().stream()
+                  .filter(elt -> elt.getKind() == ElementKind.FIELD)
+                  .filter(elt -> elt.getModifiers().contains(Modifier.PUBLIC))
+                  .filter(
+                      elt ->
+                          !elt.getModifiers().containsAll(List.of(Modifier.STATIC, Modifier.FINAL)))
+                  .map(
+                      elt -> {
+                        String fieldName = elt.getSimpleName().toString();
+                        TypeMirror tm = elt.asType();
+                        TypeKind tk = tm.getKind();
+                        FieldInfo f =
+                            new FieldInfo(
+                                fieldName,
+                                parseSimpleDescription(elt),
+                                new TypeInfo(tm.toString(), tk.name()));
+                        return f;
+                      })
+                  .toList();
           List<FunctionInfo> functionInfos =
               typeElement.getEnclosedElements().stream()
                   .filter(elt -> elt.getKind() == ElementKind.METHOD)
@@ -94,48 +168,14 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                         if (fName.isEmpty()) {
                           fName = fqName;
                         }
+                        if (!elt.getModifiers().contains(Modifier.PUBLIC)) {
+                          throw new RuntimeException(
+                              "The method %s#%s must be public if annotated with @Function"
+                                  .formatted(qName, fqName));
+                        }
 
                         List<ParameterInfo> parameterInfos =
-                            ((ExecutableElement) elt)
-                                .getParameters().stream()
-                                    .map(
-                                        param -> {
-                                          TypeMirror tm = param.asType();
-                                          TypeKind tk = tm.getKind();
-
-                                          Default defaultAnnotation =
-                                              param.getAnnotation(
-                                                  io.dagger.module.annotation.Default.class);
-                                          Nullable nullableAnnotation =
-                                              param.getAnnotation(
-                                                  io.dagger.module.annotation.Nullable.class);
-
-                                          boolean isOptional = nullableAnnotation != null;
-
-                                          var hasDefaultAnnotation = defaultAnnotation != null;
-                                          String defaultValue =
-                                              hasDefaultAnnotation
-                                                  ? quoteIfString(
-                                                      defaultAnnotation.value(), tm.toString())
-                                                  : null;
-
-                                          // if @Default("null") we handle that as @Nullable only
-                                          if (defaultValue != null && defaultValue.equals("null")) {
-                                            isOptional = true;
-                                            defaultValue = null;
-                                            hasDefaultAnnotation = false;
-                                          }
-
-                                          String paramName = param.getSimpleName().toString();
-                                          return new ParameterInfo(
-                                              paramName,
-                                              parseParameterDescription(elt, paramName),
-                                              new TypeInfo(tm.toString(), tk.name()),
-                                              isOptional,
-                                              hasDefaultAnnotation,
-                                              defaultValue);
-                                        })
-                                    .toList();
+                            parseParameters((ExecutableElement) elt);
 
                         TypeMirror tm = ((ExecutableElement) elt).getReturnType();
                         TypeKind tk = tm.getKind();
@@ -153,14 +193,90 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
               new ObjectInfo(
                   name,
                   qName,
-                  parseTypeDescription(typeElement),
-                  functionInfos.toArray(new FunctionInfo[functionInfos.size()])));
+                  parseObjectDescription(typeElement),
+                  fieldInfoInfos.toArray(new FieldInfo[fieldInfoInfos.size()]),
+                  functionInfos.toArray(new FunctionInfo[functionInfos.size()]),
+                  constructorInfo));
         }
       }
     }
 
     return new ModuleInfo(
         moduleDescription, annotatedObjects.toArray(new ObjectInfo[annotatedObjects.size()]));
+  }
+
+  private List<ParameterInfo> parseParameters(ExecutableElement elt) {
+    return elt.getParameters().stream()
+        .filter(param -> !param.asType().toString().equals("io.dagger.client.Client"))
+        .map(
+            param -> {
+              TypeMirror tm = param.asType();
+              TypeKind tk = tm.getKind();
+
+              boolean isOptional = false;
+              var optionalType =
+                  processingEnv.getElementUtils().getTypeElement(Optional.class.getName()).asType();
+              if (tm instanceof DeclaredType dt) {
+                if (processingEnv
+                    .getTypeUtils()
+                    .isSameType(dt.asElement().asType(), optionalType)) {
+                  isOptional = true;
+                  tm = dt.getTypeArguments().get(0);
+                  tk = tm.getKind();
+                }
+              }
+
+              Default defaultAnnotation = param.getAnnotation(Default.class);
+              var hasDefaultAnnotation = defaultAnnotation != null;
+
+              DefaultPath defaultPathAnnotation = param.getAnnotation(DefaultPath.class);
+              var hasDefaultPathAnnotation = defaultPathAnnotation != null;
+
+              if (hasDefaultPathAnnotation
+                  && !tm.toString().equals("io.dagger.client.Directory")
+                  && !tm.toString().equals("io.dagger.client.File")) {
+                throw new IllegalArgumentException(
+                    "Parameter "
+                        + param.getSimpleName()
+                        + " cannot have @DefaultPath annotation if it is not a Directory or File type");
+              }
+
+              if (hasDefaultAnnotation && hasDefaultPathAnnotation) {
+                throw new IllegalArgumentException(
+                    "Parameter "
+                        + param.getSimpleName()
+                        + " cannot have both @Default and @DefaultPath annotations");
+              }
+
+              String defaultValue =
+                  hasDefaultAnnotation
+                      ? quoteIfString(defaultAnnotation.value(), tm.toString())
+                      : null;
+
+              String defaultPath = hasDefaultPathAnnotation ? defaultPathAnnotation.value() : null;
+
+              Ignore ignoreAnnotation = param.getAnnotation(Ignore.class);
+              var hasIgnoreAnnotation = ignoreAnnotation != null;
+              if (hasIgnoreAnnotation && !tm.toString().equals("io.dagger.client.Directory")) {
+                throw new IllegalArgumentException(
+                    "Parameter "
+                        + param.getSimpleName()
+                        + " cannot have @Ignore annotation if it is not a Directory");
+              }
+
+              String[] ignoreValue = hasIgnoreAnnotation ? ignoreAnnotation.value() : null;
+
+              String paramName = param.getSimpleName().toString();
+              return new ParameterInfo(
+                  paramName,
+                  parseParameterDescription(elt, paramName),
+                  new TypeInfo(tm.toString(), tk.name()),
+                  isOptional,
+                  Optional.ofNullable(defaultValue),
+                  Optional.ofNullable(defaultPath),
+                  Optional.ofNullable(ignoreValue));
+            })
+        .toList();
   }
 
   static String quoteIfString(String value, String type) {
@@ -185,50 +301,40 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
               .addException(ExecutionException.class)
               .addException(DaggerQueryException.class)
               .addException(InterruptedException.class)
-              .addCode("$T module = dag.module()", io.dagger.client.Module.class);
+              .addCode(
+                  "$T module = $T.dag().module()", io.dagger.client.Module.class, Dagger.class);
       if (isNotBlank(moduleInfo.description())) {
         rm.addCode("\n    .withDescription($S)", moduleInfo.description());
       }
       for (var objectInfo : moduleInfo.objects()) {
         rm.addCode("\n    .withObject(")
-            .addCode("\n        dag.typeDef().withObject($S", objectInfo.name());
+            .addCode("\n        $T.dag().typeDef().withObject($S", Dagger.class, objectInfo.name());
         if (isNotBlank(objectInfo.description())) {
           rm.addCode(
               ", new $T.WithObjectArguments().withDescription($S)",
               TypeDef.class,
               objectInfo.description());
         }
-        rm.addCode(")"); // end of dag.TypeDef().withObject(
+        rm.addCode(")"); // end of dag().TypeDef().withObject(
         for (var fnInfo : objectInfo.functions()) {
           rm.addCode("\n            .withFunction(")
-              .addCode("\n                dag.function($S,", fnInfo.name())
-              .addCode("\n                    ")
-              .addCode(typeDef(fnInfo.returnType()))
-              .addCode(")");
-          if (isNotBlank(fnInfo.description())) {
-            rm.addCode("\n                    .withDescription($S)", fnInfo.description());
+              .addCode(withFunction(objectInfo, fnInfo))
+              .addCode(")"); // end of .withFunction(
+        }
+        for (var fieldInfo : objectInfo.fields()) {
+          rm.addCode("\n            .withField(")
+              .addCode("$S, ", fieldInfo.name())
+              .addCode(typeDef(fieldInfo.type()));
+          if (isNotBlank(fieldInfo.description())) {
+            rm.addCode(", new $T.WithFieldArguments()", io.dagger.client.TypeDef.class)
+                .addCode(".withDescription($S)", fieldInfo.description());
           }
-          for (var parameterInfo : fnInfo.parameters()) {
-            rm.addCode("\n                    .withArg($S, ", parameterInfo.name())
-                .addCode(typeDef(parameterInfo.type()));
-            if (parameterInfo.optional()) {
-              rm.addCode(".withOptional(true)");
-            }
-            boolean hasDescription = isNotBlank(parameterInfo.description());
-            boolean hasDefaultValue = parameterInfo.hasDefaultValue();
-            if (hasDescription || hasDefaultValue) {
-              rm.addCode(", new $T.WithArgArguments()", io.dagger.client.Function.class);
-              if (hasDescription) {
-                rm.addCode(".withDescription($S)", parameterInfo.description());
-              }
-              if (hasDefaultValue) {
-                rm.addCode(
-                    ".withDefaultValue($T.from($S))", JSON.class, parameterInfo.defaultValue());
-              }
-            }
-            rm.addCode(")");
-          }
-          rm.addCode(")"); // end of .withFunction(
+          rm.addCode(")");
+        }
+        if (objectInfo.constructor().isPresent()) {
+          rm.addCode("\n            .withConstructor(")
+              .addCode(withFunction(objectInfo, objectInfo.constructor().get()))
+              .addCode(")"); // end of .withConstructor
         }
         rm.addCode(")"); // end of .withObject(
       }
@@ -254,103 +360,66 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
         } else {
           im.nextControlFlow("else if (parentName.equals($S))", objectInfo.name());
         }
-        im.addStatement("$T clazz = Class.forName($S)", Class.class, objectInfo.qualifiedName())
-            .addStatement("var obj = $T.fromJSON(dag, parentJson, clazz)", JsonConverter.class)
-            .addStatement(
-                "clazz.getMethod(\"setClient\", $T.class).invoke(obj, dag)", Client.class);
+        // If there's no constructor, we can initialize the main object here as it's the same for
+        // all.
+        // But if there's a constructor we want to inline it under the function branch.
+        if (objectInfo.constructor().isEmpty()) {
+          ClassName objName = ClassName.bestGuess(objectInfo.qualifiedName());
+          im.addStatement("$T clazz = Class.forName($S)", Class.class, objectInfo.qualifiedName())
+              .addStatement(
+                  "$T obj = ($T) $T.fromJSON(parentJson, clazz)",
+                  objName,
+                  objName,
+                  JsonConverter.class);
+        }
         var firstFn = true;
         for (var fnInfo : objectInfo.functions()) {
-          CodeBlock fnReturnType = typeName(fnInfo.returnType());
           if (firstFn) {
             firstFn = false;
             im.beginControlFlow("if (fnName.equals($S))", fnInfo.name());
           } else {
             im.nextControlFlow("else if (fnName.equals($S))", fnInfo.name());
           }
-          var fnBlock =
-              CodeBlock.builder().add("$T fn = clazz.getMethod($S", Method.class, fnInfo.qName());
-          var invokeBlock =
-              CodeBlock.builder()
-                  .add(fnReturnType)
-                  .add(" res = (")
-                  .add(fnReturnType)
-                  .add(") fn.invoke(obj");
-          for (var parameterInfo : fnInfo.parameters()) {
-            CodeBlock paramType = typeName(parameterInfo.type());
-            fnBlock.add(", ").add(paramType).add(".class");
-
-            invokeBlock.add(", $L", parameterInfo.name());
-
-            String defaultValue = "null";
-            TypeKind tk = getTypeKind(parameterInfo.type().kindName());
-            if (tk == TypeKind.INT
-                || tk == TypeKind.LONG
-                || tk == TypeKind.DOUBLE
-                || tk == TypeKind.FLOAT) {
-              defaultValue = "0";
-            } else if (tk == TypeKind.BOOLEAN) {
-              defaultValue = "false";
-            }
-            im.addStatement(
-                CodeBlock.builder()
-                    .add(paramType)
-                    .add(" $L = $L", parameterInfo.name(), defaultValue)
-                    .build());
-            im.beginControlFlow("if (inputArgs.get($S) != null)", parameterInfo.name());
-            im.addStatement(
-                CodeBlock.builder()
-                    .add("$L = (", parameterInfo.name())
-                    .add(paramType)
-                    .add(
-                        ") $T.fromJSON(dag, inputArgs.get($S), ",
-                        JsonConverter.class,
-                        parameterInfo.name())
-                    .add(paramType)
-                    .add(".class)")
-                    .build());
-            im.endControlFlow();
-            if (!parameterInfo.optional() && !tk.isPrimitive()) {
-              im.addStatement(
-                  "$T.requireNonNull($L, \"$L must not be null\")",
-                  Objects.class,
-                  parameterInfo.name(),
-                  parameterInfo.name());
-            }
-          }
-          fnBlock.add(")");
-          invokeBlock.add(")");
-          im.addStatement(fnBlock.build()).addStatement(invokeBlock.build());
-          im.addStatement("return $T.toJSON(res)", JsonConverter.class);
+          im.addCode(functionInvoke(objectInfo, fnInfo));
         }
+
+        if (objectInfo.constructor().isPresent()) {
+          if (firstFn) {
+            firstFn = false;
+            im.beginControlFlow("if (fnName.equals(\"\"))");
+          } else {
+            im.nextControlFlow("if (fnName.equals(\"\"))");
+          }
+          im.addCode(functionInvoke(objectInfo, objectInfo.constructor().get()));
+        }
+
         if (!firstFn) {
           im.endControlFlow(); // functions
         }
       }
       im.endControlFlow(); // objects
       im.endControlFlow() // try json
-          .addStatement("return null");
+          .addStatement(
+              "throw new $T(new $T(\"unknown function \" + fnName))",
+              InvocationTargetException.class,
+              java.lang.Error.class);
 
       var f =
           JavaFile.builder(
                   "io.dagger.gen.entrypoint",
                   TypeSpec.classBuilder("Entrypoint")
-                      .addField(
-                          FieldSpec.builder(Client.class, "dag", Modifier.PRIVATE, Modifier.FINAL)
-                              .build())
                       .addModifiers(Modifier.PUBLIC)
-                      .addMethod(
-                          MethodSpec.constructorBuilder()
-                              .addParameter(Client.class, "dag")
-                              .addStatement("this.dag = dag")
-                              .build())
+                      .addMethod(MethodSpec.constructorBuilder().build())
                       .addMethod(
                           MethodSpec.methodBuilder("main")
                               .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
                               .addException(Exception.class)
                               .returns(void.class)
                               .addParameter(String[].class, "args")
-                              .beginControlFlow("try (Client dag = $T.connect())", Dagger.class)
-                              .addStatement("new Entrypoint(dag).dispatch()")
+                              .beginControlFlow("try")
+                              .addStatement("new Entrypoint().dispatch()")
+                              .nextControlFlow("finally")
+                              .addStatement("$T.dag().close()", Dagger.class)
                               .endControlFlow()
                               .build())
                       .addMethod(
@@ -359,7 +428,9 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                               .returns(void.class)
                               .addException(Exception.class)
                               .addStatement(
-                                  "$T fnCall = dag.currentFunctionCall()", FunctionCall.class)
+                                  "$T fnCall = $T.dag().currentFunctionCall()",
+                                  FunctionCall.class,
+                                  Dagger.class)
                               .beginControlFlow("try")
                               .addStatement("$T parentName = fnCall.parentName()", String.class)
                               .addStatement("$T fnName = fnCall.name()", String.class)
@@ -389,10 +460,13 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                               .addStatement("fnCall.returnValue(result)")
                               .nextControlFlow("catch ($T e)", InvocationTargetException.class)
                               .addStatement(
-                                  "fnCall.returnError(dag.error(e.getTargetException().getMessage()))")
+                                  "fnCall.returnError($T.dag().error(e.getTargetException().getMessage()))",
+                                  Dagger.class)
                               .addStatement("throw e")
                               .nextControlFlow("catch ($T e)", Exception.class)
-                              .addStatement("fnCall.returnError(dag.error(e.getMessage()))")
+                              .addStatement(
+                                  "fnCall.returnError($T.dag().error(e.getMessage()))",
+                                  Dagger.class)
                               .addStatement("throw e")
                               .endControlFlow()
                               .build())
@@ -401,12 +475,148 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                       .build())
               .addFileComment("This class has been generated by dagger-java-sdk. DO NOT EDIT.")
               .indent("  ")
+              .addStaticImport(Dagger.class, "dag")
               .build();
 
       return f;
     } catch (ClassNotFoundException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  private static CodeBlock functionInvoke(ObjectInfo objectInfo, FunctionInfo fnInfo) {
+    CodeBlock.Builder code = CodeBlock.builder();
+    CodeBlock fnReturnType = typeName(fnInfo.returnType());
+
+    ClassName objName = ClassName.bestGuess(objectInfo.qualifiedName());
+    if (objectInfo.constructor().isPresent() && !fnInfo.name().equals("<init>")) {
+      // the object initialization has been skipped, it has to be done here
+      code.addStatement("$T clazz = Class.forName($S)", Class.class, objectInfo.qualifiedName())
+          .addStatement(
+              "$T obj = ($T) $T.fromJSON(parentJson, clazz)",
+              objName,
+              objName,
+              JsonConverter.class);
+    }
+
+    for (var parameterInfo : fnInfo.parameters()) {
+      CodeBlock paramType = typeName(parameterInfo.type());
+
+      String defaultValue = "null";
+      TypeKind tk = getTypeKind(parameterInfo.type().kindName());
+      if (tk == TypeKind.INT
+          || tk == TypeKind.LONG
+          || tk == TypeKind.DOUBLE
+          || tk == TypeKind.FLOAT
+          || tk == TypeKind.SHORT
+          || tk == TypeKind.BYTE
+          || tk == TypeKind.CHAR) {
+        defaultValue = "0";
+      } else if (tk == TypeKind.BOOLEAN) {
+        defaultValue = "false";
+      }
+      code.add(paramType)
+          .add(" $L = $L;\n", parameterInfo.name(), defaultValue)
+          .beginControlFlow("if (inputArgs.get($S) != null)", parameterInfo.name())
+          .addStatement(
+              CodeBlock.builder()
+                  .add("$L = (", parameterInfo.name())
+                  .add(paramType)
+                  .add(
+                      ") $T.fromJSON(inputArgs.get($S), ",
+                      JsonConverter.class,
+                      parameterInfo.name())
+                  .add(paramType)
+                  .add(".class")
+                  .add(")")
+                  .build())
+          .endControlFlow();
+
+      if (!parameterInfo.optional() && !tk.isPrimitive()) {
+        code.addStatement(
+            "$T.requireNonNull($L, \"$L must not be null\")",
+            Objects.class,
+            parameterInfo.name(),
+            parameterInfo.name());
+      } else if (parameterInfo.optional()) {
+        code.addStatement(
+            "var $L_opt = $T.ofNullable($L)",
+            parameterInfo.name(),
+            Optional.class,
+            parameterInfo.name());
+      }
+    }
+
+    if (objectInfo.constructor().isPresent() && fnInfo.name().equals("<init>")) {
+      code.add("$T res = new $T(", objName, objName);
+    } else {
+      code.add(fnReturnType).add(" res = obj.$L(", fnInfo.qName());
+    }
+    code.add(
+            CodeBlock.join(
+                Arrays.stream(fnInfo.parameters())
+                    .map(
+                        p ->
+                            CodeBlock.of(
+                                "$L",
+                                p.optional()
+                                    ? CodeBlock.of("$L_opt", p.name())
+                                    : CodeBlock.of("$L", p.name())))
+                    .collect(Collectors.toList()),
+                ", "))
+        .add(");\n");
+    code.addStatement("return $T.toJSON(res)", JsonConverter.class);
+
+    return code.build();
+  }
+
+  public static CodeBlock withFunction(ObjectInfo objectInfo, FunctionInfo fnInfo)
+      throws ClassNotFoundException {
+    boolean isConstructor = fnInfo.name().equals("<init>");
+    CodeBlock.Builder code =
+        CodeBlock.builder()
+            .add(
+                "\n                $T.dag().function($S,",
+                Dagger.class,
+                isConstructor ? "" : fnInfo.name())
+            .add("\n                    ")
+            .add(
+                isConstructor
+                    ? typeDef(tiFromName(objectInfo.qualifiedName()))
+                    : typeDef(fnInfo.returnType()))
+            .add(")");
+    if (isNotBlank(fnInfo.description())) {
+      code.add("\n                    .withDescription($S)", fnInfo.description());
+    }
+    for (var parameterInfo : fnInfo.parameters()) {
+      code.add("\n                    .withArg($S, ", parameterInfo.name())
+          .add(typeDef(parameterInfo.type()));
+      if (parameterInfo.optional()) {
+        code.add(".withOptional(true)");
+      }
+      boolean hasDescription = isNotBlank(parameterInfo.description());
+      boolean hasDefaultValue = parameterInfo.defaultValue().isPresent();
+      boolean hasDefaultPath = parameterInfo.defaultPath().isPresent();
+      boolean hasIgnore = parameterInfo.ignore().isPresent();
+      if (hasDescription || hasDefaultValue || hasDefaultPath || hasIgnore) {
+        code.add(", new $T.WithArgArguments()", io.dagger.client.Function.class);
+        if (hasDescription) {
+          code.add(".withDescription($S)", parameterInfo.description());
+        }
+        if (hasDefaultValue) {
+          code.add(
+              ".withDefaultValue($T.from($S))", JSON.class, parameterInfo.defaultValue().get());
+        }
+        if (hasDefaultPath) {
+          code.add(".withDefaultPath($S)", parameterInfo.defaultPath().get());
+        }
+        if (hasIgnore) {
+          code.add(".withIgnore(").add(listOf(parameterInfo.ignore().get())).add(")");
+        }
+      }
+      code.add(")");
+    }
+    return code.build();
   }
 
   public static TypeKind getTypeKind(String name) {
@@ -441,25 +651,39 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     String name = ti.typeName();
     if (name.equals("int")) {
       return CodeBlock.of(
-          "dag.typeDef().withKind($T.$L)", TypeDefKind.class, TypeDefKind.INTEGER_KIND.name());
+          "$T.dag().typeDef().withKind($T.$L)",
+          Dagger.class,
+          TypeDefKind.class,
+          TypeDefKind.INTEGER_KIND.name());
     } else if (name.equals("boolean")) {
       return CodeBlock.of(
-          "dag.typeDef().withKind($T.$L)", TypeDefKind.class, TypeDefKind.BOOLEAN_KIND.name());
+          "$T.dag().typeDef().withKind($T.$L)",
+          Dagger.class,
+          TypeDefKind.class,
+          TypeDefKind.BOOLEAN_KIND.name());
     } else if (name.startsWith("java.util.List<")) {
       name = name.substring("java.util.List<".length(), name.length() - 1);
-      return CodeBlock.of("dag.typeDef().withListOf($L)", typeDef(tiFromName(name)).toString());
+      return CodeBlock.of(
+          "$T.dag().typeDef().withListOf($L)", Dagger.class, typeDef(tiFromName(name)).toString());
     } else if (!ti.kindName().isEmpty() && TypeKind.valueOf(ti.kindName()) == TypeKind.ARRAY) {
       // in that case the type name is com.example.Type[]
       // so we remove the [] to get the underlying type
       name = name.substring(0, name.length() - 2);
-      return CodeBlock.of("dag.typeDef().withListOf($L)", typeDef(tiFromName(name)).toString());
+      return CodeBlock.of(
+          "$T.dag().typeDef().withListOf($L)", Dagger.class, typeDef(tiFromName(name)).toString());
+    } else if (name.startsWith("java.util.Optional<")) {
+      name = name.substring("java.util.Optional<".length(), name.length() - 1);
+      return typeName(tiFromName(name));
     }
 
     try {
       var clazz = Class.forName(name);
       if (clazz.isEnum()) {
         String typeName = name.substring(name.lastIndexOf('.') + 1);
-        return CodeBlock.of("dag.typeDef().withEnum($S)", typeName);
+        return CodeBlock.of("$T.dag().typeDef().withEnum($S)", Dagger.class, typeName);
+      } else if (Scalar.class.isAssignableFrom(clazz)) {
+        String typeName = name.substring(name.lastIndexOf('.') + 1);
+        return CodeBlock.of("$T.dag().typeDef().withScalar($S)", Dagger.class, typeName);
       }
     } catch (ClassNotFoundException e) {
       // we are ignoring here any ClassNotFoundException
@@ -472,18 +696,31 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
       }
       var kindName = (name + "_kind").toUpperCase();
       var kind = TypeDefKind.valueOf(kindName);
-      return CodeBlock.of("dag.typeDef().withKind($T.$L)", TypeDefKind.class, kind.name());
+      return CodeBlock.of(
+          "$T.dag().typeDef().withKind($T.$L)", Dagger.class, TypeDefKind.class, kind.name());
     } catch (IllegalArgumentException e) {
       String typeName = name.substring(name.lastIndexOf('.') + 1);
-      return CodeBlock.of("dag.typeDef().withObject($S)", typeName);
+      return CodeBlock.of("$T.dag().typeDef().withObject($S)", Dagger.class, typeName);
     }
   }
 
   static TypeInfo tiFromName(String name) {
-    if (name.equals("int")) {
-      return new TypeInfo(name, TypeKind.INT.name());
-    } else if (name.equals("boolean")) {
+    if (name.equals("boolean")) {
       return new TypeInfo(name, TypeKind.BOOLEAN.name());
+    } else if (name.equals("byte")) {
+      return new TypeInfo(name, TypeKind.BYTE.name());
+    } else if (name.equals("short")) {
+      return new TypeInfo(name, TypeKind.SHORT.name());
+    } else if (name.equals("int")) {
+      return new TypeInfo(name, TypeKind.INT.name());
+    } else if (name.equals("long")) {
+      return new TypeInfo(name, TypeKind.LONG.name());
+    } else if (name.equals("char")) {
+      return new TypeInfo(name, TypeKind.CHAR.name());
+    } else if (name.equals("float")) {
+      return new TypeInfo(name, TypeKind.FLOAT.name());
+    } else if (name.equals("double")) {
+      return new TypeInfo(name, TypeKind.DOUBLE.name());
     } else if (name.equals("void")) {
       return new TypeInfo(name, TypeKind.VOID.name());
     } else {
@@ -494,10 +731,22 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
   static CodeBlock typeName(TypeInfo ti) {
     try {
       TypeKind tk = TypeKind.valueOf(ti.kindName());
-      if (tk == TypeKind.INT) {
-        return CodeBlock.of("$T", int.class);
-      } else if (tk == TypeKind.BOOLEAN) {
+      if (tk == TypeKind.BOOLEAN) {
         return CodeBlock.of("$T", boolean.class);
+      } else if (tk == TypeKind.BYTE) {
+        return CodeBlock.of("$T", byte.class);
+      } else if (tk == TypeKind.SHORT) {
+        return CodeBlock.of("$T", short.class);
+      } else if (tk == TypeKind.INT) {
+        return CodeBlock.of("$T", int.class);
+      } else if (tk == TypeKind.LONG) {
+        return CodeBlock.of("$T", long.class);
+      } else if (tk == TypeKind.CHAR) {
+        return CodeBlock.of("$T", char.class);
+      } else if (tk == TypeKind.FLOAT) {
+        return CodeBlock.of("$T", float.class);
+      } else if (tk == TypeKind.DOUBLE) {
+        return CodeBlock.of("$T", double.class);
       } else if (tk == TypeKind.VOID) {
         return CodeBlock.of("$T", void.class);
       } else if (tk == TypeKind.ARRAY) {
@@ -511,6 +760,9 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     String name = ti.typeName();
     if (name.startsWith("java.util.List<")) {
       return CodeBlock.of("$T", List.class);
+    }
+    if (name.startsWith("java.util.Optional<")) {
+      return CodeBlock.of("$T", Optional.class);
     }
     try {
       Class<?> clazz = Class.forName(name);
@@ -534,21 +786,44 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     return str != null && !str.isBlank();
   }
 
-  private String parseTypeDescription(Element element) {
+  private String parseSimpleDescription(Element element) {
     String javadocString = elementUtils.getDocComment(element);
     if (javadocString == null) {
-      return element.getAnnotation(Object.class).description();
+      return "";
     }
     return StaticJavaParser.parseJavadoc(javadocString).getDescription().toText().trim();
   }
 
-  private String parseFunctionDescription(Element element) {
-    String javadocString = elementUtils.getDocComment(element);
-    if (javadocString == null) {
-      return element.getAnnotation(Function.class).description();
+  private String parseModuleDescription(Element element) {
+    Module annotation = element.getAnnotation(Module.class);
+    if (annotation != null && !annotation.description().isEmpty()) {
+      return annotation.description();
     }
-    Javadoc javadoc = StaticJavaParser.parseJavadoc(javadocString);
-    return javadoc.getDescription().toText().trim();
+    return parseJavaDocDescription(element);
+  }
+
+  private String parseObjectDescription(Element element) {
+    Object annotation = element.getAnnotation(Object.class);
+    if (annotation != null && !annotation.description().isEmpty()) {
+      return annotation.description();
+    }
+    return parseJavaDocDescription(element);
+  }
+
+  private String parseFunctionDescription(Element element) {
+    Function annotation = element.getAnnotation(Function.class);
+    if (annotation != null && !annotation.description().isEmpty()) {
+      return annotation.description();
+    }
+    return parseJavaDocDescription(element);
+  }
+
+  private String parseJavaDocDescription(Element element) {
+    String javadocString = elementUtils.getDocComment(element);
+    if (javadocString != null) {
+      return StaticJavaParser.parseJavadoc(javadocString).getDescription().toText().trim();
+    }
+    return "";
   }
 
   private String parseParameterDescription(Element element, String paramName) {
@@ -563,5 +838,27 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
             .filter(tag -> tag.getName().isPresent() && tag.getName().get().equals(paramName))
             .findFirst();
     return blockTag.map(tag -> tag.getContent().toText()).orElse("");
+  }
+
+  private static CodeBlock listOf(String[] array) {
+    return CodeBlock.builder()
+        .add("$T.of(", List.class)
+        .add(CodeBlock.join(Arrays.stream(array).map(s -> CodeBlock.of("$S", s)).toList(), ", "))
+        .add(")")
+        .build();
+  }
+
+  private static boolean areSimilar(String str1, String str2) {
+    return normalize(str1).equals(normalize(str2));
+  }
+
+  private static String normalize(String str) {
+    if (str == null) {
+      return "";
+    }
+    return str.replaceAll("[-_]", " ") // Replace kebab and snake case delimiters with spaces
+        .replaceAll("([a-z])([A-Z])", "$1 $2") // Split camel case words
+        .toLowerCase(Locale.ROOT) // Convert to lowercase
+        .replaceAll("\\s+", ""); // Remove all spaces
   }
 }

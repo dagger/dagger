@@ -12,6 +12,8 @@ const (
 	alpineArm    = "arm64v8/alpine"
 	alpineAmd    = "amd64/alpine"
 
+	nodeImage = "node:22.11.0-alpine@sha256:b64ced2e7cd0a4816699fe308ce6e8a08ccba463c757c00c14cd372e3d2c763e"
+
 	// TODO: use these
 	// registryImage   = "registry:2"
 	// busyboxImage    = "busybox:1.36.0-musl"

@@ -1,0 +1,3460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="robots" content="index, follow, all" />
+    <title>Dagger\Client | API</title>
+
+            <link rel="stylesheet" type="text/css" href="../css/bootstrap.min.css">
+        <link rel="stylesheet" type="text/css" href="../css/bootstrap-theme.min.css">
+        <link rel="stylesheet" type="text/css" href="../css/doctum.css">
+        <link rel="stylesheet" type="text/css" href="../fonts/doctum-font.css">
+        <script src="../js/jquery-3.5.1.slim.min.js"></script>
+        <script async defer src="../doctum.js"></script>
+        <script async defer src="../js/bootstrap.min.js"></script>
+        <script async defer src="../js/autocomplete.min.js"></script>
+        <meta name="MobileOptimized" content="width">
+        <meta name="HandheldFriendly" content="true">
+        <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+
+    </head>
+
+    <body id="class" data-name="class:Dagger_Client" data-root-path="../" data-search-index-url="../doctum-search.json">
+            <div id="content">
+        <div id="left-column">
+                <div id="control-panel">
+                <div class="search-bar hidden" id="search-progress-bar-container">
+            <div class="progress">
+                <div class="progress-bar" role="progressbar" id="search-progress-bar"
+                    aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%"></div>
+            </div>
+        </div>
+        <form id="search-form" action="../search.html">
+            <span class="icon icon-search"></span>
+            <input name="search"
+                   id="doctum-search-auto-complete"
+                   class="typeahead form-control"
+                   type="search"
+                   placeholder="Search"
+                   spellcheck="false"
+                   autocorrect="off"
+                   autocomplete="off"
+                   autocapitalize="off">
+            <div class="auto-complete-results" id="auto-complete-results"></div>
+        </form>
+    </div>
+
+                <div id="api-tree"></div>
+
+        </div>
+        <div id="right-column">
+                <nav id="site-nav" class="navbar navbar-default" role="navigation">
+        <div class="container-fluid">
+            <div class="navbar-header">
+                <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#navbar-elements">
+                    <span class="sr-only">Toggle navigation</span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                </button>
+                <a class="navbar-brand" href="../index.html">API</a>
+            </div>
+            <div class="collapse navbar-collapse" id="navbar-elements">
+                <ul class="nav navbar-nav">
+                    <li><a href="../classes.html">Classes</a></li>
+                    <li><a href="../namespaces.html">Namespaces</a></li>
+                    <li><a href="../interfaces.html">Interfaces</a></li>
+                    <li><a href="../traits.html">Traits</a></li>
+                    <li><a href="../doc-index.html">Index</a></li>
+                    <li><a href="../search.html">Search</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+                        <div class="namespace-breadcrumbs">
+            <ol class="breadcrumb">
+                <li><span class="label label-default">class</span></li>
+                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>Client</li>
+            </ol>
+        </div>
+                <div id="page-content">
+    <div class="page-header">
+        <h1>Client    
+            </h1>
+    </div>
+
+    
+    <p>        class
+    <strong>Client</strong>        extends <a href="../Dagger/Client/AbstractClient.html"><abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a>
+</p>
+
+        
+    
+        
+
+            <div class="description">
+            <p><p>The root of the DAG.</p></p>                    </div>
+            
+        
+    
+            <h2>Properties</h2>
+
+            <table class="table table-condensed">
+                    <tr>
+                <td class="type" id="property_client">
+                                        protected                                        <a href="../Dagger/Client/AbstractClient.html"><abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a>
+                                                                                
+                                    </td>
+                <td>$client</td>
+                <td class="last"></td>
+                <td><small>from&nbsp;<a href="../Dagger/Client/AbstractClient.html#property_client">
+<abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a></small></td>
+            </tr>
+                    <tr>
+                <td class="type" id="property_graphQlClient">
+                                        protected                                        <abbr title="GraphQL\Client">Client</abbr>
+                                                                                
+                                    </td>
+                <td>$graphQlClient</td>
+                <td class="last"></td>
+                <td><small>from&nbsp;<a href="../Dagger/Client/AbstractClient.html#property_graphQlClient">
+<abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a></small></td>
+            </tr>
+            </table>
+
+    
+            <h2>Methods</h2>
+
+            <div class="container-fluid underlined">
+                    <div class="row">
+                <div class="col-md-2 type">
+                    
+                </div>
+                <div class="col-md-8">
+                    <a href="#method___construct">__construct</a>(<abbr title="Dagger\Connection|Dagger\Client">Client</abbr> $clientOrConnection, <abbr title="Dagger\GraphQl\QueryBuilderChain">QueryBuilderChain</abbr> $queryBuilderChain = new QueryBuilderChain())
+        
+                                            <p class="no-description">No description</p>
+                                    </div>
+                <div class="col-md-2"><small>from&nbsp;<a href="../Dagger/Client/AbstractClient.html#method___construct">
+<abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a></small></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <abbr title="GraphQL\Results">Results</abbr>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_runQuery">runQuery</a>(<abbr title="GraphQL\QueryBuilder\QueryBuilder|GraphQL\Query">Query</abbr> $query)
+        
+                                            <p class="no-description">No description</p>
+                                    </div>
+                <div class="col-md-2"><small>from&nbsp;<a href="../Dagger/Client/AbstractClient.html#method_runQuery">
+<abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a></small></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <abbr title="Dagger\Client\null|array|string|int|float|bool">null|array|string|int|float|bool</abbr>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_queryLeaf">queryLeaf</a>(<abbr title="GraphQL\QueryBuilder\QueryBuilder|GraphQL\Query">Query</abbr> $query, string $leafKey)
+        
+                                            <p class="no-description">No description</p>
+                                    </div>
+                <div class="col-md-2"><small>from&nbsp;<a href="../Dagger/Client/AbstractClient.html#method_queryLeaf">
+<abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a></small></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_builtinContainer">builtinContainer</a>(string $digest)
+        
+                                            <p><p>Retrieves a container builtin to the engine.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/CacheVolume.html"><abbr title="Dagger\CacheVolume">CacheVolume</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_cacheVolume">cacheVolume</a>(string $key, string|null $namespace = &#039;&#039;)
+        
+                                            <p><p>Constructs a cache volume for a given cache key.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_container">container</a>(<abbr title="Dagger\Dagger\Platform">Platform</abbr>|null $platform = null)
+        
+                                            <p><p>Creates a scratch container.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/FunctionCall.html"><abbr title="Dagger\FunctionCall">FunctionCall</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_currentFunctionCall">currentFunctionCall</a>()
+        
+                                            <p><p>The FunctionCall context that the SDK caller is currently executing in.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/CurrentModule.html"><abbr title="Dagger\CurrentModule">CurrentModule</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_currentModule">currentModule</a>()
+        
+                                            <p><p>The module currently being served in the session, if any.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    array
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_currentTypeDefs">currentTypeDefs</a>()
+        
+                                            <p><p>The TypeDef representations of the objects currently being served in the session.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Platform.html"><abbr title="Dagger\Platform">Platform</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_defaultPlatform">defaultPlatform</a>()
+        
+                                            <p><p>The default platform of the engine.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_directory">directory</a>()
+        
+                                            <p><p>Creates an empty directory.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Engine.html"><abbr title="Dagger\Engine">Engine</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_engine">engine</a>()
+        
+                                            <p><p>The Dagger engine container configuration and state</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Error.html"><abbr title="Dagger\Error">Error</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_error">error</a>(string $message)
+        
+                                            <p><p>Create a new error.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_function">function</a>(string $name, <abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $returnType)
+        
+                                            <p><p>Creates a function.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/GeneratedCode.html"><abbr title="Dagger\GeneratedCode">GeneratedCode</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_generatedCode">generatedCode</a>(<abbr title="Dagger\DirectoryId|Dagger\Directory">Directory</abbr> $code)
+        
+                                            <p><p>Create a code generation result, given a directory containing the generated code.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_git">git</a>(string $url, bool|null $keepGitDir = true, <abbr title="Dagger\Dagger\ServiceId|Dagger\Service|null">Service|null</abbr> $experimentalServiceHost = null, string|null $sshKnownHosts = &#039;&#039;, <abbr title="Dagger\Dagger\SocketId|Dagger\Socket|null">Socket|null</abbr> $sshAuthSocket = null)
+        
+                                            <p><p>Queries a Git repository.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Host.html"><abbr title="Dagger\Host">Host</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_host">host</a>()
+        
+                                            <p><p>Queries the host environment.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_http">http</a>(string $url, <abbr title="Dagger\Dagger\ServiceId|Dagger\Service|null">Service|null</abbr> $experimentalServiceHost = null)
+        
+                                            <p><p>Returns a file containing an http remote url content.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/CacheVolume.html"><abbr title="Dagger\CacheVolume">CacheVolume</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadCacheVolumeFromID">loadCacheVolumeFromID</a>(<abbr title="Dagger\CacheVolumeId|Dagger\CacheVolume">CacheVolume</abbr> $id)
+        
+                                            <p><p>Load a CacheVolume from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadContainerFromID">loadContainerFromID</a>(<abbr title="Dagger\ContainerId|Dagger\Container">Container</abbr> $id)
+        
+                                            <p><p>Load a Container from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/CurrentModule.html"><abbr title="Dagger\CurrentModule">CurrentModule</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadCurrentModuleFromID">loadCurrentModuleFromID</a>(<abbr title="Dagger\CurrentModuleId|Dagger\CurrentModule">CurrentModule</abbr> $id)
+        
+                                            <p><p>Load a CurrentModule from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadDirectoryFromID">loadDirectoryFromID</a>(<abbr title="Dagger\DirectoryId|Dagger\Directory">Directory</abbr> $id)
+        
+                                            <p><p>Load a Directory from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/EngineCacheEntry.html"><abbr title="Dagger\EngineCacheEntry">EngineCacheEntry</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadEngineCacheEntryFromID">loadEngineCacheEntryFromID</a>(<abbr title="Dagger\EngineCacheEntryId|Dagger\EngineCacheEntry">EngineCacheEntry</abbr> $id)
+        
+                                            <p><p>Load a EngineCacheEntry from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/EngineCacheEntrySet.html"><abbr title="Dagger\EngineCacheEntrySet">EngineCacheEntrySet</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadEngineCacheEntrySetFromID">loadEngineCacheEntrySetFromID</a>(<abbr title="Dagger\EngineCacheEntrySetId|Dagger\EngineCacheEntrySet">EngineCacheEntrySet</abbr> $id)
+        
+                                            <p><p>Load a EngineCacheEntrySet from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/EngineCache.html"><abbr title="Dagger\EngineCache">EngineCache</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadEngineCacheFromID">loadEngineCacheFromID</a>(<abbr title="Dagger\EngineCacheId|Dagger\EngineCache">EngineCache</abbr> $id)
+        
+                                            <p><p>Load a EngineCache from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Engine.html"><abbr title="Dagger\Engine">Engine</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadEngineFromID">loadEngineFromID</a>(<abbr title="Dagger\EngineId|Dagger\Engine">Engine</abbr> $id)
+        
+                                            <p><p>Load a Engine from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/EnumTypeDef.html"><abbr title="Dagger\EnumTypeDef">EnumTypeDef</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadEnumTypeDefFromID">loadEnumTypeDefFromID</a>(<abbr title="Dagger\EnumTypeDefId|Dagger\EnumTypeDef">EnumTypeDef</abbr> $id)
+        
+                                            <p><p>Load a EnumTypeDef from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/EnumValueTypeDef.html"><abbr title="Dagger\EnumValueTypeDef">EnumValueTypeDef</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadEnumValueTypeDefFromID">loadEnumValueTypeDefFromID</a>(<abbr title="Dagger\EnumValueTypeDefId|Dagger\EnumValueTypeDef">EnumValueTypeDef</abbr> $id)
+        
+                                            <p><p>Load a EnumValueTypeDef from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/EnvVariable.html"><abbr title="Dagger\EnvVariable">EnvVariable</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadEnvVariableFromID">loadEnvVariableFromID</a>(<abbr title="Dagger\EnvVariableId|Dagger\EnvVariable">EnvVariable</abbr> $id)
+        
+                                            <p><p>Load a EnvVariable from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Error.html"><abbr title="Dagger\Error">Error</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadErrorFromID">loadErrorFromID</a>(<abbr title="Dagger\ErrorId|Dagger\Error">Error</abbr> $id)
+        
+                                            <p><p>Load a Error from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/FieldTypeDef.html"><abbr title="Dagger\FieldTypeDef">FieldTypeDef</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadFieldTypeDefFromID">loadFieldTypeDefFromID</a>(<abbr title="Dagger\FieldTypeDefId|Dagger\FieldTypeDef">FieldTypeDef</abbr> $id)
+        
+                                            <p><p>Load a FieldTypeDef from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadFileFromID">loadFileFromID</a>(<abbr title="Dagger\FileId|Dagger\File">File</abbr> $id)
+        
+                                            <p><p>Load a File from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/FunctionArg.html"><abbr title="Dagger\FunctionArg">FunctionArg</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadFunctionArgFromID">loadFunctionArgFromID</a>(<abbr title="Dagger\FunctionArgId|Dagger\FunctionArg">FunctionArg</abbr> $id)
+        
+                                            <p><p>Load a FunctionArg from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/FunctionCallArgValue.html"><abbr title="Dagger\FunctionCallArgValue">FunctionCallArgValue</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadFunctionCallArgValueFromID">loadFunctionCallArgValueFromID</a>(<abbr title="Dagger\FunctionCallArgValueId|Dagger\FunctionCallArgValue">FunctionCallArgValue</abbr> $id)
+        
+                                            <p><p>Load a FunctionCallArgValue from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/FunctionCall.html"><abbr title="Dagger\FunctionCall">FunctionCall</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadFunctionCallFromID">loadFunctionCallFromID</a>(<abbr title="Dagger\FunctionCallId|Dagger\FunctionCall">FunctionCall</abbr> $id)
+        
+                                            <p><p>Load a FunctionCall from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadFunctionFromID">loadFunctionFromID</a>(<abbr title="Dagger\FunctionId|Dagger\Function_">Function_</abbr> $id)
+        
+                                            <p><p>Load a Function from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/GeneratedCode.html"><abbr title="Dagger\GeneratedCode">GeneratedCode</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadGeneratedCodeFromID">loadGeneratedCodeFromID</a>(<abbr title="Dagger\GeneratedCodeId|Dagger\GeneratedCode">GeneratedCode</abbr> $id)
+        
+                                            <p><p>Load a GeneratedCode from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadGitRefFromID">loadGitRefFromID</a>(<abbr title="Dagger\GitRefId|Dagger\GitRef">GitRef</abbr> $id)
+        
+                                            <p><p>Load a GitRef from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadGitRepositoryFromID">loadGitRepositoryFromID</a>(<abbr title="Dagger\GitRepositoryId|Dagger\GitRepository">GitRepository</abbr> $id)
+        
+                                            <p><p>Load a GitRepository from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Host.html"><abbr title="Dagger\Host">Host</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadHostFromID">loadHostFromID</a>(<abbr title="Dagger\HostId|Dagger\Host">Host</abbr> $id)
+        
+                                            <p><p>Load a Host from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/InputTypeDef.html"><abbr title="Dagger\InputTypeDef">InputTypeDef</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadInputTypeDefFromID">loadInputTypeDefFromID</a>(<abbr title="Dagger\InputTypeDefId|Dagger\InputTypeDef">InputTypeDef</abbr> $id)
+        
+                                            <p><p>Load a InputTypeDef from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/InterfaceTypeDef.html"><abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadInterfaceTypeDefFromID">loadInterfaceTypeDefFromID</a>(<abbr title="Dagger\InterfaceTypeDefId|Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr> $id)
+        
+                                            <p><p>Load a InterfaceTypeDef from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Label.html"><abbr title="Dagger\Label">Label</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadLabelFromID">loadLabelFromID</a>(<abbr title="Dagger\LabelId|Dagger\Label">Label</abbr> $id)
+        
+                                            <p><p>Load a Label from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ListTypeDef.html"><abbr title="Dagger\ListTypeDef">ListTypeDef</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadListTypeDefFromID">loadListTypeDefFromID</a>(<abbr title="Dagger\ListTypeDefId|Dagger\ListTypeDef">ListTypeDef</abbr> $id)
+        
+                                            <p><p>Load a ListTypeDef from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadModuleFromID">loadModuleFromID</a>(<abbr title="Dagger\ModuleId|Dagger\Module">Module</abbr> $id)
+        
+                                            <p><p>Load a Module from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadModuleSourceFromID">loadModuleSourceFromID</a>(<abbr title="Dagger\ModuleSourceId|Dagger\ModuleSource">ModuleSource</abbr> $id)
+        
+                                            <p><p>Load a ModuleSource from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ObjectTypeDef.html"><abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadObjectTypeDefFromID">loadObjectTypeDefFromID</a>(<abbr title="Dagger\ObjectTypeDefId|Dagger\ObjectTypeDef">ObjectTypeDef</abbr> $id)
+        
+                                            <p><p>Load a ObjectTypeDef from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Port.html"><abbr title="Dagger\Port">Port</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadPortFromID">loadPortFromID</a>(<abbr title="Dagger\PortId|Dagger\Port">Port</abbr> $id)
+        
+                                            <p><p>Load a Port from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/SDKConfig.html"><abbr title="Dagger\SDKConfig">SDKConfig</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadSDKConfigFromID">loadSDKConfigFromID</a>(<abbr title="Dagger\SDKConfigId|Dagger\SDKConfig">SDKConfig</abbr> $id)
+        
+                                            <p><p>Load a SDKConfig from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ScalarTypeDef.html"><abbr title="Dagger\ScalarTypeDef">ScalarTypeDef</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadScalarTypeDefFromID">loadScalarTypeDefFromID</a>(<abbr title="Dagger\ScalarTypeDefId|Dagger\ScalarTypeDef">ScalarTypeDef</abbr> $id)
+        
+                                            <p><p>Load a ScalarTypeDef from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadSecretFromID">loadSecretFromID</a>(<abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr> $id)
+        
+                                            <p><p>Load a Secret from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadSecretFromName">loadSecretFromName</a>(string $name, string|null $accessor = null)
+        
+                                            <p><p>Load a Secret from its Name.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadServiceFromID">loadServiceFromID</a>(<abbr title="Dagger\ServiceId|Dagger\Service">Service</abbr> $id)
+        
+                                            <p><p>Load a Service from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Socket.html"><abbr title="Dagger\Socket">Socket</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadSocketFromID">loadSocketFromID</a>(<abbr title="Dagger\SocketId|Dagger\Socket">Socket</abbr> $id)
+        
+                                            <p><p>Load a Socket from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadSourceMapFromID">loadSourceMapFromID</a>(<abbr title="Dagger\SourceMapId|Dagger\SourceMap">SourceMap</abbr> $id)
+        
+                                            <p><p>Load a SourceMap from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Terminal.html"><abbr title="Dagger\Terminal">Terminal</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadTerminalFromID">loadTerminalFromID</a>(<abbr title="Dagger\TerminalId|Dagger\Terminal">Terminal</abbr> $id)
+        
+                                            <p><p>Load a Terminal from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadTypeDefFromID">loadTypeDefFromID</a>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $id)
+        
+                                            <p><p>Load a TypeDef from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_module">module</a>()
+        
+                                            <p><p>Create a new module.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_moduleSource">moduleSource</a>(string $refString, string|null $refPin = &#039;&#039;, bool|null $disableFindUp = false, bool|null $allowNotExists = false, <abbr title="Dagger\Dagger\ModuleSourceKind">ModuleSourceKind</abbr>|null $requireKind = null)
+        
+                                            <p><p>Create a new module source instance from a source ref string</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_secret">secret</a>(string $uri)
+        
+                                            <p><p>Creates a new secret.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_setSecret">setSecret</a>(string $name, string $plaintext)
+        
+                                            <p><p>Sets a secret given a user defined name to its plaintext and returns the secret.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_sourceMap">sourceMap</a>(string $filename, int $line, int $column)
+        
+                                            <p><p>Creates source map metadata.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_typeDef">typeDef</a>()
+        
+                                            <p><p>Create a new TypeDef.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_version">version</a>()
+        
+                                            <p><p>Get the current Dagger Engine version.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+            </div>
+
+
+        <h2>Details</h2>
+
+            <div id="method-details">
+                    <div class="method-item">
+                    <h3 id="method___construct">
+        <div class="location">in <a href="../Dagger/Client/AbstractClient.html#method___construct">
+<abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a> at line 20</div>
+        <code>                    
+    <strong>__construct</strong>(<abbr title="Dagger\Connection|Dagger\Client">Client</abbr> $clientOrConnection, <abbr title="Dagger\GraphQl\QueryBuilderChain">QueryBuilderChain</abbr> $queryBuilderChain = new QueryBuilderChain())
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p class="no-description">No description</p>
+                    
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\Connection|Dagger\Client">Client</abbr></td>
+                <td>$clientOrConnection</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\GraphQl\QueryBuilderChain">QueryBuilderChain</abbr></td>
+                <td>$queryBuilderChain</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_runQuery">
+        <div class="location">in <a href="../Dagger/Client/AbstractClient.html#method_runQuery">
+<abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a> at line 33</div>
+        <code>                    <abbr title="GraphQL\Results">Results</abbr>
+    <strong>runQuery</strong>(<abbr title="GraphQL\QueryBuilder\QueryBuilder|GraphQL\Query">Query</abbr> $query)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p class="no-description">No description</p>
+                    
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="GraphQL\QueryBuilder\QueryBuilder|GraphQL\Query">Query</abbr></td>
+                <td>$query</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><abbr title="GraphQL\Results">Results</abbr></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_queryLeaf">
+        <div class="location">in <a href="../Dagger/Client/AbstractClient.html#method_queryLeaf">
+<abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a> at line 38</div>
+        <code>                    <abbr title="Dagger\Client\null|array|string|int|float|bool">null|array|string|int|float|bool</abbr>
+    <strong>queryLeaf</strong>(<abbr title="GraphQL\QueryBuilder\QueryBuilder|GraphQL\Query">Query</abbr> $query, string $leafKey)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p class="no-description">No description</p>
+                    
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="GraphQL\QueryBuilder\QueryBuilder|GraphQL\Query">Query</abbr></td>
+                <td>$query</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string</td>
+                <td>$leafKey</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><abbr title="Dagger\Client\null|array|string|int|float|bool">null|array|string|int|float|bool</abbr></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_builtinContainer">
+        <div class="location">at line 19</div>
+        <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
+    <strong>builtinContainer</strong>(string $digest)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Retrieves a container builtin to the engine.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$digest</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_cacheVolume">
+        <div class="location">at line 29</div>
+        <code>                    <a href="../Dagger/CacheVolume.html"><abbr title="Dagger\CacheVolume">CacheVolume</abbr></a>
+    <strong>cacheVolume</strong>(string $key, string|null $namespace = &#039;&#039;)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Constructs a cache volume for a given cache key.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$key</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$namespace</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/CacheVolume.html"><abbr title="Dagger\CacheVolume">CacheVolume</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_container">
+        <div class="location">at line 44</div>
+        <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
+    <strong>container</strong>(<abbr title="Dagger\Dagger\Platform">Platform</abbr>|null $platform = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Creates a scratch container.</p></p>                <p><p>Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.</p></p>        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\Dagger\Platform">Platform</abbr>|null</td>
+                <td>$platform</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_currentFunctionCall">
+        <div class="location">at line 58</div>
+        <code>                    <a href="../Dagger/FunctionCall.html"><abbr title="Dagger\FunctionCall">FunctionCall</abbr></a>
+    <strong>currentFunctionCall</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The FunctionCall context that the SDK caller is currently executing in.</p></p>                <p><p>If the caller is not currently executing in a function, this will return an error.</p></p>        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/FunctionCall.html"><abbr title="Dagger\FunctionCall">FunctionCall</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_currentModule">
+        <div class="location">at line 67</div>
+        <code>                    <a href="../Dagger/CurrentModule.html"><abbr title="Dagger\CurrentModule">CurrentModule</abbr></a>
+    <strong>currentModule</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The module currently being served in the session, if any.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/CurrentModule.html"><abbr title="Dagger\CurrentModule">CurrentModule</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_currentTypeDefs">
+        <div class="location">at line 76</div>
+        <code>                    array
+    <strong>currentTypeDefs</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The TypeDef representations of the objects currently being served in the session.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>array</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_defaultPlatform">
+        <div class="location">at line 85</div>
+        <code>                    <a href="../Dagger/Platform.html"><abbr title="Dagger\Platform">Platform</abbr></a>
+    <strong>defaultPlatform</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The default platform of the engine.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Platform.html"><abbr title="Dagger\Platform">Platform</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_directory">
+        <div class="location">at line 94</div>
+        <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
+    <strong>directory</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Creates an empty directory.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_engine">
+        <div class="location">at line 103</div>
+        <code>                    <a href="../Dagger/Engine.html"><abbr title="Dagger\Engine">Engine</abbr></a>
+    <strong>engine</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The Dagger engine container configuration and state</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Engine.html"><abbr title="Dagger\Engine">Engine</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_error">
+        <div class="location">at line 112</div>
+        <code>                    <a href="../Dagger/Error.html"><abbr title="Dagger\Error">Error</abbr></a>
+    <strong>error</strong>(string $message)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create a new error.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$message</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Error.html"><abbr title="Dagger\Error">Error</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_function">
+        <div class="location">at line 122</div>
+        <code>                    <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
+    <strong>function</strong>(string $name, <abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $returnType)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Creates a function.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr></td>
+                <td>$returnType</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_generatedCode">
+        <div class="location">at line 133</div>
+        <code>                    <a href="../Dagger/GeneratedCode.html"><abbr title="Dagger\GeneratedCode">GeneratedCode</abbr></a>
+    <strong>generatedCode</strong>(<abbr title="Dagger\DirectoryId|Dagger\Directory">Directory</abbr> $code)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create a code generation result, given a directory containing the generated code.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\DirectoryId|Dagger\Directory">Directory</abbr></td>
+                <td>$code</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/GeneratedCode.html"><abbr title="Dagger\GeneratedCode">GeneratedCode</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_git">
+        <div class="location">at line 143</div>
+        <code>                    <a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a>
+    <strong>git</strong>(string $url, bool|null $keepGitDir = true, <abbr title="Dagger\Dagger\ServiceId|Dagger\Service|null">Service|null</abbr> $experimentalServiceHost = null, string|null $sshKnownHosts = &#039;&#039;, <abbr title="Dagger\Dagger\SocketId|Dagger\Socket|null">Socket|null</abbr> $sshAuthSocket = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Queries a Git repository.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$url</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>bool|null</td>
+                <td>$keepGitDir</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\Dagger\ServiceId|Dagger\Service|null">Service|null</abbr></td>
+                <td>$experimentalServiceHost</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$sshKnownHosts</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\Dagger\SocketId|Dagger\Socket|null">Socket|null</abbr></td>
+                <td>$sshAuthSocket</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_host">
+        <div class="location">at line 170</div>
+        <code>                    <a href="../Dagger/Host.html"><abbr title="Dagger\Host">Host</abbr></a>
+    <strong>host</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Queries the host environment.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Host.html"><abbr title="Dagger\Host">Host</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_http">
+        <div class="location">at line 179</div>
+        <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
+    <strong>http</strong>(string $url, <abbr title="Dagger\Dagger\ServiceId|Dagger\Service|null">Service|null</abbr> $experimentalServiceHost = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Returns a file containing an http remote url content.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$url</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\Dagger\ServiceId|Dagger\Service|null">Service|null</abbr></td>
+                <td>$experimentalServiceHost</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadCacheVolumeFromID">
+        <div class="location">at line 192</div>
+        <code>                    <a href="../Dagger/CacheVolume.html"><abbr title="Dagger\CacheVolume">CacheVolume</abbr></a>
+    <strong>loadCacheVolumeFromID</strong>(<abbr title="Dagger\CacheVolumeId|Dagger\CacheVolume">CacheVolume</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a CacheVolume from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\CacheVolumeId|Dagger\CacheVolume">CacheVolume</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/CacheVolume.html"><abbr title="Dagger\CacheVolume">CacheVolume</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadContainerFromID">
+        <div class="location">at line 202</div>
+        <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
+    <strong>loadContainerFromID</strong>(<abbr title="Dagger\ContainerId|Dagger\Container">Container</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a Container from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\ContainerId|Dagger\Container">Container</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadCurrentModuleFromID">
+        <div class="location">at line 212</div>
+        <code>                    <a href="../Dagger/CurrentModule.html"><abbr title="Dagger\CurrentModule">CurrentModule</abbr></a>
+    <strong>loadCurrentModuleFromID</strong>(<abbr title="Dagger\CurrentModuleId|Dagger\CurrentModule">CurrentModule</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a CurrentModule from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\CurrentModuleId|Dagger\CurrentModule">CurrentModule</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/CurrentModule.html"><abbr title="Dagger\CurrentModule">CurrentModule</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadDirectoryFromID">
+        <div class="location">at line 222</div>
+        <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
+    <strong>loadDirectoryFromID</strong>(<abbr title="Dagger\DirectoryId|Dagger\Directory">Directory</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a Directory from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\DirectoryId|Dagger\Directory">Directory</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadEngineCacheEntryFromID">
+        <div class="location">at line 232</div>
+        <code>                    <a href="../Dagger/EngineCacheEntry.html"><abbr title="Dagger\EngineCacheEntry">EngineCacheEntry</abbr></a>
+    <strong>loadEngineCacheEntryFromID</strong>(<abbr title="Dagger\EngineCacheEntryId|Dagger\EngineCacheEntry">EngineCacheEntry</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a EngineCacheEntry from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\EngineCacheEntryId|Dagger\EngineCacheEntry">EngineCacheEntry</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/EngineCacheEntry.html"><abbr title="Dagger\EngineCacheEntry">EngineCacheEntry</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadEngineCacheEntrySetFromID">
+        <div class="location">at line 242</div>
+        <code>                    <a href="../Dagger/EngineCacheEntrySet.html"><abbr title="Dagger\EngineCacheEntrySet">EngineCacheEntrySet</abbr></a>
+    <strong>loadEngineCacheEntrySetFromID</strong>(<abbr title="Dagger\EngineCacheEntrySetId|Dagger\EngineCacheEntrySet">EngineCacheEntrySet</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a EngineCacheEntrySet from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\EngineCacheEntrySetId|Dagger\EngineCacheEntrySet">EngineCacheEntrySet</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/EngineCacheEntrySet.html"><abbr title="Dagger\EngineCacheEntrySet">EngineCacheEntrySet</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadEngineCacheFromID">
+        <div class="location">at line 252</div>
+        <code>                    <a href="../Dagger/EngineCache.html"><abbr title="Dagger\EngineCache">EngineCache</abbr></a>
+    <strong>loadEngineCacheFromID</strong>(<abbr title="Dagger\EngineCacheId|Dagger\EngineCache">EngineCache</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a EngineCache from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\EngineCacheId|Dagger\EngineCache">EngineCache</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/EngineCache.html"><abbr title="Dagger\EngineCache">EngineCache</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadEngineFromID">
+        <div class="location">at line 262</div>
+        <code>                    <a href="../Dagger/Engine.html"><abbr title="Dagger\Engine">Engine</abbr></a>
+    <strong>loadEngineFromID</strong>(<abbr title="Dagger\EngineId|Dagger\Engine">Engine</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a Engine from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\EngineId|Dagger\Engine">Engine</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Engine.html"><abbr title="Dagger\Engine">Engine</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadEnumTypeDefFromID">
+        <div class="location">at line 272</div>
+        <code>                    <a href="../Dagger/EnumTypeDef.html"><abbr title="Dagger\EnumTypeDef">EnumTypeDef</abbr></a>
+    <strong>loadEnumTypeDefFromID</strong>(<abbr title="Dagger\EnumTypeDefId|Dagger\EnumTypeDef">EnumTypeDef</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a EnumTypeDef from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\EnumTypeDefId|Dagger\EnumTypeDef">EnumTypeDef</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/EnumTypeDef.html"><abbr title="Dagger\EnumTypeDef">EnumTypeDef</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadEnumValueTypeDefFromID">
+        <div class="location">at line 282</div>
+        <code>                    <a href="../Dagger/EnumValueTypeDef.html"><abbr title="Dagger\EnumValueTypeDef">EnumValueTypeDef</abbr></a>
+    <strong>loadEnumValueTypeDefFromID</strong>(<abbr title="Dagger\EnumValueTypeDefId|Dagger\EnumValueTypeDef">EnumValueTypeDef</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a EnumValueTypeDef from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\EnumValueTypeDefId|Dagger\EnumValueTypeDef">EnumValueTypeDef</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/EnumValueTypeDef.html"><abbr title="Dagger\EnumValueTypeDef">EnumValueTypeDef</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadEnvVariableFromID">
+        <div class="location">at line 292</div>
+        <code>                    <a href="../Dagger/EnvVariable.html"><abbr title="Dagger\EnvVariable">EnvVariable</abbr></a>
+    <strong>loadEnvVariableFromID</strong>(<abbr title="Dagger\EnvVariableId|Dagger\EnvVariable">EnvVariable</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a EnvVariable from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\EnvVariableId|Dagger\EnvVariable">EnvVariable</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/EnvVariable.html"><abbr title="Dagger\EnvVariable">EnvVariable</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadErrorFromID">
+        <div class="location">at line 302</div>
+        <code>                    <a href="../Dagger/Error.html"><abbr title="Dagger\Error">Error</abbr></a>
+    <strong>loadErrorFromID</strong>(<abbr title="Dagger\ErrorId|Dagger\Error">Error</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a Error from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\ErrorId|Dagger\Error">Error</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Error.html"><abbr title="Dagger\Error">Error</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadFieldTypeDefFromID">
+        <div class="location">at line 312</div>
+        <code>                    <a href="../Dagger/FieldTypeDef.html"><abbr title="Dagger\FieldTypeDef">FieldTypeDef</abbr></a>
+    <strong>loadFieldTypeDefFromID</strong>(<abbr title="Dagger\FieldTypeDefId|Dagger\FieldTypeDef">FieldTypeDef</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a FieldTypeDef from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\FieldTypeDefId|Dagger\FieldTypeDef">FieldTypeDef</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/FieldTypeDef.html"><abbr title="Dagger\FieldTypeDef">FieldTypeDef</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadFileFromID">
+        <div class="location">at line 322</div>
+        <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
+    <strong>loadFileFromID</strong>(<abbr title="Dagger\FileId|Dagger\File">File</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a File from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\FileId|Dagger\File">File</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadFunctionArgFromID">
+        <div class="location">at line 332</div>
+        <code>                    <a href="../Dagger/FunctionArg.html"><abbr title="Dagger\FunctionArg">FunctionArg</abbr></a>
+    <strong>loadFunctionArgFromID</strong>(<abbr title="Dagger\FunctionArgId|Dagger\FunctionArg">FunctionArg</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a FunctionArg from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\FunctionArgId|Dagger\FunctionArg">FunctionArg</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/FunctionArg.html"><abbr title="Dagger\FunctionArg">FunctionArg</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadFunctionCallArgValueFromID">
+        <div class="location">at line 342</div>
+        <code>                    <a href="../Dagger/FunctionCallArgValue.html"><abbr title="Dagger\FunctionCallArgValue">FunctionCallArgValue</abbr></a>
+    <strong>loadFunctionCallArgValueFromID</strong>(<abbr title="Dagger\FunctionCallArgValueId|Dagger\FunctionCallArgValue">FunctionCallArgValue</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a FunctionCallArgValue from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\FunctionCallArgValueId|Dagger\FunctionCallArgValue">FunctionCallArgValue</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/FunctionCallArgValue.html"><abbr title="Dagger\FunctionCallArgValue">FunctionCallArgValue</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadFunctionCallFromID">
+        <div class="location">at line 353</div>
+        <code>                    <a href="../Dagger/FunctionCall.html"><abbr title="Dagger\FunctionCall">FunctionCall</abbr></a>
+    <strong>loadFunctionCallFromID</strong>(<abbr title="Dagger\FunctionCallId|Dagger\FunctionCall">FunctionCall</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a FunctionCall from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\FunctionCallId|Dagger\FunctionCall">FunctionCall</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/FunctionCall.html"><abbr title="Dagger\FunctionCall">FunctionCall</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadFunctionFromID">
+        <div class="location">at line 363</div>
+        <code>                    <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
+    <strong>loadFunctionFromID</strong>(<abbr title="Dagger\FunctionId|Dagger\Function_">Function_</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a Function from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\FunctionId|Dagger\Function_">Function_</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadGeneratedCodeFromID">
+        <div class="location">at line 373</div>
+        <code>                    <a href="../Dagger/GeneratedCode.html"><abbr title="Dagger\GeneratedCode">GeneratedCode</abbr></a>
+    <strong>loadGeneratedCodeFromID</strong>(<abbr title="Dagger\GeneratedCodeId|Dagger\GeneratedCode">GeneratedCode</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a GeneratedCode from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\GeneratedCodeId|Dagger\GeneratedCode">GeneratedCode</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/GeneratedCode.html"><abbr title="Dagger\GeneratedCode">GeneratedCode</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadGitRefFromID">
+        <div class="location">at line 383</div>
+        <code>                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
+    <strong>loadGitRefFromID</strong>(<abbr title="Dagger\GitRefId|Dagger\GitRef">GitRef</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a GitRef from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\GitRefId|Dagger\GitRef">GitRef</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadGitRepositoryFromID">
+        <div class="location">at line 393</div>
+        <code>                    <a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a>
+    <strong>loadGitRepositoryFromID</strong>(<abbr title="Dagger\GitRepositoryId|Dagger\GitRepository">GitRepository</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a GitRepository from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\GitRepositoryId|Dagger\GitRepository">GitRepository</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadHostFromID">
+        <div class="location">at line 403</div>
+        <code>                    <a href="../Dagger/Host.html"><abbr title="Dagger\Host">Host</abbr></a>
+    <strong>loadHostFromID</strong>(<abbr title="Dagger\HostId|Dagger\Host">Host</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a Host from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\HostId|Dagger\Host">Host</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Host.html"><abbr title="Dagger\Host">Host</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadInputTypeDefFromID">
+        <div class="location">at line 413</div>
+        <code>                    <a href="../Dagger/InputTypeDef.html"><abbr title="Dagger\InputTypeDef">InputTypeDef</abbr></a>
+    <strong>loadInputTypeDefFromID</strong>(<abbr title="Dagger\InputTypeDefId|Dagger\InputTypeDef">InputTypeDef</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a InputTypeDef from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\InputTypeDefId|Dagger\InputTypeDef">InputTypeDef</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/InputTypeDef.html"><abbr title="Dagger\InputTypeDef">InputTypeDef</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadInterfaceTypeDefFromID">
+        <div class="location">at line 423</div>
+        <code>                    <a href="../Dagger/InterfaceTypeDef.html"><abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr></a>
+    <strong>loadInterfaceTypeDefFromID</strong>(<abbr title="Dagger\InterfaceTypeDefId|Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a InterfaceTypeDef from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\InterfaceTypeDefId|Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/InterfaceTypeDef.html"><abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadLabelFromID">
+        <div class="location">at line 433</div>
+        <code>                    <a href="../Dagger/Label.html"><abbr title="Dagger\Label">Label</abbr></a>
+    <strong>loadLabelFromID</strong>(<abbr title="Dagger\LabelId|Dagger\Label">Label</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a Label from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\LabelId|Dagger\Label">Label</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Label.html"><abbr title="Dagger\Label">Label</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadListTypeDefFromID">
+        <div class="location">at line 443</div>
+        <code>                    <a href="../Dagger/ListTypeDef.html"><abbr title="Dagger\ListTypeDef">ListTypeDef</abbr></a>
+    <strong>loadListTypeDefFromID</strong>(<abbr title="Dagger\ListTypeDefId|Dagger\ListTypeDef">ListTypeDef</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a ListTypeDef from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\ListTypeDefId|Dagger\ListTypeDef">ListTypeDef</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ListTypeDef.html"><abbr title="Dagger\ListTypeDef">ListTypeDef</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadModuleFromID">
+        <div class="location">at line 453</div>
+        <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
+    <strong>loadModuleFromID</strong>(<abbr title="Dagger\ModuleId|Dagger\Module">Module</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a Module from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\ModuleId|Dagger\Module">Module</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadModuleSourceFromID">
+        <div class="location">at line 463</div>
+        <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
+    <strong>loadModuleSourceFromID</strong>(<abbr title="Dagger\ModuleSourceId|Dagger\ModuleSource">ModuleSource</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a ModuleSource from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\ModuleSourceId|Dagger\ModuleSource">ModuleSource</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadObjectTypeDefFromID">
+        <div class="location">at line 473</div>
+        <code>                    <a href="../Dagger/ObjectTypeDef.html"><abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr></a>
+    <strong>loadObjectTypeDefFromID</strong>(<abbr title="Dagger\ObjectTypeDefId|Dagger\ObjectTypeDef">ObjectTypeDef</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a ObjectTypeDef from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\ObjectTypeDefId|Dagger\ObjectTypeDef">ObjectTypeDef</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ObjectTypeDef.html"><abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadPortFromID">
+        <div class="location">at line 483</div>
+        <code>                    <a href="../Dagger/Port.html"><abbr title="Dagger\Port">Port</abbr></a>
+    <strong>loadPortFromID</strong>(<abbr title="Dagger\PortId|Dagger\Port">Port</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a Port from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\PortId|Dagger\Port">Port</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Port.html"><abbr title="Dagger\Port">Port</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadSDKConfigFromID">
+        <div class="location">at line 493</div>
+        <code>                    <a href="../Dagger/SDKConfig.html"><abbr title="Dagger\SDKConfig">SDKConfig</abbr></a>
+    <strong>loadSDKConfigFromID</strong>(<abbr title="Dagger\SDKConfigId|Dagger\SDKConfig">SDKConfig</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a SDKConfig from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\SDKConfigId|Dagger\SDKConfig">SDKConfig</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/SDKConfig.html"><abbr title="Dagger\SDKConfig">SDKConfig</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadScalarTypeDefFromID">
+        <div class="location">at line 503</div>
+        <code>                    <a href="../Dagger/ScalarTypeDef.html"><abbr title="Dagger\ScalarTypeDef">ScalarTypeDef</abbr></a>
+    <strong>loadScalarTypeDefFromID</strong>(<abbr title="Dagger\ScalarTypeDefId|Dagger\ScalarTypeDef">ScalarTypeDef</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a ScalarTypeDef from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\ScalarTypeDefId|Dagger\ScalarTypeDef">ScalarTypeDef</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ScalarTypeDef.html"><abbr title="Dagger\ScalarTypeDef">ScalarTypeDef</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadSecretFromID">
+        <div class="location">at line 513</div>
+        <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
+    <strong>loadSecretFromID</strong>(<abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a Secret from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadSecretFromName">
+        <div class="location">at line 523</div>
+        <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
+    <strong>loadSecretFromName</strong>(string $name, string|null $accessor = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a Secret from its Name.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$accessor</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadServiceFromID">
+        <div class="location">at line 536</div>
+        <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
+    <strong>loadServiceFromID</strong>(<abbr title="Dagger\ServiceId|Dagger\Service">Service</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a Service from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\ServiceId|Dagger\Service">Service</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadSocketFromID">
+        <div class="location">at line 546</div>
+        <code>                    <a href="../Dagger/Socket.html"><abbr title="Dagger\Socket">Socket</abbr></a>
+    <strong>loadSocketFromID</strong>(<abbr title="Dagger\SocketId|Dagger\Socket">Socket</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a Socket from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\SocketId|Dagger\Socket">Socket</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Socket.html"><abbr title="Dagger\Socket">Socket</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadSourceMapFromID">
+        <div class="location">at line 556</div>
+        <code>                    <a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a>
+    <strong>loadSourceMapFromID</strong>(<abbr title="Dagger\SourceMapId|Dagger\SourceMap">SourceMap</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a SourceMap from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\SourceMapId|Dagger\SourceMap">SourceMap</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadTerminalFromID">
+        <div class="location">at line 566</div>
+        <code>                    <a href="../Dagger/Terminal.html"><abbr title="Dagger\Terminal">Terminal</abbr></a>
+    <strong>loadTerminalFromID</strong>(<abbr title="Dagger\TerminalId|Dagger\Terminal">Terminal</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a Terminal from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\TerminalId|Dagger\Terminal">Terminal</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Terminal.html"><abbr title="Dagger\Terminal">Terminal</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadTypeDefFromID">
+        <div class="location">at line 576</div>
+        <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
+    <strong>loadTypeDefFromID</strong>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a TypeDef from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_module">
+        <div class="location">at line 586</div>
+        <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
+    <strong>module</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create a new module.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_moduleSource">
+        <div class="location">at line 595</div>
+        <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
+    <strong>moduleSource</strong>(string $refString, string|null $refPin = &#039;&#039;, bool|null $disableFindUp = false, bool|null $allowNotExists = false, <abbr title="Dagger\Dagger\ModuleSourceKind">ModuleSourceKind</abbr>|null $requireKind = null)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create a new module source instance from a source ref string</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$refString</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$refPin</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>bool|null</td>
+                <td>$disableFindUp</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>bool|null</td>
+                <td>$allowNotExists</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\Dagger\ModuleSourceKind">ModuleSourceKind</abbr>|null</td>
+                <td>$requireKind</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_secret">
+        <div class="location">at line 622</div>
+        <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
+    <strong>secret</strong>(string $uri)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Creates a new secret.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$uri</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_setSecret">
+        <div class="location">at line 634</div>
+        <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
+    <strong>setSecret</strong>(string $name, string $plaintext)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Sets a secret given a user defined name to its plaintext and returns the secret.</p></p>                <p><p>The plaintext value is limited to a size of 128000 bytes.</p></p>        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string</td>
+                <td>$plaintext</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_sourceMap">
+        <div class="location">at line 645</div>
+        <code>                    <a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a>
+    <strong>sourceMap</strong>(string $filename, int $line, int $column)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Creates source map metadata.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$filename</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>int</td>
+                <td>$line</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>int</td>
+                <td>$column</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_typeDef">
+        <div class="location">at line 657</div>
+        <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
+    <strong>typeDef</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create a new TypeDef.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_version">
+        <div class="location">at line 666</div>
+        <code>                    string
+    <strong>version</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Get the current Dagger Engine version.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+            </div>
+
+    
+</div><div id="footer">
+        Generated by <a href="https://github.com/code-lts/doctum">Doctum, a API Documentation generator and fork of Sami</a>.</div></div>
+    </div>
+    </body>
+
+</html>

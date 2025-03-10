@@ -54,7 +54,6 @@ class MyModule {
      */
     key: string,
   ): Promise<string> {
-    // set and save value
     return await this.redis()
       .withExec(["get", key], { useEntrypoint: true })
       .stdout()

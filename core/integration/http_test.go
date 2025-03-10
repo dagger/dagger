@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
@@ -14,7 +14,7 @@ import (
 type HTTPSuite struct{}
 
 func TestHTTP(t *testing.T) {
-	testctx.Run(testCtx, t, HTTPSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(HTTPSuite{})
 }
 
 func (HTTPSuite) TestHTTP(ctx context.Context, t *testctx.T) {

@@ -15,20 +15,17 @@ import (
 
 func TypescriptTemplateFuncs(
 	schemaVersion string,
-	moduleName string,
-	moduleParentPath string,
+	cfg generator.Config,
 ) template.FuncMap {
 	return typescriptTemplateFuncs{
-		moduleName:       moduleName,
-		moduleParentPath: moduleParentPath,
-		schemaVersion:    schemaVersion,
+		cfg:           cfg,
+		schemaVersion: schemaVersion,
 	}.FuncMap()
 }
 
 type typescriptTemplateFuncs struct {
-	moduleName       string
-	moduleParentPath string
-	schemaVersion    string
+	schemaVersion string
+	cfg           generator.Config
 }
 
 func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
@@ -68,6 +65,8 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"CheckVersionCompatibility": commonFunc.CheckVersionCompatibility,
 		"ModuleRelPath":             funcs.moduleRelPath,
 		"FormatProtected":           funcs.formatProtected,
+		"IsClientOnly":              funcs.isClientOnly,
+		"IsDevMode":                 funcs.isDevMode,
 	}
 }
 
@@ -313,7 +312,7 @@ func (funcs typescriptTemplateFuncs) moduleRelPath(path string) string {
 		// Path to the root of this module (since we're at the codegen root sdk/src/api/).
 		"../../../",
 		// Path to the module's context directory.
-		funcs.moduleParentPath,
+		funcs.cfg.ModuleParentPath,
 		// Path from the context directory to the target path.
 		path,
 	)
@@ -321,4 +320,12 @@ func (funcs typescriptTemplateFuncs) moduleRelPath(path string) string {
 
 func (funcs typescriptTemplateFuncs) formatProtected(s string) string {
 	return strings.TrimSuffix(s, "_")
+}
+
+func (funcs typescriptTemplateFuncs) isClientOnly() bool {
+	return funcs.cfg.ClientOnly
+}
+
+func (funcs typescriptTemplateFuncs) isDevMode() bool {
+	return funcs.cfg.Dev
 }

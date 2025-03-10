@@ -14,18 +14,36 @@ namespace Dagger;
 class Directory extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * Load the directory as a Dagger module
+     * Converts this directory into a git repository
      */
-    public function asModule(?string $sourceRootPath = '.', ?string $engineVersion = null): Module
+    public function asGit(): GitRepository
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asGit');
+        return new \Dagger\GitRepository($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load the directory as a Dagger module source
+     */
+    public function asModule(?string $sourceRootPath = '.'): Module
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asModule');
         if (null !== $sourceRootPath) {
         $innerQueryBuilder->setArgument('sourceRootPath', $sourceRootPath);
         }
-        if (null !== $engineVersion) {
-        $innerQueryBuilder->setArgument('engineVersion', $engineVersion);
-        }
         return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load the directory as a Dagger module source
+     */
+    public function asModuleSource(?string $sourceRootPath = '.'): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asModuleSource');
+        if (null !== $sourceRootPath) {
+        $innerQueryBuilder->setArgument('sourceRootPath', $sourceRootPath);
+        }
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -138,6 +156,15 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\DirectoryId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * Returns the name of the directory.
+     */
+    public function name(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
     /**

@@ -1,13 +1,13 @@
 package io.dagger.sample;
 
-import io.dagger.client.Client;
+import io.dagger.client.AutoCloseableClient;
 import io.dagger.client.Dagger;
 import java.util.List;
 
 @Description("Fetch the Dagger website content and print the first 300 characters")
 public class GetDaggerWebsite {
   public static void main(String... args) throws Exception {
-    try (Client client = Dagger.connect()) {
+    try (AutoCloseableClient client = Dagger.connect()) {
       String output =
           client
               .container()

@@ -659,16 +659,18 @@ export type DirectoryAsModuleOpts = {
   /**
    * An optional subpath of the directory which contains the module's configuration file.
    *
-   * This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
+   * If not set, the module source code is loaded from the root of the directory.
+   */
+  sourceRootPath?: string
+}
+
+export type DirectoryAsModuleSourceOpts = {
+  /**
+   * An optional subpath of the directory which contains the module's configuration file.
    *
    * If not set, the module source code is loaded from the root of the directory.
    */
   sourceRootPath?: string
-
-  /**
-   * The engine version to upgrade to.
-   */
-  engineVersion?: string
 }
 
 export type DirectoryDockerBuildOpts = {
@@ -901,11 +903,6 @@ export type FunctionID = string & { __FunctionID: never }
  */
 export type GeneratedCodeID = string & { __GeneratedCodeID: never }
 
-/**
- * The `GitModuleSourceID` scalar type represents an identifier for an object of type GitModuleSource.
- */
-export type GitModuleSourceID = string & { __GitModuleSourceID: never }
-
 export type GitRefTreeOpts = {
   /**
    * Set to true to discard .git directory.
@@ -1025,51 +1022,20 @@ export type LabelID = string & { __LabelID: never }
 export type ListTypeDefID = string & { __ListTypeDefID: never }
 
 /**
- * The `LocalModuleSourceID` scalar type represents an identifier for an object of type LocalModuleSource.
+ * The `ModuleConfigClientID` scalar type represents an identifier for an object of type ModuleConfigClient.
  */
-export type LocalModuleSourceID = string & { __LocalModuleSourceID: never }
-
-export type ModuleWithSourceOpts = {
-  /**
-   * The engine version to upgrade to.
-   */
-  engineVersion?: string
-}
-
-/**
- * The `ModuleDependencyID` scalar type represents an identifier for an object of type ModuleDependency.
- */
-export type ModuleDependencyID = string & { __ModuleDependencyID: never }
+export type ModuleConfigClientID = string & { __ModuleConfigClientID: never }
 
 /**
  * The `ModuleID` scalar type represents an identifier for an object of type Module.
  */
 export type ModuleID = string & { __ModuleID: never }
 
-export type ModuleSourceAsModuleOpts = {
+export type ModuleSourceWithClientOpts = {
   /**
-   * The engine version to upgrade to.
+   * Generate in developer mode
    */
-  engineVersion?: string
-}
-
-export type ModuleSourceResolveDirectoryFromCallerOpts = {
-  /**
-   * If set, the name of the view to apply to the path.
-   */
-  viewName?: string
-
-  /**
-   * Patterns to ignore when loading the directory.
-   */
-  ignore?: string[]
-}
-
-export type ModuleSourceWithInitOpts = {
-  /**
-   * Merge module dependencies into the current project's
-   */
-  merge?: boolean
+  dev?: boolean
 }
 
 /**
@@ -1081,14 +1047,10 @@ export type ModuleSourceID = string & { __ModuleSourceID: never }
  * The kind of module source.
  */
 export enum ModuleSourceKind {
+  DirSource = "DIR_SOURCE",
   GitSource = "GIT_SOURCE",
   LocalSource = "LOCAL_SOURCE",
 }
-/**
- * The `ModuleSourceViewID` scalar type represents an identifier for an object of type ModuleSourceView.
- */
-export type ModuleSourceViewID = string & { __ModuleSourceViewID: never }
-
 /**
  * Transport layer network protocol associated to a port.
  */
@@ -1186,13 +1148,6 @@ export type ClientLoadSecretFromNameOpts = {
   accessor?: string
 }
 
-export type ClientModuleDependencyOpts = {
-  /**
-   * If set, the name to use for the dependency. Otherwise, once installed to a parent module, the name of the dependency module will be used by default.
-   */
-  name?: string
-}
-
 export type ClientModuleSourceOpts = {
   /**
    * The pinned version of the module source
@@ -1200,14 +1155,19 @@ export type ClientModuleSourceOpts = {
   refPin?: string
 
   /**
-   * If true, enforce that the source is a stable version for source kinds that support versioning.
+   * If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.
    */
-  stable?: boolean
+  disableFindUp?: boolean
 
   /**
-   * The relative path to the module root from the host directory
+   * If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
    */
-  relHostPath?: string
+  allowNotExists?: boolean
+
+  /**
+   * If set, error out if the ref string is not of the provided requireKind.
+   */
+  requireKind?: ModuleSourceKind
 }
 
 /**
@@ -2733,6 +2693,7 @@ export class Directory extends BaseClient {
   private readonly _id?: DirectoryID = undefined
   private readonly _digest?: string = undefined
   private readonly _export?: string = undefined
+  private readonly _name?: string = undefined
   private readonly _sync?: DirectoryID = undefined
 
   /**
@@ -2743,6 +2704,7 @@ export class Directory extends BaseClient {
     _id?: DirectoryID,
     _digest?: string,
     _export?: string,
+    _name?: string,
     _sync?: DirectoryID,
   ) {
     super(ctx)
@@ -2750,6 +2712,7 @@ export class Directory extends BaseClient {
     this._id = _id
     this._digest = _digest
     this._export = _export
+    this._name = _name
     this._sync = _sync
   }
 
@@ -2769,17 +2732,33 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Load the directory as a Dagger module
+   * Converts this directory into a git repository
+   */
+  asGit = (): GitRepository => {
+    const ctx = this._ctx.select("asGit")
+    return new GitRepository(ctx)
+  }
+
+  /**
+   * Load the directory as a Dagger module source
    * @param opts.sourceRootPath An optional subpath of the directory which contains the module's configuration file.
    *
-   * This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
-   *
    * If not set, the module source code is loaded from the root of the directory.
-   * @param opts.engineVersion The engine version to upgrade to.
    */
   asModule = (opts?: DirectoryAsModuleOpts): Module_ => {
     const ctx = this._ctx.select("asModule", { ...opts })
     return new Module_(ctx)
+  }
+
+  /**
+   * Load the directory as a Dagger module source
+   * @param opts.sourceRootPath An optional subpath of the directory which contains the module's configuration file.
+   *
+   * If not set, the module source code is loaded from the root of the directory.
+   */
+  asModuleSource = (opts?: DirectoryAsModuleSourceOpts): ModuleSource => {
+    const ctx = this._ctx.select("asModuleSource", { ...opts })
+    return new ModuleSource(ctx)
   }
 
   /**
@@ -2879,6 +2858,21 @@ export class Directory extends BaseClient {
     const ctx = this._ctx.select("glob", { pattern })
 
     const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Returns the name of the directory.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -4552,174 +4546,6 @@ export class GeneratedCode extends BaseClient {
 }
 
 /**
- * Module source originating from a git repo.
- */
-export class GitModuleSource extends BaseClient {
-  private readonly _id?: GitModuleSourceID = undefined
-  private readonly _cloneRef?: string = undefined
-  private readonly _commit?: string = undefined
-  private readonly _htmlRepoURL?: string = undefined
-  private readonly _htmlURL?: string = undefined
-  private readonly _root?: string = undefined
-  private readonly _rootSubpath?: string = undefined
-  private readonly _version?: string = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(
-    ctx?: Context,
-    _id?: GitModuleSourceID,
-    _cloneRef?: string,
-    _commit?: string,
-    _htmlRepoURL?: string,
-    _htmlURL?: string,
-    _root?: string,
-    _rootSubpath?: string,
-    _version?: string,
-  ) {
-    super(ctx)
-
-    this._id = _id
-    this._cloneRef = _cloneRef
-    this._commit = _commit
-    this._htmlRepoURL = _htmlRepoURL
-    this._htmlURL = _htmlURL
-    this._root = _root
-    this._rootSubpath = _rootSubpath
-    this._version = _version
-  }
-
-  /**
-   * A unique identifier for this GitModuleSource.
-   */
-  id = async (): Promise<GitModuleSourceID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<GitModuleSourceID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The ref to clone the root of the git repo from
-   */
-  cloneRef = async (): Promise<string> => {
-    if (this._cloneRef) {
-      return this._cloneRef
-    }
-
-    const ctx = this._ctx.select("cloneRef")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The resolved commit of the git repo this source points to.
-   */
-  commit = async (): Promise<string> => {
-    if (this._commit) {
-      return this._commit
-    }
-
-    const ctx = this._ctx.select("commit")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The directory containing everything needed to load load and use the module.
-   */
-  contextDirectory = (): Directory => {
-    const ctx = this._ctx.select("contextDirectory")
-    return new Directory(ctx)
-  }
-
-  /**
-   * The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket)
-   */
-  htmlRepoURL = async (): Promise<string> => {
-    if (this._htmlRepoURL) {
-      return this._htmlRepoURL
-    }
-
-    const ctx = this._ctx.select("htmlRepoURL")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The URL to the source's git repo in a web browser
-   */
-  htmlURL = async (): Promise<string> => {
-    if (this._htmlURL) {
-      return this._htmlURL
-    }
-
-    const ctx = this._ctx.select("htmlURL")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The clean module name of the root of the module
-   */
-  root = async (): Promise<string> => {
-    if (this._root) {
-      return this._root
-    }
-
-    const ctx = this._ctx.select("root")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory).
-   */
-  rootSubpath = async (): Promise<string> => {
-    if (this._rootSubpath) {
-      return this._rootSubpath
-    }
-
-    const ctx = this._ctx.select("rootSubpath")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The specified version of the git repo this source points to.
-   */
-  version = async (): Promise<string> => {
-    if (this._version) {
-      return this._version
-    }
-
-    const ctx = this._ctx.select("version")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-}
-
-/**
  * A git ref (tag, branch, or commit).
  */
 export class GitRef extends BaseClient {
@@ -5279,84 +5105,6 @@ export class ListTypeDef extends BaseClient {
 }
 
 /**
- * Module source that that originates from a path locally relative to an arbitrary directory.
- */
-export class LocalModuleSource extends BaseClient {
-  private readonly _id?: LocalModuleSourceID = undefined
-  private readonly _relHostPath?: string = undefined
-  private readonly _rootSubpath?: string = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(
-    ctx?: Context,
-    _id?: LocalModuleSourceID,
-    _relHostPath?: string,
-    _rootSubpath?: string,
-  ) {
-    super(ctx)
-
-    this._id = _id
-    this._relHostPath = _relHostPath
-    this._rootSubpath = _rootSubpath
-  }
-
-  /**
-   * A unique identifier for this LocalModuleSource.
-   */
-  id = async (): Promise<LocalModuleSourceID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<LocalModuleSourceID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The directory containing everything needed to load load and use the module.
-   */
-  contextDirectory = (): Directory => {
-    const ctx = this._ctx.select("contextDirectory")
-    return new Directory(ctx)
-  }
-
-  /**
-   * The relative path to the module root from the host directory
-   */
-  relHostPath = async (): Promise<string> => {
-    if (this._relHostPath) {
-      return this._relHostPath
-    }
-
-    const ctx = this._ctx.select("relHostPath")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory).
-   */
-  rootSubpath = async (): Promise<string> => {
-    if (this._rootSubpath) {
-      return this._rootSubpath
-    }
-
-    const ctx = this._ctx.select("rootSubpath")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-}
-
-/**
  * A Dagger module.
  */
 export class Module_ extends BaseClient {
@@ -5364,6 +5112,7 @@ export class Module_ extends BaseClient {
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
   private readonly _serve?: Void = undefined
+  private readonly _sync?: ModuleID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -5374,6 +5123,7 @@ export class Module_ extends BaseClient {
     _description?: string,
     _name?: string,
     _serve?: Void,
+    _sync?: ModuleID,
   ) {
     super(ctx)
 
@@ -5381,6 +5131,7 @@ export class Module_ extends BaseClient {
     this._description = _description
     this._name = _name
     this._serve = _serve
+    this._sync = _sync
   }
 
   /**
@@ -5399,7 +5150,7 @@ export class Module_ extends BaseClient {
   }
 
   /**
-   * Modules used by this module.
+   * The dependencies of the module.
    */
   dependencies = async (): Promise<Module_[]> => {
     type dependencies = {
@@ -5411,23 +5162,6 @@ export class Module_ extends BaseClient {
     const response: Awaited<dependencies[]> = await ctx.execute()
 
     return response.map((r) => new Client(ctx.copy()).loadModuleFromID(r.id))
-  }
-
-  /**
-   * The dependencies as configured by the module.
-   */
-  dependencyConfig = async (): Promise<ModuleDependency[]> => {
-    type dependencyConfig = {
-      id: ModuleDependencyID
-    }
-
-    const ctx = this._ctx.select("dependencyConfig").select("id")
-
-    const response: Awaited<dependencyConfig[]> = await ctx.execute()
-
-    return response.map((r) =>
-      new Client(ctx.copy()).loadModuleDependencyFromID(r.id),
-    )
   }
 
   /**
@@ -5463,25 +5197,9 @@ export class Module_ extends BaseClient {
   /**
    * The generated files and directories made on top of the module source's context directory.
    */
-  generatedContextDiff = (): Directory => {
-    const ctx = this._ctx.select("generatedContextDiff")
-    return new Directory(ctx)
-  }
-
-  /**
-   * The module source's context plus any configuration and source files created by codegen.
-   */
   generatedContextDirectory = (): Directory => {
     const ctx = this._ctx.select("generatedContextDirectory")
     return new Directory(ctx)
-  }
-
-  /**
-   * Retrieves the module with the objects loaded via its SDK.
-   */
-  initialize = (): Module_ => {
-    const ctx = this._ctx.select("initialize")
-    return new Module_(ctx)
   }
 
   /**
@@ -5569,6 +5287,17 @@ export class Module_ extends BaseClient {
   }
 
   /**
+   * Forces evaluation of the module, including any loading into the engine and associated validation.
+   */
+  sync = async (): Promise<Module_> => {
+    const ctx = this._ctx.select("sync")
+
+    const response: Awaited<ModuleID> = await ctx.execute()
+
+    return new Client(ctx.copy()).loadModuleFromID(response)
+  }
+
+  /**
    * Retrieves the module with the given description
    * @param description The description to set
    */
@@ -5604,16 +5333,6 @@ export class Module_ extends BaseClient {
   }
 
   /**
-   * Retrieves the module with basic configuration loaded if present.
-   * @param source The module source to initialize from.
-   * @param opts.engineVersion The engine version to upgrade to.
-   */
-  withSource = (source: ModuleSource, opts?: ModuleWithSourceOpts): Module_ => {
-    const ctx = this._ctx.select("withSource", { source, ...opts })
-    return new Module_(ctx)
-  }
-
-  /**
    * Call the provided function with current Module.
    *
    * This is useful for reusability and readability by not breaking the calling chain.
@@ -5624,46 +5343,71 @@ export class Module_ extends BaseClient {
 }
 
 /**
- * The configuration of dependency of a module.
+ * The client generated for the module.
  */
-export class ModuleDependency extends BaseClient {
-  private readonly _id?: ModuleDependencyID = undefined
-  private readonly _name?: string = undefined
+export class ModuleConfigClient extends BaseClient {
+  private readonly _id?: ModuleConfigClientID = undefined
+  private readonly _dev?: boolean = undefined
+  private readonly _directory?: string = undefined
+  private readonly _generator?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: ModuleDependencyID, _name?: string) {
+  constructor(
+    ctx?: Context,
+    _id?: ModuleConfigClientID,
+    _dev?: boolean,
+    _directory?: string,
+    _generator?: string,
+  ) {
     super(ctx)
 
     this._id = _id
-    this._name = _name
+    this._dev = _dev
+    this._directory = _directory
+    this._generator = _generator
   }
 
   /**
-   * A unique identifier for this ModuleDependency.
+   * A unique identifier for this ModuleConfigClient.
    */
-  id = async (): Promise<ModuleDependencyID> => {
+  id = async (): Promise<ModuleConfigClientID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<ModuleDependencyID> = await ctx.execute()
+    const response: Awaited<ModuleConfigClientID> = await ctx.execute()
 
     return response
   }
 
   /**
-   * The name of the dependency module.
+   * If true, generate the client in developer mode.
    */
-  name = async (): Promise<string> => {
-    if (this._name) {
-      return this._name
+  dev = async (): Promise<boolean> => {
+    if (this._dev) {
+      return this._dev
     }
 
-    const ctx = this._ctx.select("name")
+    const ctx = this._ctx.select("dev")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The directory the client is generated in.
+   */
+  directory = async (): Promise<string> => {
+    if (this._directory) {
+      return this._directory
+    }
+
+    const ctx = this._ctx.select("directory")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -5671,11 +5415,18 @@ export class ModuleDependency extends BaseClient {
   }
 
   /**
-   * The source for the dependency module.
+   * The generator to use
    */
-  source = (): ModuleSource => {
-    const ctx = this._ctx.select("source")
-    return new ModuleSource(ctx)
+  generator = async (): Promise<string> => {
+    if (this._generator) {
+      return this._generator
+    }
+
+    const ctx = this._ctx.select("generator")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 
@@ -5685,15 +5436,24 @@ export class ModuleDependency extends BaseClient {
 export class ModuleSource extends BaseClient {
   private readonly _id?: ModuleSourceID = undefined
   private readonly _asString?: string = undefined
+  private readonly _cloneRef?: string = undefined
+  private readonly _commit?: string = undefined
   private readonly _configExists?: boolean = undefined
   private readonly _digest?: string = undefined
+  private readonly _engineVersion?: string = undefined
+  private readonly _htmlRepoURL?: string = undefined
+  private readonly _htmlURL?: string = undefined
   private readonly _kind?: ModuleSourceKind = undefined
+  private readonly _localContextDirectoryPath?: string = undefined
   private readonly _moduleName?: string = undefined
   private readonly _moduleOriginalName?: string = undefined
+  private readonly _originalSubpath?: string = undefined
   private readonly _pin?: string = undefined
-  private readonly _resolveContextPathFromCaller?: string = undefined
+  private readonly _repoRootPath?: string = undefined
   private readonly _sourceRootSubpath?: string = undefined
   private readonly _sourceSubpath?: string = undefined
+  private readonly _sync?: ModuleSourceID = undefined
+  private readonly _version?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -5702,29 +5462,47 @@ export class ModuleSource extends BaseClient {
     ctx?: Context,
     _id?: ModuleSourceID,
     _asString?: string,
+    _cloneRef?: string,
+    _commit?: string,
     _configExists?: boolean,
     _digest?: string,
+    _engineVersion?: string,
+    _htmlRepoURL?: string,
+    _htmlURL?: string,
     _kind?: ModuleSourceKind,
+    _localContextDirectoryPath?: string,
     _moduleName?: string,
     _moduleOriginalName?: string,
+    _originalSubpath?: string,
     _pin?: string,
-    _resolveContextPathFromCaller?: string,
+    _repoRootPath?: string,
     _sourceRootSubpath?: string,
     _sourceSubpath?: string,
+    _sync?: ModuleSourceID,
+    _version?: string,
   ) {
     super(ctx)
 
     this._id = _id
     this._asString = _asString
+    this._cloneRef = _cloneRef
+    this._commit = _commit
     this._configExists = _configExists
     this._digest = _digest
+    this._engineVersion = _engineVersion
+    this._htmlRepoURL = _htmlRepoURL
+    this._htmlURL = _htmlURL
     this._kind = _kind
+    this._localContextDirectoryPath = _localContextDirectoryPath
     this._moduleName = _moduleName
     this._moduleOriginalName = _moduleOriginalName
+    this._originalSubpath = _originalSubpath
     this._pin = _pin
-    this._resolveContextPathFromCaller = _resolveContextPathFromCaller
+    this._repoRootPath = _repoRootPath
     this._sourceRootSubpath = _sourceRootSubpath
     this._sourceSubpath = _sourceSubpath
+    this._sync = _sync
+    this._version = _version
   }
 
   /**
@@ -5743,27 +5521,10 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * If the source is a of kind git, the git source representation of it.
-   */
-  asGitSource = (): GitModuleSource => {
-    const ctx = this._ctx.select("asGitSource")
-    return new GitModuleSource(ctx)
-  }
-
-  /**
-   * If the source is of kind local, the local source representation of it.
-   */
-  asLocalSource = (): LocalModuleSource => {
-    const ctx = this._ctx.select("asLocalSource")
-    return new LocalModuleSource(ctx)
-  }
-
-  /**
    * Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
-   * @param opts.engineVersion The engine version to upgrade to.
    */
-  asModule = (opts?: ModuleSourceAsModuleOpts): Module_ => {
-    const ctx = this._ctx.select("asModule", { ...opts })
+  asModule = (): Module_ => {
+    const ctx = this._ctx.select("asModule")
     return new Module_(ctx)
   }
 
@@ -5783,7 +5544,54 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * Returns whether the module source has a configuration file.
+   * The ref to clone the root of the git repo from. Only valid for git sources.
+   */
+  cloneRef = async (): Promise<string> => {
+    if (this._cloneRef) {
+      return this._cloneRef
+    }
+
+    const ctx = this._ctx.select("cloneRef")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The resolved commit of the git repo this source points to. Only valid for git sources.
+   */
+  commit = async (): Promise<string> => {
+    if (this._commit) {
+      return this._commit
+    }
+
+    const ctx = this._ctx.select("commit")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The clients generated for the module.
+   */
+  configClients = async (): Promise<ModuleConfigClient[]> => {
+    type configClients = {
+      id: ModuleConfigClientID
+    }
+
+    const ctx = this._ctx.select("configClients").select("id")
+
+    const response: Awaited<configClients[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadModuleConfigClientFromID(r.id),
+    )
+  }
+
+  /**
+   * Whether an existing dagger.json for the module was found.
    */
   configExists = async (): Promise<boolean> => {
     if (this._configExists) {
@@ -5798,7 +5606,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The directory containing everything needed to load and use the module.
+   * The full directory loaded for the module source, including the source code as a subdirectory.
    */
   contextDirectory = (): Directory => {
     const ctx = this._ctx.select("contextDirectory")
@@ -5806,11 +5614,11 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The effective module source dependencies from the configuration, and calls to withDependencies and withoutDependencies.
+   * The dependencies of the module source.
    */
-  dependencies = async (): Promise<ModuleDependency[]> => {
+  dependencies = async (): Promise<ModuleSource[]> => {
     type dependencies = {
-      id: ModuleDependencyID
+      id: ModuleSourceID
     }
 
     const ctx = this._ctx.select("dependencies").select("id")
@@ -5818,12 +5626,12 @@ export class ModuleSource extends BaseClient {
     const response: Awaited<dependencies[]> = await ctx.execute()
 
     return response.map((r) =>
-      new Client(ctx.copy()).loadModuleDependencyFromID(r.id),
+      new Client(ctx.copy()).loadModuleSourceFromID(r.id),
     )
   }
 
   /**
-   * Return the module source's content digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
+   * A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance.
    */
   digest = async (): Promise<string> => {
     if (this._digest) {
@@ -5839,7 +5647,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * The directory containing the module configuration and source code (source code may be in a subdir).
-   * @param path The path from the source directory to select.
+   * @param path A subpath from the source directory to select.
    */
   directory = (path: string): Directory => {
     const ctx = this._ctx.select("directory", { path })
@@ -5847,7 +5655,60 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The kind of source (e.g. local, git, etc.)
+   * The engine version of the module.
+   */
+  engineVersion = async (): Promise<string> => {
+    if (this._engineVersion) {
+      return this._engineVersion
+    }
+
+    const ctx = this._ctx.select("engineVersion")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The generated files and directories made on top of the module source's context directory.
+   */
+  generatedContextDirectory = (): Directory => {
+    const ctx = this._ctx.select("generatedContextDirectory")
+    return new Directory(ctx)
+  }
+
+  /**
+   * The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources.
+   */
+  htmlRepoURL = async (): Promise<string> => {
+    if (this._htmlRepoURL) {
+      return this._htmlRepoURL
+    }
+
+    const ctx = this._ctx.select("htmlRepoURL")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The URL to the source's git repo in a web browser. Only valid for git sources.
+   */
+  htmlURL = async (): Promise<string> => {
+    if (this._htmlURL) {
+      return this._htmlURL
+    }
+
+    const ctx = this._ctx.select("htmlURL")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The kind of module source (currently local, git or dir).
    */
   kind = async (): Promise<ModuleSourceKind> => {
     if (this._kind) {
@@ -5862,7 +5723,22 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * If set, the name of the module this source references, including any overrides at runtime by callers.
+   * The full absolute path to the context directory on the caller's host filesystem that this module source is loaded from. Only valid for local module sources.
+   */
+  localContextDirectoryPath = async (): Promise<string> => {
+    if (this._localContextDirectoryPath) {
+      return this._localContextDirectoryPath
+    }
+
+    const ctx = this._ctx.select("localContextDirectoryPath")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The name of the module, including any setting via the withName API.
    */
   moduleName = async (): Promise<string> => {
     if (this._moduleName) {
@@ -5877,7 +5753,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The original name of the module this source references, as defined in the module configuration.
+   * The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).
    */
   moduleOriginalName = async (): Promise<string> => {
     if (this._moduleOriginalName) {
@@ -5885,6 +5761,21 @@ export class ModuleSource extends BaseClient {
     }
 
     const ctx = this._ctx.select("moduleOriginalName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The original subpath used when instantiating this module source, relative to the context directory.
+   */
+  originalSubpath = async (): Promise<string> => {
+    if (this._originalSubpath) {
+      return this._originalSubpath
+    }
+
+    const ctx = this._ctx.select("originalSubpath")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -5907,14 +5798,14 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The path to the module source's context directory on the caller's filesystem. Only valid for local sources.
+   * The import path corresponding to the root of the git repo this source points to. Only valid for git sources.
    */
-  resolveContextPathFromCaller = async (): Promise<string> => {
-    if (this._resolveContextPathFromCaller) {
-      return this._resolveContextPathFromCaller
+  repoRootPath = async (): Promise<string> => {
+    if (this._repoRootPath) {
+      return this._repoRootPath
     }
 
-    const ctx = this._ctx.select("resolveContextPathFromCaller")
+    const ctx = this._ctx.select("repoRootPath")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -5922,41 +5813,15 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * Resolve the provided module source arg as a dependency relative to this module source.
-   * @param dep The dependency module source to resolve.
+   * The SDK configuration of the module.
    */
-  resolveDependency = (dep: ModuleSource): ModuleSource => {
-    const ctx = this._ctx.select("resolveDependency", { dep })
-    return new ModuleSource(ctx)
+  sdk = (): SDKConfig => {
+    const ctx = this._ctx.select("sdk")
+    return new SDKConfig(ctx)
   }
 
   /**
-   * Load a directory from the caller optionally with a given view applied.
-   * @param path The path on the caller's filesystem to load.
-   * @param opts.viewName If set, the name of the view to apply to the path.
-   * @param opts.ignore Patterns to ignore when loading the directory.
-   */
-  resolveDirectoryFromCaller = (
-    path: string,
-    opts?: ModuleSourceResolveDirectoryFromCallerOpts,
-  ): Directory => {
-    const ctx = this._ctx.select("resolveDirectoryFromCaller", {
-      path,
-      ...opts,
-    })
-    return new Directory(ctx)
-  }
-
-  /**
-   * Load the source from its path on the caller's filesystem, including only needed+configured files and directories. Only valid for local sources.
-   */
-  resolveFromCaller = (): ModuleSource => {
-    const ctx = this._ctx.select("resolveFromCaller")
-    return new ModuleSource(ctx)
-  }
-
-  /**
-   * The path relative to context of the root of the module source, which contains dagger.json. It also contains the module implementation source code, but that may or may not being a subdir of this root.
+   * The path, relative to the context directory, that contains the module's dagger.json.
    */
   sourceRootSubpath = async (): Promise<string> => {
     if (this._sourceRootSubpath) {
@@ -5971,7 +5836,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The path relative to context of the module implementation source code.
+   * The path to the directory containing the module's source code, relative to the context directory.
    */
   sourceSubpath = async (): Promise<string> => {
     if (this._sourceSubpath) {
@@ -5986,37 +5851,47 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * Retrieve a named view defined for this module source.
-   * @param name The name of the view to retrieve.
+   * Forces evaluation of the module source, including any loading into the engine and associated validation.
    */
-  view = (name: string): ModuleSourceView => {
-    const ctx = this._ctx.select("view", { name })
-    return new ModuleSourceView(ctx)
+  sync = async (): Promise<ModuleSource> => {
+    const ctx = this._ctx.select("sync")
+
+    const response: Awaited<ModuleSourceID> = await ctx.execute()
+
+    return new Client(ctx.copy()).loadModuleSourceFromID(response)
   }
 
   /**
-   * The named views defined for this module source, which are sets of directory filters that can be applied to directory arguments provided to functions.
+   * The specified version of the git repo this source points to. Only valid for git sources.
    */
-  views = async (): Promise<ModuleSourceView[]> => {
-    type views = {
-      id: ModuleSourceViewID
+  version = async (): Promise<string> => {
+    if (this._version) {
+      return this._version
     }
 
-    const ctx = this._ctx.select("views").select("id")
+    const ctx = this._ctx.select("version")
 
-    const response: Awaited<views[]> = await ctx.execute()
+    const response: Awaited<string> = await ctx.execute()
 
-    return response.map((r) =>
-      new Client(ctx.copy()).loadModuleSourceViewFromID(r.id),
-    )
+    return response
   }
 
   /**
-   * Update the module source with a new context directory. Only valid for local sources.
-   * @param dir The directory to set as the context directory.
+   * Update the module source with a new client to generate.
+   * @param generator The generator to use
+   * @param outputDir The output directory for the generated client.
+   * @param opts.dev Generate in developer mode
    */
-  withContextDirectory = (dir: Directory): ModuleSource => {
-    const ctx = this._ctx.select("withContextDirectory", { dir })
+  withClient = (
+    generator: string,
+    outputDir: string,
+    opts?: ModuleSourceWithClientOpts,
+  ): ModuleSource => {
+    const ctx = this._ctx.select("withClient", {
+      generator,
+      outputDir,
+      ...opts,
+    })
     return new ModuleSource(ctx)
   }
 
@@ -6024,17 +5899,26 @@ export class ModuleSource extends BaseClient {
    * Append the provided dependencies to the module source's dependency list.
    * @param dependencies The dependencies to append.
    */
-  withDependencies = (dependencies: ModuleDependency[]): ModuleSource => {
+  withDependencies = (dependencies: ModuleSource[]): ModuleSource => {
     const ctx = this._ctx.select("withDependencies", { dependencies })
     return new ModuleSource(ctx)
   }
 
   /**
-   * Sets module init arguments
-   * @param opts.merge Merge module dependencies into the current project's
+   * Upgrade the engine version of the module to the given value.
+   * @param version The engine version to upgrade to.
    */
-  withInit = (opts?: ModuleSourceWithInitOpts): ModuleSource => {
-    const ctx = this._ctx.select("withInit", { ...opts })
+  withEngineVersion = (version: string): ModuleSource => {
+    const ctx = this._ctx.select("withEngineVersion", { version })
+    return new ModuleSource(ctx)
+  }
+
+  /**
+   * Update the module source with additional include patterns for files+directories from its context that are required for building it
+   * @param patterns The new additional include patterns.
+   */
+  withIncludes = (patterns: string[]): ModuleSource => {
+    const ctx = this._ctx.select("withIncludes", { patterns })
     return new ModuleSource(ctx)
   }
 
@@ -6058,7 +5942,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * Update the module source with a new source subpath.
-   * @param path The path to set as the source subpath.
+   * @param path The path to set as the source subpath. Must be relative to the module source's source root directory.
    */
   withSourceSubpath = (path: string): ModuleSource => {
     const ctx = this._ctx.select("withSourceSubpath", { path })
@@ -6071,16 +5955,6 @@ export class ModuleSource extends BaseClient {
    */
   withUpdateDependencies = (dependencies: string[]): ModuleSource => {
     const ctx = this._ctx.select("withUpdateDependencies", { dependencies })
-    return new ModuleSource(ctx)
-  }
-
-  /**
-   * Update the module source with a new named view.
-   * @param name The name of the view to set.
-   * @param patterns The patterns to set as the view filters.
-   */
-  withView = (name: string, patterns: string[]): ModuleSource => {
-    const ctx = this._ctx.select("withView", { name, patterns })
     return new ModuleSource(ctx)
   }
 
@@ -6100,65 +5974,6 @@ export class ModuleSource extends BaseClient {
    */
   with = (arg: (param: ModuleSource) => ModuleSource) => {
     return arg(this)
-  }
-}
-
-/**
- * A named set of path filters that can be applied to directory arguments provided to functions.
- */
-export class ModuleSourceView extends BaseClient {
-  private readonly _id?: ModuleSourceViewID = undefined
-  private readonly _name?: string = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(ctx?: Context, _id?: ModuleSourceViewID, _name?: string) {
-    super(ctx)
-
-    this._id = _id
-    this._name = _name
-  }
-
-  /**
-   * A unique identifier for this ModuleSourceView.
-   */
-  id = async (): Promise<ModuleSourceViewID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<ModuleSourceViewID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The name of the view
-   */
-  name = async (): Promise<string> => {
-    if (this._name) {
-      return this._name
-    }
-
-    const ctx = this._ctx.select("name")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The patterns of the view used to filter paths
-   */
-  patterns = async (): Promise<string[]> => {
-    const ctx = this._ctx.select("patterns")
-
-    const response: Awaited<string[]> = await ctx.execute()
-
-    return response
   }
 }
 
@@ -6736,14 +6551,6 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Load a GitModuleSource from its ID.
-   */
-  loadGitModuleSourceFromID = (id: GitModuleSourceID): GitModuleSource => {
-    const ctx = this._ctx.select("loadGitModuleSourceFromID", { id })
-    return new GitModuleSource(ctx)
-  }
-
-  /**
    * Load a GitRef from its ID.
    */
   loadGitRefFromID = (id: GitRefID): GitRef => {
@@ -6800,21 +6607,13 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Load a LocalModuleSource from its ID.
+   * Load a ModuleConfigClient from its ID.
    */
-  loadLocalModuleSourceFromID = (
-    id: LocalModuleSourceID,
-  ): LocalModuleSource => {
-    const ctx = this._ctx.select("loadLocalModuleSourceFromID", { id })
-    return new LocalModuleSource(ctx)
-  }
-
-  /**
-   * Load a ModuleDependency from its ID.
-   */
-  loadModuleDependencyFromID = (id: ModuleDependencyID): ModuleDependency => {
-    const ctx = this._ctx.select("loadModuleDependencyFromID", { id })
-    return new ModuleDependency(ctx)
+  loadModuleConfigClientFromID = (
+    id: ModuleConfigClientID,
+  ): ModuleConfigClient => {
+    const ctx = this._ctx.select("loadModuleConfigClientFromID", { id })
+    return new ModuleConfigClient(ctx)
   }
 
   /**
@@ -6831,14 +6630,6 @@ export class Client extends BaseClient {
   loadModuleSourceFromID = (id: ModuleSourceID): ModuleSource => {
     const ctx = this._ctx.select("loadModuleSourceFromID", { id })
     return new ModuleSource(ctx)
-  }
-
-  /**
-   * Load a ModuleSourceView from its ID.
-   */
-  loadModuleSourceViewFromID = (id: ModuleSourceViewID): ModuleSourceView => {
-    const ctx = this._ctx.select("loadModuleSourceViewFromID", { id })
-    return new ModuleSourceView(ctx)
   }
 
   /**
@@ -6941,30 +6732,26 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Create a new module dependency configuration from a module source and name
-   * @param source The source of the dependency
-   * @param opts.name If set, the name to use for the dependency. Otherwise, once installed to a parent module, the name of the dependency module will be used by default.
-   */
-  moduleDependency = (
-    source: ModuleSource,
-    opts?: ClientModuleDependencyOpts,
-  ): ModuleDependency => {
-    const ctx = this._ctx.select("moduleDependency", { source, ...opts })
-    return new ModuleDependency(ctx)
-  }
-
-  /**
-   * Create a new module source instance from a source ref string.
+   * Create a new module source instance from a source ref string
    * @param refString The string ref representation of the module source
    * @param opts.refPin The pinned version of the module source
-   * @param opts.stable If true, enforce that the source is a stable version for source kinds that support versioning.
-   * @param opts.relHostPath The relative path to the module root from the host directory
+   * @param opts.disableFindUp If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.
+   * @param opts.allowNotExists If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
+   * @param opts.requireKind If set, error out if the ref string is not of the provided requireKind.
    */
   moduleSource = (
     refString: string,
     opts?: ClientModuleSourceOpts,
   ): ModuleSource => {
-    const ctx = this._ctx.select("moduleSource", { refString, ...opts })
+    const metadata = {
+      requireKind: { is_enum: true },
+    }
+
+    const ctx = this._ctx.select("moduleSource", {
+      refString,
+      ...opts,
+      __metadata: metadata,
+    })
     return new ModuleSource(ctx)
   }
 

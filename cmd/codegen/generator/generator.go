@@ -32,21 +32,41 @@ type Config struct {
 
 	// ModuleName is the module name to generate code for.
 	ModuleName string
-	// ModuleContextPath is the subpath in OutputDir to where a module root can be found.
-	ModuleContextPath string
-	// ModuleParentPath is the path from the module root to the context directory
+
+	// ModuleSourcePath is the subpath in OutputDir where a the module source subpath is located.
+	ModuleSourcePath string
+
+	// ModuleParentPath is the path from the module source subpath to the context directory
 	ModuleParentPath string
 
 	// IntrospectionJSON is an optional pre-computed introspection json string.
 	IntrospectionJSON string
 
-	// Merge indicates whether to merge the module deps with the existing project.
-	Merge *bool
+	// Merge indicates whether to merge the module deps with the existing project (i.e. a go.mod in a *parent* directory).
+	Merge bool
+
+	// Whether we are initializing a new module.
+	// Currently, this is only used in go codegen to enforce backwards-compatible behavior
+	// where a pre-existing go.mod file is checked during dagger init for whether its module
+	// name is the expected value.
+	IsInit bool
+
+	// ClientOnly indicates that the codegen should only generate the client code.
+	ClientOnly bool
+
+	// Dev indicates that the codegen should use the local SDK instead of the published one.
+	// This is only relevant when ClientOnly is true.
+	Dev bool
 }
 
 type Generator interface {
-	// Generate runs codegen and returns a map of default filename to content for that file.
-	Generate(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*GeneratedState, error)
+	// GenerateModule runs codegen in a context of a module and returns a map of
+	// default filename to content for that file.
+	GenerateModule(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*GeneratedState, error)
+
+	// GenerateClient runs codegen in a context of a standalone client and returns
+	// a map of default filename to content for that file.
+	GenerateClient(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*GeneratedState, error)
 }
 
 type GeneratedState struct {

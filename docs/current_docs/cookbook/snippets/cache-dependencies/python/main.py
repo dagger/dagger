@@ -34,6 +34,5 @@ class MyModule:
             )
             # No root first uses dependencies but not the project itself
             .with_exec(["poetry", "install", "--no-root", "--no-interaction"])
-            # No root first uses dependencies but not the project itself
             .with_exec(["poetry", "install", "--no-interaction", "--only-root"])
         )

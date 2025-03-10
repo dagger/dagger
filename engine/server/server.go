@@ -70,7 +70,7 @@ import (
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	daggercache "github.com/dagger/dagger/engine/cache"
+	daggercache "github.com/dagger/dagger/engine/cache/cachemanager"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
@@ -113,7 +113,7 @@ type Server struct {
 	workerCacheMetaDB     *metadata.Store
 	workerCache           bkcache.Manager
 	workerSourceManager   *source.Manager
-	workerDefaultGCPolicy bkclient.PruneInfo
+	workerDefaultGCPolicy *bkclient.PruneInfo
 
 	bkSessionManager *bksession.Manager
 
@@ -248,20 +248,23 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// setup config derived from engine config
 	//
 
-	for _, entStr := range bkcfg.Entitlements {
-		ent, err := entitlements.Parse(entStr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse entitlement %s: %w", entStr, err)
-		}
-		srv.entitlements[ent] = struct{}{}
-	}
-	if cfg.Security.InsecureRootCapabilities != nil {
-		// override from engine.toml if we set it in *our* config
-		if *cfg.Security.InsecureRootCapabilities {
+	if cfg.Security != nil {
+		// prioritize out config first if it's set
+		if cfg.Security.InsecureRootCapabilities == nil || *cfg.Security.InsecureRootCapabilities {
 			srv.entitlements[entitlements.EntitlementSecurityInsecure] = struct{}{}
-		} else {
-			delete(srv.entitlements, entitlements.EntitlementSecurityInsecure)
 		}
+	} else if bkcfg.Entitlements != nil {
+		// fallback to the dagger config
+		for _, entStr := range bkcfg.Entitlements {
+			ent, err := entitlements.Parse(entStr)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse entitlement %s: %w", entStr, err)
+			}
+			srv.entitlements[ent] = struct{}{}
+		}
+	} else {
+		// no config? apply dagger-specific defaults
+		srv.entitlements[entitlements.EntitlementSecurityInsecure] = struct{}{}
 	}
 
 	srv.defaultPlatform = platforms.Normalize(platforms.DefaultSpec())
@@ -463,6 +466,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		TelemetryPubSub:  srv.telemetryPubSub,
 		BKSessionManager: srv.bkSessionManager,
 		SessionHandler:   srv,
+		DagqlServer:      srv,
 
 		Runc:                srv.runc,
 		DefaultCgroupParent: srv.cgroupParent,

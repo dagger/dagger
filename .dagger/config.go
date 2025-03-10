@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"text/template"
@@ -14,7 +16,8 @@ import (
 )
 
 const (
-	engineTomlPath       = "/etc/dagger/engine.toml"
+	engineTOMLPath       = "/etc/dagger/engine.toml"
+	engineJSONPath       = "/etc/dagger/engine.json"
 	engineEntrypointPath = "/usr/local/bin/dagger-entrypoint.sh"
 	engineUnixSocketPath = "/var/run/buildkit/buildkitd.sock"
 	cliPath              = "/usr/local/bin/dagger"
@@ -42,30 +45,17 @@ fi
 # many systems default to 1024 which is far too low
 ulimit -n 1048576 || echo "cannot increase open FDs with ulimit, ignoring"
 
-exec {{.EngineBin}} --config {{.EngineConfig}} {{ range $key := .EntrypointArgKeys -}}--{{ $key }}="{{ index $.EntrypointArgs $key }}" {{ end -}} "$@"
+exec {{.EngineBin}} --config {{.EngineConfig}} "$@"
 `
 
 const engineConfigTmpl = `
-trace = {{.Trace}}
-insecure-entitlements = ["security.insecure"]
 {{ range $key := .ConfigKeys }}
 [{{ $key }}]
 {{ index $.ConfigEntries $key }}
 {{ end -}}
 `
 
-func generateEntrypoint(kvs []string) (*dagger.File, error) {
-	opts := map[string]string{}
-	for _, kv := range kvs {
-		k, v, ok := strings.Cut(kv, "=")
-		if !ok {
-			return nil, fmt.Errorf("no value for key %q", k)
-		}
-		opts[k] = v
-	}
-	keys := maps.Keys(opts)
-	sort.Strings(keys)
-
+func generateEntrypoint() (*dagger.File, error) {
 	type entrypointTmplParams struct {
 		Bridge            string
 		EngineBin         string
@@ -76,13 +66,11 @@ func generateEntrypoint(kvs []string) (*dagger.File, error) {
 	tmpl := template.Must(template.New("entrypoint").Parse(engineEntrypointTmpl))
 	buf := new(bytes.Buffer)
 	err := tmpl.Execute(buf, entrypointTmplParams{
-		EngineBin:         consts.EngineServerPath,
-		EngineConfig:      engineTomlPath,
-		EntrypointArgs:    opts,
-		EntrypointArgKeys: keys,
+		EngineBin:    consts.EngineServerPath,
+		EngineConfig: engineTOMLPath,
 	})
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	entrypoint := dag.Directory().
@@ -93,7 +81,26 @@ func generateEntrypoint(kvs []string) (*dagger.File, error) {
 	return entrypoint, nil
 }
 
-func generateConfig(trace bool, kvs []string) (*dagger.File, error) {
+func generateConfig(logLevel string) (*dagger.File, error) {
+	cfg := struct {
+		LogLevel string `json:"logLevel,omitempty"`
+	}{
+		LogLevel: logLevel,
+	}
+
+	res, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+
+	filename := filepath.Base(engineJSONPath)
+	config := dag.Directory().
+		WithNewFile(filename, string(res)).
+		File(filename)
+	return config, nil
+}
+
+func generateBKConfig(kvs []string) (*dagger.File, error) {
 	opts := map[string]string{}
 	for _, kv := range kvs {
 		k, v, ok := strings.Cut(kv, "=")
@@ -113,16 +120,16 @@ func generateConfig(trace bool, kvs []string) (*dagger.File, error) {
 	tmpl := template.Must(template.New("config").Parse(engineConfigTmpl))
 	buf := new(bytes.Buffer)
 	err := tmpl.Execute(buf, configTmplParams{
-		Trace:         trace,
 		ConfigEntries: opts,
 		ConfigKeys:    keys,
 	})
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
+	filename := filepath.Base(engineTOMLPath)
 	config := dag.Directory().
-		WithNewFile("engine.toml", buf.String()).
-		File("engine.toml")
+		WithNewFile(filename, buf.String()).
+		File(filename)
 	return config, nil
 }

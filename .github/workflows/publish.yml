@@ -12,14 +12,14 @@ on:
       - ready_for_review
     paths:
       # run tests in a PR when an SDK is modified...
-      - ./sdk
+      - sdk
       # ...or when we are
-      - ./.github/workflows/publish.yml
+      - .github/workflows/publish.yml
 
 jobs:
   publish:
     if: ${{ github.repository == 'dagger/dagger' && github.event_name == 'push' }}
-    runs-on: dagger-g3-v0-15-3-16c
+    runs-on: dagger-g3-v0-16-2-16c
     steps:
       - uses: actions/checkout@v4
       - name: "Publish"
@@ -89,7 +89,7 @@ jobs:
   daggerverse-bump-dagger:
     needs: publish
     if: github.ref_name != 'main'
-    runs-on: dagger-g3-v0-15-3-4c
+    runs-on: dagger-g3-v0-16-2-4c
     steps:
       - uses: actions/checkout@v4
       - name: "Bump Dagger version in Daggerverse"
@@ -188,8 +188,8 @@ jobs:
         run: docker logs $(docker ps -q --filter name=dagger-engine)
 
   # TODO: daggerize provisioning tests
-  test-provision-go-linux:
-    name: "Test SDK Provision / go / linux"
+  test-provision-go-linux-x86:
+    name: "Test SDK Provision / go / linux / x86_64"
     needs: publish
     if: |
       always() &&
@@ -232,13 +232,65 @@ jobs:
         run: |
           cd sdk/go
           go test -v -run TestProvision ./...
+      - name: "Test Go SDK Module Load"
+        run: |
+          # verify we can load a go module (the dagger-dev module has multiple go modules)
+          curl -sL $_INTERNAL_DAGGER_TEST_CLI_URL | tar -xz dagger
+          ./dagger call --help
       - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
         run: docker logs $(docker ps -q --filter name=dagger-engine)
 
   # TODO: daggerize provisioning tests
-  test-provision-python-linux:
-    name: "Test SDK Provision / python / linux"
+  test-provision-go-linux-arm64:
+    name: "Test SDK Provision / go / linux / arm64"
+    needs: publish
+    if: |
+      always() &&
+      github.repository == 'dagger/dagger' &&
+      (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Set CLI Test URL"
+        run: |
+          if [ ${{ github.event_name }} == 'push' ]; then
+            BASE_URL="https://${{ vars.RELEASE_FQDN }}/dagger"
+            if [ $GITHUB_REF_NAME == 'main' ]; then
+              # this is a push to the main branch
+              ARCHIVE_URL="${BASE_URL}/main/${GITHUB_SHA}/dagger_${GITHUB_SHA}_linux_arm64.tar.gz"
+              CHECKSUMS_URL="${BASE_URL}/main/${GITHUB_SHA}/checksums.txt"
+              RUNNER_HOST="docker-image://${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_SHA}"
+            else
+              # this is a tag push
+              ARCHIVE_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/dagger_${GITHUB_REF_NAME}_linux_arm64.tar.gz"
+              CHECKSUMS_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/checksums.txt"
+              RUNNER_HOST="docker-image://${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_REF_NAME}"
+            fi
+          else
+            BASE_URL="https://dl.dagger.io/dagger"
+
+            # this is a pr, just default to main artifacts
+            ARCHIVE_URL="${BASE_URL}/main/head/dagger_head_linux_arm64.tar.gz"
+            CHECKSUMS_URL="${BASE_URL}/main/head/checksums.txt"
+            RUNNER_HOST="docker-image://registry.dagger.io/engine:main"
+          fi
+          echo "_INTERNAL_DAGGER_TEST_CLI_URL=${ARCHIVE_URL}" >> $GITHUB_ENV
+          echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
+          echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
+        shell: bash
+      - name: "Test Go SDK Module Load"
+        run: |
+          # verify we can load a go module (the dagger-dev module has multiple go modules)
+          curl -sL $_INTERNAL_DAGGER_TEST_CLI_URL | tar -xz dagger
+          ./dagger call --help
+      - name: "ALWAYS print engine logs - especially useful on failure"
+        if: always()
+        run: docker logs $(docker ps -q --filter name=dagger-engine)
+
+  # TODO: daggerize provisioning tests
+  test-provision-python-linux-x86:
+    name: "Test SDK Provision / python / linux / x86_64"
     needs: publish
     if: |
       always() &&
@@ -281,13 +333,62 @@ jobs:
         run: |
           cd sdk/python
           uv run pytest -xm provision
+      - name: "Test Python SDK Module Load"
+        run: |
+          curl -sL $_INTERNAL_DAGGER_TEST_CLI_URL | tar -xz dagger
+          ./dagger -m sdk/python/dev call --help
+      - name: "ALWAYS print engine logs - especially useful on failure"
+        if: always()
+        run: docker logs $(docker ps -q --filter name=dagger-engine)
+
+  test-provision-python-linux-arm64:
+    name: "Test SDK Provision / python / linux / arm64"
+    needs: publish
+    if: |
+      always() &&
+      github.repository == 'dagger/dagger' &&
+      (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Set CLI Test URL"
+        run: |
+          if [ ${{ github.event_name }} == 'push' ]; then
+            BASE_URL="https://${{ vars.RELEASE_FQDN }}/dagger"
+            if [ $GITHUB_REF_NAME == 'main' ]; then
+              # this is a push to the main branch
+              ARCHIVE_URL="${BASE_URL}/main/${GITHUB_SHA}/dagger_${GITHUB_SHA}_linux_arm64.tar.gz"
+              CHECKSUMS_URL="${BASE_URL}/main/${GITHUB_SHA}/checksums.txt"
+              RUNNER_HOST="docker-image://${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_SHA}"
+            else
+              # this is a tag push
+              ARCHIVE_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/dagger_${GITHUB_REF_NAME}_linux_arm64.tar.gz"
+              CHECKSUMS_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/checksums.txt"
+              RUNNER_HOST="docker-image://${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_REF_NAME}"
+            fi
+          else
+            BASE_URL="https://dl.dagger.io/dagger"
+
+            # this is a pr, just default to main artifacts
+            ARCHIVE_URL="${BASE_URL}/main/head/dagger_head_linux_arm64.tar.gz"
+            CHECKSUMS_URL="${BASE_URL}/main/head/checksums.txt"
+            RUNNER_HOST="docker-image://registry.dagger.io/engine:main"
+          fi
+          echo "_INTERNAL_DAGGER_TEST_CLI_URL=${ARCHIVE_URL}" >> $GITHUB_ENV
+          echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
+          echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
+        shell: bash
+      - name: "Test Python SDK Module Load"
+        run: |
+          curl -sL $_INTERNAL_DAGGER_TEST_CLI_URL | tar -xz dagger
+          ./dagger -m sdk/python/dev call --help
       - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
         run: docker logs $(docker ps -q --filter name=dagger-engine)
 
   # TODO: daggerize provisioning tests
-  test-provision-typescript-linux:
-    name: "Test SDK Provision / TypeScript / linux"
+  test-provision-typescript-linux-x86:
+    name: "Test SDK Provision / TypeScript / linux / x86_64"
     needs: publish
     if: |
       always() &&
@@ -339,6 +440,55 @@ jobs:
           cd sdk/typescript
           yarn install
           yarn test:bun -g 'Automatic Provisioned CLI Binary'
+      - name: "Test TypeScript SDK Module Load"
+        run: |
+          curl -sL $_INTERNAL_DAGGER_TEST_CLI_URL | tar -xz dagger
+          ./dagger -m sdk/typescript/dev call --help
+      - name: "ALWAYS print engine logs - especially useful on failure"
+        if: always()
+        run: docker logs $(docker ps -q --filter name=dagger-engine)
+
+  test-provision-typescript-linux-arm64:
+    name: "Test SDK Provision / TypeScript / linux / arm64"
+    needs: publish
+    if: |
+      always() &&
+      github.repository == 'dagger/dagger' &&
+      (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Set CLI Test URL"
+        run: |
+          if [ ${{ github.event_name }} == 'push' ]; then
+            BASE_URL="https://${{ vars.RELEASE_FQDN }}/dagger"
+            if [ $GITHUB_REF_NAME == 'main' ]; then
+              # this is a push to the main branch
+              ARCHIVE_URL="${BASE_URL}/main/${GITHUB_SHA}/dagger_${GITHUB_SHA}_linux_arm64.tar.gz"
+              CHECKSUMS_URL="${BASE_URL}/main/${GITHUB_SHA}/checksums.txt"
+              RUNNER_HOST="docker-image://${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_SHA}"
+            else
+              # this is a tag push
+              ARCHIVE_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/dagger_${GITHUB_REF_NAME}_linux_arm64.tar.gz"
+              CHECKSUMS_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/checksums.txt"
+              RUNNER_HOST="docker-image://${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_REF_NAME}"
+            fi
+          else
+            BASE_URL="https://dl.dagger.io/dagger"
+
+            # this is a pr, just default to main artifacts
+            ARCHIVE_URL="${BASE_URL}/main/head/dagger_head_linux_arm64.tar.gz"
+            CHECKSUMS_URL="${BASE_URL}/main/head/checksums.txt"
+            RUNNER_HOST="docker-image://registry.dagger.io/engine:main"
+          fi
+          echo "_INTERNAL_DAGGER_TEST_CLI_URL=${ARCHIVE_URL}" >> $GITHUB_ENV
+          echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
+          echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
+        shell: bash
+      - name: "Test TypeScript SDK Module Load"
+        run: |
+          curl -sL $_INTERNAL_DAGGER_TEST_CLI_URL | tar -xz dagger
+          ./dagger -m sdk/typescript/dev call --help
       - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
         run: docker logs $(docker ps -q --filter name=dagger-engine)

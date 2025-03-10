@@ -22,7 +22,6 @@ import (
 	"github.com/containerd/containerd/sys"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
 	"github.com/dagger/dagger/engine/config"
-	"github.com/docker/docker/pkg/reexec"
 	"github.com/gofrs/flock"
 	bkconfig "github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/util/apicaps"
@@ -32,6 +31,7 @@ import (
 	"github.com/moby/buildkit/util/profiler"
 	"github.com/moby/buildkit/util/stack"
 	"github.com/moby/buildkit/version"
+	"github.com/moby/sys/reexec"
 	"github.com/moby/sys/userns"
 	sloglogrus "github.com/samber/slog-logrus/v2"
 	"github.com/sirupsen/logrus"
@@ -380,21 +380,6 @@ func main() { //nolint:gocyclo
 			lock.Unlock()
 			os.RemoveAll(lockPath)
 		}()
-
-		ents := c.GlobalStringSlice("allow-insecure-entitlement")
-		if len(ents) > 0 {
-			bkcfg.Entitlements = []string{}
-			for _, e := range ents {
-				switch e {
-				case "security.insecure":
-					bkcfg.Entitlements = append(bkcfg.Entitlements, e)
-				case "network.host":
-					bkcfg.Entitlements = append(bkcfg.Entitlements, e)
-				default:
-					return fmt.Errorf("invalid entitlement : %s", e)
-				}
-			}
-		}
 
 		bklog.G(ctx).Debug("creating engine server")
 		srv, err := server.NewServer(ctx, &server.NewServerOpts{

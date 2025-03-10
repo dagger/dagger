@@ -13,6 +13,28 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "ModuleConfigClient": {
+      "properties": {
+        "generator": {
+          "type": "string",
+          "description": "The generator the client uses to be generated."
+        },
+        "directory": {
+          "type": "string",
+          "description": "The directory the client is generated in."
+        },
+        "localLibrary": {
+          "type": "boolean",
+          "description": "Whether the client is generated in Dev mode or not. If set using an official SDK like Go or Typescript, the client will use the local SDK library instead of the published one."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "generator",
+        "directory"
+      ]
+    },
     "ModuleConfigDependency": {
       "properties": {
         "name": {
@@ -33,24 +55,6 @@
       "required": [
         "name",
         "source"
-      ]
-    },
-    "ModuleConfigView": {
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "patterns": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "name"
       ]
     },
     "ModuleConfigWithUserFields": {
@@ -78,13 +82,6 @@
           "type": "array",
           "description": "Paths to explicitly include from the module, relative to the configuration file."
         },
-        "exclude": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array",
-          "description": "Paths to explicitly exclude from the module, relative to the configuration file."
-        },
         "dependencies": {
           "items": {
             "$ref": "#/$defs/ModuleConfigDependency"
@@ -96,16 +93,23 @@
           "type": "string",
           "description": "The path, relative to this config file, to the subdir containing the module's implementation source code."
         },
-        "views": {
-          "items": {
-            "$ref": "#/$defs/ModuleConfigView"
-          },
-          "type": "array",
-          "description": "Named views defined for this module, which are sets of directory filters that can be applied to directory arguments provided to functions."
-        },
         "codegen": {
           "$ref": "#/$defs/ModuleCodegenConfig",
           "description": "Codegen configuration for this module."
+        },
+        "exclude": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Paths to explicitly exclude from the module, relative to the configuration file. Deprecated: Use !\u003cpattern\u003e in the include list instead."
+        },
+        "clients": {
+          "items": {
+            "$ref": "#/$defs/ModuleConfigClient"
+          },
+          "type": "array",
+          "description": "The clients generated for this module."
         }
       },
       "additionalProperties": false,
@@ -120,12 +124,6 @@
       "properties": {
         "source": {
           "type": "string"
-        },
-        "env": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "type": "object"
         }
       },
       "additionalProperties": false,

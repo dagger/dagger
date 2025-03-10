@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/testctx"
+	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
@@ -16,7 +16,7 @@ import (
 type TypeSuite struct{}
 
 func TestType(t *testing.T) {
-	testctx.Run(testCtx, t, TypeSuite{}, Middleware()...)
+	testctx.New(t, Middleware()...).RunTests(TypeSuite{})
 }
 
 func (TypeSuite) TestCustomTypes(ctx context.Context, t *testctx.T) {
@@ -846,7 +846,7 @@ export class Test {
 			var idp call.ID
 			err = idp.Decode(id)
 			require.NoError(t, err)
-			require.Equal(t, idp.Display(), `test.sayHello(name: "world"): TestMessage!`)
+			require.Equal(t, `test.sayHello(name: "world"): TestMessage!`, idp.Display())
 
 			out, err = modGen.With(daggerQuery(`{test{upper(msg:"%s"){content}}}`, id)).Stdout(ctx)
 			require.NoError(t, err)

@@ -1193,22 +1193,28 @@ scalar CurrentModuleID
 
 """A directory."""
 type Directory {
-  """Load the directory as a Dagger module"""
-  asModule(
-    """The engine version to upgrade to."""
-    engineVersion: String
+  """Converts this directory into a git repository"""
+  asGit: GitRepository!
 
+  """Load the directory as a Dagger module source"""
+  asModule(
     """
     An optional subpath of the directory which contains the module's configuration file.
-    
-    This is needed when the module code is in a subdirectory but requires parent
-    directories to be loaded in order to execute. For example, the module source
-    code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
     
     If not set, the module source code is loaded from the root of the directory.
     """
     sourceRootPath: String = "."
   ): Module!
+
+  """Load the directory as a Dagger module source"""
+  asModuleSource(
+    """
+    An optional subpath of the directory which contains the module's configuration file.
+    
+    If not set, the module source code is loaded from the root of the directory.
+    """
+    sourceRootPath: String = "."
+  ): ModuleSource!
 
   """Gets the difference between this directory and an another directory."""
   diff(
@@ -1287,6 +1293,9 @@ type Directory {
 
   """A unique identifier for this Directory."""
   id: DirectoryID!
+
+  """Returns the name of the directory."""
+  name: String!
 
   """Force evaluation in the engine."""
   sync: DirectoryID!
@@ -1886,49 +1895,6 @@ The `GeneratedCodeID` scalar type represents an identifier for an object of type
 """
 scalar GeneratedCodeID
 
-"""Module source originating from a git repo."""
-type GitModuleSource {
-  """The ref to clone the root of the git repo from"""
-  cloneRef: String!
-
-  """The resolved commit of the git repo this source points to."""
-  commit: String!
-
-  """
-  The directory containing everything needed to load load and use the module.
-  """
-  contextDirectory: Directory!
-
-  """
-  The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket)
-  """
-  htmlRepoURL: String!
-
-  """The URL to the source's git repo in a web browser"""
-  htmlURL: String!
-
-  """A unique identifier for this GitModuleSource."""
-  id: GitModuleSourceID!
-
-  """The clean module name of the root of the module"""
-  root: String!
-
-  """
-  The path to the root of the module source under the context directory. This
-  directory contains its configuration file. It also contains its source code
-  (possibly as a subdirectory).
-  """
-  rootSubpath: String!
-
-  """The specified version of the git repo this source points to."""
-  version: String!
-}
-
-"""
-The `GitModuleSourceID` scalar type represents an identifier for an object of type GitModuleSource.
-"""
-scalar GitModuleSourceID
-
 """A git ref (tag, branch, or commit)."""
 type GitRef {
   """The resolved commit id at this ref."""
@@ -2202,41 +2168,10 @@ The `ListTypeDefID` scalar type represents an identifier for an object of type L
 """
 scalar ListTypeDefID
 
-"""
-Module source that that originates from a path locally relative to an arbitrary directory.
-"""
-type LocalModuleSource {
-  """
-  The directory containing everything needed to load load and use the module.
-  """
-  contextDirectory: Directory
-
-  """A unique identifier for this LocalModuleSource."""
-  id: LocalModuleSourceID!
-
-  """The relative path to the module root from the host directory"""
-  relHostPath: String!
-
-  """
-  The path to the root of the module source under the context directory. This
-  directory contains its configuration file. It also contains its source code
-  (possibly as a subdirectory).
-  """
-  rootSubpath: String!
-}
-
-"""
-The `LocalModuleSourceID` scalar type represents an identifier for an object of type LocalModuleSource.
-"""
-scalar LocalModuleSourceID
-
 """A Dagger module."""
 type Module {
-  """Modules used by this module."""
+  """The dependencies of the module."""
   dependencies: [Module!]!
-
-  """The dependencies as configured by the module."""
-  dependencyConfig: [ModuleDependency!]!
 
   """The doc string of the module, if any"""
   description: String!
@@ -2247,18 +2182,10 @@ type Module {
   """
   The generated files and directories made on top of the module source's context directory.
   """
-  generatedContextDiff: Directory!
-
-  """
-  The module source's context plus any configuration and source files created by codegen.
-  """
   generatedContextDirectory: Directory!
 
   """A unique identifier for this Module."""
   id: ModuleID!
-
-  """Retrieves the module with the objects loaded via its SDK."""
-  initialize: Module!
 
   """Interfaces served by this module."""
   interfaces: [TypeDef!]!
@@ -2288,6 +2215,11 @@ type Module {
   """The source for the module."""
   source: ModuleSource!
 
+  """
+  Forces evaluation of the module, including any loading into the engine and associated validation.
+  """
+  sync: ModuleID!
+
   """Retrieves the module with the given description"""
   withDescription(
     """The description to set"""
@@ -2302,33 +2234,27 @@ type Module {
 
   """This module plus the given Object type and associated functions."""
   withObject(object: TypeDefID!): Module!
-
-  """Retrieves the module with basic configuration loaded if present."""
-  withSource(
-    """The engine version to upgrade to."""
-    engineVersion: String
-
-    """The module source to initialize from."""
-    source: ModuleSourceID!
-  ): Module!
 }
 
-"""The configuration of dependency of a module."""
-type ModuleDependency {
-  """A unique identifier for this ModuleDependency."""
-  id: ModuleDependencyID!
+"""The client generated for the module."""
+type ModuleConfigClient {
+  """If true, generate the client in developer mode."""
+  dev: Boolean
 
-  """The name of the dependency module."""
-  name: String!
+  """The directory the client is generated in."""
+  directory: String!
 
-  """The source for the dependency module."""
-  source: ModuleSource!
+  """The generator to use"""
+  generator: String!
+
+  """A unique identifier for this ModuleConfigClient."""
+  id: ModuleConfigClientID!
 }
 
 """
-The `ModuleDependencyID` scalar type represents an identifier for an object of type ModuleDependency.
+The `ModuleConfigClientID` scalar type represents an identifier for an object of type ModuleConfigClient.
 """
-scalar ModuleDependencyID
+scalar ModuleConfigClientID
 
 """
 The `ModuleID` scalar type represents an identifier for an object of type Module.
@@ -2339,39 +2265,42 @@ scalar ModuleID
 The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
 """
 type ModuleSource {
-  """If the source is a of kind git, the git source representation of it."""
-  asGitSource: GitModuleSource
-
-  """If the source is of kind local, the local source representation of it."""
-  asLocalSource: LocalModuleSource
-
   """
   Load the source as a module. If this is a local source, the parent directory
   must have been provided during module source creation
   """
-  asModule(
-    """The engine version to upgrade to."""
-    engineVersion: String
-  ): Module!
+  asModule: Module!
 
   """A human readable ref string representation of this module source."""
   asString: String!
 
-  """Returns whether the module source has a configuration file."""
+  """
+  The ref to clone the root of the git repo from. Only valid for git sources.
+  """
+  cloneRef: String!
+
+  """
+  The resolved commit of the git repo this source points to. Only valid for git sources.
+  """
+  commit: String!
+
+  """The clients generated for the module."""
+  configClients: [ModuleConfigClient!]!
+
+  """Whether an existing dagger.json for the module was found."""
   configExists: Boolean!
 
-  """The directory containing everything needed to load and use the module."""
+  """
+  The full directory loaded for the module source, including the source code as a subdirectory.
+  """
   contextDirectory: Directory!
 
-  """
-  The effective module source dependencies from the configuration, and calls to withDependencies and withoutDependencies.
-  """
-  dependencies: [ModuleDependency!]!
+  """The dependencies of the module source."""
+  dependencies: [ModuleSource!]!
 
   """
-  Return the module source's content digest. The format of the digest is not
-  guaranteed to be stable between releases of Dagger. It is guaranteed to be
-  stable between invocations of the same Dagger engine.
+  A content-hash of the module source. Module sources with the same digest will
+  output the same generated context and convert into the same module instance.
   """
   digest: String!
 
@@ -2379,88 +2308,94 @@ type ModuleSource {
   The directory containing the module configuration and source code (source code may be in a subdir).
   """
   directory(
-    """The path from the source directory to select."""
+    """A subpath from the source directory to select."""
     path: String!
   ): Directory!
+
+  """The engine version of the module."""
+  engineVersion: String!
+
+  """
+  The generated files and directories made on top of the module source's context directory.
+  """
+  generatedContextDirectory: Directory!
+
+  """
+  The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources.
+  """
+  htmlRepoURL: String!
+
+  """
+  The URL to the source's git repo in a web browser. Only valid for git sources.
+  """
+  htmlURL: String!
 
   """A unique identifier for this ModuleSource."""
   id: ModuleSourceID!
 
-  """The kind of source (e.g. local, git, etc.)"""
+  """The kind of module source (currently local, git or dir)."""
   kind: ModuleSourceKind!
 
   """
-  If set, the name of the module this source references, including any overrides at runtime by callers.
+  The full absolute path to the context directory on the caller's host
+  filesystem that this module source is loaded from. Only valid for local module sources.
   """
+  localContextDirectoryPath: String!
+
+  """The name of the module, including any setting via the withName API."""
   moduleName: String!
 
   """
-  The original name of the module this source references, as defined in the module configuration.
+  The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).
   """
   moduleOriginalName: String!
+
+  """
+  The original subpath used when instantiating this module source, relative to the context directory.
+  """
+  originalSubpath: String!
 
   """The pinned version of this module source."""
   pin: String!
 
   """
-  The path to the module source's context directory on the caller's filesystem. Only valid for local sources.
+  The import path corresponding to the root of the git repo this source points to. Only valid for git sources.
   """
-  resolveContextPathFromCaller: String!
+  repoRootPath: String!
+
+  """The SDK configuration of the module."""
+  sdk: SDKConfig
 
   """
-  Resolve the provided module source arg as a dependency relative to this module source.
-  """
-  resolveDependency(
-    """The dependency module source to resolve."""
-    dep: ModuleSourceID!
-  ): ModuleSource!
-
-  """Load a directory from the caller optionally with a given view applied."""
-  resolveDirectoryFromCaller(
-    """Patterns to ignore when loading the directory."""
-    ignore: [String!] = []
-
-    """The path on the caller's filesystem to load."""
-    path: String!
-
-    """If set, the name of the view to apply to the path."""
-    viewName: String
-  ): Directory!
-
-  """
-  Load the source from its path on the caller's filesystem, including only
-  needed+configured files and directories. Only valid for local sources.
-  """
-  resolveFromCaller: ModuleSource!
-
-  """
-  The path relative to context of the root of the module source, which contains
-  dagger.json. It also contains the module implementation source code, but that
-  may or may not being a subdir of this root.
+  The path, relative to the context directory, that contains the module's dagger.json.
   """
   sourceRootSubpath: String!
 
-  """The path relative to context of the module implementation source code."""
+  """
+  The path to the directory containing the module's source code, relative to the context directory.
+  """
   sourceSubpath: String!
 
-  """Retrieve a named view defined for this module source."""
-  view(
-    """The name of the view to retrieve."""
-    name: String!
-  ): ModuleSourceView!
+  """
+  Forces evaluation of the module source, including any loading into the engine and associated validation.
+  """
+  sync: ModuleSourceID!
 
   """
-  The named views defined for this module source, which are sets of directory
-  filters that can be applied to directory arguments provided to functions.
+  The specified version of the git repo this source points to. Only valid for git sources.
   """
-  views: [ModuleSourceView!]!
+  version: String!
 
-  """
-  Update the module source with a new context directory. Only valid for local sources.
-  """
-  withContextDirectory(
-    """The directory to set as the context directory."""
-    dir: DirectoryID!
+  """Update the module source with a new client to generate."""
+  withClient(
+    """Generate in developer mode"""
+    dev: Boolean
+
+    """The generator to use"""
+    generator: String!
+
+    """The output directory for the generated client."""
+    outputDir: String!
   ): ModuleSource!
 
   """
@@ -2468,13 +2403,22 @@ type ModuleSource {
   """
   withDependencies(
     """The dependencies to append."""
-    dependencies: [ModuleDependencyID!]!
+    dependencies: [ModuleSourceID!]!
   ): ModuleSource!
 
-  """Sets module init arguments"""
-  withInit(
-    """Merge module dependencies into the current project's"""
-    merge: Boolean = false
+  """Upgrade the engine version of the module to the given value."""
+  withEngineVersion(
+    """The engine version to upgrade to."""
+    version: String!
+  ): ModuleSource!
+
+  """
+  Update the module source with additional include patterns for
+  files+directories from its context that are required for building it
+  """
+  withIncludes(
+    """The new additional include patterns."""
+    patterns: [String!]!
   ): ModuleSource!
 
   """Update the module source with a new name."""
@@ -2499,7 +2443,9 @@ type ModuleSource {
 
   """Update the module source with a new source subpath."""
   withSourceSubpath(
-    """The path to set as the source subpath."""
+    """
+    The path to set as the source subpath. Must be relative to the module source's source root directory.
+    """
     path: String!
   ): ModuleSource!
 
@@ -2507,15 +2453,6 @@ type ModuleSource {
   withUpdateDependencies(
     """The dependencies to update."""
     dependencies: [String!]!
-  ): ModuleSource!
-
-  """Update the module source with a new named view."""
-  withView(
-    """The name of the view to set."""
-    name: String!
-
-    """The patterns to set as the view filters."""
-    patterns: [String!]!
   ): ModuleSource!
 }
 
@@ -2528,26 +2465,8 @@ scalar ModuleSourceID
 enum ModuleSourceKind {
   LOCAL_SOURCE
   GIT_SOURCE
+  DIR_SOURCE
 }
-
-"""
-A named set of path filters that can be applied to directory arguments provided to functions.
-"""
-type ModuleSourceView {
-  """A unique identifier for this ModuleSourceView."""
-  id: ModuleSourceViewID!
-
-  """The name of the view"""
-  name: String!
-
-  """The patterns of the view used to filter paths"""
-  patterns: [String!]!
-}
-
-"""
-The `ModuleSourceViewID` scalar type represents an identifier for an object of type ModuleSourceView.
-"""
-scalar ModuleSourceViewID
 
 """Transport layer network protocol associated to a port."""
 enum NetworkProtocol {
@@ -2807,9 +2726,6 @@ type Query {
   """Load a GeneratedCode from its ID."""
   loadGeneratedCodeFromID(id: GeneratedCodeID!): GeneratedCode!
 
-  """Load a GitModuleSource from its ID."""
-  loadGitModuleSourceFromID(id: GitModuleSourceID!): GitModuleSource!
-
   """Load a GitRef from its ID."""
   loadGitRefFromID(id: GitRefID!): GitRef!
 
@@ -2831,20 +2747,14 @@ type Query {
   """Load a ListTypeDef from its ID."""
   loadListTypeDefFromID(id: ListTypeDefID!): ListTypeDef!
 
-  """Load a LocalModuleSource from its ID."""
-  loadLocalModuleSourceFromID(id: LocalModuleSourceID!): LocalModuleSource!
-
-  """Load a ModuleDependency from its ID."""
-  loadModuleDependencyFromID(id: ModuleDependencyID!): ModuleDependency!
+  """Load a ModuleConfigClient from its ID."""
+  loadModuleConfigClientFromID(id: ModuleConfigClientID!): ModuleConfigClient!
 
   """Load a Module from its ID."""
   loadModuleFromID(id: ModuleID!): Module!
 
   """Load a ModuleSource from its ID."""
   loadModuleSourceFromID(id: ModuleSourceID!): ModuleSource!
-
-  """Load a ModuleSourceView from its ID."""
-  loadModuleSourceViewFromID(id: ModuleSourceViewID!): ModuleSourceView!
 
   """Load a ObjectTypeDef from its ID."""
   loadObjectTypeDefFromID(id: ObjectTypeDefID!): ObjectTypeDef!
@@ -2882,35 +2792,31 @@ type Query {
   """Create a new module."""
   module: Module!
 
-  """
-  Create a new module dependency configuration from a module source and name
-  """
-  moduleDependency(
-    """
-    If set, the name to use for the dependency. Otherwise, once installed to a
-    parent module, the name of the dependency module will be used by default.
-    """
-    name: String = ""
-
-    """The source of the dependency"""
-    source: ModuleSourceID!
-  ): ModuleDependency!
-
-  """Create a new module source instance from a source ref string."""
+  """Create a new module source instance from a source ref string"""
   moduleSource(
+    """
+    If true, do not error out if the provided ref string is a local path and
+    does not exist yet. Useful when initializing new modules in directories that
+    don't exist yet.
+    """
+    allowNotExists: Boolean = false
+
+    """
+    If true, do not attempt to find dagger.json in a parent directory of the
+    provided path. Only relevant for local module sources.
+    """
+    disableFindUp: Boolean = false
+
     """The pinned version of the module source"""
     refPin: String = ""
 
     """The string ref representation of the module source"""
     refString: String!
 
-    """The relative path to the module root from the host directory"""
-    relHostPath: String = ""
-
     """
-    If true, enforce that the source is a stable version for source kinds that support versioning.
+    If set, error out if the ref string is not of the provided requireKind.
     """
-    stable: Boolean = false
+    requireKind: ModuleSourceKind
   ): ModuleSource!
 
   """Creates a new secret."""

@@ -1,6 +1,7 @@
 ---
 slug: /api/module-structure
 ---
+
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import DaggerModuleInit from '../partials/_dagger_module_init.mdx';
@@ -228,6 +229,87 @@ class MyModule {
 ```
 
 </TabItem>
+<TabItem value="PHP">
+
+Only functions from your main class (`MyModule.php`) can _initially_ be called by Dagger. However, it is possible to create other classes and access them from your main class:
+
+```php
+// src/MyModule.php
+<?php
+
+declare(strict_types=1);
+
+namespace DaggerModule;
+
+use Dagger\Attribute\{DaggerObject, DaggerFunction};
+use DaggerModule\Test; // in src/Test.php
+use DaggerModule\Lint; // in src/Lint.php
+
+use function Dagger\dag;
+
+#[DaggerObject]
+class MyModule
+{
+    #[DaggerFunction]
+    public function test(): Test
+    {
+        return new Test();
+    }
+
+    #[DaggerFunction]
+    public function lint(): Lint
+    {
+        return new Lint();
+    }
+}
+```
+
+</TabItem>
+<TabItem value="Java">
+The Dagger module's code in Java can be split into multiple classes, in multiple files. A few constraints apply:
+
+- The main Dagger object must be represented by a class using the same name as the module, in PascalCase. For instance if the module name is `my-module`, the main object's class must be named `MyModule`.
+- The exposed objects must be annotated with `@Object` and the exposed functions with `@Function`.
+
+:::note
+The package in which the main object exists is not important. By convention, the name is based on the module name, but any name may be used.
+:::
+
+The description of the module can be set in a `package-info.java` file, with the `@Module` annotation:
+
+```java
+/** My Dagger module */
+@Module
+package io.dagger.modules.mymodule;
+
+import io.dagger.module.annotation.Module;
+```
+
+:::note
+By default, the description will be read from the JavaDoc documentation of the package, class or function. To define a different
+description, use the `description` field in each `@Module`, `@Object` or `@Function` annotation.
+
+```java
+/**
+ * Returns the build container
+ *
+ * @param name The name of the container
+ * @return The container
+ */
+@Function(description = "Build container")
+public Container build(String name) {
+    //...
+}
+```
+
+```console
+$ dagger functions
+
+Name    Description
+build   Build container
+```
+:::
+</TabItem>
 </Tabs>
 
 ### Monorepos
@@ -334,6 +416,18 @@ This is why the initial `package.json` doesn't include any dependencies except a
 
 [^1]:
 </TabItem>
+<TabItem value="PHP">
+
+The runtime container is currently hardcoded to run in [php:8.3-cli-alpine](https://hub.docker.com/_/php/tags?name=8.3-cli-alpine) (although this may be configurable in future).
+
+</TabItem>
+<TabItem value="Java">
+
+Two containers are used by the runtime, one to build the module into a JAR file, one to run it.
+
+They are currently hardcoded to run in [maven:3.9.9-eclipse-temurin-17](https://hub.docker.com/_/maven/tags?name=3.9.9-eclipse-temurin-17) and [eclipse-temurin:23-jre-noble](https://hub.docker.com/_/eclipse-temurin/tags?name=23-jre-noble) respectively (although this may be configurable in future).
+
+</TabItem>
 </Tabs>
 
 ## Language-native packaging
@@ -409,5 +503,39 @@ This means that so long as the project has a `package.json` file, it can be used
 
 Only production dependencies are installed, not packages defined in the `devDependencies` field.
 
+</TabItem>
+<TabItem value="PHP">
+Dagger modules in PHP are built to be installed, like libraries. The runtime container installs the module code with:
+
+```shell
+# executed by the runtime container
+composer install
+```
+
+This means that so long as the project has a `composer.json` file, it can be used as a library.
+
+</TabItem>
+<TabItem value="Java">
+Dagger modules in Java are built as JAR files, using Maven. The runtime container builds the module code with:
+
+```shell
+# executed by the runtime build container
+mvn clean package
+```
+
+The generated JAR file is then executed by the runtime container with:
+
+```shell
+# executed by the runtime run container
+java -jar module.jar
+```
+
+:::important
+This means you have to keep the `pom.xml` file and especially the `maven-compiler-plugin` and the `maven-shade-plugin` configurations.
+:::
+
+:::note
+Other build tools like Gradle might be supported in the future.
+:::
 </TabItem>
 </Tabs>

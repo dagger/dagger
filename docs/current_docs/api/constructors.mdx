@@ -57,6 +57,16 @@ This factory class method must be named `create`.
 ```
 
 </TabItem>
+<TabItem value="PHP">
+
+```php file=./snippets/constructors/php/simple/src/MyModule.php
+```
+
+:::info
+In the PHP SDK the constructor must be the [magic method `__construct`](https://www.php.net/manual/en/language.oop5.decon.php#object.construct).
+As with any method, only public methods with the `#[DaggerFunction]` attribute will be registered with Dagger.
+:::
+</TabItem>
 </Tabs>
 
 Here is an example call for this Dagger Function:
@@ -114,6 +124,12 @@ This default value can also be assigned directly in the field:
 :::important
 When assigning default values to complex types in TypeScript, it is necessary to use the `??` notation for this assignment. It is not possible to use the classic TypeScript notation for default arguments because the argument in this case is not a TypeScript primitive.
 :::
+
+</TabItem>
+<TabItem value="PHP">
+
+```php file=./snippets/constructors/php/default-object/src/MyModule.php
+```
 
 </TabItem>
 </Tabs>

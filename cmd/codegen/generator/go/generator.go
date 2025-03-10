@@ -48,7 +48,7 @@ type GoGenerator struct {
 	Config generator.Config
 }
 
-func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
+func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
 	generator.SetSchema(schema)
 
 	// 1. if no go.mod, generate go.mod
@@ -59,7 +59,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 
 	outDir := "."
 	if g.Config.ModuleName != "" {
-		outDir = filepath.Clean(g.Config.ModuleContextPath)
+		outDir = filepath.Clean(g.Config.ModuleSourcePath)
 	}
 
 	mfs := memfs.New()
@@ -138,6 +138,59 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 	return genSt, nil
 }
 
+func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
+	generator.SetSchema(schema)
+
+	outDir := "."
+	mfs := memfs.New()
+
+	layers := []fs.FS{mfs}
+
+	// Use the published package library for external dagger packages.
+	packageImport := "dagger.io/dagger"
+
+	// If dev is set, we need to add local files to the overlay and change the package import
+	if g.Config.Dev {
+		layers = append(
+			layers,
+			&MountedFS{FS: dagger.QueryBuilder, Name: "internal"},
+			&MountedFS{FS: dagger.EngineConn, Name: "internal"},
+		)
+
+		// Get the go package from the module
+		// We assume that we'll be located at the root source directory
+		pkg, _, err := loadPackage(ctx, ".")
+		if err != nil {
+			return nil, fmt.Errorf("load package %q: %w", outDir, err)
+		}
+
+		// respect existing package import path
+		packageImport = filepath.Join(pkg.Module.Path, g.Config.OutputDir)
+	}
+
+	genSt := &generator.GeneratedState{
+		Overlay: layerfs.New(layers...),
+		PostCommands: []*exec.Cmd{
+			exec.Command("go", "mod", "tidy"),
+		},
+	}
+
+	packageName := "dagger"
+	if g.Config.OutputDir == "." {
+		packageName = "main"
+	}
+
+	if err := generateCode(ctx, g.Config, schema, schemaVersion, mfs, &PackageInfo{
+		PackageName: packageName,
+
+		PackageImport: packageImport,
+	}, nil, nil, 1); err != nil {
+		return nil, fmt.Errorf("generate code: %w", err)
+	}
+
+	return genSt, nil
+}
+
 type PackageInfo struct {
 	PackageName   string // Go package name, typically "main"
 	PackageImport string // import path of package in which this file appears
@@ -162,26 +215,26 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS, genSt *ge
 
 	modname := fmt.Sprintf("dagger/%s", strcase.ToKebab(g.Config.ModuleName))
 	// check for a go.mod already for the dagger module
-	if content, err := os.ReadFile(filepath.Join(g.Config.OutputDir, g.Config.ModuleContextPath, "go.mod")); err == nil {
-		daggerModPath = g.Config.ModuleContextPath
+	if content, err := os.ReadFile(filepath.Join(g.Config.OutputDir, g.Config.ModuleSourcePath, "go.mod")); err == nil {
+		daggerModPath = g.Config.ModuleSourcePath
 
 		goMod, err = modfile.ParseLax("go.mod", content, nil)
 		if err != nil {
 			return nil, false, fmt.Errorf("parse go.mod: %w", err)
 		}
 
-		if g.Config.Merge != nil && !*g.Config.Merge && goMod.Module.Mod.Path != modname {
-			return nil, false, fmt.Errorf("existing go.mod does not match the module's path")
+		if g.Config.IsInit && goMod.Module.Mod.Path != modname {
+			return nil, false, fmt.Errorf("existing go.mod path %q does not match the module's name %q", goMod.Module.Mod.Path, modname)
 		}
 	}
 
-	// if no go.mod is available, check the root output directory instead
-	// and if no merge is set
+	// if no go.mod is available and we are merging with the projects parent when possible,
+	// check the root output directory instead
 	//
 	// this is a necessary part of bootstrapping: SDKs such as the Go SDK
 	// will want to have a runtime module that lives in the same Go module as
 	// the generated client, which typically lives in the parent directory.
-	if goMod == nil && (g.Config.Merge == nil || *g.Config.Merge) {
+	if goMod == nil && g.Config.Merge {
 		if content, err := os.ReadFile(filepath.Join(g.Config.OutputDir, "go.mod")); err == nil {
 			daggerModPath = "."
 			goMod, err = modfile.ParseLax("go.mod", content, nil)
@@ -192,7 +245,7 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS, genSt *ge
 	}
 	// could not find a go.mod, so we can init a basic one
 	if goMod == nil {
-		daggerModPath = g.Config.ModuleContextPath
+		daggerModPath = g.Config.ModuleSourcePath
 		goMod = new(modfile.File)
 
 		goMod.AddModuleStmt(modname)
@@ -239,7 +292,7 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS, genSt *ge
 		return nil, false, err
 	}
 
-	packageImport, err := filepath.Rel(daggerModPath, g.Config.ModuleContextPath)
+	packageImport, err := filepath.Rel(daggerModPath, g.Config.ModuleSourcePath)
 	if err != nil {
 		return nil, false, err
 	}
@@ -319,7 +372,7 @@ func generateCode(
 	fset *token.FileSet,
 	pass int,
 ) error {
-	funcs := templates.GoTemplateFuncs(ctx, schema, schemaVersion, cfg.ModuleName, cfg.ModuleParentPath, pkg, fset, pass)
+	funcs := templates.GoTemplateFuncs(ctx, schema, schemaVersion, cfg, pkg, fset, pass)
 	tmpls := templates.Templates(funcs)
 
 	for k, tmpl := range tmpls {

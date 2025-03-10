@@ -23,27 +23,47 @@ final class PhpSdkDev
 
     #[DaggerFunction]
     public function __construct(
-        private ?Container $container = null,
-    ) {}
+        #[DefaultPath("..")]
+        #[Doc("The PHP SDK source directory.")]
+        private Directory $source,
+        private ?Container $container = null
+    ) {
+        if (is_null($this->container)) {
+            $this->container = dag()
+            ->container()
+            ->from('php:8.3-cli-alpine')
+            ->withFile('/usr/bin/composer', dag()
+                ->container()
+                ->from('composer:2')
+                ->file('/usr/bin/composer'))
+            ->withMountedCache('/root/.composer', dag()
+                ->cacheVolume('composer-php:8.3-cli-alpine'))
+            ->withEnvVariable('COMPOSER_HOME', '/root/.composer')
+            ->withEnvVariable('COMPOSER_ALLOW_SUPERUSER', '1');
+        }
+
+        $this->container = $this->container->withMountedDirectory(self::SDK_ROOT, $this->source)
+            ->withWorkdir(self::SDK_ROOT)
+            ->withExec(['composer', 'install'])
+            ->withEnvVariable('PATH', './vendor/bin:$PATH', expand: true);
+    }
 
     #[DaggerFunction]
-    #[Doc('Run tests from source directory')]
+    #[Doc('Run tests in source directory')]
     public function test(
-        #[Doc('Run tests from the given source directory')]
-        Directory $source,
         #[Doc('Only run tests in the given group')]
         ?string $group = null,
     ): Container {
-        return $this->base($source)->withExec(
+        return $this->container->withExec(
             is_null($group) ? ['phpunit'] : ['phpunit', "--group=$group"]
         );
     }
 
     #[DaggerFunction]
     #[Doc('Run linter in source directory')]
-    public function lint(Directory $source): Container
+    public function lint(): Container
     {
-        return $this->base($source)->withExec(['phpcs']);
+        return $this->container->withExec(['phpcs']);
     }
 
     /**
@@ -63,9 +83,9 @@ final class PhpSdkDev
      */
     #[DaggerFunction]
     #[Doc('Return diff from formatting source directory')]
-    public function format(Directory $source): Directory
+    public function format(): Directory
     {
-        $result = $this->base($source)->withExec(
+        $result = $this->container->withExec(
             args: ['phpcbf'],
             expect: ReturnType::ANY,
         );
@@ -76,37 +96,18 @@ final class PhpSdkDev
             ]]]);
         }
 
-        $original = $this->base($source)->directory(self::SDK_ROOT);
+        $original = $this->container->directory(self::SDK_ROOT);
 
         return $original->diff($result->directory(self::SDK_ROOT));
     }
 
     #[DaggerFunction]
     #[Doc('Return stdout from formatting source directory')]
-    public function formatStdout(Directory $source): string
+    public function formatStdout(): string
     {
         return $this
-            ->base($source)
+            ->container
             ->withExec(args: ['phpcbf'], expect: ReturnType::ANY)
             ->stdout();
-    }
-
-    private function base(Directory $source): Container
-    {
-        return $this->container ?? dag()
-            ->container()
-            ->from('php:8.3-cli-alpine')
-            ->withFile('/usr/bin/composer', dag()
-                ->container()
-                ->from('composer:2')
-                ->file('/usr/bin/composer'))
-            ->withMountedCache('/root/.composer', dag()
-                ->cacheVolume('composer-php:8.3-cli-alpine'))
-            ->withEnvVariable('COMPOSER_HOME', '/root/.composer')
-            ->withEnvVariable('COMPOSER_ALLOW_SUPERUSER', '1')
-            ->withMountedDirectory(self::SDK_ROOT, $source)
-            ->withWorkdir(self::SDK_ROOT)
-            ->withExec(['composer', 'install'])
-            ->withEnvVariable('PATH', './vendor/bin:$PATH', expand: true);
     }
 }

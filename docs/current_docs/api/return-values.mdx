@@ -33,6 +33,14 @@ Here is an example of a Dagger Function that returns operating system informatio
 ```typescript file=./snippets/functions/arguments-container/typescript/index.ts
 ```
 </TabItem>
+<TabItem value="PHP">
+```php file=./snippets/functions/arguments-container/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="Java">
+```java file=./snippets/functions/arguments-container/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
 </Tabs>
 
 Here is an example call for this Dagger Function:
@@ -67,6 +75,19 @@ Here is an example of a Dagger Function that returns the sum of two integers:
 ```
 </TabItem>
 
+<TabItem value="PHP">
+```php file=./snippets/functions/arguments-return-values-integer/php/src/MyModule.php
+```
+</TabItem>
+
+<TabItem value="Java">
+:::note
+You can either use the primitive `int` type or the boxed `java.lang.Integer` type.
+:::
+
+```java file=./snippets/functions/arguments-return-values-integer/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
 </Tabs>
 
 Here is an example call for this Dagger Function:
@@ -108,6 +129,20 @@ The imported `float` type is a `number` underneath, so you can return it as you 
 ```typescript file=./snippets/functions/arguments-return-values-float/typescript/index.ts
 ```
 </TabItem>
+
+<TabItem value="PHP">
+```php file=./snippets/functions/arguments-return-values-float/php/src/MyModule.php
+```
+</TabItem>
+
+<TabItem value="Java">
+:::note
+You can either use the primitive `float` type or the boxed `java.lang.Float` type.
+:::
+
+```java file=./snippets/functions/arguments-return-values-float/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
 </Tabs>
 
 Here is an example call for this Dagger Function:
@@ -145,6 +180,14 @@ Here is an example of a Go builder Dagger Function that accepts a remote Git add
 </TabItem>
 <TabItem value="TypeScript">
 ```typescript file=./snippets/functions/return-values-directory/typescript/index.ts
+```
+</TabItem>
+<TabItem value="PHP">
+```php file=./snippets/functions/return-values-directory/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="Java">
+```java file=./snippets/functions/return-values-directory/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 </TabItem>
 </Tabs>
@@ -187,6 +230,14 @@ Here is an example of a Dagger Function that accepts a filesystem path or remote
 </TabItem>
 <TabItem value="TypeScript">
 ```typescript file=./snippets/functions/return-values-file/typescript/index.ts
+```
+</TabItem>
+<TabItem value="PHP">
+```php file=./snippets/functions/return-values-file/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="Java">
+```java file=./snippets/functions/return-values-file/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 </TabItem>
 </Tabs>
@@ -237,6 +288,14 @@ Here's an example of a Dagger Function that returns a base `alpine` container im
 ```typescript file=./snippets/functions/return-values-container/typescript/index.ts
 ```
 </TabItem>
+<TabItem value="PHP">
+```php file=./snippets/functions/return-values-container/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="Java">
+```java file=./snippets/functions/return-values-container/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
 </Tabs>
 
 Here is an example call for this Dagger Function:
@@ -281,6 +340,14 @@ Here is an example module with support for function chaining:
 </TabItem>
 <TabItem value="TypeScript">
 ```typescript file=./snippets/functions/return-values-chaining/typescript/index.ts
+```
+</TabItem>
+<TabItem value="PHP">
+```php file=./snippets/functions/return-values-chaining/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="Java">
+```java file=./snippets/functions/return-values-chaining/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 </TabItem>
 </Tabs>

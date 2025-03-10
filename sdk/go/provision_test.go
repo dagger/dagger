@@ -19,7 +19,7 @@ import (
 	"testing/fstest"
 	"time"
 
-	"dagger.io/dagger/internal/engineconn"
+	"dagger.io/dagger/engineconn"
 	"github.com/adrg/xdg"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"

@@ -15,7 +15,7 @@ A Dagger SDK provides two components:
 
 The Dagger API uses GraphQL as its low-level language-agnostic framework, and can also be accessed using any standard GraphQL client. However, you do not need to know GraphQL to call the Dagger API; the translation to underlying GraphQL API calls is handled internally by the Dagger SDKs.
 
-Stable Dagger SDKs are currently available for Go, TypeScript and Python. There are also [experimental SDKs contributed by the community](https://github.com/dagger/dagger/tree/main/sdk).
+Official Dagger SDKs are currently available for Go, TypeScript and Python. There are also [experimental and community SDKs contributed by the Dagger community](https://github.com/dagger/dagger/tree/main/sdk).
 
 ## Dagger Functions
 
@@ -44,6 +44,18 @@ dagger develop --sdk=python
 ```shell
 dagger init --name=my-module
 dagger develop --sdk=typescript
+```
+</TabItem>
+<TabItem value="PHP">
+```shell
+dagger init --name=my-module
+dagger develop --sdk=php
+```
+</TabItem>
+<TabItem value="Java">
+```shell
+dagger init --name=my-module
+dagger develop --sdk=java
 ```
 </TabItem>
 </Tabs>
@@ -130,6 +142,57 @@ In this structure:
 - `sdk/` contains the TypeScript SDK.
 
 </TabItem>
+<TabItem value="PHP">
+
+```
+.
+├── LICENSE
+├── README.md
+├── composer.json
+├── composer.lock
+├── entrypoint.php
+├── sdk
+├── src
+│   └── MyModule.php
+└── vendor
+```
+
+In this structure:
+
+- `dagger.json` is the [Dagger module configuration file](../configuration/modules.mdx).
+- `composer.json` manages the module dependencies.
+- `src/` is where your Dagger module code goes. It contains sample code to help you get started.
+- `sdk/` contains the PHP SDK.
+
+</TabItem>
+<TabItem value="Java">
+```
+.
+├── LICENSE
+├── dagger.json
+├── pom.xml
+├── src
+│   └── main
+│       └── java
+│           └── io
+│               └── dagger
+│                   └── modules
+│                       └── mymodule
+│                           ├── MyModule.java
+│                           └── package-info.java
+└── target
+
+9 directories, 5 files
+```
+
+In this structure:
+
+- `dagger.json` is the [Dagger module configuration file](../configuration/modules.mdx).
+- `pom.xml` manages the module dependencies.
+- `src/main/java/io/dagger/modules/mymodule/` is where your Dagger module code goes. It contains sample code to help you get started.
+- `target` contains the generated Java source classes.
+
+</TabItem>
 </Tabs>
 
 :::note
@@ -164,6 +227,14 @@ the main object needs to be named `MyModule`.
 </TabItem>
 <TabItem value="TypeScript">
 ```typescript file=./snippets/functions/functions-complex/typescript/index.ts
+```
+</TabItem>
+<TabItem value="PHP">
+```php file=./snippets/functions/functions-complex/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="Java">
+```java file=./snippets/functions/functions-complex/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 </TabItem>
 </Tabs>
@@ -406,6 +477,71 @@ build-node-20
     ├── css
     ├── js
     └── media
+```
+</TabItem>
+<TabItem value="PHP">
+
+:::note
+The Dagger PHP SDK requires [PHP 8.2 or later](https://www.php.net/downloads.php).
+:::
+
+Install the Dagger PHP SDK in your project using `composer`:
+
+```shell
+composer require dagger/dagger
+```
+
+This example demonstrates how to test a PHP application against multiple PHP versions using the PHP SDK.
+
+Clone an example project:
+
+```shell
+git clone https://github.com/slimphp/Slim-Skeleton.git
+cd Slim-Skeleton
+```
+
+Create a new file named `test.php` in the project directory and add the following code to it.
+
+```php file=./snippets/clients-sdk/php/test.php
+```
+
+This PHP program imports the Dagger SDK and defines a function named `test()`. This `test()` function creates a Dagger client, which provides an interface to the Dagger API. It also defines the test matrix, consisting of PHP versions `8.2` to `8.4` and iterates over this matrix, downloading a PHP container image for each specified version and testing the source application in that version.
+
+Run the PHP program by executing the command below from the project directory:
+
+```shell
+dagger run php test.php
+```
+
+The `dagger run` command executes the specified command in a Dagger session and displays live progress. The program tests the application against each version concurrently and displays the following final output:
+
+```shell
+Starting tests for PHP 8.2...
+PHPUnit 9.6.22 by Sebastian Bergmann and contributors.
+
+Warning:       Your XML configuration validates against a deprecated schema.
+Suggestion:    Migrate your XML configuration using "--migrate-configuration"!
+
+...................                                               19 / 19 (100%)
+
+Time: 00:00.038, Memory: 12.00 MB
+
+OK (19 tests, 37 assertions)
+Completed tests for PHP 8.2
+**********
+Starting tests for PHP 8.3...
+PHPUnit 9.6.22 by Sebastian Bergmann and contributors.
+
+Warning:       Your XML configuration validates against a deprecated schema.
+Suggestion:    Migrate your XML configuration using "--migrate-configuration"!
+
+...................                                               19 / 19 (100%)
+
+Time: 00:00.039, Memory: 12.00 MB
+
+OK (19 tests, 37 assertions)
+Completed tests for PHP 8.3
+**********
 ```
 </TabItem>
 </Tabs>

@@ -14,21 +14,12 @@ namespace Dagger;
 class Module extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * Modules used by this module.
+     * The dependencies of the module.
      */
     public function dependencies(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dependencies');
         return (array)$this->queryLeaf($leafQueryBuilder, 'dependencies');
-    }
-
-    /**
-     * The dependencies as configured by the module.
-     */
-    public function dependencyConfig(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dependencyConfig');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'dependencyConfig');
     }
 
     /**
@@ -52,15 +43,6 @@ class Module extends Client\AbstractObject implements Client\IdAble
     /**
      * The generated files and directories made on top of the module source's context directory.
      */
-    public function generatedContextDiff(): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedContextDiff');
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * The module source's context plus any configuration and source files created by codegen.
-     */
     public function generatedContextDirectory(): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedContextDirectory');
@@ -74,15 +56,6 @@ class Module extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\ModuleId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
-    }
-
-    /**
-     * Retrieves the module with the objects loaded via its SDK.
-     */
-    public function initialize(): Module
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('initialize');
-        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -151,6 +124,15 @@ class Module extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Forces evaluation of the module, including any loading into the engine and associated validation.
+     */
+    public function sync(): ModuleId
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
+        return new \Dagger\ModuleId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+    }
+
+    /**
      * Retrieves the module with the given description
      */
     public function withDescription(string $description): Module
@@ -187,19 +169,6 @@ class Module extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withObject');
         $innerQueryBuilder->setArgument('object', $object);
-        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves the module with basic configuration loaded if present.
-     */
-    public function withSource(ModuleSourceId|ModuleSource $source, ?string $engineVersion = null): Module
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSource');
-        $innerQueryBuilder->setArgument('source', $source);
-        if (null !== $engineVersion) {
-        $innerQueryBuilder->setArgument('engineVersion', $engineVersion);
-        }
         return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

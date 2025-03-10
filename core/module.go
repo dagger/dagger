@@ -12,6 +12,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -28,22 +29,8 @@ type Module struct {
 	// Different than NameField when a different name was specified for the module via a dependency.
 	OriginalName string
 
-	// The origin sdk of the module set in its configuration file (or first configured via withSDK).
-	OriginalSDK string
-
-	// The doc string of the module, if any
-	Description string `field:"true" doc:"The doc string of the module, if any"`
-
 	// The module's SDKConfig, as set in the module config file
 	SDKConfig *SDKConfig `field:"true" name:"sdk" doc:"The SDK config used by this module."`
-
-	GeneratedContextDirectory dagql.Instance[*Directory] `field:"true" name:"generatedContextDirectory" doc:"The module source's context plus any configuration and source files created by codegen."`
-
-	// Dependencies as configured by the module
-	DependencyConfig []*ModuleDependency `field:"true" doc:"The dependencies as configured by the module."`
-
-	// The module's loaded dependencies, not yet initialized
-	DependenciesField []dagql.Instance[*Module] `field:"true" name:"dependencies" doc:"Modules used by this module."`
 
 	// Deps contains the module's dependency DAG.
 	Deps *ModDeps
@@ -52,6 +39,9 @@ type Module struct {
 	Runtime *Container `field:"true" name:"runtime" doc:"The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile."`
 
 	// The following are populated while initializing the module
+
+	// The doc string of the module, if any
+	Description string `field:"true" doc:"The doc string of the module, if any"`
 
 	// The module's objects
 	ObjectDefs []*TypeDef `field:"true" name:"objects" doc:"Objects served by this module."`
@@ -66,30 +56,6 @@ type Module struct {
 	InstanceID *call.ID
 }
 
-type SDKConfig struct {
-	Source string            `field:"true" name:"source" doc:"Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
-	Env    map[string]string `name:"env" doc:"Environment variables used in codegen and runtime. e.g. GOPRIVATE"`
-}
-
-func (*SDKConfig) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "SDKConfig",
-		NonNull:   false,
-	}
-}
-
-func (*SDKConfig) TypeDescription() string {
-	return "The SDK config of the module."
-}
-
-func (sdk SDKConfig) Clone() *SDKConfig {
-	cp := sdk
-	cp.Env = cloneMap(sdk.Env)
-	cp.Source = sdk.Source
-
-	return &cp
-}
-
 func (*Module) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Module",
@@ -101,110 +67,46 @@ func (*Module) TypeDescription() string {
 	return "A Dagger module."
 }
 
-type ModuleDependency struct {
-	Source dagql.Instance[*ModuleSource] `field:"true" name:"source" doc:"The source for the dependency module."`
-	Name   string                        `field:"true" name:"name" doc:"The name of the dependency module."`
-}
-
-func (*ModuleDependency) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "ModuleDependency",
-		NonNull:   true,
-	}
-}
-
-func (*ModuleDependency) TypeDescription() string {
-	return "The configuration of dependency of a module."
-}
-
-func (dep ModuleDependency) Clone() *ModuleDependency {
-	cp := dep
-	cp.Source.Self = dep.Source.Self.Clone()
-	return &cp
-}
-
 var _ Mod = (*Module)(nil)
 
 func (mod *Module) Name() string {
 	return mod.NameField
 }
 
-func (mod *Module) Dependencies() []Mod {
-	mods := make([]Mod, len(mod.DependenciesField))
-	for i, dep := range mod.DependenciesField {
-		mods[i] = dep.Self
-	}
-	return mods
-}
-
 func (mod *Module) IDModule() *call.Module {
-	ref, err := mod.Source.Self.RefString()
-	if err != nil {
-		// TODO: this should be impossible by not, right? doesn't seem worth
-		// propagating error
-		panic(err)
+	var ref, pin string
+	switch mod.Source.Self.Kind {
+	case ModuleSourceKindLocal:
+		ref = filepath.Join(mod.Source.Self.Local.ContextDirectoryPath, mod.Source.Self.SourceRootSubpath)
+
+	case ModuleSourceKindGit:
+		ref = mod.Source.Self.Git.CloneRef
+		if mod.Source.Self.SourceRootSubpath != "" {
+			ref += "/" + strings.TrimPrefix(mod.Source.Self.SourceRootSubpath, "/")
+		}
+		if mod.Source.Self.Git.Version != "" {
+			ref += "@" + mod.Source.Self.Git.Version
+		}
+		pin = mod.Source.Self.Git.Commit
+
+	case ModuleSourceKindDir:
+		// FIXME: this is better than nothing, but no other code handles refs that
+		// are an encoded ID right now
+		var err error
+		ref, err = mod.Source.Self.ContextDirectory.ID().Encode()
+		if err != nil {
+			panic(fmt.Sprintf("failed to encode context directory ID: %v", err))
+		}
+
+	default:
+		panic(fmt.Sprintf("unexpected module source kind %q", mod.Source.Self.Kind))
 	}
-	pin, err := mod.Source.Self.Pin()
-	if err != nil {
-		panic(err)
-	}
+
 	return call.NewModule(mod.InstanceID, mod.Name(), ref, pin)
 }
 
-func (mod *Module) Initialize(ctx context.Context, oldID *call.ID, newID *call.ID, dag *dagql.Server) (*Module, error) {
-	modName := mod.Name()
-	newMod := mod.Clone()
-	newMod.InstanceID = oldID // updated to newID once the call to initialize is done
-
-	// construct a special function with no object or function name, which tells
-	// the SDK to return the module's definition (in terms of objects, fields and
-	// functions)
-	getModDefFn, err := newModFunction(
-		ctx,
-		newMod.Query,
-		newMod,
-		nil,
-		newMod.Runtime,
-		NewFunction("", &TypeDef{
-			Kind:     TypeDefKindObject,
-			AsObject: dagql.NonNull(NewObjectTypeDef("Module", "")),
-		}))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create module definition function for module %q: %w", modName, err)
-	}
-
-	result, err := getModDefFn.Call(ctx, &CallOpts{Cache: true, SkipSelfSchema: true, Server: dag})
-	if err != nil {
-		return nil, fmt.Errorf("failed to call module %q to get functions: %w", modName, err)
-	}
-	inst, ok := result.(dagql.Instance[*Module])
-	if !ok {
-		return nil, fmt.Errorf("expected Module result, got %T", result)
-	}
-
-	newMod.InstanceID = newID
-	newMod.Description = inst.Self.Description
-	for _, obj := range inst.Self.ObjectDefs {
-		newMod, err = newMod.WithObject(ctx, obj)
-		if err != nil {
-			return nil, fmt.Errorf("failed to add object to module %q: %w", modName, err)
-		}
-	}
-	for _, iface := range inst.Self.InterfaceDefs {
-		newMod, err = newMod.WithInterface(ctx, iface)
-		if err != nil {
-			return nil, fmt.Errorf("failed to add interface to module %q: %w", modName, err)
-		}
-	}
-	for _, enum := range inst.Self.EnumDefs {
-		newMod, err = newMod.WithEnum(ctx, enum)
-		if err != nil {
-			return nil, fmt.Errorf("failed to add enum to module %q: %w", mod.Name(), err)
-		}
-	}
-	newMod.InstanceID = newID
-
-	return newMod, nil
+func (mod *Module) Evaluate(context.Context) (*buildkit.Result, error) {
+	return nil, nil
 }
 
 func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
@@ -689,12 +591,8 @@ func (mod *Module) namespaceSourceMap(modPath string, sourceMap *SourceMap) *Sou
 
 // modulePath gets the prefix for the file sourcemaps, so that the sourcemap is
 // relative to the context directory
-func (mod *Module) modulePath(ctx context.Context) (string, error) {
-	sourceSubpath, err := mod.Source.Self.SourceSubpathWithDefault(ctx)
-	if err != nil {
-		return "", err
-	}
-	return sourceSubpath, nil
+func (mod *Module) modulePath() string {
+	return mod.Source.Self.SourceSubpath
 }
 
 /*
@@ -708,9 +606,6 @@ type Mod interface {
 	// View gets the name of the module's view of its underlying schema
 	View() (string, bool)
 
-	// Dependencies returns the direct dependencies of this module
-	Dependencies() []Mod
-
 	// Install modifies the provided server to install the contents of the
 	// modules declared fields.
 	Install(ctx context.Context, dag *dagql.Server) error
@@ -722,6 +617,31 @@ type Mod interface {
 
 	// TypeDefs gets the TypeDefs exposed by this module (not including dependencies)
 	TypeDefs(ctx context.Context) ([]*TypeDef, error)
+}
+
+// ClientGenerator is an interface that a module can implements to give client generation capabilities.
+//
+// The generated client is standalone and can be used in any project, even if no source code module is
+// available.
+type ClientGenerator interface {
+	// RequiredClientGenerationFiles returns the list of files that are required from the host
+	// to generate the client.
+	RequiredClientGenerationFiles(ctx context.Context) (dagql.Array[dagql.String], error)
+
+	// Generate client binding for the module and its dependencies at the given output directory.
+	// The generated client will be placed in the same directory as the module source root dir
+	// and contains bindings for all of the module's dependencies in addition to the
+	// core API and the module itself if it got source code.
+	//
+	// It's up to that function to update the source root directory with additional
+	// configurations if needed.
+	// For example (executing go mod tidy, updating tsconfig.json etc...)
+	//
+	// The generated client should use the published library version of the SDK.
+	// However, if the last parameter is set to true, a copy of the current SDK library
+	// should be copied to test the generated client with latest changes.
+	// NOTE: this should only be used for testing purposes.
+	GenerateClient(context.Context, dagql.Instance[*ModuleSource], *ModDeps, string, bool) (dagql.Instance[*Directory], error)
 }
 
 /*
@@ -743,6 +663,8 @@ to be used without hard dependencies on the internet. They are loaded w/ the `lo
 loads them as modules from the engine container.
 */
 type SDK interface {
+	ClientGenerator
+
 	/* Codegen generates code for the module at the given source directory and subpath.
 
 	The Code field of the returned GeneratedCode object should be the generated contents of the module sourceDirSubpath,
@@ -757,10 +679,6 @@ type SDK interface {
 	The provided Module is not fully initialized; the Runtime field will not be set yet.
 	*/
 	Runtime(context.Context, *ModDeps, dagql.Instance[*ModuleSource]) (*Container, error)
-
-	// Paths that should always be loaded from module sources using this SDK. Ensures that e.g. main.go
-	// in the Go SDK is always loaded even if dagger.json has include settings that don't include it.
-	RequiredPaths(context.Context) ([]string, error)
 }
 
 var _ HasPBDefinitions = (*Module)(nil)
@@ -769,13 +687,6 @@ func (mod *Module) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) 
 	var defs []*pb.Definition
 	if mod.Source.Self != nil {
 		dirDefs, err := mod.Source.Self.PBDefinitions(ctx)
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, dirDefs...)
-	}
-	if mod.GeneratedContextDirectory.Self != nil {
-		dirDefs, err := mod.GeneratedContextDirectory.Self.PBDefinitions(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -802,18 +713,16 @@ func (mod Module) Clone() *Module {
 		cp.Source.Self = mod.Source.Self.Clone()
 	}
 
-	cp.DependencyConfig = make([]*ModuleDependency, len(mod.DependencyConfig))
-	for i, dep := range mod.DependencyConfig {
-		cp.DependencyConfig[i] = dep.Clone()
-	}
-
-	cp.DependenciesField = make([]dagql.Instance[*Module], len(mod.DependenciesField))
-	for i, dep := range mod.DependenciesField {
-		cp.DependenciesField[i].Self = dep.Self.Clone()
+	if mod.SDKConfig != nil {
+		cp.SDKConfig = mod.SDKConfig.Clone()
 	}
 
 	if mod.Deps != nil {
 		cp.Deps = mod.Deps.Clone()
+	}
+
+	if mod.Runtime != nil {
+		cp.Runtime = mod.Runtime.Clone()
 	}
 
 	cp.ObjectDefs = make([]*TypeDef, len(mod.ObjectDefs))
@@ -838,6 +747,16 @@ func (mod Module) Clone() *Module {
 	return &cp
 }
 
+func (mod Module) CloneWithoutDefs() *Module {
+	cp := mod.Clone()
+
+	cp.EnumDefs = []*TypeDef{}
+	cp.ObjectDefs = []*TypeDef{}
+	cp.InterfaceDefs = []*TypeDef{}
+
+	return cp
+}
+
 func (mod *Module) WithDescription(desc string) *Module {
 	mod = mod.Clone()
 	mod.Description = strings.TrimSpace(desc)
@@ -860,10 +779,7 @@ func (mod *Module) WithObject(ctx context.Context, def *TypeDef) (*Module, error
 	}
 	if mod.NameField != "" {
 		def = def.Clone()
-		modPath, err := mod.modulePath(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get module path: %w", err)
-		}
+		modPath := mod.modulePath()
 		if err := mod.namespaceTypeDef(ctx, modPath, def); err != nil {
 			return nil, fmt.Errorf("failed to namespace type def: %w", err)
 		}
@@ -889,10 +805,7 @@ func (mod *Module) WithInterface(ctx context.Context, def *TypeDef) (*Module, er
 	}
 	if mod.NameField != "" {
 		def = def.Clone()
-		modPath, err := mod.modulePath(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get module path: %w", err)
-		}
+		modPath := mod.modulePath()
 		if err := mod.namespaceTypeDef(ctx, modPath, def); err != nil {
 			return nil, fmt.Errorf("failed to namespace type def: %w", err)
 		}
@@ -918,10 +831,7 @@ func (mod *Module) WithEnum(ctx context.Context, def *TypeDef) (*Module, error) 
 	}
 	if mod.NameField != "" {
 		def = def.Clone()
-		modPath, err := mod.modulePath(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get module path: %w", err)
-		}
+		modPath := mod.modulePath()
 		if err := mod.namespaceTypeDef(ctx, modPath, def); err != nil {
 			return nil, fmt.Errorf("failed to namespace type def: %w", err)
 		}

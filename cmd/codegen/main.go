@@ -25,6 +25,11 @@ var (
 
 	outputSchema string
 	merge        bool
+
+	clientOnly bool
+
+	dev    bool
+	isInit bool
 )
 
 var rootCmd = &cobra.Command{
@@ -47,9 +52,12 @@ func init() {
 	rootCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "output directory")
 	rootCmd.Flags().StringVar(&introspectionJSONPath, "introspection-json-path", "", "optional path to file containing pre-computed graphql introspection JSON")
 
-	rootCmd.Flags().StringVar(&modulePath, "module-context-path", "", "path to context directory of the module")
+	rootCmd.Flags().StringVar(&modulePath, "module-source-path", "", "path to source subpath of the module")
 	rootCmd.Flags().StringVar(&moduleName, "module-name", "", "name of module to generate code for")
-	rootCmd.Flags().BoolVar(&merge, "merge", false, "merge module deps with project's")
+	rootCmd.Flags().BoolVar(&merge, "merge", false, "merge module deps with project's existing go.mod in a parent directory")
+	rootCmd.Flags().BoolVar(&isInit, "is-init", false, "whether this command is initializing a new module")
+	rootCmd.Flags().BoolVar(&clientOnly, "client-only", false, "generate only client code")
+	rootCmd.Flags().BoolVar(&dev, "dev", false, "generate in dev mode")
 
 	introspectCmd.Flags().StringVarP(&outputSchema, "output", "o", "", "save introspection result to file")
 	rootCmd.AddCommand(introspectCmd)
@@ -59,26 +67,20 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	ctx = telemetry.InitEmbedded(ctx, nil)
 
-	// we're checking for the flag existence here as not setting the flag and
-	// setting it to false doesn't produce the same behavior.
-	var mergePtr *bool
-	if cmd.Flags().Changed("merge") {
-		mergePtr = &merge
-	}
-
 	cfg := generator.Config{
-		Lang: generator.SDKLang(lang),
-
-		OutputDir: outputDir,
-
-		Merge: mergePtr,
+		Lang:       generator.SDKLang(lang),
+		OutputDir:  outputDir,
+		Merge:      merge,
+		IsInit:     isInit,
+		ClientOnly: clientOnly,
+		Dev:        dev,
 	}
 
 	if moduleName != "" {
 		cfg.ModuleName = moduleName
 
 		if modulePath == "" {
-			return fmt.Errorf("--module-name requires --module-context-path")
+			return fmt.Errorf("--module-name requires --module-source-path")
 		}
 		modPath, err := relativeTo(outputDir, modulePath)
 		if err != nil {
@@ -87,7 +89,7 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		if part, _, _ := strings.Cut(modPath, string(filepath.Separator)); part == ".." {
 			return fmt.Errorf("module path must be child of output directory")
 		}
-		cfg.ModuleContextPath = modPath
+		cfg.ModuleSourcePath = modPath
 		moduleParentPath, err := relativeTo(modulePath, outputDir)
 		if err != nil {
 			return err
