@@ -136,6 +136,17 @@ ollama pull llama3.2
 Note that to successfully give the LLM Dagger's API to use as a tool, the model should support tools.
 Here's a list curated by Ollama of models that support tools: [Ollama models supporting tools](https://ollama.com/search?c=tools)
 
+#### Using with Azure OpenAI Service
+
+If you're using Azure OpenAI Service, configure your environment with the following variables:
+
+```plaintext
+OPENAI_BASE_URL=https://<azure-openai-resource>.cognitiveservices.azure.com
+OPENAI_API_KEY=<azure openai deployment api key>
+OPENAI_MODEL=<model to use by default>          # example: gpt-4o
+OPENAI_AZURE_VERSION=<azure openai api version> # example: 2024-12-01-preview
+```
+
 ## Run modules from the command-line
 
 Use the `dagger` CLI to load a module and call its functions.
