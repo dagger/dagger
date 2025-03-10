@@ -85,7 +85,8 @@ type ModuleConfigUserFields struct {
 // The source can be reference to a built-in sdk e.g. go, php, elixir or
 // can be a reference to a git path e.g. github.com/username/reponame/sdk-name
 type SDK struct {
-	Source string `json:"source"`
+	Source string                 `json:"source"`
+	Config map[string]interface{} `json:"config,omitempty"`
 }
 
 func (sdk *SDK) UnmarshalJSON(data []byte) error {
