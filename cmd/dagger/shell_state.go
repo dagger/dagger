@@ -144,7 +144,7 @@ func (s *ShellStateStore) isUsed(key string) bool {
 // Prune removes all state instances that are not in use by a variable.
 //
 // This can be used at the end of a run to avoid
-func (s *ShellStateStore) Prune(ctx context.Context) int {
+func (s *ShellStateStore) Prune() int {
 	used := make(map[string]struct{})
 
 	if s.runner != nil {
@@ -272,7 +272,7 @@ func (st ShellState) Function() FunctionCall {
 func (st ShellState) WithCall(fn *modFunction, argValues map[string]any) ShellState {
 	prev := st.Function()
 	next := st
-	next.Calls = append(st.Calls, FunctionCall{
+	next.Calls = append(next.Calls, FunctionCall{
 		Object:       prev.ReturnObject,
 		Name:         fn.Name,
 		ReturnObject: fn.ReturnType.Name(),

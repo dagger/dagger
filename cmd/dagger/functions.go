@@ -529,10 +529,7 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 // RunE is the final command in the function chain, where the API request is made.
 func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
-		q, err := handleObjectLeaf(fc.q, fn.ReturnType)
-		if err != nil {
-			return err
-		}
+		q := handleObjectLeaf(fc.q, fn.ReturnType)
 
 		// Silence usage from this point on as errors don't likely come
 		// from wrong CLI usage.
@@ -558,10 +555,10 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 	}
 }
 
-func handleObjectLeaf(q *querybuilder.Selection, typeDef *modTypeDef) (*querybuilder.Selection, error) {
+func handleObjectLeaf(q *querybuilder.Selection, typeDef *modTypeDef) *querybuilder.Selection {
 	obj := typeDef.AsFunctionProvider()
 	if obj == nil {
-		return q, nil
+		return q
 	}
 
 	// Use duck typing to detect supported functions.
@@ -593,15 +590,15 @@ func handleObjectLeaf(q *querybuilder.Selection, typeDef *modTypeDef) (*querybui
 		if hasExportAllowParentDirPath {
 			q = q.Arg("allowParentDirPath", true)
 		}
-		return q, nil
+		return q
 	}
 
 	// TODO: Replace with interface when possible.
 	if hasSync {
-		return q.SelectWithAlias("id", "sync"), nil
+		return q.SelectWithAlias("id", "sync")
 	}
 
-	return q.Select("id"), nil
+	return q.Select("id")
 }
 
 func makeRequest(ctx context.Context, q *querybuilder.Selection, response any) error {

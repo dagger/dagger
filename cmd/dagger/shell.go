@@ -363,7 +363,7 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 			// when last used. We should only have orphans at this point if
 			// there's a variable that gets reset with a different value and
 			// that should hardly cause memory issues.
-			defer h.state.Prune(ctx)
+			defer h.state.Prune()
 			if h.debug {
 				defer h.state.debug(ctx)
 			}
