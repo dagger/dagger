@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -542,7 +543,8 @@ func (llm *Llm) Sync(ctx context.Context, dag *dagql.Server) (*Llm, error) {
 							span.SetStatus(codes.Error, err.Error())
 							errResponse := err.Error()
 							// propagate error values to the model
-							if extErr, ok := err.(dagql.ExtendedError); ok {
+							var extErr dagql.ExtendedError
+							if errors.As(err, &extErr) {
 								var exts []string
 								for k, v := range extErr.Extensions() {
 									var ext strings.Builder
