@@ -6,6 +6,8 @@ import remarkTemplate from "./plugins/remark-template";
 
 import { daggerVersion } from "./current_docs/partials/version";
 
+const url = "https://docs.dagger.io";
+
 const config: Config = {
   title: "Dagger",
   tagline:
@@ -121,8 +123,8 @@ const config: Config = {
   themeConfig: {
     sidebarCollapsed: false,
     metadata: [
-      { name: "og:image", content: "/img/dagger-factory.jpg" },
-      { name: "twitter:image", content: "/img/dagger-factory.jpg" },
+      { name: "og:image", content: `${url}/img/dagger-factory.jpg` },
+      { name: "twitter:image", content: `${url}/img/dagger-factory.jpg` },
     ],
     prism: {
       additionalLanguages: [
