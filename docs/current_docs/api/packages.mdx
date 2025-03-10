@@ -101,4 +101,24 @@ npm install pm2
 Pinning a specific dependency version or adding local dependencies are supported, in the same way as any Node.js project.
 
 </TabItem>
+<TabItem value="PHP">
+
+To add a PHP package, add it to the `composer.json` file, the same way as any PHP project. For example:
+
+```shell
+composer require phpunit/phpunit
+```
+
+:::note
+Dagger modules installed as packages via Composer are not registered with Dagger.
+
+You can access its code, like any other PHP package, but this is not the indended use-case of a Dagger module.
+This may lead to unexpected behaviour.
+
+Use Composer for standard third-party packages.
+
+Use Dagger to [install Dagger modules](./module-dependencies.mdx)
+:::
+
+</TabItem>
 </Tabs>
