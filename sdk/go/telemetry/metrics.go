@@ -56,6 +56,18 @@ const (
 	// OTel metric for number of transmitted packets dropped by a container, pulled from buildkit's network namespace representation
 	NetstatTxDropped = "dagger.io/metrics.netstat.tx.dropped"
 
+	// OTel metric for number of input tokens used by an LLM
+	LLMInputTokens = "dagger.io/metrics.llm.input.tokens"
+
+	// OTel metric for number of input tokens read from cache by an LLM
+	LLMInputTokensCacheReads = "dagger.io/metrics.llm.input.tokens.cache.reads"
+
+	// OTel metric for number of input tokens written to cache by an LLM
+	LLMInputTokensCacheWrites = "dagger.io/metrics.llm.input.tokens.cache.writes"
+
+	// OTel metric for number of output tokens used by an LLM
+	LLMOutputTokens = "dagger.io/metrics.llm.output.tokens"
+
 	// OTel metric units should be in UCUM format
 	// https://unitsofmeasure.org/ucum
 

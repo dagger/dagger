@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync"
 	"unicode"
@@ -190,7 +191,11 @@ func (term *Vterm) View() string {
 var style = styles.LightStyleConfig
 
 func init() {
-	if isDark {
+	if isDark &&
+		// termenv is unable to detect Windows Terminal (at least) background
+		// color, and light Markdown on light background is unreadable, so we
+		// use this env var to force the color.
+		os.Getenv("LIGHT") == "" {
 		style = styles.DarkStyleConfig
 	}
 	style.Document.Margin = nil

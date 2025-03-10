@@ -159,6 +159,8 @@ type daggerClient struct {
 	tracerProvider *sdktrace.TracerProvider
 	loggerProvider *sdklog.LoggerProvider
 	meterProvider  *sdkmetric.MeterProvider
+
+	dag *dagql.Server
 }
 
 type daggerClientState string
@@ -689,6 +691,7 @@ func (srv *Server) initializeDaggerClient(
 	client.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
 	client.meterProvider = sdkmetric.NewMeterProvider(meterOpts...)
 
+	client.dag = dag
 	client.state = clientStateInitialized
 	return nil
 }
@@ -1310,6 +1313,24 @@ func (srv *Server) MainClientCallerID(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return client.daggerSession.mainClientCallerID, nil
+}
+
+// Return the DAGQL server for the main client
+func (srv *Server) MainServer(ctx context.Context) (context.Context, *dagql.Server, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	mainClient, ok := srv.clientFromIDs(clientMetadata.SessionID, client.daggerSession.mainClientCallerID)
+	if !ok {
+		return nil, nil, fmt.Errorf("failed to retrieve session main client")
+	}
+	ctx = engine.ContextWithClientMetadata(ctx, mainClient.clientMetadata)
+	return ctx, mainClient.dag, nil
 }
 
 // The default deps of every user module (currently just core)

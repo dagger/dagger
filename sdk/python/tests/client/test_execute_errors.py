@@ -73,10 +73,10 @@ async def test_query_error(client: dagger.Client, httpx_mock: HTTPXMock):
 
     exc = exc_info.value
     assert msg in str(exc)
-    assert exc.errors[0].path == ["container", "from"]
-    assert exc.errors[0].locations is not None
-    assert exc.errors[0].locations[0].line == 3
-    assert exc.errors[0].locations[0].column == 5
+    assert exc.error.path == ["container", "from"]
+    assert exc.error.locations is not None
+    assert exc.error.locations[0].line == 3
+    assert exc.error.locations[0].column == 5
 
 
 async def test_no_path_query_error(client: dagger.Client, httpx_mock: HTTPXMock):
@@ -91,8 +91,8 @@ async def test_no_path_query_error(client: dagger.Client, httpx_mock: HTTPXMock)
 
     exc = exc_info.value
     assert msg in str(exc)
-    assert exc.errors[0].path is None
-    assert exc.errors[0].locations is None
+    assert exc.error.path is None
+    assert exc.error.locations is None
 
 
 @pytest.mark.slow
@@ -116,6 +116,39 @@ async def test_exec_error(client: dagger.Client, httpx_mock: HTTPXMock):
         await ctr
 
     exc = exc_info.value
+    assert issubclass(exc.__class__, dagger.QueryError)
+
+    assert exc.message == "command not found"
+    assert exc.command == ["sh", "-c", "spam"]
+    assert exc.exit_code == 127
+    assert exc.stderr == "/bin/sh: spam: not found"
+    assert exc.stdout == ""
+
+    assert "command not found" in str(exc)
+
+
+@pytest.mark.slow
+async def test_query_error_serialization(client: dagger.Client, httpx_mock: HTTPXMock):
+    error = {
+        "message": "command not found",
+        "path": ["container", "from", "withExec"],
+        "locations": [{"line": 3, "column": 5}],
+        "extensions": {
+            "_type": "EXEC_ERROR",
+            "cmd": ["sh", "-c", "spam"],
+            "exitCode": 127,
+            "stdout": "",
+            "stderr": "/bin/sh: spam: not found",
+        },
+    }
+    httpx_mock.add_response(json={"errors": [error]})
+    ctr = client.container().from_("alpine").with_exec(["sh", "-c", "spam"])
+
+    with pytest.raises(dagger.ExecError) as exc_info:
+        await ctr
+
+    exc = exc_info.value
+
     assert issubclass(exc.__class__, dagger.QueryError)
 
     assert exc.message == "command not found"
