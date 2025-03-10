@@ -278,7 +278,7 @@ func (env *LlmEnv) callCurrent(ctx context.Context, _ any) (any, error) {
 	if len(env.history) == 0 {
 		return "", nil
 	}
-	return env.history[len(env.history)-1], nil
+	return env.describe(env.history[len(env.history)-1]), nil
 }
 
 // describe returns a string representation of a typed object
