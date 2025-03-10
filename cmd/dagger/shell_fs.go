@@ -336,10 +336,7 @@ func (h *shellCallHandler) getModuleConfig(ctx context.Context, ref string) (rcf
 	var subpath string
 	var digest string
 
-	cancelCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	eg, gctx := errgroup.WithContext(cancelCtx)
+	eg, gctx := errgroup.WithContext(ctx)
 
 	// ref could be a subpath so we get the right module root ref
 	eg.Go(func() error {
