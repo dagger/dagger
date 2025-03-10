@@ -306,6 +306,32 @@ func (h *shellCallHandler) FunctionUseLine(md *moduleDef, fn *modFunction) strin
 	return sb.String()
 }
 
+func (h *shellCallHandler) FunctionFullUseLine(md *moduleDef, fn *modFunction) string {
+	usage := h.FunctionUseLine(md, fn)
+	opts := fn.OptionalArgs()
+
+	if len(opts) > 0 {
+		sb := new(strings.Builder)
+
+		for _, arg := range opts {
+			sb.WriteString(" [--")
+			sb.WriteString(arg.flagName)
+
+			t := arg.TypeDef.String()
+			if t != "bool" {
+				sb.WriteString(" ")
+				sb.WriteString(t)
+			}
+
+			sb.WriteString("]")
+		}
+
+		return strings.ReplaceAll(usage, " [options]", sb.String())
+	}
+
+	return usage
+}
+
 func (h *shellCallHandler) ModuleDoc(st *ShellState, m *moduleDef) string {
 	var doc ShellDoc
 
