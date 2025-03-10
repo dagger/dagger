@@ -4,10 +4,12 @@ import { themes as prismThemes } from "prism-react-renderer";
 import remarkCodeImport from "remark-code-import";
 import remarkTemplate from "./plugins/remark-template";
 
-import { daggerVersion } from './current_docs/partials/version';
+import { daggerVersion } from "./current_docs/partials/version";
 
 const config: Config = {
   title: "Dagger",
+  tagline:
+    "Open-source runtime for composable workflows, powering AI agents and CI/CD with modular, repeatable, and observable pipelines.",
   favicon: "img/favicon.svg",
 
   // Set the production url of your site here
@@ -36,7 +38,7 @@ const config: Config = {
   },
   scripts: [
     {
-      src: '/js/commonroom.js',
+      src: "/js/commonroom.js",
       async: true,
     },
   ],
@@ -109,7 +111,7 @@ const config: Config = {
         },
         textContentMappings: {
           "title.indexPage": "TypeScript SDK Reference",
-          "footer.text": ""
+          "footer.text": "",
         },
         requiredToBeDocumented: ["Class"],
       },
@@ -118,9 +120,20 @@ const config: Config = {
   themes: ["@docusaurus/theme-mermaid"],
   themeConfig: {
     sidebarCollapsed: false,
-    metadata: [{ name: "og:image", content: "/img/favicon.png" }],
+    metadata: [
+      { name: "og:image", content: "/img/dagger-factory.jpg" },
+      { name: "twitter:image", content: "/img/dagger-factory.jpg" },
+    ],
     prism: {
-      additionalLanguages: ["php", "rust", "elixir", "bash", "toml", "powershell", "java"],
+      additionalLanguages: [
+        "php",
+        "rust",
+        "elixir",
+        "bash",
+        "toml",
+        "powershell",
+        "java",
+      ],
       theme: prismThemes.dracula,
     },
     navbar: {
@@ -201,7 +214,7 @@ const config: Config = {
             {
               label: "Community Content",
               to: "https://dagger.io/community-content",
-            }
+            },
           ],
         },
         {
