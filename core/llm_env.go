@@ -8,9 +8,9 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // A frontend for LLM tool calling
@@ -112,21 +112,14 @@ func (env *LlmEnv) Tools(srv *dagql.Server) []LlmTool {
 					fmt.Sprintf("🤖💻 %s %v", typeName+"."+field.Name, args),
 					telemetry.Passthrough(),
 					telemetry.Reveal())
-				defer telemetry.End(span, func() error { return rerr })
-				val, id, err := env.call(ctx, srv, field, args)
-				if err != nil {
-					return nil, err
-				}
-				if env.isObjectType(srv, field.Type) {
-					obj, err := srv.Load(ctx, id)
-					if err != nil {
-						return nil, err
+				defer telemetry.End(span, func() error {
+					if rerr != nil {
+						// HACK: something went wrong, so undo passthrough
+						span.SetAttributes(attribute.Bool(telemetry.UIPassthroughAttr, false))
 					}
-					env.objsByHash[obj.ID().Digest()] = obj
-					env.history = append(env.history, obj)
-					return env.describe(obj), nil
-				}
-				return val, nil
+					return rerr
+				})
+				return env.call(ctx, srv, field, args)
 			},
 		})
 	}
@@ -140,36 +133,36 @@ func (env *LlmEnv) call(ctx context.Context,
 	fieldDef *ast.FieldDefinition,
 	// The arguments to the call. Example: {"args": ["go", "build"], "redirectStderr", "/dev/null"}
 	args any,
-) (dagql.Typed, *call.ID, error) {
+) (any, error) {
 	// 1. CONVERT CALL INPUTS (BRAIN -> BODY)
 	argsMap, ok := args.(map[string]any)
 	if !ok {
-		return nil, nil, fmt.Errorf("tool call: %s: expected arguments to be a map - got %#v", fieldDef.Name, args)
+		return nil, fmt.Errorf("tool call: %s: expected arguments to be a map - got %#v", fieldDef.Name, args)
 	}
 	var target dagql.Object
 	if varOrDigest, ok := argsMap["self"].(string); ok {
 		val, err := env.Get(varOrDigest)
 		if err != nil {
-			return nil, nil, fmt.Errorf("tool call: %s: failed to get self: %w", fieldDef.Name, err)
+			return nil, fmt.Errorf("tool call: %s: failed to get self: %w", fieldDef.Name, err)
 		}
 		if obj, ok := dagql.UnwrapAs[dagql.Object](val); ok {
 			target = obj
 		}
 	}
 	if target == nil {
-		return nil, nil, fmt.Errorf("function not found: %s", fieldDef.Name)
+		return nil, fmt.Errorf("function not found: %s", fieldDef.Name)
 	}
 	targetObjType, ok := srv.ObjectType(target.Type().Name())
 	if !ok {
-		return nil, nil, fmt.Errorf("dagql object type not found: %s", target.Type().Name())
+		return nil, fmt.Errorf("dagql object type not found: %s", target.Type().Name())
 	}
 	// FIXME: we have to hardcode *a* version here, otherwise Container.withExec disappears
 	// It's still kind of hacky
 	field, ok := targetObjType.FieldSpec(fieldDef.Name, "v0.13.2")
 	if !ok {
-		return nil, nil, fmt.Errorf("field %q not found in object type %q", fieldDef.Name, targetObjType)
+		return nil, fmt.Errorf("field %q not found in object type %q", fieldDef.Name, targetObjType)
 	}
-	sel := dagql.Selector{
+	fieldSel := dagql.Selector{
 		Field: fieldDef.Name,
 	}
 	for _, arg := range field.Args {
@@ -181,32 +174,61 @@ func (env *LlmEnv) call(ctx context.Context,
 			if idStr, ok := val.(string); ok {
 				envVal, err := env.Get(idStr)
 				if err != nil {
-					return nil, nil, fmt.Errorf("tool call: %s: failed to get self: %w", fieldDef.Name, err)
+					return nil, fmt.Errorf("tool call: %s: failed to get self: %w", fieldDef.Name, err)
 				}
 				if obj, ok := dagql.UnwrapAs[dagql.Object](envVal); ok {
 					enc, err := obj.ID().Encode()
 					if err != nil {
-						return nil, nil, fmt.Errorf("tool call: %s: failed to encode ID: %w", fieldDef.Name, err)
+						return nil, fmt.Errorf("tool call: %s: failed to encode ID: %w", fieldDef.Name, err)
 					}
 					val = enc
 				} else {
-					return nil, nil, fmt.Errorf("tool call: %s: expected object, got %T", fieldDef.Name, val)
+					return nil, fmt.Errorf("tool call: %s: expected object, got %T", fieldDef.Name, val)
 				}
 			} else {
-				return nil, nil, fmt.Errorf("tool call: %s: expected string, got %T", fieldDef.Name, val)
+				return nil, fmt.Errorf("tool call: %s: expected string, got %T", fieldDef.Name, val)
 			}
 		}
 		input, err := arg.Type.Decoder().DecodeInput(val)
 		if err != nil {
-			return nil, nil, fmt.Errorf("decode arg %q (%T): %w", arg.Name, val, err)
+			return nil, fmt.Errorf("decode arg %q (%T): %w", arg.Name, val, err)
 		}
-		sel.Args = append(sel.Args, dagql.NamedInput{
+		fieldSel.Args = append(fieldSel.Args, dagql.NamedInput{
 			Name:  arg.Name,
 			Value: input,
 		})
 	}
 	// 2. MAKE THE CALL
-	return target.Select(ctx, srv, sel)
+	if retObjType, ok := srv.ObjectType(field.Type.Type().Name()); ok {
+		var obj dagql.Object
+		if sync, ok := retObjType.FieldSpec("sync"); ok {
+			syncSel := dagql.Selector{
+				Field: sync.Name,
+			}
+			idType, ok := retObjType.IDType()
+			if !ok {
+				return nil, fmt.Errorf("field %q is not an ID type", sync.Name)
+			}
+			if err := srv.Select(ctx, target, &idType, fieldSel, syncSel); err != nil {
+				return nil, fmt.Errorf("failed to sync: %w", err)
+			}
+			syncedObj, err := srv.Load(ctx, idType.ID())
+			if err != nil {
+				return nil, fmt.Errorf("failed to load synced object: %w", err)
+			}
+			obj = syncedObj
+		} else if err := srv.Select(ctx, target, &obj, fieldSel); err != nil {
+			return nil, err
+		}
+		env.objsByHash[obj.ID().Digest()] = obj
+		env.history = append(env.history, obj)
+		return env.describe(obj), nil
+	}
+	var val dagql.Typed
+	if err := srv.Select(ctx, target, &val, fieldSel); err != nil {
+		return nil, fmt.Errorf("failed to sync: %w", err)
+	}
+	return val, nil
 }
 
 func (env *LlmEnv) callObjects(ctx context.Context, _ any) (any, error) {
