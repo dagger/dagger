@@ -32,6 +32,8 @@ class MyModule:
                     "poetry-dynamic-versioning==0.23.0",
                 ]
             )
-            .with_exec(["poetry", "install", "--no-root"])
-            .with_exec(["poetry", "install", "--only-root"])
+            # No root first uses dependencies but not the project itself
+            .with_exec(["poetry", "install", "--no-root", "--no-interaction"])
+            # No root first uses dependencies but not the project itself
+            .with_exec(["poetry", "install", "--no-interaction", "--only-root"])
         )
