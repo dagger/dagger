@@ -67,6 +67,7 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"FormatProtected":           funcs.formatProtected,
 		"IsClientOnly":              funcs.isClientOnly,
 		"IsDevMode":                 funcs.isDevMode,
+		"DependenciesRef":           funcs.dependenciesRef,
 	}
 }
 
@@ -328,4 +329,8 @@ func (funcs typescriptTemplateFuncs) isClientOnly() bool {
 
 func (funcs typescriptTemplateFuncs) isDevMode() bool {
 	return funcs.cfg.Dev
+}
+
+func (funcs typescriptTemplateFuncs) dependenciesRef() []string {
+	return funcs.cfg.DependenciesRef
 }

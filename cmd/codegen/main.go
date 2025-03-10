@@ -26,7 +26,8 @@ var (
 	outputSchema string
 	merge        bool
 
-	clientOnly bool
+	clientOnly      bool
+	dependenciesRef []string
 
 	dev    bool
 	isInit bool
@@ -58,6 +59,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&isInit, "is-init", false, "whether this command is initializing a new module")
 	rootCmd.Flags().BoolVar(&clientOnly, "client-only", false, "generate only client code")
 	rootCmd.Flags().BoolVar(&dev, "dev", false, "generate in dev mode")
+	rootCmd.Flags().StringArrayVar(&dependenciesRef, "dependencies-ref", []string{}, "dependencies used by the module")
 
 	introspectCmd.Flags().StringVarP(&outputSchema, "output", "o", "", "save introspection result to file")
 	rootCmd.AddCommand(introspectCmd)
@@ -68,12 +70,13 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 	ctx = telemetry.InitEmbedded(ctx, nil)
 
 	cfg := generator.Config{
-		Lang:       generator.SDKLang(lang),
-		OutputDir:  outputDir,
-		Merge:      merge,
-		IsInit:     isInit,
-		ClientOnly: clientOnly,
-		Dev:        dev,
+		Lang:            generator.SDKLang(lang),
+		OutputDir:       outputDir,
+		Merge:           merge,
+		IsInit:          isInit,
+		ClientOnly:      clientOnly,
+		Dev:             dev,
+		DependenciesRef: dependenciesRef,
 	}
 
 	if moduleName != "" {
