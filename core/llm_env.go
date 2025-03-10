@@ -251,6 +251,7 @@ func (env *LlmEnv) callLoad(ctx context.Context, args any) (any, error) {
 
 func (env *LlmEnv) callSave(ctx context.Context, args any) (any, error) {
 	name := args.(map[string]any)["name"].(string)
+	env.Set(name, env.Current())
 	return name, nil
 }
 

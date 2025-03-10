@@ -687,6 +687,56 @@ func (llm *Llm) Get(ctx context.Context, dag *dagql.Server, key string) (dagql.T
 	return llm.env.Get(key)
 }
 
+// A variable in the LLM environment
+type LlmVariable struct {
+	// The name of the variable
+	Name string `field:"true"`
+	// The type name of the variable's value
+	TypeName string `field:"true"`
+	// A hash of the variable's value, used to detect changes
+	Hash string `field:"true"`
+}
+
+var _ dagql.Typed = (*LlmVariable)(nil)
+
+func (v *LlmVariable) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LlmVariable",
+		NonNull:   true,
+	}
+}
+
+func (llm *Llm) Variables(ctx context.Context, dag *dagql.Server) ([]*LlmVariable, error) {
+	llm, err := llm.Sync(ctx, dag)
+	if err != nil {
+		return nil, err
+	}
+	vars := make([]*LlmVariable, 0, len(llm.env.objs))
+	for k, v := range llm.env.objs {
+		var hash string
+		if obj, ok := dagql.UnwrapAs[dagql.Object](v); ok {
+			hash = obj.ID().Digest().String()
+		} else {
+			jsonBytes, err := json.Marshal(v)
+			if err != nil {
+				return nil, err
+			}
+			hash = dagql.HashFrom(string(jsonBytes)).String()
+		}
+		vars = append(vars, &LlmVariable{
+			Name:     k,
+			TypeName: v.Type().Name(),
+			Hash:     hash,
+		})
+	}
+	// NOTE: order matters! when a client is grabbing these values they'll be
+	// "calling back" using IDs that embed index positions
+	sort.Slice(vars, func(i, j int) bool {
+		return vars[i].Name < vars[j].Name
+	})
+	return vars, nil
+}
+
 // FIXME: deprecated
 func (llm *Llm) WithState(ctx context.Context, objID dagql.IDType, srv *dagql.Server) (*Llm, error) {
 	obj, err := srv.Load(ctx, objID.ID())

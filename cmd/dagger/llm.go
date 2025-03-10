@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"fmt"
@@ -12,14 +13,18 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/muesli/termenv"
+	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
 	"github.com/vito/bubbline/complete"
 	"github.com/vito/bubbline/computil"
 	"github.com/vito/bubbline/editline"
+	"mvdan.cc/sh/v3/expand"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 // Variables for llm command flags
@@ -107,7 +112,7 @@ type LLMSession struct {
 	shell      *shellCallHandler
 	completer  editline.AutoCompleteFn
 	mode       interpreterMode
-	syncedVars map[string]string
+	syncedVars map[string]digest.Digest
 }
 
 func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string) (*LLMSession, error) {
@@ -122,14 +127,14 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string) (*L
 		return nil, err
 	}
 
-	initialVars := make(map[string]string)
+	initialVars := make(map[string]digest.Digest)
 	// HACK: pretend we synced the initial env, we don't want to just toss the
 	// entire os.Environ into the LLM
 	for k, v := range shellHandler.runner.Env.Each {
-		initialVars[k] = v.String()
+		initialVars[k] = dagql.HashFrom(v.String())
 	}
 	for k, v := range shellHandler.runner.Vars {
-		initialVars[k] = v.String()
+		initialVars[k] = dagql.HashFrom(v.String())
 	}
 
 	s := &LLMSession{
@@ -152,13 +157,8 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string) (*L
 	return s, nil
 }
 
-//go:embed llm.md
-var llmPrompt string
-
 func (s *LLMSession) reset() {
-	s.llm = s.dag.
-		Llm(dagger.LlmOpts{Model: s.llmModel})
-	// WithPrompt(llmPrompt)
+	s.llm = s.dag.Llm(dagger.LlmOpts{Model: s.llmModel})
 }
 
 func (s *LLMSession) Fork() *LLMSession {
@@ -250,6 +250,89 @@ func (s *LLMSession) interpretPrompt(ctx context.Context, input string) (*LLMSes
 
 	s.llm = prompted
 
+	vars, err := s.llm.Variables(ctx)
+	if err != nil {
+		return s, err
+	}
+	dbg.Println("syncing vars", len(vars))
+	for _, v := range vars {
+		name, err := v.Name(ctx)
+		if err != nil {
+			dbg.Println("error getting var name", err)
+			return s, err
+		}
+		typeName, err := v.TypeName(ctx)
+		if err != nil {
+			dbg.Println("error getting var type name", err)
+			return s, err
+		}
+		hash, err := v.Hash(ctx)
+		if err != nil {
+			dbg.Println("error getting var hash", err)
+			return s, err
+		}
+		dbg.Println("syncing llm => var", name, typeName, hash)
+		digest := digest.Digest(hash)
+		if s.syncedVars[name] == digest {
+			// already synced
+			continue
+		}
+		switch typeName {
+		case "String":
+			val, err := s.llm.GetString(ctx, name)
+			if err != nil {
+				return s, err
+			}
+			dbg.Println("syncing string", name, val)
+			// TODO: maybe there's a better way to set this
+			s.shell.runner.Vars[name] = expand.Variable{
+				Kind: expand.String,
+				Str:  val,
+			}
+		default:
+			llmId, err := s.llm.ID(ctx)
+			if err != nil {
+				return s, err
+			}
+			var objId string
+			if err := s.dag.QueryBuilder().
+				Select("loadLlmFromID").
+				Arg("id", llmId).
+				Select(fmt.Sprintf("get%s", typeName)).
+				Arg("name", name).
+				Select("id").
+				Bind(&objId).
+				Execute(ctx); err != nil {
+				return s, err
+			}
+			dbg.Println("syncing object", name)
+			var buf bytes.Buffer
+			st := ShellState{
+				Calls: []FunctionCall{
+					// not sure this is right
+					{
+						Object: "Query",
+						Name:   "load" + typeName + "FromID",
+						Arguments: map[string]any{
+							"id": objId,
+						},
+						ReturnObject: typeName,
+					},
+				},
+			}
+			if err := st.WriteTo(&buf); err != nil {
+				return s, err
+			}
+			quoted, err := syntax.Quote(buf.String(), syntax.LangBash)
+			if err != nil {
+				return s, err
+			}
+			if _, _, err := s.shell.Eval(ctx, fmt.Sprintf("%s=%s", name, quoted)); err != nil {
+				return s, err
+			}
+		}
+		s.syncedVars[name] = digest
+	}
 	return s, nil
 }
 
@@ -258,30 +341,8 @@ func (s *LLMSession) interpretShell(ctx context.Context, input string) (*LLMSess
 	if err != nil {
 		return s, err
 	}
-	// if typeDef == nil {
-	// 	dbg.Printf("interpretShell: %s: %+v\n", input, resp)
-	// 	return s, nil
-	// }
-	// if typeDef.AsFunctionProvider() != nil {
-	// 	llmId, err := s.llm.ID(ctx)
-	// 	if err != nil {
-	// 		return s, err
-	// 	}
-	// 	s = s.Fork()
-	// 	if err := s.dag.QueryBuilder().
-	// 		Select("loadLlmFromID").
-	// 		Arg("id", llmId).
-	// 		Select(fmt.Sprintf("set%s", typeDef.Name())).
-	// 		Arg("name", "_").
-	// 		Arg("value", resp).
-	// 		Select("id").
-	// 		Bind(&llmId).
-	// 		Execute(ctx); err != nil {
-	// 		return s, err
-	// 	}
-	// 	s.llm = s.dag.LoadLlmFromID(llmId)
-	// }
-	return s.syncEnv(ctx)
+	// TODO: is there anything useful to do with the result here?
+	return s.syncVars(ctx)
 }
 
 var dbg *log.Logger
@@ -302,13 +363,14 @@ var skipEnv = map[string]bool{
 	"EUID":   true,
 	"OPTIND": true,
 	"IFS":    true,
-	// the rest should be picked up from os.Environ
+	// the rest should be filtered out already by skipping the first batch
+	// (sourced from os.Environ)
 }
 
-func (s *LLMSession) syncEnv(ctx context.Context) (*LLMSession, error) {
+func (s *LLMSession) syncVars(ctx context.Context) (*LLMSession, error) {
 	oldVars := s.syncedVars
 	s = s.Fork()
-	s.syncedVars = make(map[string]string)
+	s.syncedVars = make(map[string]digest.Digest)
 	// TODO: overlay? bad scaling characteristics. maybe overkill anyway
 	for k, v := range oldVars {
 		s.syncedVars[k] = v
@@ -324,15 +386,14 @@ func (s *LLMSession) syncEnv(ctx context.Context) (*LLMSession, error) {
 
 	var changed bool
 	for name, value := range s.shell.runner.Vars {
-		if s.syncedVars[name] == value.String() {
+		if s.syncedVars[name] == dagql.HashFrom(value.String()) {
 			continue
 		}
 		if skipEnv[name] {
 			continue
 		}
 
-		dbg.Printf("syncEnv var diff: %s=%s (%+v)\n", name, value.String(), value)
-		s.syncedVars[name] = value.String()
+		dbg.Printf("syncing var %q => llm\n", name)
 
 		changed = true
 
@@ -348,9 +409,12 @@ func (s *LLMSession) syncEnv(ctx context.Context) (*LLMSession, error) {
 			if err != nil {
 				return s, err
 			}
-			dbg.Printf("syncEnv var %q: %T %+v\n", name, v, v)
 			if v == nil {
 				return s, fmt.Errorf("unexpected nil value for var %q", name)
+			}
+			digest, err := idDigest(v.(string))
+			if err != nil {
+				return s, err
 			}
 			if t.AsFunctionProvider() != nil {
 				typeName := t.Name()
@@ -359,7 +423,9 @@ func (s *LLMSession) syncEnv(ctx context.Context) (*LLMSession, error) {
 					Arg("name", name).
 					Arg("value", v)
 			}
+			s.syncedVars[name] = digest
 		} else {
+			s.syncedVars[name] = dagql.HashFrom(value.String())
 			syncedLlmQ = syncedLlmQ.
 				Select("setString").
 				Arg("name", name).

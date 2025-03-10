@@ -312,6 +312,12 @@ func LoadLlmFromID(id dagger.LlmID) *dagger.Llm {
 	return client.LoadLlmFromID(id)
 }
 
+// Load a LlmVariable from its ID.
+func LoadLlmVariableFromID(id dagger.LlmVariableID) *dagger.LlmVariable {
+	client := initClient()
+	return client.LoadLlmVariableFromID(id)
+}
+
 // Load a ModuleConfigClient from its ID.
 func LoadModuleConfigClientFromID(id dagger.ModuleConfigClientID) *dagger.ModuleConfigClient {
 	client := initClient()

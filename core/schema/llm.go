@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -42,6 +43,9 @@ func (s llmSchema) Install() {
 			Doc("Add a string variable to the LLM's environment").
 			ArgDoc("name", "The variable name").
 			ArgDoc("value", "The variable value"),
+		dagql.Func("getString", s.getString).
+			Doc("Get a string variable from the LLM's environment").
+			ArgDoc("name", "The variable name"),
 		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.Instance[*core.Llm], _ struct{}) (dagql.ID[*core.Llm], error) {
 			var zero dagql.ID[*core.Llm]
 			var inst dagql.Instance[*core.Llm]
@@ -58,8 +62,11 @@ func (s llmSchema) Install() {
 			Doc("synchronize LLM state"),
 		dagql.Func("tools", s.tools).
 			Doc("print documentation for available tools"),
+		dagql.Func("variables", s.variables).
+			Doc("list variables in the LLM environment"),
 	}
 	llmType.Install(s.srv)
+	dagql.Fields[*core.LlmVariable]{}.Install(s.srv)
 	middleware := core.LlmMiddleware{Server: s.srv}
 	llmObjType, ok := s.srv.ObjectType(new(core.Llm).Type().Name())
 	if !ok {
@@ -98,10 +105,23 @@ func (s *llmSchema) withPrompt(ctx context.Context, llm *core.Llm, args struct {
 }
 
 func (s *llmSchema) setString(ctx context.Context, llm *core.Llm, args struct {
-	Name  dagql.String
+	Name  string
 	Value dagql.String
 }) (*core.Llm, error) {
-	return llm.Set(ctx, s.srv, args.Name.String(), args.Value)
+	return llm.Set(ctx, s.srv, args.Name, args.Value)
+}
+
+func (s *llmSchema) getString(ctx context.Context, llm *core.Llm, args struct {
+	Name string
+}) (dagql.String, error) {
+	val, err := llm.Get(ctx, s.srv, args.Name)
+	if err != nil {
+		return "", err
+	}
+	if str, ok := dagql.UnwrapAs[dagql.String](val); ok {
+		return str, nil
+	}
+	return "", fmt.Errorf("expected string value for %q, got %T", args.Name, val)
 }
 
 func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.Llm, args struct {
@@ -144,4 +164,8 @@ func (s *llmSchema) history(ctx context.Context, llm *core.Llm, _ struct{}) (dag
 func (s *llmSchema) tools(ctx context.Context, llm *core.Llm, _ struct{}) (dagql.String, error) {
 	doc, err := llm.ToolsDoc(ctx, s.srv)
 	return dagql.NewString(doc), err
+}
+
+func (s *llmSchema) variables(ctx context.Context, llm *core.Llm, _ struct{}) ([]*core.LlmVariable, error) {
+	return llm.Variables(ctx, s.srv)
 }
