@@ -25,7 +25,6 @@ engine |\
         ${_EXPERIMENTAL_DAGGER_GPU_SUPPORT:+--gpu-support} |\
     start \
         --name=$CONTAINER \
-        --debug \
         ${DAGGER_CLOUD_TOKEN:+--cloud-token=env://DAGGER_CLOUD_TOKEN} \
         ${DAGGER_CLOUD_URL:+--cloud-url=${DAGGER_CLOUD_URL-}} &
 

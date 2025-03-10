@@ -4,13 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/moby/buildkit/identity"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 	"github.com/dagger/dagger/engine/distconsts"
@@ -196,10 +195,10 @@ func (t *Test) Dump(
 	// +optional
 	// +default="pprof/heap"
 	route string,
-	// when true, take a final dump after the tests have completed
+	// when set, don't take a final dump after the tests have completed. usually good with --route="pprof/profile".
 	// +optional'
-	// +default=true
-	final bool,
+	// +default=false
+	noFinal bool,
 	// wait this long before starting to take dumps. delay does not include engine startup.
 	// +optional
 	// +default="1s"
@@ -233,7 +232,7 @@ func (t *Test) Dump(
 			testVerbose:   testVerbose,
 		},
 		route,
-		final,
+		noFinal,
 		d,
 		i,
 	)
@@ -282,7 +281,7 @@ func (t *Test) testAndDump(
 	ctx context.Context,
 	opts *testOpts,
 	route string,
-	final bool,
+	noFinal bool,
 	delay time.Duration,
 	interval time.Duration,
 ) (*dagger.Directory, error) {
@@ -309,93 +308,85 @@ func (t *Test) testAndDump(
 	)
 	baseFileName := strings.ReplaceAll(route, "/", "-")
 
+	cancelCtx, cancel := context.WithCancel(ctx)
+	eg := errgroup.Group{}
 	dumps := dag.Directory()
-	errs := []error{}
-	doneCh := make(chan struct{})
-	dumpCount := 0
-	go func() {
-		time.Sleep(delay)
-
+	dumpCount := 0 // not strictly necessary, but a nice sanity check and less faff than using dumps.Entries()
+	wait := delay
+	eg.Go(func() error {
+		var dumpErr error
 		for {
 			select {
-			case <-doneCh:
-				return
-			default:
-				heapData, err := fetchDump(debugEndpoint, route)
-				if err != nil {
-					errs = append(errs, err)
-				} else {
+			case <-cancelCtx.Done():
+				return dumpErr
+			case <-time.After(wait):
+				heapData, err := fetchDump(ctx, debugEndpoint, route)
+				dumpErr = errors.Join(dumpErr, err)
+				if err == nil {
 					fileName := fmt.Sprintf("%s-%d.pprof", baseFileName, dumpCount)
-					dumps = dumps.WithNewFile(fileName, string(heapData))
+					dumps = dumps.WithFile(fileName, heapData)
 					dumpCount++
 				}
 				if interval < 0 {
-					return
+					return dumpErr
 				}
-
-				select {
-				case <-doneCh:
-					return
-				case <-time.After(interval):
-				}
+				wait = interval
 			}
 		}
-	}()
+	})
 
 	_, testErr := testContainer.Sync(ctx)
+	cancel()
+	dumpErr := eg.Wait()
 
-	if interval >= 0 {
-		doneCh <- struct{}{}
-	}
-
-	if final {
-		heapData, err := fetchDump(debugEndpoint, route)
-		if err != nil {
-			errs = append(errs, err)
-		} else {
+	if !noFinal {
+		heapData, finalDumpErr := fetchDump(ctx, debugEndpoint, route)
+		dumpErr = errors.Join(dumpErr, finalDumpErr)
+		if finalDumpErr == nil {
 			fileName := fmt.Sprintf("%s-final.pprof", baseFileName)
-			dumps = dumps.WithNewFile(fileName, string(heapData))
+			dumps = dumps.WithFile(fileName, heapData)
 			dumpCount++
 		}
 	}
 
 	if testErr != nil {
 		if dumpCount == 0 {
-			return nil, fmt.Errorf("no dumps collected and test failed: %w, %w", testErr, errors.Join(errs...))
+			return nil, fmt.Errorf("no dumps collected and test failed: %w, %w", testErr, dumpErr)
 		}
 		return dumps, testErr
 	}
 
 	if dumpCount == 0 {
-		return nil, fmt.Errorf("test passed, but no dumps collected: %w", errors.Join(errs...))
+		return nil, fmt.Errorf("test passed, but no dumps collected: %w", dumpErr)
 	}
 	return dumps, nil
 }
 
-// fetchDump fetches from a debug HTTP endpoint and returns it as a byte array
-func fetchDump(debugEndpoint string, route string) ([]byte, error) {
+// fetchDump fetches from a debug HTTP endpoint and returns it as a dagger.File
+func fetchDump(ctx context.Context, debugEndpoint string, route string) (*dagger.File, error) {
 	url := fmt.Sprintf("%s/debug/%s", debugEndpoint, route)
+	curlContainer := dag.Wolfi().Container(dagger.WolfiContainerOpts{Packages: []string{"curl"}}).
+		WithExec([]string{
+			"curl",
+			"--fail",
+			"--silent",
+			"--show-error",
+			"--max-time", "120", // Timeout after 120 seconds (for longer CPU profiles)
+			"--output", "/dump",
+			url,
+		})
 
-	client := &http.Client{
-		Timeout: 120 * time.Second, // for longer CPU profiles, this should be extended
-	}
-
-	resp, err := client.Get(url)
+	exitCode, err := curlContainer.ExitCode(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch heap dump: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch heap dump, status code: %d", resp.StatusCode)
+		return nil, err
 	}
 
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read heap dump: %w", err)
+	if exitCode != 0 {
+		stderr, _ := curlContainer.Stderr(ctx)
+		return nil, fmt.Errorf("failed to fetch dump, curl exit code: %d, stderr: %s", exitCode, stderr)
 	}
 
-	return data, nil
+	return curlContainer.File("/dump"), nil
 }
 
 type goTestOpts struct {
