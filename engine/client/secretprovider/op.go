@@ -37,7 +37,7 @@ func opSDKProvider(ctx context.Context, key string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	secret, err := client.Secrets.Resolve(ctx, key)
+	secret, err := client.Secrets().Resolve(ctx, key)
 	if err != nil {
 		return nil, err
 	}
