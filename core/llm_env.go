@@ -139,18 +139,12 @@ func (env *LlmEnv) call(ctx context.Context,
 	if !ok {
 		return nil, fmt.Errorf("tool call: %s: expected arguments to be a map - got %#v", fieldDef.Name, args)
 	}
-	var target dagql.Object
-	if varOrDigest, ok := argsMap["self"].(string); ok {
-		val, err := env.Get(varOrDigest)
-		if err != nil {
-			return nil, fmt.Errorf("tool call: %s: failed to get self: %w", fieldDef.Name, err)
-		}
-		if obj, ok := dagql.UnwrapAs[dagql.Object](val); ok {
-			target = obj
-		}
+	if env.Current() == nil {
+		return nil, fmt.Errorf("no current context")
 	}
-	if target == nil {
-		return nil, fmt.Errorf("function not found: %s", fieldDef.Name)
+	target, ok := dagql.UnwrapAs[dagql.Object](env.Current())
+	if !ok {
+		return nil, fmt.Errorf("current context is not an object, got %T", env.Current())
 	}
 	targetObjType, ok := srv.ObjectType(target.Type().Name())
 	if !ok {
@@ -390,16 +384,11 @@ func (env *LlmEnv) Builtins() []LlmTool {
 
 func fieldArgsToJSONSchema(field *ast.FieldDefinition) map[string]any {
 	schema := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"self": map[string]any{
-				"type":        "string",
-				"description": "The object receiving the tool call",
-			},
-		},
+		"type":       "object",
+		"properties": map[string]any{},
 	}
 	properties := schema["properties"].(map[string]any)
-	required := []string{"self"}
+	required := []string{}
 	for _, arg := range field.Arguments {
 		argSchema := typeToJSONSchema(arg.Type)
 
@@ -420,7 +409,9 @@ func fieldArgsToJSONSchema(field *ast.FieldDefinition) map[string]any {
 			required = append(required, arg.Name)
 		}
 	}
-	schema["required"] = required
+	if len(required) > 0 {
+		schema["required"] = required
+	}
 	return schema
 }
 
