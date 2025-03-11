@@ -12,8 +12,7 @@ import java.util.concurrent.ExecutionException;
 
 @Object
 public class MyModule {
-
-  private Container.WithExecArguments execOpts =
+  private final Container.WithExecArguments execOpts =
       new Container.WithExecArguments().withUseEntrypoint(true);
 
   /** Create Redis service and client */
