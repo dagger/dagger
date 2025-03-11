@@ -343,7 +343,7 @@ func (h *shellCallHandler) constructorCall(ctx context.Context, md *moduleDef, s
 
 	values, err := h.parseArgumentValues(ctx, md, fn, args)
 	if err != nil {
-		return nil, fmt.Errorf("constructor: %w", err)
+		return nil, fmt.Errorf("%q constructor: %w", md.Name, err)
 	}
 
 	newSt := st.WithCall(fn, values)
@@ -363,7 +363,7 @@ func (h *shellCallHandler) functionCall(ctx context.Context, st *ShellState, nam
 
 	argValues, err := h.parseArgumentValues(ctx, def, fn, args)
 	if err != nil {
-		return st, fmt.Errorf("could not parse arguments for function %q: %w", fn.CmdName(), err)
+		return st, fmt.Errorf("function %q: %w", fn.CmdName(), err)
 	}
 
 	newSt := st.WithCall(fn, argValues)
@@ -503,6 +503,12 @@ func (h *shellCallHandler) parseArgumentValues(
 	fn *modFunction,
 	args []string,
 ) (rargs map[string]any, rerr error) {
+	defer func() {
+		if rerr != nil {
+			rerr = fmt.Errorf("%w\n\nUsage: %s", rerr, h.FunctionFullUseLine(md, fn))
+		}
+	}()
+
 	newArgs, err := shellPreprocessArgs(ctx, fn, args)
 	if err != nil {
 		return nil, err
