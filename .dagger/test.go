@@ -162,7 +162,11 @@ func (t *Test) Specific(
 	)
 }
 
-// Run specific tests
+// Run specific tests while curling (pprof) dumps from their associated dev engine:
+// defaults to heap dumps, eg: take a heap dump every second and one after the tests complete:
+// `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --interval=1s export --path=/tmp/dump-$(date +"%Y%m%d_%H%M%S")`
+// but also works for profiles:
+// `dagger call test dump --run=TestCache/TestVolume --pkg=./core/integration --route=pprof/profile --no-final export --path=/tmp/dump-$(date +"%Y%m%d_%H%M%S")`
 func (t *Test) Dump(
 	ctx context.Context,
 	// Only run these tests
@@ -218,7 +222,7 @@ func (t *Test) Dump(
 		return nil, err
 	}
 
-	return t.testAndDump(
+	return t.testDump(
 		ctx,
 		&testOpts{
 			runTestRegex:  run,
@@ -231,10 +235,12 @@ func (t *Test) Dump(
 			count:         count,
 			testVerbose:   testVerbose,
 		},
-		route,
-		noFinal,
-		d,
-		i,
+		&dumpOpts{
+			route:    route,
+			noFinal:  noFinal,
+			delay:    d,
+			interval: i,
+		},
 	)
 }
 
@@ -277,13 +283,79 @@ func (t *Test) test(
 	return err
 }
 
-func (t *Test) testAndDump(
+type dumpOpts struct {
+	route    string
+	noFinal  bool
+	delay    time.Duration
+	interval time.Duration
+}
+
+func (t *Test) dump(
+	ctx context.Context,
+	testContainer *dagger.Container,
+	debugEndpoint string,
+	opts *dumpOpts,
+) (*dagger.Directory, error) {
+	dumps := dag.Directory()
+	baseFileName := strings.ReplaceAll(opts.route, "/", "-")
+	dumpCount := 0 // not strictly necessary, but a nice sanity check and less faff than using dumps.Entries()
+
+	cancelCtx, cancel := context.WithCancel(ctx)
+	eg := errgroup.Group{}
+	wait := opts.delay
+	eg.Go(func() error {
+		var dumpErr error
+		for {
+			select {
+			case <-cancelCtx.Done():
+				return dumpErr
+			case <-time.After(wait):
+				heapData, err := fetchDump(ctx, debugEndpoint, opts.route)
+				dumpErr = errors.Join(dumpErr, err)
+				if err == nil {
+					fileName := fmt.Sprintf("%s-%d.pprof", baseFileName, dumpCount)
+					dumps = dumps.WithFile(fileName, heapData)
+					dumpCount++
+				}
+				if opts.interval < 0 {
+					return dumpErr
+				}
+				wait = opts.interval
+			}
+		}
+	})
+
+	_, testErr := testContainer.Sync(ctx)
+	cancel()
+	dumpErr := eg.Wait()
+
+	if !opts.noFinal {
+		heapData, finalDumpErr := fetchDump(ctx, debugEndpoint, opts.route)
+		dumpErr = errors.Join(dumpErr, finalDumpErr)
+		if finalDumpErr == nil {
+			fileName := fmt.Sprintf("%s-final.pprof", baseFileName)
+			dumps = dumps.WithFile(fileName, heapData)
+			dumpCount++
+		}
+	}
+
+	if testErr != nil {
+		if dumpCount == 0 {
+			return nil, fmt.Errorf("no dumps collected and test failed: %w, %w", testErr, dumpErr)
+		}
+		return dumps, testErr
+	}
+
+	if dumpCount == 0 {
+		return nil, fmt.Errorf("test passed, but no dumps collected: %w", dumpErr)
+	}
+	return dumps, nil
+}
+
+func (t *Test) testDump(
 	ctx context.Context,
 	opts *testOpts,
-	route string,
-	noFinal bool,
-	delay time.Duration,
-	interval time.Duration,
+	dOpts *dumpOpts,
 ) (*dagger.Directory, error) {
 	cmd, debugEndpoint, err := t.testCmd(ctx)
 	if err != nil {
@@ -306,60 +378,13 @@ func (t *Test) testAndDump(
 			bench:         false,
 		},
 	)
-	baseFileName := strings.ReplaceAll(route, "/", "-")
 
-	cancelCtx, cancel := context.WithCancel(ctx)
-	eg := errgroup.Group{}
-	dumps := dag.Directory()
-	dumpCount := 0 // not strictly necessary, but a nice sanity check and less faff than using dumps.Entries()
-	wait := delay
-	eg.Go(func() error {
-		var dumpErr error
-		for {
-			select {
-			case <-cancelCtx.Done():
-				return dumpErr
-			case <-time.After(wait):
-				heapData, err := fetchDump(ctx, debugEndpoint, route)
-				dumpErr = errors.Join(dumpErr, err)
-				if err == nil {
-					fileName := fmt.Sprintf("%s-%d.pprof", baseFileName, dumpCount)
-					dumps = dumps.WithFile(fileName, heapData)
-					dumpCount++
-				}
-				if interval < 0 {
-					return dumpErr
-				}
-				wait = interval
-			}
-		}
-	})
-
-	_, testErr := testContainer.Sync(ctx)
-	cancel()
-	dumpErr := eg.Wait()
-
-	if !noFinal {
-		heapData, finalDumpErr := fetchDump(ctx, debugEndpoint, route)
-		dumpErr = errors.Join(dumpErr, finalDumpErr)
-		if finalDumpErr == nil {
-			fileName := fmt.Sprintf("%s-final.pprof", baseFileName)
-			dumps = dumps.WithFile(fileName, heapData)
-			dumpCount++
-		}
-	}
-
-	if testErr != nil {
-		if dumpCount == 0 {
-			return nil, fmt.Errorf("no dumps collected and test failed: %w, %w", testErr, dumpErr)
-		}
-		return dumps, testErr
-	}
-
-	if dumpCount == 0 {
-		return nil, fmt.Errorf("test passed, but no dumps collected: %w", dumpErr)
-	}
-	return dumps, nil
+	return t.dump(
+		ctx,
+		testContainer,
+		debugEndpoint,
+		dOpts,
+	)
 }
 
 // fetchDump fetches from a debug HTTP endpoint and returns it as a dagger.File
