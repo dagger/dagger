@@ -117,9 +117,6 @@ const (
 	// The kind of the module, e.g. "LOCAL", "GIT"
 	ModuleKindAttr = "dagger.io/module.kind"
 
-	// The root of the module, e.g. "github.com/dagger/dagger"
-	ModuleRootAttr = "dagger.io/module.root"
-
 	// The commit of the module, e.g. "abc123"
 	ModuleCommitAttr = "dagger.io/module.commit"
 
@@ -128,4 +125,7 @@ const (
 
 	// The subpath of the module, relative to the root, e.g. "/modules/my-module"
 	ModuleSubpathAttr = "dagger.io/module.subpath"
+
+	// The HTML URL of the module, e.g. "https://github.com/dagger/dagger"
+	ModuleHTMLRepoURLAttr = "dagger.io/module.htmlRepoURL"
 )

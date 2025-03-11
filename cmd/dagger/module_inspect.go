@@ -145,6 +145,7 @@ type moduleDef struct {
 	SourceDigest      string
 	SourceCommit      string
 	SourceVersion     string
+	HTMLRepoURL       string
 
 	Dependencies []*moduleDef
 }
@@ -187,6 +188,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 			SourceRootSubpath string
 			Commit            string
 			Version           string
+			HTMLRepoURL       string
 			Module            struct {
 				Name         string
 				Description  string
@@ -238,6 +240,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 		SourceDigest:      res.Source.Digest,
 		SourceRoot:        res.Source.AsString,
 		SourceRootSubpath: filepath.Join("/", res.Source.SourceRootSubpath),
+		HTMLRepoURL:       res.Source.HTMLRepoURL,
 		Name:              res.Source.Module.Name,
 		Description:       res.Source.Module.Description,
 		Dependencies:      deps,
@@ -251,17 +254,16 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 	}
 
 	span.SetAttributes(attribute.String(telemetry.ModuleKindAttr, string(def.SourceKind)))
-	// only set git attributes if the module is a git kind
+	span.SetAttributes(attribute.String(telemetry.ModuleSubpathAttr, def.SourceRootSubpath))
+
 	if def.SourceKind == dagger.ModuleSourceKindGitSource {
-		span.SetAttributes(attribute.String(telemetry.ModuleRootAttr, def.SourceRoot))
+		span.SetAttributes(attribute.String(telemetry.ModuleHTMLRepoURLAttr, def.HTMLRepoURL))
 		if def.SourceCommit != "" {
 			span.SetAttributes(attribute.String(telemetry.ModuleCommitAttr, def.SourceCommit))
 		}
 		if def.SourceVersion != "" {
 			span.SetAttributes(attribute.String(telemetry.ModuleVersionAttr, def.SourceVersion))
 		}
-	} else if def.SourceKind == dagger.ModuleSourceKindLocalSource {
-		span.SetAttributes(attribute.String(telemetry.ModuleSubpathAttr, def.SourceRootSubpath))
 	}
 
 	return def, nil
