@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"dagger/my-module/internal/dagger"
-
-	"dagger.io/dagger/dag"
 )
 
 // Demonstrates cloning a Git repository over HTTP(S).
