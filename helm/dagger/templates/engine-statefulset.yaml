@@ -8,17 +8,24 @@ metadata:
   labels:
     {{- include "dagger.labels" . | nindent 4 }}
 spec:
-  # DO NOT RUN MORE THAN 1 REPLICA.
+  # DO NOT RUN MORE THAN 1 REPLICA IF USING HOSTPATH.
   # Only one (1) Engine is able to hold the lock, other replicas will not be able to start.
+  # If using persistent volumes, this is not an issue. Use more than 1 replica if you know that you need it.
   replicas: 1
+  podManagementPolicy: {{ .Values.engine.statefulSet.podManagementPolicy }}
   selector:
     matchLabels:
       name: {{ include "dagger.fullname" . }}-engine
+  {{- if and .Values.engine.statefulSet.persistentVolumeClaim.enabled .Values.engine.statefulSet.persistentVolumeClaimRetentionPolicy }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: {{ .Values.engine.statefulSet.persistentVolumeClaimRetentionPolicy.whenDeleted }}
+    whenScaled: {{ .Values.engine.statefulSet.persistentVolumeClaimRetentionPolicy.whenScaled }}
+  {{- end }}
   template:
     metadata:
-      {{- if (or .Values.engine.config .Values.magicache.enabled .Values.engine.annotations) }}
+      {{- if (or .Values.engine.config .Values.engine.configJson .Values.magicache.enabled .Values.engine.annotations) }}
       annotations:
-        {{- if .Values.engine.config }}
+        {{- if (or .Values.engine.config .Values.engine.configJson) }}
         checksum/config: {{ include (print $.Template.BasePath "/engine-config.yaml") . | sha256sum }}
         {{- end }}
         {{- if .Values.magicache.enabled }}
@@ -32,6 +39,10 @@ spec:
         name: {{ include "dagger.fullname" . }}-engine
         {{- include "dagger.labels" . | nindent 8 }}
     spec:
+      {{- with .Values.engine.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.engine.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
@@ -57,9 +68,17 @@ spec:
         - name: dagger-engine
           image: {{ if .Values.engine.image.ref }}{{ .Values.engine.image.ref }}{{ else }}registry.dagger.io/engine:v{{ .Chart.Version }}{{ end }}
           imagePullPolicy: {{ .Values.engine.image.pullPolicy }}
-          {{- if .Values.engine.args }}
+          {{- if or .Values.engine.port .Values.engine.args }}
           args:
+            {{- if .Values.engine.port }}
+            - "--addr"
+            - "tcp://0.0.0.0:{{ .Values.engine.port }}"
+            - "--addr"
+            - "unix:///var/run/dagger/engine.sock"
+            {{- end }}
+            {{- if .Values.engine.args }}
             {{- toYaml .Values.engine.args | nindent 12 }}
+            {{- end }}
           {{- end }}
           {{- if (or .Values.engine.env .Values.magicache.enabled) }}
           env:
@@ -80,12 +99,28 @@ spec:
               name: {{ include "dagger.fullname" . }}-magicache-token
               {{- end }}
           {{- end }}
+          {{- if .Values.engine.port }}
+          ports:
+            - name: dagger
+              containerPort: {{ .Values.engine.port }}
+              protocol: TCP
+              {{- if .Values.engine.hostPort }}
+              hostPort: {{ .Values.engine.hostPort }}
+              {{- end }}
+          {{- end }}
           securityContext:
             privileged: true
             capabilities:
               add:
                 - ALL
           resources: {{- toYaml .Values.engine.resources | nindent 12 }}
+          {{- if .Values.engine.lifecycle }}
+          lifecycle:
+            {{- if .Values.engine.lifecycle.preStop }}
+            preStop:
+              {{- toYaml .Values.engine.lifecycle.preStop | nindent 14 }}
+            {{- end }}
+          {{- end }}
           readinessProbe:
             exec:
               command:
@@ -99,6 +134,7 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/dagger
+            {{- if .Values.engine.hostPath.runVolume.enabled }}
             - name: run
               mountPath: /var/run/dagger
             {{- if .Values.engine.config }}
@@ -106,20 +142,54 @@ spec:
               mountPath: /etc/dagger/engine.toml
               subPath: engine.toml
             {{- end }}
+            {{- if .Values.engine.configJson }}
+            - name: config
+              mountPath: /etc/dagger/engine.json
+              subPath: engine.json
+            {{- end }}
+            {{- with .Values.engine.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
       terminationGracePeriodSeconds: {{ .Values.engine.terminationGracePeriodSeconds }}
       volumes:
+        {{- if .Values.engine.hostPath.dataVolume.enabled }}
         - name: data
           hostPath:
             path: /var/lib/dagger-{{ include "dagger.fullname" . }}
+        {{- end }}
+        {{- if .Values.engine.hostPath.runVolume.enabled }}
         - name: run
           hostPath:
             path: /var/run/dagger-{{ include "dagger.fullname" . }}
-        {{- if .Values.engine.config }}
+        {{- end }}
+        {{- if (or .Values.engine.config .Values.engine.configJson) }}
         - name: config
           configMap:
             name: {{ include "dagger.fullname" . }}-engine-config
             items:
+              {{- if .Values.engine.config }}
               - key: engine.toml
                 path: engine.toml
+              {{- end }}
+              {{- if .Values.engine.configJson }}
+              - key: engine.json
+                path: engine.json
+              {{- end }}
         {{- end }}
+        {{- with .Values.engine.volumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+  {{- if .Values.engine.statefulSet.persistentVolumeClaim.enabled }}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      {{- with .Values.engine.statefulSet.persistentVolumeClaim.storageClassName }}
+      storageClassName: {{ . }}
+      {{- end }}
+      accessModes:
+        {{- toYaml .Values.engine.statefulSet.persistentVolumeClaim.accessModes | nindent 8 }}
+      resources:
+        {{- toYaml .Values.engine.statefulSet.persistentVolumeClaim.resources | nindent 8 }}
+  {{- end }}
 {{- end }}
