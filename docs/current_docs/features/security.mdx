@@ -1,0 +1,77 @@
+---
+slug: /features/security
+description: "Security-first design"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Security
+
+Dagger is secure by design. All Dagger Functions are fully "sandboxed" and do not have direct access to the host system. Dagger also natively supports reading secrets from multiple secret providers and  has built-in safeguards to ensure that secrets do not leak into the open.
+
+## Sandboxing
+
+Dagger is built to protect your host environment by default. This means that Dagger Functions cannot access host resources - such as the host environment, host services, host filesystem, or host SSH agent - unless you explicitly grant permission by passing them as arguments.
+
+By requiring typed arguments such as `Directory`, `Socket`, `Service`, or `Secret`, Dagger ensures users understand exactly what they are sharing with a Dagger Function. This explicit access design helps prevent malicious or untrusted modules from inadvertently obtaining sensitive data.
+
+Dagger’s security model treats the top-level module (i.e., the main function or highest-level call) as the single place where sensitive resources are introduced. It is only through this call that a user can explicitly provide directories, services, sockets, or secrets. In turn, the top-level module may pass these resources to other installed modules if needed, but there is never any implicit sharing.
+
+## Secrets
+
+Dagger also natively supports the use of confidential information ("secrets") such as passwords, API keys, SSH keys, and access tokens. These secre can be sourced from different secret providers, including the host environment, the host filesystem, the result of host command execution, and external secret managers [1Password](https://1password.com/) and [Vault](https://www.hashicorp.com/products/vault).
+
+:::important
+Dagger has built-in safeguards to ensure that secrets are used without exposing them in plaintext logs, writing them into the filesystem of containers you're building, or inserting them into the cache. This ensures that sensitive data does not leak - for example, in the event of a crash.
+:::
+
+Here's an example of a pipeline that receives and uses a GitHub personal access token as a secret:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/secrets/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/secrets/python/main.py
+```
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=./snippets/secrets/typescript/index.ts
+```
+</TabItem>
+<TabItem value="PHP">
+```php file=./snippets/secrets/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="Java">
+```java file=./snippets/secrets/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
+```
+</TabItem>
+</Tabs>
+
+The secret can be passed from the host environment via the `env` provider:
+
+![Secret from environment](/img/current_docs/features/secrets-env.gif)
+
+Secrets can also be passed from host files via the `file` provider (shown below) or from host command output via the `cmd` provider:
+
+![Secret from file](/img/current_docs/features/secrets-file.gif)
+
+Secrets can also be read from external secret managers, such as Vault (`vault`):
+
+```shell
+dagger call github-api --token=vault://credentials.github
+```
+
+...or 1Password (`op`):
+
+```shell
+dagger call github-api --token=op://infra/github/credential
+```
+
+![Secret from 1Password](/img/current_docs/features/secrets-1password.gif)
+
+## Learn more
+
+- [Use secrets as function arguments](../api/arguments.mdx#secret-arguments)
