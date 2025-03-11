@@ -968,6 +968,10 @@ func (m *Bare) TestGlob(ctx context.Context) ([]string, error) {
 	return m.dir().Glob(ctx, "**/*")
 }
 
+func (m *Bare) TestName(ctx context.Context) (string, error) {
+	return m.dir().Directory("foo").Name(ctx)
+}
+
 func (m *Bare) dir() *dagger.Directory {
 	return dag.Directory().
 		WithDirectory("foo", dag.Directory()).
@@ -977,8 +981,8 @@ func (m *Bare) dir() *dagger.Directory {
 `)
 
 	out, err := modGen.
-		With(daggerQuery(`{bare{testEntries, testGlob}}`)).
+		With(daggerQuery(`{bare{testEntries, testGlob, testName}}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"bare": {"testEntries": ["baz", "foo"], "testGlob": ["baz", "foo", "foo/bar"]}}`, out)
+	require.JSONEq(t, `{"bare": {"testEntries": ["baz", "foo"], "testGlob": ["baz", "foo", "foo/bar"], "testName": "foo"}}`, out)
 }
