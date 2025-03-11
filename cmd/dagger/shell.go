@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -28,15 +27,6 @@ const (
 	// as it suggests the idea of dependencies, intersections, and points where separate paths
 	// or data sets come together.
 	shellPromptSymbol = "⋈"
-
-	// shellInternalCmd is the command that is used internally to avoid conflicts
-	// with interpreter builtins. For example when `echo` is used, the command becomes
-	// `__dag echo`. Otherwise we can't have a function named `echo`.
-	shellInternalCmd = "__dag"
-
-	// shellInterpBuiltinPrefix is the prefix that users should add to an
-	// interpreter builtin command to force running it.
-	shellInterpBuiltinPrefix = "_"
 )
 
 // shellCode is the code to be executed in the shell command
@@ -47,7 +37,7 @@ var (
 
 func shellAddFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&shellCode, "code", "c", "", "Command to be executed")
-	cmd.Flags().BoolVar(&shellNoLoadModule, "no-mod", false, "Don't load module during shell startup (mutually exclusive with --mod)")
+	cmd.Flags().BoolVarP(&shellNoLoadModule, "no-mod", "n", false, "Don't load module during shell startup (mutually exclusive with --mod)")
 	cmd.MarkFlagsMutuallyExclusive("mod", "no-mod")
 }
 
@@ -149,6 +139,9 @@ type shellCallHandler struct {
 	// stdlib is the list of standard library commands
 	stdlib []*ShellCommand
 
+	// state stores the pipeline state between commands in a chain
+	state *ShellStateStore
+
 	// modDefs has the cached module definitions, after loading, and
 	// keyed by module digest
 	modDefs sync.Map
@@ -182,50 +175,19 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 	r, err := interp.New(
 		interp.StdIO(nil, h.stdoutWriter, h.stderrWriter),
 		interp.Params("-e", "-u", "-o", "pipefail"),
+		interp.CallHandler(h.Call),
+		interp.ExecHandlers(h.Exec),
 
 		// The "Interactive" option is useful even when not running dagger shell
 		// in interactive mode. It expands aliases and maybe more in the future.
 		interp.Interactive(true),
-
-		// Interpreter builtins run before the exec handlers, but CallHandler
-		// runs before any of that, so we can use it to change the arguments
-		// slightly in order to resolve naming conflicts. For example, "echo"
-		// is an interpreter builtin but can also be a Dagger function.
-		interp.CallHandler(func(ctx context.Context, args []string) ([]string, error) {
-			if args[0] == shellInternalCmd {
-				return args, fmt.Errorf("command %q is reserved for internal use", shellInternalCmd)
-			}
-			// When there's a Dagger function with a name that conflicts
-			// with an interpreter builtin, the Dagger function is favored.
-			// To force the builtin to execute instead, prefix the command
-			// with "_". For example: "container | from $(_echo alpine)".
-			if strings.HasPrefix(args[0], shellInterpBuiltinPrefix) {
-				args[0] = strings.TrimPrefix(args[0], shellInterpBuiltinPrefix)
-				return args, nil
-			}
-			// We may allow some interpreter builtins to be used as dagger shell
-			// builtins, but there's no way to directly call the interpreter
-			// command from there so we use ShellCommand just for the documentation
-			// (.help) but strip the builtin prefix here ('.') when executing.
-			if cmd, _ := h.BuiltinCommand(args[0]); cmd != nil && cmd.Run == nil {
-				if name := strings.TrimPrefix(args[0], "."); isInterpBuiltin(name) {
-					args[0] = name
-					return args, nil
-				}
-			}
-			// If the command is an interpreter builtin, bypass the interpreter
-			// builtins to ensure the exec handler is executed.
-			if isInterpBuiltin(args[0]) {
-				return append([]string{shellInternalCmd}, args...), nil
-			}
-			return args, nil
-		}),
-		interp.ExecHandlers(h.Exec),
 	)
 	if err != nil {
 		return err
 	}
 	h.runner = r
+
+	h.state = NewStateStore(h.runner)
 
 	// TODO: use `--workdir` and `--no-workdir` flags
 	ref, _ := getExplicitModuleSourceRef()
@@ -296,41 +258,8 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 	return nil
 }
 
-func isInterpBuiltin(name string) bool {
-	// Allow the following:
-	//  - invalid function/module names: "[", ":"
-	//  - unlikely to conflict: "true", "false"
-	switch name {
-	case "exit", "set", "shift", "unset",
-		"echo", "printf", "break", "continue", "pwd", "cd",
-		"wait", "builtin", "trap", "type", "source", ".", "command",
-		"dirs", "pushd", "popd", "alias", "unalias",
-		"getopts", "eval", "test", "exec",
-		"return", "read", "mapfile", "readarray", "shopt",
-		//  not implemented
-		"umask", "fg", "bg":
-		return true
-	}
-	return false
-}
-
 func litWord(s string) *syntax.Word {
 	return &syntax.Word{Parts: []syntax.WordPart{&syntax.Lit{Value: s}}}
-}
-
-func (h *shellCallHandler) shellStateProcessor(ctx context.Context) func([]byte) ([]byte, error) {
-	return func(b []byte) ([]byte, error) {
-		resp, typeDef, err := h.Result(ctx, bytes.NewReader(b), handleObjectLeaf)
-		if err != nil {
-			return nil, err
-		}
-		if typeDef != nil && typeDef.Kind == dagger.TypeDefKindVoidKind {
-			return nil, nil
-		}
-		buf := new(bytes.Buffer)
-		err = printResponse(buf, resp, typeDef)
-		return buf.Bytes(), err
-	}
 }
 
 // run parses code and executes the interpreter's Runner
@@ -340,7 +269,7 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 		return err
 	}
 
-	h.stdoutWriter.SetProcessFunc(h.shellStateProcessor(ctx))
+	h.stdoutWriter.SetProcessFunc(h.stateResolver(ctx))
 
 	err = h.runner.Run(ctx, file)
 	if exit, ok := interp.IsExitStatus(err); ok {
@@ -426,9 +355,18 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 
 			stdoutW := newTerminalWriter(stdio.Stdout.Write)
 			// handle shell state
-			stdoutW.SetProcessFunc(h.shellStateProcessor(ctx))
+			stdoutW.SetProcessFunc(h.stateResolver(ctx))
 			stderrW := newTerminalWriter(stdio.Stderr.Write)
 			interp.StdIO(nil, stdoutW, stderrW)(h.runner)
+
+			// Note: This may not be worth it as items will already be pruned
+			// when last used. We should only have orphans at this point if
+			// there's a variable that gets reset with a different value and
+			// that should hardly cause memory issues.
+			defer h.state.Prune()
+			if h.debug {
+				defer h.state.debug(ctx)
+			}
 
 			return h.run(ctx, strings.NewReader(line), "")
 		},

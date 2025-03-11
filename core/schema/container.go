@@ -15,12 +15,12 @@ import (
 
 	"github.com/containerd/platforms"
 	"github.com/distribution/reference"
+	bkcache "github.com/moby/buildkit/cache"
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/client/llb/sourceresolver"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/identity"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -568,7 +568,7 @@ func (s *containerSchema) Install() {
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
 
-		dagql.NodeFunc("asTarball", DagOpFileWrapper(s.srv, s.asTarball)).
+		dagql.NodeFunc("asTarball", DagOpFileWrapper(s.srv, s.asTarball, s.asTarballPath)).
 			Doc(`Returns a File representing the container serialized to a tarball.`).
 			ArgDoc("platformVariants",
 				`Identifiers for other platform specific containers.`,
@@ -1804,11 +1804,15 @@ type containerAsTarballArgs struct {
 	MediaTypes        core.ImageMediaTypes `default:"OCIMediaTypes"`
 }
 
+func (s *containerSchema) asTarballPath(ctx context.Context, val dagql.Instance[*core.Container]) (string, error) {
+	return val.ID().Call().Digest + ".tar", nil
+}
+
 func (s *containerSchema) asTarball(
 	ctx context.Context,
 	parent dagql.Instance[*core.Container],
 	args containerAsTarballArgs,
-) (inst dagql.Instance[*core.File], err error) {
+) (inst dagql.Instance[*core.File], rerr error) {
 	platformVariants, err := dagql.LoadIDs(ctx, s.srv, args.PlatformVariants)
 	if err != nil {
 		return inst, err
@@ -1891,45 +1895,45 @@ func (s *containerSchema) asTarball(
 	}
 	defer detach()
 
-	tmpDir, err := os.MkdirTemp("", "dagger-tarball")
-	if err != nil {
-		return inst, fmt.Errorf("failed to create temp dir for tarball export: %w", err)
+	op, ok := core.DagOpFromContext[core.FSDagOp](ctx)
+	if !ok {
+		return inst, fmt.Errorf("no dagop")
 	}
-	defer os.RemoveAll(tmpDir)
-	fileName := identity.NewID() + ".tar"
-
-	err = bk.ContainerImageToTarball(ctx, engineHostPlatform.Spec(), filepath.Join(tmpDir, fileName), inputByPlatform, opts)
+	bkref, err := op.CreateRef(ctx, nil,
+		bkcache.CachePolicyRetain,
+		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+		bkcache.WithDescription(op.Name()))
+	if err != nil {
+		return inst, err
+	}
+	defer func() {
+		if rerr != nil && bkref != nil {
+			bkref.Release(context.WithoutCancel(ctx))
+		}
+	}()
+	err = op.Mount(ctx, bkref, func(out string) error {
+		err = bk.ContainerImageToTarball(ctx, engineHostPlatform.Spec(), filepath.Join(out, op.Path), inputByPlatform, opts)
+		if err != nil {
+			return fmt.Errorf("container image to tarball file conversion failed: %w", err)
+		}
+		return nil
+	})
 	if err != nil {
 		return inst, fmt.Errorf("container image to tarball file conversion failed: %w", err)
 	}
-	localDef, err := llb.Local(tmpDir,
-		llb.SessionID(bk.ID()), // see engine/server/bk_session.go, we have a special session that points to our engine host
-		llb.SharedKeyHint(bk.ID()),
-		llb.IncludePatterns([]string{fileName}),
-		llb.WithCustomName(fmt.Sprintf("container-image-to-tarball-%s", fileName)),
-		buildkit.WithTracePropagation(ctx),
-	).Marshal(ctx, llb.Platform(engineHostPlatform.Spec()))
-	if err != nil {
-		return inst, fmt.Errorf("failed to create llb definition for container image to tarball: %w", err)
-	}
-	def := localDef.ToPB()
 
-	// force-evaluate to get this definitely into the llb.Local cache
-	_, err = bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: def,
-		Evaluate:   true,
-	})
+	f := core.NewFile(parent.Self.Query, nil, op.Path, parent.Self.Query.Platform(), nil)
+	snap, err := bkref.Commit(ctx)
 	if err != nil {
 		return inst, err
 	}
-
-	fileInst, err := dagql.NewInstanceForCurrentID(ctx, s.srv, parent,
-		core.NewFile(parent.Self.Query, def, fileName, parent.Self.Query.Platform(), nil),
-	)
+	bkref = nil
+	f.Result = snap
+	fileInst, err := dagql.NewInstanceForCurrentID(ctx, s.srv, parent, f)
 	if err != nil {
 		return inst, err
 	}
-	return fileInst, err
+	return fileInst, nil
 }
 
 type containerImportArgs struct {

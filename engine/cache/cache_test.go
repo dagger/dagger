@@ -256,33 +256,89 @@ func TestCacheContextCancel(t *testing.T) {
 
 func TestCacheResultRelease(t *testing.T) {
 	t.Parallel()
-	cacheIface := NewCache[int, int]()
-	c, ok := cacheIface.(*cache[int, int])
-	assert.Assert(t, ok)
-	ctx := context.Background()
+	t.Run("basic", func(t *testing.T) {
+		t.Parallel()
+		cacheIface := NewCache[int, int]()
+		c, ok := cacheIface.(*cache[int, int])
+		assert.Assert(t, ok)
+		ctx := context.Background()
 
-	res1A, err := c.GetOrInitialize(ctx, 1, func(_ context.Context) (int, error) {
-		return 1, nil
+		res1A, err := c.GetOrInitialize(ctx, 1, func(_ context.Context) (int, error) {
+			return 1, nil
+		})
+		assert.NilError(t, err)
+		res1B, err := c.GetOrInitialize(ctx, 1, func(_ context.Context) (int, error) {
+			return 1, nil
+		})
+		assert.NilError(t, err)
+
+		res2, err := c.GetOrInitialize(ctx, 2, func(_ context.Context) (int, error) {
+			return 2, nil
+		})
+		assert.NilError(t, err)
+
+		assert.Equal(t, 2, len(c.calls))
+
+		err = res2.Release(ctx)
+		assert.NilError(t, err)
+		assert.Equal(t, 1, len(c.calls))
+
+		err = res1A.Release(ctx)
+		assert.NilError(t, err)
+		assert.Equal(t, 1, len(c.calls))
+
+		err = res1B.Release(ctx)
+		assert.NilError(t, err)
+		assert.Equal(t, 0, len(c.calls))
 	})
-	assert.NilError(t, err)
-	res1B, err := c.GetOrInitialize(ctx, 1, func(_ context.Context) (int, error) {
-		return 1, nil
+
+	t.Run("onRelease", func(t *testing.T) {
+		t.Parallel()
+		cacheIface := NewCache[int, int]()
+		c, ok := cacheIface.(*cache[int, int])
+		assert.Assert(t, ok)
+		ctx := context.Background()
+
+		releaseCalledCh := make(chan struct{})
+		res1A, err := c.GetOrInitializeWithCallbacks(ctx, 1, func(_ context.Context) (*ValueWithCallbacks[int], error) {
+			return &ValueWithCallbacks[int]{Value: 1, OnRelease: func(ctx context.Context) error {
+				close(releaseCalledCh)
+				return nil
+			}}, nil
+		})
+		assert.NilError(t, err)
+		res1B, err := c.GetOrInitialize(ctx, 1, func(_ context.Context) (int, error) {
+			return 1, nil
+		})
+		assert.NilError(t, err)
+
+		err = res1A.Release(ctx)
+		assert.NilError(t, err)
+		select {
+		case <-releaseCalledCh:
+			// shouldn't be called until every result is released
+			t.Fatal("unexpected release call")
+		default:
+		}
+
+		err = res1B.Release(ctx)
+		assert.NilError(t, err)
+		select {
+		case <-releaseCalledCh:
+			// it was called now that every result is released
+		default:
+			t.Fatal("expected release call")
+		}
+
+		// test error in onRelease
+		res2, err := c.GetOrInitializeWithCallbacks(ctx, 2, func(_ context.Context) (*ValueWithCallbacks[int], error) {
+			return &ValueWithCallbacks[int]{Value: 2, OnRelease: func(ctx context.Context) error {
+				return fmt.Errorf("oh no")
+			}}, nil
+		})
+		assert.NilError(t, err)
+
+		err = res2.Release(ctx)
+		assert.ErrorContains(t, err, "oh no")
 	})
-	assert.NilError(t, err)
-
-	res2, err := c.GetOrInitialize(ctx, 2, func(_ context.Context) (int, error) {
-		return 2, nil
-	})
-	assert.NilError(t, err)
-
-	assert.Equal(t, 2, len(c.calls))
-
-	res2.Release()
-	assert.Equal(t, 1, len(c.calls))
-
-	res1A.Release()
-	assert.Equal(t, 1, len(c.calls))
-
-	res1B.Release()
-	assert.Equal(t, 0, len(c.calls))
 }
