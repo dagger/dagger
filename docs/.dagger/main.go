@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"dagger/docs/internal/dagger"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,12 +12,27 @@ import (
 	"github.com/netlify/open-api/v2/go/models"
 	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/dagger/dagger/.dagger/internal/dagger"
 )
 
+func New(
+	// +defaultPath="/"
+	source *dagger.Directory,
+	// +defaultPath="nginx.conf"
+	nginxConfig *dagger.File,
+	// +defaultPath="doctum-config.php"
+	doctumConfig *dagger.File,
+) Docs {
+	return Docs{
+		Source:       source,
+		NginxConfig:  nginxConfig,
+		DoctumConfig: doctumConfig,
+	}
+}
+
 type Docs struct {
-	Dagger *DaggerDev // +private
+	Source       *dagger.Directory
+	NginxConfig  *dagger.File // +private
+	DoctumConfig *dagger.File // +private
 }
 
 const (
@@ -39,28 +55,23 @@ pagination_prev: null
 
 // Build the docs website
 func (d Docs) Site() *dagger.Directory {
-	return dag.
-		Docusaurus(
-			d.Dagger.Source(),
-			dagger.DocusaurusOpts{
-				Dir:  "/src/docs",
-				Yarn: true,
-				// HACK: cache seems to cause weird ephemeral errors occasionally -
-				// probably because of cache sharing
-				DisableCache: true,
-			},
-		).
-		Build()
+	opts := dagger.DocusaurusOpts{
+		Dir:  "/src/docs",
+		Yarn: true,
+		// HACK: cache seems to cause weird ephemeral errors occasionally -
+		// probably because of cache sharing
+		DisableCache: true,
+	}
+	return dag.Docusaurus(d.Source, opts).Build()
 }
 
 // Build the docs server
 func (d Docs) Server() *dagger.Container {
-	nginxConfig := dag.CurrentModule().Source().File("docs-nginx.conf")
 	return dag.
 		Container().
 		From("nginx").
 		WithoutEntrypoint().
-		WithFile("/etc/nginx/conf.d/default.conf", nginxConfig).
+		WithFile("/etc/nginx/conf.d/default.conf", d.NginxConfig).
 		WithDefaultArgs([]string{"nginx", "-g", "daemon off;"}).
 		WithDirectory("/var/www", d.Site()).
 		WithExposedPort(8000)
@@ -81,8 +92,8 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 		}()
 		_, err := dag.Container().
 			From("tmknom/markdownlint:0.31.1").
-			WithMountedDirectory("/src", d.Dagger.Source()).
-			WithMountedFile("/src/.markdownlint.yaml", d.Dagger.Source().File(".markdownlint.yaml")).
+			WithMountedDirectory("/src", d.Source).
+			WithMountedFile("/src/.markdownlint.yaml", d.Source.File(".markdownlint.yaml")).
 			WithWorkdir("/src").
 			WithExec([]string{
 				"markdownlint",
@@ -104,7 +115,7 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 			}
 			span.End()
 		}()
-		before := d.Dagger.Source()
+		before := d.Source
 		after := d.Generate()
 		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{
 			generatedSchemaPath,
@@ -123,12 +134,12 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 			}
 			span.End()
 		}()
-		before := d.Dagger.Source()
+		before := d.Source
 		// FIXME: spin out a changie module
 		after := dag.
 			Container().
 			From("ghcr.io/miniscruff/changie").
-			WithMountedDirectory("/src", d.Dagger.Source()).
+			WithMountedDirectory("/src", d.Source).
 			WithWorkdir("/src").
 			WithExec([]string{"/changie", "merge"}).
 			Directory("/src")
@@ -150,7 +161,6 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 	// Go is already linted by engine:lint
 	// Python is already linted by sdk:python:lint
 	// TypeScript is already linted at sdk:typescript:lint
-
 	return eg.Wait()
 }
 
@@ -160,7 +170,8 @@ func (d Docs) Generate() *dagger.Directory {
 		WithDirectory("", d.GenerateSchema()).
 		WithDirectory("", d.GenerateCli()).
 		WithDirectory("", d.GenerateSchemaReference()).
-		WithDirectory("", d.GenerateConfigSchemas())
+		WithDirectory("", d.GenerateConfigSchemas()).
+		WithDirectory("", d.GeneratePhp())
 }
 
 // Regenerate the CLI reference docs
@@ -172,10 +183,23 @@ func (d Docs) GenerateCli() *dagger.Directory {
 	return dag.Directory().WithFile(generatedCliZenPath, generated)
 }
 
+// Generate the PHP SDK API reference documentation
+func (d Docs) GeneratePhp() *dagger.Directory {
+	return dag.PhpSDKDev().Base().
+		WithFile(
+			"/usr/bin/doctum",
+			dag.HTTP("https://doctum.long-term.support/releases/5.5.4/doctum.phar"),
+			dagger.ContainerWithFileOpts{Permissions: 0711},
+		).
+		WithFile("/etc/doctum-config.php", d.DoctumConfig).
+		WithExec([]string{"doctum", "update", "/etc/doctum-config.php", "-v"}).
+		Directory("/src/sdk/php/build")
+}
+
 // Regenerate the API schema
 func (d Docs) GenerateSchema() *dagger.Directory {
 	introspectionJSON := dag.
-		Go(d.Dagger.Source()).
+		Go(d.Source).
 		Env().
 		WithExec([]string{"go", "run", "./cmd/introspect"}, dagger.ContainerWithExecOpts{
 			RedirectStdout: "introspection.json",
@@ -190,7 +214,7 @@ func (d Docs) GenerateSchema() *dagger.Directory {
 func (d Docs) GenerateSchemaReference() *dagger.Directory {
 	generatedHTML := dag.Container().
 		From("node:18").
-		WithMountedDirectory("/src", d.Dagger.Source().WithDirectory(".", d.GenerateSchema())).
+		WithMountedDirectory("/src", d.Source.WithDirectory(".", d.GenerateSchema())).
 		WithWorkdir("/src/docs").
 		WithMountedDirectory("/mnt/spectaql", spectaql()).
 		WithExec([]string{"yarn", "add", "file:/mnt/spectaql"}).
@@ -201,7 +225,7 @@ func (d Docs) GenerateSchemaReference() *dagger.Directory {
 
 // Regenerate the config schemas
 func (d Docs) GenerateConfigSchemas() *dagger.Directory {
-	ctr := dag.Go(d.Dagger.Source()).Env()
+	ctr := dag.Go(d.Source).Env()
 
 	daggerJSONSchema := ctr.
 		WithExec([]string{"go", "run", "./cmd/json-schema", "dagger.json"}, dagger.ContainerWithExecOpts{
@@ -238,11 +262,11 @@ func (d Docs) Deploy(
 	ctx context.Context,
 	netlifyToken *dagger.Secret,
 ) (string, error) {
-	commit, err := d.Dagger.Git.Head().Commit(ctx)
+	commit, err := dag.Version().Git().Head().Commit(ctx)
 	if err != nil {
 		return "", err
 	}
-	dirty, err := d.Dagger.Git.Dirty(ctx)
+	dirty, err := dag.Version().Git().Dirty(ctx)
 	if err != nil {
 		return "", err
 	}

@@ -19,51 +19,58 @@ use function Dagger\dag;
 #[Doc("The PHP SDK's development module.")]
 final class PhpSdkDev
 {
-    private const SDK_ROOT = '/src/sdk/php';
+    private const SDK_ROOT = "/src/sdk/php";
 
     #[DaggerFunction]
     public function __construct(
-        #[DefaultPath("..")]
-        #[Doc("The PHP SDK source directory.")]
+        #[DefaultPath("..")] #[
+            Doc("The PHP SDK source directory.")
+        ]
         private Directory $source,
         private ?Container $container = null
     ) {
         if (is_null($this->container)) {
             $this->container = dag()
-            ->container()
-            ->from('php:8.3-cli-alpine')
-            ->withFile('/usr/bin/composer', dag()
                 ->container()
-                ->from('composer:2')
-                ->file('/usr/bin/composer'))
-            ->withMountedCache('/root/.composer', dag()
-                ->cacheVolume('composer-php:8.3-cli-alpine'))
-            ->withEnvVariable('COMPOSER_HOME', '/root/.composer')
-            ->withEnvVariable('COMPOSER_ALLOW_SUPERUSER', '1');
+                ->from("php:8.3-cli-alpine")
+                ->withFile(
+                    "/usr/bin/composer",
+                    dag()
+                        ->container()
+                        ->from("composer:2")
+                        ->file("/usr/bin/composer")
+                )
+                ->withMountedCache(
+                    "/root/.composer",
+                    dag()->cacheVolume("composer-php:8.3-cli-alpine")
+                )
+                ->withEnvVariable("COMPOSER_HOME", "/root/.composer")
+                ->withEnvVariable("COMPOSER_NO_INTERACTION", "1")
+                ->withEnvVariable("COMPOSER_ALLOW_SUPERUSER", "1");
         }
 
-        $this->container = $this->container->withMountedDirectory(self::SDK_ROOT, $this->source)
+        $this->container = $this->container
+            ->withMountedDirectory(self::SDK_ROOT, $this->source)
             ->withWorkdir(self::SDK_ROOT)
-            ->withExec(['composer', 'install'])
-            ->withEnvVariable('PATH', './vendor/bin:$PATH', expand: true);
+            ->withExec(["composer", "install"])
+            ->withEnvVariable("PATH", './vendor/bin:$PATH', expand: true);
     }
 
     #[DaggerFunction]
-    #[Doc('Run tests in source directory')]
+    #[Doc("Run tests in source directory")]
     public function test(
-        #[Doc('Only run tests in the given group')]
-        ?string $group = null,
+        #[Doc("Only run tests in the given group")] ?string $group = null
     ): Container {
         return $this->container->withExec(
-            is_null($group) ? ['phpunit'] : ['phpunit', "--group=$group"]
+            is_null($group) ? ["phpunit"] : ["phpunit", "--group=$group"]
         );
     }
 
     #[DaggerFunction]
-    #[Doc('Run linter in source directory')]
+    #[Doc("Run linter in source directory")]
     public function lint(): Container
     {
-        return $this->container->withExec(['phpcs']);
+        return $this->container->withExec(["phpcs"]);
     }
 
     /**
@@ -82,18 +89,23 @@ final class PhpSdkDev
      * https://github.com/PHPCSStandards/PHP_CodeSniffer/issues/184
      */
     #[DaggerFunction]
-    #[Doc('Return diff from formatting source directory')]
+    #[Doc("Return diff from formatting source directory")]
     public function format(): Directory
     {
         $result = $this->container->withExec(
-            args: ['phpcbf'],
-            expect: ReturnType::ANY,
+            args: ["phpcbf"],
+            expect: ReturnType::ANY
         );
 
         if (!in_array($result->exitCode(), [0, 1, 2], true)) {
-            throw new QueryError(['errors' => [[
-                'message' => 'An error occured during execution of PHPCBF',
-            ]]]);
+            throw new QueryError([
+                "errors" => [
+                    [
+                        "message" =>
+                            "An error occured during execution of PHPCBF",
+                    ],
+                ],
+            ]);
         }
 
         $original = $this->container->directory(self::SDK_ROOT);
@@ -102,12 +114,22 @@ final class PhpSdkDev
     }
 
     #[DaggerFunction]
-    #[Doc('Return stdout from formatting source directory')]
+    #[
+        Doc(
+            "build a PHP container with the PHP SDK source files added and dependencies installed"
+        )
+    ]
+    public function base(): Container
+    {
+        return $this->container;
+    }
+
+    #[DaggerFunction]
+    #[Doc("Return stdout from formatting source directory")]
     public function formatStdout(): string
     {
-        return $this
-            ->container
-            ->withExec(args: ['phpcbf'], expect: ReturnType::ANY)
+        return $this->container
+            ->withExec(args: ["phpcbf"], expect: ReturnType::ANY)
             ->stdout();
     }
 }
