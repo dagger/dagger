@@ -145,6 +145,11 @@ class ListTypeDefID(Scalar):
     object of type ListTypeDef."""
 
 
+class ModuleConfigClientID(Scalar):
+    """The `ModuleConfigClientID` scalar type represents an identifier for
+    an object of type ModuleConfigClient."""
+
+
 class ModuleID(Scalar):
     """The `ModuleID` scalar type represents an identifier for an object
     of type Module."""
@@ -2445,6 +2450,12 @@ class CurrentModule(Type):
 class Directory(Type):
     """A directory."""
 
+    def as_git(self) -> "GitRepository":
+        """Converts this directory into a git repository"""
+        _args: list[Arg] = []
+        _ctx = self._select("asGit", _args)
+        return GitRepository(_ctx)
+
     def as_module(
         self,
         *,
@@ -2708,6 +2719,27 @@ class Directory(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(DirectoryID)
+
+    async def name(self) -> str:
+        """Returns the name of the directory.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
 
     async def sync(self) -> Self:
         """Force evaluation in the engine.
@@ -5646,6 +5678,96 @@ class Module(Type):
 
 
 @typecheck
+class ModuleConfigClient(Type):
+    """The client generated for the module."""
+
+    async def dev(self) -> bool | None:
+        """If true, generate the client in developer mode.
+
+        Returns
+        -------
+        bool | None
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("dev", _args)
+        return await _ctx.execute(bool | None)
+
+    async def directory(self) -> str:
+        """The directory the client is generated in.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("directory", _args)
+        return await _ctx.execute(str)
+
+    async def generator(self) -> str:
+        """The generator to use
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("generator", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> ModuleConfigClientID:
+        """A unique identifier for this ModuleConfigClient.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        ModuleConfigClientID
+            The `ModuleConfigClientID` scalar type represents an identifier
+            for an object of type ModuleConfigClient.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(ModuleConfigClientID)
+
+
+@typecheck
 class ModuleSource(Type):
     """The source needed to load and run a module, along with any metadata
     about the source such as versions/urls/etc."""
@@ -5722,6 +5844,27 @@ class ModuleSource(Type):
         _args: list[Arg] = []
         _ctx = self._select("commit", _args)
         return await _ctx.execute(str)
+
+    async def config_clients(self) -> list[ModuleConfigClient]:
+        """The clients generated for the module."""
+        _args: list[Arg] = []
+        _ctx = self._select("configClients", _args)
+        _ctx = ModuleConfigClient(_ctx)._select("id", [])
+
+        @dataclass
+        class Response:
+            id: ModuleConfigClientID
+
+        _ids = await _ctx.execute(list[Response])
+        return [
+            ModuleConfigClient(
+                Client.from_context(_ctx)._select(
+                    "loadModuleConfigClientFromID",
+                    [Arg("id", v.id)],
+                )
+            )
+            for v in _ids
+        ]
 
     async def config_exists(self) -> bool:
         """Whether an existing dagger.json for the module was found.
@@ -5991,6 +6134,28 @@ class ModuleSource(Type):
         _ctx = self._select("moduleOriginalName", _args)
         return await _ctx.execute(str)
 
+    async def original_subpath(self) -> str:
+        """The original subpath used when instantiating this module source,
+        relative to the context directory.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("originalSubpath", _args)
+        return await _ctx.execute(str)
+
     async def pin(self) -> str:
         """The pinned version of this module source.
 
@@ -6127,6 +6292,32 @@ class ModuleSource(Type):
         _args: list[Arg] = []
         _ctx = self._select("version", _args)
         return await _ctx.execute(str)
+
+    def with_client(
+        self,
+        generator: str,
+        output_dir: str,
+        *,
+        dev: bool | None = None,
+    ) -> Self:
+        """Update the module source with a new client to generate.
+
+        Parameters
+        ----------
+        generator:
+            The generator to use
+        output_dir:
+            The output directory for the generated client.
+        dev:
+            Generate in developer mode
+        """
+        _args = [
+            Arg("generator", generator),
+            Arg("outputDir", output_dir),
+            Arg("dev", dev, None),
+        ]
+        _ctx = self._select("withClient", _args)
+        return ModuleSource(_ctx)
 
     def with_dependencies(self, dependencies: list["ModuleSource"]) -> Self:
         """Append the provided dependencies to the module source's dependency
@@ -6967,6 +7158,16 @@ class Client(Root):
         ]
         _ctx = self._select("loadListTypeDefFromID", _args)
         return ListTypeDef(_ctx)
+
+    def load_module_config_client_from_id(
+        self, id: ModuleConfigClientID
+    ) -> ModuleConfigClient:
+        """Load a ModuleConfigClient from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadModuleConfigClientFromID", _args)
+        return ModuleConfigClient(_ctx)
 
     def load_module_from_id(self, id: ModuleID) -> Module:
         """Load a Module from its ID."""
@@ -8223,6 +8424,8 @@ __all__ = [
     "ListTypeDef",
     "ListTypeDefID",
     "Module",
+    "ModuleConfigClient",
+    "ModuleConfigClientID",
     "ModuleID",
     "ModuleSource",
     "ModuleSourceID",

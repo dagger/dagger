@@ -10,7 +10,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
-	"github.com/dagger/dagger/.dagger/util"
 )
 
 const (
@@ -115,11 +114,9 @@ func (t PHPSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 
 	generated := t.phpBase().
 		With(installer).
-		With(util.ShellCmds(
-			fmt.Sprintf("rm -f %s/*.php", phpSDKGeneratedDir),
-			"ls -lha",
-			"$_EXPERIMENTAL_DAGGER_CLI_BIN run ./scripts/codegen.php",
-		)).
+		WithoutDirectory(phpSDKGeneratedDir).
+		WithDirectory(phpSDKGeneratedDir, dag.Directory()).
+		WithExec([]string{"sh", "-c", "$_EXPERIMENTAL_DAGGER_CLI_BIN run ./scripts/codegen.php"}).
 		Directory(".")
 
 	return dag.Directory().

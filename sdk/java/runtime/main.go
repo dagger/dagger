@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -14,14 +15,14 @@ import (
 )
 
 const (
-	MavenImage  = "maven:3.9.9-eclipse-temurin-17"
-	MavenDigest = "sha256:f8ac06fcc542020a0b3741e850c6b023c17f325e2a5fb6b81abbe67120364680"
-	JavaImage   = "eclipse-temurin:23-jre-noble"
-	JavaDigest  = "sha256:7003c5ac866cbf50af64ef563d203a939f1ab2869ec7d9f89c3f5009ee605452"
+	MavenImage  = "maven:3.9.9-eclipse-temurin-21-alpine"
+	MavenDigest = "sha256:4cbb8bf76c46b97e028998f2486ed014759a8e932480431039bdb93dffe6813e"
+	JavaImage   = "eclipse-temurin:21-jre-alpine-3.21"
+	JavaDigest  = "sha256:4e9ab608d97796571b1d5bbcd1c9f430a89a5f03fe5aa6c093888ceb6756c502"
 
 	ModSourceDirPath = "/src"
 	ModDirPath       = "/opt/module"
-	GenPath          = "dagger-io"
+	GenPath          = "/dagger-io"
 )
 
 type JavaSdk struct {
@@ -36,10 +37,6 @@ type moduleConfig struct {
 
 func (c *moduleConfig) modulePath() string {
 	return filepath.Join(ModSourceDirPath, c.subPath)
-}
-
-func (c *moduleConfig) genPath() string {
-	return filepath.Join(ModSourceDirPath, GenPath)
 }
 
 func New(
@@ -71,8 +68,13 @@ func (m *JavaSdk) Codegen(
 		return nil, err
 	}
 
+	generatedCode, err := m.generateCode(ctx, mvnCtr, introspectionJSON)
+	if err != nil {
+		return nil, err
+	}
+
 	return dag.
-		GeneratedCode(dag.Directory().WithDirectory("/", m.generateCode(ctx, mvnCtr, introspectionJSON))).
+		GeneratedCode(dag.Directory().WithDirectory("/", generatedCode)).
 		WithVCSGeneratedPaths([]string{
 			"target/generated-sources/**",
 		}).
@@ -89,15 +91,36 @@ func (m *JavaSdk) codegenBase(
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
 ) (*dagger.Container, error) {
-	ctr := m.
-		// Build dependencies
-		buildJavaDependencies(ctx, introspectionJSON).
+	ctr, err := m.buildJavaDependencies(ctx, introspectionJSON)
+	if err != nil {
+		return nil, err
+	}
+	ctr = ctr.
 		// Copy the user module directory under /src
 		WithDirectory(ModSourceDirPath, modSource.ContextDirectory()).
 		// Set the working directory to the one containing the sources to build, not just the module root
 		WithWorkdir(m.moduleConfig.modulePath())
 	// Add a default template if there's no existing user code
-	return m.addTemplate(ctx, ctr)
+	ctr, err = m.addTemplate(ctx, ctr)
+	if err != nil {
+		return nil, err
+	}
+	// Ensure the version in the pom.xml is the same as the introspection file
+	// This is updating the pom.xml whatever it's coming from the template or the user module
+	version, err := m.getDaggerVersionForModule(ctx, introspectionJSON)
+	if err != nil {
+		return nil, err
+	}
+	ctr = ctr.
+		// set the version of the Dagger dependencies to the version of the introspection file
+		WithExec([]string{
+			"mvn",
+			"versions:set-property",
+			"-DgenerateBackupPoms=false",
+			"-Dproperty=dagger.module.deps",
+			fmt.Sprintf("-DnewVersion=%s", version),
+		})
+	return ctr, nil
 }
 
 // buildJavaDependencies builds and install the needed dependencies
@@ -106,17 +129,31 @@ func (m *JavaSdk) codegenBase(
 func (m *JavaSdk) buildJavaDependencies(
 	ctx context.Context,
 	introspectionJSON *dagger.File,
-) *dagger.Container {
-	return m.
-		// We need maven to build the dependencies
-		mvnContainer(ctx).
+) (*dagger.Container, error) {
+	// We need maven to build the dependencies
+	ctr, err := m.mvnContainer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	version, err := m.getDaggerVersionForModule(ctx, introspectionJSON)
+	if err != nil {
+		return nil, err
+	}
+	return ctr.
 		// Cache maven dependencies
 		WithMountedCache("/root/.m2", dag.CacheVolume("sdk-java-maven-m2")).
 		// Mount the introspection JSON file used to generate the SDK
 		WithMountedFile("/schema.json", introspectionJSON).
 		// Copy the SDK source directory, so all the files needed to build the dependencies
-		WithDirectory(m.moduleConfig.genPath(), m.SDKSourceDir).
-		WithWorkdir(m.moduleConfig.genPath()).
+		WithDirectory(GenPath, m.SDKSourceDir).
+		WithWorkdir(GenPath).
+		// Set the version of the dependencies we are building to the version of the introspection file
+		WithExec([]string{
+			"mvn",
+			"versions:set",
+			"-DgenerateBackupPoms=false",
+			fmt.Sprintf("-DnewVersion=%s", version),
+		}).
 		// Build and install the java modules one by one
 		// - dagger-codegen-maven-plugin: this plugin will be used to generate the SDK code, from the introspection file,
 		//   this means including the ability to call other projects (not part of the main dagger SDK)
@@ -135,7 +172,7 @@ func (m *JavaSdk) buildJavaDependencies(
 			// specify the introspection json file
 			"-Ddaggerengine.schema=/schema.json",
 			// "-e", // this is just for debug purpose, uncomment if needed
-		})
+		}), nil
 }
 
 // addTemplate creates all the necessary files to start a new Java module
@@ -158,8 +195,8 @@ func (m *JavaSdk) addTemplate(
 	}
 
 	changes := []repl{
-		{"dagger-module", kebabName},
-		{"daggermodule", pkgName},
+		{"dagger-module-placeholder", kebabName},
+		{"daggermoduleplaceholder", pkgName},
 	}
 
 	// Edit template content so that they match the dagger module name
@@ -198,11 +235,23 @@ func (m *JavaSdk) generateCode(
 	ctx context.Context,
 	ctr *dagger.Container,
 	introspectionJSON *dagger.File,
-) *dagger.Directory {
+) (*dagger.Directory, error) {
 	// generate the java sdk dependencies
-	javaDeps := m.buildJavaDependencies(ctx, introspectionJSON)
+	javaDeps, err := m.buildJavaDependencies(ctx, introspectionJSON)
+	if err != nil {
+		return nil, err
+	}
 	// generate the entrypoint class based on the user module
-	entrypoint := ctr.WithExec([]string{"mvn", "clean", "compile"})
+	entrypoint := ctr.
+		// set the module name as an environment variable so we ensure constructor is only on main object
+		WithEnvVariable("_DAGGER_JAVA_SDK_MODULE_NAME", m.moduleConfig.name).
+		// generate the entrypoint
+		WithExec([]string{
+			"mvn",
+			"clean",
+			"compile",
+			// "-e", // this is just for debug purpose, uncomment if needed
+		})
 	return dag.
 		Directory().
 		// copy all user files
@@ -219,13 +268,13 @@ func (m *JavaSdk) generateCode(
 		// to a build system or an IDE without to interfere with the user source code
 		WithDirectory(
 			filepath.Join(m.moduleConfig.modulePath(), "target", "generated-sources", "dagger-io"),
-			javaDeps.Directory(filepath.Join(m.moduleConfig.genPath(), "dagger-java-sdk", "src", "main", "java"))).
+			javaDeps.Directory(filepath.Join(GenPath, "dagger-java-sdk", "src", "main", "java"))).
 		// copy the generated SDK files to target/generated-sources/dagger-module
 		// those are all the types generated from the introspection
 		WithDirectory(
 			filepath.Join(m.moduleConfig.modulePath(), "target", "generated-sources", "dagger-module"),
-			javaDeps.Directory(filepath.Join(m.moduleConfig.genPath(), "dagger-java-sdk", "target", "generated-sources", "dagger"))).
-		Directory(ModSourceDirPath)
+			javaDeps.Directory(filepath.Join(GenPath, "dagger-java-sdk", "target", "generated-sources", "dagger"))).
+		Directory(ModSourceDirPath), nil
 }
 
 func (m *JavaSdk) ModuleRuntime(
@@ -248,7 +297,11 @@ func (m *JavaSdk) ModuleRuntime(
 		return nil, err
 	}
 
-	javaCtr := m.jreContainer(ctx).
+	javaCtr, err := m.jreContainer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	javaCtr = javaCtr.
 		WithFile(filepath.Join(ModDirPath, "module.jar"), jar).
 		WithWorkdir(ModDirPath).
 		WithEntrypoint([]string{"java", "-jar", filepath.Join(ModDirPath, "module.jar")})
@@ -262,7 +315,11 @@ func (m *JavaSdk) buildJar(
 	ctr *dagger.Container,
 ) (*dagger.File, error) {
 	return m.finalJar(ctx,
-		ctr.WithExec([]string{"mvn", "clean", "package", "-DskipTests"}))
+		ctr.
+			// set the module name as an environment variable so we ensure constructor is only on main object
+			WithEnvVariable("_DAGGER_JAVA_SDK_MODULE_NAME", m.moduleConfig.name).
+			// build the final jar
+			WithExec([]string{"mvn", "clean", "package", "-DskipTests"}))
 }
 
 // finalJar will return the jar corresponding to the user module built
@@ -291,24 +348,27 @@ func (m *JavaSdk) finalJar(
 	return ctr.File(filepath.Join(m.moduleConfig.modulePath(), "target", jarFileName)), nil
 }
 
-func (m *JavaSdk) mvnContainer(ctx context.Context) *dagger.Container {
+func (m *JavaSdk) mvnContainer(ctx context.Context) (*dagger.Container, error) {
 	ctr := dag.
 		Container().
 		From(fmt.Sprintf("%s@%s", MavenImage, MavenDigest))
-	if platform, err := ctr.Platform(ctx); err == nil && strings.Contains(string(platform), "arm64") {
-		ctr = ctr.WithEnvVariable("MAVEN_OPTS", "-XX:UseSVE=0")
-	}
-	return ctr
+	return disableSVEOnArm64(ctx, ctr)
 }
 
-func (m *JavaSdk) jreContainer(ctx context.Context) *dagger.Container {
+func (m *JavaSdk) jreContainer(ctx context.Context) (*dagger.Container, error) {
 	ctr := dag.
 		Container().
 		From(fmt.Sprintf("%s@%s", JavaImage, JavaDigest))
-	if platform, err := ctr.Platform(ctx); err == nil && strings.Contains(string(platform), "arm64") {
-		ctr = ctr.WithEnvVariable("JAVA_OPTS", "-XX:UseSVE=0")
+	return disableSVEOnArm64(ctx, ctr)
+}
+
+func disableSVEOnArm64(ctx context.Context, ctr *dagger.Container) (*dagger.Container, error) {
+	if platform, err := ctr.Platform(ctx); err != nil {
+		return nil, err
+	} else if strings.Contains(string(platform), "arm64") {
+		return ctr.WithEnvVariable("_JAVA_OPTIONS", "-XX:UseSVE=0"), nil
 	}
-	return ctr
+	return ctr, nil
 }
 
 func (m *JavaSdk) setModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) error {
@@ -326,6 +386,26 @@ func (m *JavaSdk) setModuleConfig(ctx context.Context, modSource *dagger.ModuleS
 	}
 
 	return nil
+}
+
+func (m *JavaSdk) getDaggerVersionForModule(ctx context.Context, introspectionJSON *dagger.File) (string, error) {
+	content, err := introspectionJSON.Contents(ctx)
+	if err != nil {
+		return "", err
+	}
+	var introspectJSON IntrospectJSON
+	if err = json.Unmarshal([]byte(content), &introspectJSON); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(
+		"%s-%s-module",
+		strings.TrimPrefix(introspectJSON.SchemaVersion, "v"),
+		m.moduleConfig.name,
+	), nil
+}
+
+type IntrospectJSON struct {
+	SchemaVersion string `json:"__schemaVersion"`
 }
 
 type repl struct {

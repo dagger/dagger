@@ -16,7 +16,8 @@ public class TypeDefTest {
             DaggerModuleAnnotationProcessor.typeDef(
                     new TypeInfo(v.getClass().getCanonicalName(), TypeKind.DECLARED.name()))
                 .toString())
-        .isEqualTo("dag.typeDef().withKind(io.dagger.client.TypeDefKind.STRING_KIND)");
+        .isEqualTo(
+            "io.dagger.client.Dagger.dag().typeDef().withKind(io.dagger.client.TypeDefKind.STRING_KIND)");
   }
 
   @Test
@@ -26,7 +27,8 @@ public class TypeDefTest {
             DaggerModuleAnnotationProcessor.typeDef(
                     new TypeInfo(v.getClass().getCanonicalName(), TypeKind.DECLARED.name()))
                 .toString())
-        .isEqualTo("dag.typeDef().withKind(io.dagger.client.TypeDefKind.INTEGER_KIND)");
+        .isEqualTo(
+            "io.dagger.client.Dagger.dag().typeDef().withKind(io.dagger.client.TypeDefKind.INTEGER_KIND)");
   }
 
   @Test
@@ -34,7 +36,8 @@ public class TypeDefTest {
     assertThat(
             DaggerModuleAnnotationProcessor.typeDef(new TypeInfo("int", TypeKind.INT.name()))
                 .toString())
-        .isEqualTo("dag.typeDef().withKind(io.dagger.client.TypeDefKind.INTEGER_KIND)");
+        .isEqualTo(
+            "io.dagger.client.Dagger.dag().typeDef().withKind(io.dagger.client.TypeDefKind.INTEGER_KIND)");
   }
 
   @Test
@@ -43,7 +46,8 @@ public class TypeDefTest {
             DaggerModuleAnnotationProcessor.typeDef(
                     new TypeInfo("boolean", TypeKind.BOOLEAN.name()))
                 .toString())
-        .isEqualTo("dag.typeDef().withKind(io.dagger.client.TypeDefKind.BOOLEAN_KIND)");
+        .isEqualTo(
+            "io.dagger.client.Dagger.dag().typeDef().withKind(io.dagger.client.TypeDefKind.BOOLEAN_KIND)");
   }
 
   @Test
@@ -53,7 +57,7 @@ public class TypeDefTest {
                     new TypeInfo("java.util.List<java.lang.String>", TypeKind.DECLARED.name()))
                 .toString())
         .isEqualTo(
-            "dag.typeDef().withListOf(dag.typeDef().withKind(io.dagger.client.TypeDefKind.STRING_KIND))");
+            "io.dagger.client.Dagger.dag().typeDef().withListOf(io.dagger.client.Dagger.dag().typeDef().withKind(io.dagger.client.TypeDefKind.STRING_KIND))");
   }
 
   @Test
@@ -63,7 +67,8 @@ public class TypeDefTest {
                     new TypeInfo(
                         "java.util.List<io.dagger.client.Container>", TypeKind.DECLARED.name()))
                 .toString())
-        .isEqualTo("dag.typeDef().withListOf(dag.typeDef().withObject(\"Container\"))");
+        .isEqualTo(
+            "io.dagger.client.Dagger.dag().typeDef().withListOf(io.dagger.client.Dagger.dag().typeDef().withObject(\"Container\"))");
   }
 
   @Test
@@ -73,7 +78,7 @@ public class TypeDefTest {
             DaggerModuleAnnotationProcessor.typeDef(
                     new TypeInfo(v.getClass().getCanonicalName(), TypeKind.DECLARED.name()))
                 .toString())
-        .isEqualTo("dag.typeDef().withEnum(\"ImageMediaTypes\")");
+        .isEqualTo("io.dagger.client.Dagger.dag().typeDef().withEnum(\"ImageMediaTypes\")");
   }
 
   @Test
@@ -83,7 +88,7 @@ public class TypeDefTest {
             DaggerModuleAnnotationProcessor.typeDef(
                     new TypeInfo(platform.getClass().getCanonicalName(), TypeKind.DECLARED.name()))
                 .toString())
-        .isEqualTo("dag.typeDef().withScalar(\"Platform\")");
+        .isEqualTo("io.dagger.client.Dagger.dag().typeDef().withScalar(\"Platform\")");
   }
 
   @Test
@@ -94,6 +99,6 @@ public class TypeDefTest {
                     new TypeInfo(v.getClass().getCanonicalName(), TypeKind.ARRAY.name()))
                 .toString())
         .isEqualTo(
-            "dag.typeDef().withListOf(dag.typeDef().withKind(io.dagger.client.TypeDefKind.STRING_KIND))");
+            "io.dagger.client.Dagger.dag().typeDef().withListOf(io.dagger.client.Dagger.dag().typeDef().withKind(io.dagger.client.TypeDefKind.STRING_KIND))");
   }
 }

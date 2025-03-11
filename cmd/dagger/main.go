@@ -97,6 +97,7 @@ func init() {
 		sessionCmd(),
 		newGenCmd(),
 		shellCmd,
+		clientCmd,
 	)
 
 	rootCmd.AddGroup(moduleGroup)
@@ -183,6 +184,10 @@ var rootCmd = &cobra.Command{
 		})
 
 		return nil
+	},
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cmd.SetArgs(append([]string{"shell"}, args...))
+		return cmd.Execute()
 	},
 }
 
@@ -372,7 +377,9 @@ func main() {
 		var exit ExitError
 		if errors.As(err, &exit) {
 			os.Exit(exit.Code)
-		} else if errors.Is(err, context.Canceled) {
+		} else if errors.Is(err, idtui.ErrShellExited) {
+			os.Exit(0)
+		} else if errors.Is(err, context.Canceled) || errors.Is(err, idtui.ErrInterrupted) {
 			os.Exit(2)
 		} else {
 			fmt.Fprintln(os.Stderr, rootCmd.ErrPrefix(), err)

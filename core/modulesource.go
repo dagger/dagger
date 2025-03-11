@@ -107,10 +107,15 @@ type ModuleSource struct {
 	// Dependencies are the loaded sources for the module's dependencies
 	Dependencies []dagql.Instance[*ModuleSource] `field:"true" name:"dependencies" doc:"The dependencies of the module source."`
 
+	// Clients are the clients generated for the module.
+	ConfigClients []*modules.ModuleConfigClient `field:"true" name:"configClients" doc:"The clients generated for the module."`
+
 	// SourceRootSubpath is the relative path from the context dir to the dir containing the module's dagger.json
 	SourceRootSubpath string `field:"true" name:"sourceRootSubpath" doc:"The path, relative to the context directory, that contains the module's dagger.json."`
 	// SourceSubpath is the relative path from the context dir to the dir containing the module's source code
 	SourceSubpath string
+
+	OriginalSubpath string
 
 	ContextDirectory dagql.Instance[*Directory] `field:"true" name:"contextDirectory" doc:"The full directory loaded for the module source, including the source code as a subdirectory."`
 
@@ -173,6 +178,10 @@ func (src ModuleSource) Clone() *ModuleSource {
 	if src.Git != nil {
 		src.Git = src.Git.Clone()
 	}
+
+	oriConfigClients := src.ConfigClients
+	src.ConfigClients = make([]*modules.ModuleConfigClient, len(oriConfigClients))
+	copy(src.ConfigClients, oriConfigClients)
 
 	return &src
 }
@@ -267,7 +276,25 @@ func (src *ModuleSource) CalcDigest() digest.Digest {
 		inputs = append(inputs, dep.Self.Digest)
 	}
 
-	return HashFrom(inputs...)
+	for _, client := range src.ConfigClients {
+		inputs = append(inputs, client.Generator, client.Directory)
+		if client.Dev != nil {
+			inputs = append(inputs, fmt.Sprintf("%t", *client.Dev))
+		}
+	}
+
+	// For git sources, we currently need to mix in the actual git endpoint
+	// in order to ensure that we don't get cache hits on repositories that
+	// have the same content but different auth. If we get a cache hit on
+	// a repo we don't have auth for subsequent operations can break.
+	// Given that scenarios in which two different git repos have the exact
+	// same bit-by-bit module source are expected to be rare, this shouldn't
+	// be a big compromise.
+	if src.Git != nil {
+		inputs = append(inputs, src.Git.CloneRef)
+	}
+
+	return dagql.HashFrom(inputs...)
 }
 
 // LoadContext loads addition files+directories from the module source's context, including those that
@@ -333,8 +360,6 @@ func (src *ModuleSource) LoadContext(
 			return inst, fmt.Errorf("failed to select directory: %w", err)
 		}
 
-		return inst, nil
-
 	case ModuleSourceKindGit:
 		slog.Debug("moduleSource.LoadContext: loading contextual directory from git", "path", path, "kind", src.Kind, "repo", src.Git.HTMLURL)
 
@@ -376,7 +401,10 @@ func (src *ModuleSource) LoadContext(
 			}
 		}
 
-		return MakeDirectoryContentHashed(ctx, bk, ctxDir)
+		inst, err = MakeDirectoryContentHashed(ctx, bk, ctxDir)
+		if err != nil {
+			return inst, err
+		}
 
 	case ModuleSourceKindDir:
 		if !filepath.IsAbs(path) {
@@ -417,19 +445,24 @@ func (src *ModuleSource) LoadContext(
 			}
 		}
 
-		mainClientCallerID, err := src.Query.MainClientCallerID(ctx)
+		inst, err = MakeDirectoryContentHashed(ctx, bk, ctxDir)
 		if err != nil {
-			return inst, fmt.Errorf("failed to retrieve mainClientCallerID: %w", err)
+			return inst, err
 		}
-		if err := src.Query.AddClientResourcesFromID(ctx, &resource.ID{ID: *ctxDir.ID()}, mainClientCallerID, false); err != nil {
-			return inst, fmt.Errorf("failed to add client resources from ID: %w", err)
-		}
-
-		return MakeDirectoryContentHashed(ctx, bk, ctxDir)
 
 	default:
 		return inst, fmt.Errorf("unsupported module src kind: %q", src.Kind)
 	}
+
+	mainClientMetadata, err := src.Query.NonModuleParentClientMetadata(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	if err := src.Query.AddClientResourcesFromID(ctx, &resource.ID{ID: *inst.ID()}, mainClientMetadata.ClientID, false); err != nil {
+		return inst, fmt.Errorf("failed to add client resources from directory source: %w", err)
+	}
+
+	return inst, nil
 }
 
 type LocalModuleSource struct {

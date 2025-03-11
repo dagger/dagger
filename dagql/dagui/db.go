@@ -37,8 +37,9 @@ type DB struct {
 	OutputOf  map[string]map[string]struct{}
 	Intervals map[string]map[time.Time]*Span
 
-	CauseSpans  map[string]SpanSet
-	EffectSpans map[string]SpanSet
+	CauseSpans   map[string]SpanSet
+	EffectSpans  map[string]SpanSet
+	CreatorSpans map[string]SpanSet
 
 	CompletedEffects map[string]bool
 	FailedEffects    map[string]bool
@@ -73,10 +74,12 @@ func NewDB() *DB {
 		Outputs:   make(map[string]map[string]struct{}),
 		Intervals: make(map[string]map[time.Time]*Span),
 
+		CauseSpans:   make(map[string]SpanSet),
+		EffectSpans:  make(map[string]SpanSet),
+		CreatorSpans: make(map[string]SpanSet),
+
 		CompletedEffects: make(map[string]bool),
 		FailedEffects:    make(map[string]bool),
-		CauseSpans:       make(map[string]SpanSet),
-		EffectSpans:      make(map[string]SpanSet),
 
 		updatedSpans: NewSpanSet(),
 		seenSpans:    make(map[SpanID]struct{}),
@@ -326,6 +329,7 @@ func (db *DB) newSpan(spanID SpanID) *Span {
 		RunningSpans:    NewSpanSet(),
 		RevealedSpans:   NewSpanSet(),
 		FailedLinks:     NewSpanSet(),
+		CanceledLinks:   NewSpanSet(),
 		causesViaLinks:  NewSpanSet(),
 		effectsViaLinks: NewSpanSet(),
 		db:              db,
@@ -607,6 +611,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 				if span.IsRunning() {
 					span.Canceled = true
 					span.EndTime = db.RootSpan.EndTime
+					span.PropagateStatusToParentsAndLinks()
 					db.update(span)
 				}
 			}
@@ -614,6 +619,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	} else if db.RootSpan != nil && !db.RootSpan.IsRunning() && span.IsRunning() {
 		span.Canceled = true
 		span.EndTime = db.RootSpan.EndTime
+		span.PropagateStatusToParentsAndLinks()
 	}
 
 	if span.EffectID != "" {
@@ -648,7 +654,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		db.CompletedEffects[dig] = true
 	}
 
-	if span.CallDigest != "" {
+	if span.CallDigest != "" && span.Output != "" {
 		// parent -> child
 		if db.Outputs[span.CallDigest] == nil {
 			db.Outputs[span.CallDigest] = make(map[string]struct{})
@@ -660,6 +666,12 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			db.OutputOf[span.Output] = make(map[string]struct{})
 		}
 		db.OutputOf[span.Output][span.CallDigest] = struct{}{}
+
+		// output -> creator
+		if db.CreatorSpans[span.Output] == nil {
+			db.CreatorSpans[span.Output] = NewSpanSet()
+		}
+		db.CreatorSpans[span.Output].Add(span)
 	}
 
 	for _, id := range span.EffectIDs {
@@ -743,21 +755,35 @@ func (*DB) Close() error {
 }
 
 func (db *DB) Call(dig string) *callpbv1.Call {
-	cached, ok := db.Calls[dig]
-	if ok {
+	// First, check if we already have the call cached
+	if cached, ok := db.Calls[dig]; ok {
 		return cached
 	}
-	callPayload, ok := db.CallPayloads[dig]
-	if !ok {
-		return nil
+
+	// Next, try to decode from the call payload
+	if callPayload, ok := db.CallPayloads[dig]; ok {
+		var call callpbv1.Call
+		if err := call.Decode(callPayload); err != nil {
+			slog.Warn("failed to decode call", "err", err)
+		} else {
+			// Cache the decoded call for future use
+			db.Calls[dig] = &call
+			return &call
+		}
 	}
-	var call callpbv1.Call
-	if err := call.Decode(callPayload); err != nil {
-		slog.Warn("failed to decode call", "err", err)
-	} else {
-		db.Calls[dig] = &call
+
+	// Finally, try to find the call through creator spans
+	if creators, ok := db.CreatorSpans[dig]; ok {
+		// Try each creator in order
+		for _, creator := range creators.Order {
+			if creatorCall := db.Call(creator.CallDigest); creatorCall != nil {
+				return creatorCall
+			}
+		}
 	}
-	return &call
+
+	// No call found
+	return nil
 }
 
 func (db *DB) MustCall(dig string) *callpbv1.Call {
@@ -785,85 +811,22 @@ func (db *DB) MustCall(dig string) *callpbv1.Call {
 	return call
 }
 
-func (db *DB) litSize(lit *callpbv1.Literal) int {
-	switch x := lit.GetValue().(type) {
-	case *callpbv1.Literal_CallDigest:
-		return db.idSize(db.MustCall(x.CallDigest))
-	case *callpbv1.Literal_List:
-		size := 0
-		for _, lit := range x.List.GetValues() {
-			size += db.litSize(lit)
-		}
-		return size
-	case *callpbv1.Literal_Object:
-		size := 0
-		for _, lit := range x.Object.GetValues() {
-			size += db.litSize(lit.GetValue())
-		}
-		return size
-	}
-	return 1
-}
-
-func (db *DB) idSize(id *callpbv1.Call) int {
-	size := 0
-	for id := id; id != nil; id = db.MustCall(id.ReceiverDigest) {
-		size++
-		size += len(id.Args)
-		for _, arg := range id.Args {
-			size += db.litSize(arg.GetValue())
-		}
-		if id.ReceiverDigest == "" {
-			break
-		}
-	}
-	return size
-}
-
-func (db *DB) Simplify(call *callpbv1.Call, force bool) (smallest *callpbv1.Call) {
-	smallest = call
-	smallestSize := -1
-	if !force {
-		smallestSize = db.idSize(smallest)
-	}
-
-	creators, ok := db.OutputOf[call.Digest]
+func (db *DB) Simplify(call *callpbv1.Call, force bool) *callpbv1.Call {
+	creators, ok := db.CreatorSpans[call.Digest]
 	if !ok {
-		return smallest
+		return call
 	}
-	simplified := false
 
-loop:
-	for creatorDig := range creators {
-		if creatorDig == call.Digest {
-			// can't be simplified to itself
+	for _, creator := range creators.Order {
+		if creator.CallDigest == "" {
 			continue
 		}
-		creator := db.Call(creatorDig)
-		if creator == nil {
-			// creator not found? skip
-			continue
+		if creatorCall := db.Call(creator.CallDigest); creatorCall != nil {
+			return creatorCall // TODO: re-simplify?
 		}
-		for _, creatorArg := range creator.Args {
-			if creatorArg, ok := creatorArg.Value.Value.(*callpbv1.Literal_CallDigest); ok {
-				if creatorArg.CallDigest == call.Digest {
-					// can't be simplified to a call that references itself
-					// in it's argument - which would loop endlessly
-					continue loop
-				}
-			}
-		}
+	}
 
-		if size := db.idSize(creator); smallestSize == -1 || size < smallestSize {
-			smallest = creator
-			smallestSize = size
-			simplified = true
-		}
-	}
-	if simplified {
-		return db.Simplify(smallest, false)
-	}
-	return smallest
+	return call
 }
 
 // Function to check if a row is or contains a target row

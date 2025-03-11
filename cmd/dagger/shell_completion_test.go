@@ -10,10 +10,35 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/testctx"
+	"github.com/dagger/testctx/oteltest"
 	"github.com/stretchr/testify/require"
 )
 
-func TestShellAutocomplete(t *testing.T) {
+func TestMain(m *testing.M) {
+	os.Exit(oteltest.Main(m))
+}
+
+func Middleware() []testctx.Middleware[*testing.T] {
+	return []testctx.Middleware[*testing.T]{
+		oteltest.WithTracing[*testing.T](
+			oteltest.TraceConfig[*testing.T]{
+				StartOptions: testutil.SpanOpts[*testing.T],
+			},
+		),
+		oteltest.WithLogging[*testing.T](),
+	}
+}
+
+type DaggerCMDSuite struct {
+}
+
+func TestDaggerCMD(tt *testing.T) {
+	testctx.New(tt, Middleware()...).RunTests(DaggerCMDSuite{})
+}
+
+func (DaggerCMDSuite) TestShellAutocomplete(ctx context.Context, t *testctx.T) {
 	// each cmdline is a prompt input
 	// the contents of the angle brackets are the word we want to complete -
 	// everything before the $ sign is already written, and one of the response
@@ -55,22 +80,16 @@ func TestShellAutocomplete(t *testing.T) {
 		`container | directory <--$expand >`,
 
 		// .deps builtin
-		`<.dep$s >`,
-		`<$.deps >`,
 		`.deps | <$alpine >`,
 		`.deps | <a$lpine >`,
 
 		// .stdlib builtin
-		`<.std$lib >`,
-		`<$.stdlib >`,
 		`.stdlib | <$container >`,
 		`.stdlib | <con$tainer >`,
 		`.stdlib | container <--$platform >`,
 		`.stdlib | container | <dir$ectory >`,
 
 		// .core builtin
-		`<.co$re >`,
-		`<$.core >`,
 		`.core | <con$tainer >`,
 		`.core | container <--$platform >`,
 		`.core | container | <dir$ectory >`,
@@ -94,8 +113,6 @@ func TestShellAutocomplete(t *testing.T) {
 	})
 	t.Setenv("DAGGER_MODULE", "./wolfi")
 
-	ctx := context.TODO()
-
 	client, err := dagger.Connect(ctx)
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
@@ -111,27 +128,31 @@ func TestShellAutocomplete(t *testing.T) {
 	autoComplete := shellAutoComplete{handler}
 
 	for _, cmdline := range cmdlines {
-		t.Run(cmdline, func(t *testing.T) {
+		t.Run(cmdline, func(ctx context.Context, t *testctx.T) {
 			start := strings.IndexRune(cmdline, '<')
 			end := strings.IndexRune(cmdline, '>')
 			if start == -1 || end == -1 || !(start < end) {
 				require.FailNow(t, "invalid cmdline: could not find <expr>")
 			}
-			inprogress, expected, ok := strings.Cut(cmdline[start+1:end], "$")
+			inprogress, rest, ok := strings.Cut(cmdline[start+1:end], "$")
 			if !ok {
 				require.FailNow(t, "invalid cmdline: no token '$' in <expr>")
 			}
+			expected := strings.TrimSpace(inprogress + rest)
 
 			cmdline := cmdline[:start] + inprogress + cmdline[end+1:]
 			cursor := start + len(inprogress)
 
-			results, length := autoComplete.Do([]rune(cmdline), cursor)
-			sresults := make([]string, 0, len(results))
-			for _, result := range results {
-				sresults = append(sresults, string(result))
+			_, comp := autoComplete.Do([][]rune{[]rune(cmdline)}, 0, cursor)
+			require.NotNil(t, comp)
+			require.Equal(t, 1, comp.NumCategories())
+			candidates := make([]string, 0, comp.NumEntries(0))
+			for i := 0; i < comp.NumEntries(0); i++ {
+				entry := comp.Entry(0, i)
+				t.Logf("entry %d: %s (%q)", i, entry.Title(), entry.Description())
+				candidates = append(candidates, entry.Title())
 			}
-			require.Contains(t, sresults, expected)
-			require.Equal(t, len(inprogress), length)
+			require.Contains(t, candidates, expected)
 		})
 	}
 }

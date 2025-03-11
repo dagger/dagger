@@ -6,37 +6,11 @@ import (
 
 	"github.com/muesli/reflow/indent"
 	"github.com/muesli/reflow/wordwrap"
-	"github.com/spf13/cobra"
 )
 
 const (
 	helpIndent = uint(2)
 )
-
-var coreGroup = &cobra.Group{
-	ID:    "core",
-	Title: "Dagger Core Commands",
-}
-
-var shellGroups = []*cobra.Group{
-	moduleGroup,
-	coreGroup,
-	cloudGroup,
-	{
-		ID:    "",
-		Title: "Additional Commands",
-	},
-}
-
-func (h *shellCallHandler) GroupBuiltins(groupID string) []*ShellCommand {
-	l := make([]*ShellCommand, 0, len(h.builtins))
-	for _, c := range h.Builtins() {
-		if c.GroupID == groupID {
-			l = append(l, c)
-		}
-	}
-	return l
-}
 
 func (h *shellCallHandler) FunctionsList(name string, fns []*modFunction) string {
 	if len(fns) == 0 {
@@ -52,11 +26,10 @@ func (h *shellCallHandler) FunctionsList(name string, fns []*modFunction) string
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf(`Use "%s | .doc" for more details.`, name))
-	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf(`Use "%s | .doc <function>" for more information on a function.`, name))
-	sb.WriteString("\n")
+	usage := name + " | .help"
+
+	fmt.Fprintf(sb, "\nUse %q for more details.", usage)
+	fmt.Fprintf(sb, "\nUse %q for more information on a function.\n", usage+" <function>")
 
 	return sb.String()
 }
@@ -75,11 +48,10 @@ func (h *shellCallHandler) CommandsList(name string, cmds []*ShellCommand) strin
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf(`Use "%s | .doc" for more details.`, name))
-	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf(`Use "%s | .doc <command>" for more information on a command.`, name))
-	sb.WriteString("\n")
+	usage := name + " | .help"
+
+	fmt.Fprintf(sb, "\nUse %q for more details.", usage)
+	fmt.Fprintf(sb, "\nUse %q for more information on a command.\n", usage+" <command>")
 
 	return sb.String()
 }
@@ -100,13 +72,75 @@ func (h *shellCallHandler) DependenciesList() string {
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf(`Use "%s | .doc" for more details.`, shellDepsCmdName))
-	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf(`Use "%s | .doc <dependency>" for more information on a dependency.`, shellDepsCmdName))
-	sb.WriteString("\n")
+	usage := shellDepsCmdName + " | .help"
+
+	fmt.Fprintf(sb, "\nUse %q for more details.", usage)
+	fmt.Fprintf(sb, "\nUse %q for more information on a dependency.\n", usage+" <dependency>")
 
 	return sb.String()
+}
+
+func (h *shellCallHandler) MainHelp() string {
+	var doc ShellDoc
+	types := []string{"<command>"}
+
+	doc.Add(
+		"Builtin Commands",
+		nameShortWrapped(h.Builtins(), func(c *ShellCommand) (string, string) {
+			return c.Name(), c.Short()
+		}),
+	)
+
+	if fns := h.getDefaultFunctions(); len(fns) > 0 {
+		doc.Add(
+			"Available Module Functions",
+			nameShortWrapped(fns, func(f *modFunction) (string, string) {
+				return f.CmdName(), f.Short()
+			}),
+		)
+		types = append(types, "<function>")
+	}
+
+	if deps := h.getCurrentDependencies(); len(deps) > 0 {
+		doc.Add(
+			"Available Module Dependencies",
+			nameShortWrapped(deps, func(dep *moduleDef) (string, string) {
+				return dep.Name, dep.Short()
+			}),
+		)
+		types = append(types, "<dependency>")
+	}
+
+	doc.Add("Standard Commands", nameShortWrapped(h.Stdlib(), func(c *ShellCommand) (string, string) {
+		return c.Name(), c.Short()
+	}))
+
+	doc.Add("", fmt.Sprintf(`Use ".help %s" for more information.`, strings.Join(types, " | ")))
+
+	return doc.String()
+}
+
+func (h *shellCallHandler) getDefaultFunctions() []*modFunction {
+	def, _ := h.GetModuleDef(nil)
+	if def == nil {
+		return nil
+	}
+	if def.MainObject.AsObject.Constructor.HasRequiredArgs() {
+		return nil
+	}
+	fns := def.MainObject.AsFunctionProvider().GetFunctions()
+	if len(fns) == 0 {
+		return nil
+	}
+	return fns
+}
+
+func (h *shellCallHandler) getCurrentDependencies() []*moduleDef {
+	def, _ := h.GetModuleDef(nil)
+	if def == nil {
+		return nil
+	}
+	return def.Dependencies
 }
 
 func (h *shellCallHandler) StdlibHelp() string {
@@ -116,7 +150,7 @@ func (h *shellCallHandler) StdlibHelp() string {
 		return c.Name(), c.Description
 	}))
 
-	doc.Add("", fmt.Sprintf(`Use "%s | .doc <command>" for more information on a command.`, shellStdlibCmdName))
+	doc.Add("", fmt.Sprintf(`Use "%s | .help <command>" for more information on a command.`, shellStdlibCmdName))
 
 	return doc.String()
 }
@@ -124,7 +158,7 @@ func (h *shellCallHandler) StdlibHelp() string {
 func (h *shellCallHandler) CoreHelp() string {
 	var doc ShellDoc
 
-	def := h.modDef(nil)
+	def := h.GetDef(nil)
 
 	doc.Add(
 		"Available Functions",
@@ -133,7 +167,7 @@ func (h *shellCallHandler) CoreHelp() string {
 		}),
 	)
 
-	doc.Add("", fmt.Sprintf(`Use "%s | .doc <function>" for more information on a function.`, shellCoreCmdName))
+	doc.Add("", fmt.Sprintf(`Use "%s | .help <function>" for more information on a function.`, shellCoreCmdName))
 
 	return doc.String()
 }
@@ -149,12 +183,49 @@ func (h *shellCallHandler) DepsHelp() string {
 
 	doc.Add(
 		"Module Dependencies",
-		nameShortWrapped(def.Dependencies, func(dep *moduleDependency) (string, string) {
+		nameShortWrapped(def.Dependencies, func(dep *moduleDef) (string, string) {
 			return dep.Name, dep.Short()
 		}),
 	)
 
-	doc.Add("", fmt.Sprintf(`Use "%s | .doc <dependency>" for more information on a dependency.`, shellDepsCmdName))
+	doc.Add("", fmt.Sprintf(`Use "%s | .help <dependency>" for more information on a dependency.`, shellDepsCmdName))
+
+	return doc.String()
+}
+
+func (h *shellCallHandler) TypesHelp() string {
+	var doc ShellDoc
+
+	var core []functionProvider
+	var mod []functionProvider
+
+	def := h.GetDef(nil)
+
+	for _, o := range def.AsFunctionProviders() {
+		if o.IsCore() {
+			core = append(core, o)
+		} else {
+			mod = append(mod, o)
+		}
+	}
+
+	doc.Add(
+		"Core Types",
+		nameShortWrapped(core, func(o functionProvider) (string, string) {
+			return o.ProviderName(), o.Short()
+		}),
+	)
+
+	if len(mod) > 0 && def.HasModule() {
+		doc.Add(
+			def.Name+" Types",
+			nameShortWrapped(mod, func(o functionProvider) (string, string) {
+				return o.ProviderName(), o.Short()
+			}),
+		)
+	}
+
+	doc.Add("", `Use ".help <type>" for more information on a type.`)
 
 	return doc.String()
 }
@@ -213,11 +284,11 @@ func (d ShellDoc) String() string {
 }
 
 // shellFunctionUseLine returns the usage line fine for a function
-func shellFunctionUseLine(md *moduleDef, fn *modFunction) string {
+func (h *shellCallHandler) FunctionUseLine(md *moduleDef, fn *modFunction) string {
 	sb := new(strings.Builder)
 
 	if fn == md.MainObject.AsObject.Constructor {
-		sb.WriteString(md.ModRef)
+		sb.WriteString(h.modRelPath(md))
 	} else {
 		sb.WriteString(fn.CmdName())
 	}
@@ -235,7 +306,33 @@ func shellFunctionUseLine(md *moduleDef, fn *modFunction) string {
 	return sb.String()
 }
 
-func shellModuleDoc(st *ShellState, m *moduleDef) string {
+func (h *shellCallHandler) FunctionFullUseLine(md *moduleDef, fn *modFunction) string {
+	usage := h.FunctionUseLine(md, fn)
+	opts := fn.OptionalArgs()
+
+	if len(opts) > 0 {
+		sb := new(strings.Builder)
+
+		for _, arg := range opts {
+			sb.WriteString(" [--")
+			sb.WriteString(arg.flagName)
+
+			t := arg.TypeDef.String()
+			if t != "bool" {
+				sb.WriteString(" ")
+				sb.WriteString(t)
+			}
+
+			sb.WriteString("]")
+		}
+
+		return strings.ReplaceAll(usage, " [options]", sb.String())
+	}
+
+	return usage
+}
+
+func (h *shellCallHandler) ModuleDoc(st *ShellState, m *moduleDef) string {
 	var doc ShellDoc
 
 	meta := new(strings.Builder)
@@ -252,7 +349,7 @@ func shellModuleDoc(st *ShellState, m *moduleDef) string {
 	if len(fn.Args) > 0 {
 		constructor := new(strings.Builder)
 		constructor.WriteString("Usage: ")
-		constructor.WriteString(shellFunctionUseLine(m, fn))
+		constructor.WriteString(h.FunctionUseLine(m, fn))
 
 		if fn.Description != "" {
 			constructor.WriteString("\n\n")
@@ -279,9 +376,9 @@ func shellModuleDoc(st *ShellState, m *moduleDef) string {
 		}
 	}
 
-	// If it's just `.doc` and the current module doesn't have required args,
+	// If it's just `.help` and the current module doesn't have required args,
 	// can use the default constructor and show available functions.
-	if st.IsEmpty() && st.ModRef == "" && !fn.HasRequiredArgs() {
+	if st.IsEmpty() && st.ModDigest == "" && !fn.HasRequiredArgs() {
 		if fns := m.MainObject.AsFunctionProvider().GetFunctions(); len(fns) > 0 {
 			doc.Add(
 				"Available Functions",
@@ -289,7 +386,7 @@ func shellModuleDoc(st *ShellState, m *moduleDef) string {
 					return f.CmdName(), f.Short()
 				}),
 			)
-			doc.Add("", `Use ".doc <function>" for more information on a function.`)
+			doc.Add("", `Use ".help <function>" for more information on a function.`)
 		}
 	}
 
@@ -318,20 +415,20 @@ func shellTypeDoc(t *modTypeDef) string {
 				return f.CmdName(), f.Short()
 			}),
 		)
-		doc.Add("", `Use ".doc <function>" for more information on a function.`)
+		doc.Add("", `Use ".help <function>" for more information on a function.`)
 	}
 
 	return doc.String()
 }
 
-func shellFunctionDoc(md *moduleDef, fn *modFunction) string {
+func (h *shellCallHandler) FunctionDoc(md *moduleDef, fn *modFunction) string {
 	var doc ShellDoc
 
 	if fn.Description != "" {
 		doc.Add("", fn.Description)
 	}
 
-	usage := shellFunctionUseLine(md, fn)
+	usage := h.FunctionUseLine(md, fn)
 	if usage != "" {
 		doc.Add("Usage", usage)
 	}
@@ -360,7 +457,7 @@ func shellFunctionDoc(md *moduleDef, fn *modFunction) string {
 
 	if fn.ReturnType.AsFunctionProvider() != nil {
 		u := strings.TrimSuffix(usage, " [options]")
-		doc.Add("", fmt.Sprintf(`Use "%s | .doc" for available functions.`, u))
+		doc.Add("", fmt.Sprintf(`Use "%s | .help" for available functions.`, u))
 	}
 
 	return doc.String()

@@ -27,7 +27,15 @@ const (
 )
 
 func (funcs goTemplateFuncs) isModuleCode() bool {
-	return funcs.moduleName != ""
+	return funcs.cfg.ModuleName != ""
+}
+
+func (funcs goTemplateFuncs) isStandaloneClient() bool {
+	return funcs.cfg.ClientOnly
+}
+
+func (funcs goTemplateFuncs) isDevMode() bool {
+	return funcs.cfg.Dev
 }
 
 func (funcs goTemplateFuncs) moduleRelPath(path string) string {
@@ -35,7 +43,7 @@ func (funcs goTemplateFuncs) moduleRelPath(path string) string {
 		// path to the root of this module (since we're probably in internal/dagger/)
 		"../..",
 		// path from the module root to the context directory
-		funcs.moduleParent,
+		funcs.cfg.ModuleParentPath,
 		// path from the context directory to the desired path
 		path,
 	)
@@ -78,7 +86,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 	ps := &parseState{
 		pkg:        funcs.modulePkg,
 		fset:       funcs.moduleFset,
-		moduleName: funcs.moduleName,
+		moduleName: funcs.cfg.ModuleName,
 
 		methods: make(map[string][]method),
 	}

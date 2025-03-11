@@ -65,7 +65,7 @@ func (JavaSuite) TestInit(_ context.Context, t *testctx.T) {
 }
 
 func (JavaSuite) TestFields(_ context.Context, t *testctx.T) {
-	t.Run("can set and retrieve field", func(ctx context.Context, t *testctx.T) {
+	t.Run("can set and retrieve field using custom function", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "fields").
@@ -74,6 +74,49 @@ func (JavaSuite) TestFields(_ context.Context, t *testctx.T) {
 
 		require.NoError(t, err)
 		require.Contains(t, out, "a.b.c")
+	})
+
+	t.Run("can set and retrieve field using direct access to the field when decorated", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "fields").
+			With(daggerShell("with-version a.b.c | version")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, out, "a.b.c")
+	})
+
+	t.Run("can set and retrieve public field using direct access to the field", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "fields").
+			With(daggerShell("with-version a.b.c | public-version")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, out, "a.b.c")
+	})
+
+	t.Run("can set and retrieve non exposed field using custom function", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "fields").
+			With(daggerShell("with-version a.b.c | get-internal-version")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, out, "a.b.c")
+	})
+
+	t.Run("can set but not retrieve non exposed field using direct access to the field", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := javaModule(t, c, "fields").
+			With(daggerShell("with-version a.b.c | internal-version")).
+			Stdout(ctx)
+
+		require.Error(t, err)
 	})
 }
 
@@ -218,6 +261,30 @@ func (JavaSuite) TestIgnore(_ context.Context, t *testctx.T) {
 		require.NotContains(t, out, "dagger.json")
 		require.NotContains(t, out, "pom.xml")
 		require.Contains(t, out, "src")
+	})
+}
+
+func (JavaSuite) TestConstructor(_ context.Context, t *testctx.T) {
+	t.Run("value set", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "construct").
+			With(daggerCall("--value", "from cli", "echo")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "from cli", out)
+	})
+
+	t.Run("default value from constructor", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "construct").
+			With(daggerCall("echo")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "from constructor", out)
 	})
 }
 

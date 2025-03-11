@@ -1,11 +1,10 @@
 package io.dagger.java.module;
 
-import io.dagger.client.Container;
-import io.dagger.client.DaggerQueryException;
-import io.dagger.client.Directory;
-import io.dagger.client.Platform;
-import io.dagger.module.AbstractModule;
+import static io.dagger.client.Dagger.dag;
+
+import io.dagger.client.*;
 import io.dagger.module.annotation.*;
+import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.Optional;
@@ -13,16 +12,29 @@ import java.util.concurrent.ExecutionException;
 
 /** Dagger Java Module main object */
 @Object
-public class DaggerJava extends AbstractModule {
-  private String notExportedField;
+public class DaggerJava {
+  private transient String notExportedField;
 
   /** Project source directory */
   public Directory source;
 
-  public String version;
+  // this field will also be exposed as a Dagger Field, even if private
+  @Function private String version;
 
-  public DaggerJava() {
-    super();
+  // this field will be serialized but not exposed as a field
+  private Container container;
+
+  public DaggerJava() {}
+
+  /**
+   * Initialize the DaggerJava Module
+   *
+   * @param source Project source directory
+   * @param version Go version
+   */
+  public DaggerJava(Optional<Directory> source, @Default("1.23.2") String version) {
+    this.source = source.orElseGet(() -> dag().currentModule().source());
+    this.version = version;
   }
 
   /**
@@ -33,7 +45,7 @@ public class DaggerJava extends AbstractModule {
    */
   @Function
   public Container containerEcho(@Default("Hello Dagger") String stringArg) {
-    return dag.container().from("alpine:latest").withExec(List.of("echo", stringArg));
+    return dag().container().from("alpine:latest").withExec(List.of("echo", stringArg));
   }
 
   /**
@@ -49,7 +61,8 @@ public class DaggerJava extends AbstractModule {
       Optional<String> pattern)
       throws InterruptedException, ExecutionException, DaggerQueryException {
     String grepPattern = pattern.orElse("dagger");
-    return dag.container()
+    return dag()
+        .container()
         .from("alpine:latest")
         .withMountedDirectory("/mnt", directoryArg)
         .withWorkdir("/mnt")
@@ -62,7 +75,12 @@ public class DaggerJava extends AbstractModule {
     return this;
   }
 
-  @Function
+  /**
+   * Return true if the value is 0.
+   *
+   * <p>This description should not be exposed to dagger.
+   */
+  @Function(description = "but this description should be exposed")
   public boolean isZero(int value) {
     return value == 0;
   }
@@ -112,7 +130,7 @@ public class DaggerJava extends AbstractModule {
   @Function
   public Platform defaultPlatform()
       throws InterruptedException, ExecutionException, DaggerQueryException {
-    return dag.defaultPlatform();
+    return dag().defaultPlatform();
   }
 
   @Function

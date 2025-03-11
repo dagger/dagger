@@ -37,6 +37,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
+	"resenje.org/singleflight"
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/auth"
@@ -46,7 +47,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/cache"
+	"github.com/dagger/dagger/engine/cache/cachemanager"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -145,13 +146,13 @@ type daggerClient struct {
 	fnCall *core.FunctionCall
 
 	// buildkit job-related state/config
-	buildkitSession     *bksession.Session
-	getMainClientCaller func() (bksession.Caller, error)
-	job                 *bksolver.Job
-	llbSolver           *llbsolver.Solver
-	llbBridge           bkfrontend.FrontendLLBBridge
-	dialer              *net.Dialer
-	bkClient            *buildkit.Client
+	buildkitSession *bksession.Session
+	getClientCaller func(string) (bksession.Caller, error)
+	job             *bksolver.Job
+	llbSolver       *llbsolver.Solver
+	llbBridge       bkfrontend.FrontendLLBBridge
+	dialer          *net.Dialer
+	bkClient        *buildkit.Client
 
 	// SQLite database storing telemetry + anything else
 	db             *sql.DB
@@ -176,6 +177,13 @@ func (client *daggerClient) FlushTelemetry(ctx context.Context) error {
 	var errs error
 	if client.tracerProvider != nil {
 		slog.ExtraDebug("force flushing client traces")
+		// FIXME: mitigation for goroutine leak fixed upstream in
+		// https://github.com/open-telemetry/opentelemetry-go/pull/6363
+		// Just give this context a real generous timeout for now so if we
+		// are canceled we don't leak
+		// Can undo this once we've picked up the upstream fix.
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
+		defer cancel()
 		errs = errors.Join(errs, client.tracerProvider.ForceFlush(ctx))
 	}
 	if client.loggerProvider != nil {
@@ -205,6 +213,10 @@ func (client *daggerClient) ShutdownTelemetry(ctx context.Context) error {
 		errs = errors.Join(errs, client.meterProvider.Shutdown(ctx))
 	}
 	return errs
+}
+
+func (client *daggerClient) getMainClientCaller() (bksession.Caller, error) {
+	return client.getClientCaller(client.daggerSession.mainClientCallerID)
 }
 
 func (sess *daggerSession) FlushTelemetry(ctx context.Context) error {
@@ -250,7 +262,7 @@ func (srv *Server) initializeDaggerSession(
 				engine.Version,
 				runtime.GOOS,
 				runtime.GOARCH,
-				srv.SolverCache.ID() != cache.LocalCacheID,
+				srv.SolverCache.ID() != cachemanager.LocalCacheID,
 			),
 		CloudToken: clientMetadata.CloudToken,
 	})
@@ -313,6 +325,11 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// in theory none of this should block very long, but add a safeguard just in case
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
 	defer cancel()
+
+	if err := sess.dagqlCache.ReleaseAll(ctx); err != nil {
+		slog.Error("error releasing dagql cache", "error", err)
+		errs = errors.Join(errs, fmt.Errorf("release dagql cache: %w", err))
+	}
 
 	if err := sess.services.StopSessionServices(ctx, sess.sessionID); err != nil {
 		slog.Warn("error stopping services", "error", err)
@@ -464,11 +481,15 @@ func (srv *Server) initializeDaggerClient(
 	}
 	failureCleanups.Add("close llb solver", client.llbSolver.Close)
 
-	client.getMainClientCaller = sync.OnceValues(func() (bksession.Caller, error) {
+	var callerG singleflight.Group[string, bksession.Caller]
+	client.getClientCaller = func(id string) (bksession.Caller, error) {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
-		return srv.bkSessionManager.Get(ctx, client.daggerSession.mainClientCallerID, false)
-	})
+		caller, _, err := callerG.Do(ctx, id, func(ctx context.Context) (bksession.Caller, error) {
+			return srv.bkSessionManager.Get(ctx, id, false)
+		})
+		return caller, err
+	}
 
 	client.buildkitSession, err = srv.newBuildkitSession(ctx, client)
 	if err != nil {
@@ -535,6 +556,7 @@ func (srv *Server) initializeDaggerClient(
 		BkSession:            client.buildkitSession,
 		LLBBridge:            client.llbBridge,
 		Dialer:               client.dialer,
+		GetClientCaller:      client.getClientCaller,
 		GetMainClientCaller:  client.getMainClientCaller,
 		Entitlements:         srv.entitlements,
 		UpstreamCacheImports: client.daggerSession.cacheImporterCfgs,
@@ -917,6 +939,18 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 }
 
 const InstrumentationLibrary = "dagger.io/engine.server"
+
+func (srv *Server) DagqlServer(ctx context.Context) (*dagql.Server, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	schema, err := client.deps.Schema(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return schema, nil
+}
 
 func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opts *ClientInitOpts) (rerr error) {
 	ctx := r.Context()

@@ -2,6 +2,9 @@ package idtui
 
 const (
 	Block               = "█"
+	Block75             = "▓"
+	Block50             = "▒"
+	Block25             = "░"
 	CaretDownEmpty      = "▽"
 	CaretDownFilled     = "▼"
 	CaretLeftFilled     = "◀" // "<"

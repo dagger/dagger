@@ -1022,9 +1022,21 @@ export type LabelID = string & { __LabelID: never }
 export type ListTypeDefID = string & { __ListTypeDefID: never }
 
 /**
+ * The `ModuleConfigClientID` scalar type represents an identifier for an object of type ModuleConfigClient.
+ */
+export type ModuleConfigClientID = string & { __ModuleConfigClientID: never }
+
+/**
  * The `ModuleID` scalar type represents an identifier for an object of type Module.
  */
 export type ModuleID = string & { __ModuleID: never }
+
+export type ModuleSourceWithClientOpts = {
+  /**
+   * Generate in developer mode
+   */
+  dev?: boolean
+}
 
 /**
  * The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
@@ -2681,6 +2693,7 @@ export class Directory extends BaseClient {
   private readonly _id?: DirectoryID = undefined
   private readonly _digest?: string = undefined
   private readonly _export?: string = undefined
+  private readonly _name?: string = undefined
   private readonly _sync?: DirectoryID = undefined
 
   /**
@@ -2691,6 +2704,7 @@ export class Directory extends BaseClient {
     _id?: DirectoryID,
     _digest?: string,
     _export?: string,
+    _name?: string,
     _sync?: DirectoryID,
   ) {
     super(ctx)
@@ -2698,6 +2712,7 @@ export class Directory extends BaseClient {
     this._id = _id
     this._digest = _digest
     this._export = _export
+    this._name = _name
     this._sync = _sync
   }
 
@@ -2714,6 +2729,14 @@ export class Directory extends BaseClient {
     const response: Awaited<DirectoryID> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Converts this directory into a git repository
+   */
+  asGit = (): GitRepository => {
+    const ctx = this._ctx.select("asGit")
+    return new GitRepository(ctx)
   }
 
   /**
@@ -2835,6 +2858,21 @@ export class Directory extends BaseClient {
     const ctx = this._ctx.select("glob", { pattern })
 
     const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Returns the name of the directory.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -5305,6 +5343,94 @@ export class Module_ extends BaseClient {
 }
 
 /**
+ * The client generated for the module.
+ */
+export class ModuleConfigClient extends BaseClient {
+  private readonly _id?: ModuleConfigClientID = undefined
+  private readonly _dev?: boolean = undefined
+  private readonly _directory?: string = undefined
+  private readonly _generator?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ModuleConfigClientID,
+    _dev?: boolean,
+    _directory?: string,
+    _generator?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._dev = _dev
+    this._directory = _directory
+    this._generator = _generator
+  }
+
+  /**
+   * A unique identifier for this ModuleConfigClient.
+   */
+  id = async (): Promise<ModuleConfigClientID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ModuleConfigClientID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * If true, generate the client in developer mode.
+   */
+  dev = async (): Promise<boolean> => {
+    if (this._dev) {
+      return this._dev
+    }
+
+    const ctx = this._ctx.select("dev")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The directory the client is generated in.
+   */
+  directory = async (): Promise<string> => {
+    if (this._directory) {
+      return this._directory
+    }
+
+    const ctx = this._ctx.select("directory")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The generator to use
+   */
+  generator = async (): Promise<string> => {
+    if (this._generator) {
+      return this._generator
+    }
+
+    const ctx = this._ctx.select("generator")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
  * The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
  */
 export class ModuleSource extends BaseClient {
@@ -5321,6 +5447,7 @@ export class ModuleSource extends BaseClient {
   private readonly _localContextDirectoryPath?: string = undefined
   private readonly _moduleName?: string = undefined
   private readonly _moduleOriginalName?: string = undefined
+  private readonly _originalSubpath?: string = undefined
   private readonly _pin?: string = undefined
   private readonly _repoRootPath?: string = undefined
   private readonly _sourceRootSubpath?: string = undefined
@@ -5346,6 +5473,7 @@ export class ModuleSource extends BaseClient {
     _localContextDirectoryPath?: string,
     _moduleName?: string,
     _moduleOriginalName?: string,
+    _originalSubpath?: string,
     _pin?: string,
     _repoRootPath?: string,
     _sourceRootSubpath?: string,
@@ -5368,6 +5496,7 @@ export class ModuleSource extends BaseClient {
     this._localContextDirectoryPath = _localContextDirectoryPath
     this._moduleName = _moduleName
     this._moduleOriginalName = _moduleOriginalName
+    this._originalSubpath = _originalSubpath
     this._pin = _pin
     this._repoRootPath = _repoRootPath
     this._sourceRootSubpath = _sourceRootSubpath
@@ -5442,6 +5571,23 @@ export class ModuleSource extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * The clients generated for the module.
+   */
+  configClients = async (): Promise<ModuleConfigClient[]> => {
+    type configClients = {
+      id: ModuleConfigClientID
+    }
+
+    const ctx = this._ctx.select("configClients").select("id")
+
+    const response: Awaited<configClients[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadModuleConfigClientFromID(r.id),
+    )
   }
 
   /**
@@ -5622,6 +5768,21 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * The original subpath used when instantiating this module source, relative to the context directory.
+   */
+  originalSubpath = async (): Promise<string> => {
+    if (this._originalSubpath) {
+      return this._originalSubpath
+    }
+
+    const ctx = this._ctx.select("originalSubpath")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * The pinned version of this module source.
    */
   pin = async (): Promise<string> => {
@@ -5713,6 +5874,25 @@ export class ModuleSource extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Update the module source with a new client to generate.
+   * @param generator The generator to use
+   * @param outputDir The output directory for the generated client.
+   * @param opts.dev Generate in developer mode
+   */
+  withClient = (
+    generator: string,
+    outputDir: string,
+    opts?: ModuleSourceWithClientOpts,
+  ): ModuleSource => {
+    const ctx = this._ctx.select("withClient", {
+      generator,
+      outputDir,
+      ...opts,
+    })
+    return new ModuleSource(ctx)
   }
 
   /**
@@ -6424,6 +6604,16 @@ export class Client extends BaseClient {
   loadListTypeDefFromID = (id: ListTypeDefID): ListTypeDef => {
     const ctx = this._ctx.select("loadListTypeDefFromID", { id })
     return new ListTypeDef(ctx)
+  }
+
+  /**
+   * Load a ModuleConfigClient from its ID.
+   */
+  loadModuleConfigClientFromID = (
+    id: ModuleConfigClientID,
+  ): ModuleConfigClient => {
+    const ctx = this._ctx.select("loadModuleConfigClientFromID", { id })
+    return new ModuleConfigClient(ctx)
   }
 
   /**

@@ -9,11 +9,10 @@ import (
 	"fmt"
 	"reflect"
 
+	"dagger.io/dagger/querybuilder"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
-
-	"dagger.io/dagger/querybuilder"
 )
 
 func Tracer() trace.Tracer {
@@ -179,6 +178,9 @@ type LabelID string
 
 // The `ListTypeDefID` scalar type represents an identifier for an object of type ListTypeDef.
 type ListTypeDefID string
+
+// The `ModuleConfigClientID` scalar type represents an identifier for an object of type ModuleConfigClient.
+type ModuleConfigClientID string
 
 // The `ModuleID` scalar type represents an identifier for an object of type Module.
 type ModuleID string
@@ -2169,6 +2171,7 @@ type Directory struct {
 	digest *string
 	export *string
 	id     *DirectoryID
+	name   *string
 	sync   *DirectoryID
 }
 type WithDirectoryFunc func(r *Directory) *Directory
@@ -2182,6 +2185,15 @@ func (r *Directory) With(f WithDirectoryFunc) *Directory {
 
 func (r *Directory) WithGraphQLQuery(q *querybuilder.Selection) *Directory {
 	return &Directory{
+		query: q,
+	}
+}
+
+// Converts this directory into a git repository
+func (r *Directory) AsGit() *GitRepository {
+	q := r.query.Select("asGit")
+
+	return &GitRepository{
 		query: q,
 	}
 }
@@ -2420,6 +2432,19 @@ func (r *Directory) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// Returns the name of the directory.
+func (r *Directory) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Force evaluation in the engine.
@@ -5562,6 +5587,101 @@ func (r *Module) WithObject(object *TypeDef) *Module {
 	}
 }
 
+// The client generated for the module.
+type ModuleConfigClient struct {
+	query *querybuilder.Selection
+
+	dev       *bool
+	directory *string
+	generator *string
+	id        *ModuleConfigClientID
+}
+
+func (r *ModuleConfigClient) WithGraphQLQuery(q *querybuilder.Selection) *ModuleConfigClient {
+	return &ModuleConfigClient{
+		query: q,
+	}
+}
+
+// If true, generate the client in developer mode.
+func (r *ModuleConfigClient) Dev(ctx context.Context) (bool, error) {
+	if r.dev != nil {
+		return *r.dev, nil
+	}
+	q := r.query.Select("dev")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The directory the client is generated in.
+func (r *ModuleConfigClient) Directory(ctx context.Context) (string, error) {
+	if r.directory != nil {
+		return *r.directory, nil
+	}
+	q := r.query.Select("directory")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The generator to use
+func (r *ModuleConfigClient) Generator(ctx context.Context) (string, error) {
+	if r.generator != nil {
+		return *r.generator, nil
+	}
+	q := r.query.Select("generator")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this ModuleConfigClient.
+func (r *ModuleConfigClient) ID(ctx context.Context) (ModuleConfigClientID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ModuleConfigClientID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ModuleConfigClient) XXX_GraphQLType() string {
+	return "ModuleConfigClient"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ModuleConfigClient) XXX_GraphQLIDType() string {
+	return "ModuleConfigClientID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ModuleConfigClient) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ModuleConfigClient) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
 // The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
 type ModuleSource struct {
 	query *querybuilder.Selection
@@ -5579,6 +5699,7 @@ type ModuleSource struct {
 	localContextDirectoryPath *string
 	moduleName                *string
 	moduleOriginalName        *string
+	originalSubpath           *string
 	pin                       *string
 	repoRootPath              *string
 	sourceRootSubpath         *string
@@ -5647,6 +5768,39 @@ func (r *ModuleSource) Commit(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// The clients generated for the module.
+func (r *ModuleSource) ConfigClients(ctx context.Context) ([]ModuleConfigClient, error) {
+	q := r.query.Select("configClients")
+
+	q = q.Select("id")
+
+	type configClients struct {
+		Id ModuleConfigClientID
+	}
+
+	convert := func(fields []configClients) []ModuleConfigClient {
+		out := []ModuleConfigClient{}
+
+		for i := range fields {
+			val := ModuleConfigClient{id: &fields[i].Id}
+			val.query = q.Root().Select("loadModuleConfigClientFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []configClients
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // Whether an existing dagger.json for the module was found.
@@ -5867,6 +6021,19 @@ func (r *ModuleSource) ModuleOriginalName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// The original subpath used when instantiating this module source, relative to the context directory.
+func (r *ModuleSource) OriginalSubpath(ctx context.Context) (string, error) {
+	if r.originalSubpath != nil {
+		return *r.originalSubpath, nil
+	}
+	q := r.query.Select("originalSubpath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // The pinned version of this module source.
 func (r *ModuleSource) Pin(ctx context.Context) (string, error) {
 	if r.pin != nil {
@@ -5952,6 +6119,29 @@ func (r *ModuleSource) Version(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// ModuleSourceWithClientOpts contains options for ModuleSource.WithClient
+type ModuleSourceWithClientOpts struct {
+	// Generate in developer mode
+	Dev bool
+}
+
+// Update the module source with a new client to generate.
+func (r *ModuleSource) WithClient(generator string, outputDir string, opts ...ModuleSourceWithClientOpts) *ModuleSource {
+	q := r.query.Select("withClient")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `dev` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Dev) {
+			q = q.Arg("dev", opts[i].Dev)
+		}
+	}
+	q = q.Arg("generator", generator)
+	q = q.Arg("outputDir", outputDir)
+
+	return &ModuleSource{
+		query: q,
+	}
 }
 
 // Append the provided dependencies to the module source's dependency list.
@@ -6824,6 +7014,16 @@ func (r *Client) LoadListTypeDefFromID(id ListTypeDefID) *ListTypeDef {
 	q = q.Arg("id", id)
 
 	return &ListTypeDef{
+		query: q,
+	}
+}
+
+// Load a ModuleConfigClient from its ID.
+func (r *Client) LoadModuleConfigClientFromID(id ModuleConfigClientID) *ModuleConfigClient {
+	q := r.query.Select("loadModuleConfigClientFromID")
+	q = q.Arg("id", id)
+
+	return &ModuleConfigClient{
 		query: q,
 	}
 }

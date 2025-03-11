@@ -17,8 +17,6 @@ import (
 
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
@@ -45,50 +43,23 @@ func TestMain(m *testing.M) {
 func Middleware() []testctx.Middleware[*testing.T] {
 	return []testctx.Middleware[*testing.T]{
 		testctx.WithParallel(),
-		oteltest.WithTracing[*testing.T](
-			oteltest.TraceConfig{
-				Attributes: []attribute.KeyValue{
-					attribute.String(testctxTypeAttr, "*testing.T"),
-				},
+		oteltest.WithTracing(
+			oteltest.TraceConfig[*testing.T]{
+				StartOptions: testutil.SpanOpts[*testing.T],
 			},
 		),
 		oteltest.WithLogging[*testing.T](),
-		spanNameMiddleware[*testing.T](),
-	}
-}
-
-func isPrewarm() bool {
-	_, ok := os.LookupEnv("TESTCTX_PREWARM")
-	return ok
-}
-
-const testctxTypeAttr = "dagger.io/testctx.type"
-const testctxNameAttr = "dagger.io/testctx.name"
-const testctxPrewarmAttr = "dagger.io/testctx.prewarm"
-
-// spanNameMiddleware is a middleware that adds the test name to the span.
-func spanNameMiddleware[T testctx.Runner[T]]() testctx.Middleware[T] {
-	return func(next testctx.RunFunc[T]) testctx.RunFunc[T] {
-		return func(ctx context.Context, w *testctx.W[T]) {
-			span := trace.SpanFromContext(ctx)
-			span.SetAttributes(attribute.String(testctxNameAttr, w.Name()))
-			next(ctx, w)
-		}
 	}
 }
 
 func BenchMiddleware() []testctx.Middleware[*testing.B] {
 	return []testctx.Middleware[*testing.B]{
-		oteltest.WithTracing[*testing.B](
-			oteltest.TraceConfig{
-				Attributes: []attribute.KeyValue{
-					attribute.String(testctxTypeAttr, "*testing.B"),
-					attribute.Bool(testctxPrewarmAttr, isPrewarm()),
-				},
+		oteltest.WithTracing(
+			oteltest.TraceConfig[*testing.B]{
+				StartOptions: testutil.SpanOpts[*testing.B],
 			},
 		),
 		oteltest.WithLogging[*testing.B](),
-		spanNameMiddleware[*testing.B](),
 	}
 }
 

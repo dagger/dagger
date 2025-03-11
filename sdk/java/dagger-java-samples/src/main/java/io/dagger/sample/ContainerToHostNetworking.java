@@ -1,16 +1,13 @@
 package io.dagger.sample;
 
-import io.dagger.client.Client;
-import io.dagger.client.Dagger;
-import io.dagger.client.PortForward;
-import io.dagger.client.Service;
+import io.dagger.client.*;
 import java.util.List;
 
 @Description("Expose MySQL service running on the host to client containers")
 public class ContainerToHostNetworking {
 
   public static void main(String... args) throws Exception {
-    try (Client client = Dagger.connect()) {
+    try (AutoCloseableClient client = Dagger.connect()) {
       // expose host service on port 3306
       Service hostSrv =
           client.host().service(List.of(new PortForward().withBackend(3306).withFrontend(3306)));

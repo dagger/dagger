@@ -13,7 +13,7 @@ inputs:
 
   version:
     description: "Dagger version to run against"
-    default: "v0.16.1"
+    default: "v0.16.2"
     required: false
 
   dev-engine:
@@ -58,13 +58,6 @@ runs:
           curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin/ sudo -E sh
           echo "::endgroup::"
         fi
-
-    - name: Install go
-      uses: actions/setup-go@v5
-      if: inputs.dev-engine == 'true'
-      with:
-        go-version: "1.23"
-        cache-dependency-path: ".dagger/go.sum"
 
     - name: Start dev dagger
       shell: bash

@@ -22,7 +22,7 @@ Expected stderr:
 ✔ .revealedSpans: String! X.Xs
 ┃ hello from Go! it is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
 │ ✔ revealed span X.Xs
-│😊 [38;5;252m[38;5;252m[38;5;252msometimes you gotta be[38;5;252;1mbold
+│ 😊 [38;5;252m[38;5;252m[38;5;252msometimes you gotta be[38;5;252;1mbold
 
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

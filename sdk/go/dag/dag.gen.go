@@ -18,8 +18,12 @@ func initClient() *dagger.Client {
 	defer clientMu.Unlock()
 
 	if client == nil {
+		opts := []dagger.ClientOpt{
+			dagger.WithLogOutput(os.Stdout),
+		}
+
 		var err error
-		client, err = dagger.Connect(context.Background(), dagger.WithLogOutput(os.Stdout))
+		client, err = dagger.Connect(context.Background(), opts...)
 		if err != nil {
 			panic(err)
 		}
@@ -288,6 +292,12 @@ func LoadLabelFromID(id dagger.LabelID) *dagger.Label {
 func LoadListTypeDefFromID(id dagger.ListTypeDefID) *dagger.ListTypeDef {
 	client := initClient()
 	return client.LoadListTypeDefFromID(id)
+}
+
+// Load a ModuleConfigClient from its ID.
+func LoadModuleConfigClientFromID(id dagger.ModuleConfigClientID) *dagger.ModuleConfigClient {
+	client := initClient()
+	return client.LoadModuleConfigClientFromID(id)
 }
 
 // Load a Module from its ID.

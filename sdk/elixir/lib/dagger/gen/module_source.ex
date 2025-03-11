@@ -50,6 +50,26 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
+  @doc "The clients generated for the module."
+  @spec config_clients(t()) :: {:ok, [Dagger.ModuleConfigClient.t()]} | {:error, term()}
+  def config_clients(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("configClients") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(module_source.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.ModuleConfigClient{
+           query_builder:
+             QB.query()
+             |> QB.select("loadModuleConfigClientFromID")
+             |> QB.put_arg("id", id),
+           client: module_source.client
+         }
+       end}
+    end
+  end
+
   @doc "Whether an existing dagger.json for the module was found."
   @spec config_exists(t()) :: {:ok, boolean()} | {:error, term()}
   def config_exists(%__MODULE__{} = module_source) do
@@ -199,6 +219,15 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
+  @doc "The original subpath used when instantiating this module source, relative to the context directory."
+  @spec original_subpath(t()) :: {:ok, String.t()} | {:error, term()}
+  def original_subpath(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("originalSubpath")
+
+    Client.execute(module_source.client, query_builder)
+  end
+
   @doc "The pinned version of this module source."
   @spec pin(t()) :: {:ok, String.t()} | {:error, term()}
   def pin(%__MODULE__{} = module_source) do
@@ -272,6 +301,23 @@ defmodule Dagger.ModuleSource do
       module_source.query_builder |> QB.select("version")
 
     Client.execute(module_source.client, query_builder)
+  end
+
+  @doc "Update the module source with a new client to generate."
+  @spec with_client(t(), String.t(), String.t(), [{:dev, boolean() | nil}]) ::
+          Dagger.ModuleSource.t()
+  def with_client(%__MODULE__{} = module_source, generator, output_dir, optional_args \\ []) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("withClient")
+      |> QB.put_arg("generator", generator)
+      |> QB.put_arg("outputDir", output_dir)
+      |> QB.maybe_put_arg("dev", optional_args[:dev])
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
   end
 
   @doc "Append the provided dependencies to the module source's dependency list."
@@ -376,5 +422,18 @@ defmodule Dagger.ModuleSource do
       query_builder: query_builder,
       client: module_source.client
     }
+  end
+end
+
+defimpl Jason.Encoder, for: Dagger.ModuleSource do
+  def encode(module_source, opts) do
+    {:ok, id} = Dagger.ModuleSource.id(module_source)
+    Jason.Encode.string(id, opts)
+  end
+end
+
+defimpl Nestru.Decoder, for: Dagger.ModuleSource do
+  def decode_fields_hint(_struct, _context, id) do
+    {:ok, Dagger.Client.load_module_source_from_id(Dagger.Global.dag(), id)}
   end
 end

@@ -4,51 +4,77 @@ slug: /
 
 # Dagger Documentation
 
-Welcome to Dagger, a programmable tool that lets you replace your software project's artisanal scripts with a modern API and cross-language scripting engine.
+## What is Dagger?
 
-1. Encapsulate all your project's tasks and workflows into simple Dagger Functions, written in your programming language of choice.
-2. Run your Dagger Functions from the command line, your language interpreter, or a custom HTTP client.
-3. Package your Dagger Functions into a module, to reuse in your next project or share with the community.
-4. Search for existing modules, and import them into yours. All Dagger modules can reuse each other's Dagger Functions - regardless of which language they are written in.
+Dagger is an open-source runtime for composable workflows. It's perfect for systems with many moving parts and a strong need for **repeatability**, **modularity**, **observability** and **cross-platform support**. This makes it a great choice for AI agents and CI/CD workflows.
 
-## What problem does Dagger solve?
+<div class="text--center"><img src="img/dagger-factory.jpg" width="75%"></img></div>
 
-Application delivery pipelines are a source of pain. The majority of pipelines use messy, hard-to-debug YAML, which is not portable across CI providers, and inconsistent shell scripts, which may not work consistently across environments and platforms. Developers have to "push and pray" - instead of being able to test and build code locally and seeing near-instant feedback from their delivery pipelines, they have to wait (and hope) for a green signal from pipelines running on remote servers.
+## Key Features
 
-## How does Dagger solve this problem?
+- **Containerized Workflow Execution:** Transform code into containerized, composable operations. Build reproducible workflows in any language with custom environments, parallel processing, and seamless chaining.
 
-Dagger solves this by running your application delivery pipelines in containers. A "Daggerized" pipeline runs the same way locally or on your CI provider, resulting in faster feedback to the developer and the elimination of last-minute surprises. Dagger also caches everything, which accelerates each pipeline run significantly and often cuts run times by over 50%. And finally, Dagger supports multiple programming languages via native-language SDKs, enabling developers to build their delivery pipelines in the same language as their application and benefit from the ecosystem's existing tooling and best practices.
+- **Universal Type System:** Mix and match components from any language with type-safe connections. Use the best tools from each ecosystem without translation headaches.
 
-## Who is Dagger for?
+- **Automatic Artifact Caching:** Operations produce cacheable, immutable artifacts — even for LLMs and API calls. Your workflows run faster and cost less.
 
-Dagger may be a good fit if you are...
+- **Built-in Observability:** Full visibility into operations with tracing, logs, and metrics. Debug complex workflows and know exactly what's happening.
 
-- Your team's "designated devops person", hoping to replace a pile of artisanal scripts with something more powerful.
-- A platform engineer writing custom tooling, with the goal of unifying application delivery across organizational silos.
-- A cloud-native developer advocate or solutions engineer, looking to demonstrate a complex integration on short notice.
+![Dagger Trace](/img/cloud-trace.gif)
 
-## How does Dagger work?
+- **Open Platform:** Works with any compute platform and tech stack — today and tomorrow. Ship faster, experiment freely, and don’t get locked into someone else's choices.
 
-Dagger consists of a number of components, all of which work together in an integrated fashion to orchestrate the delivery of applications to the cloud from start to finish.
+- **LLM Augmentation:** Native integration of any LLM that automatically discovers and uses available functions in your workflow. Ship mind-blowing agents in just a few dozen lines of code.
+
+- **Interactive Terminal:** Directly interact with your workflow or agents in real-time through your terminal. Prototype, test, debug, and ship even faster.
+
+<div class="text--center"><img src="img/da-robots-white-box.svg" width="60%"></img></div>
+
+## Architecture
+
+Dagger consists of a number of components, all of which work together in an integrated fashion to provide the best possible platform for composable workflows.
+
+### Dagger Engine
+
+The Dagger Engine is the core runtime powering the Dagger platform. It combines an execution engine, universal type system, data layer and module system. It can run on any OCI-compatible system, and is controlled by the Dagger API.
 
 ### Dagger CLI
-The Dagger Command-Line Interface (CLI) is your primary entrypoint to Dagger. It is a full-featured, easy to use tool that can be used interactively from a terminal or non-interactively from a shell script or a CI runner. The Dagger CLI also includes a real-time visualization feature called the terminal UI (TUI).
 
-### Dagger Functions
-Dagger Functions are the fundamental unit of computing in Dagger. Dagger Functions are regular program code, written using a Dagger SDK. With Dagger Functions, you can encapsulate common project operations or workflows, such as "pull a container image", "copy a file", and "forward a TCP port", into portable, reusable program code with clear inputs and outputs. Dagger Functions execute within containers and can be called using the Dagger CLI. Dagger Functions are packaged, shared and reused using Dagger modules.
+The Dagger CLI is your primary entrypoint to Dagger. It is a full-featured, easy to use tool that can be used interactively from a terminal or non-interactively from a shell script or a CI runner. The Dagger CLI also includes a real-time visualization feature called the terminal UI (TUI).
+The Dagger CLI acts as a client to the Dagger Engine. It can automatically provision an engine if needed.
 
-Dagger Functions are portable and interoperable across languages. For example, a Python function can call a Go function, which can call a TypeScript function, and so on. Dagger is able to do this by "translating" each Dagger Function into GraphQL at runtime and adding it to the Dagger API, thereby making it immediately usable from any other Dagger SDK or any HTTP client. This means that you no longer need to care which language your tooling is written in; you can use the one that you're most comfortable with or that best suits your requirements.
+### Client libraries
 
-### Dagger SDKs
-Dagger SDKs contain language-native code bindings for the Dagger API, enabling you to develop Dagger Functions in your preferred programming language. Dagger SDKs are currently available for Go, TypeScript and Python. Support for other languages is available via experimental and community SDKs.
+Client libraries allow controlling the Dagger Engine directly from your code.
+
+To fully take advantage of the Dagger's universal type system, client libraries are automatically generated: the Dagger CLI and SDKs provides the necessary tooling.
+This allows for cross-language composition: install any Dagger module as a dependency, and your generated client will include native bindings, regardless of languages.
+
+### SDKs
+
+Dagger SDKs provide resources for developing Dagger modules using a familiar language and toolchain. Each SDK provides:
+
+1) A *client generator*, to *consume* the Dagger API with native code.
+2) A *server generator*, to *extend* the Dagger API with native code.
+3) Examples and reference documentation
+
+### Modules
+
+Dagger modules are platform-agnostic software components that consume or extend Dagger types.
 
 ### Dagger API
-The Dagger API is a unified interface for programming Dagger. It provides a set of powerful core types for creating and managing application delivery pipelines, including types for containers, artifacts, network services, and secrets. It uses GraphQL as its low-level language-agnostic framework, and can be accessed using any standard GraphQL client. In practice, interacting with the API directly is optional; typically, you will use a Dagger Function created with a type-safe Dagger SDK, or the Dagger CLI.
+
+The Dagger API is a unified interface for programming the Dagger Engine.
+
+It defines a universal type system based on GraphQL, which can be introspected by any client, and dynamically extended by specially crafted servers.
+The core features of the Dagger Engine - execution engine, data layer - are available as builtin types.
 
 ### Dagger Cloud
-Dagger Cloud complements Dagger with a production-grade control plane. Features of Dagger Cloud include pipeline visualization and operational insights. Dagger Cloud provides a web interface to visualize each step of your pipeline, drill down to detailed logs, understand how long operations took to run, and whether operations were cached.
+
+[Dagger Cloud](https://dagger.cloud) complements Dagger with a production-grade control plane. Features of Dagger Cloud include pipeline visualization and operational insights. Dagger Cloud provides a web interface to visualize each step of your pipeline, drill down to detailed logs, understand how long operations took to run, and whether operations were cached.
 
 Dagger Cloud also collects telemetry from all your organization's Dagger Engines, whether they run in development or CI, and presents it all to you in one place. This gives you a unique view on all pipelines, both pre-push and post-push.
 
 ### The Daggerverse
-The Daggerverse is a free service run by Dagger, which indexes all publicly available Dagger Functions, and lets you easily search and consume them.
+
+The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules, and lets you easily search and consume them.

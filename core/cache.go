@@ -14,7 +14,7 @@ import (
 
 // CacheVolume is a persistent volume with a globally scoped identifier.
 type CacheVolume struct {
-	Keys []string `json:"keys"`
+	Keys []string
 }
 
 func (*CacheVolume) Type() *ast.Type {

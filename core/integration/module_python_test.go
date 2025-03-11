@@ -916,11 +916,11 @@ func (PythonSuite) TestPipLock(ctx context.Context, t *testctx.T) {
 
 		out, err := daggerCliBase(t, c).
 			With(pipLockMod(t, c, nil)).
-			With(daggerCall("--json")).
+			With(daggerCall()).
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "Test", gjson.Get(out, "_type").String())
+		require.Regexp(t, `Test@xxh3:[a-f0-9]{16}`, out)
 	})
 
 	t.Run("no uv.lock on develop", func(ctx context.Context, t *testctx.T) {

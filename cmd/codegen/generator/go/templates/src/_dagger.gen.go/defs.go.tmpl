@@ -19,9 +19,18 @@ import (
 {{ if IsModuleCode }}
 	"{{.PackageImport}}/internal/querybuilder"
 	"{{.PackageImport}}/internal/telemetry"
-{{ else }}
-	"{{.PackageImport}}/querybuilder"
-	"{{.PackageImport}}/telemetry"
+{{ end }}
+
+{{ if IsDevMode }}
+	"{{.PackageImport}}/internal/querybuilder"
+	"{{.PackageImport}}/internal/engineconn"
+{{ end }}
+
+{{- if IsStandaloneClient }}
+	{{ if not IsDevMode }}
+	"dagger.io/dagger/querybuilder"
+	{{ end }}
+	"dagger.io/dagger"
 {{ end }}
 )
 
@@ -216,4 +225,29 @@ func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Reques
 	}
 	return nil
 }
+{{ end }}
+
+{{ if IsStandaloneClient }}
+{{ if IsDevMode }}
+{{ template "_dagger.gen.go/client.go.tmpl" . }}
+{{ else }}
+type Client struct {
+	query  *querybuilder.Selection
+	client graphql.Client
+}
+
+func Connect(ctx context.Context, opts ...dagger.ClientOpt) (*Client, error) {
+	opts = append(opts, dagger.WithServeCurrentModule(true))
+
+	dag, err := dagger.Connect(ctx, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Client{
+		query:  dag.QueryBuilder(),
+		client: dag.GraphQLClient(),
+	}, nil
+}
+{{ end }}
 {{ end }}

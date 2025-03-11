@@ -448,6 +448,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a ModuleConfigClient from its ID.
+     */
+    public function loadModuleConfigClientFromID(ModuleConfigClientId|ModuleConfigClient $id): ModuleConfigClient
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadModuleConfigClientFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\ModuleConfigClient($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Module from its ID.
      */
     public function loadModuleFromID(ModuleId|Module $id): Module
@@ -475,6 +485,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadObjectTypeDefFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\ObjectTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a PhpSdk from its ID.
+     */
+    public function loadPhpSdkFromID(PhpSdkId|PhpSdk $id): PhpSdk
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadPhpSdkFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\PhpSdk($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -614,6 +634,15 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder->setArgument('requireKind', $requireKind);
         }
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    public function phpSdk(DirectoryId|Directory|null $sdkSourceDir = null): PhpSdk
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('phpSdk');
+        if (null !== $sdkSourceDir) {
+        $innerQueryBuilder->setArgument('sdkSourceDir', $sdkSourceDir);
+        }
+        return new \Dagger\PhpSdk($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

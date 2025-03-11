@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/dagger/dagger/engine"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // Filename is the name of the module config file.
@@ -11,6 +14,35 @@ const Filename = "dagger.json"
 
 // EngineVersionLatest is replaced by the current engine.Version during module init.
 const EngineVersionLatest string = "latest"
+
+func ParseModuleConfig(src []byte) (*ModuleConfigWithUserFields, error) {
+	// before attempting to parse the entire config, just read the
+	// engineVersion field, to perform version checks to see if it's even
+	// possible
+	var meta struct {
+		EngineVersion string `json:"engineVersion"`
+	}
+	if err := json.Unmarshal(src, &meta); err != nil {
+		return nil, fmt.Errorf("failed to decode module config: %w", err)
+	}
+	meta.EngineVersion = engine.NormalizeVersion(meta.EngineVersion)
+	if !engine.CheckMaxVersionCompatibility(meta.EngineVersion, engine.BaseVersion(engine.Version)) {
+		return nil, fmt.Errorf("module requires dagger %s, but you have %s", meta.EngineVersion, engine.Version)
+	}
+
+	var modCfg ModuleConfigWithUserFields
+	if err := json.Unmarshal(src, &modCfg); err != nil {
+		return nil, fmt.Errorf("failed to decode module config: %w", err)
+	}
+	return &modCfg, nil
+}
+
+// ModuleConfigWithUserFields is the config for a single module as loaded from a dagger.json file.
+// Includes additional fields that should only be set by the user.
+type ModuleConfigWithUserFields struct {
+	ModuleConfigUserFields
+	ModuleConfig
+}
 
 // ModuleConfig is the config for a single module as loaded from a dagger.json file.
 // Only contains fields that are set/edited by dagger utilities.
@@ -39,6 +71,14 @@ type ModuleConfig struct {
 	// Paths to explicitly exclude from the module, relative to the configuration file.
 	// Deprecated: Use !<pattern> in the include list instead.
 	Exclude []string `json:"exclude,omitempty"`
+
+	// The clients generated for this module.
+	Clients []*ModuleConfigClient `json:"clients,omitempty"`
+}
+
+type ModuleConfigUserFields struct {
+	// The self-describing json $schema
+	Schema string `json:"$schema,omitempty"`
 }
 
 // SDK represents the sdk field in dagger.json
@@ -74,18 +114,6 @@ func (sdk *SDK) UnmarshalJSON(data []byte) error {
 	}
 	*sdk = SDK(tmp)
 	return nil
-}
-
-type ModuleConfigUserFields struct {
-	// The self-describing json $schema
-	Schema string `json:"$schema,omitempty"`
-}
-
-// ModuleConfigWithUserFields is the config for a single module as loaded from a dagger.json file.
-// Includes additional fields that should only be set by the user.
-type ModuleConfigWithUserFields struct {
-	ModuleConfigUserFields
-	ModuleConfig
 }
 
 func (modCfg *ModuleConfig) UnmarshalJSON(data []byte) error {
@@ -208,4 +236,33 @@ func (cfg ModuleCodegenConfig) Clone() *ModuleCodegenConfig {
 	clone := *cfg.AutomaticGitignore
 	cfg.AutomaticGitignore = &clone
 	return &cfg
+}
+
+type ModuleConfigClient struct {
+	// The generator the client uses to be generated.
+	Generator string `field:"true" name:"generator" json:"generator" doc:"The generator to use"`
+
+	// The directory the client is generated in.
+	Directory string `field:"true" name:"directory" json:"directory" doc:"The directory the client is generated in."`
+
+	// Whether the client is generated in Dev mode or not.
+	// If set using an official SDK like Go or Typescript, the client will use the local SDK library
+	// instead of the published one.
+	Dev *bool `field:"true" name:"dev" json:"localLibrary,omitempty" doc:"If true, generate the client in developer mode."`
+}
+
+func (*ModuleConfigClient) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ModuleConfigClient",
+		NonNull:   true,
+	}
+}
+
+func (*ModuleConfigClient) TypeDescription() string {
+	return "The client generated for the module."
+}
+
+func (m ModuleConfigClient) Clone() *ModuleConfigClient {
+	cp := m
+	return &cp
 }

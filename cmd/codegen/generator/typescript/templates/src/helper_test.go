@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/generator/typescript/templates"
 )
 
@@ -27,5 +28,5 @@ func updateAndGetFixtures(t *testing.T, filepath, got string) string {
 
 func templateHelper(t *testing.T) *template.Template {
 	t.Helper()
-	return templates.New("", "", "")
+	return templates.New("", generator.Config{})
 }
