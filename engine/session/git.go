@@ -182,7 +182,7 @@ func (s GitAttachable) GetConfig(ctx context.Context, req *GitConfigRequest) (*G
 
 	// Check if git is installed
 	if _, err := exec.LookPath("git"); err != nil {
-		return newGitConfigErrorResponse(NO_GIT, "Git is not installed or not in PATH"), nil
+		return newGitConfigErrorResponse(NO_GIT, "git is not installed or not in PATH"), nil
 	}
 
 	// Ensure no parallel execution of the git CLI happens
@@ -200,14 +200,14 @@ func (s GitAttachable) GetConfig(ctx context.Context, req *GitConfigRequest) (*G
 
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return newGitConfigErrorResponse(TIMEOUT, "Git config command timed out"), nil
+			return newGitConfigErrorResponse(TIMEOUT, "git config command timed out"), nil
 		}
-		return newGitConfigErrorResponse(CONFIG_RETRIEVAL_FAILED, fmt.Sprintf("Failed to retrieve config: %v. stdout: %q, stderr: %q", err, stdout.String(), stderr.String())), nil
+		return newGitConfigErrorResponse(CONFIG_RETRIEVAL_FAILED, fmt.Sprintf("Failed to retrieve git config: %v.", err)), nil
 	}
 
 	list, err := parseGitConfigOutput(stdout.Bytes())
 	if err != nil {
-		return newGitConfigErrorResponse(CONFIG_RETRIEVAL_FAILED, fmt.Sprintf("Failed to parse config (%q): %v", stdout.String, err)), nil
+		return newGitConfigErrorResponse(CONFIG_RETRIEVAL_FAILED, fmt.Sprintf("Failed to parse git config %v", err)), nil
 	}
 
 	return &GitConfigResponse{

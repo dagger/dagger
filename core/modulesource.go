@@ -62,8 +62,8 @@ func (proto ModuleSourceKind) HumanString() string {
 }
 
 type SDKConfig struct {
-	Source string                 `field:"true" name:"source" doc:"Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
-	Config map[string]interface{} `name:"config" doc:"sdk specific config"`
+	Source string `field:"true" name:"source" doc:"Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
+	Config map[string]interface{}
 }
 
 func (*SDKConfig) Type() *ast.Type {

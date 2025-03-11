@@ -263,11 +263,11 @@ func (sdk *moduleSDK) withConfig(ctx context.Context, rawConfig map[string]inter
 			}
 		}
 
-		// the sdk do not expose WithConfig function
-		// return the moduleSDK as is
-		// TODO(rajatjindal): should we error out here if the user specifies sdk.config in dagger.json
-		// but no withConfig function exist in the sdk module source.
 		if withConfigFn == nil {
+			if len(rawConfig) > 0 {
+				return sdk, fmt.Errorf("sdk does not currently support specifying config")
+			}
+
 			return sdk, nil
 		}
 
@@ -276,9 +276,26 @@ func (sdk *moduleSDK) withConfig(ctx context.Context, rawConfig map[string]inter
 			return nil, err
 		}
 
+		// check if there are any unknown config keys provided
+		var unusedKeys = []string{}
+		for configKey := range rawConfig {
+			found := false
+			for _, arg := range fieldspec.Args {
+				if arg.Name == configKey {
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				unusedKeys = append(unusedKeys, configKey)
+			}
+		}
+
+		if len(unusedKeys) > 0 {
+			return nil, fmt.Errorf("unknown sdk config keys found %v", unusedKeys)
+		}
 		args := []dagql.NamedInput{}
-		// TODO(rajatjindal): should we error out here if the user specifies a config in sdk.config object, but
-		// withConfig function does not support that argument.
 		for _, arg := range fieldspec.Args {
 			var valInput = arg.Default
 
@@ -543,7 +560,7 @@ type goSDK struct {
 }
 
 type goSDKConfig struct {
-	GoPrivate string `json:"goprivate"`
+	GoPrivate string `json:"goprivate,omitempty"`
 }
 
 func (sdk *goSDK) RequiredClientGenerationFiles(_ context.Context) (dagql.Array[dagql.String], error) {
@@ -859,9 +876,22 @@ func (sdk *goSDK) baseWithCodegen(
 	}
 
 	var config goSDKConfig
-	err = mapstructure.Decode(sdk.rawConfig, &config)
+	var mapstructureMetadata mapstructure.Metadata
+	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		Metadata: &mapstructureMetadata,
+		Result:   &config,
+	})
 	if err != nil {
 		return ctr, err
+	}
+
+	err = decoder.Decode(sdk.rawConfig)
+	if err != nil {
+		return ctr, err
+	}
+
+	if len(mapstructureMetadata.Unused) > 0 {
+		return ctr, fmt.Errorf("unknown sdk config keys found %v", mapstructureMetadata.Unused)
 	}
 
 	configSelectors := getSDKConfigSelectors(ctx, config)
@@ -1176,7 +1206,6 @@ func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, 
 	}, nil
 }
 
-// TODO: bikeshed on name
 func getSDKConfigSelectors(_ context.Context, config goSDKConfig) []dagql.Selector {
 	var selectors []dagql.Selector
 	if config.GoPrivate != "" {
