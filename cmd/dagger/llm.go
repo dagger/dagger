@@ -49,6 +49,36 @@ var llmCmd = &cobra.Command{
 	},
 }
 
+type LLMShellHandler struct {
+	s      *LLMSession
+	cancel func()
+}
+
+func (h *LLMShellHandler) Handle(ctx context.Context, line string) (rerr error) {
+	if line == "/exit" {
+		h.cancel()
+		return nil
+	}
+	new, err := h.s.Interpret(ctx, line)
+	if err != nil {
+		return err
+	}
+	h.s = new
+	return nil
+}
+
+func (h *LLMShellHandler) AutoComplete(entireInput [][]rune, line, col int) (string, editline.Completions) {
+	return h.s.Complete(entireInput, line, col)
+}
+
+func (h *LLMShellHandler) IsComplete(entireInput [][]rune, line, col int) bool {
+	return h.s.IsComplete(entireInput, line, col)
+}
+
+func (h *LLMShellHandler) Prompt(out idtui.TermOutput, fg termenv.Color) string {
+	return h.s.Prompt(out, fg)
+}
+
 func LLMLoop(ctx context.Context, engineClient *client.Client) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -69,30 +99,10 @@ func LLMLoop(ctx context.Context, engineClient *client.Client) error {
 	// TODO: initialize LLM with current module, matching shell behavior?
 
 	// start the shell loop
-	Frontend.Shell(ctx,
-		func(ctx context.Context, line string) (rerr error) {
-			if line == "/exit" {
-				cancel()
-				return nil
-			}
-			new, err := s.Interpret(ctx, line)
-			if err != nil {
-				return err
-			}
-			s = new
-			return nil
-		},
-		// NOTE: these close over s
-		func(entireInput [][]rune, row, col int) (msg string, comp editline.Completions) {
-			return s.Complete(entireInput, row, col)
-		},
-		func(entireInput [][]rune, row, col int) bool {
-			return s.IsComplete(entireInput, row, col)
-		},
-		func(out idtui.TermOutput, fg termenv.Color) string {
-			return s.Prompt(out, fg)
-		},
-	)
+	Frontend.Shell(ctx, &LLMShellHandler{
+		s:      s,
+		cancel: cancel,
+	})
 
 	return nil
 }
@@ -534,7 +544,7 @@ func (s *LLMSession) Complete(entireInput [][]rune, row, col int) (msg string, c
 
 func (s *LLMSession) IsComplete(entireInput [][]rune, line int, col int) bool {
 	if input, l, c, ok := stripCommandPrefix("/with ", entireInput, line, col); ok {
-		return shellIsComplete(input, l, c)
+		return s.shell.IsComplete(input, l, c)
 	}
 	return true
 }
@@ -635,7 +645,7 @@ func (s *LLMSession) Prompt(out idtui.TermOutput, fg termenv.Color) string {
 		sb.WriteString(out.String(out.String(" ").String()).String())
 		return sb.String()
 	case modeShell:
-		return s.shell.prompt(out, fg)
+		return s.shell.Prompt(out, fg)
 	default:
 		return fmt.Sprintf("unknown mode: %d", s.mode)
 	}

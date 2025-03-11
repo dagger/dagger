@@ -145,26 +145,14 @@ func NewWithDB(db *dagui.DB) *frontendPretty {
 }
 
 type startShellMsg struct {
-	ctx          context.Context
-	handler      func(ctx context.Context, input string) error
-	autocomplete editline.AutoCompleteFn
-	isComplete   func(entireInput [][]rune, line int, col int) bool
-	prompt       func(out TermOutput, fg termenv.Color) string
+	ctx     context.Context
+	handler ShellHandler
 }
 
-func (fe *frontendPretty) Shell(
-	ctx context.Context,
-	fn func(ctx context.Context, input string) error,
-	autocomplete editline.AutoCompleteFn,
-	isComplete func(entireInput [][]rune, line int, col int) bool,
-	prompt func(out TermOutput, fg termenv.Color) string,
-) {
+func (fe *frontendPretty) Shell(ctx context.Context, handler ShellHandler) {
 	fe.program.Send(startShellMsg{
-		ctx:          ctx,
-		handler:      fn,
-		autocomplete: autocomplete,
-		isComplete:   isComplete,
-		prompt:       prompt,
+		ctx:     ctx,
+		handler: handler,
 	})
 	<-ctx.Done()
 }
@@ -913,9 +901,8 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		return fe, nil
 
 	case startShellMsg:
-		fe.shell = msg.handler
+		fe.shell = msg.handler.Handle
 		fe.shellCtx = msg.ctx
-		fe.prompt = msg.prompt
 		fe.promptFg = termenv.ANSIGreen
 
 		// create the editline
@@ -923,7 +910,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		fe.editlineFocused = true
 
 		// wire up auto completion
-		fe.editline.AutoComplete = msg.autocomplete
+		fe.editline.AutoComplete = msg.handler.AutoComplete
 
 		// restore history
 		fe.editline.MaxHistorySize = 1000
@@ -932,7 +919,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		}
 
 		// if input ends with a pipe, then it's not complete
-		fe.editline.CheckInputComplete = msg.isComplete
+		fe.editline.CheckInputComplete = msg.handler.IsComplete
 
 		// put the bowtie on
 		fe.updatePrompt()
@@ -1274,7 +1261,7 @@ func (fe *frontendPretty) updatePrompt() {
 		out = focusedBg(out)
 	}
 	fe.editline.Prompt = fe.prompt(out, fe.promptFg)
-	fe.editline.Reset()
+	fe.editline.Reset() // TODO: this clears the input which is annoying if you pretyped
 }
 
 func (fe *frontendPretty) quit(interruptErr error) (*frontendPretty, tea.Cmd) {

@@ -18,6 +18,7 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"github.com/vito/bubbline/computil"
+	"github.com/vito/bubbline/editline"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -149,8 +150,11 @@ type shellCallHandler struct {
 	// oldpwd is used to return to the previous working directory
 	oldwd shellWorkdir
 
-	// mu is used to synchronize access to the workdir
+	// mu is used to synchronize access to the workdir and interpreter
 	mu sync.RWMutex
+
+	// cancel interrupts the entire shell session
+	cancel func()
 }
 
 // RunAll is the entry point for the shell command
@@ -426,52 +430,50 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	h.cancel = cancel
 
 	// give ourselves a blank slate by zooming into a passthrough span
 	shellCtx, shellSpan := Tracer().Start(ctx, "shell", telemetry.Passthrough())
 	defer telemetry.End(shellSpan, func() error { return nil })
 	Frontend.SetPrimary(dagui.SpanID{SpanID: shellSpan.SpanContext().SpanID()})
 
-	mu := &sync.Mutex{}
-	complete := &shellAutoComplete{h}
-	Frontend.Shell(shellCtx,
-		func(ctx context.Context, line string) (rerr error) {
-			mu.Lock()
-			defer mu.Unlock()
-
-			if line == "exit" {
-				cancel()
-				return nil
-			}
-
-			if strings.TrimSpace(line) == "" {
-				return nil
-			}
-
-			ctx, span := Tracer().Start(ctx, line)
-			defer telemetry.End(span, func() error { return rerr })
-
-			// redirect stdio to the current span
-			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-			defer stdio.Close()
-
-			stdoutW := newTerminalWriter(stdio.Stdout.Write)
-			// handle shell state
-			stdoutW.SetProcessFunc(h.shellStateProcessor(ctx))
-			stderrW := newTerminalWriter(stdio.Stderr.Write)
-			interp.StdIO(nil, stdoutW, stderrW)(h.runner)
-
-			return h.run(ctx, strings.NewReader(line), "")
-		},
-		complete.Do,
-		shellIsComplete,
-		h.prompt,
-	)
+	Frontend.Shell(shellCtx, h)
 
 	return nil
 }
 
-func (h *shellCallHandler) prompt(out idtui.TermOutput, fg termenv.Color) string {
+var _ idtui.ShellHandler = (*shellCallHandler)(nil)
+
+func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if line == "exit" {
+		h.cancel()
+		return nil
+	}
+
+	if strings.TrimSpace(line) == "" {
+		return nil
+	}
+
+	ctx, span := Tracer().Start(ctx, line)
+	defer telemetry.End(span, func() error { return rerr })
+
+	// redirect stdio to the current span
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close()
+
+	stdoutW := newTerminalWriter(stdio.Stdout.Write)
+	// handle shell state
+	stdoutW.SetProcessFunc(h.shellStateProcessor(ctx))
+	stderrW := newTerminalWriter(stdio.Stderr.Write)
+	interp.StdIO(nil, stdoutW, stderrW)(h.runner)
+
+	return h.run(ctx, strings.NewReader(line), "")
+}
+
+func (h *shellCallHandler) Prompt(out idtui.TermOutput, fg termenv.Color) string {
 	sb := new(strings.Builder)
 
 	if def, _ := h.GetModuleDef(nil); def != nil {
@@ -491,7 +493,11 @@ func (*shellCallHandler) Print(ctx context.Context, args ...any) error {
 	return err
 }
 
-func shellIsComplete(entireInput [][]rune, line int, col int) bool {
+func (h *shellCallHandler) AutoComplete(entireInput [][]rune, line int, col int) (string, editline.Completions) {
+	return (&shellAutoComplete{h}).Do(entireInput, line, col)
+}
+
+func (*shellCallHandler) IsComplete(entireInput [][]rune, line int, col int) bool {
 	input, _ := computil.Flatten(entireInput, line, col)
 	_, err := syntax.NewParser().Parse(strings.NewReader(input), "")
 	if err != nil {

@@ -86,13 +86,22 @@ type Frontend interface {
 	SetCloudURL(ctx context.Context, url string, msg string, logged bool)
 
 	// Shell is called when the CLI enters interactive mode.
-	Shell(
-		ctx context.Context,
-		fn func(ctx context.Context, input string) error,
-		autocomplete editline.AutoCompleteFn,
-		isComplete func(entireInput [][]rune, line int, col int) bool,
-		prompt func(out TermOutput, fg termenv.Color) string,
-	)
+	Shell(ctx context.Context, handler ShellHandler)
+}
+
+// ShellHandler defines the interface for handling shell interactions
+type ShellHandler interface {
+	// Handle processes shell input
+	Handle(ctx context.Context, input string) error
+
+	// AutoComplete provides shell auto-completion functionality
+	AutoComplete(entireInput [][]rune, line, col int) (string, editline.Completions)
+
+	// IsComplete determines if the current input is a complete command
+	IsComplete(entireInput [][]rune, line int, col int) bool
+
+	// Prompt generates the shell prompt string
+	Prompt(out TermOutput, fg termenv.Color) string
 }
 
 type Dump struct {
