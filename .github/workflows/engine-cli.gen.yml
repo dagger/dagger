@@ -773,10 +773,10 @@ jobs:
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
         timeout-minutes: 20
-    scripts-lint:
+    scripts:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-4c' || 'ubuntu-latest' }}
-        name: scripts-lint
+        name: scripts
         steps:
             - name: Checkout
               uses: actions/checkout@v4
@@ -958,7 +958,7 @@ jobs:
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                COMMAND: dagger call -q scripts lint
+                COMMAND: dagger call -q check --targets=scripts
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
         timeout-minutes: 20
