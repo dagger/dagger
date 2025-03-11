@@ -287,7 +287,7 @@ func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error)
 		return nil, err
 	}
 
-	useSlash, err := supportsDirSlash(ctx, dir.Query)
+	useSlash, err := SupportsDirSlash(ctx, dir.Query)
 	if err != nil {
 		return nil, err
 	}
@@ -344,7 +344,7 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 		return nil, err
 	}
 
-	useSlash, err := supportsDirSlash(ctx, dir.Query)
+	useSlash, err := SupportsDirSlash(ctx, dir.Query)
 	if err != nil {
 		return nil, err
 	}
@@ -861,7 +861,7 @@ func validateFileName(file string) error {
 	return nil
 }
 
-func supportsDirSlash(ctx context.Context, query *Query) (bool, error) {
+func SupportsDirSlash(ctx context.Context, query *Query) (bool, error) {
 	srv, err := query.Server.Server(ctx)
 	if err != nil {
 		return false, err

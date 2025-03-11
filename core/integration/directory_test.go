@@ -1241,13 +1241,13 @@ func (DirectorySuite) TestDirectoryName(ctx context.Context, t *testctx.T) {
 		t.Run("nested directory", func(ctx context.Context, t *testctx.T) {
 			nestedName, err := dir.Directory("nested").Name(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "nested", nestedName)
+			require.Equal(t, "nested/", nestedName)
 		})
 
 		t.Run("very nested directory", func(ctx context.Context, t *testctx.T) {
 			veryNestedName, err := dir.Directory("very/nested").Name(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "nested", veryNestedName)
+			require.Equal(t, "nested/", veryNestedName)
 		})
 	})
 
@@ -1263,13 +1263,13 @@ func (DirectorySuite) TestDirectoryName(ctx context.Context, t *testctx.T) {
 		t.Run("nested hidden directory", func(ctx context.Context, t *testctx.T) {
 			nestedName, err := dir.Directory(".dagger").Name(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".dagger", nestedName)
+			require.Equal(t, ".dagger/", nestedName)
 		})
 
 		t.Run("nested directory", func(ctx context.Context, t *testctx.T) {
 			nestedName, err := dir.Directory("sdk").Directory("go").Name(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "go", nestedName)
+			require.Equal(t, "go/", nestedName)
 		})
 	})
 }
