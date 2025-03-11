@@ -55,6 +55,11 @@ func (repo *GitRepository) PBDefinitions(ctx context.Context) ([]*pb.Definition,
 	return repo.Backend.PBDefinitions(ctx)
 }
 
+func (repo *GitRepository) UseDagOp() bool {
+	_, ok := repo.Backend.(*LocalGitRepository)
+	return ok
+}
+
 func (repo *GitRepository) Head(ctx context.Context) (*GitRef, error) {
 	ref, err := repo.Backend.Head(ctx)
 	if err != nil {
@@ -100,6 +105,11 @@ func (*GitRef) TypeDescription() string {
 
 func (ref *GitRef) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	return ref.Backend.PBDefinitions(ctx)
+}
+
+func (ref *GitRef) UseDagOp() bool {
+	_, ok := ref.Backend.(*LocalGitRef)
+	return ok
 }
 
 func (ref *GitRef) Commit(ctx context.Context) (string, error) {
@@ -249,7 +259,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	if err != nil {
 		return nil, err
 	}
-	return NewDirectorySt(ctx, ref.Query, st, "", ref.Repo.Platform, ref.Repo.Services)
+	return NewDirectorySt(ctx, ref.Query, st, "/", ref.Repo.Platform, ref.Repo.Services)
 }
 
 func (ref *RemoteGitRef) Commit(ctx context.Context) (string, error) {
