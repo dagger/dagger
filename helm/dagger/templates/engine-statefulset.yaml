@@ -11,14 +11,20 @@ spec:
   # DO NOT RUN MORE THAN 1 REPLICA.
   # Only one (1) Engine is able to hold the lock, other replicas will not be able to start.
   replicas: 1
+  podManagementPolicy: {{ .Values.engine.statefulSet.podManagementPolicy }}
   selector:
     matchLabels:
       name: {{ include "dagger.fullname" . }}-engine
+  {{- if and .Values.engine.storage.data.persistentVolumeClaim.enabled .Values.engine.storage.persistentVolumeClaimRetentionPolicy }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: {{ .Values.engine.storage.persistentVolumeClaimRetentionPolicy.whenDeleted }}
+    whenScaled: {{ .Values.engine.storage.persistentVolumeClaimRetentionPolicy.whenScaled }}
+  {{- end }}
   template:
     metadata:
-      {{- if (or .Values.engine.config .Values.magicache.enabled .Values.engine.annotations) }}
+      {{- if (or .Values.engine.config .Values.engine.configJson .Values.magicache.enabled .Values.engine.annotations) }}
       annotations:
-        {{- if .Values.engine.config }}
+        {{- if (or .Values.engine.config .Values.engine.configJson) }}
         checksum/config: {{ include (print $.Template.BasePath "/engine-config.yaml") . | sha256sum }}
         {{- end }}
         {{- if .Values.magicache.enabled }}
@@ -32,6 +38,10 @@ spec:
         name: {{ include "dagger.fullname" . }}-engine
         {{- include "dagger.labels" . | nindent 8 }}
     spec:
+      {{- with .Values.engine.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.engine.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
@@ -80,12 +90,28 @@ spec:
               name: {{ include "dagger.fullname" . }}-magicache-token
               {{- end }}
           {{- end }}
+          {{- if .Values.engine.port }}
+          ports:
+            - name: dagger
+              containerPort: {{ .Values.engine.port }}
+              protocol: TCP
+              {{- if .Values.engine.hostPort }}
+              hostPort: {{ .Values.engine.hostPort }}
+              {{- end }}
+          {{- end }}
           securityContext:
             privileged: true
             capabilities:
               add:
                 - ALL
           resources: {{- toYaml .Values.engine.resources | nindent 12 }}
+          {{- if .Values.engine.lifecycle }}
+          lifecycle:
+            {{- if .Values.engine.lifecycle.preStop }}
+            preStop:
+              {{- toYaml .Values.engine.lifecycle.preStop | nindent 14 }}
+            {{- end }}
+          {{- end }}
           readinessProbe:
             exec:
               command:
@@ -99,27 +125,63 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/dagger
+            {{- if .Values.engine.storage.run.hostPath.enabled }}
             - name: run
               mountPath: /var/run/buildkit
+            {{- end }}
             {{- if .Values.engine.config }}
             - name: config
               mountPath: /etc/dagger/engine.toml
               subPath: engine.toml
             {{- end }}
+            {{- if .Values.engine.configJson }}
+            - name: config
+              mountPath: /etc/dagger/engine.json
+              subPath: engine.json
+            {{- end }}
+            {{- with .Values.engine.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
       terminationGracePeriodSeconds: {{ .Values.engine.terminationGracePeriodSeconds }}
       volumes:
+        {{- if not .Values.engine.storage.data.persistentVolumeClaim.enabled }}
         - name: data
           hostPath:
             path: /var/lib/dagger-{{ include "dagger.fullname" . }}
+        {{- end }}
+        {{- if .Values.engine.storage.run.hostPath.enabled }}
         - name: run
           hostPath:
             path: /var/run/dagger-{{ include "dagger.fullname" . }}
-        {{- if .Values.engine.config }}
+        {{- end }}
+        {{- if (or .Values.engine.config .Values.engine.configJson) }}
         - name: config
           configMap:
             name: {{ include "dagger.fullname" . }}-engine-config
             items:
+              {{- if .Values.engine.config }}
               - key: engine.toml
                 path: engine.toml
+              {{- end }}
+              {{- if .Values.engine.configJson }}
+              - key: engine.json
+                path: engine.json
+              {{- end }}
         {{- end }}
+        {{- with .Values.engine.volumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+  {{- if .Values.engine.storage.data.persistentVolumeClaim.enabled }}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      {{- with .Values.engine.storage.data.persistentVolumeClaim.storageClassName }}
+      storageClassName: {{ . }}
+      {{- end }}
+      accessModes:
+        {{- toYaml .Values.engine.storage.data.persistentVolumeClaim.accessModes | nindent 8 }}
+      resources:
+        {{- toYaml .Values.engine.storage.data.persistentVolumeClaim.resources | nindent 8 }}
+  {{- end }}
 {{- end }}
