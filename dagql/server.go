@@ -562,6 +562,11 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 			return fmt.Errorf("select: %w", err)
 		}
 
+		if res == nil {
+			// null result; nothing to do
+			return nil
+		}
+
 		if _, ok := s.ObjectType(res.Type().Name()); ok {
 			if enum, isEnum := res.(Enumerable); isEnum {
 				// HACK: list of objects must be the last selection right now unless nth used in Selector.

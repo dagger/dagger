@@ -2248,3 +2248,265 @@ func TestCustomDigest(t *testing.T) {
 		assert.Equal(t, s1ID, res.ReturnTheArg.ID)
 	}
 }
+
+func TestServerSelect(t *testing.T) {
+	// Create a new server with a simple object hierarchy for testing
+	srv := dagql.NewServer(Query{})
+
+	// Install test types
+	InstallTestTypes(srv)
+
+	ctx := context.Background()
+
+	t.Run("basic selection", func(t *testing.T) {
+		// Create a test object and wrap it as a dagql.Object
+		testObj := &TestObject{Value: 42, Text: "hello"}
+
+		// Get the installed class from the server
+		testObjClass, ok := srv.ObjectType("TestObject")
+		require.True(t, ok, "TestObject class not found")
+
+		// Create an instance
+		objInstance, err := testObjClass.New(nil, testObj)
+		require.NoError(t, err)
+
+		// Test selecting a simple field
+		var result int
+		err = srv.Select(ctx, objInstance, &result, dagql.Selector{Field: "value"})
+		require.NoError(t, err)
+		assert.Equal(t, 42, result)
+
+		// Test selecting a string field
+		var textResult string
+		err = srv.Select(ctx, objInstance, &textResult, dagql.Selector{Field: "text"})
+		require.NoError(t, err)
+		assert.Equal(t, "hello", textResult)
+	})
+
+	t.Run("chained selection", func(t *testing.T) {
+		// Create nested objects
+		innerObj := &TestObject{Value: 100, Text: "nested value"}
+		nestedObj := &NestedObject{
+			Name:  "nested",
+			Inner: innerObj,
+		}
+
+		// Get the installed class from the server
+		nestedObjClass, ok := srv.ObjectType("NestedObject")
+		require.True(t, ok, "NestedObject class not found")
+
+		// Create an instance
+		objInstance, err := nestedObjClass.New(nil, nestedObj)
+		require.NoError(t, err)
+
+		// Test selecting through a chain of objects
+		var result int
+		err = srv.Select(ctx, objInstance, &result,
+			dagql.Selector{Field: "inner"},
+			dagql.Selector{Field: "value"})
+		require.NoError(t, err)
+		assert.Equal(t, 100, result)
+	})
+
+	t.Run("null result", func(t *testing.T) {
+		// Create an object with a null field
+		testObj := &TestObject{Value: 42, Text: "hello", NullableField: nil}
+
+		// Get the installed class from the server
+		testObjClass, ok := srv.ObjectType("TestObject")
+		require.True(t, ok, "TestObject class not found")
+
+		// Create an instance
+		objInstance, err := testObjClass.New(nil, testObj)
+		require.NoError(t, err)
+
+		// Test selecting a null field
+		var result *string
+		err = srv.Select(ctx, objInstance, &result, dagql.Selector{Field: "nullableField"})
+		require.NoError(t, err)
+		assert.Assert(t, result == nil)
+	})
+
+	t.Run("array selection", func(t *testing.T) {
+		// Create an array of integers
+		intArray := dagql.NewIntArray(1, 2, 3)
+
+		// Add a field to Query that returns this array
+		dagql.Fields[Query]{
+			dagql.Func("testArray", func(ctx context.Context, self Query, args struct{}) (dagql.Array[dagql.Int], error) {
+				return intArray, nil
+			}),
+		}.Install(srv)
+
+		// Get the root object
+		root := srv.Root()
+
+		// For arrays, we need to use a different approach
+		// First, get the array result
+		var arrayResult dagql.Typed
+		arrayResult, _, err := root.Select(ctx, srv, dagql.Selector{Field: "testArray"})
+		require.NoError(t, err)
+
+		// Verify it's enumerable
+		enum, ok := arrayResult.(dagql.Enumerable)
+		require.True(t, ok, "Expected array to be enumerable")
+		assert.Equal(t, 3, enum.Len())
+
+		// Check each item
+		for i := 1; i <= enum.Len(); i++ {
+			item, err := enum.Nth(i)
+			require.NoError(t, err)
+
+			// Convert to int
+			intVal, ok := item.(dagql.Int)
+			require.True(t, ok, "Expected item to be a dagql.Int")
+			assert.Equal(t, i, int(intVal))
+		}
+	})
+
+	t.Run("error cases", func(t *testing.T) {
+		// Create a test object
+		testObj := &TestObject{Value: 42, Text: "hello"}
+
+		// Get the installed class from the server
+		testObjClass, ok := srv.ObjectType("TestObject")
+		require.True(t, ok, "TestObject class not found")
+
+		// Create an instance
+		objInstance, err := testObjClass.New(nil, testObj)
+		require.NoError(t, err)
+
+		// Test selecting a non-existent field
+		var result int
+		err = srv.Select(ctx, objInstance, &result, dagql.Selector{Field: "nonExistentField"})
+		require.Error(t, err)
+
+		// Test invalid selector chain (trying to select from a scalar)
+		err = srv.Select(ctx, objInstance, &result,
+			dagql.Selector{Field: "value"},
+			dagql.Selector{Field: "something"})
+		require.Error(t, err)
+	})
+
+	t.Run("null result handling", func(t *testing.T) {
+		// Add a field to Query that returns null
+		dagql.Fields[Query]{
+			dagql.Func("nullResult", func(ctx context.Context, self Query, args struct{}) (dagql.Nullable[dagql.String], error) {
+				return dagql.Null[dagql.String](), nil
+			}),
+		}.Install(srv)
+
+		// Get the root object
+		root := srv.Root()
+
+		// Test selecting a null result
+		var result *string
+		err := srv.Select(ctx, root, &result, dagql.Selector{Field: "nullResult"})
+		require.NoError(t, err)
+		assert.Assert(t, result == nil, "Expected result to be nil")
+
+		// Test selecting from a null result (should not error)
+		var nestedResult string
+		err = srv.Select(ctx, root, &nestedResult,
+			dagql.Selector{Field: "nullResult"},
+			dagql.Selector{Field: "nonExistentField"})
+		require.NoError(t, err)
+		assert.Equal(t, "", nestedResult, "Expected empty result for selection from null")
+	})
+}
+
+// Helper types for testing
+
+type TestObject struct {
+	Value         int     `field:"true"`
+	Text          string  `field:"true"`
+	NullableField *string `field:"true"`
+}
+
+func (TestObject) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "TestObject",
+		NonNull:   true,
+	}
+}
+
+type NestedObject struct {
+	Name  string      `field:"true"`
+	Inner *TestObject `field:"true"`
+}
+
+func (NestedObject) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "NestedObject",
+		NonNull:   true,
+	}
+}
+
+// InstallTestTypes installs the test types on the server
+func InstallTestTypes(srv *dagql.Server) {
+	// Install TestObject
+	testObjClass := dagql.NewClass(dagql.ClassOpts[*TestObject]{
+		Typed: &TestObject{},
+	})
+
+	testObjClass.Install(
+		dagql.Field[*TestObject]{
+			Spec: dagql.FieldSpec{
+				Name: "value",
+				Type: dagql.Int(0),
+			},
+			Func: func(ctx context.Context, self dagql.Instance[*TestObject], args map[string]dagql.Input) (dagql.Typed, error) {
+				return dagql.Int(self.Self.Value), nil
+			},
+		},
+		dagql.Field[*TestObject]{
+			Spec: dagql.FieldSpec{
+				Name: "text",
+				Type: dagql.String(""),
+			},
+			Func: func(ctx context.Context, self dagql.Instance[*TestObject], args map[string]dagql.Input) (dagql.Typed, error) {
+				return dagql.String(self.Self.Text), nil
+			},
+		},
+		dagql.Field[*TestObject]{
+			Spec: dagql.FieldSpec{
+				Name: "nullableField",
+				Type: dagql.Null[dagql.String](),
+			},
+			Func: func(ctx context.Context, self dagql.Instance[*TestObject], args map[string]dagql.Input) (dagql.Typed, error) {
+				if self.Self.NullableField == nil {
+					return dagql.Null[dagql.String](), nil
+				}
+				return dagql.NonNull(dagql.String(*self.Self.NullableField)), nil
+			},
+		},
+	)
+	srv.InstallObject(testObjClass)
+
+	// Install NestedObject
+	nestedObjClass := dagql.NewClass(dagql.ClassOpts[*NestedObject]{
+		Typed: &NestedObject{},
+	})
+
+	nestedObjClass.Install(
+		dagql.Field[*NestedObject]{
+			Spec: dagql.FieldSpec{
+				Name: "name",
+				Type: dagql.String(""),
+			},
+			Func: func(ctx context.Context, self dagql.Instance[*NestedObject], args map[string]dagql.Input) (dagql.Typed, error) {
+				return dagql.String(self.Self.Name), nil
+			},
+		},
+		dagql.Field[*NestedObject]{
+			Spec: dagql.FieldSpec{
+				Name: "inner",
+				Type: &TestObject{},
+			},
+			Func: func(ctx context.Context, self dagql.Instance[*NestedObject], args map[string]dagql.Input) (dagql.Typed, error) {
+				return self.Self.Inner, nil
+			},
+		},
+	)
+	srv.InstallObject(nestedObjClass)
+}
