@@ -8,6 +8,7 @@
     "@grpc/grpc-js" "^1.12.5"
     "@lifeomic/axios-fetch" "^3.1.0"
     "@opentelemetry/api" "^1.9.0"
+    "@opentelemetry/core" "^1.30.1"
     "@opentelemetry/exporter-trace-otlp-http" "^0.57.1"
     "@opentelemetry/sdk-metrics" "^1.30.1"
     "@opentelemetry/sdk-node" "^0.57.1"
@@ -103,7 +104,7 @@
   resolved "https://registry.yarnpkg.com/@opentelemetry/context-async-hooks/-/context-async-hooks-1.30.1.tgz#4f76280691a742597fd0bf682982126857622948"
   integrity sha512-s5vvxXPVdjqS3kTLKMeBMvop9hbWkwzBpu+mUO2M7sZtlkyDJGwFe33wRKnbaYDo8ExRVBIIdwIGrqpxHuKttA==
 
-"@opentelemetry/core@1.30.1":
+"@opentelemetry/core@1.30.1", "@opentelemetry/core@^1.30.1":
   version "1.30.1"
   resolved "https://registry.yarnpkg.com/@opentelemetry/core/-/core-1.30.1.tgz#a0b468bb396358df801881709ea38299fc30ab27"
   integrity sha512-OOCM2C/QIURhJMuKaekP3TRBxBKxG/TWWA0TL2J6nXUtDnuCtccy49LUJF8xPFXMX+0LMcxFpCo8M9cGY1W6rQ==
