@@ -228,34 +228,5 @@ func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Reques
 {{ end }}
 
 {{ if IsStandaloneClient }}
-{{ if IsDevMode }}
 {{ template "_dagger.gen.go/client.go.tmpl" . }}
-{{ else }}
-type Client struct {
-	query  *querybuilder.Selection
-	client graphql.Client
-}
-
-func Connect(ctx context.Context, opts ...dagger.ClientOpt) (*Client, error) {
-	opts = append(opts, dagger.WithServeCurrentModule(true))
-
-	dag, err := dagger.Connect(ctx, opts...)
-	if err != nil {
-		return nil, err
-	}
-
-	c := &Client{
-		query:  dag.QueryBuilder(),
-		client: dag.GraphQLClient(),
-	}
-
-	{{ range $i, $dep := DependenciesRef }}
-	if err = c.ModuleSource("{{ $dep }}").AsModule().Serve(ctx); err != nil {
-		return nil, err
-	}
-	{{ end }}
-
-	return c, nil
-}
-{{ end }}
 {{ end }}
