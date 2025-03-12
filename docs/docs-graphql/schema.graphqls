@@ -2263,6 +2263,9 @@ type Llm {
   """Retrieve the llm state as a ListTypeDef"""
   listTypeDef: ListTypeDef!
 
+  """Retrieve the llm state as a Llm"""
+  llm: Llm!
+
   """synchronize LLM state"""
   loop: Llm! @deprecated(reason: "use sync")
 
@@ -2280,6 +2283,9 @@ type Llm {
 
   """Retrieve the llm state as a ObjectTypeDef"""
   objectTypeDef: ObjectTypeDef!
+
+  """return the provider used by the llm"""
+  provider: String!
 
   """Retrieve the llm state as a ScalarTypeDef"""
   scalarTypeDef: ScalarTypeDef!
@@ -2429,6 +2435,18 @@ type Llm {
   withListTypeDef(
     """The value of the ListTypeDef to save"""
     value: ListTypeDefID!
+  ): Llm!
+
+  """Set the llm state to a Llm"""
+  withLlm(
+    """The value of the Llm to save"""
+    value: LlmID!
+  ): Llm!
+
+  """swap out the llm model"""
+  withModel(
+    """The model to use"""
+    model: String!
   ): Llm!
 
   """Set the llm state to a Module"""

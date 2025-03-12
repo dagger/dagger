@@ -9,7 +9,7 @@ public class DaggerQueryException extends Exception {
   private GraphQLError[] errors;
 
   public DaggerQueryException() {
-    super("An unexpected error occured with no error details");
+    super("An unexpected error occurred with no error details");
     this.errors = new GraphQLError[0];
   }
 

@@ -17,7 +17,7 @@ replace (
 )
 
 require (
-	github.com/1password/onepassword-sdk-go v0.1.7
+	github.com/1password/onepassword-sdk-go v0.2.0
 	github.com/99designs/gqlgen v0.17.66
 	github.com/Khan/genqlient v0.8.0
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
@@ -81,7 +81,7 @@ require (
 	github.com/muesli/termenv v0.16.0
 	github.com/openai/openai-go v0.1.0-alpha.61
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/opencontainers/image-spec v1.1.0
+	github.com/opencontainers/image-spec v1.1.1
 	github.com/opencontainers/runtime-spec v1.2.1
 	github.com/pelletier/go-toml v1.9.5
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
@@ -114,26 +114,26 @@ require (
 	go.opentelemetry.io/otel/metric v1.34.0
 	go.opentelemetry.io/otel/sdk v1.34.0
 	go.opentelemetry.io/otel/sdk/log v0.8.0
-	go.opentelemetry.io/otel/sdk/metric v1.32.0
+	go.opentelemetry.io/otel/sdk/metric v1.34.0
 	go.opentelemetry.io/otel/trace v1.34.0
 	go.opentelemetry.io/proto/otlp v1.4.0
-	golang.org/x/crypto v0.35.0
+	golang.org/x/crypto v0.36.0
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0
-	golang.org/x/mod v0.23.0
-	golang.org/x/net v0.35.0
+	golang.org/x/mod v0.24.0
+	golang.org/x/net v0.37.0
 	golang.org/x/oauth2 v0.27.0
-	golang.org/x/sync v0.11.0
-	golang.org/x/sys v0.30.0
-	golang.org/x/term v0.29.0
-	golang.org/x/text v0.22.0
-	golang.org/x/tools v0.30.0
+	golang.org/x/sync v0.12.0
+	golang.org/x/sys v0.31.0
+	golang.org/x/term v0.30.0
+	golang.org/x/text v0.23.0
+	golang.org/x/tools v0.31.0
 	google.golang.org/api v0.189.0
-	google.golang.org/grpc v1.70.0
+	google.golang.org/grpc v1.71.0
 	google.golang.org/protobuf v1.36.5
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools/v3 v3.5.2
 	modernc.org/sqlite v1.36.0
-	mvdan.cc/sh/v3 v3.10.1-0.20250103084315-5e4be7920b8b
+	mvdan.cc/sh/v3 v3.11.0
 	resenje.org/singleflight v0.4.3
 )
 
@@ -332,8 +332,8 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/time v0.6.0 // indirect
 	google.golang.org/genproto v0.0.0-20240722135656-d784300faade // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20241209162323-e6fa225c2576 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20241209162323-e6fa225c2576 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20250106144421-5f5ef82da422 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250115164207-1a7da9e5054f // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	modernc.org/libc v1.61.13 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

@@ -639,7 +639,7 @@ func (s *LLMSession) Complete(entireInput [][]rune, row, col int) (msg string, c
 	}
 	var commands []slashCommand
 	for _, cmd := range slashCommands {
-		if strings.HasPrefix(cmd.name, string(word)) {
+		if strings.HasPrefix(cmd.name, word) {
 			commands = append(commands, cmd)
 		}
 	}

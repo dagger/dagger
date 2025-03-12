@@ -178,7 +178,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 			}
 			if apiErr, ok := err.(*apierror.APIError); ok {
 				// unwrap the APIError
-				return nil, fmt.Errorf("Google API error occurred: %v", apiErr.Unwrap())
+				return nil, fmt.Errorf("google API error occurred: %w", apiErr.Unwrap())
 			}
 			return nil, err
 		}
