@@ -1263,7 +1263,7 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module) error {
 	depMod, exist := client.deps.LookupDep(mod.Name())
 	if exist {
 		// Error if there's a conflict between dependencies
-		if mod.Source.Self.AsString() != depMod.GetSource().AsString() {
+		if depMod.GetSource().AsString() != "" && mod.Source.Self.AsString() != depMod.GetSource().AsString() {
 			return fmt.Errorf("module %s already exists with different source %s", mod.Name(), depMod.GetSource().AsString())
 		}
 
