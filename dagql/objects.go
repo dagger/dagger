@@ -13,6 +13,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -150,7 +151,7 @@ func (cls Class[T]) TypeName() string {
 	return cls.inner.Type().Name()
 }
 
-func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheKeyFun FieldCacheKeyFunc) {
+func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheSpec CacheSpec) {
 	cls.fieldsL.Lock()
 	defer cls.fieldsL.Unlock()
 	f := &Field[T]{
@@ -159,11 +160,7 @@ func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc, cacheKeyFun FieldCache
 			return fun(ctx, self, args)
 		},
 	}
-	if cacheKeyFun != nil {
-		f.CacheKeyFunc = func(ctx context.Context, self Instance[T], args map[string]Input, origDgst digest.Digest) (digest.Digest, error) {
-			return cacheKeyFun(ctx, self, args, origDgst)
-		}
-	}
+	f.CacheSpec = cacheSpec
 	cls.fields[spec.Name] = append(cls.fields[spec.Name], f)
 }
 
@@ -260,25 +257,35 @@ func (cls Class[T]) Call(
 	fieldName string,
 	view string,
 	args map[string]Input,
-) (Typed, func(context.Context) error, error) {
+) (*CacheValWithCallbacks, error) {
 	field, ok := cls.Field(fieldName, view)
 	if !ok {
-		return nil, nil, fmt.Errorf("Call: %s has no such field: %q", cls.inner.Type().Name(), fieldName)
+		return nil, fmt.Errorf("Call: %s has no such field: %q", cls.inner.Type().Name(), fieldName)
 	}
 
 	val, err := field.Func(ctx, node, args)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// field implementations can optionally return a wrapped Typed val that has
 	// a callback that should always run after the field is called
-	var postCall func(context.Context) error
+	var postCall cache.PostCallFunc
 	if postCallable, ok := UnwrapAs[PostCallable](val); ok {
 		postCall, val = postCallable.GetPostCall()
 	}
+	// they can also return types that need to run a callback when they are
+	// removed from the cache (to clean up or release any state)
+	var onRelease cache.OnReleaseFunc
+	if onReleaser, ok := UnwrapAs[OnReleaser](val); ok {
+		onRelease = onReleaser.OnRelease
+	}
 
-	return val, postCall, nil
+	return &CacheValWithCallbacks{
+		Value:     val,
+		PostCall:  postCall,
+		OnRelease: onRelease,
+	}, nil
 }
 
 // Instance is an instance of an Object type.
@@ -287,7 +294,7 @@ type Instance[T Typed] struct {
 	Self        T
 	Class       Class[T]
 	Module      *call.ID
-	postCall    func(context.Context) error
+	postCall    cache.PostCallFunc
 }
 
 var _ Typed = Instance[Typed]{}
@@ -321,28 +328,27 @@ func (r Instance[T]) String() string {
 	return fmt.Sprintf("%s@%s", r.Type().Name(), r.Constructor.Digest())
 }
 
-// WithMetadata returns an updated instance with the given metadata set.
-// isPure changes the purity of the instance.
+// WithDigest returns an updated instance with the given metadata set.
 // customDigest overrides the default digest of the instance to the provided value.
 // NOTE: customDigest must be used with care as any instances with the same digest
 // will be considered equivalent and can thus replace each other in the cache.
 // Generally, customDigest should be used when there's a content-based digest available
 // that won't be caputured by the default, call-chain derived digest.
-func (r Instance[T]) WithMetadata(customDigest digest.Digest, isPure bool) Instance[T] {
+func (r Instance[T]) WithDigest(customDigest digest.Digest) Instance[T] {
 	return Instance[T]{
-		Constructor: r.Constructor.WithMetadata(customDigest, !isPure),
+		Constructor: r.Constructor.WithDigest(customDigest),
 		Self:        r.Self,
 		Class:       r.Class,
 		Module:      r.Module,
 	}
 }
 
-func (r Instance[T]) WithPostCall(fn func(context.Context) error) Instance[T] {
+func (r Instance[T]) WithPostCall(fn cache.PostCallFunc) Instance[T] {
 	r.postCall = fn
 	return r
 }
 
-func (r Instance[T]) GetPostCall() (func(context.Context) error, Typed) {
+func (r Instance[T]) GetPostCall() (cache.PostCallFunc, Typed) {
 	return r.postCall, r
 }
 
@@ -350,10 +356,30 @@ func NoopDone(res Typed, cached bool, rerr error) {}
 
 // Select calls the field on the instance specified by the selector
 func (r Instance[T]) Select(ctx context.Context, s *Server, sel Selector) (Typed, *call.ID, error) {
+	inputArgs, newID, doNotCache, err := r.preselect(ctx, sel)
+	if err != nil {
+		return nil, nil, err
+	}
+	return r.call(ctx, s, newID, inputArgs, doNotCache)
+}
+
+func (r Instance[T]) ReturnType(ctx context.Context, sel Selector) (Typed, *call.ID, error) {
+	_, newID, _, err := r.preselect(ctx, sel)
+	if err != nil {
+		return nil, nil, err
+	}
+	returnType, err := r.returnType(newID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return returnType, newID, nil
+}
+
+func (r Instance[T]) preselect(ctx context.Context, sel Selector) (map[string]Input, *call.ID, bool, error) {
 	view := sel.View
 	field, ok := r.Class.Field(sel.Field, view)
 	if !ok {
-		return nil, nil, fmt.Errorf("Select: %s has no such field: %q", r.Class.TypeName(), sel.Field)
+		return nil, nil, false, fmt.Errorf("Select: %s has no such field: %q", r.Class.TypeName(), sel.Field)
 	}
 	if field.ViewFilter == nil {
 		// fields in the global view shouldn't attach the current view to the
@@ -388,7 +414,7 @@ func (r Instance[T]) Select(ctx context.Context, s *Server, sel Selector) (Typed
 
 		case argSpec.Type.Type().NonNull:
 			// error out if the arg is missing but required
-			return nil, nil, fmt.Errorf("missing required argument: %q", argSpec.Name)
+			return nil, nil, false, fmt.Errorf("missing required argument: %q", argSpec.Name)
 		}
 	}
 	// TODO: it's better DX if it matches schema order
@@ -401,28 +427,33 @@ func (r Instance[T]) Select(ctx context.Context, s *Server, sel Selector) (Typed
 		astType = astType.Elem
 	}
 
-	tainted := !sel.Pure && field.Spec.ImpurityReason != ""
-
 	newID := r.Constructor.Append(
 		astType,
 		sel.Field,
 		view,
 		field.Spec.Module,
-		tainted,
 		sel.Nth,
 		"",
 		idArgs...,
 	)
 
-	if field.CacheKeyFunc != nil {
-		customDgst, err := field.CacheKeyFunc(ctx, r, inputArgs, newID.Digest())
+	doNotCache := field.CacheSpec.DoNotCache != ""
+	if field.CacheSpec.GetCacheConfig != nil {
+		origDgst := newID.Digest()
+
+		cacheCfg, err := field.CacheSpec.GetCacheConfig(ctx, r, inputArgs, CacheConfig{
+			Digest: origDgst,
+		})
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to compute cache key for %s.%s: %w", r.Type().Name(), sel.Field, err)
+			return nil, nil, false, fmt.Errorf("failed to compute cache key for %s.%s: %w", r.Type().Name(), sel.Field, err)
 		}
-		newID = newID.WithMetadata(customDgst, tainted)
+
+		if cacheCfg.Digest != origDgst {
+			newID = newID.WithDigest(cacheCfg.Digest)
+		}
 	}
 
-	return r.call(ctx, s, newID, inputArgs)
+	return inputArgs, newID, doNotCache, nil
 }
 
 // Call calls the field on the instance specified by the ID.
@@ -464,7 +495,8 @@ func (r Instance[T]) Call(ctx context.Context, s *Server, newID *call.ID) (Typed
 		}
 	}
 
-	return r.call(ctx, s, newID, inputArgs)
+	doNotCache := field.CacheSpec.DoNotCache != ""
+	return r.call(ctx, s, newID, inputArgs, doNotCache)
 }
 
 func (r Instance[T]) call(
@@ -472,76 +504,74 @@ func (r Instance[T]) call(
 	s *Server,
 	newID *call.ID,
 	inputArgs map[string]Input,
+	doNotCache bool,
 ) (Typed, *call.ID, error) {
-	doCall := func(ctx context.Context) (innerVal Typed, postCall func(context.Context) error, innerErr error) {
+	ctx = idToContext(ctx, newID)
+	callCacheKey := newID.Digest()
+	if doNotCache {
+		callCacheKey = ""
+	}
+	res, err := s.Cache.GetOrInitializeWithCallbacks(ctx, callCacheKey, func(ctx context.Context) (_ *CacheValWithCallbacks, innerErr error) {
+		var innerVal Typed
 		if s.telemetry != nil {
 			wrappedCtx, done := s.telemetry(ctx, r, newID)
 			defer func() { done(innerVal, false, innerErr) }()
 			ctx = wrappedCtx
 		}
 
-		innerVal, postCall, innerErr = r.Class.Call(ctx, r, newID.Field(), newID.View(), inputArgs)
+		valWithCallbacks, innerErr := r.Class.Call(ctx, r, newID.Field(), newID.View(), inputArgs)
 		if innerErr != nil {
-			return nil, nil, innerErr
+			return nil, innerErr
 		}
+		innerVal = valWithCallbacks.Value
 
 		if n, ok := innerVal.(Derefable); ok {
 			innerVal, ok = n.Deref()
 			if !ok {
-				return nil, nil, nil
+				return nil, nil
 			}
 		}
 		nth := int(newID.Nth())
 		if nth != 0 {
 			enum, ok := innerVal.(Enumerable)
 			if !ok {
-				return nil, nil, fmt.Errorf("cannot sub-select %dth item from %T", nth, innerVal)
+				return nil, fmt.Errorf("cannot sub-select %dth item from %T", nth, innerVal)
 			}
 			innerVal, innerErr = enum.Nth(nth)
 			if innerErr != nil {
-				return nil, nil, innerErr
+				return nil, innerErr
 			}
 			if n, ok := innerVal.(Derefable); ok {
 				innerVal, ok = n.Deref()
 				if !ok {
-					return nil, nil, nil
+					return nil, nil
 				}
 			}
 		}
 
-		return innerVal, postCall, nil
-	}
-	ctx = idToContext(ctx, newID)
-	dig := newID.Digest()
-	var val Typed
-	var postCall func(context.Context) error
-	var err error
-	if newID.IsTainted() {
-		val, postCall, err = doCall(ctx)
-	} else {
-		val, _, postCall, err = s.Cache.GetOrInitializeWithPostCall(ctx, dig, doCall)
-	}
+		return &CacheValWithCallbacks{
+			Value:     innerVal,
+			PostCall:  valWithCallbacks.PostCall,
+			OnRelease: valWithCallbacks.OnRelease,
+		}, nil
+	})
 	if err != nil {
 		return nil, nil, err
 	}
-	if postCall != nil {
-		if err := postCall(ctx); err != nil {
-			return nil, nil, fmt.Errorf("post-call error: %w", err)
-		}
+	if err := res.PostCall(ctx); err != nil {
+		return nil, nil, fmt.Errorf("post-call error: %w", err)
 	}
+	val := res.Result()
 
-	// If the returned val is IDable, is pure, and has a different digest than the original, then
+	// If the returned val is IDable and has a different digest than the original, then
 	// add that different digest as a cache key for this val.
 	// This enables APIs to return new object instances with overridden purity and/or digests, e.g. returning
 	// values that have a pure content-based cache key different from the call-chain ID digest.
-	if idable, ok := val.(IDable); ok && idable != nil {
+	if idable, ok := val.(IDable); ok && idable != nil && !doNotCache {
 		valID := idable.ID()
 
-		// only cache pure results
-		isPure := !valID.IsTainted()
-
 		// only need to add a new cache key if the returned val has a different custom digest than the original
-		digestChanged := valID.Digest() != dig
+		digestChanged := valID.Digest() != newID.Digest()
 
 		// Corner case: the `id` field on an object returns an IDable value (IDs are themselves both values and IDable).
 		// However, if we cached `val` in this case, we would be caching <id digest> -> <id value>, which isn't what we
@@ -549,9 +579,9 @@ func (r Instance[T]) call(
 		// To avoid this, we check that the returned IDable type is the actual object type.
 		matchesType := valID.Type().ToAST().Name() == val.Type().Name()
 
-		if isPure && digestChanged && matchesType {
+		if digestChanged && matchesType {
 			newID = valID
-			_, _, err := s.Cache.GetOrInitializeValue(ctx, valID.Digest(), val)
+			_, err := s.Cache.GetOrInitializeValue(ctx, valID.Digest(), val)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -559,6 +589,37 @@ func (r Instance[T]) call(
 	}
 
 	return val, newID, nil
+}
+
+func (r Instance[T]) returnType(newID *call.ID) (Typed, error) {
+	field, ok := r.Class.Field(newID.Field(), newID.View())
+	if !ok {
+		return nil, fmt.Errorf("ReturnType: %s has no such field: %q", r.Class.inner.Type().Name(), newID.Field())
+	}
+	val := field.Spec.Type
+
+	if n, ok := val.(Derefable); ok {
+		val, ok = n.Deref()
+		if !ok {
+			return nil, nil
+		}
+	}
+	nth := int(newID.Nth())
+	if nth != 0 {
+		enum, ok := val.(Enumerable)
+		if !ok {
+			return nil, fmt.Errorf("cannot sub-select %dth item from %T", nth, val)
+		}
+		val = enum.Element()
+		if n, ok := val.(Derefable); ok {
+			val, ok = n.Deref()
+			if !ok {
+				return nil, nil
+			}
+		}
+	}
+
+	return val, nil
 }
 
 // PostCallTyped wraps a Typed value with an additional callback that
@@ -613,6 +674,11 @@ func (v ExactView) Contains(s string) bool {
 	return s == string(v)
 }
 
+type (
+	FuncHandler[T Typed, A any, R any]     func(ctx context.Context, self T, args A) (R, error)
+	NodeFuncHandler[T Typed, A any, R any] func(ctx context.Context, self Instance[T], args A) (R, error)
+)
+
 // Func is a helper for defining a field resolver and schema.
 //
 // The function must accept a context.Context, the receiver, and a struct of
@@ -631,7 +697,7 @@ func (v ExactView) Contains(s string) bool {
 //
 // To configure a description for the field in the schema, call .Doc on the
 // result.
-func Func[T Typed, A any, R any](name string, fn func(ctx context.Context, self T, args A) (R, error)) Field[T] {
+func Func[T Typed, A any, R any](name string, fn FuncHandler[T, A, R]) Field[T] {
 	return NodeFunc(name, func(ctx context.Context, self Instance[T], args A) (R, error) {
 		return fn(ctx, self.Self, args)
 	})
@@ -640,25 +706,25 @@ func Func[T Typed, A any, R any](name string, fn func(ctx context.Context, self 
 // FuncWithCacheKey is like Func but allows specifying a custom digest that will be used to cache the operation in dagql.
 func FuncWithCacheKey[T Typed, A any, R any](
 	name string,
-	fn func(ctx context.Context, self T, args A) (R, error),
-	cacheKeyFn func(ctx context.Context, self Instance[T], args A, origDgst digest.Digest) (digest.Digest, error),
+	fn FuncHandler[T, A, R],
+	cacheFn GetCacheConfigFunc[T, A],
 ) Field[T] {
 	return NodeFuncWithCacheKey(name, func(ctx context.Context, self Instance[T], args A) (R, error) {
 		return fn(ctx, self.Self, args)
-	}, cacheKeyFn)
+	}, cacheFn)
 }
 
 // NodeFunc is the same as Func, except it passes the Instance instead of the
 // receiver so that you can access its ID.
-func NodeFunc[T Typed, A any, R any](name string, fn func(ctx context.Context, self Instance[T], args A) (R, error)) Field[T] {
+func NodeFunc[T Typed, A any, R any](name string, fn NodeFuncHandler[T, A, R]) Field[T] {
 	return NodeFuncWithCacheKey(name, fn, nil)
 }
 
 // NodeFuncWithCacheKey is like NodeFunc but allows specifying a custom digest that will be used to cache the operation in dagql.
 func NodeFuncWithCacheKey[T Typed, A any, R any](
 	name string,
-	fn func(ctx context.Context, self Instance[T], args A) (R, error),
-	cacheKeyFn func(ctx context.Context, self Instance[T], args A, origDgst digest.Digest) (digest.Digest, error),
+	fn NodeFuncHandler[T, A, R],
+	cacheFn GetCacheConfigFunc[T, A],
 ) Field[T] {
 	var zeroArgs A
 	inputs, argsErr := inputSpecsForType(zeroArgs, true)
@@ -698,18 +764,22 @@ func NodeFuncWithCacheKey[T Typed, A any, R any](
 		},
 	}
 
-	if cacheKeyFn != nil {
-		field.CacheKeyFunc = func(ctx context.Context, self Instance[T], argVals map[string]Input, origDgst digest.Digest) (digest.Digest, error) {
+	if cacheFn != nil {
+		field.CacheSpec.GetCacheConfig = func(ctx context.Context, self Object, argVals map[string]Input, baseCfg CacheConfig) (*CacheConfig, error) {
 			if argsErr != nil {
 				// this error is deferred until runtime, since it's better (at least
 				// more testable) than panicking
-				return "", argsErr
+				return nil, argsErr
 			}
 			var args A
 			if err := setInputFields(inputs, argVals, &args); err != nil {
-				return "", err
+				return nil, err
 			}
-			return cacheKeyFn(ctx, self, args, origDgst)
+			inst, ok := self.(Instance[T])
+			if !ok {
+				return nil, fmt.Errorf("expected instance of %T, got %T", field, self)
+			}
+			return cacheFn(ctx, inst, args, baseCfg)
 		}
 	}
 
@@ -726,13 +796,9 @@ type FieldSpec struct {
 	Args InputSpecs
 	// Type is the type of the field's result.
 	Type Typed
-	// Meta indicates that the field has no impact on the field's result.
-	Meta bool
 	// Sensitive indicates that the value returned by this field is sensitive and
 	// should not be displayed in telemetry.
 	Sensitive bool
-	// ImpurityReason indicates that the field's result may change over time.
-	ImpurityReason string
 	// DeprecatedReason deprecates the field and provides a reason.
 	DeprecatedReason string
 	// Module is the module that provides the field's implementation.
@@ -757,12 +823,6 @@ func (spec FieldSpec) FieldDefinition() *ast.FieldDefinition {
 	}
 	if spec.DeprecatedReason != "" {
 		def.Directives = append(def.Directives, deprecated(spec.DeprecatedReason))
-	}
-	if spec.ImpurityReason != "" {
-		def.Directives = append(def.Directives, impure(spec.ImpurityReason))
-	}
-	if spec.Meta {
-		def.Directives = append(def.Directives, meta())
 	}
 	return def
 }
@@ -905,11 +965,31 @@ func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Cl
 	return classT
 }
 
+type CacheSpec struct {
+	// If set, this GetCacheConfig will be called before ID evaluation to determine the
+	// ID's digest. Otherwise the ID defaults to the digest of the call chain.
+	GetCacheConfig GenericGetCacheConfigFunc
+
+	// If set, the result of this field will never be cached and not have concurrent equal
+	// calls deduped. The string value is a reason why the field should not be cached.
+	DoNotCache string
+}
+
+type GenericGetCacheConfigFunc func(context.Context, Object, map[string]Input, CacheConfig) (*CacheConfig, error)
+
+type GetCacheConfigFunc[T Typed, A any] func(context.Context, Instance[T], A, CacheConfig) (*CacheConfig, error)
+
+// CacheConfig is the configuration for caching a field. Currently just custom digest
+// but intended to support more in time (TTL, etc).
+type CacheConfig struct {
+	Digest digest.Digest
+}
+
 // Field defines a field of an Object type.
 type Field[T Typed] struct {
-	Spec         FieldSpec
-	Func         func(context.Context, Instance[T], map[string]Input) (Typed, error)
-	CacheKeyFunc func(context.Context, Instance[T], map[string]Input, digest.Digest) (digest.Digest, error)
+	Spec      FieldSpec
+	Func      func(context.Context, Instance[T], map[string]Input) (Typed, error)
+	CacheSpec CacheSpec
 
 	// ViewFilter is filter that specifies under which views this field is
 	// accessible. If not view is present, the default is the "global" view.
@@ -929,6 +1009,15 @@ func (field Field[T]) Sensitive() Field[T] {
 // View sets a view for this field.
 func (field Field[T]) View(view View) Field[T] {
 	field.ViewFilter = view
+	return field
+}
+
+// DoNotCache marks the field as not to be stored in the cache for the given reason why
+func (field Field[T]) DoNotCache(reason string, paras ...string) Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
+	field.CacheSpec.DoNotCache = FormatDescription(append([]string{reason}, paras...)...)
 	return field
 }
 
@@ -1019,25 +1108,6 @@ func (field Field[T]) Deprecated(paras ...string) Field[T] {
 		panic("cannot call on extended field")
 	}
 	field.Spec.DeprecatedReason = FormatDescription(paras...)
-	return field
-}
-
-// Impure marks the field as "impure", meaning its result may change over time,
-// or it has side effects.
-func (field Field[T]) Impure(reason string, paras ...string) Field[T] {
-	if field.Spec.extend {
-		panic("cannot call on extended field")
-	}
-	field.Spec.ImpurityReason = FormatDescription(append([]string{reason}, paras...)...)
-	return field
-}
-
-// Meta indicates that the field has no impact on the field's result.
-func (field Field[T]) Meta() Field[T] {
-	if field.Spec.extend {
-		panic("cannot call on extended field")
-	}
-	field.Spec.Meta = true
 	return field
 }
 

@@ -5411,11 +5411,11 @@ func daggerNonNestedRun(args ...string) dagger.WithContainerFunc {
 }
 
 func daggerClientAdd(generator string) dagger.WithContainerFunc {
-	return daggerExec("client", "add", "--generator="+generator, "--local-sdk")
+	return daggerExec("client", "add", "--generator="+generator, "--dev")
 }
 
 func daggerClientAddAt(generator string, outputDirPath string) dagger.WithContainerFunc {
-	return daggerExec("client", "add", "--generator="+generator, "--local-sdk", outputDirPath)
+	return daggerExec("client", "add", "--generator="+generator, "--dev", outputDirPath)
 }
 
 func daggerQuery(query string, args ...any) dagger.WithContainerFunc {
@@ -5480,7 +5480,7 @@ func privateRepoSetup(c *dagger.Client, t *testctx.T, tc vcsTestCase) (dagger.Wi
 				WithExec([]string{
 					"git", "config", "--global",
 					"credential.https://" + tc.expectedHost + ".helper",
-					`!f() { test "$1" = get && echo "password=` + token + `"; }; f`,
+					`!f() { test "$1" = get && echo -e "password=` + token + `\nusername=git"; }; f`,
 				})
 		}
 

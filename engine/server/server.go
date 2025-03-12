@@ -70,7 +70,7 @@ import (
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	daggercache "github.com/dagger/dagger/engine/cache"
+	daggercache "github.com/dagger/dagger/engine/cache/cachemanager"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
@@ -466,6 +466,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		TelemetryPubSub:  srv.telemetryPubSub,
 		BKSessionManager: srv.bkSessionManager,
 		SessionHandler:   srv,
+		DagqlServer:      srv,
 
 		Runc:                srv.runc,
 		DefaultCgroupParent: srv.cgroupParent,

@@ -1,6 +1,6 @@
 {
   "name": "dagger-dev",
-  "engineVersion": "v0.16.1",
+  "engineVersion": "v0.16.2",
   "sdk": {
     "source": "go"
   },
@@ -45,6 +45,11 @@
     {
       "name": "helm",
       "source": "helm"
+    },
+    {
+      "name": "notify",
+      "source": "github.com/gerhard/daggerverse/notify",
+      "pin": "e4ee5778b10345d09a65a9655022d8ec40fc489f"
     },
     {
       "name": "php-sdk-dev",

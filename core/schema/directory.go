@@ -91,7 +91,7 @@ func (s *directorySchema) Install() {
 			ArgDoc("other", `Identifier of the directory to compare.`),
 		dagql.Func("export", s.export).
 			View(AllVersion).
-			Impure("Writes to the local host.").
+			DoNotCache("Writes to the local host.").
 			Doc(`Writes the contents of the directory to a path on the host.`).
 			ArgDoc("path", `Location of the copied directory (e.g., "logs/").`).
 			ArgDoc("wipe", `If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.`),
@@ -110,9 +110,11 @@ func (s *directorySchema) Install() {
 			Doc(`Retrieves this directory with all file/dir timestamps set to the given time.`).
 			ArgDoc("timestamp", `Timestamp to set dir/files in.`,
 				`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
+		dagql.Func("asGit", s.asGit).
+			Doc(`Converts this directory into a git repository`),
 		dagql.NodeFunc("terminal", s.terminal).
 			View(AfterVersion("v0.12.0")).
-			Impure("Nondeterministic.").
+			DoNotCache("Only creates a temporary container for the user to interact with and then returns original parent.").
 			Doc(`Opens an interactive terminal in new container with this directory mounted inside.`).
 			ArgDoc("container", `If set, override the default container used for the terminal.`).
 			ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`).
@@ -399,4 +401,17 @@ func (s *directorySchema) terminal(
 	}
 
 	return dir, nil
+}
+
+func (s *directorySchema) asGit(
+	ctx context.Context,
+	dir *core.Directory,
+	_ struct{},
+) (*core.GitRepository, error) {
+	return &core.GitRepository{
+		Backend: &core.LocalGitRepository{
+			Query:     dir.Query,
+			Directory: dir,
+		},
+	}, nil
 }

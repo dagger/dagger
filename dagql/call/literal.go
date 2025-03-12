@@ -17,7 +17,6 @@ type Literate interface {
 type Literal interface {
 	Inputs() ([]digest.Digest, error)
 	Modules() []*Module
-	Tainted() bool
 	Display() string
 	ToInput() any
 	ToAST() *ast.Value
@@ -44,10 +43,6 @@ func (lit *LiteralID) Inputs() ([]digest.Digest, error) {
 
 func (lit *LiteralID) Modules() []*Module {
 	return lit.id.Modules()
-}
-
-func (lit *LiteralID) Tainted() bool {
-	return lit.id.IsTainted()
 }
 
 func (lit *LiteralID) Display() string {
@@ -122,15 +117,6 @@ func (lit *LiteralList) Modules() []*Module {
 		mods = append(mods, val.Modules()...)
 	}
 	return mods
-}
-
-func (lit *LiteralList) Tainted() bool {
-	for _, val := range lit.values {
-		if val.Tainted() {
-			return true
-		}
-	}
-	return false
 }
 
 func (lit *LiteralList) Display() string {
@@ -232,15 +218,6 @@ func (lit *LiteralObject) Modules() []*Module {
 	return mods
 }
 
-func (lit *LiteralObject) Tainted() bool {
-	for _, arg := range lit.values {
-		if arg.Tainted() {
-			return true
-		}
-	}
-	return false
-}
-
 func (lit *LiteralObject) Display() string {
 	obj := "{"
 	for i, field := range lit.values {
@@ -338,10 +315,6 @@ func (lit *LiteralPrimitiveType[T, V]) Inputs() ([]digest.Digest, error) {
 
 func (lit *LiteralPrimitiveType[T, V]) Modules() []*Module {
 	return nil
-}
-
-func (lit *LiteralPrimitiveType[T, V]) Tainted() bool {
-	return false
 }
 
 func (lit *LiteralPrimitiveType[T, V]) Display() string {

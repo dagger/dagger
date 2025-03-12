@@ -75,6 +75,13 @@ func (ModuleSuite) TestDaggerUp(ctx context.Context, t *testctx.T) {
 			cachedModDir: modDirForAsContainerTests,
 		},
 		{
+			name:         "shell container port map",
+			endpointFn:   daggerUpAndGetEndpoint,
+			trafficPort:  "23104",
+			daggerArgs:   []string{"shell", "-c", fmt.Sprintf("ctr | up --ports 23104:%s", defaultTrafficPortForContainerTests)},
+			cachedModDir: modDirForAsContainerTests,
+		},
+		{
 			name:         "service native",
 			endpointFn:   daggerUpAndGetEndpoint,
 			trafficPort:  "23200",

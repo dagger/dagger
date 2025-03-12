@@ -47,7 +47,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/cache"
+	"github.com/dagger/dagger/engine/cache/cachemanager"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -262,7 +262,7 @@ func (srv *Server) initializeDaggerSession(
 				engine.Version,
 				runtime.GOOS,
 				runtime.GOARCH,
-				srv.SolverCache.ID() != cache.LocalCacheID,
+				srv.SolverCache.ID() != cachemanager.LocalCacheID,
 			),
 		CloudToken: clientMetadata.CloudToken,
 	})
@@ -325,6 +325,11 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	// in theory none of this should block very long, but add a safeguard just in case
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
 	defer cancel()
+
+	if err := sess.dagqlCache.ReleaseAll(ctx); err != nil {
+		slog.Error("error releasing dagql cache", "error", err)
+		errs = errors.Join(errs, fmt.Errorf("release dagql cache: %w", err))
+	}
 
 	if err := sess.services.StopSessionServices(ctx, sess.sessionID); err != nil {
 		slog.Warn("error stopping services", "error", err)
@@ -934,6 +939,18 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 }
 
 const InstrumentationLibrary = "dagger.io/engine.server"
+
+func (srv *Server) DagqlServer(ctx context.Context) (*dagql.Server, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	schema, err := client.deps.Schema(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return schema, nil
+}
 
 func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opts *ClientInitOpts) (rerr error) {
 	ctx := r.Context()

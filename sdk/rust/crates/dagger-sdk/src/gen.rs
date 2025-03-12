@@ -923,6 +923,41 @@ impl ListTypeDefId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct ModuleConfigClientId(pub String);
+impl From<&str> for ModuleConfigClientId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for ModuleConfigClientId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<ModuleConfigClientId> for ModuleConfigClient {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<ModuleConfigClientId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<ModuleConfigClientId> for ModuleConfigClientId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<ModuleConfigClientId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<ModuleConfigClientId, DaggerError>(self) })
+    }
+}
+impl ModuleConfigClientId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ModuleId(pub String);
 impl From<&str> for ModuleId {
     fn from(value: &str) -> Self {
@@ -3998,6 +4033,15 @@ pub struct DirectoryWithNewFileOpts {
     pub permissions: Option<isize>,
 }
 impl Directory {
+    /// Converts this directory into a git repository
+    pub fn as_git(&self) -> GitRepository {
+        let query = self.selection.select("asGit");
+        GitRepository {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Load the directory as a Dagger module source
     ///
     /// # Arguments
@@ -6085,16 +6129,44 @@ impl Module {
     }
 }
 #[derive(Clone)]
+pub struct ModuleConfigClient {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl ModuleConfigClient {
+    /// If true, generate the client in developer mode.
+    pub async fn dev(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("dev");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The directory the client is generated in.
+    pub async fn directory(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("directory");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The generator to use
+    pub async fn generator(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("generator");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this ModuleConfigClient.
+    pub async fn id(&self) -> Result<ModuleConfigClientId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
 pub struct ModuleSource {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct ModuleSourceGenerateClientOpts {
-    /// Use local SDK dependency
+pub struct ModuleSourceWithClientOpts {
+    /// Generate in developer mode
     #[builder(setter(into, strip_option), default)]
-    pub local_sdk: Option<bool>,
+    pub dev: Option<bool>,
 }
 impl ModuleSource {
     /// Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
@@ -6120,6 +6192,15 @@ impl ModuleSource {
     pub async fn commit(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("commit");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// The clients generated for the module.
+    pub fn config_clients(&self) -> Vec<ModuleConfigClient> {
+        let query = self.selection.select("configClients");
+        vec![ModuleConfigClient {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
     }
     /// Whether an existing dagger.json for the module was found.
     pub async fn config_exists(&self) -> Result<bool, DaggerError> {
@@ -6167,52 +6248,6 @@ impl ModuleSource {
     pub async fn engine_version(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("engineVersion");
         query.execute(self.graphql_client.clone()).await
-    }
-    /// Generates a client for the module.
-    ///
-    /// # Arguments
-    ///
-    /// * `generator` - The generator to use
-    /// * `output_dir` - The output directory for the generated client.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn generate_client(
-        &self,
-        generator: impl Into<String>,
-        output_dir: impl Into<String>,
-    ) -> Directory {
-        let mut query = self.selection.select("generateClient");
-        query = query.arg("generator", generator.into());
-        query = query.arg("outputDir", output_dir.into());
-        Directory {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Generates a client for the module.
-    ///
-    /// # Arguments
-    ///
-    /// * `generator` - The generator to use
-    /// * `output_dir` - The output directory for the generated client.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn generate_client_opts(
-        &self,
-        generator: impl Into<String>,
-        output_dir: impl Into<String>,
-        opts: ModuleSourceGenerateClientOpts,
-    ) -> Directory {
-        let mut query = self.selection.select("generateClient");
-        query = query.arg("generator", generator.into());
-        query = query.arg("outputDir", output_dir.into());
-        if let Some(local_sdk) = opts.local_sdk {
-            query = query.arg("localSdk", local_sdk);
-        }
-        Directory {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
     }
     /// The generated files and directories made on top of the module source's context directory.
     pub fn generated_context_directory(&self) -> Directory {
@@ -6301,6 +6336,52 @@ impl ModuleSource {
     pub async fn version(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("version");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Update the module source with a new client to generate.
+    ///
+    /// # Arguments
+    ///
+    /// * `generator` - The generator to use
+    /// * `output_dir` - The output directory for the generated client.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_client(
+        &self,
+        generator: impl Into<String>,
+        output_dir: impl Into<String>,
+    ) -> ModuleSource {
+        let mut query = self.selection.select("withClient");
+        query = query.arg("generator", generator.into());
+        query = query.arg("outputDir", output_dir.into());
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Update the module source with a new client to generate.
+    ///
+    /// # Arguments
+    ///
+    /// * `generator` - The generator to use
+    /// * `output_dir` - The output directory for the generated client.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_client_opts(
+        &self,
+        generator: impl Into<String>,
+        output_dir: impl Into<String>,
+        opts: ModuleSourceWithClientOpts,
+    ) -> ModuleSource {
+        let mut query = self.selection.select("withClient");
+        query = query.arg("generator", generator.into());
+        query = query.arg("outputDir", output_dir.into());
+        if let Some(dev) = opts.dev {
+            query = query.arg("dev", dev);
+        }
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Append the provided dependencies to the module source's dependency list.
     ///
@@ -7296,6 +7377,25 @@ impl Query {
             }),
         );
         ListTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a ModuleConfigClient from its ID.
+    pub fn load_module_config_client_from_id(
+        &self,
+        id: impl IntoID<ModuleConfigClientId>,
+    ) -> ModuleConfigClient {
+        let mut query = self.selection.select("loadModuleConfigClientFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        ModuleConfigClient {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

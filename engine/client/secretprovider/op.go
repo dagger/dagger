@@ -14,7 +14,7 @@ func opProvider(ctx context.Context, key string) ([]byte, error) {
 	key = "op://" + key
 
 	// Attempt to use the `OP_SERVICE_ACCOUNT_TOKEN`
-	if _, ok := os.LookupEnv("OP_SERVICE_ACCOUNT_TOKEN"); ok {
+	if os.Getenv("OP_SERVICE_ACCOUNT_TOKEN") != "" {
 		return opSDKProvider(ctx, key)
 	}
 
@@ -37,7 +37,7 @@ func opSDKProvider(ctx context.Context, key string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	secret, err := client.Secrets.Resolve(ctx, key)
+	secret, err := client.Secrets().Resolve(ctx, key)
 	if err != nil {
 		return nil, err
 	}

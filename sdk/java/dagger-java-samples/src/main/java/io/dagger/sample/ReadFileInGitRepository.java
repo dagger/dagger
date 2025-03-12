@@ -1,6 +1,6 @@
 package io.dagger.sample;
 
-import io.dagger.client.Client;
+import io.dagger.client.AutoCloseableClient;
 import io.dagger.client.Dagger;
 import java.io.BufferedReader;
 import java.io.StringReader;
@@ -8,7 +8,7 @@ import java.io.StringReader;
 @Description("Clone the Dagger git repository and print the first line of README.md")
 public class ReadFileInGitRepository {
   public static void main(String... args) throws Exception {
-    try (Client client = Dagger.connect()) {
+    try (AutoCloseableClient client = Dagger.connect()) {
       String readme =
           client
               .git("https://github.com/dagger/dagger")

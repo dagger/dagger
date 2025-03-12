@@ -1193,6 +1193,9 @@ scalar CurrentModuleID
 
 """A directory."""
 type Directory {
+  """Converts this directory into a git repository"""
+  asGit: GitRepository!
+
   """Load the directory as a Dagger module source"""
   asModule(
     """
@@ -2233,6 +2236,26 @@ type Module {
   withObject(object: TypeDefID!): Module!
 }
 
+"""The client generated for the module."""
+type ModuleConfigClient {
+  """If true, generate the client in developer mode."""
+  dev: Boolean
+
+  """The directory the client is generated in."""
+  directory: String!
+
+  """The generator to use"""
+  generator: String!
+
+  """A unique identifier for this ModuleConfigClient."""
+  id: ModuleConfigClientID!
+}
+
+"""
+The `ModuleConfigClientID` scalar type represents an identifier for an object of type ModuleConfigClient.
+"""
+scalar ModuleConfigClientID
+
 """
 The `ModuleID` scalar type represents an identifier for an object of type Module.
 """
@@ -2261,6 +2284,9 @@ type ModuleSource {
   """
   commit: String!
 
+  """The clients generated for the module."""
+  configClients: [ModuleConfigClient!]!
+
   """Whether an existing dagger.json for the module was found."""
   configExists: Boolean!
 
@@ -2288,18 +2314,6 @@ type ModuleSource {
 
   """The engine version of the module."""
   engineVersion: String!
-
-  """Generates a client for the module."""
-  generateClient(
-    """The generator to use"""
-    generator: String!
-
-    """Use local SDK dependency"""
-    localSdk: Boolean
-
-    """The output directory for the generated client."""
-    outputDir: String!
-  ): Directory!
 
   """
   The generated files and directories made on top of the module source's context directory.
@@ -2371,6 +2385,18 @@ type ModuleSource {
   The specified version of the git repo this source points to. Only valid for git sources.
   """
   version: String!
+
+  """Update the module source with a new client to generate."""
+  withClient(
+    """Generate in developer mode"""
+    dev: Boolean
+
+    """The generator to use"""
+    generator: String!
+
+    """The output directory for the generated client."""
+    outputDir: String!
+  ): ModuleSource!
 
   """
   Append the provided dependencies to the module source's dependency list.
@@ -2720,6 +2746,9 @@ type Query {
 
   """Load a ListTypeDef from its ID."""
   loadListTypeDefFromID(id: ListTypeDefID!): ListTypeDef!
+
+  """Load a ModuleConfigClient from its ID."""
+  loadModuleConfigClientFromID(id: ModuleConfigClientID!): ModuleConfigClient!
 
   """Load a Module from its ID."""
   loadModuleFromID(id: ModuleID!): Module!

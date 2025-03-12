@@ -49,8 +49,8 @@ type DefaultTerminalCmdOpts struct {
 }
 
 type ContainerAnnotation struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
+	Key   string
+	Value string
 }
 
 // Container is a content-addressed container.
@@ -58,50 +58,50 @@ type Container struct {
 	Query *Query
 
 	// The container's root filesystem.
-	FS *pb.Definition `json:"fs"`
+	FS *pb.Definition
 
 	// Image configuration (env, workdir, etc)
-	Config specs.ImageConfig `json:"cfg"`
+	Config specs.ImageConfig
 
 	// List of GPU devices that will be exposed to the container
-	EnabledGPUs []string `json:"enabledGPUs,omitempty"`
+	EnabledGPUs []string
 
 	// Mount points configured for the container.
-	Mounts ContainerMounts `json:"mounts,omitempty"`
+	Mounts ContainerMounts
 
 	// Meta is the /dagger filesystem. It will be null if nothing has run yet.
-	Meta *pb.Definition `json:"meta,omitempty"`
+	Meta *pb.Definition
 
 	// The platform of the container's rootfs.
-	Platform Platform `json:"platform,omitempty"`
+	Platform Platform
 
 	// OCI annotations
-	Annotations []ContainerAnnotation `json:"annotations,omitempty"`
+	Annotations []ContainerAnnotation
 
 	// Secrets to expose to the container.
-	Secrets []ContainerSecret `json:"secret_env,omitempty"`
+	Secrets []ContainerSecret
 
 	// Sockets to expose to the container.
-	Sockets []ContainerSocket `json:"sockets,omitempty"`
+	Sockets []ContainerSocket
 
 	// Image reference
-	ImageRef string `json:"image_ref,omitempty"`
+	ImageRef string
 
 	// Ports to expose from the container.
-	Ports []Port `json:"ports,omitempty"`
+	Ports []Port
 
 	// Services to start before running the container.
-	Services ServiceBindings `json:"services,omitempty"`
+	Services ServiceBindings
 
 	// The args to invoke when using the terminal api on this container.
-	DefaultTerminalCmd DefaultTerminalCmdOpts `json:"defaultTerminalCmd,omitempty"`
+	DefaultTerminalCmd DefaultTerminalCmdOpts
 
 	// (Internal-only for now) Environment variables from the engine container, prefixed
 	// with a special value, that will be inherited by this container if set.
-	SystemEnvNames []string `json:"system_envs,omitempty"`
+	SystemEnvNames []string
 
 	// DefaultArgs have been explicitly set by the user
-	DefaultArgs bool `json:"defaultArgs,omitempty"`
+	DefaultArgs bool
 }
 
 func (*Container) Type() *ast.Type {
@@ -174,8 +174,8 @@ func (container *Container) Clone() *Container {
 // provided via the API. It primarily exists to distinguish an unspecified
 // ownership from UID/GID 0 (root) ownership.
 type Ownership struct {
-	UID int `json:"uid"`
-	GID int `json:"gid"`
+	UID int
+	GID int
 }
 
 func (owner Ownership) Opt() llb.ChownOption {
@@ -185,19 +185,19 @@ func (owner Ownership) Opt() llb.ChownOption {
 // ContainerSecret configures a secret to expose, either as an environment
 // variable or mounted to a file path.
 type ContainerSecret struct {
-	Secret    *Secret     `json:"secret"`
-	EnvName   string      `json:"env,omitempty"`
-	MountPath string      `json:"path,omitempty"`
-	Owner     *Ownership  `json:"owner,omitempty"`
-	Mode      fs.FileMode `json:"mode,omitempty"`
+	Secret    *Secret
+	EnvName   string
+	MountPath string
+	Owner     *Ownership
+	Mode      fs.FileMode
 }
 
 // ContainerSocket configures a socket to expose, currently as a Unix socket,
 // but potentially as a TCP or UDP address in the future.
 type ContainerSocket struct {
-	Source        *Socket    `json:"socket"`
-	ContainerPath string     `json:"container_path,omitempty"`
-	Owner         *Ownership `json:"owner,omitempty"`
+	Source        *Socket
+	ContainerPath string
+	Owner         *Ownership
 }
 
 // FSState returns the container's root filesystem mount state. If there is
@@ -228,28 +228,28 @@ func (container *Container) MetaState() (*llb.State, error) {
 // ContainerMount is a mount point configured in a container.
 type ContainerMount struct {
 	// The source of the mount.
-	Source *pb.Definition `json:"source,omitempty"`
+	Source *pb.Definition
 
 	// A path beneath the source to scope the mount to.
-	SourcePath string `json:"source_path,omitempty"`
+	SourcePath string
 
 	// The path of the mount within the container.
-	Target string `json:"target"`
+	Target string
 
 	// Persist changes to the mount under this cache ID.
-	CacheVolumeID string `json:"cache_volume_id,omitempty"`
+	CacheVolumeID string
 
 	// How to share the cache across concurrent runs.
-	CacheSharingMode CacheSharingMode `json:"cache_sharing,omitempty"`
+	CacheSharingMode CacheSharingMode
 
 	// Configure the mount as a tmpfs.
-	Tmpfs bool `json:"tmpfs,omitempty"`
+	Tmpfs bool
 
 	// Configure the size of the mounted tmpfs in bytes
-	Size int `json:"size,omitempty"`
+	Size int
 
 	// Configure the mount as read-only.
-	Readonly bool `json:"readonly,omitempty"`
+	Readonly bool
 }
 
 // SourceState returns the state of the source of the mount.

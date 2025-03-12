@@ -32,7 +32,9 @@ jobs:
         run: dagger core version
       - name: Benchmark Engine
         uses: ./.github/actions/call
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         with:
-          function: bench all --prewarm
+          function: bench all --prewarm ${{ github.event_name != 'pull_request' && '--discord-webhook="op://releng/Discord Webhook - Engine Benchmarks/credential"' || '' }}
           dev-engine: false
           upload-logs: true

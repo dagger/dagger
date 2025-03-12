@@ -2,11 +2,13 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -494,6 +496,267 @@ main()
 	})
 }
 
+func (ClientGeneratorTest) TestPersistence(ctx context.Context, t *testctx.T) {
+	t.Run("work without a module implementation", func(ctx context.Context, t *testctx.T) {
+		type testCase struct {
+			baseImage string
+			generator string
+			callCmd   []string
+			setup     dagger.WithContainerFunc
+			postSetup dagger.WithContainerFunc
+		}
+
+		testCases := []testCase{
+			{
+				baseImage: golangImage,
+				generator: "go",
+				callCmd:   []string{"go", "run", "main.go"},
+				setup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.
+						WithExec([]string{"go", "mod", "init", "test.com/test"}).
+						WithNewFile("main.go", `package main
+		
+		import (
+			"context"
+			"fmt"
+		
+			"test.com/test/dagger"
+		)
+		
+		func main() {
+			ctx := context.Background()
+		
+			dag, err := dagger.Connect(ctx)
+      if err != nil {
+			  panic(err)
+      }
+		
+			res, err := dag.Hello().Hello(ctx)
+			if err != nil {
+				panic(err)
+			}
+		
+			fmt.Println("result:", res)
+		}
+		`,
+						)
+				},
+				postSetup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.WithoutDirectory("dagger")
+				},
+			},
+			{
+				baseImage: nodeImage,
+				generator: "typescript",
+				setup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.
+						WithExec([]string{"npm", "install", "-g", "tsx@4.15.6"}).
+						WithExec([]string{"npm", "init", "-y"}).
+						WithExec([]string{"npm", "pkg", "set", "type=module"}).
+						WithExec([]string{"npm", "install", "-D", "typescript"}).
+						WithNewFile("index.ts", `import { connection, dag } from "@dagger.io/client"
+
+async function main() {
+    await connection(async () => {
+      const res = await dag.hello().hello()
+
+      console.log("result:", res)
+    })
+}
+
+main()
+`)
+				},
+				postSetup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.
+						WithExec([]string{"npm", "install"}).
+						WithoutDirectory("dagger")
+				},
+				callCmd: []string{"tsx", "index.ts"},
+			},
+		}
+
+		for _, tc := range testCases {
+			tc := tc
+
+			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+
+				moduleSrc := c.Container().From(tc.baseImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+					With(nonNestedDevEngine(c)).
+					With(daggerNonNestedExec("init")).
+					With(daggerNonNestedExec("install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
+					With(tc.setup).
+					With(daggerClientAdd(tc.generator)).
+					With(tc.postSetup)
+
+				modCfgContents, err := moduleSrc.
+					File("dagger.json").
+					Contents(ctx)
+				require.NoError(t, err)
+
+				var modCfg modules.ModuleConfig
+				require.NoError(t, json.Unmarshal([]byte(modCfgContents), &modCfg))
+				require.Equal(t, 1, len(modCfg.Clients))
+				require.Equal(t, tc.generator, modCfg.Clients[0].Generator)
+				require.Equal(t, "dagger", modCfg.Clients[0].Directory)
+
+				// Execute module after regeneration
+				out, err := moduleSrc.
+					With(daggerNonNestedExec("develop")).
+					With(daggerNonNestedRun(tc.callCmd...)).
+					Stdout(ctx)
+
+				require.NoError(t, err)
+				require.Equal(t, "result: hello, world!\n", out)
+			})
+		}
+	})
+
+	t.Run("cohexist with a module implementation", func(ctx context.Context, t *testctx.T) {
+		type testCase struct {
+			baseImage string
+			generator string
+			callCmd   []string
+			setup     dagger.WithContainerFunc
+			postSetup dagger.WithContainerFunc
+		}
+
+		testCases := []testCase{
+			{
+				baseImage: golangImage,
+				generator: "go",
+				callCmd:   []string{"go", "run", "main.go"},
+				setup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.
+						With(daggerNonNestedExec("init", "--name=test", "--sdk=go", "--source=.dagger")).
+						WithNewFile(".dagger/main.go", `package main
+
+			type Test struct{}
+
+			func (t *Test) Hello() string {
+				return "hello"
+			}
+						`).
+						WithExec([]string{"go", "mod", "init", "test.com/test"}).
+						WithNewFile("main.go", `package main
+
+			import (
+				"context"
+				"fmt"
+
+				"test.com/test/dagger"
+			)
+
+			func main() {
+				ctx := context.Background()
+
+				dag, err := dagger.Connect(ctx)
+				if err != nil {
+					panic(err)
+				}
+
+				res, err := dag.Test().Hello(ctx)
+				if err != nil {
+					panic(err)
+				}
+
+				fmt.Println("result:", res)
+			}
+			`,
+						)
+				},
+				postSetup: func(ctr *dagger.Container) *dagger.Container {
+					// Remove generated files so they can be regenerated using dagger develop
+					return ctr.WithoutDirectory("dagger").WithoutFile(".dagger/dagger.gen.go")
+				},
+			},
+			{
+				baseImage: nodeImage,
+				generator: "typescript",
+				setup: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.
+						With(daggerNonNestedExec("init", "--name=test", "--sdk=typescript", "--source=.dagger")).
+						WithNewFile(".dagger/src/index.ts", `import { object, func } from '@dagger.io/dagger'
+
+		@object()
+		export class Test {
+		@func()
+		hello(): string {
+			return 'hello'
+		}
+		}
+					`).
+						WithExec([]string{"npm", "install", "-g", "tsx@4.15.6"}).
+						WithExec([]string{"npm", "init", "-y"}).
+						WithExec([]string{"npm", "pkg", "set", "type=module"}).
+						WithExec([]string{"npm", "install", "-D", "typescript"}).
+						WithNewFile("index.ts", `import { connection, dag } from "@dagger.io/client"
+
+		async function main() {
+			await connection(async () => {
+				const res = await dag.test().hello()
+
+				console.log("result:", res)
+			})
+		}
+
+		main()
+		`)
+				},
+				postSetup: func(ctr *dagger.Container) *dagger.Container {
+					// Remove generated files so they can be regenerated using dagger develop
+					return ctr.
+						WithExec([]string{"npm", "install"}).
+						WithoutDirectory("dagger").
+						WithoutDirectory(".dagger/sdk")
+				},
+				callCmd: []string{"tsx", "index.ts"},
+			},
+		}
+
+		for _, tc := range testCases {
+			tc := tc
+
+			t.Run(tc.generator, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+
+				moduleSrc := c.Container().From(tc.baseImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+					With(nonNestedDevEngine(c)).
+					With(tc.setup).
+					With(daggerClientAdd(tc.generator)).
+					With(tc.postSetup)
+
+				modCfgContents, err := moduleSrc.
+					File("dagger.json").
+					Contents(ctx)
+				require.NoError(t, err)
+
+				var modCfg modules.ModuleConfig
+				require.NoError(t, json.Unmarshal([]byte(modCfgContents), &modCfg))
+				require.Equal(t, 1, len(modCfg.Clients))
+				require.Equal(t, tc.generator, modCfg.Clients[0].Generator)
+				require.Equal(t, "dagger", modCfg.Clients[0].Directory)
+
+				// Execute module after regeneration
+				out, err := moduleSrc.
+					With(daggerNonNestedExec("develop")).
+					With(daggerNonNestedRun(tc.callCmd...)).
+					Stdout(ctx)
+
+				require.NoError(t, err)
+				require.Equal(t, "result: hello\n", out)
+			})
+		}
+	})
+}
+
 func (ClientGeneratorTest) TestOutputDir(ctx context.Context, t *testctx.T) {
 	type testSetup struct {
 		baseImage string
@@ -744,6 +1007,7 @@ func (ClientGeneratorTest) TestCustomClientGenerator(ctx context.Context, t *tes
 	testCases := []testCase{
 		{
 			generatorSDK: "go",
+			// Omit `dev` from signature to verify that it works if it's not defined.
 			generatorSource: `package main
 
 import (
@@ -761,13 +1025,13 @@ func (g *Generator) GenerateClient(
   ctx context.Context,
   modSource *dagger.ModuleSource,
   introspectionJSON *dagger.File,
-  useLocalSdk bool,
 ) (*dagger.Directory, error) {
   return dag.Directory().WithNewFile("hello.txt", "hello world"), nil
 }`,
 		},
 		{
 			generatorSDK: "typescript",
+			// Omit `dev` from signature to verify that it works if it's not defined.
 			generatorSource: `import { dag, Directory, object, func, ModuleSource, File } from "@dagger.io/dagger"
 
 @object()
@@ -781,7 +1045,6 @@ export class Generator {
   generateClient(
     modSource: ModuleSource,
     introspectionJSON: File,
-    useLocalSdk: boolean,
   ): Directory {
     return dag.directory().withNewFile("hello.txt", "hello world")
   }
@@ -802,7 +1065,7 @@ export class Generator {
 				With(sdkSource(tc.generatorSDK, tc.generatorSource)).
 				WithWorkdir("/work").
 				With(daggerExec("init")).
-				With(daggerClientAdd("./generator"))
+				With(daggerExec("client", "add", "--generator=./generator"))
 
 			out, err := moduleSrc.File("hello.txt").Contents(ctx)
 			require.NoError(t, err)
