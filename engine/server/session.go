@@ -737,24 +737,6 @@ func (srv *Server) clientFromIDs(sessID, clientID string) (*daggerClient, bool) 
 	return client, true
 }
 
-// TODO: doc if stays, safe because client IDs are random, never repeat across sessions
-func (srv *Server) clientFromAnySession(clientID string) (*daggerClient, bool) {
-	srv.daggerSessionsMu.RLock()
-	defer srv.daggerSessionsMu.RUnlock()
-	// TODO: is this locking too long? or who cares?
-	for _, sess := range srv.daggerSessions {
-		sess.clientMu.RLock()
-		client, ok := sess.clients[clientID]
-		if ok {
-			sess.clientMu.RUnlock()
-			return client, true
-		}
-		sess.clientMu.RUnlock()
-	}
-
-	return nil, false
-}
-
 // initialize session+client if needed, return:
 // * the initialized client
 // * a cleanup func to run when the call is done

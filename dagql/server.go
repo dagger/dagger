@@ -967,17 +967,6 @@ type Selector struct {
 	Args  []NamedInput
 	Nth   int
 	View  string
-
-	// Override the default purity of the field. Typically used so that an impure
-	// resolver call can return a pure result, by calling to itself or another
-	// field with pure arguments.
-	//
-	// If Pure is false, and the field is marked Impure, the selection will not
-	// be cached and the object's ID will be tainted.
-	//
-	// If Pure is true, the selection will be cached regardless of the field's
-	// purity, and the object's ID will be untainted.
-	Pure bool
 }
 
 func (sel Selector) String() string {
