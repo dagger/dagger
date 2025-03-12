@@ -28,6 +28,11 @@ func (m *CoreMod) Name() string {
 	return core.ModuleName
 }
 
+// GetSource returns an empty module source
+func (m *CoreMod) GetSource() *core.ModuleSource {
+	return &core.ModuleSource{}
+}
+
 func (m *CoreMod) View() (string, bool) {
 	return m.Dag.View, true
 }
