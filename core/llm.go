@@ -503,12 +503,13 @@ func (llm *LLM) LastReply(ctx context.Context, dag *dagql.Server) (string, error
 // 2. Process replies and tool calls
 // 3. Continue in a loop until no tool calls, or caps are reached
 func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx) // not mainclient
+	bk, err := llm.Query.Buildkit(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("llm sync failed fetching client metadata from context: %w", err)
+		return llm, nil
 	}
-	if clientMetadata.AllowLLMModule == "" {
-		return nil, fmt.Errorf("LLM access not allowed, pass --allow-llm to bypass")
+
+	if err := bk.AllowLLM(ctx); err != nil {
+		return nil, err
 	}
 
 	if !llm.dirty {

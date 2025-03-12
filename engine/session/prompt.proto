@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+option go_package = "session";
+
+service Prompt {
+  rpc Prompt(PromptRequest) returns (PromptResponse);
+}
+
+message PromptRequest {
+    string Prompt = 1;
+}
+
+message PromptResponse {
+    string Input = 1;
+}
