@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 )
@@ -21,23 +22,33 @@ type Cache[K comparable, V any] interface {
 
 	// Using the given key, either return an already cached value for that key or initialize a
 	// new value using the given function. If the function returns an error, the error is returned.
-	// The function can also return an optional post call function that will be set on the returned
-	// result so callers of this function can call it when post-processing of all results (cached or
-	// not) is needed.
-	GetOrInitializeWithPostCall(
+	// The function returns a ValueWithCallbacks struct that contains the value and optionally
+	// any additional callbacks for various parts of the cache lifecycle.
+	GetOrInitializeWithCallbacks(
 		context.Context,
 		K,
-		func(context.Context) (V, PostCallFunc, error),
+		func(context.Context) (*ValueWithCallbacks[V], error),
 	) (Result[K, V], error)
 }
 
 type Result[K comparable, V any] interface {
 	Result() V
-	Release()
+	Release(context.Context) error
 	PostCall(context.Context) error
 }
 
 type PostCallFunc = func(context.Context) error
+
+type OnReleaseFunc = func(context.Context) error
+
+type ValueWithCallbacks[V any] struct {
+	// The actual value to cache
+	Value V
+	// If set, a function that should be called whenever the value is returned from the cache (whether newly initialized or not)
+	PostCall PostCallFunc
+	// If set, this function will be called when a result is removed from the cache
+	OnRelease OnReleaseFunc
+}
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 
@@ -53,10 +64,12 @@ type cache[K comparable, V any] struct {
 type result[K comparable, V any] struct {
 	cache *cache[K, V]
 
-	key      K
-	val      V
-	postCall PostCallFunc
-	err      error
+	key K
+	val V
+	err error
+
+	postCall  PostCallFunc
+	onRelease OnReleaseFunc
 
 	done    chan struct{}
 	cancel  context.CancelCauseFunc
@@ -85,23 +98,34 @@ func (c *cache[K, V]) GetOrInitialize(
 	key K,
 	fn func(context.Context) (V, error),
 ) (Result[K, V], error) {
-	return c.GetOrInitializeWithPostCall(ctx, key, func(ctx context.Context) (V, PostCallFunc, error) {
+	return c.GetOrInitializeWithCallbacks(ctx, key, func(ctx context.Context) (*ValueWithCallbacks[V], error) {
 		val, err := fn(ctx)
-		return val, nil, err
+		if err != nil {
+			return nil, err
+		}
+		return &ValueWithCallbacks[V]{Value: val}, nil
 	})
 }
 
-func (c *cache[K, V]) GetOrInitializeWithPostCall(
+func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 	ctx context.Context,
 	key K,
-	fn func(context.Context) (V, PostCallFunc, error),
+	fn func(context.Context) (*ValueWithCallbacks[V], error),
 ) (Result[K, V], error) {
 	var zeroKey K
 	if key == zeroKey {
 		// don't cache, don't dedupe calls, just call it
+		valWithCallbacks, err := fn(ctx)
+		if err != nil {
+			return nil, err
+		}
 		res := &result[K, V]{}
-		res.val, res.postCall, res.err = fn(ctx)
-		return res, res.err
+		if valWithCallbacks != nil {
+			res.val = valWithCallbacks.Value
+			res.postCall = valWithCallbacks.PostCall
+			res.onRelease = valWithCallbacks.OnRelease
+		}
+		return res, nil
 	}
 
 	if ctx.Value(cacheContextKey[K, V]{key, c}) != nil {
@@ -135,7 +159,13 @@ func (c *cache[K, V]) GetOrInitializeWithPostCall(
 	c.calls[key] = res
 	go func() {
 		defer close(res.done)
-		res.val, res.postCall, res.err = fn(callCtx)
+		valWithCallbacks, err := fn(callCtx)
+		res.err = err
+		if valWithCallbacks != nil {
+			res.val = valWithCallbacks.Value
+			res.postCall = valWithCallbacks.PostCall
+			res.onRelease = valWithCallbacks.OnRelease
+		}
 	}()
 
 	c.mu.Unlock()
@@ -177,20 +207,26 @@ func (res *result[K, V]) Result() V {
 	return res.val
 }
 
-func (res *result[K, V]) Release() {
-	if res.cache == nil {
+func (res *result[K, V]) Release(ctx context.Context) error {
+	if res == nil || res.cache == nil {
 		// wasn't cached, nothing to do
-		return
+		return nil
 	}
 
 	res.cache.mu.Lock()
-	defer res.cache.mu.Unlock()
-
 	res.refCount--
+	var onRelease OnReleaseFunc
 	if res.refCount == 0 && res.waiters == 0 {
 		// no refs left and no one waiting on it, delete from cache
 		delete(res.cache.calls, res.key)
+		onRelease = res.onRelease
 	}
+	res.cache.mu.Unlock()
+
+	if onRelease != nil {
+		return onRelease(ctx)
+	}
+	return nil
 }
 
 func (res *result[K, V]) PostCall(ctx context.Context) error {
@@ -198,4 +234,72 @@ func (res *result[K, V]) PostCall(ctx context.Context) error {
 		return nil
 	}
 	return res.postCall(ctx)
+}
+
+type CacheWithResults[K comparable, V any] struct {
+	cache   Cache[K, V]
+	results []Result[K, V]
+	mu      sync.Mutex
+}
+
+var _ Cache[int, int] = &CacheWithResults[int, int]{}
+
+func NewCacheWithResults[K comparable, V any](baseCache Cache[K, V]) *CacheWithResults[K, V] {
+	return &CacheWithResults[K, V]{
+		cache: baseCache,
+	}
+}
+
+func (c *CacheWithResults[K, V]) GetOrInitializeValue(
+	ctx context.Context,
+	key K,
+	val V,
+) (Result[K, V], error) {
+	return c.GetOrInitialize(ctx, key, func(_ context.Context) (V, error) {
+		return val, nil
+	})
+}
+
+func (c *CacheWithResults[K, V]) GetOrInitialize(
+	ctx context.Context,
+	key K,
+	fn func(context.Context) (V, error),
+) (Result[K, V], error) {
+	return c.GetOrInitializeWithCallbacks(ctx, key, func(ctx context.Context) (*ValueWithCallbacks[V], error) {
+		val, err := fn(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return &ValueWithCallbacks[V]{Value: val}, nil
+	})
+}
+
+func (c *CacheWithResults[K, V]) GetOrInitializeWithCallbacks(
+	ctx context.Context,
+	key K,
+	fn func(context.Context) (*ValueWithCallbacks[V], error),
+) (Result[K, V], error) {
+	res, err := c.cache.GetOrInitializeWithCallbacks(ctx, key, fn)
+
+	var zeroKey K
+	if res != nil && key != zeroKey {
+		c.mu.Lock()
+		c.results = append(c.results, res)
+		c.mu.Unlock()
+	}
+
+	return res, err
+}
+
+func (c *CacheWithResults[K, V]) ReleaseAll(ctx context.Context) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	var rerr error
+	for _, res := range c.results {
+		rerr = errors.Join(rerr, res.Release(ctx))
+	}
+	c.results = nil
+
+	return rerr
 }

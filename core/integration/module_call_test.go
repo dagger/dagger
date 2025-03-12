@@ -207,6 +207,16 @@ func (m *Minimal) Reads(ctx context.Context, files []dagger.File) (string, error
 
 	t.Run("directory arg inputs", func(ctx context.Context, t *testctx.T) {
 		t.Run("local dir", func(ctx context.Context, t *testctx.T) {
+			src := `package main
+
+import "dagger/test/internal/dagger"
+
+type Test struct {}
+
+func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
+	return dir
+}`
+
 			t.Run("abs path", func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -216,19 +226,7 @@ func (m *Minimal) Reads(ctx context.Context, files []dagger.File) (string, error
 					With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 					WithNewFile("/dir/subdir/foo.txt", "foo").
 					WithNewFile("/dir/subdir/bar.txt", "bar").
-					WithNewFile("main.go", `package main
-
-import (
-	"dagger/test/internal/dagger"
-)
-
-type Test struct {}
-
-func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
-	return dir
-}
-	`,
-					)
+					WithNewFile("main.go", src)
 
 				out, err := modGen.With(daggerCall("fn", "--dir", "/dir/subdir", "entries")).Stdout(ctx)
 				require.NoError(t, err)
@@ -248,18 +246,7 @@ func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
 					With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 					WithNewFile("/root/foo.txt", "foo").
 					WithNewFile("/root/subdir/bar.txt", "bar").
-					WithNewFile("main.go", `package main
-
-import (
-	"dagger/test/internal/dagger"
-)
-type Test struct {}
-
-func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
-	return dir
-}
-`,
-					)
+					WithNewFile("main.go", src)
 
 				out, err := modGen.With(daggerCall("fn", "--dir", "~", "entries")).Stdout(ctx)
 				require.NoError(t, err)
@@ -280,17 +267,7 @@ func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
 					WithNewFile("/work/otherdir/foo.txt", "foo").
 					WithNewFile("/work/otherdir/bar.txt", "bar").
 					WithNewFile("/work/dir/subdir/blah.txt", "blah").
-					WithNewFile("main.go", `package main
-import (
-	"dagger/test/internal/dagger"
-)
-type Test struct {}
-
-func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
-	return dir
-}
-	`,
-					)
+					WithNewFile("main.go", src)
 
 				out, err := modGen.With(daggerCall("fn", "--dir", "../otherdir", "entries")).Stdout(ctx)
 				require.NoError(t, err)
@@ -374,6 +351,73 @@ func (m *Test) Fn(
 					require.NotContains(t, out, "v0.9.2.md")
 				})
 			}
+		})
+	})
+
+	t.Run("git arg inputs", func(ctx context.Context, t *testctx.T) {
+		src := `package main
+
+import "dagger/test/internal/dagger"
+
+type Test struct {}
+
+func (m *Test) FnRepo(repo *dagger.GitRepository) *dagger.Directory {
+	return repo.Head().Tree()
+}
+
+func (m *Test) FnRef(ref *dagger.GitRef) *dagger.Directory {
+	return ref.Tree()
+}`
+
+		t.Run("local dir", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			modGen := goGitBase(t, c).
+				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+				WithExec([]string{"git", "add", "."}).
+				WithExec([]string{"git", "commit", "-m", "initial commit"}).
+				WithExec([]string{"git", "branch", "ye-olde"}).
+				WithNewFile("main.go", src).
+				WithExec([]string{"git", "add", "."}).
+				WithExec([]string{"git", "commit", "-m", "my content"})
+
+			mainSha, err := modGen.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Regexp(t, `^[a-f0-9]{40}$`, strings.TrimSpace(mainSha))
+			yeOldeSha, err := modGen.WithExec([]string{"git", "rev-parse", "ye-olde"}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Regexp(t, `^[a-f0-9]{40}$`, strings.TrimSpace(yeOldeSha))
+
+			out, err := modGen.With(daggerCall("fn-repo", "--repo", ".git", "file", "--path=.git/HEAD", "contents")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, mainSha, out)
+
+			out, err = modGen.With(daggerCall("fn-ref", "--ref", ".git", "file", "--path=.git/HEAD", "contents")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, mainSha, out)
+			out, err = modGen.With(daggerCall("fn-ref", "--ref", ".git#ye-olde", "file", "--path=.git/HEAD", "contents")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, yeOldeSha, out)
+		})
+
+		t.Run("remote git", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			modGen := goGitBase(t, c).
+				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+				WithNewFile("main.go", src)
+
+			remote := "https://github.com/dagger/dagger.git"
+			out, err := modGen.With(daggerCall("fn-repo", "--repo", remote, "file", "--path=.git/HEAD", "contents")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Regexp(t, `^[a-f0-9]{40}$`, strings.TrimSpace(out))
+
+			out, err = modGen.With(daggerCall("fn-ref", "--ref", remote, "file", "--path=.git/HEAD", "contents")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Regexp(t, `^[a-f0-9]{40}$`, strings.TrimSpace(out))
+			out, err = modGen.With(daggerCall("fn-ref", "--ref", remote+"#v0.16.2", "file", "--path=.git/HEAD", "contents")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "b3e6f765a547b22edc61a24336177348b9f00d94", strings.TrimSpace(out))
 		})
 	})
 

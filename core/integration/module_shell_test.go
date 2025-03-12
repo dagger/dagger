@@ -29,7 +29,7 @@ func daggerShell(script string) dagger.WithContainerFunc {
 
 func daggerShellNoMod(script string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec([]string{"dagger", "--no-mod"}, dagger.ContainerWithExecOpts{
+		return c.WithExec([]string{"dagger", "-n"}, dagger.ContainerWithExecOpts{
 			Stdin:                         script,
 			ExperimentalPrivilegedNesting: true,
 		})
@@ -267,7 +267,7 @@ func (Other) Version() string {
 			WithWorkdir("modules/git").
 			With(daggerShell("url")).
 			Sync(ctx)
-		requireErrOut(t, err, "constructor: missing 1 positional argument")
+		requireErrOut(t, err, "constructor: requires 1 positional argument(s), received 0")
 	})
 
 	t.Run("current module required constructor arg function", func(ctx context.Context, t *testctx.T) {
@@ -670,6 +670,61 @@ func (ShellSuite) TestSliceFlag(ctx context.Context, t *testctx.T) {
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "passwd\nshadow\n", out)
+}
+
+func (ShellSuite) TestStateInterpolation(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen := daggerCliBase(t, c)
+
+	for _, tc := range []struct {
+		name     string
+		prompt   string
+		expected string
+	}{
+		{
+			name:     "single state result",
+			prompt:   `$($FOO | name)`,
+			expected: "foo",
+		},
+		{
+			name:     "interpolated command",
+			prompt:   `.$($FOO | contents) hello`,
+			expected: "hello\n",
+		},
+		{
+			name:     "single state argument",
+			prompt:   `directory | with-new-file test $($FOO | name) | file test | contents`,
+			expected: "foo",
+		},
+		{
+			name:     "multiple state argument",
+			prompt:   `directory | with-new-file ./$($FOO | name)_$($BAR | name).txt foobar | entries`,
+			expected: "foo_bar.txt\n",
+		},
+		{
+			name:     "command argument",
+			prompt:   `.ls ./$($FOO | name)/$($BAR | name)`,
+			expected: "foobar.txt\n",
+		},
+		{
+			name:     "builtin argument",
+			prompt:   `_echo ./$($FOO | name)/$($BAR | name)/`,
+			expected: "./foo/bar/\n",
+		},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			script := []string{
+				"FOO=$(directory | with-new-file foo echo | file foo)",
+				"BAR=$(directory | with-new-file bar directory | file bar)",
+			}
+			out, err := modGen.
+				WithNewFile("foo/bar/foobar.txt", "foobar").
+				With(daggerShellNoMod(strings.Join(append(script, tc.prompt), "\n"))).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, out)
+		})
+	}
 }
 
 func (ShellSuite) TestCommandStateArgs(ctx context.Context, t *testctx.T) {

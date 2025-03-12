@@ -10,114 +10,134 @@ import (
 )
 
 // DagOpWrapper caches an arbitrary dagql field as a buildkit operation
-func DagOpWrapper[T dagql.Typed, A any, R dagql.Typed](srv *dagql.Server, fn func(ctx context.Context, self dagql.Instance[T], args A) (R, error)) func(ctx context.Context, self dagql.Instance[T], args A) (R, error) {
+func DagOpWrapper[T dagql.Typed, A any, R dagql.Typed](
+	srv *dagql.Server,
+	fn dagql.NodeFuncHandler[T, A, R],
+) dagql.NodeFuncHandler[T, A, R] {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst R, err error) {
-		if _, ok := core.DagOpFromContext[core.RawDagOp](ctx); ok {
+		if core.DagOpInContext[core.RawDagOp](ctx) {
 			return fn(ctx, self, args)
 		}
-
-		deps, err := extractLLBDependencies(ctx, self.Self)
-		if err != nil {
-			return inst, err
-		}
-		return core.NewRawDagOp[R](ctx, srv, currentIDForDagOp(ctx), deps)
+		return DagOp(ctx, srv, self, args, fn)
 	}
 }
+
+// DagOp creates a RawDagOp from an arbitrary operation
+//
+// NOTE: prefer DagOpWrapper where possible, this is for low-level plumbing,
+// where more control over *which* operations should be cached is needed.
+func DagOp[T dagql.Typed, A any, R dagql.Typed](
+	ctx context.Context,
+	srv *dagql.Server,
+	self dagql.Instance[T],
+	args A,
+	fn dagql.NodeFuncHandler[T, A, R],
+) (inst R, err error) {
+	deps, err := extractLLBDependencies(ctx, self.Self)
+	if err != nil {
+		return inst, err
+	}
+	return core.NewRawDagOp[R](ctx, srv, currentIDForDagOp(ctx), deps)
+}
+
+type PathFunc[T dagql.Typed] func(ctx context.Context, val dagql.Instance[T]) (string, error)
 
 // DagOpFileWrapper caches a file field as a buildkit operation - this is
 // more specialized than DagOpWrapper, since that serializes the value to
 // JSON, so we'd just end up with a cached ID instead of the actual content.
-//
-// func DagOpFileWrapper[T dagql.Typed, A any](srv *dagql.Server, fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]]) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]] {
-func DagOpFileWrapper[T dagql.Typed, A any](srv *dagql.Server, fn func(ctx context.Context, self dagql.Instance[T], args A) (dagql.Instance[*core.File], error)) func(ctx context.Context, self dagql.Instance[T], args A) (dagql.Instance[*core.File], error) {
+func DagOpFileWrapper[T dagql.Typed, A any](
+	srv *dagql.Server,
+	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]],
+	pfn PathFunc[T],
+) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]] {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.File], err error) {
-		if _, ok := core.DagOpFromContext[core.DirectoryDagOp](ctx); ok {
+		if core.DagOpInContext[core.FSDagOp](ctx) {
 			return fn(ctx, self, args)
 		}
-
-		deps, err := extractLLBDependencies(ctx, self.Self)
-		if err != nil {
-			return inst, err
-		}
-
-		filename := "file"
-		id, err := srv.SelectID(ctx, srv.Root(),
-			dagql.Selector{
-				Field: "directory",
-			},
-			dagql.Selector{
-				Field: "withFile",
-				Args: []dagql.NamedInput{
-					{
-						Name:  "path",
-						Value: dagql.String(filename),
-					},
-					{
-						Name:  "source",
-						Value: dagql.NewID[*core.File](currentIDForDagOp(ctx)),
-					},
-				},
-			},
-		)
-		if err != nil {
-			return inst, err
-		}
-
-		dir, err := core.NewDirectoryDagOp(ctx, srv, id, deps)
-		if err != nil {
-			return inst, err
-		}
-		f, err := dir.File(ctx, filename)
-		if err != nil {
-			return inst, err
-		}
-		return dagql.NewInstanceForCurrentID(ctx, srv, self, f)
+		return DagOpFile(ctx, srv, self, args, fn, pfn)
 	}
+}
+
+// DagOpFile creates a FSDagOp from an operation that returns a File
+//
+// NOTE: prefer DagOpFileWrapper where possible, this is for low-level
+// plumbing, where more control over *which* operations should be cached is
+// needed.
+func DagOpFile[T dagql.Typed, A any](
+	ctx context.Context,
+	srv *dagql.Server,
+	self dagql.Instance[T],
+	args A,
+	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.File]],
+	pfn PathFunc[T],
+) (inst dagql.Instance[*core.File], _ error) {
+	deps, err := extractLLBDependencies(ctx, self.Self)
+	if err != nil {
+		return inst, err
+	}
+
+	filename := "file"
+	if pfn != nil {
+		// NOTE: if set, the path function must be *somewhat* stable -
+		// since it becomes part of the op, then any changes to this
+		// invalidate the cache
+		filename, err = pfn(ctx, self)
+		if err != nil {
+			return inst, err
+		}
+	}
+
+	file, err := core.NewFileDagOp(ctx, srv, currentIDForDagOp(ctx), deps, filename)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, srv, self, file)
 }
 
 // DagOpDirectoryWrapper caches a directory field as a buildkit operation,
 // similar to DagOpFileWrapper.
-//
-// func DagOpDirectoryWrapper[T dagql.Typed, A any](srv *dagql.Server, fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]]) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]] {
-func DagOpDirectoryWrapper[T dagql.Typed, A any](srv *dagql.Server, fn func(ctx context.Context, self dagql.Instance[T], args A) (dagql.Instance[*core.Directory], error)) func(ctx context.Context, self dagql.Instance[T], args A) (dagql.Instance[*core.Directory], error) {
+func DagOpDirectoryWrapper[T dagql.Typed, A any](
+	srv *dagql.Server,
+	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]],
+	pfn PathFunc[T],
+) dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]] {
 	return func(ctx context.Context, self dagql.Instance[T], args A) (inst dagql.Instance[*core.Directory], err error) {
-		if _, ok := core.DagOpFromContext[core.DirectoryDagOp](ctx); ok {
+		if core.DagOpInContext[core.FSDagOp](ctx) {
 			return fn(ctx, self, args)
 		}
-
-		deps, err := extractLLBDependencies(ctx, self.Self)
-		if err != nil {
-			return inst, err
-		}
-
-		id, err := srv.SelectID(ctx, srv.Root(),
-			dagql.Selector{
-				Field: "directory",
-			},
-			dagql.Selector{
-				Field: "withDirectory",
-				Args: []dagql.NamedInput{
-					{
-						Name:  "path",
-						Value: dagql.String(""),
-					},
-					{
-						Name:  "source",
-						Value: dagql.NewID[*core.Directory](currentIDForDagOp(ctx)),
-					},
-				},
-			},
-		)
-		if err != nil {
-			return inst, err
-		}
-
-		dir, err := core.NewDirectoryDagOp(ctx, srv, id, deps)
-		if err != nil {
-			return inst, err
-		}
-		return dagql.NewInstanceForCurrentID(ctx, srv, self, dir)
+		return DagOpDirectory(ctx, srv, self, args, fn, pfn)
 	}
+}
+
+// NOTE: prefer DagOpDirectoryWrapper where possible, this is for low-level
+// plumbing, where more control over *which* operations should be cached is
+// needed.
+func DagOpDirectory[T dagql.Typed, A any](
+	ctx context.Context,
+	srv *dagql.Server,
+	self dagql.Instance[T],
+	args A,
+	fn dagql.NodeFuncHandler[T, A, dagql.Instance[*core.Directory]],
+	pfn PathFunc[T],
+) (inst dagql.Instance[*core.Directory], _ error) {
+	deps, err := extractLLBDependencies(ctx, self.Self)
+	if err != nil {
+		return inst, err
+	}
+
+	filename := "/"
+	if pfn != nil {
+		filename, err = pfn(ctx, self)
+		if err != nil {
+			return inst, err
+		}
+	}
+
+	dir, err := core.NewDirectoryDagOp(ctx, srv, currentIDForDagOp(ctx), deps, filename)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, srv, self, dir)
 }
 
 const runDagOpDigestMixin = "runDagOpDigestMixin"
@@ -144,6 +164,10 @@ func extractLLBDependencies(ctx context.Context, val any) ([]llb.State, error) {
 	}
 	deps := make([]llb.State, 0, len(depsDefs))
 	for _, def := range depsDefs {
+		if def == nil || def.Def == nil {
+			deps = append(deps, llb.Scratch())
+			continue
+		}
 		op, err := llb.NewDefinitionOp(def)
 		if err != nil {
 			return nil, err

@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
 	"time"
 
+	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
@@ -18,6 +20,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
@@ -25,7 +28,9 @@ import (
 type Directory struct {
 	Query *Query
 
-	LLB      *pb.Definition
+	LLB    *pb.Definition
+	Result bkcache.ImmutableRef // only valid when returned by dagop
+
 	Dir      string
 	Platform Platform
 
@@ -100,6 +105,15 @@ func (dir *Directory) Clone() *Directory {
 	cp := *dir
 	cp.Services = cloneSlice(cp.Services)
 	return &cp
+}
+
+var _ dagql.OnReleaser = (*Directory)(nil)
+
+func (dir *Directory) OnRelease(ctx context.Context) error {
+	if dir.Result != nil {
+		return dir.Result.Release(ctx)
+	}
+	return nil
 }
 
 func (dir *Directory) State() (llb.State, error) {
@@ -444,6 +458,7 @@ func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
 	return &File{
 		Query:    dir.Query,
 		LLB:      dir.LLB,
+		Result:   dir.Result,
 		File:     path.Join(dir.Dir, file),
 		Platform: dir.Platform,
 		Services: dir.Services,
@@ -779,6 +794,44 @@ func (dir *Directory) Root() (*Directory, error) {
 	dir = dir.Clone()
 	dir.Dir = "/"
 	return dir, nil
+}
+
+func (dir *Directory) mount(ctx context.Context, f func(string) error) error {
+	svcs, err := dir.Query.Services(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get services: %w", err)
+	}
+	bk, err := dir.Query.Buildkit(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	detach, _, err := svcs.StartBindings(ctx, dir.Services)
+	if err != nil {
+		return err
+	}
+	defer detach()
+
+	res, err := bk.Solve(ctx, bkgw.SolveRequest{
+		Definition: dir.LLB,
+	})
+	if err != nil {
+		return err
+	}
+
+	ref, err := res.SingleRef()
+	if err != nil {
+		return err
+	}
+	// empty directory, i.e. llb.Scratch()
+	if ref == nil {
+		tmp, err := os.MkdirTemp("", "mount")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(tmp)
+		return f(tmp)
+	}
+	return ref.Mount(ctx, f)
 }
 
 func validateFileName(file string) error {

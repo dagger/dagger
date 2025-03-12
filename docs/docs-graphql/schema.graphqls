@@ -1193,6 +1193,9 @@ scalar CurrentModuleID
 
 """A directory."""
 type Directory {
+  """Converts this directory into a git repository"""
+  asGit: GitRepository!
+
   """Load the directory as a Dagger module source"""
   asModule(
     """
