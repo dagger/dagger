@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dustin/go-humanize"
 	"github.com/muesli/termenv"
@@ -103,9 +104,13 @@ type ShellHandler interface {
 	// Prompt generates the shell prompt string
 	Prompt(out TermOutput, fg termenv.Color) string
 
+	// Keys returns the keys that will be displayed when the input is focused
+	KeyBindings() []key.Binding
+
 	// ReactToInput allows reacting to live input before it's submitted
 	ReactToInput(msg tea.KeyMsg) bool
 
+	// Shell handlers can man-in-the-middle history items to preserve per-entry modes etc.
 	editline.HistoryEncoder
 }
 

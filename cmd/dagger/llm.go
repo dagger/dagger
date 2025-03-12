@@ -13,6 +13,7 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
 	"dagger.io/dagger/telemetry"
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -104,6 +105,10 @@ func (h *LLMShellHandler) RestoreAfterHistory() {
 	h.s.RestoreAfterHistory()
 }
 
+func (h *LLMShellHandler) KeyBindings() []key.Binding {
+	return h.s.KeyBindings()
+}
+
 func (s *LLMSession) ReactToInput(msg tea.KeyMsg) (*LLMSession, bool) {
 	switch msg.String() {
 	case "*":
@@ -127,6 +132,21 @@ func (s *LLMSession) EncodeHistory(entry string) string {
 		return "!" + entry
 	}
 	return entry
+}
+
+func (s *LLMSession) KeyBindings() []key.Binding {
+	return []key.Binding{
+		key.NewBinding(
+			key.WithKeys("!"),
+			key.WithHelp("!", "run shell"),
+			idtui.KeyEnabled(s.mode() == modePrompt),
+		),
+		key.NewBinding(
+			key.WithKeys("*"),
+			key.WithHelp("*", "run prompt"),
+			idtui.KeyEnabled(s.mode() == modeShell),
+		),
+	}
 }
 
 func (s *LLMSession) DecodeHistory(entry string) string {
@@ -259,11 +279,6 @@ func (s *LLMSession) Fork() *LLMSession {
 }
 
 var slashCommands = []slashCommand{
-	// {
-	// 	name:    "/with",
-	// 	desc:    "Change the scope of the LLM",
-	// 	handler: (*LLMSession).With,
-	// },
 	{
 		name:    "/undo",
 		desc:    "Undo the last command",

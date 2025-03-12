@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/adrg/xdg"
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
@@ -515,42 +516,19 @@ var KeymapStyle = lipgloss.NewStyle().
 
 func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style) int {
 	w := new(strings.Builder)
-	type keyHelp struct {
-		label string
-		keys  []string
-		show  bool
-	}
-	var quitMsg string
-	if fe.interrupted {
-		quitMsg = "quit!"
-	} else {
-		quitMsg = "quit"
-	}
-
 	var showedKey bool
 	// Blank line prior to keymap
-	for _, key := range []keyHelp{
-		{"input", []string{"tab", "i"}, fe.shell != nil},
-		{out.Hyperlink(fe.cloudURL, "web"), []string{"w"}, fe.cloudURL != ""},
-		{"move", []string{"←↑↓→", "up", "down", "left", "right", "h", "j", "k", "l"}, true},
-		{"first", []string{"home"}, true},
-		{"last", []string{"end", " "}, true},
-		{"zoom", []string{"enter"}, true},
-		{"unzoom", []string{"esc"}, fe.ZoomedSpan.IsValid() &&
-			fe.ZoomedSpan != fe.db.PrimarySpan},
-		{fmt.Sprintf("verbosity=%d", fe.Verbosity), []string{"+/-", "+", "-"}, true},
-		{quitMsg, []string{"q", "ctrl+c"}, true},
-	} {
-		if !key.show {
+	for _, key := range fe.keys(out) {
+		if !key.Enabled() {
 			continue
 		}
-		mainKey := key.keys[0]
+		mainKey := key.Keys()[0]
 		if showedKey {
-			fmt.Fprint(w, style.Render("  "))
+			fmt.Fprint(w, style.Render(" · "))
 		}
 		keyStyle := style
 		if time.Since(fe.pressedKeyAt) < 500*time.Millisecond {
-			for _, k := range key.keys {
+			for _, k := range key.Keys() {
 				if k == fe.pressedKey {
 					keyStyle = keyStyle.Foreground(nil)
 					// Reverse(true)
@@ -558,12 +536,55 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 			}
 		}
 		fmt.Fprint(w, keyStyle.Bold(true).Render(mainKey))
-		fmt.Fprint(w, keyStyle.Render(": "+key.label))
+		fmt.Fprint(w, keyStyle.Render(" "+key.Help().Desc))
 		showedKey = true
 	}
 	res := w.String()
 	fmt.Fprint(out, res)
 	return lipgloss.Width(res)
+}
+
+func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
+	if fe.editlineFocused {
+		return append([]key.Binding{
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "nav mode")),
+		}, fe.shell.KeyBindings()...)
+	}
+
+	var quitMsg string
+	if fe.interrupted {
+		quitMsg = "quit!"
+	} else {
+		quitMsg = "quit"
+	}
+
+	return []key.Binding{
+		key.NewBinding(key.WithKeys("i", "tab"),
+			key.WithHelp("i", "input mode"),
+			KeyEnabled(fe.shell != nil)),
+		key.NewBinding(key.WithKeys("w"),
+			key.WithHelp("w", out.Hyperlink(fe.cloudURL, "web")),
+			KeyEnabled(fe.cloudURL != "")),
+		key.NewBinding(key.WithKeys("←↑↓→", "up", "down", "left", "right", "h", "j", "k", "l"),
+			key.WithHelp("←↑↓→", "move")),
+		key.NewBinding(key.WithKeys("home"),
+			key.WithHelp("home", "first")),
+		key.NewBinding(key.WithKeys("end", " "),
+			key.WithHelp("end", "last")),
+		key.NewBinding(key.WithKeys("enter"),
+			key.WithHelp("enter", "zoom"),
+			KeyEnabled(fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan)),
+		key.NewBinding(key.WithKeys("+/-", "+", "-"),
+			key.WithHelp("+/-", fmt.Sprintf("verbosity=%d", fe.Verbosity))),
+		key.NewBinding(key.WithKeys("q", "ctrl+c"),
+			key.WithHelp("q", quitMsg)),
+	}
+}
+
+func KeyEnabled(enabled bool) key.BindingOpt {
+	return func(b *key.Binding) {
+		b.SetEnabled(enabled)
+	}
 }
 
 func (fe *frontendPretty) Render(out TermOutput) error {
@@ -615,10 +636,8 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 func (fe *frontendPretty) viewKeymap() string {
 	outBuf := new(strings.Builder)
 	out := NewOutput(outBuf, termenv.WithProfile(fe.profile))
-	if fe.shell == nil {
-		fmt.Fprint(out, KeymapStyle.Render(strings.Repeat(HorizBar, 1)))
-		fmt.Fprint(out, KeymapStyle.Render(" "))
-	}
+	fmt.Fprint(out, KeymapStyle.Render(strings.Repeat(HorizBar, 1)))
+	fmt.Fprint(out, KeymapStyle.Render(" "))
 	fe.renderKeymap(out, KeymapStyle)
 	fmt.Fprint(out, KeymapStyle.Render(" "))
 	if rest := fe.window.Width - lipgloss.Width(outBuf.String()); rest > 0 {
@@ -850,15 +869,7 @@ func (fe *frontendPretty) View() string {
 }
 
 func (fe *frontendPretty) editlineView() string {
-	orig := fe.editline.View()
-	if fe.editlineFocused {
-		return orig
-	}
-	// cut off the last line of output, which is the keymap, by deleting everything after the last newline
-	if lastNewline := strings.LastIndex(orig, "\n"); lastNewline != -1 {
-		orig = orig[:lastNewline]
-	}
-	return orig + "\n" + fe.viewKeymap()
+	return fe.editline.View() + "\n" + fe.viewKeymap()
 }
 
 type doneMsg struct {
@@ -907,6 +918,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		// create the editline
 		fe.editline = editline.New(fe.window.Width, fe.window.Height)
 		fe.editline.HistoryEncoder = msg.handler
+		fe.editline.HideKeyMap = true
 		fe.editlineFocused = true
 
 		// wire up auto completion

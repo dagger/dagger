@@ -11,6 +11,7 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
@@ -519,3 +520,7 @@ func (*shellCallHandler) DecodeHistory(entry string) string { return entry }
 func (*shellCallHandler) SaveBeforeHistory() {}
 
 func (*shellCallHandler) RestoreAfterHistory() {}
+
+func (*shellCallHandler) KeyBindings() []key.Binding {
+	return []key.Binding{}
+}
