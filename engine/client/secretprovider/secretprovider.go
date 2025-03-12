@@ -20,6 +20,10 @@ var resolvers = map[string]SecretResolver{
 	"cmd":   cmdProvider,
 	"op":    opProvider,
 	"vault": vaultProvider,
+	// TODO: uggo
+	"named": func(ctx context.Context, path string) ([]byte, error) {
+		return nil, secrets.ErrNotFound
+	},
 }
 
 func ResolverForID(id string) (SecretResolver, string, error) {
