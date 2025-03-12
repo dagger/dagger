@@ -303,10 +303,10 @@ Finally:
 - [ ] Double-check the engine+cli release:
 
 ```console
-# install the cli to dagger-0.13.0, and symlink dagger to it
-curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.13.0 sh
-mv ~/.local/bin/dagger{,-0.13.0}
-ln -s ~/.local/bin/dagger{-0.13.0,}
+# install the cli to dagger-<version>, and symlink dagger to it
+curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=$ENGINE_VERSION sh
+mv ~/.local/bin/dagger{,-$ENGINE_VERSION}
+ln -s ~/.local/bin/dagger{-$ENGINE_VERSION,}
 
 dagger version
 dagger core version
@@ -348,7 +348,7 @@ The action's `README.md` and `action.yml` should be relatively evergreen now, so
 
 - [ ] Take a peek at the action or mention it in the release thread on Discord if there are updates to reflect in the docs. Not tied to the Dagger release itself outside of docs. cc @jpadams @kpenfound @vikram-dagger @jasonmccallister
 
-- [ ] Create/push a new patch tag for fixes/changes to `dagger-for-github` 
+- [ ] Create/push a new patch tag for fixes/changes to `dagger-for-github`
 
 ```console
 # Find the latest released patch https://github.com/dagger/dagger-for-github/releases
@@ -410,6 +410,7 @@ go mod tidy
 cd ..
 
 # run recursive dagger develop
+dagger develop
 dagger call with-mod-codegen source -o .
 
 # add, commit and push the changes to the PR
