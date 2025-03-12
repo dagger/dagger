@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 
 	bkcache "github.com/moby/buildkit/cache"
@@ -654,6 +655,33 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 	default:
 		return nil, fmt.Errorf("unexpected response type")
 	}
+}
+
+func (c *Client) AllowLLM(ctx context.Context) error {
+	md, err := engine.ClientMetadataFromContext(ctx) // not mainclient
+	if err != nil {
+		return fmt.Errorf("llm sync failed fetching client metadata from context: %w", err)
+	}
+	if md.AllowLLMModule == "all" {
+		return nil
+	}
+	caller, err := c.GetMainClientCaller()
+	if err != nil {
+		return fmt.Errorf("failed to get main client caller for %q: %w", md.ClientID, err)
+	}
+
+	response, err := session.NewPromptClient(caller.Conn()).Prompt(ctx, &session.PromptRequest{
+		Prompt: "something attempted to access the LLM API. Allow it?",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to prompt user for LLM API access: %w", err)
+	}
+	input := strings.ToLower(strings.TrimSpace(response.Input))
+	if input == "yes" || input == "y" {
+		return nil
+	}
+
+	return fmt.Errorf("LLM access is not allowed for this session, pass --allow-llm=all to bypass")
 }
 
 type TerminalClient struct {
