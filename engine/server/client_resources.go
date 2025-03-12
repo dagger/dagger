@@ -68,13 +68,7 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 		"num", len(secretIDs),
 		"dest", destClient.clientID)
 
-	// TODO: THIS RELIES ON VERY GOOD SYNC SUCH THAT CLIENT IS NEVER GONE WHEN WE USE IT
-	// TODO: THIS RELIES ON VERY GOOD SYNC SUCH THAT CLIENT IS NEVER GONE WHEN WE USE IT
-	// TODO: THIS RELIES ON VERY GOOD SYNC SUCH THAT CLIENT IS NEVER GONE WHEN WE USE IT
-	// TODO: THIS RELIES ON VERY GOOD SYNC SUCH THAT CLIENT IS NEVER GONE WHEN WE USE IT
-	// TODO: Probably need to move dagql cache release to beginning of session removal
-	// TODO: AND retain client secret store after client is removed from session
-	srcClient, ok := srv.clientFromAnySession(sourceClientID)
+	srcClient, ok := srv.clientFromIDs(destClient.daggerSession.sessionID, sourceClientID)
 	if !ok {
 		if id.Optional {
 			return nil // no errors for this case
@@ -87,13 +81,6 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 			err = errors.Join(err, errors.New("cached result contains unknown socket IDs"))
 		}
 		return err // if nil, that's fine, nothing more to do here
-	}
-
-	// TODO: this shouldn't be needed...
-	// TODO: this shouldn't be needed...
-	// TODO: this shouldn't be needed...
-	if srcClient.deps == nil {
-		return fmt.Errorf("WTF")
 	}
 
 	srcDag, err := srcClient.deps.Schema(ctx)
@@ -122,7 +109,7 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 				// don't attempt to add the secret if it doesn't exist and was optional
 				continue
 			}
-			if err := destClient.secretStore.AddSecretFromOtherStore(ctx, secret, srcClient.secretStore); err != nil {
+			if err := destClient.secretStore.AddSecret(secret); err != nil {
 				return fmt.Errorf("failed to add secret from source client %s: %w", srcClient.clientID, err)
 			}
 
