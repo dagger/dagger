@@ -261,11 +261,8 @@ func litWord(s string) *syntax.Word {
 	return &syntax.Word{Parts: []syntax.WordPart{&syntax.Lit{Value: s}}}
 }
 
-func (h *shellCallHandler) Eval(ctx context.Context, code string) (resp any, typeDef *modTypeDef, err error) {
-	if err := h.run(ctx, strings.NewReader(code), ""); err != nil {
-		return nil, nil, err
-	}
-	return h.lastResult.Value, h.lastResult.typeDef, nil
+func (h *shellCallHandler) Eval(ctx context.Context, code string) error {
+	return h.run(ctx, strings.NewReader(code), "")
 }
 
 // run parses code and executes the interpreter's Runner

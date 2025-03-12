@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	_ "embed"
 	"fmt"
@@ -11,7 +10,6 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/querybuilder"
 	"dagger.io/dagger/telemetry"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -338,7 +336,7 @@ func (s *LLMSession) Interpret(ctx context.Context, input string) (ret *LLMSessi
 
 	// reset any oneshot mode after the command is interpreted
 	defer func() {
-		if ret.oneshotMode != modeUnset {
+		if ret != nil && ret.oneshotMode != modeUnset {
 			ret.oneshotMode = modeUnset
 		}
 	}()
@@ -422,7 +420,6 @@ func (s *LLMSession) interpretPrompt(ctx context.Context, input string) (*LLMSes
 				return s, err
 			}
 			dbg.Println("syncing object", name)
-			var buf bytes.Buffer
 			st := ShellState{
 				Calls: []FunctionCall{
 					// not sure this is right
@@ -436,14 +433,12 @@ func (s *LLMSession) interpretPrompt(ctx context.Context, input string) (*LLMSes
 					},
 				},
 			}
-			if err := st.WriteTo(&buf); err != nil {
-				return s, err
-			}
-			quoted, err := syntax.Quote(buf.String(), syntax.LangBash)
+			key := s.shell.state.Store(st)
+			quoted, err := syntax.Quote(newStateToken(key), syntax.LangBash)
 			if err != nil {
 				return s, err
 			}
-			if _, _, err := s.shell.Eval(ctx, fmt.Sprintf("%s=%s", name, quoted)); err != nil {
+			if err := s.shell.Eval(ctx, fmt.Sprintf("%s=%s", name, quoted)); err != nil {
 				return s, err
 			}
 		}
@@ -453,7 +448,7 @@ func (s *LLMSession) interpretPrompt(ctx context.Context, input string) (*LLMSes
 }
 
 func (s *LLMSession) interpretShell(ctx context.Context, input string) (*LLMSession, error) {
-	_, _, err := s.shell.Eval(ctx, input)
+	err := s.shell.Eval(ctx, input)
 	if err != nil {
 		return s, err
 	}
@@ -513,33 +508,33 @@ func (s *LLMSession) syncVars(ctx context.Context) (*LLMSession, error) {
 
 		changed = true
 
-		if strings.HasPrefix(value.String(), shellStatePrefix) {
-			w := strings.NewReader(value.String())
-			v, t, err := s.shell.Result(ctx, w, func(_ context.Context, q *querybuilder.Selection, t *modTypeDef) (*querybuilder.Selection, error) {
-				// When an argument returns an object, assume we want its ID
-				if t.AsFunctionProvider() != nil {
-					q = q.Select("id")
+		if key := GetStateKey(value.String()); key != "" {
+			st, err := s.shell.state.Load(key)
+			if err != nil {
+				return s, err
+			}
+			q := st.QueryBuilder(s.dag)
+			modDef := s.shell.GetDef(st)
+			typeDef, err := st.GetTypeDef(modDef)
+			if err != nil {
+				return s, err
+			}
+			if typeDef.AsFunctionProvider() != nil {
+				var id string
+				if err := q.Select("id").Bind(&id).Execute(ctx); err != nil {
+					return s, err
 				}
-				return q, nil
-			})
-			if err != nil {
-				return s, err
-			}
-			if v == nil {
-				return s, fmt.Errorf("unexpected nil value for var %q", name)
-			}
-			digest, err := idDigest(v.(string))
-			if err != nil {
-				return s, err
-			}
-			if t.AsFunctionProvider() != nil {
-				typeName := t.Name()
+				digest, err := idDigest(id)
+				if err != nil {
+					return s, err
+				}
+				typeName := typeDef.Name()
 				syncedLlmQ = syncedLlmQ.
 					Select(fmt.Sprintf("set%s", typeName)).
 					Arg("name", name).
-					Arg("value", v)
+					Arg("value", id)
+				s.syncedVars[name] = digest
 			}
-			s.syncedVars[name] = digest
 		} else {
 			s.syncedVars[name] = dagql.HashFrom(value.String())
 			syncedLlmQ = syncedLlmQ.
