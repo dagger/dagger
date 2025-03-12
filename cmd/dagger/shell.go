@@ -349,11 +349,11 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 var _ idtui.ShellHandler = (*shellCallHandler)(nil)
 
 func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error) {
-	mu.Lock()
-	defer mu.Unlock()
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
 	if line == "exit" {
-		cancel()
+		h.cancel()
 		return nil
 	}
 
