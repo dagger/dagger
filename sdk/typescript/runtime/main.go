@@ -88,8 +88,9 @@ const (
 	GenDir         = "sdk"
 	NodeModulesDir = "node_modules"
 
-	schemaPath     = "/schema.json"
-	codegenBinPath = "/codegen"
+	schemaPath             = "/schema.json"
+	dependenciesConfigPath = "/dependencies.json"
+	codegenBinPath         = "/codegen"
 )
 
 // ModuleRuntime returns a container with the node or bun entrypoint ready to be called.
@@ -210,11 +211,18 @@ func (t *TypescriptSdk) GenerateClient(
 		"--client-only",
 	}
 
+	type dependencyConfig struct {
+		Name string
+		Pin  string
+		Ref  string
+	}
+
 	dependencies, err := modSource.Dependencies(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module dependencies: %w", err)
 	}
 
+	dependenciesConfig := []dependencyConfig{}
 	// Add remote dependency reference to the codegen arguments.
 	for _, dep := range dependencies {
 		depKind, err := dep.Kind(ctx)
@@ -231,9 +239,32 @@ func (t *TypescriptSdk) GenerateClient(
 			return nil, fmt.Errorf("failed to get module dependency ref: %w", err)
 		}
 
+		depPin, err := dep.Pin(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get module dependency pin: %w", err)
+		}
+
+		depName, err := dep.ModuleOriginalName(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get module dependency name: %w", err)
+		}
+
+		dependenciesConfig = append(dependenciesConfig, dependencyConfig{
+			Name: depName,
+			Pin:  depPin,
+			Ref:  depRef,
+		})
+	}
+
+	if len(dependenciesConfig) > 0 {
+		depenciesJSONConfig, err := json.Marshal(dependenciesConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal dependencies config: %w", err)
+		}
+
+		ctr = ctr.WithNewFile(dependenciesConfigPath, string(depenciesJSONConfig))
 		codegenArgs = append(codegenArgs,
-			"--dependencies-ref",
-			depRef,
+			fmt.Sprintf("--dependencies-json-file-path=%s", dependenciesConfigPath),
 		)
 	}
 

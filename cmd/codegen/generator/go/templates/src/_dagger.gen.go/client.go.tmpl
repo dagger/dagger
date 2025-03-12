@@ -1,11 +1,14 @@
 // Client is the Dagger Engine Client
 type Client struct {
+	{{ if IsDevMode }}
 	conn engineconn.EngineConn
-
+	{{ end }}
 	query  *querybuilder.Selection
 	client graphql.Client
 }
 
+{{/* If dev mode is set, we recreate an implementation of the client */}}
+{{ if IsDevMode }}
 // ClientOpt holds a client option
 type ClientOpt interface {
 	setClientOpt(cfg *engineconn.Config)
@@ -96,8 +99,8 @@ func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 		conn:   conn,
 	}
 
-	{{ range $i, $dep := DependenciesRef }}
-	if err = c.ModuleSource("{{ $dep }}").AsModule().Serve(ctx); err != nil {
+	{{ range $i, $dep := Dependencies }}
+	if err = c.ModuleSource("{{ $dep.Ref }}", ModuleSourceOpts{RefPin: "{{ $dep.Pin }}"}).WithName("{{ $dep.Name }}").AsModule().Serve(ctx); err != nil {
 		return nil, err
 	}
 	{{ end }}
@@ -184,3 +187,28 @@ func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Reques
 	}
 	return nil
 }
+{{/* If it's not in dev mode, we wrap the library client with custom options */}}
+{{ else }}
+
+func Connect(ctx context.Context, opts ...dagger.ClientOpt) (*Client, error) {
+	opts = append(opts, dagger.WithServeCurrentModule(true))
+
+	dag, err := dagger.Connect(ctx, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	c := &Client{
+		query:  dag.QueryBuilder(),
+		client: dag.GraphQLClient(),
+	}
+
+	{{ range $i, $dep := Dependencies }}
+	if err = c.ModuleSource("{{ $dep.Ref }}", ModuleSourceOpts{RefPin: "{{ $dep.Pin }}"}).WithName("{{ $dep.Name }}").AsModule().Serve(ctx); err != nil {
+		return nil, err
+	}
+	{{ end }}
+
+	return c, nil
+}
+{{ end }}
