@@ -1260,7 +1260,13 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module) error {
 	// don't add the same module twice
 	// This can happen with generated clients since all remote dependencies are added
 	// on each connection and this could happen multiple times.
-	if client.deps.LookupDep(mod.Name()) {
+	depMod, exist := client.deps.LookupDep(mod.Name())
+	if exist {
+		// Error if there's a conflict between dependencies
+		if mod.Source.Self.AsString() != depMod.GetSource().AsString() {
+			return fmt.Errorf("module %s already exists with different source %s", mod.Name(), depMod.GetSource().AsString())
+		}
+
 		return nil
 	}
 

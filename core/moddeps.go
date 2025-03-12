@@ -55,14 +55,14 @@ func (d *ModDeps) Append(mods ...Mod) *ModDeps {
 	return NewModDeps(d.root, deps)
 }
 
-func (d *ModDeps) LookupDep(name string) bool {
+func (d *ModDeps) LookupDep(name string) (Mod, bool) {
 	for _, mod := range d.Mods {
 		if mod.Name() == name {
-			return true
+			return mod, true
 		}
 	}
 
-	return false
+	return nil, false
 }
 
 // The combined schema exposed by each mod in this set of dependencies

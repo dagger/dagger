@@ -73,6 +73,10 @@ func (mod *Module) Name() string {
 	return mod.NameField
 }
 
+func (mod *Module) GetSource() *ModuleSource {
+	return mod.Source.Self
+}
+
 func (mod *Module) IDModule() *call.Module {
 	var ref, pin string
 	switch mod.Source.Self.Kind {
@@ -617,6 +621,9 @@ type Mod interface {
 
 	// TypeDefs gets the TypeDefs exposed by this module (not including dependencies)
 	TypeDefs(ctx context.Context) ([]*TypeDef, error)
+
+	// Source returns the ModuleSource for this module
+	GetSource() *ModuleSource
 }
 
 // ClientGenerator is an interface that a module can implements to give client generation capabilities.
