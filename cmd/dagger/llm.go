@@ -110,7 +110,7 @@ func (h *LLMShellHandler) KeyBindings() []key.Binding {
 
 func (s *LLMSession) ReactToInput(msg tea.KeyMsg) (*LLMSession, bool) {
 	switch msg.String() {
-	case "*":
+	case ">":
 		s.oneshotMode = modePrompt
 		return s, true
 	case "!":
@@ -126,7 +126,7 @@ func (s *LLMSession) ReactToInput(msg tea.KeyMsg) (*LLMSession, bool) {
 func (s *LLMSession) EncodeHistory(entry string) string {
 	switch s.mode() {
 	case modePrompt:
-		return "*" + entry
+		return ">" + entry
 	case modeShell:
 		return "!" + entry
 	}
@@ -141,8 +141,8 @@ func (s *LLMSession) KeyBindings() []key.Binding {
 			idtui.KeyEnabled(s.mode() == modePrompt),
 		),
 		key.NewBinding(
-			key.WithKeys("*"),
-			key.WithHelp("*", "run prompt"),
+			key.WithKeys(">"),
+			key.WithHelp(">", "run prompt"),
 			idtui.KeyEnabled(s.mode() == modeShell),
 		),
 	}
