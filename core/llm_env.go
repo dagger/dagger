@@ -222,6 +222,10 @@ func (env *LlmEnv) call(ctx context.Context,
 	if err := srv.Select(ctx, target, &val, fieldSel); err != nil {
 		return nil, fmt.Errorf("failed to sync: %w", err)
 	}
+	if id, ok := val.(dagql.IDType); ok {
+		// avoid dumping full IDs, show the type and hash instead
+		return env.describe(id), nil
+	}
 	return val, nil
 }
 
@@ -275,10 +279,10 @@ func (env *LlmEnv) callCurrent(ctx context.Context, _ any) (any, error) {
 	return env.describe(env.history[len(env.history)-1]), nil
 }
 
-// describe returns a string representation of a typed object
+// describe returns a string representation of a typed object or object ID
 func (env *LlmEnv) describe(obj dagql.Typed) string {
-	if obj, ok := dagql.UnwrapAs[dagql.Object](obj); ok {
-		return obj.Type().Name() + "@" + obj.ID().Digest().String()
+	if obj, ok := dagql.UnwrapAs[dagql.IDable](obj); ok {
+		return obj.ID().Type().ToAST().Name() + "@" + obj.ID().Digest().String()
 	}
 	return obj.Type().Name()
 }
