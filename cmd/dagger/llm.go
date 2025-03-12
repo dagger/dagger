@@ -192,7 +192,6 @@ type LLMSession struct {
 	llm            *dagger.Llm
 	llmModel       string
 	shell          *shellCallHandler
-	completer      editline.AutoCompleteFn
 	persistentMode interpreterMode
 	oneshotMode    interpreterMode
 	// mode from before going through history
@@ -205,8 +204,6 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string) (*L
 		dag:   dag,
 		debug: debug,
 	}
-
-	shellCompletion := &shellAutoComplete{shellHandler}
 
 	if err := shellHandler.Initialize(ctx); err != nil {
 		return nil, err
@@ -226,7 +223,6 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string) (*L
 		dag:            dag,
 		llmModel:       llmModel,
 		shell:          shellHandler,
-		completer:      shellCompletion.Do,
 		persistentMode: modePrompt,
 		syncedVars:     initialVars,
 	}
@@ -353,7 +349,7 @@ func (s *LLMSession) interpretPrompt(ctx context.Context, input string) (*LLMSes
 	if err != nil {
 		return s, err
 	}
-	dbg.Println("syncing vars", len(vars))
+
 	for _, v := range vars {
 		name, err := v.Name(ctx)
 		if err != nil {
@@ -370,12 +366,15 @@ func (s *LLMSession) interpretPrompt(ctx context.Context, input string) (*LLMSes
 			dbg.Println("error getting var hash", err)
 			return s, err
 		}
-		dbg.Println("syncing llm => var", name, typeName, hash)
 		digest := digest.Digest(hash)
+
 		if s.syncedVars[name] == digest {
 			// already synced
 			continue
 		}
+
+		dbg.Println("syncing llm => var", name, typeName, hash)
+
 		switch typeName {
 		case "String":
 			val, err := s.llm.GetString(ctx, name)
@@ -613,8 +612,8 @@ func (s *LLMSession) Undo(ctx context.Context, _ string) (*LLMSession, error) {
 // }
 
 func (s *LLMSession) Complete(entireInput [][]rune, row, col int) (msg string, comp editline.Completions) {
-	if input, l, c, ok := stripCommandPrefix("/with ", entireInput, row, col); ok {
-		return s.completer(input, l, c)
+	if s.mode() == modeShell {
+		return s.shell.AutoComplete(entireInput, row, col)
 	}
 	word, wstart, wend := computil.FindWord(entireInput, row, col)
 	if !strings.HasPrefix(word, "/") {
@@ -632,16 +631,14 @@ func (s *LLMSession) Complete(entireInput [][]rune, row, col int) (msg string, c
 }
 
 func (s *LLMSession) IsComplete(entireInput [][]rune, line int, col int) bool {
-	if input, l, c, ok := stripCommandPrefix("/with ", entireInput, line, col); ok {
-		return s.shell.IsComplete(input, l, c)
+	if s.mode() == modeShell {
+		return s.shell.IsComplete(entireInput, line, col)
 	}
 	return true
 }
 
 func (s *LLMSession) Clear(ctx context.Context, _ string) (_ *LLMSession, rerr error) {
-	s.llm = s.dag.Llm(dagger.LlmOpts{
-		Model: s.llmModel,
-	})
+	s.reset()
 	return s, nil
 }
 
@@ -751,23 +748,6 @@ func (s *LLMSession) Model(ctx context.Context, model string) (*LLMSession, erro
 	}
 	s.llmModel = model
 	return s, nil
-}
-
-func stripCommandPrefix(prefix string, entireInput [][]rune, line, col int) ([][]rune, int, int, bool) {
-	if len(entireInput) == 0 {
-		return entireInput, line, col, false
-	}
-	firstLine := string(entireInput[0])
-	if strings.HasPrefix(firstLine, prefix) {
-		strippedLine := strings.TrimSpace(strings.TrimPrefix(firstLine, prefix))
-		strippedInput := [][]rune{[]rune(strippedLine)}
-		strippedInput = append(strippedInput, entireInput[1:]...)
-		if line == 0 {
-			col -= len(prefix)
-		}
-		return strippedInput, line, col, true
-	}
-	return entireInput, line, col, false
 }
 
 type slashCommand struct {
