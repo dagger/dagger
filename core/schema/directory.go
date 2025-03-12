@@ -458,7 +458,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.Instance
 		return nil, err
 	}
 
-	secrets, err := dagql.LoadIDs(ctx, s.srv, args.Secrets)
+	secrets, err := dagql.LoadIDInstances(ctx, s.srv, args.Secrets)
 	if err != nil {
 		return nil, err
 	}

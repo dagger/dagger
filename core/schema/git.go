@@ -432,7 +432,7 @@ func (s *gitSchema) withAuthToken(ctx context.Context, parent *core.GitRepositor
 	repo := *parent
 	if remote, ok := repo.Backend.(*core.RemoteGitRepository); ok {
 		remote := *remote
-		remote.AuthToken = token.Self
+		remote.AuthToken = token
 		repo.Backend = &remote
 	}
 	return &repo, nil
@@ -450,7 +450,7 @@ func (s *gitSchema) withAuthHeader(ctx context.Context, parent *core.GitReposito
 	repo := *parent
 	if remote, ok := repo.Backend.(*core.RemoteGitRepository); ok {
 		remote := *remote
-		remote.AuthHeader = header.Self
+		remote.AuthHeader = header
 		repo.Backend = &remote
 	}
 	return &repo, nil

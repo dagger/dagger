@@ -194,7 +194,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	}
 
 	for i, secret := range container.Secrets {
-		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.LLBID())}
+		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.ID().Digest().String())}
 
 		var secretDest string
 		switch {
