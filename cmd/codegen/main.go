@@ -26,8 +26,8 @@ var (
 	outputSchema string
 	merge        bool
 
-	clientOnly      bool
-	dependenciesRef []string
+	clientOnly               bool
+	dependenciesJSONFilePath string
 
 	dev    bool
 	isInit bool
@@ -59,7 +59,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&isInit, "is-init", false, "whether this command is initializing a new module")
 	rootCmd.Flags().BoolVar(&clientOnly, "client-only", false, "generate only client code")
 	rootCmd.Flags().BoolVar(&dev, "dev", false, "generate in dev mode")
-	rootCmd.Flags().StringArrayVar(&dependenciesRef, "dependencies-ref", []string{}, "dependencies used by the module")
+	rootCmd.Flags().StringVar(&dependenciesJSONFilePath, "dependencies-json-file-path", "", "file containing the list of dependencies used by the module")
 
 	introspectCmd.Flags().StringVarP(&outputSchema, "output", "o", "", "save introspection result to file")
 	rootCmd.AddCommand(introspectCmd)
@@ -70,13 +70,12 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 	ctx = telemetry.InitEmbedded(ctx, nil)
 
 	cfg := generator.Config{
-		Lang:            generator.SDKLang(lang),
-		OutputDir:       outputDir,
-		Merge:           merge,
-		IsInit:          isInit,
-		ClientOnly:      clientOnly,
-		Dev:             dev,
-		DependenciesRef: dependenciesRef,
+		Lang:       generator.SDKLang(lang),
+		OutputDir:  outputDir,
+		Merge:      merge,
+		IsInit:     isInit,
+		ClientOnly: clientOnly,
+		Dev:        dev,
 	}
 
 	if moduleName != "" {
@@ -106,6 +105,20 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("read introspection json: %w", err)
 		}
 		cfg.IntrospectionJSON = string(introspectionJSON)
+	}
+
+	if dependenciesJSONFilePath != "" {
+		dependenciesJSON, err := os.ReadFile(dependenciesJSONFilePath)
+		if err != nil {
+			return fmt.Errorf("read dependencies json: %w", err)
+		}
+
+		var dependencies []generator.DependencyConfig
+		if err := json.Unmarshal(dependenciesJSON, &dependencies); err != nil {
+			return fmt.Errorf("failed to unmarshal dependencies json: %w", err)
+		}
+
+		cfg.Dependencies = dependencies
 	}
 
 	return Generate(ctx, cfg)
