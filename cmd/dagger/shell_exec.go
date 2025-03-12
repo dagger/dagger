@@ -11,7 +11,6 @@ import (
 	"sync"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/querybuilder"
 	"dagger.io/dagger/telemetry"
 	"github.com/spf13/pflag"
 	"mvdan.cc/sh/v3/interp"
@@ -19,27 +18,117 @@ import (
 
 const (
 	shellHandlerExit = 200
+
+	// shellInternalCmd is the command that is used internally to avoid conflicts
+	// with interpreter builtins. For example when `echo` is used, the command becomes
+	// `__dag echo`. Otherwise we can't have a function named `echo`.
+	shellInternalCmd = "__dag"
+
+	// shellInterpBuiltinPrefix is the prefix that users should add to an
+	// interpreter builtin command to force running it.
+	shellInterpBuiltinPrefix = "_"
 )
 
-// First command in pipeline: e.g., `cmd1 | cmd2 | cmd3`
-func isFirstShellCommand(ctx context.Context) bool {
-	return interp.HandlerCtx(ctx).Stdin == nil
+func isInterpBuiltin(name string) bool {
+	// See https://github.com/mvdan/sh/blob/v3.11.0/interp/builtin.go#L27
+	// Allow the following:
+	//  - invalid function/module names: "[", ":"
+	//  - unlikely to conflict: "true", "false"
+	switch name {
+	case "exit", "set", "shift", "unset",
+		"echo", "printf", "break", "continue", "pwd", "cd",
+		"wait", "builtin", "trap", "type", "source", ".", "command",
+		"dirs", "pushd", "popd", "alias", "unalias",
+		"getopts", "eval", "test", "exec",
+		"return", "read", "mapfile", "readarray", "shopt",
+		//  not implemented
+		"umask", "fg", "bg":
+		return true
+	}
+	return false
 }
 
-// Exec is the main handler function, that prepares the command to be executed
-// and wraps any returned errors
+// Call is a handler which runs on every [syntax.CallExpr].
+//
+// It is called once variable assignments and field expansion have occurred.
+// The call's arguments are replaced by what the handler returns,
+// and then the call is executed by the Runner as usual.
+//
+// This handler is similar to [Exec], but has two major differences:
+//
+// First, it runs for all simple commands, including function calls and builtins.
+//
+// Second, it is not expected to execute the simple command, but instead to
+// allow running custom code which allows replacing the argument list.
+//
+// This is used mainly to resolve  conflicts. For example, "echo" is an
+// interpreter builtin but can also be a Dagger function.
+func (h *shellCallHandler) Call(ctx context.Context, args []string) ([]string, error) {
+	if args[0] == shellInternalCmd {
+		return args, fmt.Errorf("command %q is reserved for internal use", shellInternalCmd)
+	}
+
+	// If command has an interpolated state token, make sure to resolve it.
+	// If it's a single token let it pass through so the handler just pipes it.
+	// Example: `.$FOO | .help`
+	if HasState(args[0]) && GetStateKey(args[0]) == "" {
+		r, err := h.resolveResult(ctx, args[0])
+		if err != nil {
+			return args, err
+		}
+		if r != args[0] {
+			args[0] = r
+		}
+	}
+
+	// When there's a Dagger function with a name that conflicts
+	// with an interpreter builtin, the Dagger function is favored.
+	// To force the builtin to execute instead, prefix the command
+	// with "_". For example: "container | from $(_echo alpine)".
+	if strings.HasPrefix(args[0], shellInterpBuiltinPrefix) {
+		args[0] = strings.TrimPrefix(args[0], shellInterpBuiltinPrefix)
+		return args, nil
+	}
+
+	// We may allow some interpreter builtins to be used as dagger shell
+	// builtins, but there's no way to directly call the interpreter
+	// command from there so we use ShellCommand just for the documentation
+	// (.help) but strip the builtin prefix here ('.') when executing.
+	if cmd, _ := h.BuiltinCommand(args[0]); cmd != nil && cmd.Run == nil {
+		if name := strings.TrimPrefix(args[0], "."); isInterpBuiltin(name) {
+			args[0] = name
+			return args, nil
+		}
+	}
+
+	// If the command is an interpreter builtin, bypass the interpreter
+	// builtins to ensure the exec handler is executed.
+	if isInterpBuiltin(args[0]) {
+		return append([]string{shellInternalCmd}, args...), nil
+	}
+
+	return args, nil
+}
+
+// Exec is the main handler for executing simple commands.
+//
+// It is called for all [syntax.CallExpr] nodes
+// where the first argument is neither a declared shell function nor a builtin.
+//
+// This handler is responsible to interpreting functions and module references
+// as commands that can be executed, and wraps any returned errors.
 func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 	return func(ctx context.Context, args []string) error {
 		// This avoids interpreter builtins running first, which would make it
 		// impossible to have a function named "echo", for example. We can
-		// remove `.dag` from this point onward.
+		// remove `__dag` from this point onward.
 		if args[0] == shellInternalCmd {
 			args = args[1:]
 		}
 
 		// If argument is a state value, just pass it on to stdout.
 		// Example: `$FOO` or `$FOO | bar`
-		if strings.HasPrefix(args[0], shellStatePrefix) {
+		if GetStateKey(args[0]) != "" {
 			hctx := interp.HandlerCtx(ctx)
 			fmt.Fprint(hctx.Stdout, args[0])
 			return nil
@@ -50,18 +139,25 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 			if h.debug {
 				shellDebug(ctx, "Stdout", args[0], args[1:], st)
 			}
-			err = st.Write(ctx)
+			err = h.Save(ctx, *st)
 		}
 		if err != nil {
-			m := err.Error()
 			if h.debug {
-				shellDebug(ctx, "Error", m, args)
+				shellDebug(ctx, "Error", err, args)
 			}
+
+			if st == nil {
+				st = &ShellState{}
+			}
+
+			st.Error = err
+
 			// Ensure any error from the handler is written to stdout so that
 			// the next command in the chain knows about it.
-			if e := (ShellState{Error: &m}.Write(ctx)); e != nil {
+			if e := h.Save(ctx, *st); e != nil {
 				return e
 			}
+
 			// There's a bug in the library where a handler that does `return err`
 			// is fatal but NewExitStatus` is not. With a fatal error, if this
 			// is in a command substitution, the parent command won't even
@@ -79,18 +175,29 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 func (h *shellCallHandler) cmd(ctx context.Context, args []string) (*ShellState, error) {
 	c, a := args[0], args[1:]
 
-	if isFirstShellCommand(ctx) {
+	stdin := interp.HandlerCtx(ctx).Stdin
+
+	// First command in pipeline: e.g., `cmd1 | cmd2 | cmd3`
+	if stdin == nil {
 		return h.entrypointCall(ctx, c, a)
 	}
 
-	var b []byte
-	st, b, err := shellState(ctx)
+	b, err := io.ReadAll(stdin)
 	if err != nil {
 		return nil, err
 	}
+	s := string(b)
+
+	// Stdin expects a single state
+	st, err := h.state.Load(GetStateKey(s))
+	if err != nil {
+		// should pass st around to cleanup from state store in case the
+		// error came from the state
+		return st, err
+	}
 	if st == nil {
 		if h.debug {
-			shellDebug(ctx, "InvalidStdin", args, b)
+			shellDebug(ctx, "InvalidStdin", args, s)
 		}
 		return nil, fmt.Errorf("unexpected input for command %q", c)
 	}
@@ -195,7 +302,8 @@ func (h *shellCallHandler) StateLookup(ctx context.Context, name string) (*Shell
 	if md, _ := h.GetModuleDef(nil); md != nil {
 		// 1. Function in current context
 		if md.HasMainFunction(name) {
-			return h.NewState(), nil
+			st := h.NewState()
+			return &st, nil
 		}
 
 		// 2. Dependency short name
@@ -206,13 +314,15 @@ func (h *shellCallHandler) StateLookup(ctx context.Context, name string) (*Shell
 
 		// 3. Is it the current module's name?
 		if md.Name == name {
-			return h.newModState(md.SourceDigest), nil
+			st := h.newModState(md.SourceDigest)
+			return &st, nil
 		}
 	}
 
 	// 4. Standard library command
 	if cmd, _ := h.StdlibCommand(name); cmd != nil {
-		return h.NewStdlibState(), nil
+		st := h.NewStdlibState()
+		return &st, nil
 	}
 
 	// 5. Path to local or remote module source
@@ -221,7 +331,8 @@ func (h *shellCallHandler) StateLookup(ctx context.Context, name string) (*Shell
 		return nil, err
 	}
 	if def != nil {
-		return h.newModState(def.SourceDigest), nil
+		st := h.newModState(def.SourceDigest)
+		return &st, nil
 	}
 
 	return nil, fmt.Errorf("function or module %q not found", name)
@@ -232,10 +343,12 @@ func (h *shellCallHandler) constructorCall(ctx context.Context, md *moduleDef, s
 
 	values, err := h.parseArgumentValues(ctx, md, fn, args)
 	if err != nil {
-		return nil, fmt.Errorf("constructor: %w", err)
+		return nil, fmt.Errorf("%q constructor: %w", md.Name, err)
 	}
 
-	return st.WithCall(fn, values), nil
+	newSt := st.WithCall(fn, values)
+
+	return &newSt, nil
 }
 
 // functionCall is executed for every command that the exec handler processes
@@ -250,10 +363,12 @@ func (h *shellCallHandler) functionCall(ctx context.Context, st *ShellState, nam
 
 	argValues, err := h.parseArgumentValues(ctx, def, fn, args)
 	if err != nil {
-		return st, fmt.Errorf("could not parse arguments for function %q: %w", fn.CmdName(), err)
+		return st, fmt.Errorf("function %q: %w", fn.CmdName(), err)
 	}
 
-	return st.WithCall(fn, argValues), nil
+	newSt := st.WithCall(fn, argValues)
+
+	return &newSt, nil
 }
 
 // shellPreprocessArgs converts positional arguments to flag arguments
@@ -382,14 +497,31 @@ func checkErrHelp(err error, args []string) error {
 }
 
 // parseArgumentValues returns a map of argument names and their parsed values
-func (h *shellCallHandler) parseArgumentValues(ctx context.Context, md *moduleDef, fn *modFunction, args []string) (map[string]any, error) {
+func (h *shellCallHandler) parseArgumentValues(
+	ctx context.Context,
+	md *moduleDef,
+	fn *modFunction,
+	args []string,
+) (rargs map[string]any, rerr error) {
+	defer func() {
+		if rerr != nil {
+			rerr = fmt.Errorf("%w\n\nUsage: %s", rerr, h.FunctionFullUseLine(md, fn))
+		}
+	}()
+
 	newArgs, err := shellPreprocessArgs(ctx, fn, args)
 	if err != nil {
 		return nil, err
 	}
 
+	if len(newArgs) == 0 {
+		return nil, nil
+	}
+
 	if h.debug {
-		shellDebug(ctx, "Process args", fn.CmdName(), args, newArgs)
+		defer func() {
+			shellDebug(ctx, "Arguments", fn.CmdName(), args, newArgs, rargs)
+		}()
 	}
 
 	flags := pflag.NewFlagSet(fn.CmdName(), pflag.ContinueOnError)
@@ -483,9 +615,11 @@ func (h *shellCallHandler) parseArgumentValues(ctx context.Context, md *moduleDe
 //
 // This happens most commonly when argument is the result of command expansion
 // from a sub-shell.
-func (h *shellCallHandler) parseFlagValue(ctx context.Context, value string, arg *modFunctionArg) (any, bool, error) {
+func (h *shellCallHandler) parseFlagValue(ctx context.Context, value string, arg *modFunctionArg) (rval any, bypass bool, rerr error) {
 	argType := arg.TypeDef
-	if !strings.HasPrefix(value, shellStatePrefix) {
+	states := FindStateTokens(value)
+
+	if len(states) == 0 {
 		if argType.AsObject != nil {
 			switch argType.AsObject.Name {
 			case Directory, File:
@@ -499,109 +633,98 @@ func (h *shellCallHandler) parseFlagValue(ctx context.Context, value string, arg
 		return value, false, nil
 	}
 
-	var bypass bool
-
-	handleObjectID := func(_ context.Context, q *querybuilder.Selection, t *modTypeDef) (*querybuilder.Selection, error) {
-		// When an argument returns an object, assume we want its ID
-		// TODO: Allow ids in TypeDefs so we can directly check if there's an `id`
-		// function in this object.
-		if t.AsFunctionProvider() != nil {
-			if argType.Name() != t.Name() {
-				return nil, fmt.Errorf("expected return type %q, got %q", argType.Name(), t.Name())
-			}
-			q = q.Select("id")
-			bypass = true
-		}
-
-		// TODO: do a bit more validation. Consider that values that are not
-		// to be replaced should only be strings, because that's what the
-		// flagSet supports. This also means the type won't match the expected
-		// definition. For example, a function that returns a `Directory` object
-		// could have a subshell return a path string so the flag will turn that
-		// into the `Directory` object.
-
-		return q, nil
+	if h.debug {
+		shellDebug(ctx, "parse flag value", arg.FlagName(), states, bypass, rval)
 	}
-	v, _, err := h.Result(ctx, strings.NewReader(value), handleObjectID)
-	return v, bypass, err
+
+	// If value isn't one state exactly, we need to process into a string
+	if len(states) > 1 || states[0] != value {
+		r, err := h.resolveResult(ctx, value)
+		return r, false, err
+	}
+
+	// Otherwise it may be an object that we want to bypass (for its ID)
+	st, err := h.state.Extract(GetStateKey(value))
+	if err != nil {
+		return nil, false, err
+	}
+	r, err := h.StateResult(ctx, st)
+	if err != nil {
+		return nil, false, err
+	}
+	if r.IsObject() {
+		return r.Value, true, err
+	}
+	s, err := r.String()
+	return s, false, err
 }
 
-// Result reads the state from stdin and returns the final result
-func (h *shellCallHandler) Result(
-	ctx context.Context,
-	// r is the reader to read the shell state from
-	r io.Reader,
-	// beforeRequest is a callback that allows modifying the query before making
-	// the request
-	//
-	// It's also useful for validating the query with the function's
-	// return type.
-	beforeRequest func(context.Context, *querybuilder.Selection, *modTypeDef) (*querybuilder.Selection, error),
-) (any, *modTypeDef, error) {
-	st, b, err := readShellState(r)
-	if err != nil {
-		return nil, nil, err
+// Result is a resolved state
+type Result struct {
+	Value   any
+	typeDef *modTypeDef
+}
+
+func (r *Result) String() (string, error) {
+	if r.IsVoid() {
+		return "", nil
 	}
+	sb := new(strings.Builder)
+	err := printResponse(sb, r.Value, r.typeDef)
+	return sb.String(), err
+}
+
+func (r *Result) IsObject() bool {
+	return r.typeDef != nil && r.typeDef.AsFunctionProvider() != nil
+}
+
+func (r *Result) IsVoid() bool {
+	return r.typeDef != nil && r.typeDef.Kind == dagger.TypeDefKindVoidKind
+}
+
+// StateResult resolves a state into a value, more commonly by making an API request.
+func (h *shellCallHandler) StateResult(ctx context.Context, st *ShellState) (*Result, error) {
 	if st == nil {
-		return string(b), nil, nil
+		return nil, nil
 	}
 
 	if st.IsCommandRoot() {
+		r := &Result{}
 		switch {
 		case st.IsStdlib():
-			return h.CommandsList(st.Cmd, h.Stdlib()), nil, nil
+			r.Value = h.CommandsList(st.Cmd, h.Stdlib())
 		case st.IsDeps():
-			return h.DependenciesList(), nil, nil
+			r.Value = h.DependenciesList()
 		case st.IsCore():
 			def := h.GetDef(nil)
-			return h.FunctionsList(st.Cmd, def.GetCoreFunctions()), nil, nil
+			r.Value = h.FunctionsList(st.Cmd, def.GetCoreFunctions())
 		default:
-			return nil, nil, fmt.Errorf("unexpected namespace %q", st.Cmd)
+			return nil, fmt.Errorf("unexpected namespace %q", st.Cmd)
 		}
+		return r, nil
 	}
 
 	def := h.GetDef(st)
+	var err error
 
 	// Example: `build` (i.e., omitted constructor)
 	if def.HasModule() && st.IsEmpty() {
 		st, err = h.constructorCall(ctx, def, st, nil)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 	}
 
 	fn, err := st.Function().GetDef(def)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	q := st.QueryBuilder(h.dag)
-	if beforeRequest != nil {
-		q, err = beforeRequest(ctx, q, fn.ReturnType)
-		if err != nil {
-			return nil, fn.ReturnType, err
-		}
-	}
+	r := &Result{typeDef: fn.ReturnType}
+	q := handleObjectLeaf(st.QueryBuilder(h.dag), fn.ReturnType)
+	err = makeRequest(ctx, q, &r.Value)
 
-	// The beforeRequest hook has a chance to return a nil `q` to signal
-	// that we shouldn't proceed with the request. For example, it's
-	// possible  that a pipeline ending in an object doesn't have anything
-	// to sub-select.
-	if q == nil {
-		return nil, fn.ReturnType, nil
-	}
-
-	var response any
-
-	if err := makeRequest(ctx, q, &response); err != nil {
-		return nil, fn.ReturnType, err
-	}
-
-	if fn.ReturnType.Kind == dagger.TypeDefKindVoidKind {
-		return nil, fn.ReturnType, nil
-	}
-
-	return response, fn.ReturnType, nil
+	return r, err
 }
 
 func (h *shellCallHandler) getOrInitDef(ref string, fn func() (*moduleDef, error)) (*moduleDef, error) {
@@ -697,7 +820,8 @@ func (h *shellCallHandler) GetDependency(ctx context.Context, name string) (*She
 	if err != nil {
 		return nil, nil, err
 	}
-	return h.newModState(dep.SourceDigest), def, nil
+	st := h.newModState(dep.SourceDigest)
+	return &st, def, nil
 }
 
 func (h *shellCallHandler) debugLoadedModules() []string {

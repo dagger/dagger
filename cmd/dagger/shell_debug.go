@@ -64,7 +64,7 @@ func shellDebugFormat(data any) string {
 		return shellDebugFormat(*t)
 	case ShellState:
 		if t.IsError() {
-			return shellDebugFormat(*t.Error)
+			return shellDebugFormat(t.Error)
 		}
 		var r string
 		if t.ModDigest != "" {
@@ -79,7 +79,7 @@ func shellDebugFormat(data any) string {
 		if len(r) == 0 {
 			r = " <empty>"
 		}
-		return "State:" + r
+		return fmt.Sprintf("State [%s]: %s", t.Key, r)
 	default:
 		b, _ := json.MarshalIndent(t, "", "  ")
 		return string(b)

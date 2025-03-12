@@ -13,6 +13,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -256,25 +257,35 @@ func (cls Class[T]) Call(
 	fieldName string,
 	view string,
 	args map[string]Input,
-) (Typed, func(context.Context) error, error) {
+) (*CacheValWithCallbacks, error) {
 	field, ok := cls.Field(fieldName, view)
 	if !ok {
-		return nil, nil, fmt.Errorf("Call: %s has no such field: %q", cls.inner.Type().Name(), fieldName)
+		return nil, fmt.Errorf("Call: %s has no such field: %q", cls.inner.Type().Name(), fieldName)
 	}
 
 	val, err := field.Func(ctx, node, args)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// field implementations can optionally return a wrapped Typed val that has
 	// a callback that should always run after the field is called
-	var postCall func(context.Context) error
+	var postCall cache.PostCallFunc
 	if postCallable, ok := UnwrapAs[PostCallable](val); ok {
 		postCall, val = postCallable.GetPostCall()
 	}
+	// they can also return types that need to run a callback when they are
+	// removed from the cache (to clean up or release any state)
+	var onRelease cache.OnReleaseFunc
+	if onReleaser, ok := UnwrapAs[OnReleaser](val); ok {
+		onRelease = onReleaser.OnRelease
+	}
 
-	return val, postCall, nil
+	return &CacheValWithCallbacks{
+		Value:     val,
+		PostCall:  postCall,
+		OnRelease: onRelease,
+	}, nil
 }
 
 // Instance is an instance of an Object type.
@@ -283,7 +294,7 @@ type Instance[T Typed] struct {
 	Self        T
 	Class       Class[T]
 	Module      *call.ID
-	postCall    func(context.Context) error
+	postCall    cache.PostCallFunc
 }
 
 var _ Typed = Instance[Typed]{}
@@ -332,12 +343,12 @@ func (r Instance[T]) WithDigest(customDigest digest.Digest) Instance[T] {
 	}
 }
 
-func (r Instance[T]) WithPostCall(fn func(context.Context) error) Instance[T] {
+func (r Instance[T]) WithPostCall(fn cache.PostCallFunc) Instance[T] {
 	r.postCall = fn
 	return r
 }
 
-func (r Instance[T]) GetPostCall() (func(context.Context) error, Typed) {
+func (r Instance[T]) GetPostCall() (cache.PostCallFunc, Typed) {
 	return r.postCall, r
 }
 
@@ -500,43 +511,49 @@ func (r Instance[T]) call(
 	if doNotCache {
 		callCacheKey = ""
 	}
-	res, err := s.Cache.GetOrInitializeWithPostCall(ctx, callCacheKey, func(ctx context.Context) (innerVal Typed, postCall func(context.Context) error, innerErr error) {
+	res, err := s.Cache.GetOrInitializeWithCallbacks(ctx, callCacheKey, func(ctx context.Context) (_ *CacheValWithCallbacks, innerErr error) {
+		var innerVal Typed
 		if s.telemetry != nil {
 			wrappedCtx, done := s.telemetry(ctx, r, newID)
 			defer func() { done(innerVal, false, innerErr) }()
 			ctx = wrappedCtx
 		}
 
-		innerVal, postCall, innerErr = r.Class.Call(ctx, r, newID.Field(), newID.View(), inputArgs)
+		valWithCallbacks, innerErr := r.Class.Call(ctx, r, newID.Field(), newID.View(), inputArgs)
 		if innerErr != nil {
-			return nil, nil, innerErr
+			return nil, innerErr
 		}
+		innerVal = valWithCallbacks.Value
 
 		if n, ok := innerVal.(Derefable); ok {
 			innerVal, ok = n.Deref()
 			if !ok {
-				return nil, nil, nil
+				return nil, nil
 			}
 		}
 		nth := int(newID.Nth())
 		if nth != 0 {
 			enum, ok := innerVal.(Enumerable)
 			if !ok {
-				return nil, nil, fmt.Errorf("cannot sub-select %dth item from %T", nth, innerVal)
+				return nil, fmt.Errorf("cannot sub-select %dth item from %T", nth, innerVal)
 			}
 			innerVal, innerErr = enum.Nth(nth)
 			if innerErr != nil {
-				return nil, nil, innerErr
+				return nil, innerErr
 			}
 			if n, ok := innerVal.(Derefable); ok {
 				innerVal, ok = n.Deref()
 				if !ok {
-					return nil, nil, nil
+					return nil, nil
 				}
 			}
 		}
 
-		return innerVal, postCall, nil
+		return &CacheValWithCallbacks{
+			Value:     innerVal,
+			PostCall:  valWithCallbacks.PostCall,
+			OnRelease: valWithCallbacks.OnRelease,
+		}, nil
 	})
 	if err != nil {
 		return nil, nil, err
@@ -657,11 +674,10 @@ func (v ExactView) Contains(s string) bool {
 	return s == string(v)
 }
 
-// not available until go1.24 (see dagger/dagger#9759)
-// type (
-// 	FuncHandler[T Typed, A any, R any]     = func(ctx context.Context, self T, args A) (R, error)
-// 	NodeFuncHandler[T Typed, A any, R any] = func(ctx context.Context, self Instance[T], args A) (R, error)
-// )
+type (
+	FuncHandler[T Typed, A any, R any]     func(ctx context.Context, self T, args A) (R, error)
+	NodeFuncHandler[T Typed, A any, R any] func(ctx context.Context, self Instance[T], args A) (R, error)
+)
 
 // Func is a helper for defining a field resolver and schema.
 //
@@ -681,9 +697,7 @@ func (v ExactView) Contains(s string) bool {
 //
 // To configure a description for the field in the schema, call .Doc on the
 // result.
-//
-// func Func[T Typed, A any, R any](name string, fn FuncHandler[T, A, R]) Field[T] {
-func Func[T Typed, A any, R any](name string, fn func(ctx context.Context, self T, args A) (R, error)) Field[T] {
+func Func[T Typed, A any, R any](name string, fn FuncHandler[T, A, R]) Field[T] {
 	return NodeFunc(name, func(ctx context.Context, self Instance[T], args A) (R, error) {
 		return fn(ctx, self.Self, args)
 	})
@@ -692,8 +706,7 @@ func Func[T Typed, A any, R any](name string, fn func(ctx context.Context, self 
 // FuncWithCacheKey is like Func but allows specifying a custom digest that will be used to cache the operation in dagql.
 func FuncWithCacheKey[T Typed, A any, R any](
 	name string,
-	// fn FuncHandler[T, A, R],
-	fn func(ctx context.Context, self T, args A) (R, error),
+	fn FuncHandler[T, A, R],
 	cacheFn GetCacheConfigFunc[T, A],
 ) Field[T] {
 	return NodeFuncWithCacheKey(name, func(ctx context.Context, self Instance[T], args A) (R, error) {
@@ -703,17 +716,14 @@ func FuncWithCacheKey[T Typed, A any, R any](
 
 // NodeFunc is the same as Func, except it passes the Instance instead of the
 // receiver so that you can access its ID.
-//
-// func NodeFunc[T Typed, A any, R any](name string, fn NodeFuncHandler[T, A, R]) Field[T] {
-func NodeFunc[T Typed, A any, R any](name string, fn func(ctx context.Context, self Instance[T], args A) (R, error)) Field[T] {
+func NodeFunc[T Typed, A any, R any](name string, fn NodeFuncHandler[T, A, R]) Field[T] {
 	return NodeFuncWithCacheKey(name, fn, nil)
 }
 
 // NodeFuncWithCacheKey is like NodeFunc but allows specifying a custom digest that will be used to cache the operation in dagql.
 func NodeFuncWithCacheKey[T Typed, A any, R any](
 	name string,
-	// fn NodeFuncHandler[T, A, R],
-	fn func(ctx context.Context, self Instance[T], args A) (R, error),
+	fn NodeFuncHandler[T, A, R],
 	cacheFn GetCacheConfigFunc[T, A],
 ) Field[T] {
 	var zeroArgs A

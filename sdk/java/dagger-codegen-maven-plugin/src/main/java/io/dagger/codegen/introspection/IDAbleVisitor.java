@@ -3,6 +3,7 @@ package io.dagger.codegen.introspection;
 import com.palantir.javapoet.*;
 import jakarta.json.bind.Jsonb;
 import jakarta.json.bind.JsonbBuilder;
+import jakarta.json.bind.JsonbConfig;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.util.List;
@@ -26,7 +27,11 @@ public class IDAbleVisitor extends AbstractMultiTypesVisitor {
                     .addException(Exception.class)
                     .addParameter(Object.class, "object")
                     .beginControlFlow(
-                        "try ($T jsonb = $T.create())", Jsonb.class, JsonbBuilder.class)
+                        "try ($T jsonb = $T.create(new $T().withPropertyVisibilityStrategy(new $T())))",
+                        Jsonb.class,
+                        JsonbBuilder.class,
+                        JsonbConfig.class,
+                        ClassName.bestGuess("io.dagger.client.FieldsStrategy"))
                     .addStatement(
                         "return $T.from(jsonb.toJson(object))", ClassName.bestGuess("JSON"))
                     .endControlFlow()
@@ -56,7 +61,11 @@ public class IDAbleVisitor extends AbstractMultiTypesVisitor {
                         "clazz")
                     .addException(Exception.class)
                     .beginControlFlow(
-                        "try ($T jsonb = $T.create())", Jsonb.class, JsonbBuilder.class)
+                        "try ($T jsonb = $T.create(new $T().withPropertyVisibilityStrategy(new $T())))",
+                        Jsonb.class,
+                        JsonbBuilder.class,
+                        JsonbConfig.class,
+                        ClassName.bestGuess("io.dagger.client.FieldsStrategy"))
                     .addStatement("return jsonb.fromJson(json, clazz)")
                     .endControlFlow()
                     .build());
