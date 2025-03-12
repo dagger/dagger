@@ -745,6 +745,7 @@ func (s *LLMSession) Prompt(out idtui.TermOutput, fg termenv.Color) string {
 	switch s.mode() {
 	case modePrompt:
 		sb := new(strings.Builder)
+		sb.WriteString(termenv.CSI + termenv.ResetSeq + "m") // clear background
 		sb.WriteString(out.String(s.llmModel).Bold().Foreground(termenv.ANSICyan).String())
 		sb.WriteString(out.String(" ").String())
 		sb.WriteString(out.String(idtui.LLMPrompt).Bold().Foreground(fg).String())
