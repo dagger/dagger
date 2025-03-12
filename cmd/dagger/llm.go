@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"os"
 	"strings"
 
@@ -404,14 +405,10 @@ func (s *LLMSession) interpretPrompt(ctx context.Context, input string) (*LLMSes
 				Str:  val,
 			}
 		default:
-			llmId, err := s.llm.ID(ctx)
-			if err != nil {
-				return s, err
-			}
 			var objId string
 			if err := s.dag.QueryBuilder().
 				Select("loadLlmFromID").
-				Arg("id", llmId).
+				Arg("id", s.llm).
 				Select(fmt.Sprintf("get%s", typeName)).
 				Arg("name", name).
 				Select("id").
@@ -453,7 +450,7 @@ func (s *LLMSession) interpretShell(ctx context.Context, input string) (*LLMSess
 		return s, err
 	}
 	// TODO: is there anything useful to do with the result here?
-	return s.syncVars(ctx)
+	return s.syncVarsToLLM(ctx)
 }
 
 var dbg *log.Logger
@@ -478,22 +475,17 @@ var skipEnv = map[string]bool{
 	// (sourced from os.Environ)
 }
 
-func (s *LLMSession) syncVars(ctx context.Context) (*LLMSession, error) {
-	oldVars := s.syncedVars
+func (s *LLMSession) syncVarsToLLM(ctx context.Context) (*LLMSession, error) {
 	s = s.Fork()
-	s.syncedVars = make(map[string]digest.Digest)
-	// TODO: overlay? bad scaling characteristics. maybe overkill anyway
-	for k, v := range oldVars {
-		s.syncedVars[k] = v
-	}
 
-	llmId, err := s.llm.ID(ctx)
-	if err != nil {
-		return s, err
-	}
+	// TODO: overlay? bad scaling characteristics. maybe overkill anyway
+	oldVars := s.syncedVars
+	s.syncedVars = make(map[string]digest.Digest)
+	maps.Copy(s.syncedVars, oldVars)
+
 	syncedLlmQ := s.dag.QueryBuilder().
 		Select("loadLlmFromID").
-		Arg("id", llmId)
+		Arg("id", s.llm)
 
 	var changed bool
 	for name, value := range s.shell.runner.Vars {
@@ -546,6 +538,7 @@ func (s *LLMSession) syncVars(ctx context.Context) (*LLMSession, error) {
 	if !changed {
 		return s, nil
 	}
+	var llmId dagger.LlmID
 	if err := syncedLlmQ.Select("id").Bind(&llmId).Execute(ctx); err != nil {
 		return s, err
 	}
@@ -559,70 +552,6 @@ func (s *LLMSession) Undo(ctx context.Context, _ string) (*LLMSession, error) {
 	}
 	return s.undo, nil
 }
-
-// TODO: maybe these go away and instead we sync the env
-// func (s *LLMSession) With(ctx context.Context, args string) (*LLMSession, error) {
-// 	s, err := s.Set(ctx, "_ "+args)
-// 	if err != nil {
-// 		return s, err
-// 	}
-// 	return s.Get(ctx, "_")
-// }
-
-// TODO: maybe these go away and instead we sync the env
-// func (s *LLMSession) Set(ctx context.Context, args string) (*LLMSession, error) {
-// 	name, script, ok := strings.Cut(args, " ")
-// 	if !ok {
-// 		return s, fmt.Errorf("expected name and script")
-// 	}
-// 	resp, typeDef, err := s.shell.Eval(ctx, script)
-// 	if err != nil {
-// 		return s, err
-// 	}
-// 	if typeDef.AsFunctionProvider() != nil {
-// 		llmId, err := s.llm.ID(ctx)
-// 		if err != nil {
-// 			return s, err
-// 		}
-// 		s = s.Fork()
-// 		if err := s.dag.QueryBuilder().
-// 			Select("loadLlmFromID").
-// 			Arg("id", llmId).
-// 			Select(fmt.Sprintf("set%s", typeDef.Name())).
-// 			Arg("name", name).
-// 			Arg("value", resp).
-// 			Select("id").
-// 			Bind(&llmId).
-// 			Execute(ctx); err != nil {
-// 			return s, err
-// 		}
-// 		s.llm = s.dag.LoadLlmFromID(llmId)
-// 		return s, nil
-// 	}
-// 	return s, fmt.Errorf("cannot change scope to %s - script must return an Object type", typeDef.Name())
-// }
-
-// TODO: maybe these go away and instead we sync the env
-// func (s *LLMSession) Get(ctx context.Context, name string) (*LLMSession, error) {
-// 	s = s.Fork()
-// 	llmId, err := s.llm.ID(ctx)
-// 	if err != nil {
-// 		return s, err
-// 	}
-// 	s = s.Fork()
-// 	if err := s.dag.QueryBuilder().
-// 		Select("loadLlmFromID").
-// 		Arg("id", llmId).
-// 		Select(fmt.Sprintf("get%s", typeDef.Name())).
-// 		Arg("name", name).
-// 		Select("id").
-// 		Bind(&llmId).
-// 		Execute(ctx); err != nil {
-// 		return s, err
-// 	}
-// 	s.llm = s.dag.LoadLlmFromID(llmId)
-// 	return s, nil
-// }
 
 func (s *LLMSession) Complete(entireInput [][]rune, row, col int) (msg string, comp editline.Completions) {
 	if s.mode() == modeShell {
