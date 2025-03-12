@@ -64,7 +64,7 @@ func (s *gitSchema) Install() {
 		dagql.Func("tag", s.tag).
 			Doc(`Returns details of a tag.`).
 			ArgDoc("name", `Tag's name (e.g., "v0.3.9").`),
-		dagql.Func("tags", s.tags).
+		dagql.NodeFunc("tags", s.tags).
 			Doc(`tags that match any of the given glob patterns.`).
 			ArgDoc("patterns", `Glob patterns (e.g., "refs/tags/v*").`),
 		dagql.Func("commit", s.commit).
@@ -80,17 +80,17 @@ func (s *gitSchema) Install() {
 	}.Install(s.srv)
 
 	dagql.Fields[*core.GitRef]{
-		dagql.NodeFunc("tree", DagOpDirectoryWrapper(s.srv, s.tree, nil)).
+		dagql.NodeFunc("tree", s.tree).
 			View(AllVersion).
 			Doc(`The filesystem tree at this ref.`).
 			ArgDoc("discardGitDir", `Set to true to discard .git directory.`),
-		dagql.Func("tree", s.treeLegacy).
+		dagql.NodeFunc("tree", s.treeLegacy).
 			View(BeforeVersion("v0.12.0")).
 			Doc(`The filesystem tree at this ref.`).
 			ArgDoc("discardGitDir", `Set to true to discard .git directory.`).
 			ArgDeprecated("sshKnownHosts", "This option should be passed to `git` instead.").
 			ArgDeprecated("sshAuthSocket", "This option should be passed to `git` instead."),
-		dagql.NodeFunc("commit", DagOpWrapper(s.srv, s.fetchCommit)).
+		dagql.NodeFunc("commit", s.fetchCommit).
 			Doc(`The resolved commit id at this ref.`),
 	}.Install(s.srv)
 }
@@ -369,14 +369,19 @@ type tagsArgs struct {
 	Patterns dagql.Optional[dagql.ArrayInput[dagql.String]] `name:"patterns"`
 }
 
-func (s *gitSchema) tags(ctx context.Context, parent *core.GitRepository, args tagsArgs) ([]string, error) {
+func (s *gitSchema) tags(ctx context.Context, parent dagql.Instance[*core.GitRepository], args tagsArgs) (dagql.Array[dagql.String], error) {
+	if parent.Self.UseDagOp() && !core.DagOpInContext[core.RawDagOp](ctx) {
+		return DagOp(ctx, s.srv, parent, args, s.tags)
+	}
+
 	var patterns []string
 	if args.Patterns.Valid {
 		for _, pattern := range args.Patterns.Value {
 			patterns = append(patterns, pattern.String())
 		}
 	}
-	return parent.Tags(ctx, patterns)
+	res, err := parent.Self.Tags(ctx, patterns)
+	return dagql.NewStringArray(res...), err
 }
 
 type withAuthTokenArgs struct {
@@ -420,6 +425,10 @@ type treeArgs struct {
 }
 
 func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef], args treeArgs) (inst dagql.Instance[*core.Directory], _ error) {
+	if parent.Self.UseDagOp() && !core.DagOpInContext[core.FSDagOp](ctx) {
+		return DagOpDirectory(ctx, s.srv, parent, args, s.tree, nil)
+	}
+
 	dir, err := parent.Self.Tree(ctx, s.srv, args.DiscardGitDir)
 	if err != nil {
 		return inst, err
@@ -438,30 +447,46 @@ type treeArgsLegacy struct {
 	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
 }
 
-func (s *gitSchema) treeLegacy(ctx context.Context, parent *core.GitRef, args treeArgsLegacy) (*core.Directory, error) {
+func (s *gitSchema) treeLegacy(ctx context.Context, parent dagql.Instance[*core.GitRef], args treeArgsLegacy) (inst dagql.Instance[*core.Directory], _ error) {
+	if parent.Self.UseDagOp() && !core.DagOpInContext[core.FSDagOp](ctx) {
+		return DagOpDirectory(ctx, s.srv, parent, args, s.treeLegacy, nil)
+	}
+
 	var authSock *core.Socket
 	if args.SSHAuthSocket.Valid {
 		sock, err := args.SSHAuthSocket.Value.Load(ctx, s.srv)
 		if err != nil {
-			return nil, err
+			return inst, err
 		}
 		authSock = sock.Self
 	}
 	res := parent
 	if args.SSHKnownHosts.Valid || args.SSHAuthSocket.Valid {
-		repo := *res.Repo
+		repo := *res.Self.Repo
 		if remote, ok := repo.Backend.(*core.RemoteGitRepository); ok {
 			remote := *remote
 			remote.SSHKnownHosts = args.SSHKnownHosts.GetOr("").String()
 			remote.SSHAuthSocket = authSock
 			repo.Backend = &remote
 		}
-		res.Repo = &repo
+		res.Self.Repo = &repo
 	}
-	return res.Tree(ctx, s.srv, args.DiscardGitDir)
+	dir, err := res.Self.Tree(ctx, s.srv, args.DiscardGitDir)
+	if err != nil {
+		return inst, err
+	}
+	inst, err = dagql.NewInstanceForCurrentID(ctx, s.srv, parent, dir)
+	if err != nil {
+		return inst, err
+	}
+	return inst, nil
 }
 
-func (s *gitSchema) fetchCommit(ctx context.Context, parent dagql.Instance[*core.GitRef], _ struct{}) (dagql.String, error) {
+func (s *gitSchema) fetchCommit(ctx context.Context, parent dagql.Instance[*core.GitRef], args struct{}) (dagql.String, error) {
+	if parent.Self.UseDagOp() && !core.DagOpInContext[core.RawDagOp](ctx) {
+		return DagOp(ctx, s.srv, parent, args, s.fetchCommit)
+	}
+
 	str, err := parent.Self.Commit(ctx)
 	if err != nil {
 		return "", err
