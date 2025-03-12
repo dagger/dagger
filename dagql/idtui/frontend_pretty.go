@@ -65,11 +65,10 @@ type frontendPretty struct {
 	err         error
 
 	// updated by Shell
-	shell           func(ctx context.Context, input string) error
+	shell           ShellHandler
 	shellCtx        context.Context
 	shellInterrupt  context.CancelCauseFunc
 	promptFg        termenv.Color
-	prompt          func(out TermOutput, fg termenv.Color) string
 	editline        *editline.Model
 	editlineFocused bool
 	flushed         map[dagui.SpanID]bool
@@ -901,12 +900,13 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		return fe, nil
 
 	case startShellMsg:
-		fe.shell = msg.handler.Handle
+		fe.shell = msg.handler
 		fe.shellCtx = msg.ctx
 		fe.promptFg = termenv.ANSIGreen
 
 		// create the editline
 		fe.editline = editline.New(fe.window.Width, fe.window.Height)
+		fe.editline.HistoryEncoder = msg.handler
 		fe.editlineFocused = true
 
 		// wire up auto completion
@@ -993,12 +993,15 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			fe.promptFg = termenv.ANSIYellow
 			fe.updatePrompt()
 
+			// reset now that we've accepted input
+			fe.editline.Reset()
+
 			ctx, cancel := context.WithCancelCause(fe.shellCtx)
 			fe.shellInterrupt = cancel
 			fe.shellRunning = true
 
 			return fe, func() tea.Msg {
-				return shellDoneMsg{fe.shell(ctx, value)}
+				return shellDoneMsg{fe.shell.Handle(ctx, value)}
 			}
 		}
 		return fe, nil
@@ -1018,6 +1021,9 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 	case tea.KeyMsg:
 		// send all input to editline if it's focused
 		if fe.shell != nil && fe.editlineFocused {
+			// update the prompt in all cases since e.g. going through history
+			// can change it
+			defer fe.updatePrompt()
 			switch msg.String() {
 			case "ctrl+d":
 				if fe.editline.Value() == "" {
@@ -1028,10 +1034,8 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 					fe.shellInterrupt(errors.New("interrupted"))
 				}
 				fe.editline.Reset()
-				return fe, nil
 			case "esc":
 				fe.editlineFocused = false
-				fe.updatePrompt()
 				fe.editline.Blur()
 				return fe, nil
 			case "alt++", "alt+=":
@@ -1042,6 +1046,10 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				fe.Verbosity--
 				fe.recalculateViewLocked()
 				return fe, nil
+			default:
+				if fe.editline.Value() == "" && fe.shell.ReactToInput(msg) {
+					return fe, nil
+				}
 			}
 			el, cmd := fe.editline.Update(msg)
 			fe.editline = el.(*editline.Model)
@@ -1260,8 +1268,8 @@ func (fe *frontendPretty) updatePrompt() {
 	if fe.editlineFocused {
 		out = focusedBg(out)
 	}
-	fe.editline.Prompt = fe.prompt(out, fe.promptFg)
-	fe.editline.Reset() // TODO: this clears the input which is annoying if you pretyped
+	fe.editline.Prompt = fe.shell.Prompt(out, fe.promptFg)
+	fe.editline.UpdatePrompt()
 }
 
 func (fe *frontendPretty) quit(interruptErr error) (*frontendPretty, tea.Cmd) {

@@ -102,6 +102,11 @@ type ShellHandler interface {
 
 	// Prompt generates the shell prompt string
 	Prompt(out TermOutput, fg termenv.Color) string
+
+	// ReactToInput allows reacting to live input before it's submitted
+	ReactToInput(msg tea.KeyMsg) bool
+
+	editline.HistoryEncoder
 }
 
 type Dump struct {

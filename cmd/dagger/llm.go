@@ -13,6 +13,7 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
 	"dagger.io/dagger/telemetry"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
@@ -79,6 +80,76 @@ func (h *LLMShellHandler) Prompt(out idtui.TermOutput, fg termenv.Color) string 
 	return h.s.Prompt(out, fg)
 }
 
+func (h *LLMShellHandler) ReactToInput(msg tea.KeyMsg) bool {
+	if s, ok := h.s.ReactToInput(msg); ok {
+		h.s = s
+		return true
+	}
+	return false
+}
+
+func (h *LLMShellHandler) DecodeHistory(entry string) string {
+	return h.s.DecodeHistory(entry)
+}
+
+func (h *LLMShellHandler) EncodeHistory(entry string) string {
+	return h.s.EncodeHistory(entry)
+}
+
+func (h *LLMShellHandler) SaveBeforeHistory() {
+	h.s.SaveBeforeHistory()
+}
+
+func (h *LLMShellHandler) RestoreAfterHistory() {
+	h.s.RestoreAfterHistory()
+}
+
+func (s *LLMSession) ReactToInput(msg tea.KeyMsg) (*LLMSession, bool) {
+	switch msg.String() {
+	case "*":
+		s.oneshotMode = modePrompt
+		return s, true
+	case "!":
+		s.oneshotMode = modeShell
+		return s, true
+	}
+	return s, false
+}
+
+func (s *LLMSession) EncodeHistory(entry string) string {
+	switch s.mode() {
+	case modePrompt:
+		return "*" + entry
+	case modeShell:
+		return "!" + entry
+	}
+	return entry
+}
+
+func (s *LLMSession) DecodeHistory(entry string) string {
+	if len(entry) > 0 {
+		switch entry[0] {
+		case '*':
+			s.oneshotMode = modePrompt
+			return entry[1:]
+		case '!':
+			s.oneshotMode = modeShell
+			return entry[1:]
+		}
+	}
+	s.oneshotMode = modeUnset
+	return entry
+}
+
+func (s *LLMSession) SaveBeforeHistory() {
+	s.savedMode = s.mode()
+}
+
+func (s *LLMSession) RestoreAfterHistory() {
+	s.oneshotMode = s.savedMode
+	s.savedMode = modeUnset
+}
+
 func LLMLoop(ctx context.Context, engineClient *client.Client) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -110,18 +181,22 @@ func LLMLoop(ctx context.Context, engineClient *client.Client) error {
 type interpreterMode int
 
 const (
-	modePrompt interpreterMode = iota
+	modeUnset interpreterMode = iota
+	modePrompt
 	modeShell
 )
 
 type LLMSession struct {
-	undo       *LLMSession
-	dag        *dagger.Client
-	llm        *dagger.Llm
-	llmModel   string
-	shell      *shellCallHandler
-	completer  editline.AutoCompleteFn
-	mode       interpreterMode
+	undo           *LLMSession
+	dag            *dagger.Client
+	llm            *dagger.Llm
+	llmModel       string
+	shell          *shellCallHandler
+	completer      editline.AutoCompleteFn
+	persistentMode interpreterMode
+	oneshotMode    interpreterMode
+	// mode from before going through history
+	savedMode  interpreterMode
 	syncedVars map[string]digest.Digest
 }
 
@@ -148,12 +223,12 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string) (*L
 	}
 
 	s := &LLMSession{
-		dag:        dag,
-		llmModel:   llmModel,
-		shell:      shellHandler,
-		completer:  shellCompletion.Do,
-		mode:       modePrompt,
-		syncedVars: initialVars,
+		dag:            dag,
+		llmModel:       llmModel,
+		shell:          shellHandler,
+		completer:      shellCompletion.Do,
+		persistentMode: modePrompt,
+		syncedVars:     initialVars,
 	}
 	s.reset()
 
@@ -169,6 +244,13 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string) (*L
 
 func (s *LLMSession) reset() {
 	s.llm = s.dag.Llm(dagger.LlmOpts{Model: s.llmModel})
+}
+
+func (s *LLMSession) mode() interpreterMode {
+	if s.oneshotMode != modeUnset {
+		return s.oneshotMode
+	}
+	return s.persistentMode
 }
 
 func (s *LLMSession) Fork() *LLMSession {
@@ -220,7 +302,7 @@ var slashCommands = []slashCommand{
 	},
 }
 
-func (s *LLMSession) Interpret(ctx context.Context, input string) (_ *LLMSession, rerr error) {
+func (s *LLMSession) Interpret(ctx context.Context, input string) (ret *LLMSession, rerr error) {
 	if strings.TrimSpace(input) == "" {
 		return s, nil
 	}
@@ -240,13 +322,20 @@ func (s *LLMSession) Interpret(ctx context.Context, input string) (_ *LLMSession
 		return s, fmt.Errorf("unknown slash command: %s", input)
 	}
 
-	switch s.mode {
+	// reset any oneshot mode after the command is interpreted
+	defer func() {
+		if ret.oneshotMode != modeUnset {
+			ret.oneshotMode = modeUnset
+		}
+	}()
+
+	switch s.mode() {
 	case modePrompt:
 		return s.interpretPrompt(ctx, input)
 	case modeShell:
 		return s.interpretShell(ctx, input)
 	default:
-		return s, fmt.Errorf("unknown mode: %d", s.mode)
+		return s, fmt.Errorf("unknown mode: %d", s.mode())
 	}
 }
 
@@ -622,7 +711,8 @@ func (s *LLMSession) ShellMode(ctx context.Context, script string) (*LLMSession,
 		return s.interpretShell(ctx, script)
 	}
 	s = s.Fork()
-	s.mode = modeShell
+	s.persistentMode = modeShell
+	s.oneshotMode = modeUnset
 	return s, nil
 }
 
@@ -631,12 +721,13 @@ func (s *LLMSession) PromptMode(ctx context.Context, prompt string) (*LLMSession
 		return s.interpretPrompt(ctx, prompt)
 	}
 	s = s.Fork()
-	s.mode = modePrompt
+	s.persistentMode = modePrompt
+	s.oneshotMode = modeUnset
 	return s, nil
 }
 
 func (s *LLMSession) Prompt(out idtui.TermOutput, fg termenv.Color) string {
-	switch s.mode {
+	switch s.mode() {
 	case modePrompt:
 		sb := new(strings.Builder)
 		sb.WriteString(out.String(s.llmModel).Bold().Foreground(termenv.ANSICyan).String())
@@ -647,7 +738,7 @@ func (s *LLMSession) Prompt(out idtui.TermOutput, fg termenv.Color) string {
 	case modeShell:
 		return s.shell.Prompt(out, fg)
 	default:
-		return fmt.Sprintf("unknown mode: %d", s.mode)
+		return fmt.Sprintf("unknown mode: %d", s.mode())
 	}
 }
 

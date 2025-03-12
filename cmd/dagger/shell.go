@@ -11,6 +11,7 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
@@ -508,3 +509,13 @@ func (*shellCallHandler) IsComplete(entireInput [][]rune, line int, col int) boo
 	}
 	return true
 }
+
+func (*shellCallHandler) ReactToInput(msg tea.KeyMsg) bool { return false }
+
+func (*shellCallHandler) EncodeHistory(entry string) string { return entry }
+
+func (*shellCallHandler) DecodeHistory(entry string) string { return entry }
+
+func (*shellCallHandler) SaveBeforeHistory() {}
+
+func (*shellCallHandler) RestoreAfterHistory() {}
