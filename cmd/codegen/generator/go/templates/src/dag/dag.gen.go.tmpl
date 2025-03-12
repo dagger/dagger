@@ -28,7 +28,7 @@ func initClient() *dagger.Client {
 		opts = append(opts, dagger.WithServeCurrentModule(true))
 		{{ end }}
 
-    ctx := context.Background()
+		ctx := context.Background()
 
 		var err error
 		client, err = dagger.Connect(ctx, opts...)
@@ -37,11 +37,11 @@ func initClient() *dagger.Client {
 		}
 
     {{ if IsStandaloneClient }}
-	  {{- range $i, $dep := DependenciesRef }}
-	  if err = client.ModuleSource("{{ $dep }}").AsModule().Serve(ctx); err != nil {
-	    panic(err)
-	  }
-	  {{ end }}
+	  {{- range $i, $dep := Dependencies }}
+		if err = client.ModuleSource("{{ $dep.Ref }}", dagger.ModuleSourceOpts{RefPin: "{{ $dep.Pin }}"}).WithName("{{ $dep.Name }}").AsModule().Serve(ctx); err != nil {
+			panic(err)
+		}
+		{{ end }}
 		{{- end }}
 	}
 	return client
