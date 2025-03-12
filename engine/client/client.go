@@ -87,7 +87,8 @@ type Params struct {
 
 	WithTerminal session.WithTerminalFunc
 
-	ServeModule bool
+	ServeModule    bool
+	AllowLLMModule string
 }
 
 type Client struct {
@@ -1119,6 +1120,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		Interactive:               c.Interactive,
 		InteractiveCommand:        c.InteractiveCommand,
 		SSHAuthSocketPath:         sshAuthSock,
+		AllowLLMModule:            c.AllowLLMModule,
 	}
 }
 
