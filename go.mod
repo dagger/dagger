@@ -100,7 +100,7 @@ require (
 	github.com/tonistiigi/fsutil v0.0.0-20240424095704-91a3fc46842c
 	github.com/urfave/cli v1.22.16
 	github.com/vektah/gqlparser/v2 v2.5.23
-	github.com/vito/bubbline v0.0.0-20250312004051-b7cecad10522
+	github.com/vito/bubbline v0.0.0-20250312161705-4565375b38ff
 	github.com/vito/go-sse v1.1.2
 	github.com/vito/midterm v0.2.2
 	github.com/zeebo/xxh3 v1.0.2

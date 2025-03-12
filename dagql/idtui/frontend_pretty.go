@@ -1047,7 +1047,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				fe.recalculateViewLocked()
 				return fe, nil
 			default:
-				if fe.editline.Value() == "" && fe.shell.ReactToInput(msg) {
+				if fe.editline.AtStart() && fe.shell.ReactToInput(msg) {
 					return fe, nil
 				}
 			}
