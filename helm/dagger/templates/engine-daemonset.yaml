@@ -74,13 +74,12 @@ spec:
           {{- end }}
           {{- if .Values.magicache.enabled }}
           envFrom:
-          {{- if .Values.magicache.enabled }}
           - secretRef:
+              {{- if .Values.magicache.secretName }}
               name: {{ .Values.magicache.secretName }}
               {{- else }}
               name: {{ include "dagger.fullname" . }}-magicache-token
               {{- end }}
-          {{- end }}
           {{- end }}
           {{- if .Values.engine.port }}
           ports:
