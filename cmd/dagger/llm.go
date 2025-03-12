@@ -112,6 +112,9 @@ func (s *LLMSession) ReactToInput(msg tea.KeyMsg) (*LLMSession, bool) {
 	case "!":
 		s.oneshotMode = modeShell
 		return s, true
+	case "backspace":
+		s.oneshotMode = modeUnset
+		return s, true
 	}
 	return s, false
 }
