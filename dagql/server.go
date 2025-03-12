@@ -688,6 +688,25 @@ func LoadIDs[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]T, error
 	return out, nil
 }
 
+func LoadIDInstances[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]Instance[T], error) {
+	out := make([]Instance[T], len(ids))
+	eg := new(errgroup.Group)
+	for i, id := range ids {
+		eg.Go(func() error {
+			val, err := id.Load(ctx, srv)
+			if err != nil {
+				return err
+			}
+			out[i] = val
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
 type idCtx struct{}
 
 func idToContext(ctx context.Context, id *call.ID) context.Context {
