@@ -920,10 +920,8 @@ func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // size.
 func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Request, execMD *buildkit.ExecutionMetadata) {
 	clientVersion := engine.Version
-	var allowLLMModule string
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
 		clientVersion = md.ClientVersion
-		allowLLMModule = md.AllowLLMModule
 	}
 
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
@@ -936,7 +934,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			ClientStableID:    execMD.ClientStableID,
 			Labels:            map[string]string{},
 			SSHAuthSocketPath: execMD.SSHAuthSocketPath,
-			AllowLLMModule:    allowLLMModule,
+			AllowLLMModule:    execMD.AllowLLM,
 		},
 		CallID:              execMD.CallID,
 		CallerClientID:      execMD.CallerClientID,

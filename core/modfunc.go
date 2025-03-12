@@ -22,6 +22,7 @@ import (
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
@@ -244,6 +245,11 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to marshal parent value: %w", err)
 	}
 
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	execMD := buildkit.ExecutionMetadata{
 		ClientID:        identity.NewID(),
 		CallID:          dagql.CurrentID(ctx),
@@ -252,6 +258,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		Internal:        true,
 		ModuleName:      mod.NameField,
 		CacheByCall:     !opts.SkipCallDigestCacheKey,
+		AllowLLM:        clientMetadata.AllowLLMModule,
 	}
 
 	if opts.ParentTyped != nil {

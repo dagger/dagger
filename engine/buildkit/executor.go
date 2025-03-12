@@ -102,6 +102,9 @@ type ExecutionMetadata struct {
 
 	// If true, skip injecting dagger-init into the container.
 	NoInit bool
+
+	// If non-null, allow llm API calls.
+	AllowLLM string
 }
 
 const executionMetadataKey = "dagger.executionMetadata"

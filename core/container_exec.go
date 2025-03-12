@@ -91,6 +91,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	execMD.CallerClientID = clientMetadata.ClientID
 	execMD.ExecID = identity.NewID()
 	execMD.SessionID = clientMetadata.SessionID
+	execMD.AllowLLM = clientMetadata.AllowLLMModule
 	if execMD.HostAliases == nil {
 		execMD.HostAliases = make(map[string][]string)
 	}
