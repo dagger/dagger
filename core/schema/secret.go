@@ -3,10 +3,10 @@ package schema
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 )
 
@@ -49,34 +49,6 @@ type secretArgs struct {
 	URI string
 }
 
-/*
-func (s *secretSchema) secretCacheKey(
-	ctx context.Context,
-	parent dagql.Instance[*core.Query],
-	args secretArgs,
-	cacheCfg dagql.CacheConfig,
-) (*dagql.CacheConfig, error) {
-	accessor, err := core.GetClientResourceAccessor(ctx, parent.Self, args.URI)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get client resource accessor: %w", err)
-	}
-
-	inputs := []string{args.URI, accessor}
-
-	// TODO: uggo
-	if _, ok := strings.CutPrefix(args.URI, "named://"); ok {
-		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get client metadata from context: %w", err)
-		}
-		inputs = append(inputs, clientMetadata.ClientID)
-	}
-
-	cacheCfg.Digest = dagql.HashFrom(inputs...)
-	return &cacheCfg, nil
-}
-*/
-
 func (s *secretSchema) secret(
 	ctx context.Context,
 	parent dagql.Instance[*core.Query],
@@ -97,11 +69,6 @@ func (s *secretSchema) secret(
 		URI:               args.URI,
 		BuildkitSessionID: clientMetadata.ClientID,
 	}
-	// TODO: uggo
-	name, isNamed := strings.CutPrefix(args.URI, "named://")
-	if isNamed {
-		secret.Name = name
-	}
 	i, err = dagql.NewInstanceForCurrentID(ctx, s.srv, parent, secret)
 	if err != nil {
 		return i, fmt.Errorf("failed to create instance: %w", err)
@@ -111,11 +78,7 @@ func (s *secretSchema) secret(
 	if err != nil {
 		return i, fmt.Errorf("failed to get client resource accessor: %w", err)
 	}
-	dgstInputs := []string{args.URI, accessor}
-	if isNamed {
-		dgstInputs = append(dgstInputs, clientMetadata.SessionID)
-	}
-	dgst := dagql.HashFrom(dgstInputs...)
+	dgst := dagql.HashFrom(args.URI, accessor)
 	i = i.WithDigest(dgst)
 
 	if err := secretStore.AddSecret(i); err != nil {
@@ -135,30 +98,52 @@ func (s *secretSchema) setSecret(
 	parent dagql.Instance[*core.Query],
 	args setSecretArgs,
 ) (i dagql.Instance[*core.Secret], err error) {
-	// TODO: const
-	uri := "named://" + args.Name
-	if err := s.srv.Select(ctx, s.srv.Root(), &i, dagql.Selector{
-		Field: "secret",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "uri",
-				Value: dagql.NewString(uri),
-			},
-		},
-	}); err != nil {
-		return i, fmt.Errorf("failed to select secret: %w", err)
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return i, fmt.Errorf("failed to get client metadata from context: %w", err)
 	}
+	accessor, err := core.GetClientResourceAccessor(ctx, parent.Self, args.Name)
+	if err != nil {
+		return i, fmt.Errorf("failed to get client resource accessor: %w", err)
+	}
+	dgst := dagql.HashFrom(
+		args.Name,
+		accessor,
+		clientMetadata.SessionID,
+	)
+
+	currentID := dagql.CurrentID(ctx)
+	callID := currentID.Receiver().Append(
+		currentID.Type().ToAST(),
+		currentID.Field(),
+		currentID.View(),
+		currentID.Module(),
+		0,
+		dgst,
+		call.NewArgument("name", call.NewLiteralString(args.Name), false),
+		// hide plaintext in the returned ID, we instead rely on the
+		// digest of the ID for uniqueness+identity
+		call.NewArgument("plaintext", call.NewLiteralString("***"), false),
+	)
 
 	secretStore, err := parent.Self.Secrets(ctx)
 	if err != nil {
 		return i, fmt.Errorf("failed to get secret store: %w", err)
 	}
-
-	if err := secretStore.SetSecretPlaintext(i.ID().Digest(), []byte(args.Plaintext)); err != nil {
-		return i, fmt.Errorf("failed to set secret plaintext: %w", err)
+	secretVal := &core.Secret{
+		Query:     parent.Self,
+		Name:      args.Name,
+		Plaintext: []byte(args.Plaintext),
+	}
+	secret, err := dagql.NewInstanceForID(s.srv, parent, secretVal, callID)
+	if err != nil {
+		return i, fmt.Errorf("failed to create secret instance: %w", err)
+	}
+	if err := secretStore.AddSecret(secret); err != nil {
+		return i, fmt.Errorf("failed to add secret: %w", err)
 	}
 
-	return i, nil
+	return secret, nil
 }
 
 func (s *secretSchema) name(ctx context.Context, secret dagql.Instance[*core.Secret], args struct{}) (dagql.String, error) {

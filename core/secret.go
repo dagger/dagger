@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/dagger/dagger/dagql"
@@ -23,11 +22,14 @@ type Secret struct {
 	// The URI of the secret, if it's stored in a remote store.
 	URI string
 
-	// The user-designated name of the secret.
-	Name string
-
 	// The id of the buildkit session the secret will be retrieved through.
 	BuildkitSessionID string
+
+	// The user-designated name of the secret, if created by setSecret
+	Name string
+
+	// The secret plaintext, if created by setSecret
+	Plaintext []byte `json:"-"` // we shouldn't be json marshalling this, but disclude just in case
 }
 
 func (*Secret) Type() *ast.Type {
@@ -82,35 +84,16 @@ func (store *SecretStore) AddSecret(secret dagql.Instance[*Secret]) error {
 		return fmt.Errorf("secret must have a query")
 	}
 
-	_, _, err := secretprovider.ResolverForID(secret.Self.URI)
-	if err != nil {
-		return err
+	if secret.Self.URI != "" {
+		_, _, err := secretprovider.ResolverForID(secret.Self.URI)
+		if err != nil {
+			return err
+		}
 	}
 
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	store.secrets[secret.ID().Digest()] = secret
-	return nil
-}
-
-func (store *SecretStore) AddSecretFromOtherStore(
-	ctx context.Context,
-	secret dagql.Instance[*Secret],
-	otherStore *SecretStore,
-) error {
-	// TODO: uggo
-	if !strings.HasPrefix(secret.Self.URI, "named://") {
-		return store.AddSecret(secret)
-	}
-
-	plaintext, err := otherStore.GetSecretPlaintext(ctx, secret.ID().Digest())
-	if err != nil {
-		return err
-	}
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	store.secrets[secret.ID().Digest()] = secret
-	store.plaintexts[secret.ID().Digest()] = plaintext
 	return nil
 }
 
@@ -167,21 +150,6 @@ func (store *SecretStore) GetSecretNameOrURI(idDgst digest.Digest) (string, bool
 	return "", true
 }
 
-func (store *SecretStore) SetSecretPlaintext(idDgst digest.Digest, plaintext []byte) error {
-	store.mu.RLock()
-	defer store.mu.RUnlock()
-	secret, ok := store.secrets[idDgst]
-	if !ok {
-		return fmt.Errorf("secret %s: %w", idDgst, secrets.ErrNotFound)
-	}
-	// TODO: uggo
-	if !strings.HasPrefix(secret.Self.URI, "named://") {
-		return fmt.Errorf("cannot set plaintext for remote secret %s", idDgst)
-	}
-	store.plaintexts[idDgst] = plaintext
-	return nil
-}
-
 func (store *SecretStore) GetSecretPlaintext(ctx context.Context, idDgst digest.Digest) ([]byte, error) {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
@@ -191,13 +159,8 @@ func (store *SecretStore) GetSecretPlaintext(ctx context.Context, idDgst digest.
 	}
 
 	// If the secret is stored locally (setSecret), return the plaintext.
-	// TODO: uggo
-	if strings.HasPrefix(secret.Self.URI, "named://") {
-		plaintext, ok := store.plaintexts[idDgst]
-		if !ok {
-			return nil, fmt.Errorf("secret %s plaintext: %w", idDgst, secrets.ErrNotFound)
-		}
-		return plaintext, nil
+	if len(secret.Self.Plaintext) > 0 {
+		return secret.Self.Plaintext, nil
 	}
 
 	buildkitSessionID := secret.Self.BuildkitSessionID
