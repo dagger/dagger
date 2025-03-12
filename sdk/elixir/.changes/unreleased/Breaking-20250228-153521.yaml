@@ -1,6 +1,0 @@
-kind: Breaking
-body: The Elixir application is now move to the root of the module.
-time: 2025-02-28T15:35:21.246698+07:00
-custom:
-    Author: wingyplus
-    PR: "9727"
