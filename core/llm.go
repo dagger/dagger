@@ -726,9 +726,9 @@ func (msg ModelMessage) Text() (string, error) {
 	switch v := msg.Content.(type) {
 	case string:
 		return v, nil
-	case []interface{}:
+	case []any:
 		if len(v) > 0 {
-			if text, ok := v[0].(map[string]interface{})["text"].(string); ok {
+			if text, ok := v[0].(map[string]any)["text"].(string); ok {
 				return text, nil
 			}
 		}

@@ -45,6 +45,6 @@ type Session interface {
 type Tool struct {
 	Name        string
 	Description string
-	Schema      map[string]interface{}
-	Call        func(context.Context, interface{}) (interface{}, error)
+	Schema      map[string]any
+	Call        func(context.Context, any) (any, error)
 }

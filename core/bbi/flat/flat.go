@@ -84,7 +84,7 @@ func (s *Session) TypeWasReturned(typename string) bool {
 	return false
 }
 
-func (s *Session) call(ctx context.Context, fieldDef *ast.FieldDefinition, args interface{}, toplevel bool) (dagql.Typed, *call.ID, error) {
+func (s *Session) call(ctx context.Context, fieldDef *ast.FieldDefinition, args any, toplevel bool) (dagql.Typed, *call.ID, error) {
 	// 1. CONVERT CALL INPUTS (BRAIN -> BODY)
 	argsMap, ok := args.(map[string]any)
 	if !ok {
@@ -271,12 +271,12 @@ func (s *Session) tools(typedef *ast.Definition, toplevel bool, objectTypes map[
 	return tools
 }
 
-func fieldArgsToJSONSchema(field *ast.FieldDefinition) map[string]interface{} {
-	schema := map[string]interface{}{
+func fieldArgsToJSONSchema(field *ast.FieldDefinition) map[string]any {
+	schema := map[string]any{
 		"type":       "object",
-		"properties": map[string]interface{}{},
+		"properties": map[string]any{},
 	}
-	properties := schema["properties"].(map[string]interface{})
+	properties := schema["properties"].(map[string]any)
 	required := []string{}
 	for _, arg := range field.Arguments {
 		argSchema := typeToJSONSchema(arg.Type)
@@ -304,8 +304,8 @@ func fieldArgsToJSONSchema(field *ast.FieldDefinition) map[string]interface{} {
 	return schema
 }
 
-func typeToJSONSchema(t *ast.Type) map[string]interface{} {
-	schema := map[string]interface{}{}
+func typeToJSONSchema(t *ast.Type) map[string]any {
+	schema := map[string]any{}
 
 	// Handle lists
 	if t.Elem != nil {
