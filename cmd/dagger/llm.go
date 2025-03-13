@@ -8,16 +8,11 @@ import (
 	"log"
 	"maps"
 	"os"
-	"strings"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idtui"
-	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
-	"github.com/vito/bubbline/complete"
-	"github.com/vito/bubbline/editline"
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -90,39 +85,6 @@ func (s *LLMSession) Fork() *LLMSession {
 	cp.undo = s
 	return &cp
 }
-
-// var slashCommands = []slashCommand{
-// 	{
-// 		name:    "/shell",
-// 		desc:    "Switch into shell mode",
-// 		handler: (*shellCallHandler).ShellMode,
-// 	},
-// 	{
-// 		name:    "/prompt",
-// 		desc:    "Switch into prompt mode",
-// 		handler: (*shellCallHandler).PromptMode,
-// 	},
-// 	{
-// 		name:    "/clear",
-// 		desc:    "Clear the LLM history",
-// 		handler: (*shellCallHandler).Clear,
-// 	},
-// 	{
-// 		name:    "/compact",
-// 		desc:    "Compact the LLM history",
-// 		handler: (*shellCallHandler).Compact,
-// 	},
-// 	{
-// 		name:    "/history",
-// 		desc:    "Show the LLM history",
-// 		handler: (*shellCallHandler).History,
-// 	},
-// 	{
-// 		name:    "/model",
-// 		desc:    "Swap out the LLM model",
-// 		handler: (*LLMSession).Model,
-// 	},
-// }
 
 func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession, error) {
 	s = s.Fork()
@@ -309,16 +271,10 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) (*LLMSession, error) {
 	return s, nil
 }
 
-func (s *LLMSession) Undo(ctx context.Context, _ string) (*LLMSession, error) {
-	if s.undo == nil {
-		return s, nil
-	}
-	return s.undo, nil
-}
-
-func (s *LLMSession) Clear(ctx context.Context, _ string) (_ *LLMSession, rerr error) {
+func (s *LLMSession) Clear() *LLMSession {
+	s = s.Fork()
 	s.reset()
-	return s, nil
+	return s
 }
 
 var compact = `Please summarize our conversation so far into a concise context that:
@@ -351,7 +307,7 @@ Present this summary in a compact form that retains all essential context needed
 This will be a note to yourself, not shown to the user, so prioritize your own understanding and don't ask any questions, because they won't be seen by anyone.
 `
 
-func (s *LLMSession) Compact(ctx context.Context, _ string) (_ *LLMSession, rerr error) {
+func (s *LLMSession) Compact(ctx context.Context) (_ *LLMSession, rerr error) {
 	ctx, span := Tracer().Start(ctx, "compact", telemetry.Internal(), telemetry.Encapsulate())
 	defer telemetry.End(span, func() error { return rerr })
 	summary, err := s.llm.WithPrompt(compact).LastReply(ctx)
@@ -365,12 +321,12 @@ func (s *LLMSession) Compact(ctx context.Context, _ string) (_ *LLMSession, rerr
 	if err != nil {
 		return s, err
 	}
-	// TODO: restore previous state
+	s = s.Fork()
 	s.llm = compacted
 	return s, nil
 }
 
-func (s *LLMSession) History(ctx context.Context, _ string) (*LLMSession, error) {
+func (s *LLMSession) History(ctx context.Context) (*LLMSession, error) {
 	history, err := s.llm.History(ctx)
 	if err != nil {
 		return s, err
@@ -382,16 +338,6 @@ func (s *LLMSession) History(ctx context.Context, _ string) (*LLMSession, error)
 	return s, nil
 }
 
-func (s *LLMSession) Prompt(out idtui.TermOutput, fg termenv.Color) string {
-	sb := new(strings.Builder)
-	sb.WriteString(termenv.CSI + termenv.ResetSeq + "m") // clear background
-	sb.WriteString(out.String(s.model).Bold().Foreground(termenv.ANSICyan).String())
-	sb.WriteString(out.String(" ").String())
-	sb.WriteString(out.String(idtui.LLMPrompt).Bold().Foreground(fg).String())
-	sb.WriteString(out.String(out.String(" ").String()).String())
-	return sb.String()
-}
-
 func (s *LLMSession) Model(ctx context.Context, model string) (*LLMSession, error) {
 	s = s.Fork()
 	s.llm = s.llm.WithModel(model)
@@ -401,71 +347,4 @@ func (s *LLMSession) Model(ctx context.Context, model string) (*LLMSession, erro
 	}
 	s.model = model
 	return s, nil
-}
-
-type slashCommand struct {
-	name    string
-	desc    string
-	handler func(s *shellCallHandler, ctx context.Context, script string) error
-}
-
-type varCompletions struct {
-	groups             []slashCommandGroup
-	cursor, start, end int
-}
-
-type slashCommandGroup struct {
-	name     string
-	commands []slashCommand
-}
-
-var _ editline.Completions = (*varCompletions)(nil)
-
-func (c *varCompletions) NumCategories() int {
-	return len(c.groups)
-}
-
-func (c *varCompletions) CategoryTitle(catIdx int) string {
-	return c.groups[catIdx].name
-}
-
-func (c *varCompletions) NumEntries(catIdx int) int {
-	return len(c.groups[catIdx].commands)
-}
-
-func (c *varCompletions) Entry(catIdx, entryIdx int) complete.Entry {
-	return &slashCompletion{c, &c.groups[catIdx].commands[entryIdx]}
-}
-
-func (c *varCompletions) Candidate(e complete.Entry) editline.Candidate {
-	return e.(*slashCompletion)
-}
-
-type slashCompletion struct {
-	s   *varCompletions
-	cmd *slashCommand
-}
-
-var _ complete.Entry = (*slashCompletion)(nil)
-
-func (c *slashCompletion) Title() string {
-	return c.cmd.name
-}
-
-func (c *slashCompletion) Description() string {
-	return c.cmd.desc
-}
-
-var _ editline.Candidate = (*slashCompletion)(nil)
-
-func (c *slashCompletion) Replacement() string {
-	return c.cmd.name
-}
-
-func (c *slashCompletion) MoveRight() int {
-	return c.s.end - c.s.cursor
-}
-
-func (c *slashCompletion) DeleteLeft() int {
-	return c.s.end - c.s.start
 }

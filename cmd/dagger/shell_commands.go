@@ -201,6 +201,104 @@ func (h *shellCallHandler) Stdlib() []*ShellCommand {
 	return l
 }
 
+func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
+	return []*ShellCommand{
+		{
+			Use:         ".shell",
+			Description: "Switch into shell mode",
+			GroupID:     "llm",
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
+				h.persistentMode = modeShell
+				return nil
+			},
+		},
+		{
+			Use:         ".prompt",
+			Description: "Switch into prompt mode",
+			GroupID:     "llm",
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
+				// Initialize LLM if not already done
+				_, err := h.llm(ctx)
+				if err != nil {
+					return err
+				}
+				h.persistentMode = modePrompt
+				return nil
+			},
+		},
+		{
+			Use:         ".clear",
+			Description: "Clear the LLM history",
+			GroupID:     "llm",
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
+				if h.llmSession == nil {
+					return fmt.Errorf("LLM not initialized")
+				}
+				h.llmSession = h.llmSession.Clear()
+				return nil
+			},
+		},
+		{
+			Use:         ".compact",
+			Description: "Compact the LLM history",
+			GroupID:     "llm",
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
+				if h.llmSession == nil {
+					return fmt.Errorf("LLM not initialized")
+				}
+				newLLM, err := h.llmSession.Compact(ctx)
+				if err != nil {
+					return err
+				}
+				h.llmSession = newLLM
+				return nil
+			},
+		},
+		{
+			Use:         ".history",
+			Description: "Show the LLM history",
+			GroupID:     "llm",
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
+				if h.llmSession == nil {
+					return fmt.Errorf("LLM not initialized")
+				}
+				_, err := h.llmSession.History(ctx)
+				return err
+			},
+		},
+		{
+			Use:         ".model [model]",
+			Description: "Swap out the LLM model",
+			GroupID:     "llm",
+			Args:        ExactArgs(1),
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, args []string, _ *ShellState) error {
+				llm, err := h.llm(ctx)
+				if err != nil {
+					return err
+				}
+				newLLM, err := llm.Model(ctx, args[0])
+				if err != nil {
+					return err
+				}
+				h.llmSession = newLLM
+				h.llmModel = newLLM.model
+				return nil
+			},
+		},
+	}
+}
+
 func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 	var builtins []*ShellCommand
 	var stdlib []*ShellCommand
@@ -507,6 +605,9 @@ Without arguments, the current working directory is replaced by the initial cont
 		cobraToShellCommand(moduleUnInstallCmd),
 		cobraToShellCommand(moduleUpdateCmd),
 	)
+
+	// Add LLM commands
+	builtins = append(builtins, h.llmBuiltins()...)
 
 	def := h.GetDef(nil)
 

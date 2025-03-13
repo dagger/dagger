@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
@@ -49,8 +50,10 @@ var shellCmd = &cobra.Command{
 		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
 			handler := &shellCallHandler{
-				dag:   dag,
-				debug: debug,
+				dag:            dag,
+				debug:          debug,
+				llmModel:       llmModel,
+				persistentMode: modeShell,
 			}
 			return handler.RunAll(ctx, args)
 		})
@@ -107,8 +110,8 @@ type shellCallHandler struct {
 	lastResult *Result
 
 	// llm is the LLM session for the shell
-	llm      *LLMSession
-	llmModel string
+	llmSession *LLMSession
+	llmModel   string
 
 	// mu is used to synchronize access to the workdir and interpreter
 	mu sync.RWMutex
@@ -307,14 +310,6 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 	defer telemetry.End(shellSpan, func() error { return nil })
 	Frontend.SetPrimary(dagui.SpanID{SpanID: shellSpan.SpanContext().SpanID()})
 
-	// If LLM model is specified, initialize LLM session
-	if llmModel != "" {
-		if err := h.initLLM(ctx); err != nil {
-			return err
-		}
-		h.persistentMode = modePrompt
-	}
-
 	// Start the shell loop (either in LLM mode or normal shell mode)
 	Frontend.Shell(ctx, h)
 
@@ -350,12 +345,16 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	defer telemetry.End(span, func() error { return rerr })
 
 	// Handle based on mode
-	if h.llm != nil && h.mode() == modePrompt {
-		newLLM, err := h.llm.WithPrompt(ctx, line)
+	if h.mode() == modePrompt {
+		llm, err := h.llm(ctx)
 		if err != nil {
 			return err
 		}
-		h.llm = newLLM
+		newLLM, err := llm.WithPrompt(ctx, line)
+		if err != nil {
+			return err
+		}
+		h.llmSession = newLLM
 		return nil
 	}
 
@@ -385,33 +384,45 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	}
 
 	// If LLM is active, sync variables from shell to LLM
-	if h.llm != nil {
-		newLLM, err := h.llm.syncVarsToLLM(ctx)
+	if h.llmSession != nil {
+		newLLM, err := h.llmSession.syncVarsToLLM(ctx)
 		if err != nil {
 			return err
 		}
-		h.llm = newLLM
+		h.llmSession = newLLM
 	}
 
 	return nil
 }
 
 func (h *shellCallHandler) Prompt(out idtui.TermOutput, fg termenv.Color) string {
-	// Use LLM prompt if LLM session is active and in prompt mode
-	if h.llm != nil && h.mode() == modePrompt {
-		return h.llm.Prompt(out, fg)
-	}
-
-	// Regular shell prompt
 	sb := new(strings.Builder)
 
-	if def, _ := h.GetModuleDef(nil); def != nil {
-		sb.WriteString(out.String(def.Name).Bold().Foreground(termenv.ANSICyan).String())
-		sb.WriteString(out.String(" ").String())
-	}
+	sb.WriteString(termenv.CSI + termenv.ResetSeq + "m") // clear background
 
-	sb.WriteString(out.String(idtui.ShellPrompt).Bold().Foreground(fg).String())
-	sb.WriteString(out.String(out.String(" ").String()).String())
+	// Use LLM prompt if LLM session is active and in prompt mode
+	switch h.mode() {
+	case modeShell:
+		if def, _ := h.GetModuleDef(nil); def != nil {
+			sb.WriteString(out.String(def.Name).Bold().Foreground(termenv.ANSICyan).String())
+			sb.WriteString(out.String(" ").String())
+		}
+
+		sb.WriteString(out.String(idtui.ShellPrompt).Bold().Foreground(fg).String())
+		sb.WriteString(out.String(out.String(" ").String()).String())
+	case modePrompt:
+		// initialize LLM session if not already initialized
+		llm, err := h.llm(context.TODO())
+		if err != nil {
+			sb.WriteString(out.String(err.Error()).Bold().Foreground(termenv.ANSIRed).String())
+			sb.WriteString(out.String(" ").String())
+		} else {
+			sb.WriteString(out.String(llm.model).Bold().Foreground(termenv.ANSICyan).String())
+			sb.WriteString(out.String(" ").String())
+		}
+		sb.WriteString(out.String(idtui.LLMPrompt).Bold().Foreground(fg).String())
+		sb.WriteString(out.String(out.String(" ").String()).String())
+	}
 
 	return sb.String()
 }
@@ -423,7 +434,7 @@ func (*shellCallHandler) Print(ctx context.Context, args ...any) error {
 }
 
 func (h *shellCallHandler) AutoComplete(entireInput [][]rune, line int, col int) (string, editline.Completions) {
-	if h.llm != nil && h.mode() == modePrompt {
+	if h.mode() == modePrompt {
 		word, wstart, wend := computil.FindWord(entireInput, line, col)
 		if strings.HasPrefix(word, "$") {
 			word = strings.TrimPrefix(word, "$")
@@ -443,7 +454,7 @@ func (h *shellCallHandler) AutoComplete(entireInput [][]rune, line int, col int)
 }
 
 func (h *shellCallHandler) IsComplete(entireInput [][]rune, line int, col int) bool {
-	if h.llm != nil && h.mode() == modePrompt {
+	if h.mode() == modePrompt {
 		return true // LLM prompt mode always considers input complete
 	}
 
@@ -459,59 +470,47 @@ func (h *shellCallHandler) IsComplete(entireInput [][]rune, line int, col int) b
 	return true
 }
 
-func (h *shellCallHandler) initLLM(ctx context.Context) error {
-	if h.llm == nil {
+func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
+	if h.llmSession == nil {
+		// this blocks the UI, so set a brief timeout
+		ctx, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
 		s, err := NewLLMSession(ctx, h.dag, h.llmModel, h)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		h.llm = s
+		h.llmSession = s
 	}
-	return nil
+	return h.llmSession, nil
 }
 
 func (h *shellCallHandler) ReactToInput(msg tea.KeyMsg) bool {
 	switch msg.String() {
 	case ">":
-		// Initialize LLM if not already done
-		if h.llm == nil {
-			ctx := context.TODO()
-			if err := h.initLLM(ctx); err != nil {
-				// Can't really handle the error here, but we'll return false
-				// which means we didn't handle the key press
-				return false
-			}
-		}
 		h.oneshotMode = modePrompt
 		return true
 	case "!":
-		if h.llm != nil {
-			h.oneshotMode = modeShell
-			return true
-		}
+		h.oneshotMode = modeShell
+		return true
 	case "backspace":
-		if h.llm != nil {
-			h.oneshotMode = modeUnset
-			return true
-		}
+		h.oneshotMode = modeUnset
+		return true
 	}
 	return false
 }
 
 func (h *shellCallHandler) EncodeHistory(entry string) string {
-	if h.llm != nil {
-		switch h.mode() {
-		case modePrompt:
-			return ">" + entry
-		case modeShell:
-			return "!" + entry
-		}
+	switch h.mode() {
+	case modePrompt:
+		return ">" + entry
+	case modeShell:
+		return "!" + entry
 	}
 	return entry
 }
 
 func (h *shellCallHandler) DecodeHistory(entry string) string {
-	if h.llm != nil && len(entry) > 0 {
+	if len(entry) > 0 {
 		switch entry[0] {
 		case '*':
 			// Legacy format in history
