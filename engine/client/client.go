@@ -86,8 +86,6 @@ type Params struct {
 	InteractiveCommand []string
 
 	WithTerminal session.WithTerminalFunc
-
-	ServeModule bool
 }
 
 type Client struct {

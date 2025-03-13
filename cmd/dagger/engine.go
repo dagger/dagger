@@ -2,11 +2,9 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 
-	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
@@ -97,45 +95,6 @@ func withEngine(
 			return err
 		}
 		defer sess.Close()
-
-		// Automatically serve the module in the context directory if available.
-		if params.ServeModule {
-			mod, exist, err := initializeClientGeneratorModule(ctx, sess.Dagger(), ".")
-			if err != nil && !errors.Is(err, ErrConfigNotFound) {
-				return fmt.Errorf("failed to initialize current module: %w", err)
-			}
-
-			if exist {
-				for _, dep := range mod.Dependencies {
-					depKind, err := dep.Kind(ctx)
-					if err != nil {
-						return fmt.Errorf("failed to get dependency kind: %w", err)
-					}
-
-					// Skip remote dependencies because they are already serves during the call to `Connect`
-					if depKind == dagger.ModuleSourceKindGitSource {
-						continue
-					}
-
-					err = dep.AsModule().Serve(ctx)
-					if err != nil {
-						return fmt.Errorf("failed to serve dependency %w", err)
-					}
-				}
-
-				sdkSource, err := mod.Source.SDK().Source(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to get module SDK source: %w", err)
-				}
-
-				if sdkSource != "" {
-					err := mod.Source.AsModule().Serve(ctx)
-					if err != nil {
-						return fmt.Errorf("failed to serve module source: %w", err)
-					}
-				}
-			}
-		}
 
 		return fn(ctx, sess)
 	})
