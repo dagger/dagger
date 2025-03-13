@@ -20,6 +20,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/vito/bubbline/computil"
 	"github.com/vito/bubbline/editline"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -28,11 +30,14 @@ import (
 var (
 	shellCode         string
 	shellNoLoadModule bool
+
+	llmModel string
 )
 
 func shellAddFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&shellCode, "code", "c", "", "Command to be executed")
 	cmd.Flags().BoolVarP(&shellNoLoadModule, "no-mod", "n", false, "Don't load module during shell startup (mutually exclusive with --mod)")
+	cmd.Flags().StringVar(&llmModel, "model", "", "LLM model to use (e.g., 'claude-3-5-sonnet', 'gpt-4o')")
 	cmd.MarkFlagsMutuallyExclusive("mod", "no-mod")
 }
 
@@ -54,51 +59,6 @@ var shellCmd = &cobra.Command{
 	Annotations: map[string]string{
 		"experimental": "true",
 	},
-}
-
-func newTerminalWriter(fn func([]byte) (int, error)) *terminalWriter {
-	return &terminalWriter{
-		fn: fn,
-	}
-}
-
-// terminalWriter is a custom io.Writer that synchronously calls the handler's
-// withTerminal on each write from the runner
-type terminalWriter struct {
-	mu sync.Mutex
-	fn func([]byte) (int, error)
-
-	// processFn is a function that can be used to process the incoming data
-	// before writing to the terminal
-	//
-	// This can be used to resolve shell state just before printing to screen,
-	// and make necessary API requests.
-	processFn func([]byte) ([]byte, error)
-}
-
-func (o *terminalWriter) Write(p []byte) (n int, err error) {
-	if len(p) == 0 {
-		return 0, nil
-	}
-	if o.processFn != nil {
-		r, err := o.processFn(p)
-		if err != nil {
-			return 0, err
-		}
-		p = r
-	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return o.fn(p)
-}
-
-// Shell state is piped between exec handlers and only in the end the runner
-// writes the final output to the stdoutWriter. We need to check if that
-// state needs to be resolved into an API request and handle the response
-// appropriately. Note that this can happen in parallel if commands are
-// separated with a '&'.
-func (o *terminalWriter) SetProcessFunc(fn func([]byte) ([]byte, error)) {
-	o.processFn = fn
 }
 
 type shellCallHandler struct {
@@ -146,8 +106,17 @@ type shellCallHandler struct {
 	// lastResult is the last result from the shell
 	lastResult *Result
 
+	// llm is the LLM session for the shell
+	llm      *LLMSession
+	llmModel string
+
 	// mu is used to synchronize access to the workdir and interpreter
 	mu sync.RWMutex
+
+	// interpreter mode (shell or prompt)
+	persistentMode interpreterMode // persistent mode (flag or slash command)
+	oneshotMode    interpreterMode // user prefixed input with ! or >
+	savedMode      interpreterMode // user coming back from history
 
 	// cancel interrupts the entire shell session
 	cancel func()
@@ -334,32 +303,61 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 	h.cancel = cancel
 
 	// give ourselves a blank slate by zooming into a passthrough span
-	shellCtx, shellSpan := Tracer().Start(ctx, "shell", telemetry.Passthrough())
+	ctx, shellSpan := Tracer().Start(ctx, "shell", telemetry.Passthrough())
 	defer telemetry.End(shellSpan, func() error { return nil })
 	Frontend.SetPrimary(dagui.SpanID{SpanID: shellSpan.SpanContext().SpanID()})
 
-	Frontend.Shell(shellCtx, h)
+	// If LLM model is specified, initialize LLM session
+	if llmModel != "" {
+		if err := h.initLLM(ctx); err != nil {
+			return err
+		}
+		h.persistentMode = modePrompt
+	}
+
+	// Start the shell loop (either in LLM mode or normal shell mode)
+	Frontend.Shell(ctx, h)
 
 	return nil
 }
 
 var _ idtui.ShellHandler = (*shellCallHandler)(nil)
 
-func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+func (s *shellCallHandler) mode() interpreterMode {
+	if s.oneshotMode != modeUnset {
+		return s.oneshotMode
+	}
+	return s.persistentMode
+}
 
-	if line == "exit" {
+func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error) {
+	// If in exit command
+	if line == "exit" || line == "/exit" {
 		h.cancel()
 		return nil
 	}
 
+	// Empty input
 	if strings.TrimSpace(line) == "" {
 		return nil
 	}
 
-	ctx, span := Tracer().Start(ctx, line)
+	// reset any oneshot mode after the command is interpreted
+	defer func() { h.oneshotMode = modeUnset }()
+
+	// Create a new span for this command
+	ctx, span := Tracer().Start(ctx, line, trace.WithAttributes(attribute.String("mode", h.mode().String())))
 	defer telemetry.End(span, func() error { return rerr })
+
+	// Handle based on mode
+	if h.llm != nil && h.mode() == modePrompt {
+		newLLM, err := h.llm.WithPrompt(ctx, line)
+		if err != nil {
+			return err
+		}
+		h.llm = newLLM
+		return nil
+	}
 
 	// redirect stdio to the current span
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
@@ -380,10 +378,31 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		defer h.state.debug(ctx)
 	}
 
-	return h.run(ctx, strings.NewReader(line), "")
+	// Run shell command - optionally sync vars back to LLM after running
+	err := h.run(ctx, strings.NewReader(line), "")
+	if err != nil {
+		return err
+	}
+
+	// If LLM is active, sync variables from shell to LLM
+	if h.llm != nil {
+		newLLM, err := h.llm.syncVarsToLLM(ctx)
+		if err != nil {
+			return err
+		}
+		h.llm = newLLM
+	}
+
+	return nil
 }
 
 func (h *shellCallHandler) Prompt(out idtui.TermOutput, fg termenv.Color) string {
+	// Use LLM prompt if LLM session is active and in prompt mode
+	if h.llm != nil && h.mode() == modePrompt {
+		return h.llm.Prompt(out, fg)
+	}
+
+	// Regular shell prompt
 	sb := new(strings.Builder)
 
 	if def, _ := h.GetModuleDef(nil); def != nil {
@@ -404,10 +423,31 @@ func (*shellCallHandler) Print(ctx context.Context, args ...any) error {
 }
 
 func (h *shellCallHandler) AutoComplete(entireInput [][]rune, line int, col int) (string, editline.Completions) {
+	if h.llm != nil && h.mode() == modePrompt {
+		word, wstart, wend := computil.FindWord(entireInput, line, col)
+		if strings.HasPrefix(word, "$") {
+			word = strings.TrimPrefix(word, "$")
+			vars := h.runner.Vars
+			var completions []string
+			for k := range vars {
+				if strings.HasPrefix(k, word) {
+					completions = append(completions, k)
+				}
+			}
+			return "", editline.SimpleWordsCompletion(completions, word, wstart, wend, col)
+		}
+		return "", nil
+	}
+
 	return (&shellAutoComplete{h}).Do(entireInput, line, col)
 }
 
-func (*shellCallHandler) IsComplete(entireInput [][]rune, line int, col int) bool {
+func (h *shellCallHandler) IsComplete(entireInput [][]rune, line int, col int) bool {
+	if h.llm != nil && h.mode() == modePrompt {
+		return true // LLM prompt mode always considers input complete
+	}
+
+	// Regular shell mode
 	input, _ := computil.Flatten(entireInput, line, col)
 	_, err := syntax.NewParser().Parse(strings.NewReader(input), "")
 	if err != nil {
@@ -419,16 +459,142 @@ func (*shellCallHandler) IsComplete(entireInput [][]rune, line int, col int) boo
 	return true
 }
 
-func (*shellCallHandler) ReactToInput(msg tea.KeyMsg) bool { return false }
+func (h *shellCallHandler) initLLM(ctx context.Context) error {
+	if h.llm == nil {
+		s, err := NewLLMSession(ctx, h.dag, h.llmModel, h)
+		if err != nil {
+			return err
+		}
+		h.llm = s
+	}
+	return nil
+}
 
-func (*shellCallHandler) EncodeHistory(entry string) string { return entry }
+func (h *shellCallHandler) ReactToInput(msg tea.KeyMsg) bool {
+	switch msg.String() {
+	case ">":
+		// Initialize LLM if not already done
+		if h.llm == nil {
+			ctx := context.TODO()
+			if err := h.initLLM(ctx); err != nil {
+				// Can't really handle the error here, but we'll return false
+				// which means we didn't handle the key press
+				return false
+			}
+		}
+		h.oneshotMode = modePrompt
+		return true
+	case "!":
+		if h.llm != nil {
+			h.oneshotMode = modeShell
+			return true
+		}
+	case "backspace":
+		if h.llm != nil {
+			h.oneshotMode = modeUnset
+			return true
+		}
+	}
+	return false
+}
 
-func (*shellCallHandler) DecodeHistory(entry string) string { return entry }
+func (h *shellCallHandler) EncodeHistory(entry string) string {
+	if h.llm != nil {
+		switch h.mode() {
+		case modePrompt:
+			return ">" + entry
+		case modeShell:
+			return "!" + entry
+		}
+	}
+	return entry
+}
 
-func (*shellCallHandler) SaveBeforeHistory() {}
+func (h *shellCallHandler) DecodeHistory(entry string) string {
+	if h.llm != nil && len(entry) > 0 {
+		switch entry[0] {
+		case '*':
+			// Legacy format in history
+			h.oneshotMode = modePrompt
+			return entry[1:]
+		case '>':
+			h.oneshotMode = modePrompt
+			return entry[1:]
+		case '!':
+			h.oneshotMode = modeShell
+			return entry[1:]
+		default:
+			h.oneshotMode = modeUnset
+		}
+	}
+	return entry
+}
 
-func (*shellCallHandler) RestoreAfterHistory() {}
+func (h *shellCallHandler) SaveBeforeHistory() {
+	h.savedMode = h.mode()
+}
 
-func (*shellCallHandler) KeyBindings() []key.Binding {
-	return []key.Binding{}
+func (h *shellCallHandler) RestoreAfterHistory() {
+	h.oneshotMode = h.savedMode
+	h.savedMode = modeUnset
+}
+
+func (h *shellCallHandler) KeyBindings() []key.Binding {
+	return []key.Binding{
+		key.NewBinding(
+			key.WithKeys("!"),
+			key.WithHelp("!", "run shell"),
+			idtui.KeyEnabled(h.mode() == modePrompt),
+		),
+		key.NewBinding(
+			key.WithKeys(">"),
+			key.WithHelp(">", "run prompt"),
+			idtui.KeyEnabled(h.mode() == modeShell),
+		),
+	}
+}
+
+func newTerminalWriter(fn func([]byte) (int, error)) *terminalWriter {
+	return &terminalWriter{
+		fn: fn,
+	}
+}
+
+// terminalWriter is a custom io.Writer that synchronously calls the handler's
+// withTerminal on each write from the runner
+type terminalWriter struct {
+	mu sync.Mutex
+	fn func([]byte) (int, error)
+
+	// processFn is a function that can be used to process the incoming data
+	// before writing to the terminal
+	//
+	// This can be used to resolve shell state just before printing to screen,
+	// and make necessary API requests.
+	processFn func([]byte) ([]byte, error)
+}
+
+func (o *terminalWriter) Write(p []byte) (n int, err error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if o.processFn != nil {
+		r, err := o.processFn(p)
+		if err != nil {
+			return 0, err
+		}
+		p = r
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.fn(p)
+}
+
+// Shell state is piped between exec handlers and only in the end the runner
+// writes the final output to the stdoutWriter. We need to check if that
+// state needs to be resolved into an API request and handle the response
+// appropriately. Note that this can happen in parallel if commands are
+// separated with a '&'.
+func (o *terminalWriter) SetProcessFunc(fn func([]byte) ([]byte, error)) {
+	o.processFn = fn
 }

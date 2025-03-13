@@ -103,12 +103,10 @@ func init() {
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	configCmd.PersistentFlags().AddFlagSet(moduleFlags)
-	llmCmd.PersistentFlags().AddFlagSet(moduleFlags)
 
 	shellCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	rootCmd.Flags().AddFlagSet(moduleFlags)
 	shellAddFlags(shellCmd)
-	shellAddFlags(llmCmd)
 	shellAddFlags(rootCmd)
 
 	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "Optionally install a Dagger SDK")

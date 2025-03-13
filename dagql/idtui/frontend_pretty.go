@@ -75,6 +75,7 @@ type frontendPretty struct {
 	flushed         map[dagui.SpanID]bool
 	scrollback      *strings.Builder
 	shellRunning    bool
+	shellLock       sync.Mutex
 
 	// updated as events are written
 	db           *dagui.DB
@@ -1013,6 +1014,8 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			fe.shellRunning = true
 
 			return fe, func() tea.Msg {
+				fe.shellLock.Lock()
+				defer fe.shellLock.Unlock()
 				return shellDoneMsg{fe.shell.Handle(ctx, value)}
 			}
 		}

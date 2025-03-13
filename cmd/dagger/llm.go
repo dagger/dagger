@@ -12,193 +12,15 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
-	"github.com/dagger/dagger/engine/client"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
-	"github.com/spf13/cobra"
 	"github.com/vito/bubbline/complete"
-	"github.com/vito/bubbline/computil"
 	"github.com/vito/bubbline/editline"
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 )
-
-// Variables for llm command flags
-var (
-	llmModel string
-)
-
-func llmAddFlags(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&llmModel, "model", "", "LLM model to use (e.g., 'claude-3-5-sonnet', 'gpt-4o')")
-}
-
-var llmCmd = &cobra.Command{
-	Use:   "llm [options]",
-	Short: "Run an interactive LLM interface",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cmd.SetContext(idtui.WithPrintTraceLink(cmd.Context(), true))
-		return withEngine(cmd.Context(), client.Params{}, LLMLoop)
-	},
-	Hidden: true,
-	Annotations: map[string]string{
-		"experimental": "true",
-	},
-}
-
-type LLMShellHandler struct {
-	s      *LLMSession
-	cancel func()
-}
-
-func (h *LLMShellHandler) Handle(ctx context.Context, line string) (rerr error) {
-	if line == "/exit" {
-		h.cancel()
-		return nil
-	}
-	new, err := h.s.Interpret(ctx, line)
-	if err != nil {
-		return err
-	}
-	h.s = new
-	return nil
-}
-
-func (h *LLMShellHandler) AutoComplete(entireInput [][]rune, line, col int) (string, editline.Completions) {
-	return h.s.Complete(entireInput, line, col)
-}
-
-func (h *LLMShellHandler) IsComplete(entireInput [][]rune, line, col int) bool {
-	return h.s.IsComplete(entireInput, line, col)
-}
-
-func (h *LLMShellHandler) Prompt(out idtui.TermOutput, fg termenv.Color) string {
-	return h.s.Prompt(out, fg)
-}
-
-func (h *LLMShellHandler) ReactToInput(msg tea.KeyMsg) bool {
-	if s, ok := h.s.ReactToInput(msg); ok {
-		h.s = s
-		return true
-	}
-	return false
-}
-
-func (h *LLMShellHandler) DecodeHistory(entry string) string {
-	return h.s.DecodeHistory(entry)
-}
-
-func (h *LLMShellHandler) EncodeHistory(entry string) string {
-	return h.s.EncodeHistory(entry)
-}
-
-func (h *LLMShellHandler) SaveBeforeHistory() {
-	h.s.SaveBeforeHistory()
-}
-
-func (h *LLMShellHandler) RestoreAfterHistory() {
-	h.s.RestoreAfterHistory()
-}
-
-func (h *LLMShellHandler) KeyBindings() []key.Binding {
-	return h.s.KeyBindings()
-}
-
-func (s *LLMSession) ReactToInput(msg tea.KeyMsg) (*LLMSession, bool) {
-	switch msg.String() {
-	case ">":
-		s.oneshotMode = modePrompt
-		return s, true
-	case "!":
-		s.oneshotMode = modeShell
-		return s, true
-	case "backspace":
-		s.oneshotMode = modeUnset
-		return s, true
-	}
-	return s, false
-}
-
-func (s *LLMSession) EncodeHistory(entry string) string {
-	switch s.mode() {
-	case modePrompt:
-		return ">" + entry
-	case modeShell:
-		return "!" + entry
-	}
-	return entry
-}
-
-func (s *LLMSession) KeyBindings() []key.Binding {
-	return []key.Binding{
-		key.NewBinding(
-			key.WithKeys("!"),
-			key.WithHelp("!", "run shell"),
-			idtui.KeyEnabled(s.mode() == modePrompt),
-		),
-		key.NewBinding(
-			key.WithKeys(">"),
-			key.WithHelp(">", "run prompt"),
-			idtui.KeyEnabled(s.mode() == modeShell),
-		),
-	}
-}
-
-func (s *LLMSession) DecodeHistory(entry string) string {
-	if len(entry) > 0 {
-		switch entry[0] {
-		case '*':
-			s.oneshotMode = modePrompt
-			return entry[1:]
-		case '!':
-			s.oneshotMode = modeShell
-			return entry[1:]
-		}
-	}
-	s.oneshotMode = modeUnset
-	return entry
-}
-
-func (s *LLMSession) SaveBeforeHistory() {
-	s.savedMode = s.mode()
-}
-
-func (s *LLMSession) RestoreAfterHistory() {
-	s.oneshotMode = s.savedMode
-	s.savedMode = modeUnset
-}
-
-func LLMLoop(ctx context.Context, engineClient *client.Client) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	dag := engineClient.Dagger()
-
-	// start a new LLM session, which we'll reassign throughout
-	s, err := NewLLMSession(ctx, dag, llmModel)
-	if err != nil {
-		return err
-	}
-
-	// give ourselves a blank slate by zooming into a passthrough span
-	ctx, span := Tracer().Start(ctx, "llm", telemetry.Passthrough())
-	defer telemetry.End(span, func() error { return nil })
-	Frontend.SetPrimary(dagui.SpanID{SpanID: span.SpanContext().SpanID()})
-
-	// TODO: initialize LLM with current module, matching shell behavior?
-
-	// start the shell loop
-	Frontend.Shell(ctx, &LLMShellHandler{
-		s:      s,
-		cancel: cancel,
-	})
-
-	return nil
-}
 
 type interpreterMode int
 
@@ -208,29 +30,29 @@ const (
 	modeShell
 )
 
-type LLMSession struct {
-	undo           *LLMSession
-	dag            *dagger.Client
-	llm            *dagger.Llm
-	llmModel       string
-	shell          *shellCallHandler
-	persistentMode interpreterMode
-	oneshotMode    interpreterMode
-	// mode from before going through history
-	savedMode  interpreterMode
-	syncedVars map[string]digest.Digest
+func (m interpreterMode) String() string {
+	switch m {
+	case modeUnset:
+		return "unset"
+	case modePrompt:
+		return "prompt"
+	case modeShell:
+		return "shell"
+	default:
+		return fmt.Sprintf("unknown(%d)", m)
+	}
 }
 
-func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string) (*LLMSession, error) {
-	shellHandler := &shellCallHandler{
-		dag:   dag,
-		debug: debug,
-	}
+type LLMSession struct {
+	undo       *LLMSession
+	dag        *dagger.Client
+	llm        *dagger.Llm
+	model      string
+	syncedVars map[string]digest.Digest
+	shell      *shellCallHandler
+}
 
-	if err := shellHandler.Initialize(ctx); err != nil {
-		return nil, err
-	}
-
+func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, shellHandler *shellCallHandler) (*LLMSession, error) {
 	initialVars := make(map[string]digest.Digest)
 	// HACK: pretend we synced the initial env, we don't want to just toss the
 	// entire os.Environ into the LLM
@@ -242,11 +64,10 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string) (*L
 	}
 
 	s := &LLMSession{
-		dag:            dag,
-		llmModel:       llmModel,
-		shell:          shellHandler,
-		persistentMode: modePrompt,
-		syncedVars:     initialVars,
+		dag:        dag,
+		model:      llmModel,
+		syncedVars: initialVars,
+		shell:      shellHandler,
 	}
 	s.reset()
 
@@ -255,20 +76,13 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string) (*L
 	if err != nil {
 		return nil, err
 	}
-	s.llmModel = model
+	s.model = model
 
 	return s, nil
 }
 
 func (s *LLMSession) reset() {
-	s.llm = s.dag.Llm(dagger.LlmOpts{Model: s.llmModel})
-}
-
-func (s *LLMSession) mode() interpreterMode {
-	if s.oneshotMode != modeUnset {
-		return s.oneshotMode
-	}
-	return s.persistentMode
+	s.llm = s.dag.Llm(dagger.LlmOpts{Model: s.model})
 }
 
 func (s *LLMSession) Fork() *LLMSession {
@@ -277,82 +91,40 @@ func (s *LLMSession) Fork() *LLMSession {
 	return &cp
 }
 
-var slashCommands = []slashCommand{
-	{
-		name:    "/undo",
-		desc:    "Undo the last command",
-		handler: (*LLMSession).Undo,
-	},
-	{
-		name:    "/shell",
-		desc:    "Switch into shell mode",
-		handler: (*LLMSession).ShellMode,
-	},
-	{
-		name:    "/prompt",
-		desc:    "Switch into prompt mode",
-		handler: (*LLMSession).PromptMode,
-	},
-	{
-		name:    "/clear",
-		desc:    "Clear the LLM history",
-		handler: (*LLMSession).Clear,
-	},
-	{
-		name:    "/compact",
-		desc:    "Compact the LLM history",
-		handler: (*LLMSession).Compact,
-	},
-	{
-		name:    "/history",
-		desc:    "Show the LLM history",
-		handler: (*LLMSession).History,
-	},
-	{
-		name:    "/model",
-		desc:    "Swap out the LLM model",
-		handler: (*LLMSession).Model,
-	},
-}
+// var slashCommands = []slashCommand{
+// 	{
+// 		name:    "/shell",
+// 		desc:    "Switch into shell mode",
+// 		handler: (*shellCallHandler).ShellMode,
+// 	},
+// 	{
+// 		name:    "/prompt",
+// 		desc:    "Switch into prompt mode",
+// 		handler: (*shellCallHandler).PromptMode,
+// 	},
+// 	{
+// 		name:    "/clear",
+// 		desc:    "Clear the LLM history",
+// 		handler: (*shellCallHandler).Clear,
+// 	},
+// 	{
+// 		name:    "/compact",
+// 		desc:    "Compact the LLM history",
+// 		handler: (*shellCallHandler).Compact,
+// 	},
+// 	{
+// 		name:    "/history",
+// 		desc:    "Show the LLM history",
+// 		handler: (*shellCallHandler).History,
+// 	},
+// 	{
+// 		name:    "/model",
+// 		desc:    "Swap out the LLM model",
+// 		handler: (*LLMSession).Model,
+// 	},
+// }
 
-func (s *LLMSession) Interpret(ctx context.Context, input string) (ret *LLMSession, rerr error) {
-	if strings.TrimSpace(input) == "" {
-		return s, nil
-	}
-
-	ctx, span := Tracer().Start(ctx, input)
-	defer telemetry.End(span, func() error { return rerr })
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	defer stdio.Close()
-
-	if strings.HasPrefix(input, "/") {
-		for _, cmd := range slashCommands {
-			if strings.HasPrefix(input, cmd.name) {
-				input = strings.TrimSpace(strings.TrimPrefix(input, cmd.name))
-				return cmd.handler(s, ctx, input)
-			}
-		}
-		return s, fmt.Errorf("unknown slash command: %s", input)
-	}
-
-	// reset any oneshot mode after the command is interpreted
-	defer func() {
-		if ret != nil && ret.oneshotMode != modeUnset {
-			ret.oneshotMode = modeUnset
-		}
-	}()
-
-	switch s.mode() {
-	case modePrompt:
-		return s.interpretPrompt(ctx, input)
-	case modeShell:
-		return s.interpretShell(ctx, input)
-	default:
-		return s, fmt.Errorf("unknown mode: %d", s.mode())
-	}
-}
-
-func (s *LLMSession) interpretPrompt(ctx context.Context, input string) (*LLMSession, error) {
+func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession, error) {
 	s = s.Fork()
 
 	prompted, err := s.llm.WithPrompt(input).Sync(ctx)
@@ -442,15 +214,6 @@ func (s *LLMSession) interpretPrompt(ctx context.Context, input string) (*LLMSes
 		s.syncedVars[name] = digest
 	}
 	return s, nil
-}
-
-func (s *LLMSession) interpretShell(ctx context.Context, input string) (*LLMSession, error) {
-	err := s.shell.Eval(ctx, input)
-	if err != nil {
-		return s, err
-	}
-	// TODO: is there anything useful to do with the result here?
-	return s.syncVarsToLLM(ctx)
 }
 
 var dbg *log.Logger
@@ -553,32 +316,6 @@ func (s *LLMSession) Undo(ctx context.Context, _ string) (*LLMSession, error) {
 	return s.undo, nil
 }
 
-func (s *LLMSession) Complete(entireInput [][]rune, row, col int) (msg string, comp editline.Completions) {
-	if s.mode() == modeShell {
-		return s.shell.AutoComplete(entireInput, row, col)
-	}
-	word, wstart, wend := computil.FindWord(entireInput, row, col)
-	if !strings.HasPrefix(word, "/") {
-		return "", nil
-	}
-	var commands []slashCommand
-	for _, cmd := range slashCommands {
-		if strings.HasPrefix(cmd.name, word) {
-			commands = append(commands, cmd)
-		}
-	}
-	return "", &slashCompletions{groups: []slashCommandGroup{
-		{name: "", commands: commands},
-	}, cursor: col, start: wstart, end: wend}
-}
-
-func (s *LLMSession) IsComplete(entireInput [][]rune, line int, col int) bool {
-	if s.mode() == modeShell {
-		return s.shell.IsComplete(entireInput, line, col)
-	}
-	return true
-}
-
 func (s *LLMSession) Clear(ctx context.Context, _ string) (_ *LLMSession, rerr error) {
 	s.reset()
 	return s, nil
@@ -622,7 +359,7 @@ func (s *LLMSession) Compact(ctx context.Context, _ string) (_ *LLMSession, rerr
 		return s, err
 	}
 	fresh := s.dag.Llm(dagger.LlmOpts{
-		Model: s.llmModel,
+		Model: s.model,
 	})
 	compacted, err := fresh.WithPrompt(summary).Sync(ctx)
 	if err != nil {
@@ -645,41 +382,14 @@ func (s *LLMSession) History(ctx context.Context, _ string) (*LLMSession, error)
 	return s, nil
 }
 
-func (s *LLMSession) ShellMode(ctx context.Context, script string) (*LLMSession, error) {
-	if script != "" {
-		return s.interpretShell(ctx, script)
-	}
-	s = s.Fork()
-	s.persistentMode = modeShell
-	s.oneshotMode = modeUnset
-	return s, nil
-}
-
-func (s *LLMSession) PromptMode(ctx context.Context, prompt string) (*LLMSession, error) {
-	if prompt != "" {
-		return s.interpretPrompt(ctx, prompt)
-	}
-	s = s.Fork()
-	s.persistentMode = modePrompt
-	s.oneshotMode = modeUnset
-	return s, nil
-}
-
 func (s *LLMSession) Prompt(out idtui.TermOutput, fg termenv.Color) string {
-	switch s.mode() {
-	case modePrompt:
-		sb := new(strings.Builder)
-		sb.WriteString(termenv.CSI + termenv.ResetSeq + "m") // clear background
-		sb.WriteString(out.String(s.llmModel).Bold().Foreground(termenv.ANSICyan).String())
-		sb.WriteString(out.String(" ").String())
-		sb.WriteString(out.String(idtui.LLMPrompt).Bold().Foreground(fg).String())
-		sb.WriteString(out.String(out.String(" ").String()).String())
-		return sb.String()
-	case modeShell:
-		return s.shell.Prompt(out, fg)
-	default:
-		return fmt.Sprintf("unknown mode: %d", s.mode())
-	}
+	sb := new(strings.Builder)
+	sb.WriteString(termenv.CSI + termenv.ResetSeq + "m") // clear background
+	sb.WriteString(out.String(s.model).Bold().Foreground(termenv.ANSICyan).String())
+	sb.WriteString(out.String(" ").String())
+	sb.WriteString(out.String(idtui.LLMPrompt).Bold().Foreground(fg).String())
+	sb.WriteString(out.String(out.String(" ").String()).String())
+	return sb.String()
 }
 
 func (s *LLMSession) Model(ctx context.Context, model string) (*LLMSession, error) {
@@ -689,17 +399,17 @@ func (s *LLMSession) Model(ctx context.Context, model string) (*LLMSession, erro
 	if err != nil {
 		return nil, err
 	}
-	s.llmModel = model
+	s.model = model
 	return s, nil
 }
 
 type slashCommand struct {
 	name    string
 	desc    string
-	handler func(s *LLMSession, ctx context.Context, script string) (*LLMSession, error)
+	handler func(s *shellCallHandler, ctx context.Context, script string) error
 }
 
-type slashCompletions struct {
+type varCompletions struct {
 	groups             []slashCommandGroup
 	cursor, start, end int
 }
@@ -709,30 +419,30 @@ type slashCommandGroup struct {
 	commands []slashCommand
 }
 
-var _ editline.Completions = (*slashCompletions)(nil)
+var _ editline.Completions = (*varCompletions)(nil)
 
-func (c *slashCompletions) NumCategories() int {
+func (c *varCompletions) NumCategories() int {
 	return len(c.groups)
 }
 
-func (c *slashCompletions) CategoryTitle(catIdx int) string {
+func (c *varCompletions) CategoryTitle(catIdx int) string {
 	return c.groups[catIdx].name
 }
 
-func (c *slashCompletions) NumEntries(catIdx int) int {
+func (c *varCompletions) NumEntries(catIdx int) int {
 	return len(c.groups[catIdx].commands)
 }
 
-func (c *slashCompletions) Entry(catIdx, entryIdx int) complete.Entry {
+func (c *varCompletions) Entry(catIdx, entryIdx int) complete.Entry {
 	return &slashCompletion{c, &c.groups[catIdx].commands[entryIdx]}
 }
 
-func (c *slashCompletions) Candidate(e complete.Entry) editline.Candidate {
+func (c *varCompletions) Candidate(e complete.Entry) editline.Candidate {
 	return e.(*slashCompletion)
 }
 
 type slashCompletion struct {
-	s   *slashCompletions
+	s   *varCompletions
 	cmd *slashCommand
 }
 
