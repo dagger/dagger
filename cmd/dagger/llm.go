@@ -13,7 +13,6 @@ import (
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/opencontainers/go-digest"
-	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/syntax"
 )
 
@@ -89,92 +88,22 @@ func (s *LLMSession) Fork() *LLMSession {
 func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession, error) {
 	s = s.Fork()
 
-	prompted, err := s.llm.WithPrompt(input).Sync(ctx)
+	synced, err := s.syncVarsToLLM(ctx)
+	if err != nil {
+		return s, err
+	}
+
+	prompted, err := synced.llm.WithPrompt(input).Sync(ctx)
 	if err != nil {
 		return s, err
 	}
 
 	s.llm = prompted
 
-	vars, err := s.llm.Variables(ctx)
-	if err != nil {
+	if err := s.syncVarsFromLLM(ctx); err != nil {
 		return s, err
 	}
 
-	for _, v := range vars {
-		name, err := v.Name(ctx)
-		if err != nil {
-			dbg.Println("error getting var name", err)
-			return s, err
-		}
-		typeName, err := v.TypeName(ctx)
-		if err != nil {
-			dbg.Println("error getting var type name", err)
-			return s, err
-		}
-		hash, err := v.Hash(ctx)
-		if err != nil {
-			dbg.Println("error getting var hash", err)
-			return s, err
-		}
-		digest := digest.Digest(hash)
-
-		if s.syncedVars[name] == digest {
-			// already synced
-			continue
-		}
-
-		dbg.Println("syncing llm => var", name, typeName, hash)
-
-		switch typeName {
-		case "String":
-			val, err := s.llm.GetString(ctx, name)
-			if err != nil {
-				return s, err
-			}
-			dbg.Println("syncing string", name, val)
-			// TODO: maybe there's a better way to set this
-			s.shell.runner.Vars[name] = expand.Variable{
-				Kind: expand.String,
-				Str:  val,
-			}
-		default:
-			var objId string
-			if err := s.dag.QueryBuilder().
-				Select("loadLlmFromID").
-				Arg("id", s.llm).
-				Select(fmt.Sprintf("get%s", typeName)).
-				Arg("name", name).
-				Select("id").
-				Bind(&objId).
-				Execute(ctx); err != nil {
-				return s, err
-			}
-			dbg.Println("syncing object", name)
-			st := ShellState{
-				Calls: []FunctionCall{
-					// not sure this is right
-					{
-						Object: "Query",
-						Name:   "load" + typeName + "FromID",
-						Arguments: map[string]any{
-							"id": objId,
-						},
-						ReturnObject: typeName,
-					},
-				},
-			}
-			key := s.shell.state.Store(st)
-			quoted, err := syntax.Quote(newStateToken(key), syntax.LangBash)
-			if err != nil {
-				return s, err
-			}
-			if err := s.shell.Eval(ctx, fmt.Sprintf("%s=%s", name, quoted)); err != nil {
-				return s, err
-			}
-		}
-		s.syncedVars[name] = digest
-	}
 	return s, nil
 }
 
@@ -269,6 +198,89 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) (*LLMSession, error) {
 	}
 	s.llm = s.dag.LoadLlmFromID(llmId)
 	return s, nil
+}
+
+func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
+	vars, err := s.llm.Variables(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, v := range vars {
+		name, err := v.Name(ctx)
+		if err != nil {
+			dbg.Println("error getting var name", err)
+			return err
+		}
+		typeName, err := v.TypeName(ctx)
+		if err != nil {
+			dbg.Println("error getting var type name", err)
+			return err
+		}
+		hash, err := v.Hash(ctx)
+		if err != nil {
+			dbg.Println("error getting var hash", err)
+			return err
+		}
+		digest := digest.Digest(hash)
+
+		if s.syncedVars[name] == digest {
+			// already synced
+			continue
+		}
+
+		dbg.Println("syncing llm => var", name, typeName, hash)
+
+		val, err := s.ShellValue(ctx, name, typeName)
+		if err != nil {
+			return err
+		}
+		quot, err := syntax.Quote(val, syntax.LangBash)
+		if err != nil {
+			return err
+		}
+		if err := s.shell.Eval(ctx, fmt.Sprintf("%s=%s", name, quot)); err != nil {
+			return err
+		}
+		s.syncedVars[name] = digest
+	}
+
+	return nil
+}
+
+func (s *LLMSession) ShellValue(ctx context.Context, name, typeName string) (string, error) {
+	switch typeName {
+	case "String":
+		return s.llm.GetString(ctx, name)
+	default:
+		var objId string
+		if err := s.dag.QueryBuilder().
+			Select("loadLlmFromID").
+			Arg("id", s.llm).
+			Select(fmt.Sprintf("get%s", typeName)).
+			Arg("name", name).
+			Select("id").
+			Bind(&objId).
+			Execute(ctx); err != nil {
+			return "", err
+		}
+		dbg.Println("syncing object", name)
+		st := ShellState{
+			Calls: []FunctionCall{
+				// not sure this is right
+				{
+					Object: "Query",
+					Name:   "load" + typeName + "FromID",
+					Arguments: map[string]any{
+						"id": objId,
+					},
+					ReturnObject: typeName,
+				},
+			},
+		}
+		key := s.shell.state.Store(st)
+		return newStateToken(key), nil
+	}
 }
 
 func (s *LLMSession) Clear() *LLMSession {

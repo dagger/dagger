@@ -832,14 +832,21 @@ func (s LlmMiddleware) ExtendLlmType(targetType dagql.ObjectType) error {
 			Type:        targetType.Typed(),
 			Args: dagql.InputSpecs{{
 				Name:        "name",
-				Description: fmt.Sprintf("The name of the variable", typename),
+				Description: "The name of the variable",
 				Type:        dagql.NewString(""),
 			}},
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			llm := self.(dagql.Instance[*Llm]).Self
 			name := args["name"].(dagql.String).String()
-			return llm.Get(ctx, s.Server, name)
+			val, err := llm.Get(ctx, s.Server, name)
+			if err != nil {
+				return nil, err
+			}
+			if val.Type().Name() != typename {
+				return nil, fmt.Errorf("expected variable of type %s, got %s", typename, val.Type().Name())
+			}
+			return val, nil
 		},
 		dagql.CacheSpec{},
 	)
