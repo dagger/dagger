@@ -517,10 +517,12 @@ func (r Instance[T]) call(
 			wrappedCtx, done := s.telemetry(ctx, r, newID)
 			defer func() {
 				var innerVal Typed
+				var cached bool
 				if innerRes != nil {
 					innerVal = innerRes.Result()
+					cached = innerRes.HitCache()
 				}
-				done(innerVal, false, innerErr)
+				done(innerVal, cached, innerErr)
 			}()
 			ctx = wrappedCtx
 		}

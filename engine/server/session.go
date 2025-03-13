@@ -405,14 +405,6 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 		close(sess.shutdownCh)
 	})
 
-	// TODO: should this be in defer? very painful to end up in a situation where it doesn't run
-	// TODO: should this be in defer? very painful to end up in a situation where it doesn't run
-	// TODO: should this be in defer? very painful to end up in a situation where it doesn't run
-	if sess.dagqlCache != nil {
-		releaseCount := sess.dagqlCache.ReleaseAll()
-		slog.Debug("released dagql cache entries", "count", releaseCount)
-	}
-
 	return errs
 }
 
