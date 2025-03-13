@@ -229,7 +229,7 @@ defmodule Dagger.Client do
 
   @doc "Initialize a Large Language Model (LLM)"
   @spec llm(t(), [{:model, String.t() | nil}, {:max_api_calls, integer() | nil}]) ::
-          Dagger.Llm.t()
+          Dagger.LLM.t()
   def llm(%__MODULE__{} = client, optional_args \\ []) do
     query_builder =
       client.query_builder
@@ -237,7 +237,7 @@ defmodule Dagger.Client do
       |> QB.maybe_put_arg("model", optional_args[:model])
       |> QB.maybe_put_arg("maxAPICalls", optional_args[:max_api_calls])
 
-    %Dagger.Llm{
+    %Dagger.LLM{
       query_builder: query_builder,
       client: client.client
     }
@@ -548,6 +548,18 @@ defmodule Dagger.Client do
     }
   end
 
+  @doc "Load a LLM from its ID."
+  @spec load_llm_from_id(t(), Dagger.LLMID.t()) :: Dagger.LLM.t()
+  def load_llm_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadLLMFromID") |> QB.put_arg("id", id)
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
   @doc "Load a Label from its ID."
   @spec load_label_from_id(t(), Dagger.LabelID.t()) :: Dagger.Label.t()
   def load_label_from_id(%__MODULE__{} = client, id) do
@@ -567,18 +579,6 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadListTypeDefFromID") |> QB.put_arg("id", id)
 
     %Dagger.ListTypeDef{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
-  @doc "Load a Llm from its ID."
-  @spec load_llm_from_id(t(), Dagger.LlmID.t()) :: Dagger.Llm.t()
-  def load_llm_from_id(%__MODULE__{} = client, id) do
-    query_builder =
-      client.query_builder |> QB.select("loadLlmFromID") |> QB.put_arg("id", id)
-
-    %Dagger.Llm{
       query_builder: query_builder,
       client: client.client
     }

@@ -890,6 +890,39 @@ impl Json {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct LlmId(pub String);
+impl From<&str> for LlmId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for LlmId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<LlmId> for Llm {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<LlmId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<LlmId> for LlmId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<LlmId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<LlmId, DaggerError>(self) })
+    }
+}
+impl LlmId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct LabelId(pub String);
 impl From<&str> for LabelId {
     fn from(value: &str) -> Self {
@@ -953,39 +986,6 @@ impl IntoID<ListTypeDefId> for ListTypeDefId {
     }
 }
 impl ListTypeDefId {
-    fn quote(&self) -> String {
-        format!("\"{}\"", self.0.clone())
-    }
-}
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct LlmId(pub String);
-impl From<&str> for LlmId {
-    fn from(value: &str) -> Self {
-        Self(value.to_string())
-    }
-}
-impl From<String> for LlmId {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-impl IntoID<LlmId> for Llm {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<LlmId, DaggerError>> + Send>>
-    {
-        Box::pin(async move { self.id().await })
-    }
-}
-impl IntoID<LlmId> for LlmId {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<LlmId, DaggerError>> + Send>>
-    {
-        Box::pin(async move { Ok::<LlmId, DaggerError>(self) })
-    }
-}
-impl LlmId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
     }
@@ -6032,51 +6032,6 @@ impl InterfaceTypeDef {
     }
 }
 #[derive(Clone)]
-pub struct Label {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl Label {
-    /// A unique identifier for this Label.
-    pub async fn id(&self) -> Result<LabelId, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The label name.
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The label value.
-    pub async fn value(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("value");
-        query.execute(self.graphql_client.clone()).await
-    }
-}
-#[derive(Clone)]
-pub struct ListTypeDef {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl ListTypeDef {
-    /// The type of the elements in the list.
-    pub fn element_type_def(&self) -> TypeDef {
-        let query = self.selection.select("elementTypeDef");
-        TypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// A unique identifier for this ListTypeDef.
-    pub async fn id(&self) -> Result<ListTypeDefId, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-}
-#[derive(Clone)]
 pub struct Llm {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -6241,7 +6196,7 @@ impl Llm {
         let query = self.selection.select("history");
         query.execute(self.graphql_client.clone()).await
     }
-    /// A unique identifier for this Llm.
+    /// A unique identifier for this LLM.
     pub async fn id(&self) -> Result<LlmId, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
@@ -6278,7 +6233,7 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Retrieve the llm state as a Llm
+    /// Retrieve the llm state as a LLM
     pub fn llm(&self) -> Llm {
         let query = self.selection.select("llm");
         Llm {
@@ -6804,13 +6759,13 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Set the llm state to a ListTypeDef
+    /// Set the llm state to a LLM
     ///
     /// # Arguments
     ///
-    /// * `value` - The value of the ListTypeDef to save
-    pub fn with_list_type_def(&self, value: impl IntoID<ListTypeDefId>) -> Llm {
-        let mut query = self.selection.select("withListTypeDef");
+    /// * `value` - The value of the LLM to save
+    pub fn with_llm(&self, value: impl IntoID<LlmId>) -> Llm {
+        let mut query = self.selection.select("withLLM");
         query = query.arg_lazy(
             "value",
             Box::new(move || {
@@ -6824,13 +6779,13 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Set the llm state to a Llm
+    /// Set the llm state to a ListTypeDef
     ///
     /// # Arguments
     ///
-    /// * `value` - The value of the Llm to save
-    pub fn with_llm(&self, value: impl IntoID<LlmId>) -> Llm {
-        let mut query = self.selection.select("withLlm");
+    /// * `value` - The value of the ListTypeDef to save
+    pub fn with_list_type_def(&self, value: impl IntoID<ListTypeDefId>) -> Llm {
+        let mut query = self.selection.select("withListTypeDef");
         query = query.arg_lazy(
             "value",
             Box::new(move || {
@@ -7147,6 +7102,51 @@ impl Llm {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+}
+#[derive(Clone)]
+pub struct Label {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl Label {
+    /// A unique identifier for this Label.
+    pub async fn id(&self) -> Result<LabelId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The label name.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The label value.
+    pub async fn value(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("value");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
+pub struct ListTypeDef {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl ListTypeDef {
+    /// The type of the elements in the list.
+    pub fn element_type_def(&self) -> TypeDef {
+        let query = self.selection.select("elementTypeDef");
+        TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// A unique identifier for this ListTypeDef.
+    pub async fn id(&self) -> Result<ListTypeDefId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
     }
 }
 #[derive(Clone)]
@@ -8596,6 +8596,22 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Load a LLM from its ID.
+    pub fn load_llm_from_id(&self, id: impl IntoID<LlmId>) -> Llm {
+        let mut query = self.selection.select("loadLLMFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Load a Label from its ID.
     pub fn load_label_from_id(&self, id: impl IntoID<LabelId>) -> Label {
         let mut query = self.selection.select("loadLabelFromID");
@@ -8623,22 +8639,6 @@ impl Query {
             }),
         );
         ListTypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Load a Llm from its ID.
-    pub fn load_llm_from_id(&self, id: impl IntoID<LlmId>) -> Llm {
-        let mut query = self.selection.select("loadLlmFromID");
-        query = query.arg_lazy(
-            "id",
-            Box::new(move || {
-                let id = id.clone();
-                Box::pin(async move { id.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

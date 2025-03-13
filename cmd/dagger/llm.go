@@ -97,7 +97,7 @@ const (
 type LLMSession struct {
 	undo      *LLMSession
 	dag       *dagger.Client
-	llm       *dagger.Llm
+	llm       *dagger.LLM
 	llmModel  string
 	shell     *shellCallHandler
 	completer editline.AutoCompleteFn
@@ -257,7 +257,7 @@ func (s *LLMSession) With(ctx context.Context, script string) (*LLMSession, erro
 			Execute(ctx); err != nil {
 			return s, err
 		}
-		s.llm = s.dag.LoadLlmFromID(llmID)
+		s.llm = s.dag.LoadLLMFromID(llmID)
 		return s, nil
 	}
 	return s, fmt.Errorf("cannot change scope to %s - script must return an Object type", typeDef.Name())

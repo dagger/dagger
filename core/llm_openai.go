@@ -18,10 +18,10 @@ import (
 
 type OpenAIClient struct {
 	client   *openai.Client
-	endpoint *LlmEndpoint
+	endpoint *LLMEndpoint
 }
 
-func newOpenAIClient(endpoint *LlmEndpoint, azureVersion string) *OpenAIClient {
+func newOpenAIClient(endpoint *LLMEndpoint, azureVersion string) *OpenAIClient {
 	var opts []option.RequestOption
 	opts = append(opts, option.WithHeader("Content-Type", "application/json"))
 	if azureVersion != "" {

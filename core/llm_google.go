@@ -20,11 +20,11 @@ import (
 
 type GenaiClient struct {
 	client              *genai.Client
-	endpoint            *LlmEndpoint
+	endpoint            *LLMEndpoint
 	defaultSystemPrompt string
 }
 
-func newGenaiClient(endpoint *LlmEndpoint, defaultSystemPrompt string) (*GenaiClient, error) {
+func newGenaiClient(endpoint *LLMEndpoint, defaultSystemPrompt string) (*GenaiClient, error) {
 	opts := []option.ClientOption{option.WithAPIKey(endpoint.Key)}
 	if endpoint.Key != "" {
 		opts = append(opts, option.WithAPIKey(endpoint.Key))

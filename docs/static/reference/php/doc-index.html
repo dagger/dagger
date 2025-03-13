@@ -117,7 +117,9 @@
 <abbr title="Dagger\Container">Container</abbr>::asService</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Turn the container into a Service.</p></dd><dt><a href="Dagger/Container.html#method_asTarball">
 <abbr title="Dagger\Container">Container</abbr>::asTarball</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Returns a File representing the container serialized to a tarball.</p></dd><dt><a href="Dagger/Directory.html#method_asModule">
+                    <dd><p>Returns a File representing the container serialized to a tarball.</p></dd><dt><a href="Dagger/Directory.html#method_asGit">
+<abbr title="Dagger\Directory">Directory</abbr>::asGit</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
+                    <dd><p>Converts this directory into a git repository</p></dd><dt><a href="Dagger/Directory.html#method_asModule">
 <abbr title="Dagger\Directory">Directory</abbr>::asModule</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
                     <dd><p>Load the directory as a Dagger module source</p></dd><dt><a href="Dagger/Directory.html#method_asModuleSource">
 <abbr title="Dagger\Directory">Directory</abbr>::asModuleSource</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
@@ -677,7 +679,9 @@
 <abbr title="Dagger\Llm">Llm</abbr>::lastReply</a>() &mdash; <em>Method in class <a href="Dagger/Llm.html"><abbr title="Dagger\Llm">Llm</abbr></a></em></dt>
                     <dd><p>return the last llm reply from the history</p></dd><dt><a href="Dagger/Llm.html#method_listTypeDef">
 <abbr title="Dagger\Llm">Llm</abbr>::listTypeDef</a>() &mdash; <em>Method in class <a href="Dagger/Llm.html"><abbr title="Dagger\Llm">Llm</abbr></a></em></dt>
-                    <dd><p>Retrieve the llm state as a ListTypeDef</p></dd><dt><a href="Dagger/Llm.html#method_loop">
+                    <dd><p>Retrieve the llm state as a ListTypeDef</p></dd><dt><a href="Dagger/Llm.html#method_llm">
+<abbr title="Dagger\Llm">Llm</abbr>::llm</a>() &mdash; <em>Method in class <a href="Dagger/Llm.html"><abbr title="Dagger\Llm">Llm</abbr></a></em></dt>
+                    <dd><p>Retrieve the llm state as a Llm</p></dd><dt><a href="Dagger/Llm.html#method_loop">
 <abbr title="Dagger\Llm">Llm</abbr>::loop</a>() &mdash; <em>Method in class <a href="Dagger/Llm.html"><abbr title="Dagger\Llm">Llm</abbr></a></em></dt>
                     <dd><p>synchronize LLM state</p></dd><dt><a href="Dagger/LlmId.html"><abbr title="Dagger\LlmId">LlmId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>LlmID</code> scalar type represents an identifier for an object of type Llm.</p></dd><dt><a href="Dagger/ModuleSource.html#method_localContextDirectoryPath">
@@ -790,7 +794,9 @@
 <abbr title="Dagger\FunctionCall">FunctionCall</abbr>::parentName</a>() &mdash; <em>Method in class <a href="Dagger/FunctionCall.html"><abbr title="Dagger\FunctionCall">FunctionCall</abbr></a></em></dt>
                     <dd><p>The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module.</p></dd><dt><a href="Dagger/Llm.html#method_phpSdk">
 <abbr title="Dagger\Llm">Llm</abbr>::phpSdk</a>() &mdash; <em>Method in class <a href="Dagger/Llm.html"><abbr title="Dagger\Llm">Llm</abbr></a></em></dt>
-                    <dd><p>Retrieve the llm state as a PhpSdk</p></dd><dt><a href="Dagger/ModuleSource.html#method_pin">
+                    <dd><p>Retrieve the llm state as a PhpSdk</p></dd><dt><a href="Dagger/Llm.html#method_provider">
+<abbr title="Dagger\Llm">Llm</abbr>::provider</a>() &mdash; <em>Method in class <a href="Dagger/Llm.html"><abbr title="Dagger\Llm">Llm</abbr></a></em></dt>
+                    <dd><p>return the provider used by the llm</p></dd><dt><a href="Dagger/ModuleSource.html#method_pin">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::pin</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The pinned version of this module source.</p></dd><dt><a href="Dagger/PhpSdk.html"><abbr title="Dagger\PhpSdk">PhpSdk</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd></dd><dt><a href="Dagger/PhpSdkId.html"><abbr title="Dagger\PhpSdkId">PhpSdkId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
@@ -1158,7 +1164,11 @@
 <abbr title="Dagger\Llm">Llm</abbr>::withInterfaceTypeDef</a>() &mdash; <em>Method in class <a href="Dagger/Llm.html"><abbr title="Dagger\Llm">Llm</abbr></a></em></dt>
                     <dd><p>Set the llm state to a InterfaceTypeDef</p></dd><dt><a href="Dagger/Llm.html#method_withListTypeDef">
 <abbr title="Dagger\Llm">Llm</abbr>::withListTypeDef</a>() &mdash; <em>Method in class <a href="Dagger/Llm.html"><abbr title="Dagger\Llm">Llm</abbr></a></em></dt>
-                    <dd><p>Set the llm state to a ListTypeDef</p></dd><dt><a href="Dagger/Llm.html#method_withModule">
+                    <dd><p>Set the llm state to a ListTypeDef</p></dd><dt><a href="Dagger/Llm.html#method_withLlm">
+<abbr title="Dagger\Llm">Llm</abbr>::withLlm</a>() &mdash; <em>Method in class <a href="Dagger/Llm.html"><abbr title="Dagger\Llm">Llm</abbr></a></em></dt>
+                    <dd><p>Set the llm state to a Llm</p></dd><dt><a href="Dagger/Llm.html#method_withModel">
+<abbr title="Dagger\Llm">Llm</abbr>::withModel</a>() &mdash; <em>Method in class <a href="Dagger/Llm.html"><abbr title="Dagger\Llm">Llm</abbr></a></em></dt>
+                    <dd><p>swap out the llm model</p></dd><dt><a href="Dagger/Llm.html#method_withModule">
 <abbr title="Dagger\Llm">Llm</abbr>::withModule</a>() &mdash; <em>Method in class <a href="Dagger/Llm.html"><abbr title="Dagger\Llm">Llm</abbr></a></em></dt>
                     <dd><p>Set the llm state to a Module</p></dd><dt><a href="Dagger/Llm.html#method_withModuleConfigClient">
 <abbr title="Dagger\Llm">Llm</abbr>::withModuleConfigClient</a>() &mdash; <em>Method in class <a href="Dagger/Llm.html"><abbr title="Dagger\Llm">Llm</abbr></a></em></dt>

@@ -1017,6 +1017,11 @@ export type InterfaceTypeDefID = string & { __InterfaceTypeDefID: never }
 export type JSON = string & { __JSON: never }
 
 /**
+ * The `LLMID` scalar type represents an identifier for an object of type LLM.
+ */
+export type LLMID = string & { __LLMID: never }
+
+/**
  * The `LabelID` scalar type represents an identifier for an object of type Label.
  */
 export type LabelID = string & { __LabelID: never }
@@ -1025,11 +1030,6 @@ export type LabelID = string & { __LabelID: never }
  * The `ListTypeDefID` scalar type represents an identifier for an object of type ListTypeDef.
  */
 export type ListTypeDefID = string & { __ListTypeDefID: never }
-
-/**
- * The `LlmID` scalar type represents an identifier for an object of type Llm.
- */
-export type LlmID = string & { __LlmID: never }
 
 /**
  * The `ModuleConfigClientID` scalar type represents an identifier for an object of type ModuleConfigClient.
@@ -5125,116 +5125,12 @@ export class InterfaceTypeDef extends BaseClient {
   }
 }
 
-/**
- * A simple key value object that represents a label.
- */
-export class Label extends BaseClient {
-  private readonly _id?: LabelID = undefined
-  private readonly _name?: string = undefined
-  private readonly _value?: string = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(ctx?: Context, _id?: LabelID, _name?: string, _value?: string) {
-    super(ctx)
-
-    this._id = _id
-    this._name = _name
-    this._value = _value
-  }
-
-  /**
-   * A unique identifier for this Label.
-   */
-  id = async (): Promise<LabelID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<LabelID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The label name.
-   */
-  name = async (): Promise<string> => {
-    if (this._name) {
-      return this._name
-    }
-
-    const ctx = this._ctx.select("name")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The label value.
-   */
-  value = async (): Promise<string> => {
-    if (this._value) {
-      return this._value
-    }
-
-    const ctx = this._ctx.select("value")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-}
-
-/**
- * A definition of a list type in a Module.
- */
-export class ListTypeDef extends BaseClient {
-  private readonly _id?: ListTypeDefID = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(ctx?: Context, _id?: ListTypeDefID) {
-    super(ctx)
-
-    this._id = _id
-  }
-
-  /**
-   * A unique identifier for this ListTypeDef.
-   */
-  id = async (): Promise<ListTypeDefID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<ListTypeDefID> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * The type of the elements in the list.
-   */
-  elementTypeDef = (): TypeDef => {
-    const ctx = this._ctx.select("elementTypeDef")
-    return new TypeDef(ctx)
-  }
-}
-
-export class Llm extends BaseClient {
-  private readonly _id?: LlmID = undefined
+export class LLM extends BaseClient {
+  private readonly _id?: LLMID = undefined
   private readonly _lastReply?: string = undefined
   private readonly _model?: string = undefined
   private readonly _provider?: string = undefined
-  private readonly _sync?: LlmID = undefined
+  private readonly _sync?: LLMID = undefined
   private readonly _tools?: string = undefined
 
   /**
@@ -5242,11 +5138,11 @@ export class Llm extends BaseClient {
    */
   constructor(
     ctx?: Context,
-    _id?: LlmID,
+    _id?: LLMID,
     _lastReply?: string,
     _model?: string,
     _provider?: string,
-    _sync?: LlmID,
+    _sync?: LLMID,
     _tools?: string,
   ) {
     super(ctx)
@@ -5260,16 +5156,16 @@ export class Llm extends BaseClient {
   }
 
   /**
-   * A unique identifier for this Llm.
+   * A unique identifier for this LLM.
    */
-  id = async (): Promise<LlmID> => {
+  id = async (): Promise<LLMID> => {
     if (this._id) {
       return this._id
     }
 
     const ctx = this._ctx.select("id")
 
-    const response: Awaited<LlmID> = await ctx.execute()
+    const response: Awaited<LLMID> = await ctx.execute()
 
     return response
   }
@@ -5461,20 +5357,20 @@ export class Llm extends BaseClient {
   }
 
   /**
-   * Retrieve the llm state as a Llm
+   * Retrieve the llm state as a LLM
    */
-  llm = (): Llm => {
+  llm = (): LLM => {
     const ctx = this._ctx.select("llm")
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * synchronize LLM state
    * @deprecated use sync
    */
-  loop = (): Llm => {
+  loop = (): LLM => {
     const ctx = this._ctx.select("loop")
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
@@ -5590,12 +5486,12 @@ export class Llm extends BaseClient {
   /**
    * synchronize LLM state
    */
-  sync = async (): Promise<Llm> => {
+  sync = async (): Promise<LLM> => {
     const ctx = this._ctx.select("sync")
 
-    const response: Awaited<LlmID> = await ctx.execute()
+    const response: Awaited<LLMID> = await ctx.execute()
 
-    return new Client(ctx.copy()).loadLlmFromID(response)
+    return new Client(ctx.copy()).loadLLMFromID(response)
   }
 
   /**
@@ -5633,252 +5529,252 @@ export class Llm extends BaseClient {
    * Set the llm state to a CacheVolume
    * @param value The value of the CacheVolume to save
    */
-  withCacheVolume = (value: CacheVolume): Llm => {
+  withCacheVolume = (value: CacheVolume): LLM => {
     const ctx = this._ctx.select("withCacheVolume", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a Container
    * @param value The value of the Container to save
    */
-  withContainer = (value: Container): Llm => {
+  withContainer = (value: Container): LLM => {
     const ctx = this._ctx.select("withContainer", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a CurrentModule
    * @param value The value of the CurrentModule to save
    */
-  withCurrentModule = (value: CurrentModule): Llm => {
+  withCurrentModule = (value: CurrentModule): LLM => {
     const ctx = this._ctx.select("withCurrentModule", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a Directory
    * @param value The value of the Directory to save
    */
-  withDirectory = (value: Directory): Llm => {
+  withDirectory = (value: Directory): LLM => {
     const ctx = this._ctx.select("withDirectory", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a EnumTypeDef
    * @param value The value of the EnumTypeDef to save
    */
-  withEnumTypeDef = (value: EnumTypeDef): Llm => {
+  withEnumTypeDef = (value: EnumTypeDef): LLM => {
     const ctx = this._ctx.select("withEnumTypeDef", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a EnumValueTypeDef
    * @param value The value of the EnumValueTypeDef to save
    */
-  withEnumValueTypeDef = (value: EnumValueTypeDef): Llm => {
+  withEnumValueTypeDef = (value: EnumValueTypeDef): LLM => {
     const ctx = this._ctx.select("withEnumValueTypeDef", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a Error
    * @param value The value of the Error to save
    */
-  withError = (value: Error): Llm => {
+  withError = (value: Error): LLM => {
     const ctx = this._ctx.select("withError", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a ErrorValue
    * @param value The value of the ErrorValue to save
    */
-  withErrorValue = (value: ErrorValue): Llm => {
+  withErrorValue = (value: ErrorValue): LLM => {
     const ctx = this._ctx.select("withErrorValue", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a FieldTypeDef
    * @param value The value of the FieldTypeDef to save
    */
-  withFieldTypeDef = (value: FieldTypeDef): Llm => {
+  withFieldTypeDef = (value: FieldTypeDef): LLM => {
     const ctx = this._ctx.select("withFieldTypeDef", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a File
    * @param value The value of the File to save
    */
-  withFile = (value: File): Llm => {
+  withFile = (value: File): LLM => {
     const ctx = this._ctx.select("withFile", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a Function
    * @param value The value of the Function to save
    */
-  withFunction = (value: Function_): Llm => {
+  withFunction = (value: Function_): LLM => {
     const ctx = this._ctx.select("withFunction", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a FunctionArg
    * @param value The value of the FunctionArg to save
    */
-  withFunctionArg = (value: FunctionArg): Llm => {
+  withFunctionArg = (value: FunctionArg): LLM => {
     const ctx = this._ctx.select("withFunctionArg", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a FunctionCall
    * @param value The value of the FunctionCall to save
    */
-  withFunctionCall = (value: FunctionCall): Llm => {
+  withFunctionCall = (value: FunctionCall): LLM => {
     const ctx = this._ctx.select("withFunctionCall", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a FunctionCallArgValue
    * @param value The value of the FunctionCallArgValue to save
    */
-  withFunctionCallArgValue = (value: FunctionCallArgValue): Llm => {
+  withFunctionCallArgValue = (value: FunctionCallArgValue): LLM => {
     const ctx = this._ctx.select("withFunctionCallArgValue", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a GeneratedCode
    * @param value The value of the GeneratedCode to save
    */
-  withGeneratedCode = (value: GeneratedCode): Llm => {
+  withGeneratedCode = (value: GeneratedCode): LLM => {
     const ctx = this._ctx.select("withGeneratedCode", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a GitRef
    * @param value The value of the GitRef to save
    */
-  withGitRef = (value: GitRef): Llm => {
+  withGitRef = (value: GitRef): LLM => {
     const ctx = this._ctx.select("withGitRef", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a GitRepository
    * @param value The value of the GitRepository to save
    */
-  withGitRepository = (value: GitRepository): Llm => {
+  withGitRepository = (value: GitRepository): LLM => {
     const ctx = this._ctx.select("withGitRepository", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a InputTypeDef
    * @param value The value of the InputTypeDef to save
    */
-  withInputTypeDef = (value: InputTypeDef): Llm => {
+  withInputTypeDef = (value: InputTypeDef): LLM => {
     const ctx = this._ctx.select("withInputTypeDef", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a InterfaceTypeDef
    * @param value The value of the InterfaceTypeDef to save
    */
-  withInterfaceTypeDef = (value: InterfaceTypeDef): Llm => {
+  withInterfaceTypeDef = (value: InterfaceTypeDef): LLM => {
     const ctx = this._ctx.select("withInterfaceTypeDef", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
+  }
+
+  /**
+   * Set the llm state to a LLM
+   * @param value The value of the LLM to save
+   */
+  withLLM = (value: LLM): LLM => {
+    const ctx = this._ctx.select("withLLM", { value })
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a ListTypeDef
    * @param value The value of the ListTypeDef to save
    */
-  withListTypeDef = (value: ListTypeDef): Llm => {
+  withListTypeDef = (value: ListTypeDef): LLM => {
     const ctx = this._ctx.select("withListTypeDef", { value })
-    return new Llm(ctx)
-  }
-
-  /**
-   * Set the llm state to a Llm
-   * @param value The value of the Llm to save
-   */
-  withLlm = (value: Llm): Llm => {
-    const ctx = this._ctx.select("withLlm", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * swap out the llm model
    * @param model The model to use
    */
-  withModel = (model: string): Llm => {
+  withModel = (model: string): LLM => {
     const ctx = this._ctx.select("withModel", { model })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a Module
    * @param value The value of the Module to save
    */
-  withModule = (value: Module_): Llm => {
+  withModule = (value: Module_): LLM => {
     const ctx = this._ctx.select("withModule", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a ModuleConfigClient
    * @param value The value of the ModuleConfigClient to save
    */
-  withModuleConfigClient = (value: ModuleConfigClient): Llm => {
+  withModuleConfigClient = (value: ModuleConfigClient): LLM => {
     const ctx = this._ctx.select("withModuleConfigClient", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a ModuleSource
    * @param value The value of the ModuleSource to save
    */
-  withModuleSource = (value: ModuleSource): Llm => {
+  withModuleSource = (value: ModuleSource): LLM => {
     const ctx = this._ctx.select("withModuleSource", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a ObjectTypeDef
    * @param value The value of the ObjectTypeDef to save
    */
-  withObjectTypeDef = (value: ObjectTypeDef): Llm => {
+  withObjectTypeDef = (value: ObjectTypeDef): LLM => {
     const ctx = this._ctx.select("withObjectTypeDef", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * append a prompt to the llm context
    * @param prompt The prompt to send
    */
-  withPrompt = (prompt: string): Llm => {
+  withPrompt = (prompt: string): LLM => {
     const ctx = this._ctx.select("withPrompt", { prompt })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * append the contents of a file to the llm context
    * @param file The file to read the prompt from
    */
-  withPromptFile = (file: File): Llm => {
+  withPromptFile = (file: File): LLM => {
     const ctx = this._ctx.select("withPromptFile", { file })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
@@ -5886,90 +5782,194 @@ export class Llm extends BaseClient {
    * @param name The name of the variable
    * @param value The value of the variable
    */
-  withPromptVar = (name: string, value: string): Llm => {
+  withPromptVar = (name: string, value: string): LLM => {
     const ctx = this._ctx.select("withPromptVar", { name, value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a SDKConfig
    * @param value The value of the SDKConfig to save
    */
-  withSDKConfig = (value: SDKConfig): Llm => {
+  withSDKConfig = (value: SDKConfig): LLM => {
     const ctx = this._ctx.select("withSDKConfig", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a ScalarTypeDef
    * @param value The value of the ScalarTypeDef to save
    */
-  withScalarTypeDef = (value: ScalarTypeDef): Llm => {
+  withScalarTypeDef = (value: ScalarTypeDef): LLM => {
     const ctx = this._ctx.select("withScalarTypeDef", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a Secret
    * @param value The value of the Secret to save
    */
-  withSecret = (value: Secret): Llm => {
+  withSecret = (value: Secret): LLM => {
     const ctx = this._ctx.select("withSecret", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a Service
    * @param value The value of the Service to save
    */
-  withService = (value: Service): Llm => {
+  withService = (value: Service): LLM => {
     const ctx = this._ctx.select("withService", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a Socket
    * @param value The value of the Socket to save
    */
-  withSocket = (value: Socket): Llm => {
+  withSocket = (value: Socket): LLM => {
     const ctx = this._ctx.select("withSocket", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a SourceMap
    * @param value The value of the SourceMap to save
    */
-  withSourceMap = (value: SourceMap): Llm => {
+  withSourceMap = (value: SourceMap): LLM => {
     const ctx = this._ctx.select("withSourceMap", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a Terminal
    * @param value The value of the Terminal to save
    */
-  withTerminal = (value: Terminal): Llm => {
+  withTerminal = (value: Terminal): LLM => {
     const ctx = this._ctx.select("withTerminal", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
    * Set the llm state to a TypeDef
    * @param value The value of the TypeDef to save
    */
-  withTypeDef = (value: TypeDef): Llm => {
+  withTypeDef = (value: TypeDef): LLM => {
     const ctx = this._ctx.select("withTypeDef", { value })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
-   * Call the provided function with current Llm.
+   * Call the provided function with current LLM.
    *
    * This is useful for reusability and readability by not breaking the calling chain.
    */
-  with = (arg: (param: Llm) => Llm) => {
+  with = (arg: (param: LLM) => LLM) => {
     return arg(this)
+  }
+}
+
+/**
+ * A simple key value object that represents a label.
+ */
+export class Label extends BaseClient {
+  private readonly _id?: LabelID = undefined
+  private readonly _name?: string = undefined
+  private readonly _value?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: LabelID, _name?: string, _value?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._name = _name
+    this._value = _value
+  }
+
+  /**
+   * A unique identifier for this Label.
+   */
+  id = async (): Promise<LabelID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<LabelID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The label name.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The label value.
+   */
+  value = async (): Promise<string> => {
+    if (this._value) {
+      return this._value
+    }
+
+    const ctx = this._ctx.select("value")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * A definition of a list type in a Module.
+ */
+export class ListTypeDef extends BaseClient {
+  private readonly _id?: ListTypeDefID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ListTypeDefID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this ListTypeDef.
+   */
+  id = async (): Promise<ListTypeDefID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ListTypeDefID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The type of the elements in the list.
+   */
+  elementTypeDef = (): TypeDef => {
+    const ctx = this._ctx.select("elementTypeDef")
+    return new TypeDef(ctx)
   }
 }
 
@@ -7268,9 +7268,9 @@ export class Client extends BaseClient {
    * @param opts.model Model to use
    * @param opts.maxAPICalls Cap the number of API calls for this LLM
    */
-  llm = (opts?: ClientLlmOpts): Llm => {
+  llm = (opts?: ClientLlmOpts): LLM => {
     const ctx = this._ctx.select("llm", { ...opts })
-    return new Llm(ctx)
+    return new LLM(ctx)
   }
 
   /**
@@ -7478,6 +7478,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a LLM from its ID.
+   */
+  loadLLMFromID = (id: LLMID): LLM => {
+    const ctx = this._ctx.select("loadLLMFromID", { id })
+    return new LLM(ctx)
+  }
+
+  /**
    * Load a Label from its ID.
    */
   loadLabelFromID = (id: LabelID): Label => {
@@ -7491,14 +7499,6 @@ export class Client extends BaseClient {
   loadListTypeDefFromID = (id: ListTypeDefID): ListTypeDef => {
     const ctx = this._ctx.select("loadListTypeDefFromID", { id })
     return new ListTypeDef(ctx)
-  }
-
-  /**
-   * Load a Llm from its ID.
-   */
-  loadLlmFromID = (id: LlmID): Llm => {
-    const ctx = this._ctx.select("loadLlmFromID", { id })
-    return new Llm(ctx)
   }
 
   /**

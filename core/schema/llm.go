@@ -20,7 +20,7 @@ func (s llmSchema) Install() {
 			ArgDoc("model", "Model to use").
 			ArgDoc("maxAPICalls", "Cap the number of API calls for this LLM"),
 	}.Install(s.srv)
-	llmType := dagql.Fields[*core.Llm]{
+	llmType := dagql.Fields[*core.LLM]{
 		dagql.Func("model", s.model).
 			Doc("return the model used by the llm"),
 		dagql.Func("provider", s.provider).
@@ -42,15 +42,15 @@ func (s llmSchema) Install() {
 			Doc("set a variable for expansion in the prompt").
 			ArgDoc("name", "The name of the variable").
 			ArgDoc("value", "The value of the variable"),
-		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.Instance[*core.Llm], _ struct{}) (dagql.ID[*core.Llm], error) {
-			var zero dagql.ID[*core.Llm]
-			var inst dagql.Instance[*core.Llm]
+		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.Instance[*core.LLM], _ struct{}) (dagql.ID[*core.LLM], error) {
+			var zero dagql.ID[*core.LLM]
+			var inst dagql.Instance[*core.LLM]
 			if err := s.srv.Select(ctx, self, &inst, dagql.Selector{
 				Field: "loop",
 			}); err != nil {
 				return zero, err
 			}
-			return dagql.NewID[*core.Llm](inst.ID()), nil
+			return dagql.NewID[*core.LLM](inst.ID()), nil
 		}).
 			Doc("synchronize LLM state"),
 		dagql.Func("loop", s.loop).
@@ -61,24 +61,24 @@ func (s llmSchema) Install() {
 	}
 	llmType.Install(s.srv)
 
-	hook := core.LlmHook{Server: s.srv}
-	llmObjType, ok := s.srv.ObjectType(new(core.Llm).Type().Name())
+	hook := core.LLMHook{Server: s.srv}
+	llmObjType, ok := s.srv.ObjectType(new(core.LLM).Type().Name())
 	if !ok {
 		panic("llm type not found after dagql install")
 	}
-	hook.ExtendLlmType(llmObjType)
+	hook.ExtendLLMType(llmObjType)
 	s.srv.AddInstallHook(hook)
 }
 
-func (s *llmSchema) model(ctx context.Context, llm *core.Llm, args struct{}) (string, error) {
+func (s *llmSchema) model(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
 	return llm.Endpoint.Model, nil
 }
 
-func (s *llmSchema) provider(ctx context.Context, llm *core.Llm, args struct{}) (string, error) {
+func (s *llmSchema) provider(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
 	return string(llm.Endpoint.Provider), nil
 }
 
-func (s *llmSchema) lastReply(ctx context.Context, llm *core.Llm, args struct{}) (dagql.String, error) {
+func (s *llmSchema) lastReply(ctx context.Context, llm *core.LLM, args struct{}) (dagql.String, error) {
 	reply, err := llm.LastReply(ctx, s.srv)
 	if err != nil {
 		return "", err
@@ -86,28 +86,28 @@ func (s *llmSchema) lastReply(ctx context.Context, llm *core.Llm, args struct{})
 	return dagql.NewString(reply), nil
 }
 
-func (s *llmSchema) withModel(ctx context.Context, llm *core.Llm, args struct {
+func (s *llmSchema) withModel(ctx context.Context, llm *core.LLM, args struct {
 	Model string
-}) (*core.Llm, error) {
+}) (*core.LLM, error) {
 	return llm.WithModel(ctx, args.Model, s.srv)
 }
 
-func (s *llmSchema) withPrompt(ctx context.Context, llm *core.Llm, args struct {
+func (s *llmSchema) withPrompt(ctx context.Context, llm *core.LLM, args struct {
 	Prompt string
-}) (*core.Llm, error) {
+}) (*core.LLM, error) {
 	return llm.WithPrompt(ctx, args.Prompt, s.srv)
 }
 
-func (s *llmSchema) withPromptVar(ctx context.Context, llm *core.Llm, args struct {
+func (s *llmSchema) withPromptVar(ctx context.Context, llm *core.LLM, args struct {
 	Name  dagql.String
 	Value dagql.String
-}) (*core.Llm, error) {
+}) (*core.LLM, error) {
 	return llm.WithPromptVar(args.Name.String(), args.Value.String()), nil
 }
 
-func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.Llm, args struct {
+func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args struct {
 	File core.FileID
-}) (*core.Llm, error) {
+}) (*core.LLM, error) {
 	file, err := args.File.Load(ctx, s.srv)
 	if err != nil {
 		return nil, err
@@ -115,14 +115,14 @@ func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.Llm, args stru
 	return llm.WithPromptFile(ctx, file.Self, s.srv)
 }
 
-func (s *llmSchema) loop(ctx context.Context, llm *core.Llm, args struct{}) (*core.Llm, error) {
+func (s *llmSchema) loop(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
 	return llm.Sync(ctx, s.srv)
 }
 
 func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
 	Model       dagql.Optional[dagql.String]
 	MaxAPICalls dagql.Optional[dagql.Int] `name:"maxAPICalls"`
-}) (*core.Llm, error) {
+}) (*core.LLM, error) {
 	var model string
 	if args.Model.Valid {
 		model = args.Model.Value.String()
@@ -131,10 +131,10 @@ func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
 	if args.MaxAPICalls.Valid {
 		maxAPICalls = args.MaxAPICalls.Value.Int()
 	}
-	return core.NewLlm(ctx, parent, s.srv, model, maxAPICalls)
+	return core.NewLLM(ctx, parent, s.srv, model, maxAPICalls)
 }
 
-func (s *llmSchema) history(ctx context.Context, llm *core.Llm, _ struct{}) (dagql.Array[dagql.String], error) {
+func (s *llmSchema) history(ctx context.Context, llm *core.LLM, _ struct{}) (dagql.Array[dagql.String], error) {
 	history, err := llm.History(ctx, s.srv)
 	if err != nil {
 		return nil, err
@@ -142,7 +142,7 @@ func (s *llmSchema) history(ctx context.Context, llm *core.Llm, _ struct{}) (dag
 	return dagql.NewStringArray(history...), nil
 }
 
-func (s *llmSchema) tools(ctx context.Context, llm *core.Llm, _ struct{}) (dagql.String, error) {
+func (s *llmSchema) tools(ctx context.Context, llm *core.LLM, _ struct{}) (dagql.String, error) {
 	doc, err := llm.ToolsDoc(ctx, s.srv)
 	return dagql.NewString(doc), err
 }
