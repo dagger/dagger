@@ -122,10 +122,12 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 			IncludeUsage: openai.F(true),
 		}),
 		// call tools one at a time, or else chaining breaks
-		ParallelToolCalls: openai.F(false),
 	}
 
 	if len(tools) > 0 {
+		// OpenAI is picky about this being set if no tools are specified
+		params.ParallelToolCalls = openai.F(false)
+
 		var toolParams []openai.ChatCompletionToolParam
 		for _, tool := range tools {
 			toolParams = append(toolParams, openai.ChatCompletionToolParam{
