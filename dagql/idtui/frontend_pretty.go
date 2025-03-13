@@ -1409,6 +1409,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 					}
 					fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix, highlight)
 				}
+				fe.renderStepError(out, r, root.Span, 0, prefix)
 			}()
 		}
 		if row.Depth == 0 {
@@ -1418,7 +1419,6 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 				fmt.Fprintln(out, out.String(prefix))
 			}
 			fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
-			fe.renderStepError(out, r, row.Span, 0, prefix)
 			fe.renderDebug(out, row.Span, prefix+Block25+" ")
 			return true
 		}
