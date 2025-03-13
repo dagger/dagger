@@ -29,7 +29,6 @@ func initClient() *dagger.Client {
 		if err != nil {
 			panic(err)
 		}
-
 	}
 	return client
 }
