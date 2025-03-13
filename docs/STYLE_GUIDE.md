@@ -109,5 +109,5 @@ Some screen recordings can be auto-generated with the `docs/recorder` module.
 - Generate recordings for some quickstart pages:
 
   ```shell
-  dagger call generate-quickstart-recordings --base=../current_docs/quickstart/snippets export --path=/tmp/out
+  dagger call generate-quickstart-recordings --base=../current_docs/ci/quickstart/snippets export --path=/tmp/out
   ```
