@@ -1341,17 +1341,18 @@ func assign(field reflect.Value, val any) error {
 	} else if setter, ok := val.(Setter); ok {
 		return setter.SetField(field)
 	} else {
-		return fmt.Errorf("cannot assign %T to %s", val, field.Type())
+		return fmt.Errorf("assign: cannot assign %T to %s", val, field.Type())
 	}
 }
 
 func appendAssign(slice reflect.Value, val any) error {
+	if slice.Kind() != reflect.Slice {
+		return fmt.Errorf("appendAssign: expected slice, got %v", slice.Kind())
+	}
 	if reflect.TypeOf(val).AssignableTo(slice.Type().Elem()) {
 		slice.Set(reflect.Append(slice, reflect.ValueOf(val)))
 		return nil
-	} else if setter, ok := val.(Setter); ok {
-		return setter.SetField(slice)
 	} else {
-		return fmt.Errorf("cannot assign %T to %s", val, slice.Type())
+		return fmt.Errorf("appendAssign: cannot assign %T to %s", val, slice.Type())
 	}
 }

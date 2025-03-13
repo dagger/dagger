@@ -194,7 +194,7 @@ func (env *LLMEnv) call(ctx context.Context,
 	}
 	// 2. MAKE THE CALL
 	if retObjType, ok := srv.ObjectType(field.Type.Type().Name()); ok {
-		var obj dagql.Object
+		var val dagql.Typed
 		if sync, ok := retObjType.FieldSpec("sync"); ok {
 			syncSel := dagql.Selector{
 				Field: sync.Name,
@@ -210,13 +210,15 @@ func (env *LLMEnv) call(ctx context.Context,
 			if err != nil {
 				return nil, fmt.Errorf("failed to load synced object: %w", err)
 			}
-			obj = syncedObj
-		} else if err := srv.Select(ctx, target, &obj, fieldSel); err != nil {
+			val = syncedObj
+		} else if err := srv.Select(ctx, target, &val, fieldSel); err != nil {
 			return nil, err
 		}
-		env.objsByHash[obj.ID().Digest()] = obj
-		env.history = append(env.history, obj)
-		return env.describe(obj), nil
+		if obj, ok := dagql.UnwrapAs[dagql.Object](val); ok {
+			env.objsByHash[obj.ID().Digest()] = val
+		}
+		env.history = append(env.history, val)
+		return env.describe(val), nil
 	}
 	var val dagql.Typed
 	if err := srv.Select(ctx, target, &val, fieldSel); err != nil {
@@ -280,11 +282,14 @@ func (env *LLMEnv) callCurrent(ctx context.Context, _ any) (any, error) {
 }
 
 // describe returns a string representation of a typed object or object ID
-func (env *LLMEnv) describe(obj dagql.Typed) string {
-	if obj, ok := dagql.UnwrapAs[dagql.IDable](obj); ok {
+func (env *LLMEnv) describe(val dagql.Typed) string {
+	if obj, ok := dagql.UnwrapAs[dagql.IDable](val); ok {
 		return obj.ID().Type().ToAST().Name() + "@" + obj.ID().Digest().String()
 	}
-	return obj.Type().Name()
+	if list, ok := dagql.UnwrapAs[dagql.Enumerable](val); ok {
+		return "[" + val.Type().Name() + "] (length: " + strconv.Itoa(list.Len()) + ")"
+	}
+	return val.Type().Name()
 }
 
 func (env *LLMEnv) Builtins() []LlmTool {

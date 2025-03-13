@@ -200,6 +200,19 @@ func TestSelectArray(t *testing.T) {
 		assert.Equal(t, points[0].Self.Y, 7)
 	})
 
+	t.Run("select all as Typed", func(t *testing.T) {
+		var dest dagql.Typed
+		assert.NilError(t, srv.Select(ctx, srv.Root(), &dest,
+			pointSel,
+			dagql.Selector{
+				Field: "neighbors",
+			},
+		))
+		pointsArr, ok := dest.(dagql.Array[*points.Point])
+		assert.Assert(t, ok)
+		assert.Equal(t, len(pointsArr), 4)
+	})
+
 	t.Run("select all children", func(t *testing.T) {
 		var points dagql.Array[dagql.Instance[*points.Point]]
 		assert.ErrorContains(t, srv.Select(ctx, srv.Root(), &points,

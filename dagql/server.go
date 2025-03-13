@@ -573,38 +573,48 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 			return nil
 		}
 
-		if _, ok := s.ObjectType(res.Type().Name()); ok {
-			if enum, isEnum := res.(Enumerable); isEnum {
-				// HACK: list of objects must be the last selection right now unless nth used in Selector.
-				if i+1 < len(sels) {
-					return fmt.Errorf("cannot sub-select enum of %s", res.Type())
-				}
-				for nth := 1; nth <= enum.Len(); nth++ {
-					val, err := enum.Nth(nth)
-					if err != nil {
-						return fmt.Errorf("nth %d: %w", nth, err)
-					}
-					if wrapped, ok := val.(Derefable); ok {
-						val, ok = wrapped.Deref()
-						if !ok {
-							if err := appendAssign(reflect.ValueOf(dest).Elem(), nil); err != nil {
-								return err
-							}
-							continue
-						}
-					}
-					nthID := id.SelectNth(nth)
-					obj, err := s.toSelectable(nthID, val)
-					if err != nil {
-						return fmt.Errorf("select %dth array element: %w", nth, err)
-					}
-					if err := appendAssign(reflect.ValueOf(dest).Elem(), obj); err != nil {
-						return err
-					}
-				}
-				return nil
+		destV := reflect.ValueOf(dest).Elem()
+		if res.Type().Elem != nil {
+			if i+1 < len(sels) {
+				return fmt.Errorf("cannot sub-select enum of %s", res.Type())
 			}
-
+			if destV.Type().Kind() != reflect.Slice {
+				// assigning to something like dagql.Typed, don't need to enumerate
+				break
+			}
+			enum, isEnum := res.(Enumerable)
+			if !isEnum {
+				return fmt.Errorf("cannot assign non-Enumerable %T to %s", res, destV.Type())
+			}
+			// HACK: list of objects must be the last selection right now unless nth used in Selector.
+			if i+1 < len(sels) {
+				return fmt.Errorf("cannot sub-select enum of %s", res.Type())
+			}
+			for nth := 1; nth <= enum.Len(); nth++ {
+				val, err := enum.Nth(nth)
+				if err != nil {
+					return fmt.Errorf("nth %d: %w", nth, err)
+				}
+				if wrapped, ok := val.(Derefable); ok {
+					val, ok = wrapped.Deref()
+					if !ok {
+						if err := appendAssign(destV, nil); err != nil {
+							return err
+						}
+						continue
+					}
+				}
+				nthID := id.SelectNth(nth)
+				obj, err := s.toSelectable(nthID, val)
+				if err != nil {
+					return fmt.Errorf("select %dth array element: %w", nth, err)
+				}
+				if err := appendAssign(destV, obj); err != nil {
+					return err
+				}
+			}
+			return nil
+		} else if _, ok := s.ObjectType(res.Type().Name()); ok {
 			// if the result is an Object, set it as the next selection target, and
 			// assign res to the "hydrated" Object
 			self, err = s.toSelectable(id, res)
