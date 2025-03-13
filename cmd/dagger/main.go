@@ -65,6 +65,7 @@ var (
 	interactiveCommandParsed []string
 	web                      bool
 	noExit                   bool
+	useCloudEngine           bool
 
 	dotOutputFilePath string
 	dotFocusField     string
@@ -160,6 +161,11 @@ func init() {
 	// we'll add it in the last line of the usage template
 	rootCmd.PersistentFlags().BoolP("help", "h", false, "Print usage")
 	rootCmd.PersistentFlags().Lookup("help").Hidden = true
+
+	// this flag changes the behaviour of a few commands, e.g. call, functions, core, shell, etc.
+	// all those functions will run in a remote cloud engine which gets created at execution time
+	rootCmd.PersistentFlags().BoolVar(&useCloudEngine, "cloud", false, "Run in a Dagger Cloud Engine")
+	rootCmd.PersistentFlags().Lookup("cloud").Hidden = true
 
 	disableFlagsInUseLine(rootCmd)
 }
