@@ -122,7 +122,6 @@ func run(cmd *cobra.Command, args []string) error {
 
 	return withEngine(ctx, client.Params{
 		SecretToken: sessionToken,
-		ServeModule: true,
 	}, func(ctx context.Context, engineClient *client.Client) error {
 		sessionL, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {

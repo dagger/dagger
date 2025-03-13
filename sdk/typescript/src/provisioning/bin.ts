@@ -197,10 +197,6 @@ export class Bin implements EngineConn {
       opts.LogOutput.write("Creating new Engine session... ")
     }
 
-    if (opts.ServeCurrentModule) {
-      args.push("--serve-module")
-    }
-
     this._subProcess = execa(binPath, args, {
       stdio: "pipe",
       reject: true,
