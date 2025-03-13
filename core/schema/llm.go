@@ -60,13 +60,14 @@ func (s llmSchema) Install() {
 			Doc("print documentation for available tools"),
 	}
 	llmType.Install(s.srv)
-	middleware := core.LlmMiddleware{Server: s.srv}
+
+	hook := core.LlmHook{Server: s.srv}
 	llmObjType, ok := s.srv.ObjectType(new(core.Llm).Type().Name())
 	if !ok {
 		panic("llm type not found after dagql install")
 	}
-	middleware.ExtendLlmType(llmObjType)
-	s.srv.SetMiddleware(middleware)
+	hook.ExtendLlmType(llmObjType)
+	s.srv.AddInstallHook(hook)
 }
 
 func (s *llmSchema) model(ctx context.Context, llm *core.Llm, args struct{}) (string, error) {

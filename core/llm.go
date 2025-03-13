@@ -736,7 +736,7 @@ func (msg ModelMessage) Text() (string, error) {
 	return "", fmt.Errorf("unable to extract text from message content: %v", msg.Content)
 }
 
-type LlmMiddleware struct {
+type LlmHook struct {
 	Server *dagql.Server
 }
 
@@ -753,7 +753,7 @@ var TypesHiddenFromModuleSDKs = []dagql.Typed{
 	&EngineCacheEntrySet{},
 }
 
-func (s LlmMiddleware) ExtendLlmType(targetType dagql.ObjectType) error {
+func (s LlmHook) ExtendLlmType(targetType dagql.ObjectType) error {
 	llmType, ok := s.Server.ObjectType(new(Llm).Type().Name())
 	if !ok {
 		return fmt.Errorf("failed to lookup llm type")
@@ -800,8 +800,7 @@ func (s LlmMiddleware) ExtendLlmType(targetType dagql.ObjectType) error {
 	return nil
 }
 
-func (s LlmMiddleware) InstallObject(targetType dagql.ObjectType, install func(dagql.ObjectType)) {
-	install(targetType)
+func (s LlmHook) InstallObject(targetType dagql.ObjectType) {
 	typename := targetType.TypeName()
 	if strings.HasPrefix(typename, "_") {
 		return
@@ -824,7 +823,7 @@ func (s LlmMiddleware) InstallObject(targetType dagql.ObjectType, install func(d
 	}
 }
 
-func (s LlmMiddleware) ModuleWithObject(ctx context.Context, mod *Module, targetTypedef *TypeDef) (*Module, error) {
+func (s LlmHook) ModuleWithObject(ctx context.Context, mod *Module, targetTypedef *TypeDef) (*Module, error) {
 	// Install the target type
 	mod, err := mod.WithObject(ctx, targetTypedef)
 	if err != nil {

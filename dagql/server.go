@@ -43,15 +43,14 @@ func init() {
 // Server represents a GraphQL server whose schema is dynamically modified at
 // runtime.
 type Server struct {
-	root        Object
-	telemetry   AroundFunc
-	objects     map[string]ObjectType
-	scalars     map[string]ScalarType
-	typeDefs    map[string]TypeDef
-	directives  map[string]DirectiveSpec
-	installLock *sync.Mutex
-	// FIXME: implement stacked middleware
-	middleware Middleware
+	root         Object
+	telemetry    AroundFunc
+	objects      map[string]ObjectType
+	scalars      map[string]ScalarType
+	typeDefs     map[string]TypeDef
+	directives   map[string]DirectiveSpec
+	installLock  *sync.Mutex
+	installHooks []InstallHook
 
 	// View is the view that is applied to all queries on this server
 	View string
@@ -63,8 +62,8 @@ type Server struct {
 	Cache Cache
 }
 
-type Middleware interface {
-	InstallObject(ObjectType, func(ObjectType))
+type InstallHook interface {
+	InstallObject(ObjectType)
 	// FIXME: add support for other install functions
 }
 
@@ -235,64 +234,71 @@ type Loadable interface {
 	Load(context.Context, *Server) (Typed, error)
 }
 
-// InstallObject installs the given Object type into the schema.
-func (s *Server) InstallObject(class ObjectType) {
-	// FIXME: shortcut to get our "agent" middleware to work
-	// s.installLock.Lock()
-	// defer s.installLock.Unlock()
-	s.installObject(class)
-}
+// InstallObject installs the given Object type into the schema, or returns the
+// previously installed type if it was already present
+func (s *Server) InstallObject(class ObjectType) ObjectType {
+	s.installLock.Lock()
 
-func (s *Server) installObject(o ObjectType) {
-	install := func(class ObjectType) {
-		s.objects[class.TypeName()] = class
-		if idType, hasID := class.IDType(); hasID {
-			s.scalars[idType.TypeName()] = idType
-			s.Root().ObjectType().Extend(
-				FieldSpec{
-					Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
-					Description: fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
-					Type:        class.Typed(),
-					Args: []InputSpec{
-						{
-							Name: "id",
-							Type: idType,
-						},
+	if class, ok := s.objects[class.TypeName()]; ok {
+		s.installLock.Unlock()
+		return class
+	}
+
+	s.objects[class.TypeName()] = class
+	if idType, hasID := class.IDType(); hasID {
+		s.scalars[idType.TypeName()] = idType
+
+		s.Root().ObjectType().Extend(
+			FieldSpec{
+				Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
+				Description: fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
+				Type:        class.Typed(),
+				Args: []InputSpec{
+					{
+						Name: "id",
+						Type: idType,
 					},
 				},
-				func(ctx context.Context, self Object, args map[string]Input) (Typed, error) {
-					idable, ok := args["id"].(IDable)
-					if !ok {
-						return nil, fmt.Errorf("expected IDable, got %T", args["id"])
-					}
-					id := idable.ID()
-					if id.Type().ToAST().NamedType != class.TypeName() {
-						return nil, fmt.Errorf("expected ID of type %q, got %q", class.TypeName(), id.Type().ToAST().NamedType)
-					}
-					res, err := s.Load(ctx, idable.ID())
-					if err != nil {
-						return nil, fmt.Errorf("load: %w", err)
-					}
-					return res, nil
-				},
-				CacheSpec{
-					DoNotCache: "There's no point caching the loading call of an ID vs. letting the ID's calls cache on their own.",
-				},
-			)
-		}
+			},
+			func(ctx context.Context, self Object, args map[string]Input) (Typed, error) {
+				idable, ok := args["id"].(IDable)
+				if !ok {
+					return nil, fmt.Errorf("expected IDable, got %T", args["id"])
+				}
+				id := idable.ID()
+				if id.Type().ToAST().NamedType != class.TypeName() {
+					return nil, fmt.Errorf("expected ID of type %q, got %q", class.TypeName(), id.Type().ToAST().NamedType)
+				}
+				res, err := s.Load(ctx, idable.ID())
+				if err != nil {
+					return nil, fmt.Errorf("load: %w", err)
+				}
+				return res, nil
+			},
+			CacheSpec{
+				DoNotCache: "There's no point caching the loading call of an ID vs. letting the ID's calls cache on their own.",
+			},
+		)
 	}
-	if middleware := s.middleware; middleware != nil {
-		middleware.InstallObject(o, install)
-	} else {
-		install(o)
+	s.installLock.Unlock()
+
+	for _, hook := range s.installHooks {
+		hook.InstallObject(class)
 	}
+
+	return class
 }
 
-// InstallScalar installs the given Scalar type into the schema.
-func (s *Server) InstallScalar(scalar ScalarType) {
+// InstallScalar installs the given Scalar type into the schema, or returns the
+// previously installed type if it was already present
+func (s *Server) InstallScalar(scalar ScalarType) ScalarType {
 	s.installLock.Lock()
 	defer s.installLock.Unlock()
+	if scalar, ok := s.scalars[scalar.TypeName()]; ok {
+		return scalar
+	}
 	s.scalars[scalar.TypeName()] = scalar
+	return scalar
 }
 
 // InstallDirective installs the given Directive type into the schema.
@@ -610,16 +616,11 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 	return assign(reflect.ValueOf(dest).Elem(), res)
 }
 
-// Attach a middleware to hook into object installation
-func (s *Server) SetMiddleware(middleware Middleware) {
+// Attach an install hook
+func (s *Server) AddInstallHook(hook InstallHook) {
 	s.installLock.Lock()
-	s.middleware = middleware
+	s.installHooks = append(s.installHooks, hook)
 	s.installLock.Unlock()
-}
-
-// Return the currently attached middleware (may be nil)
-func (s *Server) Middleware() Middleware {
-	return s.middleware
 }
 
 func (s *Server) SelectID(ctx context.Context, self Object, sels ...Selector) (*call.ID, error) {
