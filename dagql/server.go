@@ -80,6 +80,8 @@ type AroundFunc func(
 // Cache stores results of pure selections against Server.
 type Cache = *cache.CacheWithResults[digest.Digest, Typed]
 
+type CacheResult = cache.Result[digest.Digest, Typed]
+
 type CacheValWithCallbacks = cache.ValueWithCallbacks[Typed]
 
 // TypeDef is a type whose sole practical purpose is to define a GraphQL type,
