@@ -283,9 +283,9 @@ func (svc *Service) startContainer(
 	}
 	if !ok {
 		execMD = &buildkit.ExecutionMetadata{
-			ExecID:    identity.NewID(),
-			SessionID: clientMetadata.SessionID,
-			AllowLLM:  clientMetadata.AllowLLMModule,
+			ExecID:            identity.NewID(),
+			SessionID:         clientMetadata.SessionID,
+			AllowedLLMModules: clientMetadata.AllowedLLMModules,
 		}
 	}
 

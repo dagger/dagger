@@ -662,11 +662,10 @@ func (c *Client) AllowLLM(ctx context.Context, moduleRepoURL string) error {
 	if err != nil {
 		return fmt.Errorf("llm sync failed fetching client metadata from context: %w", err)
 	}
-	if md.AllowLLMModule == "all" {
-		return nil
-	}
-	if md.AllowLLMModule != "" && moduleRepoURL == md.AllowLLMModule {
-		return nil
+	for _, allowedModule := range md.AllowedLLMModules {
+		if allowedModule == "all" || moduleRepoURL == allowedModule {
+			return nil
+		}
 	}
 
 	// the flag hasn't allowed this LLM call, so prompt the user
@@ -676,7 +675,7 @@ func (c *Client) AllowLLM(ctx context.Context, moduleRepoURL string) error {
 	}
 
 	response, err := session.NewPromptClient(caller.Conn()).Prompt(ctx, &session.PromptRequest{
-		Prompt: fmt.Sprintf("Remote module %s attempted to access the LLM API. Allow it?", moduleRepoURL)
+		Prompt: fmt.Sprintf("Remote module %s attempted to access the LLM API. Allow it?", moduleRepoURL),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to prompt user for LLM API access: %w", err)
@@ -686,7 +685,7 @@ func (c *Client) AllowLLM(ctx context.Context, moduleRepoURL string) error {
 		return nil
 	}
 
-	return fmt.Errorf("Remote module %s attempted to access LLM, pass --allow-llm=%s to grant llm access", moduleRepoURL, moduleRepoURL)
+	return fmt.Errorf("Remote module %s attempted to use LLM tokens, pass --allow-llm=%s or --allow-llm=all to allow", moduleRepoURL, moduleRepoURL)
 }
 
 type TerminalClient struct {

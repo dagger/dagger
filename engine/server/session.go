@@ -94,7 +94,7 @@ type daggerSession struct {
 	interactive        bool
 	interactiveCommand []string
 
-	allowLLMModule string
+	allowedLLMModules []string
 }
 
 type daggerSessionState string
@@ -257,7 +257,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.telemetryPubSub = srv.telemetryPubSub
 	sess.interactive = clientMetadata.Interactive
 	sess.interactiveCommand = clientMetadata.InteractiveCommand
-	sess.allowLLMModule = clientMetadata.AllowLLMModule
+	sess.allowedLLMModules = clientMetadata.AllowedLLMModules
 
 	sess.analytics = analytics.New(analytics.Config{
 		DoNotTrack: clientMetadata.DoNotTrack || analytics.DoNotTrack(),
@@ -934,7 +934,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			ClientStableID:    execMD.ClientStableID,
 			Labels:            map[string]string{},
 			SSHAuthSocketPath: execMD.SSHAuthSocketPath,
-			AllowLLMModule:    execMD.AllowLLM,
+			AllowedLLMModules: execMD.AllowedLLMModules,
 		},
 		CallID:              execMD.CallID,
 		CallerClientID:      execMD.CallerClientID,

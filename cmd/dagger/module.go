@@ -29,9 +29,9 @@ var (
 		Title: "Dagger Module Commands",
 	}
 
-	moduleURL   string
-	moduleFlags = pflag.NewFlagSet("module", pflag.ContinueOnError)
-	allowLLM    string
+	moduleURL         string
+	moduleFlags       = pflag.NewFlagSet("module", pflag.ContinueOnError)
+	allowedLLMModules []string
 
 	sdk           string
 	licenseID     string
@@ -93,7 +93,7 @@ func getCompatVersion() string {
 
 func init() {
 	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to the module directory. Either local path or a remote git repo")
-	moduleFlags.StringVar(&allowLLM, "allow-llm", "", "url or relative path of module allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session")
+	moduleFlags.StringSliceVar(&allowedLLMModules, "allow-llm", nil, "List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session")
 
 	for _, fc := range funcCmds {
 		if !fc.DisableModuleLoad {
