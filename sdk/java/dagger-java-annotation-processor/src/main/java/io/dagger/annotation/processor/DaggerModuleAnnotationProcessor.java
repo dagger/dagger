@@ -547,8 +547,12 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
       }
     }
 
-    if (objectInfo.constructor().isPresent() && fnInfo.name().equals("<init>")) {
+    boolean returnsVoid = fnInfo.returnType().typeName().equals("void");
+    boolean isConstructor = objectInfo.constructor().isPresent() && fnInfo.name().equals("<init>");
+    if (isConstructor) {
       code.add("$T res = new $T(", objName, objName);
+    } else if (returnsVoid) {
+      code.add("obj.$L(", fnInfo.qName());
     } else {
       code.add(fnReturnType).add(" res = obj.$L(", fnInfo.qName());
     }
@@ -565,7 +569,11 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                     .collect(Collectors.toList()),
                 ", "))
         .add(");\n");
-    code.addStatement("return $T.toJSON(res)", JsonConverter.class);
+    if (returnsVoid && !isConstructor) {
+      code.addStatement("return $T.toJSON(null)", JsonConverter.class);
+    } else {
+      code.addStatement("return $T.toJSON(res)", JsonConverter.class);
+    }
 
     return code.build();
   }
@@ -661,6 +669,12 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           Dagger.class,
           TypeDefKind.class,
           TypeDefKind.BOOLEAN_KIND.name());
+    } else if (name.equals("void")) {
+      return CodeBlock.of(
+          "$T.dag().typeDef().withKind($T.$L).withOptional(true)",
+          Dagger.class,
+          TypeDefKind.class,
+          TypeDefKind.VOID_KIND.name());
     } else if (name.startsWith("java.util.List<")) {
       name = name.substring("java.util.List<".length(), name.length() - 1);
       return CodeBlock.of(

@@ -137,4 +137,10 @@ public class DaggerJava {
   public float addFloat(float a, float b) {
     return a + b;
   }
+
+  /** Function returning nothing */
+  @Function
+  public void doSomething(Directory src) {
+    // do something
+  }
 }
