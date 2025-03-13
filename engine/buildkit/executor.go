@@ -103,8 +103,9 @@ type ExecutionMetadata struct {
 	// If true, skip injecting dagger-init into the container.
 	NoInit bool
 
-	// If non-null, allow llm API calls.
-	AllowLLM string
+	// list of remote modules allowed to access LLM APIs
+	// any value of "all" bypasses restrictions, a nil slice imposes them
+	AllowedLLMModules []string
 }
 
 const executionMetadataKey = "dagger.executionMetadata"
