@@ -32,7 +32,6 @@ func (s PromptAttachable) Prompt(ctx context.Context, req *PromptRequest) (*Prom
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 
-	// Validate request
 	if req.Prompt == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid input: prompt is required")
 	}
@@ -44,6 +43,6 @@ func (s PromptAttachable) Prompt(ctx context.Context, req *PromptRequest) (*Prom
 	// TODO: @vito: actually prompt the user via the frontend
 
 	return &PromptResponse{
-		Input: "yes",
+		Input: "no",
 	}, nil
 }
