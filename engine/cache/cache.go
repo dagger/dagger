@@ -38,6 +38,7 @@ type Result[K comparable, V any] interface {
 	Result() V
 	Release(context.Context) error
 	PostCall(context.Context) error
+	HitCache() bool
 }
 
 type PostCallFunc = func(context.Context) error
@@ -76,14 +77,27 @@ type result[K comparable, V any] struct {
 	postCall  PostCallFunc
 	onRelease OnReleaseFunc
 
-	done    chan struct{}
+	waitCh  chan struct{}
 	cancel  context.CancelCauseFunc
 	waiters int
 
 	refCount int
 }
 
-var _ Result[int, int] = &result[int, int]{}
+// perCallResult wraps result with metadata that is specific to a single call,
+// as opposed to the shared metadata for all instances of a result. e.g. whether
+// the result was returned from cache or new.
+type perCallResult[K comparable, V any] struct {
+	*result[K, V]
+
+	hitCache bool
+}
+
+func (r *perCallResult[K, V]) HitCache() bool {
+	return r.hitCache
+}
+
+var _ Result[int, int] = &perCallResult[int, int]{}
 
 type cacheContextKey[K comparable, V any] struct {
 	key   K
@@ -133,7 +147,7 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 		if err != nil {
 			return nil, err
 		}
-		res := &result[K, V]{}
+		res := &perCallResult[K, V]{result: &result[K, V]{}}
 		if valWithCallbacks != nil {
 			res.val = valWithCallbacks.Value
 			res.postCall = valWithCallbacks.PostCall
@@ -166,13 +180,13 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 
 		key: key,
 
-		done:    make(chan struct{}),
+		waitCh:  make(chan struct{}),
 		cancel:  cancel,
 		waiters: 1,
 	}
 	c.calls[key] = res
 	go func() {
-		defer close(res.done)
+		defer close(res.waitCh)
 		valWithCallbacks, err := fn(callCtx)
 		res.err = err
 		if valWithCallbacks != nil {
@@ -186,14 +200,24 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 	return c.wait(ctx, key, res)
 }
 
-func (c *cache[K, V]) wait(ctx context.Context, key K, res *result[K, V]) (*result[K, V], error) {
-	// wait for either the call to be done or the caller's ctx to be canceled
+func (c *cache[K, V]) wait(ctx context.Context, key K, res *result[K, V]) (*perCallResult[K, V], error) {
+	var hitCache bool
 	var err error
+	// TODO: doc
+	// TODO: doc
+	// TODO: doc
 	select {
-	case <-res.done:
+	case <-res.waitCh:
+		hitCache = true
 		err = res.err
-	case <-ctx.Done():
-		err = context.Cause(ctx)
+	default:
+		// wait for either the call to be done or the caller's ctx to be canceled
+		select {
+		case <-res.waitCh:
+			err = res.err
+		case <-ctx.Done():
+			err = context.Cause(ctx)
+		}
 	}
 
 	c.mu.Lock()
@@ -207,7 +231,10 @@ func (c *cache[K, V]) wait(ctx context.Context, key K, res *result[K, V]) (*resu
 
 	if err == nil {
 		res.refCount++
-		return res, nil
+		return &perCallResult[K, V]{
+			result:   res,
+			hitCache: hitCache,
+		}, nil
 	}
 
 	if res.refCount == 0 {
