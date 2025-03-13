@@ -300,6 +300,7 @@ func (t *TypescriptSdk) moduleConfigFiles(path string) []string {
 		"yarn.lock",
 		"pnpm-lock.yaml",
 		"bun.lockb",
+		"bun.lock",
 	}
 
 	for i, file := range modConfigFiles {
@@ -481,7 +482,7 @@ func (t *TypescriptSdk) detectBaseImageRef() (string, error) {
 // DetectRuntime returns the runtime(bun or node) detected for the user's module
 // If a runtime is specfied inside the package.json, it will be used.
 // If a package-lock.json, yarn.lock, or pnpm-lock.yaml is present, node will be used.
-// If a bun.lockb is present, bun will be used.
+// If a bun.lock or bun.lockb is present, bun will be used.
 // If none of the above is present, node will be used.
 //
 // If the runtime is detected and pinned to a specific version, it will also return the pinned version.
@@ -507,7 +508,7 @@ func (t *TypescriptSdk) detectRuntime() error {
 	}
 
 	// Try to detect runtime from lock files
-	if t.moduleConfig.hasFile("bun.lockb") {
+	if t.moduleConfig.hasFile("bun.lockb") || t.moduleConfig.hasFile("bun.lock") {
 		t.moduleConfig.runtime = Bun
 
 		return nil
@@ -559,7 +560,8 @@ func (t *TypescriptSdk) detectPackageManager() (SupportedPackageManager, string,
 		}
 	}
 
-	if t.moduleConfig.hasFile("bun.lockb") {
+	// Bun can additionally output a yarn.lock file, so we need to check for Bun before Yarn.
+	if t.moduleConfig.hasFile("bun.lockb") || t.moduleConfig.hasFile("bun.lock") {
 		return BunManager, "", nil
 	}
 
