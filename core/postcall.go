@@ -120,9 +120,12 @@ func ResourceTransferPostCall(
 			// The longer term fix for this type of issue is to have more dagql awareness of edges between
 			// cache results such that a function call return value result inherently results in any referenced
 			// secrets also staying in cache.
-			_, err = destDag.Cache.GetOrInitializeWithPostCall(ctx, secret.inst.ID().Digest(),
-				func(ctx context.Context) (dagql.Typed, func(context.Context) error, error) {
-					return secret.inst, postCall, nil
+			_, err = destDag.Cache.GetOrInitializeWithCallbacks(ctx, secret.inst.ID().Digest(),
+				func(ctx context.Context) (*dagql.CacheValWithCallbacks, error) {
+					return &dagql.CacheValWithCallbacks{
+						Value:    secret.inst,
+						PostCall: postCall,
+					}, nil
 				},
 			)
 			if err != nil {
