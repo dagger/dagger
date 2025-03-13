@@ -140,6 +140,7 @@ func (s *llmSchema) loop(ctx context.Context, llm *core.LLM, args struct{}) (*co
 func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
 	Model       dagql.Optional[dagql.String]
 	MaxAPICalls dagql.Optional[dagql.Int] `name:"maxAPICalls"`
+	MultiObject bool                      `default:"true"`
 }) (*core.LLM, error) {
 	var model string
 	if args.Model.Valid {
@@ -149,7 +150,7 @@ func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
 	if args.MaxAPICalls.Valid {
 		maxAPICalls = args.MaxAPICalls.Value.Int()
 	}
-	return core.NewLLM(ctx, parent, model, maxAPICalls)
+	return core.NewLLM(ctx, parent, model, maxAPICalls, args.MultiObject)
 }
 
 func (s *llmSchema) history(ctx context.Context, llm *core.LLM, _ struct{}) (dagql.Array[dagql.String], error) {

@@ -3,7 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
-	"log/slog"
+	"strconv"
 	"strings"
 
 	"dagger.io/dagger/telemetry"
@@ -14,7 +14,7 @@ import (
 )
 
 // A frontend for LLM tool calling
-type LlmTool struct {
+type LLMTool struct {
 	// Tool name
 	Name string
 	// Tool description
@@ -32,12 +32,15 @@ type LLMEnv struct {
 	objs map[string]dagql.Typed
 	// Saved objects by type + hash
 	objsByHash map[digest.Digest]dagql.Typed
+	// Whether to use multiple tools or a single tool
+	multi bool
 }
 
-func NewLlmEnv() *LLMEnv {
+func NewLLMEnv(multi bool) *LLMEnv {
 	return &LLMEnv{
 		objs:       map[string]dagql.Typed{},
 		objsByHash: map[digest.Digest]dagql.Typed{},
+		multi:      multi,
 	}
 }
 
@@ -52,6 +55,10 @@ func (env *LLMEnv) Current() dagql.Typed {
 		return nil
 	}
 	return env.history[len(env.history)-1]
+}
+
+func (env *LLMEnv) With(val dagql.Typed) {
+	env.history = append(env.history, val)
 }
 
 // Save a value at the given key
@@ -90,8 +97,11 @@ func (env *LLMEnv) Unset(key string) {
 	delete(env.objs, key)
 }
 
-func (env *LLMEnv) Tools(srv *dagql.Server) []LlmTool {
-	tools := env.Builtins()
+func (env *LLMEnv) Tools(srv *dagql.Server) []LLMTool {
+	var tools []LLMTool
+	if env.multi {
+		tools = env.Builtins()
+	}
 	typedefs := make(map[string]*ast.Definition)
 	for _, val := range env.objs {
 		typedef := env.typedef(srv, val)
@@ -103,7 +113,7 @@ func (env *LLMEnv) Tools(srv *dagql.Server) []LlmTool {
 	typedef := env.typedef(srv, env.Current())
 	typeName := typedef.Name
 	for _, field := range typedef.Fields {
-		tools = append(tools, LlmTool{
+		tools = append(tools, LLMTool{
 			Name:        typeName + "_" + field.Name,
 			Description: field.Description,
 			Schema:      fieldArgsToJSONSchema(field),
@@ -119,7 +129,13 @@ func (env *LLMEnv) Tools(srv *dagql.Server) []LlmTool {
 					}
 					return rerr
 				})
-				return env.call(ctx, srv, field, args)
+				stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+				res, err := env.call(ctx, srv, field, args)
+				if err != nil {
+					return nil, err
+				}
+				fmt.Fprintln(stdio.Stdout, res)
+				return res, nil
 			},
 		})
 	}
@@ -292,8 +308,8 @@ func (env *LLMEnv) describe(val dagql.Typed) string {
 	return val.Type().Name()
 }
 
-func (env *LLMEnv) Builtins() []LlmTool {
-	builtins := []LlmTool{
+func (env *LLMEnv) Builtins() []LLMTool {
+	builtins := []LLMTool{
 		{
 			Name:        "_objects",
 			Description: "List saved objects with their types",
@@ -454,14 +470,4 @@ func typeToJSONSchema(t *ast.Type) map[string]any {
 	}
 
 	return schema
-}
-
-// Return true if the given type is an object
-func (env *LLMEnv) isObjectType(srv *dagql.Server, t *ast.Type) bool {
-	objType, ok := srv.Schema().Types[t.Name()]
-	if !ok {
-		return false
-	}
-	slog.Debug("Checking if type is an object", "typeName", t.NamedType, "kind", objType.Kind)
-	return objType.Kind == ast.Object
 }

@@ -53,7 +53,7 @@ type LLMProvider string
 
 // LLMClient interface defines the methods that each provider must implement
 type LLMClient interface {
-	SendQuery(ctx context.Context, history []ModelMessage, tools []LlmTool) (*LLMResponse, error)
+	SendQuery(ctx context.Context, history []ModelMessage, tools []LLMTool) (*LLMResponse, error)
 }
 
 type LLMResponse struct {
@@ -327,7 +327,7 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 	return router, err
 }
 
-func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int) (*LLM, error) {
+func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int, multi bool) (*LLM, error) {
 	var router *LLMRouter
 	{
 		// Don't leak this context, it's specific to querying the parent client for llm config secrets
@@ -356,7 +356,7 @@ func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int) (*
 		Endpoint:    endpoint,
 		maxAPICalls: maxAPICalls,
 		calls:       map[string]string{},
-		env:         NewLlmEnv(),
+		env:         NewLLMEnv(multi),
 	}, nil
 }
 
@@ -666,17 +666,6 @@ func (llm *LLM) Set(ctx context.Context, dag *dagql.Server, key string, value da
 	}
 	llm = llm.Clone()
 	llm.env.Set(key, value)
-	// if obj, ok := dagql.UnwrapAs[dagql.Object](value); ok {
-	// 	llm.history = append(llm.history, ModelMessage{
-	// 		Role:    "user",
-	// 		Content: fmt.Sprintf("The variable %s is set to %s@%s.", key, value.Type().Name(), obj.ID().Digest()),
-	// 	})
-	// } else {
-	// 	llm.history = append(llm.history, ModelMessage{
-	// 		Role:    "user",
-	// 		Content: fmt.Sprintf("The variable %s is set to %v.", key, value),
-	// 	})
-	// }
 	llm.dirty = true
 	return llm, nil
 }
@@ -687,6 +676,20 @@ func (llm *LLM) Get(ctx context.Context, dag *dagql.Server, key string) (dagql.T
 		return nil, err
 	}
 	return llm.env.Get(key)
+}
+
+func (llm *LLM) With(ctx context.Context, dag *dagql.Server, value dagql.Typed) (*LLM, error) {
+	if id, ok := value.(dagql.IDType); ok {
+		obj, err := dag.Load(ctx, id.ID())
+		if err != nil {
+			return nil, err
+		}
+		value = obj
+	}
+	llm = llm.Clone()
+	llm.env.With(value)
+	llm.dirty = true
+	return llm, nil
 }
 
 // A variable in the LLM environment
@@ -796,7 +799,7 @@ func (s LLMHook) ExtendLLMType(targetType dagql.ObjectType) error {
 		return fmt.Errorf("failed to lookup ID type for %T", targetType)
 	}
 	typename := targetType.TypeName()
-	// Install with<TargetType>()
+	// Install get<TargetType>()
 	llmType.Extend(
 		dagql.FieldSpec{
 			Name:        "set" + typename,
@@ -805,12 +808,12 @@ func (s LLMHook) ExtendLLMType(targetType dagql.ObjectType) error {
 			Args: dagql.InputSpecs{
 				{
 					Name:        "name",
-					Description: fmt.Sprintf("The name of the variable", typename),
+					Description: "The name of the variable",
 					Type:        dagql.NewString(""),
 				},
 				{
 					Name:        "value",
-					Description: fmt.Sprintf("The value of the variable", typename),
+					Description: fmt.Sprintf("The %s value to assign to the variable", typename),
 					Type:        idType,
 				},
 			},
@@ -824,7 +827,7 @@ func (s LLMHook) ExtendLLMType(targetType dagql.ObjectType) error {
 		},
 		dagql.CacheSpec{},
 	)
-	// Install <targetType>()
+	// Install get<targetType>()
 	llmType.Extend(
 		dagql.FieldSpec{
 			Name:        "get" + typename,
@@ -843,6 +846,49 @@ func (s LLMHook) ExtendLLMType(targetType dagql.ObjectType) error {
 			if err != nil {
 				return nil, err
 			}
+			if val.Type().Name() != typename {
+				return nil, fmt.Errorf("expected variable of type %s, got %s", typename, val.Type().Name())
+			}
+			return val, nil
+		},
+		dagql.CacheSpec{},
+	)
+
+	// BACKWARDS COMPATIBILITY:
+
+	// Install with<TargetType>()
+	llmType.Extend(
+		dagql.FieldSpec{
+			Name:             "with" + typename,
+			Description:      fmt.Sprintf("Set a variable of type %s in the llm environment", typename),
+			Type:             llmType.Typed(),
+			DeprecatedReason: "use set<TargetType> instead",
+			Args: dagql.InputSpecs{
+				{
+					Name:        "value",
+					Description: fmt.Sprintf("The %s value to assign to the variable", typename),
+					Type:        idType,
+				},
+			},
+		},
+		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
+			llm := self.(dagql.Instance[*LLM]).Self
+			value := args["value"].(dagql.Typed)
+			return llm.With(ctx, s.Server, value)
+		},
+		dagql.CacheSpec{},
+	)
+	// Install <targetType>()
+	llmType.Extend(
+		dagql.FieldSpec{
+			Name:             gqlFieldName(typename),
+			Description:      fmt.Sprintf("Retrieve a the current value in the LLM environment, of type %s", typename),
+			Type:             targetType.Typed(),
+			DeprecatedReason: "use get<TargetType> instead",
+		},
+		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
+			llm := self.(dagql.Instance[*LLM]).Self
+			val := llm.env.Current()
 			if val.Type().Name() != typename {
 				return nil, fmt.Errorf("expected variable of type %s, got %s", typename, val.Type().Name())
 			}

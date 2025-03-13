@@ -43,7 +43,7 @@ func newOpenAIClient(endpoint *LLMEndpoint, azureVersion string) *OpenAIClient {
 	return &OpenAIClient{client: c, endpoint: endpoint}
 }
 
-func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, tools []LlmTool) (_ *LLMResponse, rerr error) {
+func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
 	ctx, span := Tracer(ctx).Start(ctx, "LLM query", telemetry.Reveal(), trace.WithAttributes(
 		attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 		attribute.String(telemetry.UIMessageAttr, "received"),
