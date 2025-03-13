@@ -139,7 +139,7 @@ func HTTP(url string, opts ...dagger.HTTPOpts) *dagger.File {
 }
 
 // Initialize a Large Language Model (LLM)
-func Llm(opts ...dagger.LlmOpts) *dagger.Llm {
+func Llm(opts ...dagger.LlmOpts) *dagger.LLM {
 	client := initClient()
 	return client.Llm(opts...)
 }
@@ -294,6 +294,18 @@ func LoadInterfaceTypeDefFromID(id dagger.InterfaceTypeDefID) *dagger.InterfaceT
 	return client.LoadInterfaceTypeDefFromID(id)
 }
 
+// Load a LLM from its ID.
+func LoadLLMFromID(id dagger.LLMID) *dagger.LLM {
+	client := initClient()
+	return client.LoadLLMFromID(id)
+}
+
+// Load a LLMVariable from its ID.
+func LoadLLMVariableFromID(id dagger.LLMVariableID) *dagger.LLMVariable {
+	client := initClient()
+	return client.LoadLLMVariableFromID(id)
+}
+
 // Load a Label from its ID.
 func LoadLabelFromID(id dagger.LabelID) *dagger.Label {
 	client := initClient()
@@ -304,18 +316,6 @@ func LoadLabelFromID(id dagger.LabelID) *dagger.Label {
 func LoadListTypeDefFromID(id dagger.ListTypeDefID) *dagger.ListTypeDef {
 	client := initClient()
 	return client.LoadListTypeDefFromID(id)
-}
-
-// Load a Llm from its ID.
-func LoadLlmFromID(id dagger.LlmID) *dagger.Llm {
-	client := initClient()
-	return client.LoadLlmFromID(id)
-}
-
-// Load a LlmVariable from its ID.
-func LoadLlmVariableFromID(id dagger.LlmVariableID) *dagger.LlmVariable {
-	client := initClient()
-	return client.LoadLlmVariableFromID(id)
 }
 
 // Load a ModuleConfigClient from its ID.

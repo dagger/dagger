@@ -14,6 +14,14 @@ pub fn format_name(s: &str) -> String {
     s.to_case(Case::Pascal)
 }
 
+pub fn format_scalar_name(s: &str) -> String {
+    if let Some(s) = s.strip_suffix("ID") {
+        s.to_case(Case::Pascal) + "Id"
+    } else {
+        s.to_case(Case::Pascal)
+    }
+}
+
 pub fn format_struct_name(s: &str) -> String {
     let s = s.to_case(Case::Snake);
     match s.as_ref() {

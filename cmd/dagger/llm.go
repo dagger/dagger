@@ -40,7 +40,7 @@ func (m interpreterMode) String() string {
 type LLMSession struct {
 	undo       *LLMSession
 	dag        *dagger.Client
-	llm        *dagger.Llm
+	llm        *dagger.LLM
 	model      string
 	syncedVars map[string]digest.Digest
 	shell      *shellCallHandler
@@ -192,11 +192,11 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) (*LLMSession, error) {
 	if !changed {
 		return s, nil
 	}
-	var llmId dagger.LlmID
+	var llmId dagger.LLMID
 	if err := syncedLlmQ.Select("id").Bind(&llmId).Execute(ctx); err != nil {
 		return s, err
 	}
-	s.llm = s.dag.LoadLlmFromID(llmId)
+	s.llm = s.dag.LoadLLMFromID(llmId)
 	return s, nil
 }
 
@@ -255,7 +255,7 @@ func (s *LLMSession) ShellValue(ctx context.Context, name, typeName string) (str
 	default:
 		var objId string
 		if err := s.dag.QueryBuilder().
-			Select("loadLlmFromID").
+			Select("loadLLMFromID").
 			Arg("id", s.llm).
 			Select(fmt.Sprintf("get%s", typeName)).
 			Arg("name", name).

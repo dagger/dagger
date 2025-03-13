@@ -920,12 +920,9 @@ type Fields[T Typed] []Field[T]
 // Install installs the field's Object type if needed, and installs all fields
 // into the type.
 func (fields Fields[T]) Install(server *Server) {
-	// FIXME: shortcut to get our "agent" middleware to work
-	// server.installLock.Lock()
-	// defer server.installLock.Unlock()
+	class := server.InstallObject(NewClass[T]()).(Class[T])
+
 	var t T
-	typeName := t.Type().Name()
-	class := fields.findOrInitializeType(server, typeName)
 	objectFields, err := reflectFieldsForType(t, false, builtinOrTyped)
 	if err != nil {
 		panic(fmt.Errorf("fields for %T: %w", t, err))
@@ -952,18 +949,6 @@ func (fields Fields[T]) Install(server *Server) {
 		})
 	}
 	class.Install(fields...)
-}
-
-func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Class[T] {
-	var classT Class[T]
-	class, ok := server.objects[typeName]
-	if !ok {
-		classT = NewClass[T]()
-		server.installObject(classT)
-	} else {
-		classT = class.(Class[T])
-	}
-	return classT
 }
 
 type CacheSpec struct {

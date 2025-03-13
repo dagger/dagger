@@ -19,11 +19,11 @@ import (
 
 type GenaiClient struct {
 	client              *genai.Client
-	endpoint            *LlmEndpoint
+	endpoint            *LLMEndpoint
 	defaultSystemPrompt string
 }
 
-func newGenaiClient(endpoint *LlmEndpoint, defaultSystemPrompt string) (*GenaiClient, error) {
+func newGenaiClient(endpoint *LLMEndpoint, defaultSystemPrompt string) (*GenaiClient, error) {
 	opts := []option.ClientOption{option.WithAPIKey(endpoint.Key)}
 	if endpoint.Key != "" {
 		opts = append(opts, option.WithAPIKey(endpoint.Key))
@@ -230,7 +230,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 }
 
 // TODO: this definitely needs a unit test
-func bbiSchemaToGenaiSchema(bbi map[string]interface{}) *genai.Schema {
+func bbiSchemaToGenaiSchema(bbi map[string]any) *genai.Schema {
 	schema := &genai.Schema{}
 	for key, param := range bbi {
 		switch key {
@@ -238,8 +238,8 @@ func bbiSchemaToGenaiSchema(bbi map[string]interface{}) *genai.Schema {
 			schema.Description = param.(string)
 		case "properties":
 			schema.Properties = map[string]*genai.Schema{}
-			for propKey, propParam := range param.(map[string]interface{}) {
-				schema.Properties[propKey] = bbiSchemaToGenaiSchema(propParam.(map[string]interface{}))
+			for propKey, propParam := range param.(map[string]any) {
+				schema.Properties[propKey] = bbiSchemaToGenaiSchema(propParam.(map[string]any))
 			}
 		case "default": // just setting Nullable=true. Genai Schema does not have Default
 			schema.Nullable = true
@@ -249,7 +249,7 @@ func bbiSchemaToGenaiSchema(bbi map[string]interface{}) *genai.Schema {
 		// case "format": // ignoring format. Genai is very picky about format values
 		// 	schema.Format = param.(string)
 		case "items":
-			schema.Items = bbiSchemaToGenaiSchema(param.(map[string]interface{}))
+			schema.Items = bbiSchemaToGenaiSchema(param.(map[string]any))
 		case "required":
 			schema.Required = bbi["required"].([]string)
 		}

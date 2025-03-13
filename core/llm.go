@@ -22,12 +22,12 @@ import (
 )
 
 // An instance of a LLM (large language model), with its state and tool calling environment
-type Llm struct {
+type LLM struct {
 	Query *Query
 
 	maxAPICalls int
 	apiCalls    int
-	Endpoint    *LlmEndpoint
+	Endpoint    *LLMEndpoint
 
 	// If true: has un-synced state
 	dirty bool
@@ -38,18 +38,18 @@ type Llm struct {
 	calls      map[string]string
 	promptVars []string
 
-	env *LlmEnv
+	env *LLMEnv
 }
 
-type LlmEndpoint struct {
+type LLMEndpoint struct {
 	Model    string
 	BaseURL  string
 	Key      string
-	Provider LlmProvider
+	Provider LLMProvider
 	Client   LLMClient
 }
 
-type LlmProvider string
+type LLMProvider string
 
 // LLMClient interface defines the methods that each provider must implement
 type LLMClient interface {
@@ -90,17 +90,17 @@ type FuncCall struct {
 }
 
 const (
-	OpenAI    LlmProvider = "openai"
-	Anthropic LlmProvider = "anthropic"
-	Google    LlmProvider = "google"
-	Meta      LlmProvider = "meta"
-	Mistral   LlmProvider = "mistral"
-	DeepSeek  LlmProvider = "deepseek"
-	Other     LlmProvider = "other"
+	OpenAI    LLMProvider = "openai"
+	Anthropic LLMProvider = "anthropic"
+	Google    LLMProvider = "google"
+	Meta      LLMProvider = "meta"
+	Mistral   LLMProvider = "mistral"
+	DeepSeek  LLMProvider = "deepseek"
+	Other     LLMProvider = "other"
 )
 
 // A LLM routing configuration
-type LlmRouter struct {
+type LLMRouter struct {
 	AnthropicAPIKey  string
 	AnthropicBaseURL string
 	AnthropicModel   string
@@ -115,25 +115,25 @@ type LlmRouter struct {
 	GeminiModel   string
 }
 
-func (r *LlmRouter) isAnthropicModel(model string) bool {
+func (r *LLMRouter) isAnthropicModel(model string) bool {
 	return strings.HasPrefix(model, "claude-") || strings.HasPrefix(model, "anthropic/")
 }
 
-func (r *LlmRouter) isOpenAIModel(model string) bool {
+func (r *LLMRouter) isOpenAIModel(model string) bool {
 	return strings.HasPrefix(model, "gpt-") || strings.HasPrefix(model, "openai/")
 }
 
-func (r *LlmRouter) isGoogleModel(model string) bool {
+func (r *LLMRouter) isGoogleModel(model string) bool {
 	return strings.HasPrefix(model, "gemini-") || strings.HasPrefix(model, "google/")
 }
 
-func (r *LlmRouter) isMistralModel(model string) bool {
+func (r *LLMRouter) isMistralModel(model string) bool {
 	return strings.HasPrefix(model, "mistral-") || strings.HasPrefix(model, "mistral/")
 }
 
-func (r *LlmRouter) routeAnthropicModel() *LlmEndpoint {
+func (r *LLMRouter) routeAnthropicModel() *LLMEndpoint {
 	defaultSystemPrompt := "You are a helpful AI assistant. You can use tools to accomplish the user's requests"
-	endpoint := &LlmEndpoint{
+	endpoint := &LLMEndpoint{
 		BaseURL:  r.AnthropicBaseURL,
 		Key:      r.AnthropicAPIKey,
 		Provider: Anthropic,
@@ -143,8 +143,8 @@ func (r *LlmRouter) routeAnthropicModel() *LlmEndpoint {
 	return endpoint
 }
 
-func (r *LlmRouter) routeOpenAIModel() *LlmEndpoint {
-	endpoint := &LlmEndpoint{
+func (r *LLMRouter) routeOpenAIModel() *LLMEndpoint {
+	endpoint := &LLMEndpoint{
 		BaseURL:  r.OpenAIBaseURL,
 		Key:      r.OpenAIAPIKey,
 		Provider: OpenAI,
@@ -154,9 +154,9 @@ func (r *LlmRouter) routeOpenAIModel() *LlmEndpoint {
 	return endpoint
 }
 
-func (r *LlmRouter) routeGoogleModel() (*LlmEndpoint, error) {
+func (r *LLMRouter) routeGoogleModel() (*LLMEndpoint, error) {
 	defaultSystemPrompt := "You are a helpful AI assistant. You can use tools to accomplish the user's requests"
-	endpoint := &LlmEndpoint{
+	endpoint := &LLMEndpoint{
 		BaseURL:  r.GeminiBaseURL,
 		Key:      r.GeminiAPIKey,
 		Provider: Google,
@@ -170,9 +170,9 @@ func (r *LlmRouter) routeGoogleModel() (*LlmEndpoint, error) {
 	return endpoint, nil
 }
 
-func (r *LlmRouter) routeOtherModel() *LlmEndpoint {
+func (r *LLMRouter) routeOtherModel() *LLMEndpoint {
 	// default to openAI compat from other providers
-	endpoint := &LlmEndpoint{
+	endpoint := &LLMEndpoint{
 		BaseURL:  r.OpenAIBaseURL,
 		Key:      r.OpenAIAPIKey,
 		Provider: Other,
@@ -183,7 +183,7 @@ func (r *LlmRouter) routeOtherModel() *LlmEndpoint {
 }
 
 // Return a default model, if configured
-func (r *LlmRouter) DefaultModel() string {
+func (r *LLMRouter) DefaultModel() string {
 	for _, model := range []string{r.OpenAIModel, r.AnthropicModel, r.GeminiModel} {
 		if model != "" {
 			return model
@@ -206,11 +206,11 @@ func (r *LlmRouter) DefaultModel() string {
 
 // Return an endpoint for the requested model
 // If the model name is not set, a default will be selected.
-func (r *LlmRouter) Route(model string) (*LlmEndpoint, error) {
+func (r *LLMRouter) Route(model string) (*LLMEndpoint, error) {
 	if model == "" {
 		model = r.DefaultModel()
 	}
-	var endpoint *LlmEndpoint
+	var endpoint *LLMEndpoint
 	if r.isAnthropicModel(model) {
 		endpoint = r.routeAnthropicModel()
 	} else if r.isOpenAIModel(model) {
@@ -230,7 +230,7 @@ func (r *LlmRouter) Route(model string) (*LlmEndpoint, error) {
 	return endpoint, nil
 }
 
-func (r *LlmRouter) LoadConfig(ctx context.Context, getenv func(context.Context, string) (string, error)) error {
+func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context, string) (string, error)) error {
 	if getenv == nil {
 		getenv = func(ctx context.Context, key string) (string, error) {
 			return os.Getenv(key), nil
@@ -280,8 +280,8 @@ func (r *LlmRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	return nil
 }
 
-func NewLlmRouter(ctx context.Context, srv *dagql.Server) (_ *LlmRouter, rerr error) {
-	router := new(LlmRouter)
+func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr error) {
+	router := new(LLMRouter)
 	// Get the secret plaintext, from either a URI (provider lookup) or a plaintext (no-op)
 	loadSecret := func(ctx context.Context, uriOrPlaintext string) (string, error) {
 		var result string
@@ -327,8 +327,8 @@ func NewLlmRouter(ctx context.Context, srv *dagql.Server) (_ *LlmRouter, rerr er
 	return router, err
 }
 
-func NewLlm(ctx context.Context, query *Query, model string, maxAPICalls int) (*Llm, error) {
-	var router *LlmRouter
+func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int) (*LLM, error) {
+	var router *LLMRouter
 	{
 		// Don't leak this context, it's specific to querying the parent client for llm config secrets
 		// FIXME: clean up this function
@@ -336,7 +336,7 @@ func NewLlm(ctx context.Context, query *Query, model string, maxAPICalls int) (*
 		if err != nil {
 			return nil, err
 		}
-		router, err = NewLlmRouter(ctx, mainSrv)
+		router, err = NewLLMRouter(ctx, mainSrv)
 		if err != nil {
 			return nil, err
 		}
@@ -351,7 +351,7 @@ func NewLlm(ctx context.Context, query *Query, model string, maxAPICalls int) (*
 	if endpoint.Model == "" {
 		return nil, fmt.Errorf("no valid LLM endpoint configuration")
 	}
-	return &Llm{
+	return &LLM{
 		Query:       query,
 		Endpoint:    endpoint,
 		maxAPICalls: maxAPICalls,
@@ -360,14 +360,14 @@ func NewLlm(ctx context.Context, query *Query, model string, maxAPICalls int) (*
 	}, nil
 }
 
-func (*Llm) Type() *ast.Type {
+func (*LLM) Type() *ast.Type {
 	return &ast.Type{
-		NamedType: "Llm",
+		NamedType: "LLM",
 		NonNull:   true,
 	}
 }
 
-func (llm *Llm) Clone() *Llm {
+func (llm *LLM) Clone() *LLM {
 	cp := *llm
 	cp.history = cloneSlice(cp.history)
 	cp.promptVars = cloneSlice(cp.promptVars)
@@ -377,7 +377,7 @@ func (llm *Llm) Clone() *Llm {
 }
 
 // Generate a human-readable documentation of tools available to the model
-func (llm *Llm) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error) {
+func (llm *LLM) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error) {
 	var result string
 	for _, tool := range llm.env.Tools(srv) {
 		schema, err := json.MarshalIndent(tool.Schema, "", "  ")
@@ -389,9 +389,9 @@ func (llm *Llm) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error)
 	return result, nil
 }
 
-func (llm *Llm) WithModel(ctx context.Context, model string, srv *dagql.Server) (*Llm, error) {
+func (llm *LLM) WithModel(ctx context.Context, model string, srv *dagql.Server) (*LLM, error) {
 	llm = llm.Clone()
-	router, err := NewLlmRouter(ctx, srv)
+	router, err := NewLLMRouter(ctx, srv)
 	if err != nil {
 		return nil, err
 	}
@@ -407,12 +407,12 @@ func (llm *Llm) WithModel(ctx context.Context, model string, srv *dagql.Server) 
 }
 
 // Append a user message (prompt) to the message history
-func (llm *Llm) WithPrompt(
+func (llm *LLM) WithPrompt(
 	ctx context.Context,
 	// The prompt message.
 	prompt string,
 	srv *dagql.Server,
-) (*Llm, error) {
+) (*LLM, error) {
 	if len(llm.env.objs) > 0 {
 		prompt = os.Expand(prompt, func(key string) string {
 			val, err := llm.env.Get(key)
@@ -443,7 +443,7 @@ func (llm *Llm) WithPrompt(
 }
 
 // WithPromptFile is like WithPrompt but reads the prompt from a file
-func (llm *Llm) WithPromptFile(ctx context.Context, file *File, srv *dagql.Server) (*Llm, error) {
+func (llm *LLM) WithPromptFile(ctx context.Context, file *File, srv *dagql.Server) (*LLM, error) {
 	contents, err := file.Contents(ctx)
 	if err != nil {
 		return nil, err
@@ -451,14 +451,14 @@ func (llm *Llm) WithPromptFile(ctx context.Context, file *File, srv *dagql.Serve
 	return llm.WithPrompt(ctx, string(contents), srv)
 }
 
-func (llm *Llm) WithPromptVar(name, value string) *Llm {
+func (llm *LLM) WithPromptVar(name, value string) *LLM {
 	llm = llm.Clone()
 	llm.promptVars = append(llm.promptVars, name, value)
 	return llm
 }
 
 // Append a system prompt message to the history
-func (llm *Llm) WithSystemPrompt(prompt string) *Llm {
+func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 	llm = llm.Clone()
 	llm.history = append(llm.history, ModelMessage{
 		Role:    "system",
@@ -469,7 +469,7 @@ func (llm *Llm) WithSystemPrompt(prompt string) *Llm {
 }
 
 // Return the last message sent by the agent
-func (llm *Llm) LastReply(ctx context.Context, dag *dagql.Server) (string, error) {
+func (llm *LLM) LastReply(ctx context.Context, dag *dagql.Server) (string, error) {
 	llm, err := llm.Sync(ctx, dag)
 	if err != nil {
 		return "", err
@@ -500,7 +500,7 @@ func (llm *Llm) LastReply(ctx context.Context, dag *dagql.Server) (string, error
 // 1. Send context to LLM endpoint
 // 2. Process replies and tool calls
 // 3. Continue in a loop until no tool calls, or caps are reached
-func (llm *Llm) Sync(ctx context.Context, dag *dagql.Server) (*Llm, error) {
+func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 	if !llm.dirty {
 		return llm, nil
 	}
@@ -606,7 +606,7 @@ func (llm *Llm) Sync(ctx context.Context, dag *dagql.Server) (*Llm, error) {
 	return llm, nil
 }
 
-func (llm *Llm) History(ctx context.Context, dag *dagql.Server) ([]string, error) {
+func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error) {
 	llm, err := llm.Sync(ctx, dag)
 	if err != nil {
 		return nil, err
@@ -643,7 +643,7 @@ func (llm *Llm) History(ctx context.Context, dag *dagql.Server) ([]string, error
 	return history, nil
 }
 
-func (llm *Llm) messages() ([]ModelMessage, error) {
+func (llm *LLM) messages() ([]ModelMessage, error) {
 	// FIXME: ugly hack
 	data, err := json.Marshal(llm.history)
 	if err != nil {
@@ -656,7 +656,7 @@ func (llm *Llm) messages() ([]ModelMessage, error) {
 	return messages, nil
 }
 
-func (llm *Llm) Set(ctx context.Context, dag *dagql.Server, key string, value dagql.Typed) (*Llm, error) {
+func (llm *LLM) Set(ctx context.Context, dag *dagql.Server, key string, value dagql.Typed) (*LLM, error) {
 	if id, ok := value.(dagql.IDType); ok {
 		obj, err := dag.Load(ctx, id.ID())
 		if err != nil {
@@ -681,7 +681,7 @@ func (llm *Llm) Set(ctx context.Context, dag *dagql.Server, key string, value da
 	return llm, nil
 }
 
-func (llm *Llm) Get(ctx context.Context, dag *dagql.Server, key string) (dagql.Typed, error) {
+func (llm *LLM) Get(ctx context.Context, dag *dagql.Server, key string) (dagql.Typed, error) {
 	llm, err := llm.Sync(ctx, dag)
 	if err != nil {
 		return nil, err
@@ -690,7 +690,7 @@ func (llm *Llm) Get(ctx context.Context, dag *dagql.Server, key string) (dagql.T
 }
 
 // A variable in the LLM environment
-type LlmVariable struct {
+type LLMVariable struct {
 	// The name of the variable
 	Name string `field:"true"`
 	// The type name of the variable's value
@@ -699,21 +699,21 @@ type LlmVariable struct {
 	Hash string `field:"true"`
 }
 
-var _ dagql.Typed = (*LlmVariable)(nil)
+var _ dagql.Typed = (*LLMVariable)(nil)
 
-func (v *LlmVariable) Type() *ast.Type {
+func (v *LLMVariable) Type() *ast.Type {
 	return &ast.Type{
-		NamedType: "LlmVariable",
+		NamedType: "LLMVariable",
 		NonNull:   true,
 	}
 }
 
-func (llm *Llm) Variables(ctx context.Context, dag *dagql.Server) ([]*LlmVariable, error) {
+func (llm *LLM) Variables(ctx context.Context, dag *dagql.Server) ([]*LLMVariable, error) {
 	llm, err := llm.Sync(ctx, dag)
 	if err != nil {
 		return nil, err
 	}
-	vars := make([]*LlmVariable, 0, len(llm.env.objs))
+	vars := make([]*LLMVariable, 0, len(llm.env.objs))
 	for k, v := range llm.env.objs {
 		var hash string
 		if obj, ok := dagql.UnwrapAs[dagql.Object](v); ok {
@@ -725,7 +725,7 @@ func (llm *Llm) Variables(ctx context.Context, dag *dagql.Server) ([]*LlmVariabl
 			}
 			hash = dagql.HashFrom(string(jsonBytes)).String()
 		}
-		vars = append(vars, &LlmVariable{
+		vars = append(vars, &LLMVariable{
 			Name:     k,
 			TypeName: v.Type().Name(),
 			Hash:     hash,
@@ -740,7 +740,7 @@ func (llm *Llm) Variables(ctx context.Context, dag *dagql.Server) ([]*LlmVariabl
 }
 
 // FIXME: deprecated
-func (llm *Llm) WithState(ctx context.Context, objID dagql.IDType, srv *dagql.Server) (*Llm, error) {
+func (llm *LLM) WithState(ctx context.Context, objID dagql.IDType, srv *dagql.Server) (*LLM, error) {
 	obj, err := srv.Load(ctx, objID.ID())
 	if err != nil {
 		return nil, err
@@ -749,7 +749,7 @@ func (llm *Llm) WithState(ctx context.Context, objID dagql.IDType, srv *dagql.Se
 }
 
 // FIXME: deprecated
-func (llm *Llm) State(ctx context.Context, dag *dagql.Server) (dagql.Typed, error) {
+func (llm *LLM) State(ctx context.Context, dag *dagql.Server) (dagql.Typed, error) {
 	return llm.Get(ctx, dag, "default")
 }
 
@@ -769,7 +769,7 @@ func (msg ModelMessage) Text() (string, error) {
 	return "", fmt.Errorf("unable to extract text from message content: %v", msg.Content)
 }
 
-type LlmMiddleware struct {
+type LLMHook struct {
 	Server *dagql.Server
 }
 
@@ -786,8 +786,8 @@ var TypesHiddenFromModuleSDKs = []dagql.Typed{
 	&EngineCacheEntrySet{},
 }
 
-func (s LlmMiddleware) ExtendLlmType(targetType dagql.ObjectType) error {
-	llmType, ok := s.Server.ObjectType(new(Llm).Type().Name())
+func (s LLMHook) ExtendLLMType(targetType dagql.ObjectType) error {
+	llmType, ok := s.Server.ObjectType(new(LLM).Type().Name())
 	if !ok {
 		return fmt.Errorf("failed to lookup llm type")
 	}
@@ -816,7 +816,7 @@ func (s LlmMiddleware) ExtendLlmType(targetType dagql.ObjectType) error {
 			},
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-			llm := self.(dagql.Instance[*Llm]).Self
+			llm := self.(dagql.Instance[*LLM]).Self
 			name := args["name"].(dagql.String).String()
 			value := args["value"].(dagql.Typed)
 			return llm.Set(ctx, s.Server, name, value)
@@ -837,7 +837,7 @@ func (s LlmMiddleware) ExtendLlmType(targetType dagql.ObjectType) error {
 			}},
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-			llm := self.(dagql.Instance[*Llm]).Self
+			llm := self.(dagql.Instance[*LLM]).Self
 			name := args["name"].(dagql.String).String()
 			val, err := llm.Get(ctx, s.Server, name)
 			if err != nil {
@@ -853,8 +853,7 @@ func (s LlmMiddleware) ExtendLlmType(targetType dagql.ObjectType) error {
 	return nil
 }
 
-func (s LlmMiddleware) InstallObject(targetType dagql.ObjectType, install func(dagql.ObjectType)) {
-	install(targetType)
+func (s LLMHook) InstallObject(targetType dagql.ObjectType) {
 	typename := targetType.TypeName()
 	if strings.HasPrefix(typename, "_") {
 		return
@@ -872,12 +871,12 @@ func (s LlmMiddleware) InstallObject(targetType dagql.ObjectType, install func(d
 		}
 	}
 
-	if err := s.ExtendLlmType(targetType); err != nil {
+	if err := s.ExtendLLMType(targetType); err != nil {
 		panic(err)
 	}
 }
 
-func (s LlmMiddleware) ModuleWithObject(ctx context.Context, mod *Module, targetTypedef *TypeDef) (*Module, error) {
+func (s LLMHook) ModuleWithObject(ctx context.Context, mod *Module, targetTypedef *TypeDef) (*Module, error) {
 	// Install the target type
 	mod, err := mod.WithObject(ctx, targetTypedef)
 	if err != nil {
@@ -888,7 +887,7 @@ func (s LlmMiddleware) ModuleWithObject(ctx context.Context, mod *Module, target
 	if !ok {
 		return nil, fmt.Errorf("can't retrieve object type %s", typename)
 	}
-	if err := s.ExtendLlmType(targetType); err != nil {
+	if err := s.ExtendLLMType(targetType); err != nil {
 		return nil, err
 	}
 	return mod, nil

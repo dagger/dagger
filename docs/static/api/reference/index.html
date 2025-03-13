@@ -69,9 +69,9 @@
               <li><a href="#query-loadHostFromID">loadHostFromID</a></li>
               <li><a href="#query-loadInputTypeDefFromID">loadInputTypeDefFromID</a></li>
               <li><a href="#query-loadInterfaceTypeDefFromID">loadInterfaceTypeDefFromID</a></li>
+              <li><a href="#query-loadLLMFromID">loadLLMFromID</a></li>
               <li><a href="#query-loadLabelFromID">loadLabelFromID</a></li>
               <li><a href="#query-loadListTypeDefFromID">loadListTypeDefFromID</a></li>
-              <li><a href="#query-loadLlmFromID">loadLlmFromID</a></li>
               <li><a href="#query-loadModuleConfigClientFromID">loadModuleConfigClientFromID</a></li>
               <li><a href="#query-loadModuleFromID">loadModuleFromID</a></li>
               <li><a href="#query-loadModuleSourceFromID">loadModuleSourceFromID</a></li>
@@ -155,12 +155,12 @@
               <li><a href="#definition-InterfaceTypeDef">InterfaceTypeDef</a></li>
               <li><a href="#definition-InterfaceTypeDefID">InterfaceTypeDefID</a></li>
               <li><a href="#definition-JSON">JSON</a></li>
+              <li><a href="#definition-LLM">LLM</a></li>
+              <li><a href="#definition-LLMID">LLMID</a></li>
               <li><a href="#definition-Label">Label</a></li>
               <li><a href="#definition-LabelID">LabelID</a></li>
               <li><a href="#definition-ListTypeDef">ListTypeDef</a></li>
               <li><a href="#definition-ListTypeDefID">ListTypeDefID</a></li>
-              <li><a href="#definition-Llm">Llm</a></li>
-              <li><a href="#definition-LlmID">LlmID</a></li>
               <li><a href="#definition-Module">Module</a></li>
               <li><a href="#definition-ModuleConfigClient">ModuleConfigClient</a></li>
               <li><a href="#definition-ModuleConfigClientID">ModuleConfigClientID</a></li>
@@ -1004,7 +1004,7 @@
                 <div class="operation-response doc-copy-section">
                   <h5>Type</h5>
                   <p>
-                    <a href="#definition-Llm"><code>Llm!</code></a>
+                    <a href="#definition-LLM"><code>LLM!</code></a>
                   </p>
                 </div>
                 <div class="operation-arguments test doc-copy-section">
@@ -2367,6 +2367,59 @@
               </div>
             </div>
           </section>
+          <section id="query-loadLLMFromID" class="operation operation-query" data-traverse-target="query-loadLLMFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadLLMFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a LLM from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-LLM"><code>LLM!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-LLMID"><code>LLMID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-loadLabelFromID" class="operation operation-query" data-traverse-target="query-loadLabelFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -2456,59 +2509,6 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-ListTypeDefID"><code>ListTypeDefID!</code></a></span>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="query-loadLlmFromID" class="operation operation-query" data-traverse-target="query-loadLlmFromID">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>loadLlmFromID</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Load a Llm from its ID.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-Llm"><code>Llm!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-LlmID"><code>LlmID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -7697,6 +7697,841 @@
               </div>
             </div>
           </section>
+          <section id="definition-LLM" class="definition definition-object" data-traverse-target="definition-LLM">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">LLM</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-cacheVolume" href="#LLM-cacheVolume"><code>cacheVolume</code></a> - <span class="property-type"><a href="#definition-CacheVolume"><code>CacheVolume!</code></a></span> </td>
+                        <td> Retrieve the llm state as a CacheVolume </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-container" href="#LLM-container"><code>container</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td> Retrieve the llm state as a Container </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-currentModule" href="#LLM-currentModule"><code>currentModule</code></a> - <span class="property-type"><a href="#definition-CurrentModule"><code>CurrentModule!</code></a></span> </td>
+                        <td> Retrieve the llm state as a CurrentModule </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-directory" href="#LLM-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td> Retrieve the llm state as a Directory </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-enumTypeDef" href="#LLM-enumTypeDef"><code>enumTypeDef</code></a> - <span class="property-type"><a href="#definition-EnumTypeDef"><code>EnumTypeDef!</code></a></span> </td>
+                        <td> Retrieve the llm state as a EnumTypeDef </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-enumValueTypeDef" href="#LLM-enumValueTypeDef"><code>enumValueTypeDef</code></a> - <span class="property-type"><a href="#definition-EnumValueTypeDef"><code>EnumValueTypeDef!</code></a></span> </td>
+                        <td> Retrieve the llm state as a EnumValueTypeDef </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-error" href="#LLM-error"><code>error</code></a> - <span class="property-type"><a href="#definition-Error"><code>Error!</code></a></span> </td>
+                        <td> Retrieve the llm state as a Error </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-errorValue" href="#LLM-errorValue"><code>errorValue</code></a> - <span class="property-type"><a href="#definition-ErrorValue"><code>ErrorValue!</code></a></span> </td>
+                        <td> Retrieve the llm state as a ErrorValue </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-fieldTypeDef" href="#LLM-fieldTypeDef"><code>fieldTypeDef</code></a> - <span class="property-type"><a href="#definition-FieldTypeDef"><code>FieldTypeDef!</code></a></span> </td>
+                        <td> Retrieve the llm state as a FieldTypeDef </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-file" href="#LLM-file"><code>file</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
+                        <td> Retrieve the llm state as a File </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-function" href="#LLM-function"><code>function</code></a> - <span class="property-type"><a href="#definition-Function"><code>Function!</code></a></span> </td>
+                        <td> Retrieve the llm state as a Function </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-functionArg" href="#LLM-functionArg"><code>functionArg</code></a> - <span class="property-type"><a href="#definition-FunctionArg"><code>FunctionArg!</code></a></span> </td>
+                        <td> Retrieve the llm state as a FunctionArg </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-functionCall" href="#LLM-functionCall"><code>functionCall</code></a> - <span class="property-type"><a href="#definition-FunctionCall"><code>FunctionCall!</code></a></span> </td>
+                        <td> Retrieve the llm state as a FunctionCall </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-functionCallArgValue" href="#LLM-functionCallArgValue"><code>functionCallArgValue</code></a> - <span class="property-type"><a href="#definition-FunctionCallArgValue"><code>FunctionCallArgValue!</code></a></span> </td>
+                        <td> Retrieve the llm state as a FunctionCallArgValue </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-generatedCode" href="#LLM-generatedCode"><code>generatedCode</code></a> - <span class="property-type"><a href="#definition-GeneratedCode"><code>GeneratedCode!</code></a></span> </td>
+                        <td> Retrieve the llm state as a GeneratedCode </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-gitRef" href="#LLM-gitRef"><code>gitRef</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
+                        <td> Retrieve the llm state as a GitRef </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-gitRepository" href="#LLM-gitRepository"><code>gitRepository</code></a> - <span class="property-type"><a href="#definition-GitRepository"><code>GitRepository!</code></a></span> </td>
+                        <td> Retrieve the llm state as a GitRepository </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-history" href="#LLM-history"><code>history</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
+                        <td> return the llm message history </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-id" href="#LLM-id"><code>id</code></a> - <span class="property-type"><a href="#definition-LLMID"><code>LLMID!</code></a></span> </td>
+                        <td> A unique identifier for this LLM. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-inputTypeDef" href="#LLM-inputTypeDef"><code>inputTypeDef</code></a> - <span class="property-type"><a href="#definition-InputTypeDef"><code>InputTypeDef!</code></a></span> </td>
+                        <td> Retrieve the llm state as a InputTypeDef </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-interfaceTypeDef" href="#LLM-interfaceTypeDef"><code>interfaceTypeDef</code></a> - <span class="property-type"><a href="#definition-InterfaceTypeDef"><code>InterfaceTypeDef!</code></a></span> </td>
+                        <td> Retrieve the llm state as a InterfaceTypeDef </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-lastReply" href="#LLM-lastReply"><code>lastReply</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> return the last llm reply from the history </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-listTypeDef" href="#LLM-listTypeDef"><code>listTypeDef</code></a> - <span class="property-type"><a href="#definition-ListTypeDef"><code>ListTypeDef!</code></a></span> </td>
+                        <td> Retrieve the llm state as a ListTypeDef </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-llm" href="#LLM-llm"><code>llm</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Retrieve the llm state as a LLM </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-loop" href="#LLM-loop"><code>loop</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> synchronize LLM state <span class="deprecation-reason">use sync</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-model" href="#LLM-model"><code>model</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> return the model used by the llm </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-module" href="#LLM-module"><code>module</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
+                        <td> Retrieve the llm state as a Module </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-moduleConfigClient" href="#LLM-moduleConfigClient"><code>moduleConfigClient</code></a> - <span class="property-type"><a href="#definition-ModuleConfigClient"><code>ModuleConfigClient!</code></a></span> </td>
+                        <td> Retrieve the llm state as a ModuleConfigClient </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-moduleSource" href="#LLM-moduleSource"><code>moduleSource</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Retrieve the llm state as a ModuleSource </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-objectTypeDef" href="#LLM-objectTypeDef"><code>objectTypeDef</code></a> - <span class="property-type"><a href="#definition-ObjectTypeDef"><code>ObjectTypeDef!</code></a></span> </td>
+                        <td> Retrieve the llm state as a ObjectTypeDef </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-provider" href="#LLM-provider"><code>provider</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> return the provider used by the llm </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-scalarTypeDef" href="#LLM-scalarTypeDef"><code>scalarTypeDef</code></a> - <span class="property-type"><a href="#definition-ScalarTypeDef"><code>ScalarTypeDef!</code></a></span> </td>
+                        <td> Retrieve the llm state as a ScalarTypeDef </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-sdkconfig" href="#LLM-sdkconfig"><code>sdkconfig</code></a> - <span class="property-type"><a href="#definition-SDKConfig"><code>SDKConfig</code></a></span> </td>
+                        <td> Retrieve the llm state as a SDKConfig </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-secret" href="#LLM-secret"><code>secret</code></a> - <span class="property-type"><a href="#definition-Secret"><code>Secret!</code></a></span> </td>
+                        <td> Retrieve the llm state as a Secret </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-service" href="#LLM-service"><code>service</code></a> - <span class="property-type"><a href="#definition-Service"><code>Service!</code></a></span> </td>
+                        <td> Retrieve the llm state as a Service </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-socket" href="#LLM-socket"><code>socket</code></a> - <span class="property-type"><a href="#definition-Socket"><code>Socket!</code></a></span> </td>
+                        <td> Retrieve the llm state as a Socket </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-sourceMap" href="#LLM-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td> Retrieve the llm state as a SourceMap </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-sync" href="#LLM-sync"><code>sync</code></a> - <span class="property-type"><a href="#definition-LLMID"><code>LLMID!</code></a></span> </td>
+                        <td> synchronize LLM state </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-terminal" href="#LLM-terminal"><code>terminal</code></a> - <span class="property-type"><a href="#definition-Terminal"><code>Terminal!</code></a></span> </td>
+                        <td> Retrieve the llm state as a Terminal </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-tools" href="#LLM-tools"><code>tools</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> print documentation for available tools </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-typeDef" href="#LLM-typeDef"><code>typeDef</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
+                        <td> Retrieve the llm state as a TypeDef </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withCacheVolume" href="#LLM-withCacheVolume"><code>withCacheVolume</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a CacheVolume </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-CacheVolumeID"><code>CacheVolumeID!</code></a></span></h6>
+                                <p>The value of the CacheVolume to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withContainer" href="#LLM-withContainer"><code>withContainer</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a Container </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ContainerID"><code>ContainerID!</code></a></span></h6>
+                                <p>The value of the Container to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withCurrentModule" href="#LLM-withCurrentModule"><code>withCurrentModule</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a CurrentModule </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-CurrentModuleID"><code>CurrentModuleID!</code></a></span></h6>
+                                <p>The value of the CurrentModule to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withDirectory" href="#LLM-withDirectory"><code>withDirectory</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a Directory </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span></h6>
+                                <p>The value of the Directory to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withEnumTypeDef" href="#LLM-withEnumTypeDef"><code>withEnumTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a EnumTypeDef </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-EnumTypeDefID"><code>EnumTypeDefID!</code></a></span></h6>
+                                <p>The value of the EnumTypeDef to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withEnumValueTypeDef" href="#LLM-withEnumValueTypeDef"><code>withEnumValueTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a EnumValueTypeDef </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-EnumValueTypeDefID"><code>EnumValueTypeDefID!</code></a></span></h6>
+                                <p>The value of the EnumValueTypeDef to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withError" href="#LLM-withError"><code>withError</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a Error </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ErrorID"><code>ErrorID!</code></a></span></h6>
+                                <p>The value of the Error to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withErrorValue" href="#LLM-withErrorValue"><code>withErrorValue</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a ErrorValue </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ErrorValueID"><code>ErrorValueID!</code></a></span></h6>
+                                <p>The value of the ErrorValue to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withFieldTypeDef" href="#LLM-withFieldTypeDef"><code>withFieldTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a FieldTypeDef </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FieldTypeDefID"><code>FieldTypeDefID!</code></a></span></h6>
+                                <p>The value of the FieldTypeDef to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withFile" href="#LLM-withFile"><code>withFile</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a File </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FileID"><code>FileID!</code></a></span></h6>
+                                <p>The value of the File to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withFunction" href="#LLM-withFunction"><code>withFunction</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a Function </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FunctionID"><code>FunctionID!</code></a></span></h6>
+                                <p>The value of the Function to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withFunctionArg" href="#LLM-withFunctionArg"><code>withFunctionArg</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a FunctionArg </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FunctionArgID"><code>FunctionArgID!</code></a></span></h6>
+                                <p>The value of the FunctionArg to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withFunctionCall" href="#LLM-withFunctionCall"><code>withFunctionCall</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a FunctionCall </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FunctionCallID"><code>FunctionCallID!</code></a></span></h6>
+                                <p>The value of the FunctionCall to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withFunctionCallArgValue" href="#LLM-withFunctionCallArgValue"><code>withFunctionCallArgValue</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a FunctionCallArgValue </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FunctionCallArgValueID"><code>FunctionCallArgValueID!</code></a></span></h6>
+                                <p>The value of the FunctionCallArgValue to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withGeneratedCode" href="#LLM-withGeneratedCode"><code>withGeneratedCode</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a GeneratedCode </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-GeneratedCodeID"><code>GeneratedCodeID!</code></a></span></h6>
+                                <p>The value of the GeneratedCode to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withGitRef" href="#LLM-withGitRef"><code>withGitRef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a GitRef </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-GitRefID"><code>GitRefID!</code></a></span></h6>
+                                <p>The value of the GitRef to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withGitRepository" href="#LLM-withGitRepository"><code>withGitRepository</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a GitRepository </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-GitRepositoryID"><code>GitRepositoryID!</code></a></span></h6>
+                                <p>The value of the GitRepository to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withInputTypeDef" href="#LLM-withInputTypeDef"><code>withInputTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a InputTypeDef </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-InputTypeDefID"><code>InputTypeDefID!</code></a></span></h6>
+                                <p>The value of the InputTypeDef to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withInterfaceTypeDef" href="#LLM-withInterfaceTypeDef"><code>withInterfaceTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a InterfaceTypeDef </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-InterfaceTypeDefID"><code>InterfaceTypeDefID!</code></a></span></h6>
+                                <p>The value of the InterfaceTypeDef to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withListTypeDef" href="#LLM-withListTypeDef"><code>withListTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a ListTypeDef </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ListTypeDefID"><code>ListTypeDefID!</code></a></span></h6>
+                                <p>The value of the ListTypeDef to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withLLM" href="#LLM-withLLM"><code>withLLM</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a LLM </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-LLMID"><code>LLMID!</code></a></span></h6>
+                                <p>The value of the LLM to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withModel" href="#LLM-withModel"><code>withModel</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> swap out the llm model </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>model</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The model to use</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withModule" href="#LLM-withModule"><code>withModule</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a Module </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ModuleID"><code>ModuleID!</code></a></span></h6>
+                                <p>The value of the Module to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withModuleConfigClient" href="#LLM-withModuleConfigClient"><code>withModuleConfigClient</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a ModuleConfigClient </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ModuleConfigClientID"><code>ModuleConfigClientID!</code></a></span></h6>
+                                <p>The value of the ModuleConfigClient to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withModuleSource" href="#LLM-withModuleSource"><code>withModuleSource</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a ModuleSource </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ModuleSourceID"><code>ModuleSourceID!</code></a></span></h6>
+                                <p>The value of the ModuleSource to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withObjectTypeDef" href="#LLM-withObjectTypeDef"><code>withObjectTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a ObjectTypeDef </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ObjectTypeDefID"><code>ObjectTypeDefID!</code></a></span></h6>
+                                <p>The value of the ObjectTypeDef to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withPrompt" href="#LLM-withPrompt"><code>withPrompt</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> append a prompt to the llm context </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>prompt</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The prompt to send</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withPromptFile" href="#LLM-withPromptFile"><code>withPromptFile</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> append the contents of a file to the llm context </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>file</code></span> - <span class="property-type"><a href="#definition-FileID"><code>FileID!</code></a></span></h6>
+                                <p>The file to read the prompt from</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withPromptVar" href="#LLM-withPromptVar"><code>withPromptVar</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> set a variable for expansion in the prompt </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The value of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withScalarTypeDef" href="#LLM-withScalarTypeDef"><code>withScalarTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a ScalarTypeDef </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ScalarTypeDefID"><code>ScalarTypeDefID!</code></a></span></h6>
+                                <p>The value of the ScalarTypeDef to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withSDKConfig" href="#LLM-withSDKConfig"><code>withSDKConfig</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a SDKConfig </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SDKConfigID"><code>SDKConfigID!</code></a></span></h6>
+                                <p>The value of the SDKConfig to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withSecret" href="#LLM-withSecret"><code>withSecret</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a Secret </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID!</code></a></span></h6>
+                                <p>The value of the Secret to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withService" href="#LLM-withService"><code>withService</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a Service </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ServiceID"><code>ServiceID!</code></a></span></h6>
+                                <p>The value of the Service to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withSocket" href="#LLM-withSocket"><code>withSocket</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a Socket </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SocketID"><code>SocketID!</code></a></span></h6>
+                                <p>The value of the Socket to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withSourceMap" href="#LLM-withSourceMap"><code>withSourceMap</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a SourceMap </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID!</code></a></span></h6>
+                                <p>The value of the SourceMap to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withTerminal" href="#LLM-withTerminal"><code>withTerminal</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a Terminal </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-TerminalID"><code>TerminalID!</code></a></span></h6>
+                                <p>The value of the Terminal to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withTypeDef" href="#LLM-withTypeDef"><code>withTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set the llm state to a TypeDef </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-TypeDefID"><code>TypeDefID!</code></a></span></h6>
+                                <p>The value of the TypeDef to save</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-LLMID" class="definition definition-scalar" data-traverse-target="definition-LLMID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">LLMID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>LLMID</code> scalar type represents an identifier for an object of type LLM.</p>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="definition-Label" class="definition definition-object" data-traverse-target="definition-Label">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -7795,841 +8630,6 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>ListTypeDefID</code> scalar type represents an identifier for an object of type ListTypeDef.</p>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-Llm" class="definition definition-object" data-traverse-target="definition-Llm">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">Llm</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-properties doc-copy-section">
-                  <h5>Fields</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Field Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-cacheVolume" href="#Llm-cacheVolume"><code>cacheVolume</code></a> - <span class="property-type"><a href="#definition-CacheVolume"><code>CacheVolume!</code></a></span> </td>
-                        <td> Retrieve the llm state as a CacheVolume </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-container" href="#Llm-container"><code>container</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Retrieve the llm state as a Container </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-currentModule" href="#Llm-currentModule"><code>currentModule</code></a> - <span class="property-type"><a href="#definition-CurrentModule"><code>CurrentModule!</code></a></span> </td>
-                        <td> Retrieve the llm state as a CurrentModule </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-directory" href="#Llm-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
-                        <td> Retrieve the llm state as a Directory </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-enumTypeDef" href="#Llm-enumTypeDef"><code>enumTypeDef</code></a> - <span class="property-type"><a href="#definition-EnumTypeDef"><code>EnumTypeDef!</code></a></span> </td>
-                        <td> Retrieve the llm state as a EnumTypeDef </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-enumValueTypeDef" href="#Llm-enumValueTypeDef"><code>enumValueTypeDef</code></a> - <span class="property-type"><a href="#definition-EnumValueTypeDef"><code>EnumValueTypeDef!</code></a></span> </td>
-                        <td> Retrieve the llm state as a EnumValueTypeDef </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-error" href="#Llm-error"><code>error</code></a> - <span class="property-type"><a href="#definition-Error"><code>Error!</code></a></span> </td>
-                        <td> Retrieve the llm state as a Error </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-errorValue" href="#Llm-errorValue"><code>errorValue</code></a> - <span class="property-type"><a href="#definition-ErrorValue"><code>ErrorValue!</code></a></span> </td>
-                        <td> Retrieve the llm state as a ErrorValue </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-fieldTypeDef" href="#Llm-fieldTypeDef"><code>fieldTypeDef</code></a> - <span class="property-type"><a href="#definition-FieldTypeDef"><code>FieldTypeDef!</code></a></span> </td>
-                        <td> Retrieve the llm state as a FieldTypeDef </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-file" href="#Llm-file"><code>file</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
-                        <td> Retrieve the llm state as a File </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-function" href="#Llm-function"><code>function</code></a> - <span class="property-type"><a href="#definition-Function"><code>Function!</code></a></span> </td>
-                        <td> Retrieve the llm state as a Function </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-functionArg" href="#Llm-functionArg"><code>functionArg</code></a> - <span class="property-type"><a href="#definition-FunctionArg"><code>FunctionArg!</code></a></span> </td>
-                        <td> Retrieve the llm state as a FunctionArg </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-functionCall" href="#Llm-functionCall"><code>functionCall</code></a> - <span class="property-type"><a href="#definition-FunctionCall"><code>FunctionCall!</code></a></span> </td>
-                        <td> Retrieve the llm state as a FunctionCall </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-functionCallArgValue" href="#Llm-functionCallArgValue"><code>functionCallArgValue</code></a> - <span class="property-type"><a href="#definition-FunctionCallArgValue"><code>FunctionCallArgValue!</code></a></span> </td>
-                        <td> Retrieve the llm state as a FunctionCallArgValue </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-generatedCode" href="#Llm-generatedCode"><code>generatedCode</code></a> - <span class="property-type"><a href="#definition-GeneratedCode"><code>GeneratedCode!</code></a></span> </td>
-                        <td> Retrieve the llm state as a GeneratedCode </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-gitRef" href="#Llm-gitRef"><code>gitRef</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
-                        <td> Retrieve the llm state as a GitRef </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-gitRepository" href="#Llm-gitRepository"><code>gitRepository</code></a> - <span class="property-type"><a href="#definition-GitRepository"><code>GitRepository!</code></a></span> </td>
-                        <td> Retrieve the llm state as a GitRepository </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-history" href="#Llm-history"><code>history</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
-                        <td> return the llm message history </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-id" href="#Llm-id"><code>id</code></a> - <span class="property-type"><a href="#definition-LlmID"><code>LlmID!</code></a></span> </td>
-                        <td> A unique identifier for this Llm. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-inputTypeDef" href="#Llm-inputTypeDef"><code>inputTypeDef</code></a> - <span class="property-type"><a href="#definition-InputTypeDef"><code>InputTypeDef!</code></a></span> </td>
-                        <td> Retrieve the llm state as a InputTypeDef </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-interfaceTypeDef" href="#Llm-interfaceTypeDef"><code>interfaceTypeDef</code></a> - <span class="property-type"><a href="#definition-InterfaceTypeDef"><code>InterfaceTypeDef!</code></a></span> </td>
-                        <td> Retrieve the llm state as a InterfaceTypeDef </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-lastReply" href="#Llm-lastReply"><code>lastReply</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> return the last llm reply from the history </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-listTypeDef" href="#Llm-listTypeDef"><code>listTypeDef</code></a> - <span class="property-type"><a href="#definition-ListTypeDef"><code>ListTypeDef!</code></a></span> </td>
-                        <td> Retrieve the llm state as a ListTypeDef </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-llm" href="#Llm-llm"><code>llm</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Retrieve the llm state as a Llm </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="Llm-loop" href="#Llm-loop"><code>loop</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> synchronize LLM state <span class="deprecation-reason">use sync</span>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-model" href="#Llm-model"><code>model</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> return the model used by the llm </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-module" href="#Llm-module"><code>module</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
-                        <td> Retrieve the llm state as a Module </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-moduleConfigClient" href="#Llm-moduleConfigClient"><code>moduleConfigClient</code></a> - <span class="property-type"><a href="#definition-ModuleConfigClient"><code>ModuleConfigClient!</code></a></span> </td>
-                        <td> Retrieve the llm state as a ModuleConfigClient </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-moduleSource" href="#Llm-moduleSource"><code>moduleSource</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Retrieve the llm state as a ModuleSource </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-objectTypeDef" href="#Llm-objectTypeDef"><code>objectTypeDef</code></a> - <span class="property-type"><a href="#definition-ObjectTypeDef"><code>ObjectTypeDef!</code></a></span> </td>
-                        <td> Retrieve the llm state as a ObjectTypeDef </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-provider" href="#Llm-provider"><code>provider</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> return the provider used by the llm </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-scalarTypeDef" href="#Llm-scalarTypeDef"><code>scalarTypeDef</code></a> - <span class="property-type"><a href="#definition-ScalarTypeDef"><code>ScalarTypeDef!</code></a></span> </td>
-                        <td> Retrieve the llm state as a ScalarTypeDef </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-sdkconfig" href="#Llm-sdkconfig"><code>sdkconfig</code></a> - <span class="property-type"><a href="#definition-SDKConfig"><code>SDKConfig</code></a></span> </td>
-                        <td> Retrieve the llm state as a SDKConfig </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-secret" href="#Llm-secret"><code>secret</code></a> - <span class="property-type"><a href="#definition-Secret"><code>Secret!</code></a></span> </td>
-                        <td> Retrieve the llm state as a Secret </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-service" href="#Llm-service"><code>service</code></a> - <span class="property-type"><a href="#definition-Service"><code>Service!</code></a></span> </td>
-                        <td> Retrieve the llm state as a Service </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-socket" href="#Llm-socket"><code>socket</code></a> - <span class="property-type"><a href="#definition-Socket"><code>Socket!</code></a></span> </td>
-                        <td> Retrieve the llm state as a Socket </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-sourceMap" href="#Llm-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
-                        <td> Retrieve the llm state as a SourceMap </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-sync" href="#Llm-sync"><code>sync</code></a> - <span class="property-type"><a href="#definition-LlmID"><code>LlmID!</code></a></span> </td>
-                        <td> synchronize LLM state </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-terminal" href="#Llm-terminal"><code>terminal</code></a> - <span class="property-type"><a href="#definition-Terminal"><code>Terminal!</code></a></span> </td>
-                        <td> Retrieve the llm state as a Terminal </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-tools" href="#Llm-tools"><code>tools</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> print documentation for available tools </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Llm-typeDef" href="#Llm-typeDef"><code>typeDef</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
-                        <td> Retrieve the llm state as a TypeDef </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withCacheVolume" href="#Llm-withCacheVolume"><code>withCacheVolume</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a CacheVolume </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-CacheVolumeID"><code>CacheVolumeID!</code></a></span></h6>
-                                <p>The value of the CacheVolume to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withContainer" href="#Llm-withContainer"><code>withContainer</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a Container </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ContainerID"><code>ContainerID!</code></a></span></h6>
-                                <p>The value of the Container to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withCurrentModule" href="#Llm-withCurrentModule"><code>withCurrentModule</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a CurrentModule </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-CurrentModuleID"><code>CurrentModuleID!</code></a></span></h6>
-                                <p>The value of the CurrentModule to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withDirectory" href="#Llm-withDirectory"><code>withDirectory</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a Directory </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span></h6>
-                                <p>The value of the Directory to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withEnumTypeDef" href="#Llm-withEnumTypeDef"><code>withEnumTypeDef</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a EnumTypeDef </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-EnumTypeDefID"><code>EnumTypeDefID!</code></a></span></h6>
-                                <p>The value of the EnumTypeDef to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withEnumValueTypeDef" href="#Llm-withEnumValueTypeDef"><code>withEnumValueTypeDef</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a EnumValueTypeDef </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-EnumValueTypeDefID"><code>EnumValueTypeDefID!</code></a></span></h6>
-                                <p>The value of the EnumValueTypeDef to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withError" href="#Llm-withError"><code>withError</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a Error </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ErrorID"><code>ErrorID!</code></a></span></h6>
-                                <p>The value of the Error to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withErrorValue" href="#Llm-withErrorValue"><code>withErrorValue</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a ErrorValue </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ErrorValueID"><code>ErrorValueID!</code></a></span></h6>
-                                <p>The value of the ErrorValue to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withFieldTypeDef" href="#Llm-withFieldTypeDef"><code>withFieldTypeDef</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a FieldTypeDef </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FieldTypeDefID"><code>FieldTypeDefID!</code></a></span></h6>
-                                <p>The value of the FieldTypeDef to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withFile" href="#Llm-withFile"><code>withFile</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a File </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FileID"><code>FileID!</code></a></span></h6>
-                                <p>The value of the File to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withFunction" href="#Llm-withFunction"><code>withFunction</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a Function </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FunctionID"><code>FunctionID!</code></a></span></h6>
-                                <p>The value of the Function to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withFunctionArg" href="#Llm-withFunctionArg"><code>withFunctionArg</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a FunctionArg </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FunctionArgID"><code>FunctionArgID!</code></a></span></h6>
-                                <p>The value of the FunctionArg to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withFunctionCall" href="#Llm-withFunctionCall"><code>withFunctionCall</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a FunctionCall </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FunctionCallID"><code>FunctionCallID!</code></a></span></h6>
-                                <p>The value of the FunctionCall to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withFunctionCallArgValue" href="#Llm-withFunctionCallArgValue"><code>withFunctionCallArgValue</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a FunctionCallArgValue </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FunctionCallArgValueID"><code>FunctionCallArgValueID!</code></a></span></h6>
-                                <p>The value of the FunctionCallArgValue to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withGeneratedCode" href="#Llm-withGeneratedCode"><code>withGeneratedCode</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a GeneratedCode </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-GeneratedCodeID"><code>GeneratedCodeID!</code></a></span></h6>
-                                <p>The value of the GeneratedCode to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withGitRef" href="#Llm-withGitRef"><code>withGitRef</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a GitRef </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-GitRefID"><code>GitRefID!</code></a></span></h6>
-                                <p>The value of the GitRef to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withGitRepository" href="#Llm-withGitRepository"><code>withGitRepository</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a GitRepository </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-GitRepositoryID"><code>GitRepositoryID!</code></a></span></h6>
-                                <p>The value of the GitRepository to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withInputTypeDef" href="#Llm-withInputTypeDef"><code>withInputTypeDef</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a InputTypeDef </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-InputTypeDefID"><code>InputTypeDefID!</code></a></span></h6>
-                                <p>The value of the InputTypeDef to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withInterfaceTypeDef" href="#Llm-withInterfaceTypeDef"><code>withInterfaceTypeDef</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a InterfaceTypeDef </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-InterfaceTypeDefID"><code>InterfaceTypeDefID!</code></a></span></h6>
-                                <p>The value of the InterfaceTypeDef to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withListTypeDef" href="#Llm-withListTypeDef"><code>withListTypeDef</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a ListTypeDef </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ListTypeDefID"><code>ListTypeDefID!</code></a></span></h6>
-                                <p>The value of the ListTypeDef to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withLlm" href="#Llm-withLlm"><code>withLlm</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a Llm </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-LlmID"><code>LlmID!</code></a></span></h6>
-                                <p>The value of the Llm to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withModel" href="#Llm-withModel"><code>withModel</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> swap out the llm model </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>model</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The model to use</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withModule" href="#Llm-withModule"><code>withModule</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a Module </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ModuleID"><code>ModuleID!</code></a></span></h6>
-                                <p>The value of the Module to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withModuleConfigClient" href="#Llm-withModuleConfigClient"><code>withModuleConfigClient</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a ModuleConfigClient </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ModuleConfigClientID"><code>ModuleConfigClientID!</code></a></span></h6>
-                                <p>The value of the ModuleConfigClient to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withModuleSource" href="#Llm-withModuleSource"><code>withModuleSource</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a ModuleSource </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ModuleSourceID"><code>ModuleSourceID!</code></a></span></h6>
-                                <p>The value of the ModuleSource to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withObjectTypeDef" href="#Llm-withObjectTypeDef"><code>withObjectTypeDef</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a ObjectTypeDef </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ObjectTypeDefID"><code>ObjectTypeDefID!</code></a></span></h6>
-                                <p>The value of the ObjectTypeDef to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withPrompt" href="#Llm-withPrompt"><code>withPrompt</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> append a prompt to the llm context </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>prompt</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The prompt to send</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withPromptFile" href="#Llm-withPromptFile"><code>withPromptFile</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> append the contents of a file to the llm context </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>file</code></span> - <span class="property-type"><a href="#definition-FileID"><code>FileID!</code></a></span></h6>
-                                <p>The file to read the prompt from</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withPromptVar" href="#Llm-withPromptVar"><code>withPromptVar</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> set a variable for expansion in the prompt </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the variable</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The value of the variable</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withScalarTypeDef" href="#Llm-withScalarTypeDef"><code>withScalarTypeDef</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a ScalarTypeDef </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ScalarTypeDefID"><code>ScalarTypeDefID!</code></a></span></h6>
-                                <p>The value of the ScalarTypeDef to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withSDKConfig" href="#Llm-withSDKConfig"><code>withSDKConfig</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a SDKConfig </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SDKConfigID"><code>SDKConfigID!</code></a></span></h6>
-                                <p>The value of the SDKConfig to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withSecret" href="#Llm-withSecret"><code>withSecret</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a Secret </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID!</code></a></span></h6>
-                                <p>The value of the Secret to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withService" href="#Llm-withService"><code>withService</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a Service </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ServiceID"><code>ServiceID!</code></a></span></h6>
-                                <p>The value of the Service to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withSocket" href="#Llm-withSocket"><code>withSocket</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a Socket </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SocketID"><code>SocketID!</code></a></span></h6>
-                                <p>The value of the Socket to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withSourceMap" href="#Llm-withSourceMap"><code>withSourceMap</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a SourceMap </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID!</code></a></span></h6>
-                                <p>The value of the SourceMap to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withTerminal" href="#Llm-withTerminal"><code>withTerminal</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a Terminal </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-TerminalID"><code>TerminalID!</code></a></span></h6>
-                                <p>The value of the Terminal to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Llm-withTypeDef" href="#Llm-withTypeDef"><code>withTypeDef</code></a> - <span class="property-type"><a href="#definition-Llm"><code>Llm!</code></a></span> </td>
-                        <td> Set the llm state to a TypeDef </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-TypeDefID"><code>TypeDefID!</code></a></span></h6>
-                                <p>The value of the TypeDef to save</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-LlmID" class="definition definition-scalar" data-traverse-target="definition-LlmID">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">LlmID</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The <code>LlmID</code> scalar type represents an identifier for an object of type Llm.</p>
                 </div>
               </div>
             </div>

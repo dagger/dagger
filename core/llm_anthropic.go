@@ -16,11 +16,11 @@ import (
 
 type AnthropicClient struct {
 	client              *anthropic.Client
-	endpoint            *LlmEndpoint
+	endpoint            *LLMEndpoint
 	defaultSystemPrompt string
 }
 
-func newAnthropicClient(endpoint *LlmEndpoint, defaultSystemPrompt string) *AnthropicClient {
+func newAnthropicClient(endpoint *LLMEndpoint, defaultSystemPrompt string) *AnthropicClient {
 	opts := []option.RequestOption{option.WithAPIKey(endpoint.Key)}
 	if endpoint.Key != "" {
 		opts = append(opts, option.WithAPIKey(endpoint.Key))

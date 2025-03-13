@@ -189,7 +189,7 @@ class Client extends Client\AbstractClient
     /**
      * Initialize a Large Language Model (LLM)
      */
-    public function llm(?string $model = null, ?int $maxAPICalls = null): Llm
+    public function llm(?string $model = null, ?int $maxAPICalls = null): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('llm');
         if (null !== $model) {
@@ -198,7 +198,7 @@ class Client extends Client\AbstractClient
         if (null !== $maxAPICalls) {
         $innerQueryBuilder->setArgument('maxAPICalls', $maxAPICalls);
         }
-        return new \Dagger\Llm($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -453,6 +453,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a LLM from its ID.
+     */
+    public function loadLLMFromID(LLMId|LLM $id): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadLLMFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Label from its ID.
      */
     public function loadLabelFromID(LabelId|Label $id): Label
@@ -470,16 +480,6 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadListTypeDefFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\ListTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Load a Llm from its ID.
-     */
-    public function loadLlmFromID(LlmId|Llm $id): Llm
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadLlmFromID');
-        $innerQueryBuilder->setArgument('id', $id);
-        return new \Dagger\Llm($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

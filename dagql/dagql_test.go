@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -2509,4 +2510,87 @@ func InstallTestTypes(srv *dagql.Server) {
 		},
 	)
 	srv.InstallObject(nestedObjClass)
+}
+
+type testInstallHook struct {
+	Server *dagql.Server
+}
+
+type renamedType struct {
+	dagql.ObjectType
+	Name string
+}
+
+func (tp renamedType) TypeName() string {
+	return tp.Name
+}
+
+func (hook *testInstallHook) InstallObject(class dagql.ObjectType) {
+	if strings.HasSuffix(class.TypeName(), "Other") {
+		return
+	}
+
+	// test extending a field
+	class.Extend(
+		dagql.FieldSpec{
+			Name: "hello",
+			Type: dagql.String(""),
+		},
+		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
+			return dagql.String("hello world!"), nil
+		},
+		dagql.CacheSpec{},
+	)
+
+	// test adding a new type
+	classOther := renamedType{class, class.TypeName() + "Other"}
+	hook.Server.InstallObject(classOther)
+	hook.Server.Root().ObjectType().Extend(
+		dagql.FieldSpec{
+			Name: "other" + class.TypeName(),
+			Type: classOther.Typed(),
+		},
+		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
+			return &points.Point{X: 100, Y: 200}, nil
+		},
+		dagql.CacheSpec{},
+	)
+}
+
+func TestInstallHooks(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+	srv.AddInstallHook(&testInstallHook{srv})
+	points.Install[Query](srv)
+
+	gql := client.New(dagql.NewDefaultHandler(srv))
+	var res struct {
+		Point struct {
+			X, Y  int
+			Hello string
+		}
+		OtherPoint struct {
+			X, Y  int
+			Hello string
+		}
+	}
+	req(t, gql, `query {
+		point(x: 6, y: 7) {
+			x
+			y
+			hello
+		}
+		otherPoint {
+			x
+			y
+			hello
+		}
+	}`, &res)
+
+	require.Equal(t, 6, res.Point.X)
+	require.Equal(t, 7, res.Point.Y)
+	require.Equal(t, "hello world!", res.Point.Hello)
+
+	require.Equal(t, 100, res.OtherPoint.X)
+	require.Equal(t, 200, res.OtherPoint.Y)
+	require.Equal(t, "hello world!", res.OtherPoint.Hello)
 }

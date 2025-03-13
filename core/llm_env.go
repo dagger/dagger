@@ -25,7 +25,7 @@ type LlmTool struct {
 	Call func(context.Context, any) (any, error)
 }
 
-type LlmEnv struct {
+type LLMEnv struct {
 	// History of values. Current selection is last. Remove last N values to rewind last N changes
 	history []dagql.Typed
 	// Saved objects
@@ -34,20 +34,20 @@ type LlmEnv struct {
 	objsByHash map[digest.Digest]dagql.Typed
 }
 
-func NewLlmEnv() *LlmEnv {
-	return &LlmEnv{
+func NewLlmEnv() *LLMEnv {
+	return &LLMEnv{
 		objs:       map[string]dagql.Typed{},
 		objsByHash: map[digest.Digest]dagql.Typed{},
 	}
 }
 
 // Lookup dagql typedef for a given dagql value
-func (env *LlmEnv) typedef(srv *dagql.Server, val dagql.Typed) *ast.Definition {
+func (env *LLMEnv) typedef(srv *dagql.Server, val dagql.Typed) *ast.Definition {
 	return srv.Schema().Types[val.Type().Name()]
 }
 
 // Return the current selection
-func (env *LlmEnv) Current() dagql.Typed {
+func (env *LLMEnv) Current() dagql.Typed {
 	if len(env.history) == 0 {
 		return nil
 	}
@@ -55,7 +55,7 @@ func (env *LlmEnv) Current() dagql.Typed {
 }
 
 // Save a value at the given key
-func (env *LlmEnv) Set(key string, value dagql.Typed) {
+func (env *LLMEnv) Set(key string, value dagql.Typed) {
 	env.objs[key] = value
 	if obj, ok := dagql.UnwrapAs[dagql.Object](value); ok {
 		env.objsByHash[obj.ID().Digest()] = value
@@ -63,7 +63,7 @@ func (env *LlmEnv) Set(key string, value dagql.Typed) {
 }
 
 // Get a value saved at the given key
-func (env *LlmEnv) Get(key string) (dagql.Typed, error) {
+func (env *LLMEnv) Get(key string) (dagql.Typed, error) {
 	if val, exists := env.objs[key]; exists {
 		return val, nil
 	}
@@ -86,11 +86,11 @@ func (env *LlmEnv) Get(key string) (dagql.Typed, error) {
 }
 
 // Unset a saved value
-func (env *LlmEnv) Unset(key string) {
+func (env *LLMEnv) Unset(key string) {
 	delete(env.objs, key)
 }
 
-func (env *LlmEnv) Tools(srv *dagql.Server) []LlmTool {
+func (env *LLMEnv) Tools(srv *dagql.Server) []LlmTool {
 	tools := env.Builtins()
 	typedefs := make(map[string]*ast.Definition)
 	for _, val := range env.objs {
@@ -127,7 +127,7 @@ func (env *LlmEnv) Tools(srv *dagql.Server) []LlmTool {
 }
 
 // Low-level function call plumbing
-func (env *LlmEnv) call(ctx context.Context,
+func (env *LLMEnv) call(ctx context.Context,
 	srv *dagql.Server,
 	// The definition of the dagql field to call. Example: Container.withExec
 	fieldDef *ast.FieldDefinition,
@@ -229,7 +229,7 @@ func (env *LlmEnv) call(ctx context.Context,
 	return val, nil
 }
 
-func (env *LlmEnv) callObjects(ctx context.Context, _ any) (any, error) {
+func (env *LLMEnv) callObjects(ctx context.Context, _ any) (any, error) {
 	var result string
 	for name, obj := range env.objs {
 		result += "- " + name + " (" + env.describe(obj) + ")\n"
@@ -237,7 +237,7 @@ func (env *LlmEnv) callObjects(ctx context.Context, _ any) (any, error) {
 	return result, nil
 }
 
-func (env *LlmEnv) callLoad(ctx context.Context, args any) (any, error) {
+func (env *LLMEnv) callLoad(ctx context.Context, args any) (any, error) {
 	name := args.(map[string]any)["name"].(string)
 	value, err := env.Get(name)
 	if err != nil {
@@ -247,20 +247,20 @@ func (env *LlmEnv) callLoad(ctx context.Context, args any) (any, error) {
 	return fmt.Sprintf("Switched context to %s.", env.describe(value)), nil
 }
 
-func (env *LlmEnv) callSave(ctx context.Context, args any) (any, error) {
+func (env *LLMEnv) callSave(ctx context.Context, args any) (any, error) {
 	name := args.(map[string]any)["name"].(string)
 	env.Set(name, env.Current())
 	return name, nil
 }
 
-func (env *LlmEnv) callUndo(ctx context.Context, _ any) (any, error) {
+func (env *LLMEnv) callUndo(ctx context.Context, _ any) (any, error) {
 	if len(env.history) > 0 {
 		env.history = env.history[:len(env.history)-1]
 	}
 	return env.Current(), nil
 }
 
-func (env *LlmEnv) callType(ctx context.Context, args any) (any, error) {
+func (env *LLMEnv) callType(ctx context.Context, args any) (any, error) {
 	name := args.(map[string]any)["name"].(string)
 	obj, err := env.Get(name)
 	if err != nil {
@@ -272,7 +272,7 @@ func (env *LlmEnv) callType(ctx context.Context, args any) (any, error) {
 	return obj.Type().Name(), nil
 }
 
-func (env *LlmEnv) callCurrent(ctx context.Context, _ any) (any, error) {
+func (env *LLMEnv) callCurrent(ctx context.Context, _ any) (any, error) {
 	if len(env.history) == 0 {
 		return "", nil
 	}
@@ -280,14 +280,14 @@ func (env *LlmEnv) callCurrent(ctx context.Context, _ any) (any, error) {
 }
 
 // describe returns a string representation of a typed object or object ID
-func (env *LlmEnv) describe(obj dagql.Typed) string {
+func (env *LLMEnv) describe(obj dagql.Typed) string {
 	if obj, ok := dagql.UnwrapAs[dagql.IDable](obj); ok {
 		return obj.ID().Type().ToAST().Name() + "@" + obj.ID().Digest().String()
 	}
 	return obj.Type().Name()
 }
 
-func (env *LlmEnv) Builtins() []LlmTool {
+func (env *LLMEnv) Builtins() []LlmTool {
 	builtins := []LlmTool{
 		{
 			Name:        "_objects",
@@ -452,7 +452,7 @@ func typeToJSONSchema(t *ast.Type) map[string]any {
 }
 
 // Return true if the given type is an object
-func (env *LlmEnv) isObjectType(srv *dagql.Server, t *ast.Type) bool {
+func (env *LLMEnv) isObjectType(srv *dagql.Server, t *ast.Type) bool {
 	objType, ok := srv.Schema().Types[t.Name()]
 	if !ok {
 		return false
