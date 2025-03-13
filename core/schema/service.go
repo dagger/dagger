@@ -18,12 +18,26 @@ var _ SchemaResolvers = &serviceSchema{}
 
 func (s *serviceSchema) Install() {
 	dagql.Fields[*core.Container]{
-		dagql.FuncWithCacheKey("asService", s.containerAsServiceLegacy, dagql.CachePerSession).
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// dagql.FuncWithCacheKey("asService", s.containerAsServiceLegacy, dagql.CachePerSession).
+		dagql.Func("asService", s.containerAsServiceLegacy).
 			View(BeforeVersion("v0.15.0")).
 			Doc(`Turn the container into a Service.`,
 				`Be sure to set any exposed ports before this conversion.`),
 
-		dagql.FuncWithCacheKey("asService", s.containerAsService, dagql.CachePerSession).
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// dagql.FuncWithCacheKey("asService", s.containerAsService, dagql.CachePerSession).
+		dagql.Func("asService", s.containerAsService).
 			View(AfterVersion("v0.15.0")).
 			Doc(`Turn the container into a Service.`,
 				`Be sure to set any exposed ports before this conversion.`).

@@ -112,6 +112,14 @@ func ResourceTransferPostCall(
 			if err := destClientSecretStore.AddSecret(secret.inst); err != nil {
 				return fmt.Errorf("failed to add secret: %w", err)
 			}
+			// Ensure this secret is in the cache. This is necessary for now because of a corner case like:
+			// 1. Client A does a new function call, returns some type that references a SetSecret
+			// 2. Client B does the same function call, gets a cache hit
+			// 3. Client A disconnects *before Client B has reached this PostCall*
+			// 4. Client B tries to access the secret, but it's not in the cache
+			// The longer term fix for this type of issue is to have more dagql awareness of edges between
+			// cache results such that a function call return value result inherently results in any referenced
+			// secrets also staying in cache.
 			_, err = destDag.Cache.GetOrInitializeWithPostCall(ctx, secret.inst.ID().Digest(),
 				func(ctx context.Context) (dagql.Typed, func(context.Context) error, error) {
 					return secret.inst, postCall, nil
