@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io/fs"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/moby/patternmatcher/ignorefile"
 )
 
 type directorySchema struct {
@@ -98,7 +100,7 @@ func (s *directorySchema) Install() {
 		dagql.Func("export", s.exportLegacy).
 			View(BeforeVersion("v0.12.0")).
 			Extend(),
-		dagql.Func("dockerBuild", s.dockerBuild).
+		dagql.NodeFunc("dockerBuild", s.dockerBuild).
 			Doc(`Builds a new Docker container from this directory.`).
 			ArgDoc("dockerfile", `Path to the Dockerfile to use (e.g., "frontend.Dockerfile").`).
 			ArgDoc("platform", `The platform to build.`).
@@ -343,26 +345,80 @@ type dirDockerBuildArgs struct {
 	Secrets    []core.SecretID                    `default:"[]"`
 }
 
-func (s *directorySchema) dockerBuild(ctx context.Context, parent *core.Directory, args dirDockerBuildArgs) (*core.Container, error) {
-	platform := parent.Query.Platform()
+func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.Instance[*core.Directory], args dirDockerBuildArgs) (*core.Container, error) {
+	platform := parent.Self.Query.Platform()
 	if args.Platform.Valid {
 		platform = args.Platform.Value
 	}
-	ctr, err := core.NewContainer(parent.Query, platform)
+
+	defaultDockerIgnoreFile := ".dockerignore"
+	var dockerIgnoreFile string
+	if args.Dockerfile != "Dockerfile" {
+		dockerIgnoreFile = args.Dockerfile + ".dockerignore"
+	}
+
+	var dockerIgnoreContents []byte
+	// First try to read the dockerIgnoreFile for given Dockerfile
+	if dockerIgnoreFile != "" {
+		file, err := parent.Self.File(ctx, dockerIgnoreFile)
+		if err != nil {
+			return nil, err
+		}
+
+		dockerIgnoreContents, err = file.Contents(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// if no contents found in <Dockerfile>.dockerignore file, read the default .dockerignore file
+	// TODO(rajatjindal): handle error if .dockerignore file does not exist
+	if len(dockerIgnoreContents) == 0 {
+		file, err := parent.Self.File(ctx, defaultDockerIgnoreFile)
+		if err != nil {
+			return nil, err
+		}
+
+		dockerIgnoreContents, err = file.Contents(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	excludes, err := ignorefile.ReadAll(bytes.NewBuffer(dockerIgnoreContents))
 	if err != nil {
 		return nil, err
 	}
+
+	var destdir dagql.Instance[*core.Directory]
+	err = s.srv.Select(ctx, parent, &destdir,
+		dagql.Selector{
+			Field: "withoutFiles",
+			Args: []dagql.NamedInput{
+				{Name: "paths", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(excludes...))},
+			},
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	ctr, err := core.NewContainer(destdir.Self.Query, platform)
+	if err != nil {
+		return nil, err
+	}
+
 	secrets, err := dagql.LoadIDs(ctx, s.srv, args.Secrets)
 	if err != nil {
 		return nil, err
 	}
-	secretStore, err := parent.Query.Secrets(ctx)
+	secretStore, err := parent.Self.Query.Secrets(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get secret store: %w", err)
 	}
 	return ctr.Build(
 		ctx,
-		parent,
+		destdir.Self,
 		args.Dockerfile,
 		collectInputsSlice(args.BuildArgs),
 		args.Target,
