@@ -138,7 +138,7 @@ func (d *Dump) DumpID(out *termenv.Output, id *call.ID) error {
 	if d.Newline != "" {
 		r.newline = d.Newline
 	}
-	err = r.renderCall(out, nil, id.Call(), d.Prefix, false, 0, false, false, false)
+	err = r.renderCall(out, nil, id.Call(), d.Prefix, true, 0, false, false, false)
 	fmt.Fprint(out, r.newline)
 	return err
 }
