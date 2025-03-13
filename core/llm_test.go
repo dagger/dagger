@@ -69,7 +69,7 @@ func TestLlmConfig(t *testing.T) {
 	}.Install(srv)
 
 	ctx := context.Background()
-	r, err := NewLlmRouter(ctx, srv)
+	r, err := NewLLMRouter(ctx, srv)
 	assert.NoError(t, err)
 	assert.Equal(t, "anthropic-api-key", r.AnthropicAPIKey)
 	assert.Equal(t, "anthropic-base-url", r.AnthropicBaseURL)
@@ -116,7 +116,7 @@ GEMINI_MODEL=gemini-model`, nil
 	}.Install(srv)
 
 	ctx := context.Background()
-	r, err := NewLlmRouter(ctx, srv)
+	r, err := NewLLMRouter(ctx, srv)
 	assert.NoError(t, err)
 	assert.Equal(t, "anthropic-api-key", r.AnthropicAPIKey)
 	assert.Equal(t, "anthropic-base-url", r.AnthropicBaseURL)
