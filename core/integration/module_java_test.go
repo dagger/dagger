@@ -288,6 +288,29 @@ func (JavaSuite) TestConstructor(_ context.Context, t *testctx.T) {
 	})
 }
 
+func (JavaSuite) TestEnum(_ context.Context, t *testctx.T) {
+	t.Run("can use an enum value", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "enums").
+			With(daggerCall("print", "--severity=LOW")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "LOW", out)
+	})
+
+	t.Run("can not use a value not defined in the enum", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := javaModule(t, c, "enums").
+			With(daggerCall("print", "--severity=FOO")).
+			Stdout(ctx)
+
+		require.Error(t, err)
+	})
+}
+
 func javaModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/java", moduleName))
