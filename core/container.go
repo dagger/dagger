@@ -383,6 +383,7 @@ const defaultDockerfileName = "Dockerfile"
 func (container *Container) Build(
 	ctx context.Context,
 	contextDir *Directory,
+	buildctxDir *Directory,
 	dockerfile string,
 	buildArgs []BuildArg,
 	target string,
@@ -428,7 +429,7 @@ func (container *Container) Build(
 
 	opts := map[string]string{
 		"platform":      platform.Format(),
-		"contextsubdir": contextDir.Dir,
+		"contextsubdir": buildctxDir.Dir,
 	}
 
 	if dockerfile != "" {
@@ -446,7 +447,7 @@ func (container *Container) Build(
 	}
 
 	inputs := map[string]*pb.Definition{
-		dockerui.DefaultLocalNameContext:    contextDir.LLB,
+		dockerui.DefaultLocalNameContext:    buildctxDir.LLB,
 		dockerui.DefaultLocalNameDockerfile: contextDir.LLB,
 	}
 

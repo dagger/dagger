@@ -39,6 +39,7 @@ import (
 	"github.com/moby/buildkit/frontend"
 	dockerfile "github.com/moby/buildkit/frontend/dockerfile/builder"
 	"github.com/moby/buildkit/frontend/gateway"
+	"github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/frontend/gateway/forwarder"
 	bksession "github.com/moby/buildkit/session"
 	containerdsnapshot "github.com/moby/buildkit/snapshot/containerd"
@@ -177,6 +178,10 @@ type NewServerOpts struct {
 	Name           string
 	Config         *config.Config
 	BuildkitConfig *bkconfig.Config
+}
+
+func MyBuild(ctx context.Context, c client.Client) (_ *client.Result, err error) {
+	return nil, fmt.Errorf("FROM INSIDE MY BUILD")
 }
 
 //nolint:gocyclo
