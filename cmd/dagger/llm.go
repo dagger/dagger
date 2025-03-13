@@ -138,7 +138,7 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) (*LLMSession, error) {
 	maps.Copy(s.syncedVars, oldVars)
 
 	syncedLlmQ := s.dag.QueryBuilder().
-		Select("loadLlmFromID").
+		Select("loadLLMFromID").
 		Arg("id", s.llm)
 
 	var changed bool
