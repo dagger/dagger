@@ -41,6 +41,17 @@ Here is an example of a Dagger Function that takes two arguments: an image refer
 ```typescript file=./snippets/enums/typescript/index.ts
 ```
 </TabItem>
+<TabItem value="Java">
+```java file=./snippets/enums/java/Severity.java
+```
+
+:::note
+Please note the `@Enum` annotation that is required for Dagger to recognize the enum.
+:::
+
+```java file=./snippets/enums/java/MyModule.java
+```
+</TabItem>
 </Tabs>
 
 Enumeration choices will be displayed when calling `--help` or `.help` on a Dagger Function:
