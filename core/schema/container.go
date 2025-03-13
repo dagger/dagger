@@ -812,6 +812,7 @@ func (s *containerSchema) build(ctx context.Context, parent *core.Container, arg
 	return parent.Build(
 		ctx,
 		dir.Self,
+		dir.Self,
 		args.Dockerfile,
 		collectInputsSlice(args.BuildArgs),
 		args.Target,
