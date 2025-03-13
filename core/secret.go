@@ -48,19 +48,6 @@ func (secret *Secret) Clone() *Secret {
 	return &cp
 }
 
-/*
-func (secret *Secret) OnReturn(ctx context.Context, root dagql.Typed) error {
-	query, ok := root.(*Query)
-	if !ok {
-		return fmt.Errorf("expected *Query, got %T", root)
-	}
-	callerSecretStore, err := query.Secrets(ctx)
-	if err != nil {
-		return err
-	}
-}
-*/
-
 type SecretStore struct {
 	bkSessionManager *bksession.Manager
 	secrets          map[digest.Digest]dagql.Instance[*Secret]
