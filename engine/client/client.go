@@ -87,7 +87,6 @@ type Params struct {
 
 	WithTerminal session.WithTerminalFunc
 
-	ServeModule       bool
 	AllowedLLMModules []string
 
 	PromptHandler session.PromptHandler
