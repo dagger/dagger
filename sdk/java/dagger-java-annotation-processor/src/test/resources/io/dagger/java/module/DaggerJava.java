@@ -4,6 +4,7 @@ import static io.dagger.client.Dagger.dag;
 
 import io.dagger.client.*;
 import io.dagger.module.annotation.*;
+import io.dagger.module.annotation.Enum;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
@@ -13,6 +14,15 @@ import java.util.concurrent.ExecutionException;
 /** Dagger Java Module main object */
 @Object
 public class DaggerJava {
+  @Enum
+  public enum Severity {
+    DEBUG,
+    INFO,
+    WARN,
+    ERROR,
+    FATAL,
+  }
+
   private transient String notExportedField;
 
   /** Project source directory */
@@ -142,5 +152,10 @@ public class DaggerJava {
   @Function
   public void doSomething(Directory src) {
     // do something
+  }
+
+  @Function
+  public String printSeverity(Severity severity) {
+    return severity.name();
   }
 }

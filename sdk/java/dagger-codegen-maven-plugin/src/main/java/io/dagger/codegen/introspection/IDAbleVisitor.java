@@ -4,6 +4,7 @@ import com.palantir.javapoet.*;
 import jakarta.json.bind.Jsonb;
 import jakarta.json.bind.JsonbBuilder;
 import jakarta.json.bind.JsonbConfig;
+import java.lang.reflect.Method;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.util.List;
@@ -66,6 +67,16 @@ public class IDAbleVisitor extends AbstractMultiTypesVisitor {
                         JsonbBuilder.class,
                         JsonbConfig.class,
                         ClassName.bestGuess("io.dagger.client.FieldsStrategy"))
+                    .beginControlFlow("if (clazz.isEnum())")
+                    .addStatement(
+                        "$T valueOf = clazz.getMethod($S, $T.class)",
+                        Method.class,
+                        "valueOf",
+                        String.class)
+                    .addStatement(
+                        "return clazz.cast(valueOf.invoke(null, jsonb.fromJson(json, $T.class)))",
+                        String.class)
+                    .endControlFlow()
                     .addStatement("return jsonb.fromJson(json, clazz)")
                     .endControlFlow()
                     .build());

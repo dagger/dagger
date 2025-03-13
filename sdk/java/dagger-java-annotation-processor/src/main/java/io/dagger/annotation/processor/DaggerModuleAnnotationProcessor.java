@@ -8,6 +8,7 @@ import com.google.auto.service.AutoService;
 import com.palantir.javapoet.*;
 import io.dagger.client.*;
 import io.dagger.module.annotation.*;
+import io.dagger.module.annotation.Enum;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Module;
 import io.dagger.module.annotation.Object;
@@ -45,6 +46,7 @@ import javax.lang.model.util.Elements;
 @SupportedAnnotationTypes({
   "io.dagger.module.annotation.Module",
   "io.dagger.module.annotation.Object",
+  "io.dagger.module.annotation.Enum",
   "io.dagger.module.annotation.Function",
   "io.dagger.module.annotation.Optional",
   "io.dagger.module.annotation.Default",
@@ -69,9 +71,24 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     Set<ObjectInfo> annotatedObjects = new HashSet<>();
     boolean hasModuleAnnotation = false;
 
+    Map<String, EnumInfo> enumInfos = new HashMap<>();
+
     for (TypeElement annotation : annotations) {
       for (Element element : roundEnv.getElementsAnnotatedWith(annotation)) {
-        if (element.getKind() == ElementKind.PACKAGE) {
+        if (element.getKind() == ElementKind.ENUM && element.getAnnotation(Enum.class) != null) {
+          String qName = ((TypeElement) element).getQualifiedName().toString();
+          if (!enumInfos.containsKey(qName)) {
+            enumInfos.put(
+                qName,
+                new EnumInfo(
+                    element.getSimpleName().toString(),
+                    element.getEnclosedElements().stream()
+                        .filter(elt -> elt.getKind() == ElementKind.ENUM_CONSTANT)
+                        .map(Element::getSimpleName)
+                        .map(Name::toString)
+                        .toArray(String[]::new)));
+          }
+        } else if (element.getKind() == ElementKind.PACKAGE) {
           if (hasModuleAnnotation) {
             throw new IllegalStateException("Only one @Module annotation is allowed");
           }
@@ -203,8 +220,22 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
       }
     }
 
+    // Ensure only one single enum is defined with a specific name
+    Set<String> enumSimpleNames = new HashSet<>();
+    for (var enumQualifiedName : enumInfos.keySet()) {
+      String simpleName = enumQualifiedName.substring(enumQualifiedName.lastIndexOf('.') + 1);
+      if (enumSimpleNames.contains(simpleName)) {
+        throw new RuntimeException(
+            "The enum %s has already been registered via %s"
+                .formatted(simpleName, enumQualifiedName));
+      }
+      enumSimpleNames.add(simpleName);
+    }
+
     return new ModuleInfo(
-        moduleDescription, annotatedObjects.toArray(new ObjectInfo[annotatedObjects.size()]));
+        moduleDescription,
+        annotatedObjects.toArray(new ObjectInfo[annotatedObjects.size()]),
+        enumInfos);
   }
 
   private List<ParameterInfo> parseParameters(ExecutableElement elt) {
@@ -320,13 +351,13 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
         rm.addCode(")"); // end of dag().TypeDef().withObject(
         for (var fnInfo : objectInfo.functions()) {
           rm.addCode("\n            .withFunction(")
-              .addCode(withFunction(objectInfo, fnInfo))
+              .addCode(withFunction(moduleInfo.enumInfos().keySet(), objectInfo, fnInfo))
               .addCode(")"); // end of .withFunction(
         }
         for (var fieldInfo : objectInfo.fields()) {
           rm.addCode("\n            .withField(")
               .addCode("$S, ", fieldInfo.name())
-              .addCode(typeDef(fieldInfo.type()));
+              .addCode(typeDef(moduleInfo.enumInfos().keySet(), fieldInfo.type()));
           if (isNotBlank(fieldInfo.description())) {
             rm.addCode(", new $T.WithFieldArguments()", io.dagger.client.TypeDef.class)
                 .addCode(".withDescription($S)", fieldInfo.description());
@@ -335,10 +366,20 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
         }
         if (objectInfo.constructor().isPresent()) {
           rm.addCode("\n            .withConstructor(")
-              .addCode(withFunction(objectInfo, objectInfo.constructor().get()))
+              .addCode(
+                  withFunction(
+                      moduleInfo.enumInfos().keySet(), objectInfo, objectInfo.constructor().get()))
               .addCode(")"); // end of .withConstructor
         }
         rm.addCode(")"); // end of .withObject(
+      }
+      for (var enumInfo : moduleInfo.enumInfos().values()) {
+        rm.addCode("\n    .withEnum(")
+            .addCode("\n        $T.dag().typeDef().withEnum($S)", Dagger.class, enumInfo.name());
+        for (var enumValue : enumInfo.values()) {
+          rm.addCode("\n            .withEnumValue($S)", enumValue);
+        }
+        rm.addCode(")"); // end of .withEnum(
       }
       rm.addCode(";\n") // end of module instantiation
           .addStatement("return module.id()");
@@ -520,10 +561,9 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           .beginControlFlow("if (inputArgs.get($S) != null)", parameterInfo.name())
           .addStatement(
               CodeBlock.builder()
-                  .add("$L = (", parameterInfo.name())
-                  .add(paramType)
                   .add(
-                      ") $T.fromJSON(inputArgs.get($S), ",
+                      "$L = $T.fromJSON(inputArgs.get($S), ",
+                      parameterInfo.name(),
                       JsonConverter.class,
                       parameterInfo.name())
                   .add(paramType)
@@ -578,8 +618,8 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     return code.build();
   }
 
-  public static CodeBlock withFunction(ObjectInfo objectInfo, FunctionInfo fnInfo)
-      throws ClassNotFoundException {
+  public static CodeBlock withFunction(
+      Set<String> enums, ObjectInfo objectInfo, FunctionInfo fnInfo) throws ClassNotFoundException {
     boolean isConstructor = fnInfo.name().equals("<init>");
     CodeBlock.Builder code =
         CodeBlock.builder()
@@ -590,15 +630,15 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
             .add("\n                    ")
             .add(
                 isConstructor
-                    ? typeDef(tiFromName(objectInfo.qualifiedName()))
-                    : typeDef(fnInfo.returnType()))
+                    ? typeDef(enums, tiFromName(objectInfo.qualifiedName()))
+                    : typeDef(enums, fnInfo.returnType()))
             .add(")");
     if (isNotBlank(fnInfo.description())) {
       code.add("\n                    .withDescription($S)", fnInfo.description());
     }
     for (var parameterInfo : fnInfo.parameters()) {
       code.add("\n                    .withArg($S, ", parameterInfo.name())
-          .add(typeDef(parameterInfo.type()));
+          .add(typeDef(enums, parameterInfo.type()));
       if (parameterInfo.optional()) {
         code.add(".withOptional(true)");
       }
@@ -655,8 +695,14 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     return true;
   }
 
-  static CodeBlock typeDef(TypeInfo ti) throws ClassNotFoundException {
+  static CodeBlock typeDef(Set<String> enums, TypeInfo ti) throws ClassNotFoundException {
     String name = ti.typeName();
+    if (enums.contains(name)) {
+      return CodeBlock.of(
+          "$T.dag().typeDef().withEnum($S)",
+          Dagger.class,
+          name.substring(name.lastIndexOf('.') + 1));
+    }
     if (name.equals("int")) {
       return CodeBlock.of(
           "$T.dag().typeDef().withKind($T.$L)",
@@ -678,13 +724,17 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     } else if (name.startsWith("java.util.List<")) {
       name = name.substring("java.util.List<".length(), name.length() - 1);
       return CodeBlock.of(
-          "$T.dag().typeDef().withListOf($L)", Dagger.class, typeDef(tiFromName(name)).toString());
+          "$T.dag().typeDef().withListOf($L)",
+          Dagger.class,
+          typeDef(enums, tiFromName(name)).toString());
     } else if (!ti.kindName().isEmpty() && TypeKind.valueOf(ti.kindName()) == TypeKind.ARRAY) {
       // in that case the type name is com.example.Type[]
       // so we remove the [] to get the underlying type
       name = name.substring(0, name.length() - 2);
       return CodeBlock.of(
-          "$T.dag().typeDef().withListOf($L)", Dagger.class, typeDef(tiFromName(name)).toString());
+          "$T.dag().typeDef().withListOf($L)",
+          Dagger.class,
+          typeDef(enums, tiFromName(name)).toString());
     } else if (name.startsWith("java.util.Optional<")) {
       name = name.substring("java.util.Optional<".length(), name.length() - 1);
       return typeName(tiFromName(name));
