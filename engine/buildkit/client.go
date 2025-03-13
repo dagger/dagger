@@ -657,7 +657,7 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 	}
 }
 
-func (c *Client) AllowLLM(ctx context.Context) error {
+func (c *Client) AllowLLM(ctx context.Context, moduleRepoURL string) error {
 	md, err := engine.ClientMetadataFromContext(ctx) // not mainclient
 	if err != nil {
 		return fmt.Errorf("llm sync failed fetching client metadata from context: %w", err)
@@ -665,13 +665,18 @@ func (c *Client) AllowLLM(ctx context.Context) error {
 	if md.AllowLLMModule == "all" {
 		return nil
 	}
+	if md.AllowLLMModule != "" && moduleRepoURL == md.AllowLLMModule {
+		return nil
+	}
+
+	// the flag hasn't allowed this LLM call, so prompt the user
 	caller, err := c.GetMainClientCaller()
 	if err != nil {
 		return fmt.Errorf("failed to get main client caller for %q: %w", md.ClientID, err)
 	}
 
 	response, err := session.NewPromptClient(caller.Conn()).Prompt(ctx, &session.PromptRequest{
-		Prompt: "something attempted to access the LLM API. Allow it?",
+		Prompt: fmt.Sprintf("Remote module %s attempted to access the LLM API. Allow it?", moduleRepoURL)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to prompt user for LLM API access: %w", err)
@@ -681,7 +686,7 @@ func (c *Client) AllowLLM(ctx context.Context) error {
 		return nil
 	}
 
-	return fmt.Errorf("LLM access is not allowed for this session, pass --allow-llm=all to bypass")
+	return fmt.Errorf("Remote module %s attempted to access LLM, pass --allow-llm=%s to grant llm access", moduleRepoURL, moduleRepoURL)
 }
 
 type TerminalClient struct {
