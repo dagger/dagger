@@ -2,7 +2,6 @@ package cache
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 )
@@ -275,76 +274,4 @@ func (res *result[K, V]) PostCall(ctx context.Context) error {
 		return nil
 	}
 	return res.postCall(ctx)
-}
-
-type CacheWithResults[K comparable, V any] struct {
-	cache   Cache[K, V]
-	results []Result[K, V]
-	mu      sync.Mutex
-}
-
-var _ Cache[int, int] = &CacheWithResults[int, int]{}
-
-func NewCacheWithResults[K comparable, V any](baseCache Cache[K, V]) *CacheWithResults[K, V] {
-	return &CacheWithResults[K, V]{
-		cache: baseCache,
-	}
-}
-
-func (c *CacheWithResults[K, V]) GetOrInitializeValue(
-	ctx context.Context,
-	key K,
-	val V,
-) (Result[K, V], error) {
-	return c.GetOrInitialize(ctx, key, func(_ context.Context) (V, error) {
-		return val, nil
-	})
-}
-
-func (c *CacheWithResults[K, V]) GetOrInitialize(
-	ctx context.Context,
-	key K,
-	fn func(context.Context) (V, error),
-) (Result[K, V], error) {
-	return c.GetOrInitializeWithCallbacks(ctx, key, func(ctx context.Context) (*ValueWithCallbacks[V], error) {
-		val, err := fn(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return &ValueWithCallbacks[V]{Value: val}, nil
-	})
-}
-
-func (c *CacheWithResults[K, V]) GetOrInitializeWithCallbacks(
-	ctx context.Context,
-	key K,
-	fn func(context.Context) (*ValueWithCallbacks[V], error),
-) (Result[K, V], error) {
-	res, err := c.cache.GetOrInitializeWithCallbacks(ctx, key, fn)
-
-	var zeroKey K
-	if res != nil && key != zeroKey {
-		c.mu.Lock()
-		c.results = append(c.results, res)
-		c.mu.Unlock()
-	}
-
-	return res, err
-}
-
-func (c *CacheWithResults[K, V]) ReleaseAll(ctx context.Context) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	var rerr error
-	for _, res := range c.results {
-		rerr = errors.Join(rerr, res.Release(ctx))
-	}
-	c.results = nil
-
-	return rerr
-}
-
-func (c *CacheWithResults[K, V]) Size() int {
-	return c.cache.Size()
 }
