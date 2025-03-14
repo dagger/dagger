@@ -1462,19 +1462,8 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 		// NOTE: arguably this should be opt-in, but it's not clear how the
 		// span name relates to the message in all cases; is it the
 		// subject? or author? better to be explicit with attributes.
-		isFocused := row.Span.ID == fe.FocusedSpan && !fe.editlineFocused
 		r.indent(out, row.Depth)
-		emoji := span.ActorEmoji
-		if emoji == "" {
-			emoji = "💬"
-		}
-		fmt.Fprint(out, "\b") // emojis take up two columns, so make room
-		icon := out.String(emoji)
-		if isFocused {
-			icon = icon.Reverse()
-		}
-		fmt.Fprint(out, icon)
-		fmt.Fprint(out, out.String(" "))
+		r.renderStatus(out, span, row.Span.ID == fe.FocusedSpan && !fe.editlineFocused)
 		if fe.renderStepLogs(out, r, row, prefix, highlight) {
 			r.indent(out, row.Depth)
 			fmt.Fprint(out, out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack))

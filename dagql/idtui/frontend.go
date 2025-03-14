@@ -399,11 +399,19 @@ func (r *renderer) renderStatus(out TermOutput, span *dagui.Span, focused bool) 
 		color = termenv.ANSIGreen
 	}
 
+	if span.ActorEmoji != "" {
+		symbol = span.ActorEmoji
+	}
+
 	style := out.String(symbol).Foreground(color)
 	if focused {
 		style = style.Reverse()
 	}
 	symbol = style.String()
+
+	if span.ActorEmoji != "" {
+		fmt.Fprint(out, "\b") // emojis take up two columns, so make room
+	}
 
 	fmt.Fprint(out, symbol)
 	fmt.Fprint(out, out.String(" "))

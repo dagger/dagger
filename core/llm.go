@@ -16,7 +16,6 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -533,14 +532,8 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 			for _, tool := range tools {
 				if tool.Name == toolCall.Function.Name {
 					result, isError := func() (string, bool) {
-						ctx, span := Tracer(ctx).Start(ctx,
-							fmt.Sprintf("🤖 💻 %s", toolCall.Function.Name),
-							telemetry.Passthrough(),
-							telemetry.Reveal())
-						defer span.End()
 						result, err := tool.Call(ctx, toolCall.Function.Arguments)
 						if err != nil {
-							span.SetStatus(codes.Error, err.Error())
 							errResponse := err.Error()
 							// propagate error values to the model
 							var extErr dagql.ExtendedError
@@ -573,19 +566,16 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 							}
 							return errResponse, true
 						}
-						stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-						defer stdio.Close()
 						switch v := result.(type) {
 						case string:
-							fmt.Fprint(stdio.Stdout, v)
+							// TODO: should we just JSON encode this too? what
+							// is safer and/or better for the model?
 							return v, false
 						default:
 							jsonBytes, err := json.Marshal(v)
 							if err != nil {
-								span.SetStatus(codes.Error, err.Error())
 								return fmt.Sprintf("error processing tool result: %s", err.Error()), true
 							}
-							fmt.Fprint(stdio.Stdout, string(jsonBytes))
 							return string(jsonBytes), false
 						}
 					}()

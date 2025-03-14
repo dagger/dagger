@@ -2,15 +2,18 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // A frontend for LLM tool calling
@@ -128,19 +131,23 @@ func (env *LLMEnv) Tools(srv *dagql.Server) []LLMTool {
 					telemetry.Passthrough(),
 					telemetry.Reveal())
 				defer telemetry.End(span, func() error {
-					if rerr != nil {
-						// HACK: something went wrong, so undo passthrough
-						span.SetAttributes(attribute.Bool(telemetry.UIPassthroughAttr, false))
-					}
 					return rerr
 				})
-				stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-				res, err := env.call(ctx, srv, field, args)
+				result, err := env.call(ctx, srv, field, args)
 				if err != nil {
 					return nil, err
 				}
-				fmt.Fprintln(stdio.Stdout, res)
-				return res, nil
+				stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+				defer stdio.Close()
+				switch v := result.(type) {
+				case string:
+					fmt.Fprint(stdio.Stdout, v)
+				default:
+					enc := json.NewEncoder(stdio.Stdout)
+					enc.SetIndent("", "  ")
+					enc.Encode(v)
+				}
+				return result, nil
 			},
 		})
 	}
@@ -388,15 +395,57 @@ func (env *LLMEnv) Builtins() []LLMTool {
 		},
 	}
 	// Attach builtin telemetry
-	for i := range builtins {
-		call := builtins[i].Call
+	for i, builtin := range builtins {
 		builtins[i].Call = func(ctx context.Context, args any) (_ any, rerr error) {
-			ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("🤖💻 %s %v", builtins[i].Name, args))
+			id := toolToID(builtin.Name, args)
+			callAttr, err := id.Call().Encode()
+			if err != nil {
+				return nil, err
+			}
+			ctx, span := Tracer(ctx).Start(ctx, builtin.Name,
+				trace.WithAttributes(
+					attribute.String(telemetry.DagDigestAttr, id.Digest().String()),
+					attribute.String(telemetry.DagCallAttr, callAttr),
+					attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
+				),
+				telemetry.Reveal())
 			defer telemetry.End(span, func() error { return rerr })
-			return call(ctx, args)
+			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+			defer stdio.Close()
+			res, err := builtin.Call(ctx, args)
+			if err != nil {
+				return nil, err
+			}
+			fmt.Fprintln(stdio.Stdout, res)
+			return res, nil
 		}
 	}
 	return builtins
+}
+
+func toolToID(name string, args any) *call.ID {
+	var callArgs []*call.Argument
+	if argsMap, ok := args.(map[string]any); ok {
+		for k, v := range argsMap {
+			lit, err := call.ToLiteral(v)
+			if err != nil {
+				lit = call.NewLiteralString(fmt.Sprintf("!(%v)(%s)", v, err))
+			}
+			callArgs = append(callArgs, call.NewArgument(k, lit, false))
+		}
+	}
+	return call.New().Append(
+		&ast.Type{
+			NamedType: "String",
+			NonNull:   true,
+		},
+		name, // fn name
+		"",   // view
+		nil,  // module
+		0,    // nth
+		"",   // custom digest
+		callArgs...,
+	)
 }
 
 func fieldArgsToJSONSchema(field *ast.FieldDefinition) map[string]any {
