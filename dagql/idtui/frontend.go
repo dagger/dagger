@@ -309,11 +309,13 @@ func (r *renderer) renderSpan(
 	fmt.Fprint(out, prefix)
 	r.indent(out, depth)
 
+	var contentType string
 	if span != nil {
 		r.renderStatus(out, span, focused)
+		contentType = span.ContentType
 	}
 
-	switch span.ContentType {
+	switch contentType {
 	case "text/x-shellscript":
 		quick.Highlight(out, name, "bash", "terminal16", "monokai")
 	case "text/markdown":
