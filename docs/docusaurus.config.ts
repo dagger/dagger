@@ -128,7 +128,15 @@ const config: Config = {
         content:
           "Dagger is an open-source runtime for composable workflows, powering AI agents and CI/CD with modular, repeatable, and observable pipelines.",
       },
-      { property: "og:image", content: `${url}/img/dagger-factory-share.jpg` },
+      {
+        name: "image",
+        property: "og:image",
+        content: `${url}/img/dagger-factory-share.jpg`,
+      },
+      {
+        name: "author",
+        content: "Dagger",
+      },
       {
         property: "twitter:image",
         content: `${url}/img/dagger-factory-share.jpg`,

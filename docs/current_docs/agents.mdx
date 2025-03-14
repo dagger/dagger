@@ -1,5 +1,6 @@
 ---
 slug: /ai-agents
+description: Learn how to build reproducible AI agents with Dagger using OpenAI, Anthropic, Gemini, Llama, DeepSeek, Qwen, and more.
 ---
 
 # Build AI agents with Dagger
@@ -80,8 +81,6 @@ Check the [source code](https://github.com/dagger/dagger/blob/llm/core/llm.go#L2
 #### Anthropic
 - `ANTHROPIC_API_KEY`: required
 - `ANTHROPIC_MODEL`: if unset, defaults to latest Claude 3.5 Sonnet
-- **optional extras**
-	- `ANTHROPIC_BASE_URL`: if unset, defaults to `"https://api.anthropic.com"`
 
 #### OpenAI
 - `OPENAI_API_KEY`: required
@@ -93,10 +92,14 @@ Check the [source code](https://github.com/dagger/dagger/blob/llm/core/llm.go#L2
 #### Google Gemini
 - `GEMINI_API_KEY`: required
 - `GEMINI_MODEL`: default `"gemini-2.0-flash"`
-- **optional extras**
-  - `GEMINI_BASE_URL`: if unset, defaults to `https://generativelanguage.googleapis.com`
 
 Dagger will look for these variables in your environment, or in a `.env` file in the current directory (`.env` files in parent directories are not yet supported).
+
+Secrets in the `.env` file can use Dagger Secrets management, for example:
+```
+# key stored in 1Password
+OPENAI_API_KEY="op://Private/OpenAI API Key/password"
+```
 
 #### Using with Ollama
 
