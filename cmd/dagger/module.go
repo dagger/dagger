@@ -14,8 +14,10 @@ import (
 	"github.com/moby/buildkit/util/gitutil"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine/client"
@@ -44,6 +46,7 @@ var (
 
 	developSDK        string
 	developSourcePath string
+	developRecursive  bool
 
 	force bool
 )
@@ -130,6 +133,7 @@ func init() {
 
 	moduleDevelopCmd.Flags().StringVar(&developSDK, "sdk", "", "Install the given Dagger SDK. Can be builtin (go, python, typescript) or a module address")
 	moduleDevelopCmd.Flags().StringVar(&developSourcePath, "source", "", "Source directory used by the installed SDK. Defaults to module root")
+	moduleDevelopCmd.Flags().BoolVarP(&developRecursive, "recursive", "r", false, "Develop recursively into local dependencies")
 	moduleDevelopCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
 	moduleDevelopCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
 	moduleDevelopCmd.Flags().Lookup("compat").NoOptDefVal = "skip"
@@ -494,7 +498,8 @@ This command is idempotent: you can run it at any time, any number of times. It 
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
-			modSrc := dag.ModuleSource(getModuleSourceRefWithDefault(), dagger.ModuleSourceOpts{
+			modRef := getModuleSourceRefWithDefault()
+			modSrc := dag.ModuleSource(modRef, dagger.ModuleSourceOpts{
 				// We can only export updated generated files for a local modules
 				RequireKind: dagger.ModuleSourceKindLocalSource,
 			})
@@ -507,86 +512,155 @@ This command is idempotent: you can run it at any time, any number of times. It 
 			if err != nil {
 				return fmt.Errorf("failed to get source root subpath: %w", err)
 			}
-			srcRootAbsPath := filepath.Join(contextDirPath, srcRootSubPath)
+			baseSrcRootPath := filepath.Join(contextDirPath, srcRootSubPath)
 
-			if engineVersion := getCompatVersion(); engineVersion != "" {
-				modSrc = modSrc.WithEngineVersion(engineVersion)
-			}
-
-			modSDK, err := modSrc.SDK().Source(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get module SDK: %w", err)
-			}
-			if developSDK != "" {
-				if modSDK != "" && modSDK != developSDK {
-					return fmt.Errorf("cannot update module SDK that has already been set to %q", modSDK)
-				}
-				modSDK = developSDK
-				modSrc = modSrc.WithSDK(modSDK)
-			}
-
-			modSourcePath, err := modSrc.SourceSubpath(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get module source subpath: %w", err)
-			}
-			// if SDK is set but source path isn't and the user didn't provide --source, we'll use the default source path
-			if modSDK != "" && modSourcePath == "" && developSourcePath == "" {
-				inferredSourcePath, err := inferSourcePathDir(srcRootAbsPath)
+			modSrcs := make(map[string]*dagger.ModuleSource)
+			if developRecursive {
+				ctx, span := Tracer().Start(ctx, "load module", telemetry.Encapsulate())
+				err := collectLocalModulesRecursive(ctx, modSrc, modSrcs)
+				telemetry.End(span, func() error { return err })
 				if err != nil {
 					return err
 				}
-
-				developSourcePath = filepath.Join(srcRootAbsPath, inferredSourcePath)
+			} else {
+				modSrcs[baseSrcRootPath] = modSrc
 			}
 
-			clients, err := modSrc.ConfigClients(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get module clients configuration: %w", err)
-			}
+			ctx, span := Tracer().Start(ctx, "develop")
+			defer telemetry.End(span, func() error { return err })
 
-			// if there's no SDK and the user isn't changing the source path, there's nothing to do.
-			// error out rather than silently doing nothing.
-			if modSDK == "" && developSourcePath == "" && len(clients) == 0 {
-				return fmt.Errorf("dagger develop on a module without an SDK or clients requires either --sdk or --source")
-			}
-
-			if developSourcePath != "" {
-				// ensure source path is relative to the source root
-				sourceAbsPath, err := pathutil.Abs(developSourcePath)
-				if err != nil {
-					return fmt.Errorf("failed to get absolute source path for %s: %w", developSourcePath, err)
+			eg, ctx := errgroup.WithContext(ctx)
+			for srcRootPath, modSrc := range modSrcs {
+				name := strings.TrimPrefix(srcRootPath, baseSrcRootPath)
+				name = strings.TrimPrefix(name, "/")
+				if name == "" {
+					name = "."
 				}
-				developSourcePath, err = filepath.Rel(srcRootAbsPath, sourceAbsPath)
-				if err != nil {
-					return fmt.Errorf("failed to get relative source path: %w", err)
-				}
+				ctx, span := Tracer().Start(ctx, "develop "+name, telemetry.Encapsulate())
+				eg.Go(func() (err error) {
+					defer telemetry.End(span, func() error { return err })
 
-				if modSourcePath != "" && modSourcePath != developSourcePath {
-					return fmt.Errorf("cannot update module source path that has already been set to %q", modSourcePath)
-				}
+					if engineVersion := getCompatVersion(); engineVersion != "" {
+						modSrc = modSrc.WithEngineVersion(engineVersion)
+					}
 
-				modSourcePath = developSourcePath
-				modSrc = modSrc.WithSourceSubpath(modSourcePath)
+					modSDK, err := modSrc.SDK().Source(ctx)
+					if err != nil {
+						return fmt.Errorf("failed to get module SDK: %w", err)
+					}
+					if developSDK != "" {
+						if modSDK != "" && modSDK != developSDK {
+							return fmt.Errorf("cannot update module SDK that has already been set to %q", modSDK)
+						}
+						modSDK = developSDK
+						modSrc = modSrc.WithSDK(modSDK)
+					}
+
+					modSourcePath, err := modSrc.SourceSubpath(ctx)
+					if err != nil {
+						return fmt.Errorf("failed to get module source subpath: %w", err)
+					}
+					// if SDK is set but source path isn't and the user didn't provide --source, we'll use the default source path
+					if modSDK != "" && modSourcePath == "" && developSourcePath == "" {
+						inferredSourcePath, err := inferSourcePathDir(srcRootPath)
+						if err != nil {
+							return err
+						}
+
+						developSourcePath = filepath.Join(srcRootPath, inferredSourcePath)
+					}
+
+					clients, err := modSrc.ConfigClients(ctx)
+					if err != nil {
+						return fmt.Errorf("failed to get module clients configuration: %w", err)
+					}
+
+					// if there's no SDK and the user isn't changing the source path, there's nothing to do.
+					// error out rather than silently doing nothing.
+					if modSDK == "" && developSourcePath == "" && len(clients) == 0 {
+						return fmt.Errorf("dagger develop on a module without an SDK or clients requires either --sdk or --source")
+					}
+
+					if developSourcePath != "" {
+						// ensure source path is relative to the source root
+						sourceAbsPath, err := pathutil.Abs(developSourcePath)
+						if err != nil {
+							return fmt.Errorf("failed to get absolute source path for %s: %w", developSourcePath, err)
+						}
+						developSourcePath, err = filepath.Rel(srcRootPath, sourceAbsPath)
+						if err != nil {
+							return fmt.Errorf("failed to get relative source path: %w", err)
+						}
+
+						if modSourcePath != "" && modSourcePath != developSourcePath {
+							return fmt.Errorf("cannot update module source path that has already been set to %q", modSourcePath)
+						}
+
+						modSourcePath = developSourcePath
+						modSrc = modSrc.WithSourceSubpath(modSourcePath)
+					}
+
+					contextDirPath, err := modSrc.LocalContextDirectoryPath(ctx)
+					if err != nil {
+						return fmt.Errorf("failed to get local context directory path: %w", err)
+					}
+					_, err = modSrc.
+						GeneratedContextDirectory().
+						Export(ctx, contextDirPath)
+					if err != nil {
+						return fmt.Errorf("failed to generate code: %w", err)
+					}
+
+					// If no license has been created yet, and SDK is set, we should create one.
+					if developSDK != "" {
+						searchExisting := !cmd.Flags().Lookup("license").Changed
+						if err := findOrCreateLicense(ctx, srcRootPath, searchExisting); err != nil {
+							return err
+						}
+					}
+					return nil
+				})
 			}
-
-			_, err = modSrc.
-				GeneratedContextDirectory().
-				Export(ctx, contextDirPath)
-			if err != nil {
-				return fmt.Errorf("failed to generate code: %w", err)
-			}
-
-			// If no license has been created yet, and SDK is set, we should create one.
-			if developSDK != "" {
-				searchExisting := !cmd.Flags().Lookup("license").Changed
-				if err := findOrCreateLicense(ctx, srcRootAbsPath, searchExisting); err != nil {
-					return err
-				}
-			}
-
-			return nil
+			return eg.Wait()
 		})
 	},
+}
+
+func collectLocalModulesRecursive(ctx context.Context, base *dagger.ModuleSource, m map[string]*dagger.ModuleSource) error {
+	kind, err := base.Kind(ctx)
+	if err != nil {
+		return err
+	}
+	if kind != dagger.ModuleSourceKindLocalSource {
+		return nil
+	}
+
+	contextDirPath, err := base.LocalContextDirectoryPath(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get local context directory path: %w", err)
+	}
+	srcRootSubPath, err := base.SourceRootSubpath(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get source root subpath: %w", err)
+	}
+	srcRootAbsPath := filepath.Join(contextDirPath, srcRootSubPath)
+
+	if _, ok := m[srcRootAbsPath]; ok {
+		return nil // already collected
+	}
+	m[srcRootAbsPath] = base
+
+	deps, err := base.Dependencies(ctx)
+	if err != nil {
+		return err
+	}
+	for _, dep := range deps {
+		err := collectLocalModulesRecursive(ctx, &dep, m)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 const daDaggerverse = "https://daggerverse.dev"
