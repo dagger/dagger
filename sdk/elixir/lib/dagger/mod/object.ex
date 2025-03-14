@@ -107,10 +107,11 @@ defmodule Dagger.Mod.Object do
     name = opts[:name]
 
     quote do
-      import Dagger.Mod.Object, only: [defn: 2]
+      import Dagger.Mod.Object, only: [defn: 2, field: 2, field: 3, object: 1]
       import Dagger.Global, only: [dag: 0]
 
       Module.register_attribute(__MODULE__, :function, accumulate: true, persist: true)
+      Module.register_attribute(__MODULE__, :field, accumulate: true, persist: true)
 
       # Get an object name
       def __object__(:name), do: unquote(name)
@@ -127,6 +128,13 @@ defmodule Dagger.Mod.Object do
         __object__(:functions)
         |> Keyword.fetch!(name)
       end
+
+      # List available field definitions.
+      def __object__(:fields) do
+        __MODULE__.__info__(:attributes)
+        |> Keyword.get_values(:field)
+        |> Enum.flat_map(& &1)
+      end
     end
   end
 
@@ -141,10 +149,87 @@ defmodule Dagger.Mod.Object do
 
     quote do
       @function {unquote(name),
-                 [self: unquote(has_self?), args: unquote(arg_defs), return: unquote(return_def)]}
+                 %Dagger.Mod.Object.FunctionDef{
+                   self: unquote(has_self?),
+                   args: unquote(arg_defs),
+                   return: unquote(return_def)
+                 }}
       unquote(Defn.define(name, args, return, block))
     end
   end
+
+  @doc """
+  Declare an object struct.
+  """
+  defmacro object(do: block) do
+    quote do
+      Module.register_attribute(__MODULE__, :required_fields, accumulate: true)
+      Module.register_attribute(__MODULE__, :optional_fields, accumulate: true)
+
+      unquote(block)
+
+      required_fields = @required_fields || []
+      optional_fields = @optional_fields || []
+      fields = @required_fields ++ @optional_fields
+
+      # TODO: convert fields into typespec.
+      @type t() :: %__MODULE__{}
+
+      @derive [Jason.Encoder, {Nestru.Decoder, hint: Dagger.Mod.Object.decoder_hint(fields)}]
+      @enforce_keys Keyword.keys(required_fields)
+      defstruct fields |> Keyword.keys() |> Enum.sort()
+    end
+  end
+
+  def decoder_hint(fields) do
+    fields
+    |> Enum.filter(&only_module/1)
+    |> Enum.into(%{}, fn {name, field_def} ->
+      type =
+        case field_def.type do
+          {:list, type} -> type
+          {:optional, type} -> type
+          type -> type
+        end
+
+      {name, type}
+    end)
+  end
+
+  defp only_module({_, field_def}) do
+    case field_def.type do
+      {:list, type} -> module?(type)
+      {:optional, type} -> module?(type)
+      type -> module?(type)
+    end
+  end
+
+  defp module?(type) do
+    {:module, ^type} = Code.ensure_loaded(type)
+    function_exported?(type, :__struct__, 0)
+  end
+
+  @doc """
+  Declare a field.
+  """
+  defmacro field(name, type, opts \\ []) do
+    type = compile_typespec!(type)
+    optional? = match?({:optional, _}, type)
+    doc = opts[:doc]
+    field = Macro.escape({name, %Dagger.Mod.Object.FieldDef{type: type, doc: doc}})
+
+    quote do
+      @field unquote(field)
+      if unquote(optional?) do
+        Module.put_attribute(__MODULE__, :optional_fields, unquote(field))
+      else
+        Module.put_attribute(__MODULE__, :required_fields, unquote(field))
+      end
+    end
+  end
+
+  defguardp is_self(self) when is_atom(elem(self, 0)) and is_nil(elem(self, 2))
+  defguardp is_args(args) when is_list(args)
 
   defp extract_call({:"::", _, [call_def, return]}) do
     {name, args} = extract_call_def(call_def)
@@ -155,11 +240,15 @@ defmodule Dagger.Mod.Object do
     {name, []}
   end
 
-  defp extract_call_def({name, _, [args]}) do
+  defp extract_call_def({name, _, [self]}) when is_self(self) do
+    {name, {self, []}}
+  end
+
+  defp extract_call_def({name, _, [args]}) when is_args(args) do
     {name, args}
   end
 
-  defp extract_call_def({name, _, [self, args]}) do
+  defp extract_call_def({name, _, [self, args]}) when is_self(self) and is_args(args) do
     {name, {self, args}}
   end
 
