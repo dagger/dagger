@@ -23,6 +23,9 @@ func TestLLM(t *testing.T) {
 //go:embed llm-hello-world.golden
 var helloWorldRecording string
 
+//go:embed llm-api-limit.golden
+var apiLimitRecording string
+
 func (LLMSuite) TestHelloWorld(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -75,6 +78,16 @@ func (m *Test) GoProgram(assignment string) *dagger.Container {
 		require.NoError(t, err)
 		testGoProgram(ctx, t, c, dag.Directory().WithNewFile("main.go", out).File("main.go"), regexp.MustCompile("(?i)hello(.*)world"))
 	})
+}
+
+func (LLMSuite) TestApiLimit(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	_, err := daggerCliBase(t, c).
+		With(llmReplay(apiLimitRecording)).
+		With(daggerShell("llm --max-api-calls=1 | with-container alpine | with-prompt \"tell me the value of PATH and TERM in this container using just envVariable\"")).
+		Stdout(ctx)
+	requireErrOut(t, err, "reached API call limit: 1")
 }
 
 const toyWorkspaceSrc = `

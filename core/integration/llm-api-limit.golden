@@ -1,0 +1,52 @@
+[
+  {
+    "role": "user",
+    "content": "tell me the value of PATH and TERM in this container using just envVariable",
+    "token_usage": {
+      "InputTokens": 0,
+      "OutputTokens": 0,
+      "TotalTokens": 0
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "I'll help you check the values of PATH and TERM environment variables using the  envVariable",
+    "tool_calls": [
+      {
+        "id": "call_tJCAiWyEwQCJpWEiFgIP01k1",
+        "function": {
+          "name": "envVariable",
+          "arguments": {
+            "path": "PATH"
+          }
+        },
+        "type": "function"
+      }
+    ],
+    "token_usage": {
+      "InputTokens": 160,
+      "OutputTokens": 15,
+      "TotalTokens": 175
+    }
+  },
+  {
+    "role": "user",
+    "content": "/usr/bin",
+    "tool_call_id": "call_tJCAiWyEwQCJpWEiFgIP01k1",
+    "tool_errored": false,
+    "token_usage": {
+      "InputTokens": 0,
+      "OutputTokens": 0,
+      "TotalTokens": 0
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "",
+    "token_usage": {
+      "InputTokens": 411,
+      "OutputTokens": 48,
+      "TotalTokens": 459
+    }
+  }
+]
