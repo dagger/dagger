@@ -8257,6 +8257,22 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Add a string variable to the LLM's environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The variable name
+    /// * `value` - The variable value
+    pub fn with_prompt_var(&self, name: impl Into<String>, value: impl Into<String>) -> Llm {
+        let mut query = self.selection.select("withPromptVar");
+        query = query.arg("name", name.into());
+        query = query.arg("value", value.into());
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Set a variable of type SDKConfig in the llm environment
     ///
     /// # Arguments

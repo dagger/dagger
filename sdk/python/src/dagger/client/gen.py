@@ -7795,6 +7795,23 @@ class LLM(Type):
         _ctx = self._select("withPromptFile", _args)
         return LLM(_ctx)
 
+    def with_prompt_var(self, name: str, value: str) -> Self:
+        """Add a string variable to the LLM's environment
+
+        Parameters
+        ----------
+        name:
+            The variable name
+        value:
+            The variable value
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+        ]
+        _ctx = self._select("withPromptVar", _args)
+        return LLM(_ctx)
+
     def with_sdk_config(self, value: "SDKConfig") -> Self:
         """Set a variable of type SDKConfig in the llm environment
 

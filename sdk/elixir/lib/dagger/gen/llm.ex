@@ -1855,6 +1855,21 @@ defmodule Dagger.LLM do
     }
   end
 
+  @doc "Add a string variable to the LLM's environment"
+  @spec with_prompt_var(t(), String.t(), String.t()) :: Dagger.LLM.t()
+  def with_prompt_var(%__MODULE__{} = llm, name, value) do
+    query_builder =
+      llm.query_builder
+      |> QB.select("withPromptVar")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", value)
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
   @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type SDKConfig in the llm environment"
   @spec with_sdk_config(t(), Dagger.SDKConfig.t()) :: Dagger.LLM.t()

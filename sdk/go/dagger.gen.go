@@ -6913,6 +6913,17 @@ func (r *LLM) WithPromptFile(file *File) *LLM {
 	}
 }
 
+// Add a string variable to the LLM's environment
+func (r *LLM) WithPromptVar(name string, value string) *LLM {
+	q := r.query.Select("withPromptVar")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // Set a variable of type SDKConfig in the llm environment
 //
 // Deprecated: use set<TargetType> instead

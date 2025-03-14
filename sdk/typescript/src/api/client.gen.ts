@@ -6518,6 +6518,16 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Add a string variable to the LLM's environment
+   * @param name The variable name
+   * @param value The variable value
+   */
+  withPromptVar = (name: string, value: string): LLM => {
+    const ctx = this._ctx.select("withPromptVar", { name, value })
+    return new LLM(ctx)
+  }
+
+  /**
    * Set a variable of type SDKConfig in the llm environment
    * @param value The SDKConfig value to assign to the variable
    * @deprecated use set<TargetType> instead

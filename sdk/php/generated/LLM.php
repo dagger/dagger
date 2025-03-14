@@ -1423,6 +1423,17 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Add a string variable to the LLM's environment
+     */
+    public function withPromptVar(string $name, string $value): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPromptVar');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Set a variable of type SDKConfig in the llm environment
      */
     public function withSDKConfig(SDKConfigId|SDKConfig $value): LLM
