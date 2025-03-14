@@ -9,8 +9,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-type LlmTestQuery struct {
-}
+type LlmTestQuery struct{}
 
 func (LlmTestQuery) Type() *ast.Type {
 	return &ast.Type{
@@ -20,7 +19,7 @@ func (LlmTestQuery) Type() *ast.Type {
 }
 
 type mockSecret struct {
-	Plaintext string `field: "true"`
+	Plaintext string `field:"true"`
 	uri       string
 }
 
@@ -32,7 +31,6 @@ func (mockSecret) Type() *ast.Type {
 }
 
 func TestLlmConfig(t *testing.T) {
-
 	q := LlmTestQuery{}
 
 	srv := dagql.NewServer(q)
@@ -53,12 +51,12 @@ func TestLlmConfig(t *testing.T) {
 
 	dagql.Fields[LlmTestQuery]{
 		dagql.Func("secret", func(ctx context.Context, self LlmTestQuery, args struct {
-			Uri string
+			URI string
 		}) (mockSecret, error) {
-			if _, ok := vars[args.Uri]; !ok {
-				t.Errorf("Uri not found: %s", args.Uri)
+			if _, ok := vars[args.URI]; !ok {
+				t.Errorf("uri not found: %s", args.URI)
 			}
-			return mockSecret{uri: args.Uri}, nil
+			return mockSecret{uri: args.URI}, nil
 		}),
 	}.Install(srv)
 
@@ -84,15 +82,14 @@ func TestLlmConfig(t *testing.T) {
 }
 
 func TestLlmConfigEnvFile(t *testing.T) {
-
 	q := LlmTestQuery{}
 
 	srv := dagql.NewServer(q)
 	dagql.Fields[LlmTestQuery]{
 		dagql.Func("secret", func(ctx context.Context, self LlmTestQuery, args struct {
-			Uri string
+			URI string
 		}) (mockSecret, error) {
-			return mockSecret{uri: args.Uri}, nil
+			return mockSecret{uri: args.URI}, nil
 		}),
 	}.Install(srv)
 
@@ -128,5 +125,4 @@ GEMINI_MODEL=gemini-model`, nil
 	assert.Equal(t, "gemini-api-key", r.GeminiAPIKey)
 	assert.Equal(t, "gemini-base-url", r.GeminiBaseURL)
 	assert.Equal(t, "gemini-model", r.GeminiModel)
-
 }

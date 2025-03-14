@@ -208,6 +208,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 			switch x := part.(type) {
 			case genai.Text:
 				fmt.Fprint(stdio.Stdout, x)
+				content += string(part.(genai.Text))
 			case genai.FunctionCall:
 				toolCalls = append(toolCalls, ToolCall{
 					ID: x.Name,
