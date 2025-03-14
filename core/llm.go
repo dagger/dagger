@@ -665,7 +665,10 @@ func (llm *LLM) Set(ctx context.Context, dag *dagql.Server, key string, value da
 		value = obj
 	}
 	llm = llm.Clone()
-	llm.env.Set(key, value)
+	llm.history = append(llm.history, ModelMessage{
+		Role:    "user",
+		Content: llm.env.Set(key, value),
+	})
 	llm.dirty = true
 	return llm, nil
 }

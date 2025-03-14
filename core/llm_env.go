@@ -62,11 +62,16 @@ func (env *LLMEnv) With(val dagql.Typed) {
 }
 
 // Save a value at the given key
-func (env *LLMEnv) Set(key string, value dagql.Typed) {
+func (env *LLMEnv) Set(key string, value dagql.Typed) string {
+	prev := env.objs[key]
 	env.objs[key] = value
 	if obj, ok := dagql.UnwrapAs[dagql.Object](value); ok {
 		env.objsByHash[obj.ID().Digest()] = value
 	}
+	if prev != nil {
+		return fmt.Sprintf("The variable %q has changed from %s to %s.", key, env.describe(prev), env.describe(value))
+	}
+	return fmt.Sprintf("The variable %q has been set to %s.", key, env.describe(value))
 }
 
 // Get a value saved at the given key
@@ -255,20 +260,19 @@ func (env *LLMEnv) callObjects(ctx context.Context, _ any) (any, error) {
 	return result, nil
 }
 
-func (env *LLMEnv) callLoad(ctx context.Context, args any) (any, error) {
+func (env *LLMEnv) callSelectTools(ctx context.Context, args any) (any, error) {
 	name := args.(map[string]any)["name"].(string)
 	value, err := env.Get(name)
 	if err != nil {
 		return nil, err
 	}
 	env.history = append(env.history, value)
-	return fmt.Sprintf("Switched context to %s.", env.describe(value)), nil
+	return fmt.Sprintf("Switched tools to %s.", env.describe(value)), nil
 }
 
 func (env *LLMEnv) callSave(ctx context.Context, args any) (any, error) {
 	name := args.(map[string]any)["name"].(string)
-	env.Set(name, env.Current())
-	return name, nil
+	return env.Set(name, env.Current()), nil
 }
 
 func (env *LLMEnv) callUndo(ctx context.Context, _ any) (any, error) {
@@ -276,18 +280,6 @@ func (env *LLMEnv) callUndo(ctx context.Context, _ any) (any, error) {
 		env.history = env.history[:len(env.history)-1]
 	}
 	return env.Current(), nil
-}
-
-func (env *LLMEnv) callType(ctx context.Context, args any) (any, error) {
-	name := args.(map[string]any)["name"].(string)
-	obj, err := env.Get(name)
-	if err != nil {
-		return nil, err
-	}
-	if obj == nil {
-		return nil, nil
-	}
-	return obj.Type().Name(), nil
 }
 
 func (env *LLMEnv) callCurrent(ctx context.Context, _ any) (any, error) {
@@ -332,7 +324,7 @@ func (env *LLMEnv) Builtins() []LLMTool {
 				},
 				"required": []string{"name"},
 			},
-			Call: env.callLoad,
+			Call: env.callSelectTools,
 		},
 		{
 			Name:        "_save",
