@@ -81,7 +81,8 @@ Check the [source code](https://github.com/dagger/dagger/blob/llm/core/llm.go#L2
 
 #### Anthropic
 - `ANTHROPIC_API_KEY`: required
-- `ANTHROPIC_MODEL`: if unset, defaults to latest Claude 3.5 Sonnet
+- `ANTHROPIC_MODEL`: if unset, defaults to `"claude-3-5-sonnet-latest"`
+- [more model name strings](https://docs.anthropic.com/en/docs/about-claude/models/all-models)
 
 #### OpenAI
 - `OPENAI_API_KEY`: required
@@ -89,10 +90,12 @@ Check the [source code](https://github.com/dagger/dagger/blob/llm/core/llm.go#L2
 - **optional extras**
   - `OPENAI_BASE_URL`: for alternative OpenAI-compatible endpoints like Azure or local models
   - `OPENAI_AZURE_VERSION`: for use with [Azure's API to OpenAI](https://learn.microsoft.com/en-us/azure/ai-services/openai/overview). See below.
+- [more model name strings](https://platform.openai.com/docs/models) within individual model docs
 
 #### Google Gemini
 - `GEMINI_API_KEY`: required
 - `GEMINI_MODEL`: default `"gemini-2.0-flash"`
+- [more model name strings](https://ai.google.dev/gemini-api/docs/models/gemini)
 
 Dagger will look for these variables in your environment, or in a `.env` file in the current directory (`.env` files in parent directories are not yet supported).
 
