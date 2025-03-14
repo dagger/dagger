@@ -1,0 +1,13 @@
+{
+  "name": "tests",
+  "engineVersion": "v0.16.2",
+  "sdk": {
+    "source": "python"
+  },
+  "dependencies": [
+    {
+      "name": "greeter",
+      "source": ".."
+    }
+  ]
+}
