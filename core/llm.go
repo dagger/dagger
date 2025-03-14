@@ -327,7 +327,7 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 	return router, err
 }
 
-func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int, multi bool) (*LLM, error) {
+func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int) (*LLM, error) {
 	router, err := loadLLMRouter(ctx, query)
 	if err != nil {
 		return nil, err
@@ -348,7 +348,7 @@ func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int, mu
 		Endpoint:    endpoint,
 		maxAPICalls: maxAPICalls,
 		calls:       make(map[string]string),
-		env:         NewLLMEnv(multi),
+		env:         NewLLMEnv(),
 	}, nil
 }
 
@@ -378,7 +378,7 @@ func (llm *LLM) Clone() *LLM {
 	cp.messages = cloneSlice(cp.messages)
 	cp.promptVars = cloneSlice(cp.promptVars)
 	cp.calls = cloneMap(cp.calls)
-	cp.env.objs = cloneMap(cp.env.objs)
+	cp.env.vars = cloneMap(cp.env.vars)
 	return &cp
 }
 
@@ -419,7 +419,7 @@ func (llm *LLM) WithPrompt(
 	prompt string,
 	srv *dagql.Server,
 ) (*LLM, error) {
-	if len(llm.env.objs) > 0 {
+	if len(llm.env.vars) > 0 {
 		prompt = os.Expand(prompt, func(key string) string {
 			val, err := llm.env.Get(key)
 			if err != nil {
@@ -700,8 +700,8 @@ func (llm *LLM) Variables(ctx context.Context, dag *dagql.Server) ([]*LLMVariabl
 	if err != nil {
 		return nil, err
 	}
-	vars := make([]*LLMVariable, 0, len(llm.env.objs))
-	for k, v := range llm.env.objs {
+	vars := make([]*LLMVariable, 0, len(llm.env.vars))
+	for k, v := range llm.env.vars {
 		var hash string
 		if obj, ok := dagql.UnwrapAs[dagql.Object](v); ok {
 			hash = obj.ID().Digest().String()

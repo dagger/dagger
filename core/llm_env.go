@@ -32,18 +32,15 @@ type LLMEnv struct {
 	// History of values. Current selection is last. Remove last N values to rewind last N changes
 	history []dagql.Typed
 	// Saved objects
-	objs map[string]dagql.Typed
+	vars map[string]dagql.Typed
 	// Saved objects by type + hash
 	objsByHash map[digest.Digest]dagql.Typed
-	// Whether to use multiple tools or a single tool
-	multi bool
 }
 
-func NewLLMEnv(multi bool) *LLMEnv {
+func NewLLMEnv() *LLMEnv {
 	return &LLMEnv{
-		objs:       map[string]dagql.Typed{},
+		vars:       map[string]dagql.Typed{},
 		objsByHash: map[digest.Digest]dagql.Typed{},
-		multi:      multi,
 	}
 }
 
@@ -66,8 +63,8 @@ func (env *LLMEnv) With(val dagql.Typed) {
 
 // Save a value at the given key
 func (env *LLMEnv) Set(key string, value dagql.Typed) string {
-	prev := env.objs[key]
-	env.objs[key] = value
+	prev := env.vars[key]
+	env.vars[key] = value
 	if obj, ok := dagql.UnwrapAs[dagql.Object](value); ok {
 		env.objsByHash[obj.ID().Digest()] = value
 	}
@@ -79,7 +76,7 @@ func (env *LLMEnv) Set(key string, value dagql.Typed) string {
 
 // Get a value saved at the given key
 func (env *LLMEnv) Get(key string) (dagql.Typed, error) {
-	if val, exists := env.objs[key]; exists {
+	if val, exists := env.vars[key]; exists {
 		return val, nil
 	}
 	if _, hash, ok := strings.Cut(key, "@"); ok {
@@ -94,7 +91,7 @@ func (env *LLMEnv) Get(key string) (dagql.Typed, error) {
 	for k, v := range env.objsByHash {
 		dbg += fmt.Sprintf("hash %s: %s\n", k, v.Type().Name())
 	}
-	for k, v := range env.objs {
+	for k, v := range env.vars {
 		dbg += fmt.Sprintf("var %s: %s\n", k, v.Type().Name())
 	}
 	return nil, fmt.Errorf("object not found: %s\n\n%s", key, dbg)
@@ -102,16 +99,16 @@ func (env *LLMEnv) Get(key string) (dagql.Typed, error) {
 
 // Unset a saved value
 func (env *LLMEnv) Unset(key string) {
-	delete(env.objs, key)
+	delete(env.vars, key)
 }
 
 func (env *LLMEnv) Tools(srv *dagql.Server) []LLMTool {
 	var tools []LLMTool
-	if env.multi {
+	if len(env.vars) > 0 {
 		tools = env.Builtins()
 	}
 	typedefs := make(map[string]*ast.Definition)
-	for _, val := range env.objs {
+	for _, val := range env.vars {
 		typedef := env.typedef(srv, val)
 		typedefs[typedef.Name] = typedef
 	}
@@ -261,7 +258,7 @@ func (env *LLMEnv) call(ctx context.Context,
 
 func (env *LLMEnv) callObjects(ctx context.Context, _ any) (any, error) {
 	var result string
-	for name, obj := range env.objs {
+	for name, obj := range env.vars {
 		result += "- " + name + " (" + env.describe(obj) + ")\n"
 	}
 	return result, nil
