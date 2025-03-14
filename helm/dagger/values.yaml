@@ -34,6 +34,25 @@ engine:
   ### StatefulSet specific configuration
   #
   statefulSet:
+    # PVC retention policy (applies to all PVCs)
+    # Only available in Kubernetes 1.23+
+    persistentVolumeClaimRetentionPolicy:
+      # Options: Delete, Retain
+      whenDeleted: Retain
+      # Options: Delete, Retain
+      whenScaled: Retain
+
+    # Use PersistentVolumeClaim for data volume
+    persistentVolumeClaim:
+      enabled: false
+      # PVC specifications
+      storageClassName: ""
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+
     # Controls how pods are created during initial scale up,
     # when replacing pods, and when scaling down.
     # Options: OrderedReady, Parallel (default: OrderedReady)
@@ -41,7 +60,10 @@ engine:
 
   ### Configure the port settings for the Dagger Engine
   #
-  # port: 1234        # The container port that the Dagger Engine will listen on
+  # port: 1234        # The container port that the Dagger Engine will listen on.
+  #                   # If you want to connect to the port over tcp you must add a listener with the port in the args.
+  #                   # e.g. args: ["--addr", "tcp://0.0.0.0:1234", "--addr", "unix:///run/buildkit/buildkitd.sock"]
+
   # hostPort: 1234    # Optional: Expose the engine port directly on the host node
 
   ### Customize Dagger Engine start args
@@ -122,41 +144,18 @@ engine:
       # exec:
       #   command: ["/bin/sh", "-c", "sleep 10"]  # Example: graceful shutdown delay
 
-  ### Storage configuration for StatefulSet
+  ### HostPath Volume configuration
   #
-  storage:
-    # Data volume configuration (required)
-    data:
-      # Use hostPath for data volume (default)
-      hostPath:
-        enabled: true
-        # When disabled, PVC will be used if configured below
+  hostPath:
+    # Use hostPath for data volume
+    dataVolume:
+      # When disabled, PVC will be used if configured above
+      enabled: true
 
-      # Use PersistentVolumeClaim for data volume
-      persistentVolumeClaim:
-        enabled: false
-        # PVC specifications
-        storageClassName: ""
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: 10Gi
-
-    # Run volume configuration (optional)
-    run:
-      # Use hostPath for run volume
+    # Use hostPath for run volume
+    runVolume:
       # When disabled, no run volume will be mounted
-      hostPath:
-        enabled: true
-
-    # PVC retention policy (applies to all PVCs)
-    # Only available in Kubernetes 1.23+
-    persistentVolumeClaimRetentionPolicy:
-      # Options: Delete, Retain
-      whenDeleted: Retain
-      # Options: Delete, Retain
-      whenScaled: Retain
+      enabled: true
 
   ### Additional volumes to mount in the Dagger Engine container
   #

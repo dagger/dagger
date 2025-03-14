@@ -15,10 +15,10 @@ spec:
   selector:
     matchLabels:
       name: {{ include "dagger.fullname" . }}-engine
-  {{- if and .Values.engine.storage.data.persistentVolumeClaim.enabled .Values.engine.storage.persistentVolumeClaimRetentionPolicy }}
+  {{- if and .Values.engine.statefulSet.persistentVolumeClaim.enabled .Values.engine.statefulSet.persistentVolumeClaimRetentionPolicy }}
   persistentVolumeClaimRetentionPolicy:
-    whenDeleted: {{ .Values.engine.storage.persistentVolumeClaimRetentionPolicy.whenDeleted }}
-    whenScaled: {{ .Values.engine.storage.persistentVolumeClaimRetentionPolicy.whenScaled }}
+    whenDeleted: {{ .Values.engine.statefulSet.persistentVolumeClaimRetentionPolicy.whenDeleted }}
+    whenScaled: {{ .Values.engine.statefulSet.persistentVolumeClaimRetentionPolicy.whenScaled }}
   {{- end }}
   template:
     metadata:
@@ -125,7 +125,7 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/dagger
-            {{- if .Values.engine.storage.run.hostPath.enabled }}
+            {{- if .Values.engine.hostPath.runVolume.enabled }}
             - name: run
               mountPath: /var/run/buildkit
             {{- end }}
@@ -144,12 +144,12 @@ spec:
             {{- end }}
       terminationGracePeriodSeconds: {{ .Values.engine.terminationGracePeriodSeconds }}
       volumes:
-        {{- if not .Values.engine.storage.data.persistentVolumeClaim.enabled }}
+        {{- if .Values.engine.hostPath.dataVolume.enabled }}
         - name: data
           hostPath:
             path: /var/lib/dagger-{{ include "dagger.fullname" . }}
         {{- end }}
-        {{- if .Values.engine.storage.run.hostPath.enabled }}
+        {{- if .Values.engine.hostPath.runVolume.enabled }}
         - name: run
           hostPath:
             path: /var/run/dagger-{{ include "dagger.fullname" . }}
@@ -171,17 +171,17 @@ spec:
         {{- with .Values.engine.volumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-  {{- if .Values.engine.storage.data.persistentVolumeClaim.enabled }}
+  {{- if .Values.engine.statefulSet.persistentVolumeClaim.enabled }}
   volumeClaimTemplates:
   - metadata:
       name: data
     spec:
-      {{- with .Values.engine.storage.data.persistentVolumeClaim.storageClassName }}
+      {{- with .Values.engine.statefulSet.persistentVolumeClaim.storageClassName }}
       storageClassName: {{ . }}
       {{- end }}
       accessModes:
-        {{- toYaml .Values.engine.storage.data.persistentVolumeClaim.accessModes | nindent 8 }}
+        {{- toYaml .Values.engine.statefulSet.persistentVolumeClaim.accessModes | nindent 8 }}
       resources:
-        {{- toYaml .Values.engine.storage.data.persistentVolumeClaim.resources | nindent 8 }}
+        {{- toYaml .Values.engine.statefulSet.persistentVolumeClaim.resources | nindent 8 }}
   {{- end }}
 {{- end }}
