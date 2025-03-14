@@ -2,7 +2,7 @@ use dagger_sdk::core::introspection::FullType;
 use genco::prelude::rust;
 use genco::quote;
 
-use crate::rust::functions::format_scalar_name;
+use crate::rust::functions::format_name;
 use crate::utility::OptionExt;
 
 pub fn render_scalar(t: &FullType) -> eyre::Result<rust::Tokens> {
@@ -10,7 +10,7 @@ pub fn render_scalar(t: &FullType) -> eyre::Result<rust::Tokens> {
     let serialize = rust::import("serde", "Serialize");
     let into_id = &rust::import("crate::id", "IntoID");
 
-    let name = t.name.pipe(|n| format_scalar_name(n));
+    let name = t.name.pipe(|n| format_name(n));
     let name = name.as_ref();
 
     if let Some(name) = name.filter(|n| n.ends_with("Id")) {

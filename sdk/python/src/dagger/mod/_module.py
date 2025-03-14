@@ -90,7 +90,7 @@ class Module:
                 result = await self._register()
         except FunctionError as e:
             logger.exception("Error while executing function")
-            await dag.current_function_call().return_error(e.as_dagger())
+            await dag.current_function_call().return_error(dag.error(str(e)))
             raise SystemExit(2) from None
 
         try:
@@ -300,7 +300,7 @@ class Module:
         except Exception as e:
             raise ConversionError(e, origin=origin) from e
 
-    async def unstructure(self, obj: Any, unstructure_as: type[T]) -> Awaitable[T]:
+    async def unstructure(self, obj: Any, unstructure_as: Any) -> Awaitable[Any]:
         """Convert a result to primitive values."""
         try:
             return await asyncify(self._converter.unstructure, obj, unstructure_as)

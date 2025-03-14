@@ -28,41 +28,6 @@ defmodule Dagger.Error do
 
     Client.execute(error.client, query_builder)
   end
-
-  @doc "The extensions of the error."
-  @spec values(t()) :: {:ok, [Dagger.ErrorValue.t()]} | {:error, term()}
-  def values(%__MODULE__{} = error) do
-    query_builder =
-      error.query_builder |> QB.select("values") |> QB.select("id")
-
-    with {:ok, items} <- Client.execute(error.client, query_builder) do
-      {:ok,
-       for %{"id" => id} <- items do
-         %Dagger.ErrorValue{
-           query_builder:
-             QB.query()
-             |> QB.select("loadErrorValueFromID")
-             |> QB.put_arg("id", id),
-           client: error.client
-         }
-       end}
-    end
-  end
-
-  @doc "Add a value to the error."
-  @spec with_value(t(), String.t(), Dagger.JSON.t()) :: Dagger.Error.t()
-  def with_value(%__MODULE__{} = error, name, value) do
-    query_builder =
-      error.query_builder
-      |> QB.select("withValue")
-      |> QB.put_arg("name", name)
-      |> QB.put_arg("value", value)
-
-    %Dagger.Error{
-      query_builder: query_builder,
-      client: error.client
-    }
-  end
 end
 
 defimpl Jason.Encoder, for: Dagger.Error do

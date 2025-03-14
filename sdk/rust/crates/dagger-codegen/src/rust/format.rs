@@ -1,6 +1,6 @@
 use crate::functions::FormatTypeFuncs;
 
-use super::functions::{format_name, format_scalar_name};
+use super::functions::format_name;
 
 pub struct FormatTypeFunc;
 
@@ -44,7 +44,7 @@ impl FormatTypeFuncs for FormatTypeFunc {
         _input: bool,
     ) -> String {
         let mut rep = representation.to_string();
-        rep.push_str(&format_scalar_name(ref_name));
+        rep.push_str(&format_name(ref_name));
         rep
     }
 
