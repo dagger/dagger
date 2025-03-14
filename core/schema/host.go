@@ -17,6 +17,7 @@ import (
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/core"
@@ -396,7 +397,12 @@ func (s *hostSchema) tunnel(ctx context.Context, parent *core.Host, args hostTun
 		return nil, errors.New("no ports to forward")
 	}
 
-	return parent.Query.NewTunnelService(ctx, inst, ports), nil
+	return &core.Service{
+		Creator:        trace.SpanContextFromContext(ctx),
+		Query:          parent.Query,
+		TunnelUpstream: &inst,
+		TunnelPorts:    ports,
+	}, nil
 }
 
 type hostServiceArgs struct {
@@ -488,7 +494,11 @@ func (s *hostSchema) internalService(ctx context.Context, parent *core.Host, arg
 		socks = append(socks, sockInst.Self)
 	}
 
-	return parent.Query.NewHostService(ctx, socks), nil
+	return &core.Service{
+		Creator:     trace.SpanContextFromContext(ctx),
+		Query:       parent.Query,
+		HostSockets: socks,
+	}, nil
 }
 
 type hostInternalSocketArgs struct {

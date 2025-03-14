@@ -13,7 +13,6 @@ import (
 	"github.com/99designs/gqlgen/graphql/errcode"
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/iancoleman/strcase"
-	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -23,7 +22,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine/cache"
 )
 
 func init() {
@@ -59,7 +57,7 @@ type Server struct {
 	// another *Server to inherit and share caches.
 	//
 	// TODO: copy-on-write
-	Cache Cache
+	Cache *SessionCache
 }
 
 type InstallHook interface {
@@ -77,13 +75,6 @@ type AroundFunc func(
 	*call.ID,
 ) (context.Context, func(res Typed, cached bool, err error))
 
-// Cache stores results of pure selections against Server.
-type Cache = *cache.CacheWithResults[digest.Digest, Typed]
-
-type CacheResult = cache.Result[digest.Digest, Typed]
-
-type CacheValWithCallbacks = cache.ValueWithCallbacks[Typed]
-
 // TypeDef is a type whose sole practical purpose is to define a GraphQL type,
 // so it explicitly includes the Definitive interface.
 type TypeDef interface {
@@ -92,7 +83,7 @@ type TypeDef interface {
 }
 
 // NewServer returns a new Server with the given root object.
-func NewServer[T Typed](root T, c Cache) *Server {
+func NewServer[T Typed](root T, c *SessionCache) *Server {
 	rootClass := NewClass(ClassOpts[T]{
 		// NB: there's nothing actually stopping this from being a thing, except it
 		// currently confuses the Dagger Go SDK. could be a nifty way to pass
@@ -555,7 +546,7 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (Typed, error) {
 func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Selector) error {
 	// Annotate ctx with the internal flag so we can distinguish self-calls from
 	// user-calls in the UI.
-	ctx = withInternal(ctx)
+	ctx = WithInternal(ctx)
 
 	var res Typed = self
 	var id *call.ID

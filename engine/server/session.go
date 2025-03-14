@@ -47,7 +47,6 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/cache/cachemanager"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
@@ -90,7 +89,7 @@ type daggerSession struct {
 	containers   map[bkgw.Container]struct{}
 	containersMu sync.Mutex
 
-	dagqlCache *cache.CacheWithResults[digest.Digest, dagql.Typed]
+	dagqlCache *dagql.SessionCache
 
 	interactive        bool
 	interactiveCommand []string
@@ -253,7 +252,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.authProvider = auth.NewRegistryAuthProvider()
 	sess.refs = map[buildkit.Reference]struct{}{}
 	sess.containers = map[bkgw.Container]struct{}{}
-	sess.dagqlCache = cache.NewCacheWithResults(srv.baseDagqlCache)
+	sess.dagqlCache = dagql.NewSessionCache(srv.baseDagqlCache)
 	sess.telemetryPubSub = srv.telemetryPubSub
 	sess.interactive = clientMetadata.Interactive
 	sess.interactiveCommand = clientMetadata.InteractiveCommand
@@ -1394,7 +1393,7 @@ func (srv *Server) DefaultDeps(ctx context.Context) (*core.ModDeps, error) {
 }
 
 // The DagQL query cache for the current client's session
-func (srv *Server) Cache(ctx context.Context) (dagql.Cache, error) {
+func (srv *Server) Cache(ctx context.Context) (*dagql.SessionCache, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return nil, err

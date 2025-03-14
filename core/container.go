@@ -30,6 +30,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -1633,7 +1634,11 @@ func (container *Container) AsServiceLegacy(ctx context.Context) (*Service, erro
 			return nil, err
 		}
 	}
-	return container.Query.NewContainerService(ctx, container), nil
+	return &Service{
+		Creator:   trace.SpanContextFromContext(ctx),
+		Query:     container.Query,
+		Container: container,
+	}, nil
 }
 
 func (container *Container) AsService(ctx context.Context, args ContainerAsServiceArgs) (*Service, error) {
@@ -1668,7 +1673,11 @@ func (container *Container) AsService(ctx context.Context, args ContainerAsServi
 		return nil, err
 	}
 
-	return container.Query.NewContainerService(ctx, container), nil
+	return &Service{
+		Creator:   trace.SpanContextFromContext(ctx),
+		Query:     container.Query,
+		Container: container,
+	}, nil
 }
 
 func (container *Container) ownership(ctx context.Context, owner string) (*Ownership, error) {
