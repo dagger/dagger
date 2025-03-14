@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -188,7 +189,15 @@ func (s *directorySchema) withTimestamps(ctx context.Context, parent *core.Direc
 }
 
 func (s *directorySchema) name(ctx context.Context, parent *core.Directory, args struct{}) (dagql.String, error) {
-	return dagql.NewString(path.Base(parent.Dir)), nil
+	name := path.Base(parent.Dir)
+	useSlash, err := core.SupportsDirSlash(ctx, parent.Query)
+	if err != nil {
+		return "", err
+	}
+	if useSlash {
+		name = strings.TrimSuffix(name, "/") + "/"
+	}
+	return dagql.NewString(name), nil
 }
 
 type entriesArgs struct {

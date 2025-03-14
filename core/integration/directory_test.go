@@ -96,7 +96,7 @@ func (DirectorySuite) TestEntries(ctx context.Context, t *testctx.T) {
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"some-file", "some-dir"}, res.Directory.WithNewFile.WithNewFile.Entries)
+	require.ElementsMatch(t, []string{"some-file", "some-dir/"}, res.Directory.WithNewFile.WithNewFile.Entries)
 }
 
 func (DirectorySuite) TestEntriesOfPath(ctx context.Context, t *testctx.T) {
@@ -259,7 +259,7 @@ func (DirectorySuite) TestWithDirectoryIncludeExclude(ctx context.Context, t *te
 			Exclude: []string{"*.rar"},
 		}).Entries(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{"a.txt", "b.txt", "subdir"}, entries)
+		require.Equal(t, []string{"a.txt", "b.txt", "subdir/"}, entries)
 	})
 
 	t.Run("include", func(ctx context.Context, t *testctx.T) {
@@ -316,13 +316,13 @@ func (DirectorySuite) TestWithNewDirectory(ctx context.Context, t *testctx.T) {
 
 	entries, err := dir.Entries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{"a", "b"}, entries)
+	require.Equal(t, []string{"a/", "b/"}, entries)
 
 	entries, err = dir.Entries(ctx, dagger.DirectoryEntriesOpts{
 		Path: "b",
 	})
 	require.NoError(t, err)
-	require.Equal(t, []string{"c"}, entries)
+	require.Equal(t, []string{"c/"}, entries)
 
 	t.Run("does not permit creating directory outside of root", func(ctx context.Context, t *testctx.T) {
 		_, err := dir.Directory("b").WithNewDirectory("../c").ID(ctx)
@@ -511,7 +511,7 @@ func (DirectorySuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
 		Entries(ctx)
 
 	require.NoError(t, err)
-	require.Equal(t, []string{"some-dir", "some-file"}, entries)
+	require.Equal(t, []string{"some-dir/", "some-file"}, entries)
 
 	dir := c.Directory().
 		WithNewFile("foo.txt", "foo").
@@ -527,13 +527,13 @@ func (DirectorySuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
 
 	entries, err = dir.Entries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{"a", "b", "c", "foo.txt"}, entries)
+	require.Equal(t, []string{"a/", "b/", "c/", "foo.txt"}, entries)
 
 	entries, err = dir.
 		WithoutDirectory("a").
 		Entries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{"b", "c", "foo.txt"}, entries)
+	require.Equal(t, []string{"b/", "c/", "foo.txt"}, entries)
 
 	entries, err = dir.
 		WithoutFile("b/*.txt").
@@ -557,7 +557,7 @@ func (DirectorySuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
 
 	entries, err = dirDir.WithoutDirectory("a*").Entries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{"b1", "foo.txt"}, entries)
+	require.Equal(t, []string{"b1/", "foo.txt"}, entries)
 
 	// Test WithoutFile
 	filesDir := c.Directory().
@@ -567,7 +567,7 @@ func (DirectorySuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
 
 	entries, err = filesDir.Entries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{"some-dir"}, entries)
+	require.Equal(t, []string{"some-dir/"}, entries)
 
 	// Test WithoutFiles
 	filesDir = c.Directory().
@@ -578,7 +578,7 @@ func (DirectorySuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
 
 	entries, err = filesDir.Entries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{"some-dir"}, entries)
+	require.Equal(t, []string{"some-dir/"}, entries)
 
 	// verify WithoutFile works when dir has be selected to a subdir
 	subdirWithout := c.Directory().
@@ -1095,9 +1095,9 @@ func (DirectorySuite) TestGlob(ctx context.Context, t *testctx.T) {
 				require.NoError(t, err)
 				require.ElementsMatch(t, entries, []string{
 					"func.go", "main.go", "test.md", "foo.txt", "README.txt",
-					"subdir", "subdir/foo.txt", "subdir/README.md",
-					"subdir2", "subdir2/subsubdir", "subdir2/baz.txt", "subdir2/TESTING.md",
-					"subdir/subsubdir", "subdir/subsubdir/package.json",
+					"subdir/", "subdir/foo.txt", "subdir/README.md",
+					"subdir2/", "subdir2/subsubdir/", "subdir2/baz.txt", "subdir2/TESTING.md",
+					"subdir/subsubdir/", "subdir/subsubdir/package.json",
 					"subdir/subsubdir/index.mts", "subdir/subsubdir/JS.md",
 				})
 			})
@@ -1134,7 +1134,7 @@ func (DirectorySuite) TestGlob(ctx context.Context, t *testctx.T) {
 
 		require.NoError(t, err)
 		require.ElementsMatch(t, entries, []string{
-			"foo/bar.md",
+			"foo/bar.md/",
 			"foo/bar.md/w.md",
 			"foo/baz.go/y.md",
 		})
@@ -1241,13 +1241,13 @@ func (DirectorySuite) TestDirectoryName(ctx context.Context, t *testctx.T) {
 		t.Run("nested directory", func(ctx context.Context, t *testctx.T) {
 			nestedName, err := dir.Directory("nested").Name(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "nested", nestedName)
+			require.Equal(t, "nested/", nestedName)
 		})
 
 		t.Run("very nested directory", func(ctx context.Context, t *testctx.T) {
 			veryNestedName, err := dir.Directory("very/nested").Name(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "nested", veryNestedName)
+			require.Equal(t, "nested/", veryNestedName)
 		})
 	})
 
@@ -1263,13 +1263,13 @@ func (DirectorySuite) TestDirectoryName(ctx context.Context, t *testctx.T) {
 		t.Run("nested hidden directory", func(ctx context.Context, t *testctx.T) {
 			nestedName, err := dir.Directory(".dagger").Name(ctx)
 			require.NoError(t, err)
-			require.Equal(t, ".dagger", nestedName)
+			require.Equal(t, ".dagger/", nestedName)
 		})
 
 		t.Run("nested directory", func(ctx context.Context, t *testctx.T) {
 			nestedName, err := dir.Directory("sdk").Directory("go").Name(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "go", nestedName)
+			require.Equal(t, "go/", nestedName)
 		})
 	})
 }
