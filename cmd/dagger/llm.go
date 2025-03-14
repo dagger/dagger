@@ -53,27 +53,34 @@ type LLMSession struct {
 	dag        *dagger.Client
 	llm        *dagger.LLM
 	model      string
+	skipEnv    map[string]bool
 	syncedVars map[string]digest.Digest
 	shell      *shellCallHandler
 }
 
 func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, shellHandler *shellCallHandler) (*LLMSession, error) {
-	initialVars := make(map[string]digest.Digest)
-	// HACK: pretend we synced the initial env, we don't want to just toss the
-	// entire os.Environ into the LLM
-	for k, v := range shellHandler.runner.Env.Each {
-		initialVars[k] = dagql.HashFrom(v.String())
-	}
-	for k, v := range shellHandler.runner.Vars {
-		initialVars[k] = dagql.HashFrom(v.String())
-	}
-
 	s := &LLMSession{
 		dag:        dag,
 		model:      llmModel,
-		syncedVars: initialVars,
-		shell:      shellHandler,
+		syncedVars: map[string]digest.Digest{},
+		skipEnv: map[string]bool{
+			// these vars are set by the sh package
+			"GID":    true,
+			"UID":    true,
+			"EUID":   true,
+			"OPTIND": true,
+			"IFS":    true,
+			// the rest should be filtered out already by skipping the first batch
+			// (sourced from os.Environ)
+		},
+		shell: shellHandler,
 	}
+
+	// don't sync the initial env vars
+	for k := range shellHandler.runner.Env.Each {
+		s.skipEnv[k] = true
+	}
+
 	s.reset()
 
 	// figure out what the model resolved to
@@ -99,12 +106,11 @@ func (s *LLMSession) Fork() *LLMSession {
 func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession, error) {
 	s = s.Fork()
 
-	synced, err := s.syncVarsToLLM(ctx)
-	if err != nil {
+	if err := s.syncVarsToLLM(ctx); err != nil {
 		return s, err
 	}
 
-	prompted, err := synced.llm.WithPrompt(input).Sync(ctx)
+	prompted, err := s.llm.WithPrompt(input).Sync(ctx)
 	if err != nil {
 		return s, err
 	}
@@ -129,20 +135,7 @@ func init() {
 	}
 }
 
-var skipEnv = map[string]bool{
-	// these vars are set by the sh package
-	"GID":    true,
-	"UID":    true,
-	"EUID":   true,
-	"OPTIND": true,
-	"IFS":    true,
-	// the rest should be filtered out already by skipping the first batch
-	// (sourced from os.Environ)
-}
-
-func (s *LLMSession) syncVarsToLLM(ctx context.Context) (*LLMSession, error) {
-	s = s.Fork()
-
+func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 	// TODO: overlay? bad scaling characteristics. maybe overkill anyway
 	oldVars := s.syncedVars
 	s.syncedVars = make(map[string]digest.Digest)
@@ -154,10 +147,11 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) (*LLMSession, error) {
 
 	var changed bool
 	for name, value := range s.shell.runner.Vars {
-		if s.syncedVars[name] == dagql.HashFrom(value.String()) {
+		if s.skipEnv[name] {
 			continue
 		}
-		if skipEnv[name] {
+
+		if s.syncedVars[name] == dagql.HashFrom(value.String()) {
 			continue
 		}
 
@@ -168,22 +162,22 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) (*LLMSession, error) {
 		if key := GetStateKey(value.String()); key != "" {
 			st, err := s.shell.state.Load(key)
 			if err != nil {
-				return s, err
+				return err
 			}
 			q := st.QueryBuilder(s.dag)
 			modDef := s.shell.GetDef(st)
 			typeDef, err := st.GetTypeDef(modDef)
 			if err != nil {
-				return s, err
+				return err
 			}
 			if typeDef.AsFunctionProvider() != nil {
 				var id string
 				if err := q.Select("id").Bind(&id).Execute(ctx); err != nil {
-					return s, err
+					return err
 				}
 				digest, err := idDigest(id)
 				if err != nil {
-					return s, err
+					return err
 				}
 				typeName := typeDef.Name()
 				syncedLlmQ = syncedLlmQ.
@@ -201,14 +195,14 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) (*LLMSession, error) {
 		}
 	}
 	if !changed {
-		return s, nil
+		return nil
 	}
 	var llmId dagger.LLMID
 	if err := syncedLlmQ.Select("id").Bind(&llmId).Execute(ctx); err != nil {
-		return s, err
+		return err
 	}
 	s.llm = s.dag.LoadLLMFromID(llmId)
-	return s, nil
+	return nil
 }
 
 func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {

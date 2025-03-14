@@ -375,21 +375,7 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	}
 
 	// Run shell command - optionally sync vars back to LLM after running
-	err := h.run(ctx, strings.NewReader(line), "")
-	if err != nil {
-		return err
-	}
-
-	// If LLM is active, sync variables from shell to LLM
-	if h.llmSession != nil {
-		newLLM, err := h.llmSession.syncVarsToLLM(ctx)
-		if err != nil {
-			return err
-		}
-		h.llmSession = newLLM
-	}
-
-	return nil
+	return h.run(ctx, strings.NewReader(line), "")
 }
 
 func (h *shellCallHandler) Prompt(out idtui.TermOutput, fg termenv.Color) string {
