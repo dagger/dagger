@@ -219,7 +219,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 		},
 		&ShellCommand{
 			Use:         ".help [command | function | module | type]\n<function> | .help [function]",
-			Description: `Show documentation for a command, function, module, or type.`,
+			Description: `Show documentation for a command, function, module, or type`,
 			Args:        MaximumArgs(1),
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, st *ShellState) error {
 				var err error

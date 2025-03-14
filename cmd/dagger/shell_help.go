@@ -84,13 +84,6 @@ func (h *shellCallHandler) MainHelp() string {
 	var doc ShellDoc
 	types := []string{"<command>"}
 
-	doc.Add(
-		"Builtin Commands",
-		nameShortWrapped(h.Builtins(), func(c *ShellCommand) (string, string) {
-			return c.Name(), c.Short()
-		}),
-	)
-
 	if fns := h.getDefaultFunctions(); len(fns) > 0 {
 		doc.Add(
 			"Available Module Functions",
@@ -101,19 +94,12 @@ func (h *shellCallHandler) MainHelp() string {
 		types = append(types, "<function>")
 	}
 
-	if deps := h.getCurrentDependencies(); len(deps) > 0 {
-		doc.Add(
-			"Available Module Dependencies",
-			nameShortWrapped(deps, func(dep *moduleDef) (string, string) {
-				return dep.Name, dep.Short()
-			}),
-		)
-		types = append(types, "<dependency>")
-	}
-
-	doc.Add("Standard Commands", nameShortWrapped(h.Stdlib(), func(c *ShellCommand) (string, string) {
-		return c.Name(), c.Short()
-	}))
+	doc.Add(
+		"Builtin Commands",
+		nameShortWrapped(h.Builtins(), func(c *ShellCommand) (string, string) {
+			return c.Name(), c.Short()
+		}),
+	)
 
 	doc.Add("", fmt.Sprintf(`Use ".help %s" for more information.`, strings.Join(types, " | ")))
 
@@ -133,14 +119,6 @@ func (h *shellCallHandler) getDefaultFunctions() []*modFunction {
 		return nil
 	}
 	return fns
-}
-
-func (h *shellCallHandler) getCurrentDependencies() []*moduleDef {
-	def, _ := h.GetModuleDef(nil)
-	if def == nil {
-		return nil
-	}
-	return def.Dependencies
 }
 
 func (h *shellCallHandler) StdlibHelp() string {
