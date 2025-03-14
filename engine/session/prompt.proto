@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+option go_package = "session";
+
+service Prompt {
+  rpc Prompt(PromptRequest) returns (PromptResponse);
+}
+
+// right now this is hardcoded to allow llm prompts, but could easily be extended to other prompt use cases
+message PromptRequest {
+    string prompt = 1;
+    string moduleRepoURL = 2;
+}
+
+message PromptResponse {
+    string response = 1;
+}

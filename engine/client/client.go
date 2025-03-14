@@ -87,7 +87,8 @@ type Params struct {
 
 	WithTerminal session.WithTerminalFunc
 
-	ServeModule bool
+	ServeModule       bool
+	AllowedLLMModules []string
 }
 
 type Client struct {
@@ -352,6 +353,8 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		session.NewTerminalAttachable(ctx, c.Params.WithTerminal),
 		// Git credentials
 		session.NewGitCredentialAttachable(ctx),
+		// Prompts
+		session.NewPromptAttachable(ctx),
 	}
 	// filesync
 	if !c.DisableHostRW {
@@ -1119,6 +1122,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		Interactive:               c.Interactive,
 		InteractiveCommand:        c.InteractiveCommand,
 		SSHAuthSocketPath:         sshAuthSock,
+		AllowedLLMModules:         c.AllowedLLMModules,
 	}
 }
 

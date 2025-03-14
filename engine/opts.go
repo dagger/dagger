@@ -82,6 +82,9 @@ type ClientMetadata struct {
 
 	// SSH auth socket path
 	SSHAuthSocketPath string `json:"ssh_auth_socket_path"`
+
+	// Modules permitted to access LLM APIs or "all" to bypass restrictions for any loaded module.
+	AllowedLLMModules []string `json:"allowed_llm_modules"`
 }
 
 type clientMetadataCtxKey struct{}

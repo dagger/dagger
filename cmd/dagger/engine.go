@@ -74,6 +74,7 @@ func withEngine(
 		}
 
 		params.DisableHostRW = disableHostRW
+		params.AllowedLLMModules = allowedLLMModules
 
 		params.EngineCallback = Frontend.ConnectedToEngine
 		params.CloudURLCallback = Frontend.SetCloudURL
