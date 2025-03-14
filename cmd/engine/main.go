@@ -51,7 +51,7 @@ import (
 )
 
 func init() {
-	apicaps.ExportedProduct = "buildkit"
+	apicaps.ExportedProduct = "dagger-engine"
 	stack.SetVersionInfo(version.Version, version.Revision)
 
 	//nolint:staticcheck // SA1019 deprecated
@@ -239,8 +239,7 @@ func main() { //nolint:gocyclo
 		fmt.Println(c.App.Name, version.Package, c.App.Version, version.Revision)
 	}
 	app := cli.NewApp()
-	app.Name = "buildkitd"
-	app.Usage = "build daemon"
+	app.Name = "dagger-engine"
 	app.Version = version.Version
 
 	addFlags(app)
@@ -367,7 +366,7 @@ func main() { //nolint:gocyclo
 		}
 
 		bklog.G(ctx).Debug("creating engine lockfile")
-		lockPath := filepath.Join(root, "buildkitd.lock")
+		lockPath := filepath.Join(root, "dagger-engine.lock")
 		lock := flock.New(lockPath)
 		locked, err := lock.TryLock()
 		if err != nil {
@@ -468,7 +467,7 @@ func main() { //nolint:gocyclo
 	profiler.Attach(app)
 
 	if err := app.Run(os.Args); err != nil {
-		fmt.Fprintf(os.Stderr, "buildkitd: %+v\n", err)
+		fmt.Fprintf(os.Stderr, "dagger-engine: %+v\n", err)
 		os.Exit(1)
 	}
 }

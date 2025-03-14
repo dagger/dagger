@@ -27,7 +27,7 @@ Create a file called `workflow.yaml` with the following content:
 A few important points to note:
 
 - The workflow uses hardwired artifacts to clone the Git repository and to install the Dagger CLI.
-- `unix:///var/run/dagger/buildkitd.sock` is mounted and specified with the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable.
+- `unix:///var/run/dagger/engine.sock` is mounted and specified with the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable.
 - The Dagger CLI is downloaded and installed. Confirm the version and architecture are accurate for your cluster and project.
 - Setting the `DAGGER_CLOUD_TOKEN` environment variable is only necessary if integrating with Dagger Cloud.
 

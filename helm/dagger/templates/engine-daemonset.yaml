@@ -97,7 +97,7 @@ spec:
             - name: varlibdagger
               mountPath: /var/lib/dagger
             - name: varrundagger
-              mountPath: /var/run/buildkit
+              mountPath: /var/run/dagger
             {{- if .Values.engine.config }}
             - name: dagger-engine-config
               mountPath: /etc/dagger/engine.toml

@@ -127,7 +127,7 @@ func engineServiceWithVersion(version string, withs ...func(*dagger.Container) *
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithExec([]string{
 			"--addr", "tcp://0.0.0.0:1234",
-			"--addr", "unix:///var/run/buildkit/buildkitd.sock",
+			"--addr", "unix:///var/run/dagger/engine.sock",
 			// // avoid network conflicts with other tests
 			"--network-name", deviceName,
 			"--network-cidr", cidr,
