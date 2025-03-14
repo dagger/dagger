@@ -117,8 +117,8 @@ type shellCallHandler struct {
 	mu sync.RWMutex
 
 	// interpreter mode (shell or prompt)
-	mode      interpreterMode // persistent mode (flag or slash command)
-	savedMode interpreterMode // user coming back from history
+	mode      interpreterMode
+	savedMode interpreterMode // for coming back from history
 
 	// cancel interrupts the entire shell session
 	cancel func()
@@ -426,15 +426,15 @@ func (h *shellCallHandler) AutoComplete(entireInput [][]rune, line int, col int)
 	if h.mode == modePrompt {
 		word, wstart, wend := computil.FindWord(entireInput, line, col)
 		if strings.HasPrefix(word, "$") {
-			word = strings.TrimPrefix(word, "$")
+			prefix := strings.TrimPrefix(word, "$")
 			vars := h.runner.Vars
 			var completions []string
 			for k := range vars {
-				if strings.HasPrefix(k, word) {
-					completions = append(completions, k)
+				if strings.HasPrefix(k, prefix) {
+					completions = append(completions, "$"+k)
 				}
 			}
-			return "", editline.SimpleWordsCompletion(completions, word, wstart, wend, col)
+			return "", editline.SimpleWordsCompletion(completions, "variable", col, wstart, wend)
 		}
 		return "", nil
 	}
