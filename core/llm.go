@@ -873,6 +873,9 @@ func (s LLMHook) ExtendLLMType(targetType dagql.ObjectType) error {
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			llm := self.(dagql.Instance[*LLM]).Self
 			val := llm.env.Current()
+			if val == nil {
+				return nil, fmt.Errorf("no value set for %s", typename)
+			}
 			if val.Type().Name() != typename {
 				return nil, fmt.Errorf("expected variable of type %s, got %s", typename, val.Type().Name())
 			}
