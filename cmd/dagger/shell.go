@@ -50,10 +50,10 @@ var shellCmd = &cobra.Command{
 		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
 			handler := &shellCallHandler{
-				dag:            dag,
-				debug:          debug,
-				llmModel:       llmModel,
-				persistentMode: modeShell,
+				dag:      dag,
+				debug:    debug,
+				llmModel: llmModel,
+				mode:     modeShell,
 			}
 			return handler.RunAll(ctx, args)
 		})
@@ -117,9 +117,8 @@ type shellCallHandler struct {
 	mu sync.RWMutex
 
 	// interpreter mode (shell or prompt)
-	persistentMode interpreterMode // persistent mode (flag or slash command)
-	oneshotMode    interpreterMode // user prefixed input with ! or >
-	savedMode      interpreterMode // user coming back from history
+	mode      interpreterMode // persistent mode (flag or slash command)
+	savedMode interpreterMode // user coming back from history
 
 	// cancel interrupts the entire shell session
 	cancel func()
@@ -318,13 +317,6 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 
 var _ idtui.ShellHandler = (*shellCallHandler)(nil)
 
-func (s *shellCallHandler) mode() interpreterMode {
-	if s.oneshotMode != modeUnset {
-		return s.oneshotMode
-	}
-	return s.persistentMode
-}
-
 func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error) {
 	// If in exit command
 	if line == "exit" || line == "/exit" {
@@ -337,15 +329,12 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		return nil
 	}
 
-	// reset any oneshot mode after the command is interpreted
-	defer func() { h.oneshotMode = modeUnset }()
-
 	// Create a new span for this command
-	ctx, span := Tracer().Start(ctx, line, trace.WithAttributes(attribute.String("mode", h.mode().String())))
+	ctx, span := Tracer().Start(ctx, line, trace.WithAttributes(attribute.String("mode", h.mode.String())))
 	defer telemetry.End(span, func() error { return rerr })
 
 	// Handle based on mode
-	if h.mode() == modePrompt {
+	if h.mode == modePrompt {
 		llm, err := h.llm(ctx)
 		if err != nil {
 			return err
@@ -401,7 +390,7 @@ func (h *shellCallHandler) Prompt(out idtui.TermOutput, fg termenv.Color) string
 	sb.WriteString(termenv.CSI + termenv.ResetSeq + "m") // clear background
 
 	// Use LLM prompt if LLM session is active and in prompt mode
-	switch h.mode() {
+	switch h.mode {
 	case modeShell:
 		if def, _ := h.GetModuleDef(nil); def != nil {
 			sb.WriteString(out.String(def.Name).Bold().Foreground(termenv.ANSICyan).String())
@@ -434,7 +423,7 @@ func (*shellCallHandler) Print(ctx context.Context, args ...any) error {
 }
 
 func (h *shellCallHandler) AutoComplete(entireInput [][]rune, line int, col int) (string, editline.Completions) {
-	if h.mode() == modePrompt {
+	if h.mode == modePrompt {
 		word, wstart, wend := computil.FindWord(entireInput, line, col)
 		if strings.HasPrefix(word, "$") {
 			word = strings.TrimPrefix(word, "$")
@@ -454,7 +443,7 @@ func (h *shellCallHandler) AutoComplete(entireInput [][]rune, line int, col int)
 }
 
 func (h *shellCallHandler) IsComplete(entireInput [][]rune, line int, col int) bool {
-	if h.mode() == modePrompt {
+	if h.mode == modePrompt {
 		return true // LLM prompt mode always considers input complete
 	}
 
@@ -487,20 +476,17 @@ func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
 func (h *shellCallHandler) ReactToInput(msg tea.KeyMsg) bool {
 	switch msg.String() {
 	case ">":
-		h.oneshotMode = modePrompt
+		h.mode = modePrompt
 		return true
 	case "!":
-		h.oneshotMode = modeShell
-		return true
-	case "backspace":
-		h.oneshotMode = modeUnset
+		h.mode = modeShell
 		return true
 	}
 	return false
 }
 
 func (h *shellCallHandler) EncodeHistory(entry string) string {
-	switch h.mode() {
+	switch h.mode {
 	case modePrompt:
 		return ">" + entry
 	case modeShell:
@@ -514,27 +500,27 @@ func (h *shellCallHandler) DecodeHistory(entry string) string {
 		switch entry[0] {
 		case '*':
 			// Legacy format in history
-			h.oneshotMode = modePrompt
+			h.mode = modePrompt
 			return entry[1:]
 		case '>':
-			h.oneshotMode = modePrompt
+			h.mode = modePrompt
 			return entry[1:]
 		case '!':
-			h.oneshotMode = modeShell
+			h.mode = modeShell
 			return entry[1:]
 		default:
-			h.oneshotMode = modeUnset
+			h.mode = modeUnset
 		}
 	}
 	return entry
 }
 
 func (h *shellCallHandler) SaveBeforeHistory() {
-	h.savedMode = h.mode()
+	h.savedMode = h.mode
 }
 
 func (h *shellCallHandler) RestoreAfterHistory() {
-	h.oneshotMode = h.savedMode
+	h.mode = h.savedMode
 	h.savedMode = modeUnset
 }
 
@@ -543,12 +529,12 @@ func (h *shellCallHandler) KeyBindings() []key.Binding {
 		key.NewBinding(
 			key.WithKeys("!"),
 			key.WithHelp("!", "run shell"),
-			idtui.KeyEnabled(h.mode() == modePrompt),
+			idtui.KeyEnabled(h.mode == modePrompt),
 		),
 		key.NewBinding(
 			key.WithKeys(">"),
 			key.WithHelp(">", "run prompt"),
-			idtui.KeyEnabled(h.mode() == modeShell),
+			idtui.KeyEnabled(h.mode == modeShell),
 		),
 	}
 }

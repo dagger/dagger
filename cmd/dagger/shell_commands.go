@@ -210,7 +210,7 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 			Args:        NoArgs,
 			State:       NoState,
 			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
-				h.persistentMode = modeShell
+				h.mode = modeShell
 				return nil
 			},
 		},
@@ -226,7 +226,7 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				if err != nil {
 					return err
 				}
-				h.persistentMode = modePrompt
+				h.mode = modePrompt
 				return nil
 			},
 		},
