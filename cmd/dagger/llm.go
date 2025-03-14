@@ -37,6 +37,17 @@ func (m interpreterMode) String() string {
 	}
 }
 
+func (m interpreterMode) ContentType() string {
+	switch m {
+	case modeShell:
+		return "text/x-shellscript"
+	case modePrompt:
+		return "text/markdown"
+	default:
+		return "text/plain"
+	}
+}
+
 type LLMSession struct {
 	undo       *LLMSession
 	dag        *dagger.Client

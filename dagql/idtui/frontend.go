@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alecthomas/chroma/v2/quick"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dustin/go-humanize"
@@ -312,11 +313,18 @@ func (r *renderer) renderSpan(
 		r.renderStatus(out, span, focused)
 	}
 
-	label := out.String(name)
-	if span != nil && len(span.Links) > 0 {
-		label = label.Italic()
+	switch span.ContentType {
+	case "text/x-shellscript":
+		quick.Highlight(out, name, "bash", "terminal16", "monokai")
+	case "text/markdown":
+		quick.Highlight(out, name, "markdown", "terminal16", "monokai")
+	default:
+		label := out.String(name)
+		if span != nil && len(span.Links) > 0 {
+			label = label.Italic()
+		}
+		fmt.Fprint(out, label)
 	}
-	fmt.Fprint(out, label)
 
 	if span != nil {
 		// TODO: when a span has child spans that have progress, do 2-d progress

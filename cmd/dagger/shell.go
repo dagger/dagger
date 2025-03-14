@@ -318,20 +318,28 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 var _ idtui.ShellHandler = (*shellCallHandler)(nil)
 
 func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error) {
+	// Quick sanitization
+	line = strings.TrimSpace(line)
+
 	// If in exit command
 	if line == "exit" || line == "/exit" {
 		h.cancel()
 		return nil
 	}
 
+	// Create a new span for this command
+	ctx, span := Tracer().Start(ctx, line,
+		trace.WithAttributes(
+			attribute.String(telemetry.ContentTypeAttr, h.mode.ContentType()),
+			attribute.Bool(telemetry.CanceledAttr, line == ""),
+		),
+	)
+	defer telemetry.End(span, func() error { return rerr })
+
 	// Empty input
-	if strings.TrimSpace(line) == "" {
+	if line == "" {
 		return nil
 	}
-
-	// Create a new span for this command
-	ctx, span := Tracer().Start(ctx, line, trace.WithAttributes(attribute.String("mode", h.mode.String())))
-	defer telemetry.End(span, func() error { return rerr })
 
 	// Handle based on mode
 	if h.mode == modePrompt {
