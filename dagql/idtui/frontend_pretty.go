@@ -1049,6 +1049,8 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 					fe.shellInterrupt(errors.New("interrupted"))
 				}
 				fe.editline.Reset()
+			case "ctrl+l":
+				return fe.clearScrollback()
 			case "esc":
 				fe.editlineFocused = false
 				fe.editline.Blur()
@@ -1276,6 +1278,18 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 	msg := strings.TrimSuffix(offscreen.String(), "\n")
 	dbg.Println("flushing offscreen lines", strconv.Quote(msg))
 	return fe, tea.Printf("%s", msg)
+}
+
+func (fe *frontendPretty) clearScrollback() (*frontendPretty, tea.Cmd) {
+	scrollback := strings.TrimSuffix(fe.scrollback.String(), "\n")
+	fe.scrollback.Reset()
+	return fe, tea.Sequence(
+		tea.Printf("%s", scrollback),
+		func() tea.Msg {
+			time.Sleep(100 * time.Millisecond)
+			return tea.ClearScreen()
+		},
+	)
 }
 
 func (fe *frontendPretty) updatePrompt() {
