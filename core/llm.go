@@ -15,6 +15,7 @@ import (
 	_ "github.com/dagger/dagger/core/bbi/empty"
 	_ "github.com/dagger/dagger/core/bbi/flat"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/joho/godotenv"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
@@ -34,8 +35,7 @@ type LLM struct {
 	// If true: has un-synced state
 	dirty bool
 	// History of messages
-	// FIXME: rename to 'messages'
-	history []ModelMessage
+	messages []ModelMessage
 	// History of tool calls and their result
 	calls      map[string]string
 	promptVars []string
@@ -43,11 +43,7 @@ type LLM struct {
 	// LLM state
 	// Can hold typed variables for all the types available in the schema
 	// This state is what gets extended by our graphql middleware
-	// FIXME: Agent.ref moves here
-	// FIXME: Agent.self moves here
-	// FIXME: Agent.selfType moves here
-	// FIXME: Agent.Self moves here
-	// state map[string]dagql.Typed
+	// FIXME: support multiple variables in state
 	state dagql.Typed
 }
 
@@ -221,19 +217,20 @@ func (r *LLMRouter) Route(model string) (*LLMEndpoint, error) {
 		model = r.DefaultModel()
 	}
 	var endpoint *LLMEndpoint
-	if r.isAnthropicModel(model) {
+	switch {
+	case r.isAnthropicModel(model):
 		endpoint = r.routeAnthropicModel()
-	} else if r.isOpenAIModel(model) {
+	case r.isOpenAIModel(model):
 		endpoint = r.routeOpenAIModel()
-	} else if r.isGoogleModel(model) {
+	case r.isGoogleModel(model):
 		googleEndpoint, err := r.routeGoogleModel()
 		if err != nil {
 			return nil, err
 		}
 		endpoint = googleEndpoint
-	} else if r.isMistralModel(model) {
+	case r.isMistralModel(model):
 		return nil, fmt.Errorf("mistral models are not yet supported")
-	} else {
+	default:
 		endpoint = r.routeOtherModel()
 	}
 	endpoint.Model = model
@@ -338,19 +335,11 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 }
 
 func NewLLM(ctx context.Context, query *Query, srv *dagql.Server, model string, maxAPICalls int) (*LLM, error) {
-	var router *LLMRouter
-	{
-		// Don't leak this context, it's specific to querying the parent client for llm config secrets
-		// FIXME: clean up this function
-		ctx, mainSrv, err := query.MainServer(ctx)
-		if err != nil {
-			return nil, err
-		}
-		router, err = NewLLMRouter(ctx, mainSrv)
-		if err != nil {
-			return nil, err
-		}
+	router, err := loadLLMRouter(ctx, query)
+	if err != nil {
+		return nil, err
 	}
+
 	if model == "" {
 		model = router.DefaultModel()
 	}
@@ -366,9 +355,21 @@ func NewLLM(ctx context.Context, query *Query, srv *dagql.Server, model string, 
 		Endpoint:    endpoint,
 		maxAPICalls: maxAPICalls,
 		calls:       make(map[string]string),
-		// FIXME: support multiple variables in state
-		// state:  make(map[string]dagql.Typed),
 	}, nil
+}
+
+// loadLLMRouter creates an LLM router that routes to the root client
+func loadLLMRouter(ctx context.Context, query *Query) (*LLMRouter, error) {
+	parentClient, err := query.NonModuleParentClientMetadata(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ctx = engine.ContextWithClientMetadata(ctx, parentClient)
+	mainSrv, err := query.Server.Server(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return NewLLMRouter(ctx, mainSrv)
 }
 
 func (*LLM) Type() *ast.Type {
@@ -380,11 +381,9 @@ func (*LLM) Type() *ast.Type {
 
 func (llm *LLM) Clone() *LLM {
 	cp := *llm
-	cp.history = cloneSlice(cp.history)
+	cp.messages = cloneSlice(cp.messages)
 	cp.promptVars = cloneSlice(cp.promptVars)
 	cp.calls = cloneMap(cp.calls)
-	// FIXME: support multiple variables in state
-	// cp.state = cloneMap(cp.state)
 	return &cp
 }
 
@@ -459,7 +458,7 @@ func (llm *LLM) WithPrompt(
 		defer stdio.Close()
 		fmt.Fprint(stdio.Stdout, prompt)
 	}()
-	llm.history = append(llm.history, ModelMessage{
+	llm.messages = append(llm.messages, ModelMessage{
 		Role:    "user",
 		Content: prompt,
 	})
@@ -485,7 +484,7 @@ func (llm *LLM) WithPromptVar(name, value string) *LLM {
 // Append a system prompt message to the history
 func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 	llm = llm.Clone()
-	llm.history = append(llm.history, ModelMessage{
+	llm.messages = append(llm.messages, ModelMessage{
 		Role:    "system",
 		Content: prompt,
 	})
@@ -499,12 +498,8 @@ func (llm *LLM) LastReply(ctx context.Context, dag *dagql.Server) (string, error
 	if err != nil {
 		return "", err
 	}
-	messages, err := llm.messages()
-	if err != nil {
-		return "", err
-	}
 	var reply string = "(no reply)"
-	for _, msg := range messages {
+	for _, msg := range llm.messages {
 		if msg.Role != "assistant" {
 			continue
 		}
@@ -552,13 +547,13 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 		llm.apiCalls++
 
 		tools := session.Tools()
-		res, err := llm.Endpoint.Client.SendQuery(ctx, llm.history, tools)
+		res, err := llm.Endpoint.Client.SendQuery(ctx, llm.messages, tools)
 		if err != nil {
 			return nil, err
 		}
 
 		// Add the model reply to the history
-		llm.history = append(llm.history, ModelMessage{
+		llm.messages = append(llm.messages, ModelMessage{
 			Role:       "assistant",
 			Content:    res.Content,
 			ToolCalls:  res.ToolCalls,
@@ -635,7 +630,7 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 					}()
 					func() {
 						llm.calls[toolCall.ID] = result
-						llm.history = append(llm.history, ModelMessage{
+						llm.messages = append(llm.messages, ModelMessage{
 							Role:        "user", // Anthropic only allows tool calls in user messages
 							Content:     result,
 							ToolCallID:  toolCall.ID,
@@ -656,12 +651,8 @@ func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error
 	if err != nil {
 		return nil, err
 	}
-	messages, err := llm.messages()
-	if err != nil {
-		return nil, err
-	}
 	var history []string
-	for _, msg := range messages {
+	for _, msg := range llm.messages {
 		switch msg.Role {
 		case "user":
 			txt, err := msg.Text()
@@ -686,19 +677,6 @@ func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error
 		}
 	}
 	return history, nil
-}
-
-func (llm *LLM) messages() ([]ModelMessage, error) {
-	// FIXME: ugly hack
-	data, err := json.Marshal(llm.history)
-	if err != nil {
-		return nil, err
-	}
-	var messages []ModelMessage
-	if err := json.Unmarshal(data, &messages); err != nil {
-		return nil, err
-	}
-	return messages, nil
 }
 
 func (llm *LLM) WithState(ctx context.Context, objID dagql.IDType, srv *dagql.Server) (*LLM, error) {

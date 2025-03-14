@@ -9,8 +9,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-type LlmTestQuery struct {
-}
+type LlmTestQuery struct{}
 
 func (LlmTestQuery) Type() *ast.Type {
 	return &ast.Type{
