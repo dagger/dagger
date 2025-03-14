@@ -90,7 +90,7 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 			for _, org := range user.Orgs {
 				fmt.Fprintf(errW, "- %s\n", org.Name)
 			}
-			fmt.Fprintf(errW, "\nYou are a member of multiple organizations. Please select one with `dagger login <org>`:\n\n")
+			fmt.Fprintf(errW, "\n\nYou are a member of multiple organizations. Please select one with `dagger login <org>`.\n")
 			return Fail
 		}
 		for _, org := range user.Orgs {
