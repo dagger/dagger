@@ -19,6 +19,7 @@ pub fn format_struct_name(s: &str) -> String {
     match s.as_ref() {
         "ref" => "r#ref".to_string(),
         "enum" => "r#enum".to_string(),
+        "loop" => "r#loop".to_string(),
         _ => s,
     }
 }
@@ -310,7 +311,7 @@ fn format_function_args(
                         });
                     }
 
-                    if t.ends_with("Id") {
+                    if s.input_value.type_.is_id() {
                         let into_id = rust::import("crate::id", "IntoID");
                         Some(quote! {
                             $(n): impl $(into_id)<$(t)>,
@@ -392,7 +393,7 @@ fn format_required_function_args(
                     let t = funcs.format_input_type(&s.input_value.type_);
                     let n = format_struct_name(&s.input_value.name);
 
-                    if t.ends_with("Id") {
+                    if s.input_value.type_.is_id() {
                         let into_id = rust::import("crate::id", "IntoID");
                         Some(quote! {
                             $(n): impl $(into_id)<$(t)>,
