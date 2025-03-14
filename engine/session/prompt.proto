@@ -6,10 +6,12 @@ service Prompt {
   rpc Prompt(PromptRequest) returns (PromptResponse);
 }
 
+// right now this is hardcoded to allow llm prompts, but could easily be extended to other prompt use cases
 message PromptRequest {
-    string Prompt = 1;
+    string prompt = 1;
+    string moduleRepoURL = 2;
 }
 
 message PromptResponse {
-    string Input = 1;
+    string response = 1;
 }

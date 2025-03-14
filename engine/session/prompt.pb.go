@@ -29,7 +29,8 @@ var _ = math.Inf
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 type PromptRequest struct {
-	Prompt string `protobuf:"bytes,1,opt,name=Prompt,proto3" json:"Prompt,omitempty"`
+	Prompt        string `protobuf:"bytes,1,opt,name=prompt,proto3" json:"prompt,omitempty"`
+	ModuleRepoURL string `protobuf:"bytes,2,opt,name=moduleRepoURL,proto3" json:"moduleRepoURL,omitempty"`
 }
 
 func (m *PromptRequest) Reset()      { *m = PromptRequest{} }
@@ -71,8 +72,15 @@ func (m *PromptRequest) GetPrompt() string {
 	return ""
 }
 
+func (m *PromptRequest) GetModuleRepoURL() string {
+	if m != nil {
+		return m.ModuleRepoURL
+	}
+	return ""
+}
+
 type PromptResponse struct {
-	Input string `protobuf:"bytes,1,opt,name=Input,proto3" json:"Input,omitempty"`
+	Response string `protobuf:"bytes,1,opt,name=response,proto3" json:"response,omitempty"`
 }
 
 func (m *PromptResponse) Reset()      { *m = PromptResponse{} }
@@ -107,9 +115,9 @@ func (m *PromptResponse) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_PromptResponse proto.InternalMessageInfo
 
-func (m *PromptResponse) GetInput() string {
+func (m *PromptResponse) GetResponse() string {
 	if m != nil {
-		return m.Input
+		return m.Response
 	}
 	return ""
 }
@@ -122,19 +130,20 @@ func init() {
 func init() { proto.RegisterFile("prompt.proto", fileDescriptor_2532b5caf780ac64) }
 
 var fileDescriptor_2532b5caf780ac64 = []byte{
-	// 179 bytes of a gzipped FileDescriptorProto
+	// 203 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0x29, 0x28, 0xca, 0xcf,
-	0x2d, 0x28, 0xd1, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x57, 0x52, 0xe7, 0xe2, 0x0d, 0x00, 0xf3, 0x83,
-	0x52, 0x0b, 0x4b, 0x53, 0x8b, 0x4b, 0x84, 0xc4, 0xb8, 0xd8, 0x20, 0x02, 0x12, 0x8c, 0x0a, 0x8c,
-	0x1a, 0x9c, 0x41, 0x50, 0x9e, 0x92, 0x1a, 0x17, 0x1f, 0x4c, 0x61, 0x71, 0x41, 0x7e, 0x5e, 0x71,
-	0xaa, 0x90, 0x08, 0x17, 0xab, 0x67, 0x5e, 0x41, 0x29, 0x4c, 0x21, 0x84, 0x63, 0x64, 0x0c, 0xd3,
-	0x2f, 0xa4, 0x09, 0x67, 0xf1, 0xe9, 0xa1, 0xd8, 0x21, 0xc5, 0xaf, 0x87, 0x6a, 0x94, 0x93, 0xed,
-	0x85, 0x87, 0x72, 0x0c, 0x37, 0x1e, 0xca, 0x31, 0x7c, 0x78, 0x28, 0xc7, 0xd8, 0xf0, 0x48, 0x8e,
-	0x71, 0xc5, 0x23, 0x39, 0xc6, 0x13, 0x8f, 0xe4, 0x18, 0x2f, 0x3c, 0x92, 0x63, 0x7c, 0xf0, 0x48,
-	0x8e, 0xf1, 0xc5, 0x23, 0x39, 0x86, 0x0f, 0x8f, 0xe4, 0x18, 0x27, 0x3c, 0x96, 0x63, 0xb8, 0xf0,
-	0x58, 0x8e, 0xe1, 0xc6, 0x63, 0x39, 0x86, 0x28, 0xf6, 0xe2, 0xd4, 0xe2, 0xe2, 0xcc, 0xfc, 0xbc,
-	0x24, 0x36, 0xb0, 0x5f, 0x8c, 0x01, 0x01, 0x00, 0x00, 0xff, 0xff, 0xfd, 0x94, 0x57, 0xfa, 0xdb,
-	0x00, 0x00, 0x00,
+	0x2d, 0x28, 0xd1, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x57, 0xf2, 0xe5, 0xe2, 0x0d, 0x00, 0xf3, 0x83,
+	0x52, 0x0b, 0x4b, 0x53, 0x8b, 0x4b, 0x84, 0xc4, 0xb8, 0xd8, 0x20, 0x0a, 0x24, 0x18, 0x15, 0x18,
+	0x35, 0x38, 0x83, 0xa0, 0x3c, 0x21, 0x15, 0x2e, 0xde, 0xdc, 0xfc, 0x94, 0xd2, 0x9c, 0xd4, 0xa0,
+	0xd4, 0x82, 0xfc, 0xd0, 0x20, 0x1f, 0x09, 0x26, 0xb0, 0x34, 0xaa, 0xa0, 0x92, 0x0e, 0x17, 0x1f,
+	0xcc, 0xb8, 0xe2, 0x82, 0xfc, 0xbc, 0xe2, 0x54, 0x21, 0x29, 0x2e, 0x8e, 0x22, 0x28, 0x1b, 0x6a,
+	0x22, 0x9c, 0x6f, 0x64, 0xcc, 0xc5, 0x06, 0x51, 0x2d, 0xa4, 0x09, 0x67, 0xf1, 0xe9, 0xa1, 0xb8,
+	0x47, 0x8a, 0x5f, 0x0f, 0xd5, 0x40, 0x27, 0xdb, 0x0b, 0x0f, 0xe5, 0x18, 0x6e, 0x3c, 0x94, 0x63,
+	0xf8, 0xf0, 0x50, 0x8e, 0xb1, 0xe1, 0x91, 0x1c, 0xe3, 0x8a, 0x47, 0x72, 0x8c, 0x27, 0x1e, 0xc9,
+	0x31, 0x5e, 0x78, 0x24, 0xc7, 0xf8, 0xe0, 0x91, 0x1c, 0xe3, 0x8b, 0x47, 0x72, 0x0c, 0x1f, 0x1e,
+	0xc9, 0x31, 0x4e, 0x78, 0x2c, 0xc7, 0x70, 0xe1, 0xb1, 0x1c, 0xc3, 0x8d, 0xc7, 0x72, 0x0c, 0x51,
+	0xec, 0xc5, 0xa9, 0xc5, 0xc5, 0x99, 0xf9, 0x79, 0x49, 0x6c, 0x60, 0x7f, 0x1b, 0x03, 0x02, 0x00,
+	0x00, 0xff, 0xff, 0xbe, 0x1a, 0x6e, 0x9c, 0x07, 0x01, 0x00, 0x00,
 }
 
 func (this *PromptRequest) Equal(that interface{}) bool {
@@ -159,6 +168,9 @@ func (this *PromptRequest) Equal(that interface{}) bool {
 	if this.Prompt != that1.Prompt {
 		return false
 	}
+	if this.ModuleRepoURL != that1.ModuleRepoURL {
+		return false
+	}
 	return true
 }
 func (this *PromptResponse) Equal(that interface{}) bool {
@@ -180,7 +192,7 @@ func (this *PromptResponse) Equal(that interface{}) bool {
 	} else if this == nil {
 		return false
 	}
-	if this.Input != that1.Input {
+	if this.Response != that1.Response {
 		return false
 	}
 	return true
@@ -189,9 +201,10 @@ func (this *PromptRequest) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 5)
+	s := make([]string, 0, 6)
 	s = append(s, "&session.PromptRequest{")
 	s = append(s, "Prompt: "+fmt.Sprintf("%#v", this.Prompt)+",\n")
+	s = append(s, "ModuleRepoURL: "+fmt.Sprintf("%#v", this.ModuleRepoURL)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -201,7 +214,7 @@ func (this *PromptResponse) GoString() string {
 	}
 	s := make([]string, 0, 5)
 	s = append(s, "&session.PromptResponse{")
-	s = append(s, "Input: "+fmt.Sprintf("%#v", this.Input)+",\n")
+	s = append(s, "Response: "+fmt.Sprintf("%#v", this.Response)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -314,6 +327,13 @@ func (m *PromptRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.ModuleRepoURL) > 0 {
+		i -= len(m.ModuleRepoURL)
+		copy(dAtA[i:], m.ModuleRepoURL)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.ModuleRepoURL)))
+		i--
+		dAtA[i] = 0x12
+	}
 	if len(m.Prompt) > 0 {
 		i -= len(m.Prompt)
 		copy(dAtA[i:], m.Prompt)
@@ -344,10 +364,10 @@ func (m *PromptResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if len(m.Input) > 0 {
-		i -= len(m.Input)
-		copy(dAtA[i:], m.Input)
-		i = encodeVarintPrompt(dAtA, i, uint64(len(m.Input)))
+	if len(m.Response) > 0 {
+		i -= len(m.Response)
+		copy(dAtA[i:], m.Response)
+		i = encodeVarintPrompt(dAtA, i, uint64(len(m.Response)))
 		i--
 		dAtA[i] = 0xa
 	}
@@ -375,6 +395,10 @@ func (m *PromptRequest) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovPrompt(uint64(l))
 	}
+	l = len(m.ModuleRepoURL)
+	if l > 0 {
+		n += 1 + l + sovPrompt(uint64(l))
+	}
 	return n
 }
 
@@ -384,7 +408,7 @@ func (m *PromptResponse) Size() (n int) {
 	}
 	var l int
 	_ = l
-	l = len(m.Input)
+	l = len(m.Response)
 	if l > 0 {
 		n += 1 + l + sovPrompt(uint64(l))
 	}
@@ -403,6 +427,7 @@ func (this *PromptRequest) String() string {
 	}
 	s := strings.Join([]string{`&PromptRequest{`,
 		`Prompt:` + fmt.Sprintf("%v", this.Prompt) + `,`,
+		`ModuleRepoURL:` + fmt.Sprintf("%v", this.ModuleRepoURL) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -412,7 +437,7 @@ func (this *PromptResponse) String() string {
 		return "nil"
 	}
 	s := strings.Join([]string{`&PromptResponse{`,
-		`Input:` + fmt.Sprintf("%v", this.Input) + `,`,
+		`Response:` + fmt.Sprintf("%v", this.Response) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -486,6 +511,38 @@ func (m *PromptRequest) Unmarshal(dAtA []byte) error {
 			}
 			m.Prompt = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ModuleRepoURL", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowPrompt
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthPrompt
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ModuleRepoURL = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipPrompt(dAtA[iNdEx:])
@@ -538,7 +595,7 @@ func (m *PromptResponse) Unmarshal(dAtA []byte) error {
 		switch fieldNum {
 		case 1:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Input", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Response", wireType)
 			}
 			var stringLen uint64
 			for shift := uint(0); ; shift += 7 {
@@ -566,7 +623,7 @@ func (m *PromptResponse) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Input = string(dAtA[iNdEx:postIndex])
+			m.Response = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
