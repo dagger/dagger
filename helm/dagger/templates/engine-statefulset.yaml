@@ -8,8 +8,9 @@ metadata:
   labels:
     {{- include "dagger.labels" . | nindent 4 }}
 spec:
-  # DO NOT RUN MORE THAN 1 REPLICA.
+  # DO NOT RUN MORE THAN 1 REPLICA IF USING HOSTPATH.
   # Only one (1) Engine is able to hold the lock, other replicas will not be able to start.
+  # If using persistent volumes, this is not an issue. Use more than 1 replica if you know that you need it.
   replicas: 1
   podManagementPolicy: {{ .Values.engine.statefulSet.podManagementPolicy }}
   selector:
@@ -67,9 +68,17 @@ spec:
         - name: dagger-engine
           image: {{ if .Values.engine.image.ref }}{{ .Values.engine.image.ref }}{{ else }}registry.dagger.io/engine:v{{ .Chart.Version }}{{ end }}
           imagePullPolicy: {{ .Values.engine.image.pullPolicy }}
-          {{- if .Values.engine.args }}
+          {{- if or .Values.engine.port .Values.engine.args }}
           args:
+            {{- if .Values.engine.port }}
+            - "--addr"
+            - "tcp://0.0.0.0:{{ .Values.engine.port }}"
+            - "--addr"
+            - "unix:///run/buildkit/buildkitd.sock"
+            {{- end }}
+            {{- if .Values.engine.args }}
             {{- toYaml .Values.engine.args | nindent 12 }}
+            {{- end }}
           {{- end }}
           {{- if (or .Values.engine.env .Values.magicache.enabled) }}
           env:

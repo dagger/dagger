@@ -58,9 +58,17 @@ spec:
         - name: dagger-engine
           image: {{ if .Values.engine.image.ref }}{{ .Values.engine.image.ref }}{{ else }}registry.dagger.io/engine:v{{ .Chart.Version }}{{ end }}
           imagePullPolicy: {{ .Values.engine.image.pullPolicy }}
-          {{- if .Values.engine.args }}
+          {{- if or .Values.engine.port .Values.engine.args }}
           args:
+            {{- if .Values.engine.port }}
+            - "--addr"
+            - "tcp://0.0.0.0:{{ .Values.engine.port }}"
+            - "--addr"
+            - "unix:///run/buildkit/buildkitd.sock"
+            {{- end }}
+            {{- if .Values.engine.args }}
             {{- toYaml .Values.engine.args | nindent 12 }}
+            {{- end }}
           {{- end }}
           {{- if (or .Values.engine.env .Values.magicache.enabled) }}
           env:
@@ -114,11 +122,11 @@ spec:
             {{- end }}
           {{- end }}
           volumeMounts:
-            {{- if .Values.engine.storage.data.hostPath.enabled }}
+            {{- if .Values.engine.hostPath.dataVolume.enabled }}
             - name: varlibdagger
               mountPath: /var/lib/dagger
             {{- end }}
-            {{- if .Values.engine.storage.run.hostPath.enabled }}
+            {{- if .Values.engine.hostPath.runVolume.enabled }}
             - name: varrundagger
               mountPath: /var/run/buildkit
             {{- end }}
@@ -137,12 +145,12 @@ spec:
             {{- end }}
       terminationGracePeriodSeconds: {{ .Values.engine.terminationGracePeriodSeconds }}
       volumes:
-        {{- if .Values.engine.storage.data.hostPath.enabled }}
+        {{- if .Values.engine.hostPath.dataVolume.enabled }}
         - name: varlibdagger
           hostPath:
             path: /var/lib/dagger
         {{- end }}
-        {{- if .Values.engine.storage.run.hostPath.enabled }}
+        {{- if .Values.engine.hostPath.runVolume.enabled }}
         - name: varrundagger
           hostPath:
             path: /var/run/dagger

@@ -60,10 +60,7 @@ engine:
 
   ### Configure the port settings for the Dagger Engine
   #
-  # port: 1234        # The container port that the Dagger Engine will listen on.
-  #                   # If you want to connect to the port over tcp you must add a listener with the port in the args.
-  #                   # e.g. args: ["--addr", "tcp://0.0.0.0:1234", "--addr", "unix:///run/buildkit/buildkitd.sock"]
-
+  # port: 1234 # The container port that the Dagger Engine will listen on.
   # hostPort: 1234    # Optional: Expose the engine port directly on the host node
 
   ### Customize Dagger Engine start args
