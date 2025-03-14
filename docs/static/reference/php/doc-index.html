@@ -117,7 +117,9 @@
 <abbr title="Dagger\Container">Container</abbr>::asService</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Turn the container into a Service.</p></dd><dt><a href="Dagger/Container.html#method_asTarball">
 <abbr title="Dagger\Container">Container</abbr>::asTarball</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
-                    <dd><p>Returns a File representing the container serialized to a tarball.</p></dd><dt><a href="Dagger/Directory.html#method_asModule">
+                    <dd><p>Returns a File representing the container serialized to a tarball.</p></dd><dt><a href="Dagger/Directory.html#method_asGit">
+<abbr title="Dagger\Directory">Directory</abbr>::asGit</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
+                    <dd><p>Converts this directory into a git repository</p></dd><dt><a href="Dagger/Directory.html#method_asModule">
 <abbr title="Dagger\Directory">Directory</abbr>::asModule</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
                     <dd><p>Load the directory as a Dagger module source</p></dd><dt><a href="Dagger/Directory.html#method_asModuleSource">
 <abbr title="Dagger\Directory">Directory</abbr>::asModuleSource</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
@@ -194,13 +196,19 @@
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::cloneRef</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The ref to clone the root of the git repo from. Only valid for git sources.</p></dd><dt><a href="Dagger/ModuleSource.html#method_commit">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::commit</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>The resolved commit of the git repo this source points to. Only valid for git sources.</p></dd><dt><a href="Dagger/ModuleSource.html#method_configExists">
+                    <dd><p>The resolved commit of the git repo this source points to. Only valid for git sources.</p></dd><dt><a href="Dagger/ModuleSource.html#method_configClients">
+<abbr title="Dagger\ModuleSource">ModuleSource</abbr>::configClients</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
+                    <dd><p>The clients generated for the module.</p></dd><dt><a href="Dagger/ModuleSource.html#method_configExists">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::configExists</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>Whether an existing dagger.json for the module was found.</p></dd><dt><a href="Dagger/ModuleSource.html#method_contextDirectory">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::contextDirectory</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The full directory loaded for the module source, including the source code as a subdirectory.</p></dd><dt><a href="Dagger/ObjectTypeDef.html#method_constructor">
 <abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr>::constructor</a>() &mdash; <em>Method in class <a href="Dagger/ObjectTypeDef.html"><abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr></a></em></dt>
-                    <dd><p>The function used to construct new instances of this object, if any</p></dd><dt><a href="Dagger/SourceMap.html#method_column">
+                    <dd><p>The function used to construct new instances of this object, if any</p></dd><dt><a href="Dagger/PhpSdk.html#method_codegen">
+<abbr title="Dagger\PhpSdk">PhpSdk</abbr>::codegen</a>() &mdash; <em>Method in class <a href="Dagger/PhpSdk.html"><abbr title="Dagger\PhpSdk">PhpSdk</abbr></a></em></dt>
+                    <dd></dd><dt><a href="Dagger/PhpSdk.html#method_codegenBase">
+<abbr title="Dagger\PhpSdk">PhpSdk</abbr>::codegenBase</a>() &mdash; <em>Method in class <a href="Dagger/PhpSdk.html"><abbr title="Dagger\PhpSdk">PhpSdk</abbr></a></em></dt>
+                    <dd></dd><dt><a href="Dagger/SourceMap.html#method_column">
 <abbr title="Dagger\SourceMap">SourceMap</abbr>::column</a>() &mdash; <em>Method in class <a href="Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a></em></dt>
                     <dd><p>The column number within the line.</p></dd>        </dl><h2 id="letterD">D</h2>
         <dl id="indexD"><dt><a href="Dagger/Attribute/DaggerFunction.html"><abbr title="Dagger\Attribute\DaggerFunction">DaggerFunction</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Attribute.html">Dagger\Attribute</a></em></dt>
@@ -256,7 +264,11 @@
 <abbr title="Dagger\Module">Module</abbr>::dependencies</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
                     <dd><p>The dependencies of the module.</p></dd><dt><a href="Dagger/Module.html#method_description">
 <abbr title="Dagger\Module">Module</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
-                    <dd><p>The doc string of the module, if any</p></dd><dt><a href="Dagger/ModuleSource.html#method_dependencies">
+                    <dd><p>The doc string of the module, if any</p></dd><dt><a href="Dagger/ModuleConfigClient.html#method_dev">
+<abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr>::dev</a>() &mdash; <em>Method in class <a href="Dagger/ModuleConfigClient.html"><abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a></em></dt>
+                    <dd><p>If true, generate the client in developer mode.</p></dd><dt><a href="Dagger/ModuleConfigClient.html#method_directory">
+<abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr>::directory</a>() &mdash; <em>Method in class <a href="Dagger/ModuleConfigClient.html"><abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a></em></dt>
+                    <dd><p>The directory the client is generated in.</p></dd><dt><a href="Dagger/ModuleSource.html#method_dependencies">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::dependencies</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The dependencies of the module source.</p></dd><dt><a href="Dagger/ModuleSource.html#method_digest">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::digest</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -385,7 +397,9 @@
                     <dd><p>A git repository.</p></dd><dt><a href="Dagger/GitRepositoryId.html"><abbr title="Dagger\GitRepositoryId">GitRepositoryId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>GitRepositoryID</code> scalar type represents an identifier for an object of type GitRepository.</p></dd><dt><a href="Dagger/Module.html#method_generatedContextDirectory">
 <abbr title="Dagger\Module">Module</abbr>::generatedContextDirectory</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
-                    <dd><p>The generated files and directories made on top of the module source's context directory.</p></dd><dt><a href="Dagger/ModuleSource.html#method_generatedContextDirectory">
+                    <dd><p>The generated files and directories made on top of the module source's context directory.</p></dd><dt><a href="Dagger/ModuleConfigClient.html#method_generator">
+<abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr>::generator</a>() &mdash; <em>Method in class <a href="Dagger/ModuleConfigClient.html"><abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a></em></dt>
+                    <dd><p>The generator to use</p></dd><dt><a href="Dagger/ModuleSource.html#method_generatedContextDirectory">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::generatedContextDirectory</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The generated files and directories made on top of the module source's context directory.</p></dd>        </dl><h2 id="letterH">H</h2>
         <dl id="indexH"><dt><a href="Dagger/Client.html#method_host">
@@ -477,11 +491,15 @@
 <abbr title="Dagger\Module">Module</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
                     <dd><p>A unique identifier for this Module.</p></dd><dt><a href="Dagger/Module.html#method_interfaces">
 <abbr title="Dagger\Module">Module</abbr>::interfaces</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
-                    <dd><p>Interfaces served by this module.</p></dd><dt><a href="Dagger/ModuleSource.html#method_id">
+                    <dd><p>Interfaces served by this module.</p></dd><dt><a href="Dagger/ModuleConfigClient.html#method_id">
+<abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/ModuleConfigClient.html"><abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this ModuleConfigClient.</p></dd><dt><a href="Dagger/ModuleSource.html#method_id">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>A unique identifier for this ModuleSource.</p></dd><dt><a href="Dagger/ObjectTypeDef.html#method_id">
 <abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/ObjectTypeDef.html"><abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr></a></em></dt>
-                    <dd><p>A unique identifier for this ObjectTypeDef.</p></dd><dt><a href="Dagger/Port.html#method_id">
+                    <dd><p>A unique identifier for this ObjectTypeDef.</p></dd><dt><a href="Dagger/PhpSdk.html#method_id">
+<abbr title="Dagger\PhpSdk">PhpSdk</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/PhpSdk.html"><abbr title="Dagger\PhpSdk">PhpSdk</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this PhpSdk.</p></dd><dt><a href="Dagger/Port.html#method_id">
 <abbr title="Dagger\Port">Port</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Port.html"><abbr title="Dagger\Port">Port</abbr></a></em></dt>
                     <dd><p>A unique identifier for this Port.</p></dd><dt><a href="Dagger/SDKConfig.html#method_id">
 <abbr title="Dagger\SDKConfig">SDKConfig</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/SDKConfig.html"><abbr title="Dagger\SDKConfig">SDKConfig</abbr></a></em></dt>
@@ -562,13 +580,17 @@
 <abbr title="Dagger\Client">Client</abbr>::loadLabelFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a Label from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadListTypeDefFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadListTypeDefFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Load a ListTypeDef from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadModuleFromID">
+                    <dd><p>Load a ListTypeDef from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadModuleConfigClientFromID">
+<abbr title="Dagger\Client">Client</abbr>::loadModuleConfigClientFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>Load a ModuleConfigClient from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadModuleFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadModuleFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a Module from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadModuleSourceFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadModuleSourceFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a ModuleSource from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadObjectTypeDefFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadObjectTypeDefFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Load a ObjectTypeDef from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadPortFromID">
+                    <dd><p>Load a ObjectTypeDef from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadPhpSdkFromID">
+<abbr title="Dagger\Client">Client</abbr>::loadPhpSdkFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>Load a PhpSdk from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadPortFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadPortFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a Port from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadSDKConfigFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadSDKConfigFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -620,14 +642,18 @@
                     <dd><p>The most recent time the cache entry was used, in Unix nanoseconds.</p></dd><dt><a href="Dagger/Error.html#method_message">
 <abbr title="Dagger\Error">Error</abbr>::message</a>() &mdash; <em>Method in class <a href="Dagger/Error.html"><abbr title="Dagger\Error">Error</abbr></a></em></dt>
                     <dd><p>A description of the error.</p></dd><dt><a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>A Dagger module.</p></dd><dt><a href="Dagger/ModuleId.html"><abbr title="Dagger\ModuleId">ModuleId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A Dagger module.</p></dd><dt><a href="Dagger/ModuleConfigClient.html"><abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>The client generated for the module.</p></dd><dt><a href="Dagger/ModuleConfigClientId.html"><abbr title="Dagger\ModuleConfigClientId">ModuleConfigClientId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>The <code>ModuleConfigClientID</code> scalar type represents an identifier for an object of type ModuleConfigClient.</p></dd><dt><a href="Dagger/ModuleId.html"><abbr title="Dagger\ModuleId">ModuleId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>ModuleID</code> scalar type represents an identifier for an object of type Module.</p></dd><dt><a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.</p></dd><dt><a href="Dagger/ModuleSource.html#method_moduleName">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::moduleName</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The name of the module, including any setting via the withName API.</p></dd><dt><a href="Dagger/ModuleSource.html#method_moduleOriginalName">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::moduleOriginalName</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).</p></dd><dt><a href="Dagger/ModuleSourceId.html"><abbr title="Dagger\ModuleSourceId">ModuleSourceId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>The <code>ModuleSourceID</code> scalar type represents an identifier for an object of type ModuleSource.</p></dd><dt><a href="Dagger/SourceMap.html#method_module">
+                    <dd><p>The <code>ModuleSourceID</code> scalar type represents an identifier for an object of type ModuleSource.</p></dd><dt><a href="Dagger/PhpSdk.html#method_moduleRuntime">
+<abbr title="Dagger\PhpSdk">PhpSdk</abbr>::moduleRuntime</a>() &mdash; <em>Method in class <a href="Dagger/PhpSdk.html"><abbr title="Dagger\PhpSdk">PhpSdk</abbr></a></em></dt>
+                    <dd></dd><dt><a href="Dagger/SourceMap.html#method_module">
 <abbr title="Dagger\SourceMap">SourceMap</abbr>::module</a>() &mdash; <em>Method in class <a href="Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a></em></dt>
                     <dd><p>The module dependency this was declared in.</p></dd>        </dl><h2 id="letterN">N</h2>
         <dl id="indexN"><dt><a href="Dagger/Connection.html#method_newEnvSession">
@@ -636,7 +662,9 @@
 <abbr title="Dagger\Connection">Connection</abbr>::newProcessSession</a>() &mdash; <em>Method in class <a href="Dagger/Connection.html"><abbr title="Dagger\Connection">Connection</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/CurrentModule.html#method_name">
 <abbr title="Dagger\CurrentModule">CurrentModule</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/CurrentModule.html"><abbr title="Dagger\CurrentModule">CurrentModule</abbr></a></em></dt>
-                    <dd><p>The name of the module being executed in</p></dd><dt><a href="Dagger/EnumTypeDef.html#method_name">
+                    <dd><p>The name of the module being executed in</p></dd><dt><a href="Dagger/Directory.html#method_name">
+<abbr title="Dagger\Directory">Directory</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></em></dt>
+                    <dd><p>Returns the name of the directory.</p></dd><dt><a href="Dagger/EnumTypeDef.html#method_name">
 <abbr title="Dagger\EnumTypeDef">EnumTypeDef</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/EnumTypeDef.html"><abbr title="Dagger\EnumTypeDef">EnumTypeDef</abbr></a></em></dt>
                     <dd><p>The name of the enum.</p></dd><dt><a href="Dagger/EnumValueTypeDef.html#method_name">
 <abbr title="Dagger\EnumValueTypeDef">EnumValueTypeDef</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/EnumValueTypeDef.html"><abbr title="Dagger\EnumValueTypeDef">EnumValueTypeDef</abbr></a></em></dt>
@@ -673,12 +701,14 @@
 <abbr title="Dagger\Module">Module</abbr>::objects</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
                     <dd><p>Objects served by this module.</p></dd><dt><a href="Dagger/ModuleSource.html#method_originalSubpath">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::originalSubpath</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>The path to the directory containing the module's source code, relative to the context directory.</p></dd><dt><a href="Dagger/ObjectTypeDef.html"><abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>The original subpath used when instantiating this module source, relative to the context directory.</p></dd><dt><a href="Dagger/ObjectTypeDef.html"><abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A definition of a custom object defined in a Module.</p></dd><dt><a href="Dagger/ObjectTypeDefId.html"><abbr title="Dagger\ObjectTypeDefId">ObjectTypeDefId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>ObjectTypeDefID</code> scalar type represents an identifier for an object of type ObjectTypeDef.</p></dd><dt><a href="Dagger/TypeDef.html#method_optional">
 <abbr title="Dagger\TypeDef">TypeDef</abbr>::optional</a>() &mdash; <em>Method in class <a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></em></dt>
                     <dd><p>Whether this type can be set to null. Defaults to false.</p></dd>        </dl><h2 id="letterP">P</h2>
-        <dl id="indexP"><dt><a href="Dagger/Container.html#method_platform">
+        <dl id="indexP"><dt><a href="Dagger/Client.html#method_phpSdk">
+<abbr title="Dagger\Client">Client</abbr>::phpSdk</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd></dd><dt><a href="Dagger/Container.html#method_platform">
 <abbr title="Dagger\Container">Container</abbr>::platform</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>The platform this container executes and publishes as.</p></dd><dt><a href="Dagger/Container.html#method_publish">
 <abbr title="Dagger\Container">Container</abbr>::publish</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
@@ -690,7 +720,9 @@
 <abbr title="Dagger\FunctionCall">FunctionCall</abbr>::parentName</a>() &mdash; <em>Method in class <a href="Dagger/FunctionCall.html"><abbr title="Dagger\FunctionCall">FunctionCall</abbr></a></em></dt>
                     <dd><p>The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module.</p></dd><dt><a href="Dagger/ModuleSource.html#method_pin">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::pin</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>The pinned version of this module source.</p></dd><dt><a href="Dagger/PipelineLabel.html"><abbr title="Dagger\PipelineLabel">PipelineLabel</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>The pinned version of this module source.</p></dd><dt><a href="Dagger/PhpSdk.html"><abbr title="Dagger\PhpSdk">PhpSdk</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd></dd><dt><a href="Dagger/PhpSdkId.html"><abbr title="Dagger\PhpSdkId">PhpSdkId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>The <code>PhpSdkID</code> scalar type represents an identifier for an object of type PhpSdk.</p></dd><dt><a href="Dagger/PipelineLabel.html"><abbr title="Dagger\PipelineLabel">PipelineLabel</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>Key value object that represents a pipeline label.</p></dd><dt><a href="Dagger/Platform.html"><abbr title="Dagger\Platform">Platform</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The platform config OS and architecture in a Container.</p></dd><dt><a href="Dagger/Port.html"><abbr title="Dagger\Port">Port</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A port exposed by a container.</p></dd><dt><a href="Dagger/Port.html#method_port">
@@ -792,7 +824,9 @@
 <abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr>::sourceMap</a>() &mdash; <em>Method in class <a href="Dagger/ObjectTypeDef.html"><abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr></a></em></dt>
                     <dd><p>The location of this object declaration.</p></dd><dt><a href="Dagger/ObjectTypeDef.html#method_sourceModuleName">
 <abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr>::sourceModuleName</a>() &mdash; <em>Method in class <a href="Dagger/ObjectTypeDef.html"><abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr></a></em></dt>
-                    <dd><p>If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.</p></dd><dt><a href="Dagger/SDKConfig.html"><abbr title="Dagger\SDKConfig">SDKConfig</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.</p></dd><dt><a href="Dagger/PhpSdk.html#method_sourceDir">
+<abbr title="Dagger\PhpSdk">PhpSdk</abbr>::sourceDir</a>() &mdash; <em>Method in class <a href="Dagger/PhpSdk.html"><abbr title="Dagger\PhpSdk">PhpSdk</abbr></a></em></dt>
+                    <dd></dd><dt><a href="Dagger/SDKConfig.html"><abbr title="Dagger\SDKConfig">SDKConfig</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The SDK config of the module.</p></dd><dt><a href="Dagger/SDKConfig.html#method_source">
 <abbr title="Dagger\SDKConfig">SDKConfig</abbr>::source</a>() &mdash; <em>Method in class <a href="Dagger/SDKConfig.html"><abbr title="Dagger\SDKConfig">SDKConfig</abbr></a></em></dt>
                     <dd><p>Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.</p></dd><dt><a href="Dagger/SDKConfigId.html"><abbr title="Dagger\SDKConfigId">SDKConfigId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
@@ -994,7 +1028,9 @@
 <abbr title="Dagger\Module">Module</abbr>::withInterface</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
                     <dd><p>This module plus the given Interface type and associated functions</p></dd><dt><a href="Dagger/Module.html#method_withObject">
 <abbr title="Dagger\Module">Module</abbr>::withObject</a>() &mdash; <em>Method in class <a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></em></dt>
-                    <dd><p>This module plus the given Object type and associated functions.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withDependencies">
+                    <dd><p>This module plus the given Object type and associated functions.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withClient">
+<abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withClient</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
+                    <dd><p>Update the module source with a new client to generate.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withDependencies">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withDependencies</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>Append the provided dependencies to the module source's dependency list.</p></dd><dt><a href="Dagger/ModuleSource.html#method_withEngineVersion">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::withEngineVersion</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
