@@ -675,12 +675,13 @@ func (c *Client) AllowLLM(ctx context.Context, moduleRepoURL string) error {
 	}
 
 	response, err := session.NewPromptClient(caller.Conn()).Prompt(ctx, &session.PromptRequest{
-		Prompt: fmt.Sprintf("Remote module %s attempted to access the LLM API. Allow it?", moduleRepoURL),
+		Prompt:        fmt.Sprintf("Remote module %s attempted to access the LLM API. Allow it?", moduleRepoURL),
+		ModuleRepoURL: moduleRepoURL,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to prompt user for LLM API access: %w", err)
 	}
-	input := strings.ToLower(strings.TrimSpace(response.Input))
+	input := strings.ToLower(strings.TrimSpace(response.Response))
 	if input == "yes" || input == "y" {
 		return nil
 	}
