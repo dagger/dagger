@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"testing"
 
@@ -56,12 +57,24 @@ func (m *Test) GoProgram(assignment string) *dagger.Container {
 	modGen := modInit(t, c, "go", src).
 		With(withModInitAt("./toy-workspace", "go", toyWorkspaceSrc)).
 		With(daggerExec("install", "./toy-workspace"))
-	out, err := modGen.
-		With(llmReplay(helloWorldRecording)).
-		With(daggerCall("go-program", "--assignment="+assignment, "file", "--path=main.go", "contents")).
-		Stdout(ctx)
-	require.NoError(t, err)
-	testGoProgram(ctx, t, c, dag.Directory().WithNewFile("main.go", out).File("main.go"), regexp.MustCompile("(?i)hello(.*)world"))
+
+	t.Run("dagger call", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.
+			With(llmReplay(helloWorldRecording)).
+			With(daggerCall("go-program", "--assignment="+assignment, "file", "--path=main.go", "contents")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		testGoProgram(ctx, t, c, dag.Directory().WithNewFile("main.go", out).File("main.go"), regexp.MustCompile("(?i)hello(.*)world"))
+	})
+
+	t.Run("dagger shell", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.
+			With(llmReplay(helloWorldRecording)).
+			With(daggerShell(fmt.Sprintf("go-program \"%s\" | file main.go | contents", assignment))).
+			Stdout(ctx)
+		require.NoError(t, err)
+		testGoProgram(ctx, t, c, dag.Directory().WithNewFile("main.go", out).File("main.go"), regexp.MustCompile("(?i)hello(.*)world"))
+	})
 }
 
 const toyWorkspaceSrc = `

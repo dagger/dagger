@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/core/bbi"
+	"github.com/google/go-cmp/cmp"
 )
 
 type LLMReplayer struct {
@@ -20,9 +21,13 @@ func (c *LLMReplayer) SendQuery(ctx context.Context, history []ModelMessage, too
 		return nil, fmt.Errorf("no more messages")
 	}
 	for i, message := range history {
+		// TODO: (cwlbraa) is this a complete comparison? also doesn't this end up being O(n^2)?
 		if message.Content != c.messages[i].Content || message.Role != c.messages[i].Role {
-			// FIXME: improve comparisons
-			return nil, fmt.Errorf("message history diverges at %d", i)
+			return nil, fmt.Errorf(
+				"message history diverges at index %d:\n%s",
+				i,
+				cmp.Diff(c.messages[i], message),
+			)
 		}
 	}
 	msg := c.messages[len(history)]
