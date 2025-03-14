@@ -5,6 +5,9 @@ import (
 	"dagger/my-module/internal/dagger"
 )
 
+// Demonstrates cloning a Git repository over HTTP(S).
+//
+// For SSH usage, see the SSH snippet (CloneWithSsh).
 type MyModule struct{}
 
 type Locator string
