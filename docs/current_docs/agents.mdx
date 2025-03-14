@@ -47,6 +47,7 @@ Here are several example repositories containing examples of Dagger modules with
 - [tictactoe](https://github.com/kpenfound/agents/tree/main/tictactoe): an agent that plays Tic Tac Toe with a human player.
 - [dockerfile-optimizer](https://github.com/dagger/agents/tree/main/dockerfile-optimizer): an agent that analyzes your Dockerfile and suggests improvements for better efficiency, security, and best practices.
 - [test-debugger](https://github.com/kpenfound/greetings-api/blob/main/DEBUGGER_AGENT.md): an agent that automatically debugs failing tests in CI.
+- [technical-content-summarizer](https://github.com/jasonmccallister/technical-content-summarizer): an agent that accepts a URL, optional min and max character length and forbidden words and summarizes the content for a non-technical audience.
 
 ## Initial setup
 
@@ -80,7 +81,8 @@ Check the [source code](https://github.com/dagger/dagger/blob/llm/core/llm.go#L2
 
 #### Anthropic
 - `ANTHROPIC_API_KEY`: required
-- `ANTHROPIC_MODEL`: if unset, defaults to latest Claude 3.5 Sonnet
+- `ANTHROPIC_MODEL`: if unset, defaults to `"claude-3-5-sonnet-latest"`
+- [more model name strings](https://docs.anthropic.com/en/docs/about-claude/models/all-models)
 
 #### OpenAI
 - `OPENAI_API_KEY`: required
@@ -88,10 +90,12 @@ Check the [source code](https://github.com/dagger/dagger/blob/llm/core/llm.go#L2
 - **optional extras**
   - `OPENAI_BASE_URL`: for alternative OpenAI-compatible endpoints like Azure or local models
   - `OPENAI_AZURE_VERSION`: for use with [Azure's API to OpenAI](https://learn.microsoft.com/en-us/azure/ai-services/openai/overview). See below.
+- [more model name strings](https://platform.openai.com/docs/models) within individual model docs
 
 #### Google Gemini
 - `GEMINI_API_KEY`: required
 - `GEMINI_MODEL`: default `"gemini-2.0-flash"`
+- [more model name strings](https://ai.google.dev/gemini-api/docs/models/gemini)
 
 Dagger will look for these variables in your environment, or in a `.env` file in the current directory (`.env` files in parent directories are not yet supported).
 
