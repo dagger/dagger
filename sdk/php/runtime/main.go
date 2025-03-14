@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
+
 	"php-sdk/internal/dagger"
 )
 
@@ -123,9 +125,25 @@ func (m *PhpSdk) CodegenBase(
 		WithDirectory(sdkPath, sdkDir).
 		WithWorkdir(srcPath).
 		WithExec([]string{"/init-template.sh", name}).
-		// composer install adds the lock file so we want this even in Codegen.
-		WithExec([]string{"composer", "install"}).
 		WithEntrypoint([]string{filepath.Join(srcPath, "entrypoint.php")})
+
+	entries, err := ctr.Directory(srcPath).Entries(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if slices.Contains(entries, "composer.lock") {
+		ctr = ctr.WithExec([]string{
+			"composer",
+			"update",
+			"--with-all-dependencies",
+			"--minimal-changes",
+			"dagger/dagger"})
+	} else {
+		ctr = ctr.WithExec([]string{
+			"composer",
+			"install"})
+	}
 
 	return ctr, nil
 }
