@@ -39,6 +39,10 @@ func (s llmSchema) Install() {
 		dagql.Func("withPromptFile", s.withPromptFile).
 			Doc("append the contents of a file to the llm context").
 			ArgDoc("file", "The file to read the prompt from"),
+		dagql.Func("withPromptVar", s.setString).
+			Doc("Add a string variable to the LLM's environment").
+			ArgDoc("name", "The variable name").
+			ArgDoc("value", "The variable value"),
 		dagql.Func("setString", s.setString).
 			Doc("Add a string variable to the LLM's environment").
 			ArgDoc("name", "The variable name").
