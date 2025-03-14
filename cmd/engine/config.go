@@ -15,6 +15,10 @@ import (
 	"github.com/dagger/dagger/engine/server"
 )
 
+const (
+	daggerEngineSockAddr = "unix:///run/dagger/engine.sock"
+)
+
 func defaultBuildkitConfigPath() string {
 	if userns.RunningInUserNS() {
 		return filepath.Join(appdefaults.UserConfigDir(), "buildkitd.toml")
@@ -43,8 +47,8 @@ func setDefaultBuildkitConfig(cfg *bkconfig.Config, netConf *networkConfig) {
 		cfg.Root = distconsts.EngineDefaultStateDir
 	}
 
-	// always include default address
-	cfg.GRPC.Address = append([]string{appdefaults.Address}, cfg.GRPC.Address...)
+	// always include default addresses
+	cfg.GRPC.Address = append([]string{appdefaults.Address, daggerEngineSockAddr}, cfg.GRPC.Address...)
 
 	isTrue := true
 	cfg.Workers.OCI.Enabled = &isTrue

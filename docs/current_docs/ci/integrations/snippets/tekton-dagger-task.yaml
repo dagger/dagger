@@ -28,7 +28,7 @@ spec:
         exec:
           command: ["dagger", "core", "version"]
       volumeMounts:
-        - mountPath: /var/run/buildkit
+        - mountPath: /var/run/dagger
           name: dagger-socket
         - mountPath: /var/lib/dagger
           name: dagger-storage
@@ -47,7 +47,7 @@ spec:
         name: dagger-socket
     env:
       - name: _EXPERIMENTAL_DAGGER_RUNNER_HOST
-        value: unix:///var/run/dagger/buildkitd.sock
+        value: unix:///var/run/dagger/engine.sock
       - name: DAGGER_CLOUD_TOKEN
         valueFrom:
           secretKeyRef:
