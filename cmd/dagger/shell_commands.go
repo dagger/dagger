@@ -296,6 +296,50 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				return nil
 			},
 		},
+		{
+			Use:         ".llm",
+			Description: "Update or access the LLM state",
+			GroupID:     "llm",
+			Args:        NoArgs,
+			State:       AnyState,
+			Run: func(ctx context.Context, _ *ShellCommand, _ []string, st *ShellState) error {
+				s, err := h.llm(ctx)
+				if err != nil {
+					return err
+				}
+				res, err := h.StateResult(ctx, st)
+				if err != nil {
+					return err
+				}
+				if res != nil {
+					if !res.IsObject() {
+						return fmt.Errorf("invalid value: %q (type: %v)", res.Value, res.typeDef)
+					}
+					id := res.Value.(string)
+					newLLM, err := s.WithState(ctx, res.typeDef.Name(), id)
+					if err != nil {
+						return err
+					}
+					h.llmSession = newLLM
+				}
+				llmID, err := h.llmSession.llm.ID(ctx)
+				if err != nil {
+					return err
+				}
+				return h.Save(ctx, ShellState{
+					Calls: []FunctionCall{
+						{
+							Object: "Query",
+							Name:   "loadLLMFromID",
+							Arguments: map[string]any{
+								"id": llmID,
+							},
+							ReturnObject: "LLM",
+						},
+					},
+				})
+			},
+		},
 	}
 }
 

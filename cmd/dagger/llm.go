@@ -124,6 +124,26 @@ func (s *LLMSession) WithPrompt(ctx context.Context, input string) (*LLMSession,
 	return s, nil
 }
 
+func (s *LLMSession) WithState(ctx context.Context, typeName, id string) (*LLMSession, error) {
+	s = s.Fork()
+
+	var llmID dagger.LLMID
+	updatedLLM := s.dag.QueryBuilder().
+		Select("loadLLMFromID").
+		Arg("id", s.llm).
+		Select(fmt.Sprintf("with%s", typeName)).
+		Arg("value", id).
+		Select("id").
+		Bind(&llmID)
+
+	if err := updatedLLM.Execute(ctx); err != nil {
+		return s, err
+	}
+
+	s.llm = s.dag.LoadLLMFromID(llmID)
+	return s, nil
+}
+
 var dbg *log.Logger
 
 func init() {
@@ -272,7 +292,6 @@ func (s *LLMSession) ShellValue(ctx context.Context, name, typeName string) (str
 		dbg.Println("syncing object", name)
 		st := ShellState{
 			Calls: []FunctionCall{
-				// not sure this is right
 				{
 					Object: "Query",
 					Name:   "load" + typeName + "FromID",

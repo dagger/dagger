@@ -506,6 +506,11 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 	if !llm.dirty {
 		return llm, nil
 	}
+	if len(llm.messages) == 0 {
+		// dirty but no messages, possibly just a state change, nothing to do
+		// until a prompt is given
+		return llm, nil
+	}
 	llm = llm.Clone()
 	for {
 		if llm.maxAPICalls > 0 && llm.apiCalls >= llm.maxAPICalls {
