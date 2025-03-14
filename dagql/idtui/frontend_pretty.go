@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/cellbuf"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
 	"github.com/vito/bubbline/editline"
@@ -1545,11 +1546,29 @@ func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui
 
 func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, span *dagui.Span, depth int, prefix string) {
 	for _, span := range span.Errors().Order {
-		// only print the first line
-		for _, line := range strings.Split(span.Status.Description, "\n") {
+		if span.Status.Description == "" {
+			continue
+		}
+
+		// Calculate available width for text
+		prefixWidth := lipgloss.Width(prefix)
+		indentWidth := depth * 2 // Assuming indent is 2 spaces per depth level
+		markerWidth := 2         // "! " prefix
+		availableWidth := fe.window.Width - prefixWidth - indentWidth - markerWidth
+
+		if availableWidth <= 0 {
+			availableWidth = 20 // Minimum width to prevent issues
+		}
+
+		// Use lipgloss.Wrap to handle word wrapping
+		wrappedText := cellbuf.Wrap(span.Status.Description, availableWidth, "")
+
+		// Print each wrapped line with proper indentation
+		for _, line := range strings.Split(wrappedText, "\n") {
 			if line == "" {
 				continue
 			}
+
 			fmt.Fprint(out, prefix)
 			r.indent(out, depth)
 			fmt.Fprintf(out,
