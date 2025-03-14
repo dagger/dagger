@@ -473,10 +473,10 @@ func (r renderer) renderMetrics(out TermOutput, span *dagui.Span) {
 
 	if metricsByName := r.db.MetricsBySpan[span.ID]; metricsByName != nil {
 		// LLM Stats
-		r.renderMetric(out, metricsByName, telemetry.LLMInputTokens, "LLM Input Tokens", humanizeTokens)
-		r.renderMetric(out, metricsByName, telemetry.LLMOutputTokens, "LLM Output Tokens", humanizeTokens)
-		r.renderMetric(out, metricsByName, telemetry.LLMInputTokensCacheReads, "LLM Input Tokens (cache reads)", humanizeTokens)
-		r.renderMetric(out, metricsByName, telemetry.LLMInputTokensCacheWrites, "LLM Input Tokens (cache writes)", humanizeTokens)
+		r.renderMetric(out, metricsByName, telemetry.LLMInputTokens, "Input Tokens", humanizeTokens)
+		r.renderMetric(out, metricsByName, telemetry.LLMOutputTokens, "Output Tokens", humanizeTokens)
+		r.renderMetric(out, metricsByName, telemetry.LLMInputTokensCacheReads, "Token Cache Reads", humanizeTokens)
+		r.renderMetric(out, metricsByName, telemetry.LLMInputTokensCacheWrites, "Token Cache Writes", humanizeTokens)
 	}
 }
 
