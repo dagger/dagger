@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/joho/godotenv"
+	"github.com/moby/buildkit/identity"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -119,6 +120,8 @@ type LLMRouter struct {
 	GeminiAPIKey  string
 	GeminiBaseURL string
 	GeminiModel   string
+
+	HistoryReplay []ModelMessage
 }
 
 func (r *LLMRouter) isAnthropicModel(model string) bool {
@@ -135,6 +138,10 @@ func (r *LLMRouter) isGoogleModel(model string) bool {
 
 func (r *LLMRouter) isMistralModel(model string) bool {
 	return strings.HasPrefix(model, "mistral-") || strings.HasPrefix(model, "mistral/")
+}
+
+func (r *LLMRouter) isReplay(model string) bool {
+	return strings.HasPrefix(model, "replay-") || strings.HasPrefix(model, "replay/")
 }
 
 func (r *LLMRouter) routeAnthropicModel() *LLMEndpoint {
@@ -188,6 +195,12 @@ func (r *LLMRouter) routeOtherModel() *LLMEndpoint {
 	return endpoint
 }
 
+func (r *LLMRouter) routeReplayModel() *LLMEndpoint {
+	endpoint := &LLMEndpoint{}
+	endpoint.Client = newHistoryReplay(r.HistoryReplay)
+	return endpoint
+}
+
 // Return a default model, if configured
 func (r *LLMRouter) DefaultModel() string {
 	for _, model := range []string{r.OpenAIModel, r.AnthropicModel, r.GeminiModel} {
@@ -206,6 +219,9 @@ func (r *LLMRouter) DefaultModel() string {
 	}
 	if r.GeminiAPIKey != "" {
 		return "gemini-2.0-flash"
+	}
+	if r.HistoryReplay != nil {
+		return "replay/" + identity.NewID()
 	}
 	return ""
 }
@@ -230,6 +246,8 @@ func (r *LLMRouter) Route(model string) (*LLMEndpoint, error) {
 		endpoint = googleEndpoint
 	case r.isMistralModel(model):
 		return nil, fmt.Errorf("mistral models are not yet supported")
+	case r.isReplay(model):
+		endpoint = r.routeReplayModel()
 	default:
 		endpoint = r.routeOtherModel()
 	}
@@ -244,6 +262,7 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 		}
 	}
 	var err error
+
 	r.AnthropicAPIKey, err = getenv(ctx, "ANTHROPIC_API_KEY")
 	if err != nil {
 		return err
@@ -256,6 +275,7 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	if err != nil {
 		return err
 	}
+
 	r.OpenAIAPIKey, err = getenv(ctx, "OPENAI_API_KEY")
 	if err != nil {
 		return err
@@ -272,6 +292,7 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	if err != nil {
 		return err
 	}
+
 	r.GeminiAPIKey, err = getenv(ctx, "GEMINI_API_KEY")
 	if err != nil {
 		return err
@@ -284,6 +305,18 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	if err != nil {
 		return err
 	}
+
+	historyReplay, err := getenv(ctx, "LLM_HISTORY_REPLAY")
+	if err != nil {
+		return err
+	}
+	if historyReplay != "" {
+		err = json.Unmarshal([]byte(historyReplay), &r.HistoryReplay)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -677,6 +710,18 @@ func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error
 		}
 	}
 	return history, nil
+}
+
+func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (string, error) {
+	llm, err := llm.Sync(ctx, dag)
+	if err != nil {
+		return "", err
+	}
+	result, err := json.MarshalIndent(llm.messages, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(result), nil
 }
 
 func (llm *LLM) WithState(ctx context.Context, objID dagql.IDType, srv *dagql.Server) (*LLM, error) {
