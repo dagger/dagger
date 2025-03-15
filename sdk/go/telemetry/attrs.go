@@ -113,4 +113,19 @@ const (
 
 	// OTel metric attribute so we can correlate metrics with traces
 	MetricsTraceIDAttr = "dagger.io/metrics.trace"
+
+	// The kind of the module, e.g. "LOCAL", "GIT"
+	ModuleKindAttr = "dagger.io/module.kind"
+
+	// The commit of the module, e.g. "abc123"
+	ModuleCommitAttr = "dagger.io/module.commit"
+
+	// The version of the module, e.g. tag, branch, or commit
+	ModuleVersionAttr = "dagger.io/module.version"
+
+	// The subpath of the module, relative to the root, e.g. "/modules/my-module"
+	ModuleSubpathAttr = "dagger.io/module.subpath"
+
+	// The HTML URL of the module, e.g. "https://github.com/dagger/dagger"
+	ModuleHTMLRepoURLAttr = "dagger.io/module.htmlRepoURL"
 )
