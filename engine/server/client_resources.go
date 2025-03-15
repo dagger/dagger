@@ -26,8 +26,19 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 		return fmt.Errorf("failed to walk ID: %w", err)
 	}
 
+	// TODO:???
+	// TODO:???
+	// TODO:???
 	secretIDs := dagql.WalkedIDs[*core.Secret](walked)
 	socketIDs := dagql.WalkedIDs[*core.Socket](walked)
+
+	// TODO:?
+	// TODO:?
+	// TODO:?
+	slog.Debug("pre-filter transferring secrets",
+		"secrets", secretIDs,
+		"num", len(secretIDs),
+		"dest", destClient.clientID)
 
 	// Filter out resources that this client already knows about. This is important for the case
 	// where the sourceClientID isn't found, which can happen due to caching skipping the client's
@@ -48,6 +59,14 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 		}
 	}
 	socketIDs = filteredSocketIDs
+
+	// TODO:?
+	// TODO:?
+	// TODO:?
+	slog.Debug("post-filter transferring secrets",
+		"secrets", secretIDs,
+		"num", len(secretIDs),
+		"dest", destClient.clientID)
 
 	srcClient, ok := srv.clientFromIDs(destClient.daggerSession.sessionID, sourceClientID)
 	if !ok {
@@ -70,25 +89,37 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 	}
 
 	if len(secretIDs) > 0 {
-		secrets, err := dagql.LoadIDs(ctx, srcDag, secretIDs)
+		// TODO:?
+		// TODO:?
+		// TODO:?
+		slog.Debug("transferring secrets",
+			"secrets", secretIDs,
+			"num", len(secretIDs),
+			"src", srcClient.clientID,
+			"dest", destClient.clientID)
+		secrets, err := dagql.LoadIDInstances(ctx, srcDag, secretIDs)
 		if err != nil && !id.Optional {
 			return fmt.Errorf("failed to load secrets: %w", err)
 		}
 		for _, secret := range secrets {
-			if secret == nil {
+			if secret.Self == nil {
 				continue
 			}
-			if id.Optional && !srcClient.secretStore.HasSecret(secret.IDDigest) {
+			if id.Optional && !srcClient.secretStore.HasSecret(secret.ID().Digest()) {
 				// don't attempt to add the secret if it doesn't exist and was optional
 				continue
 			}
-			if err := destClient.secretStore.AddSecretFromOtherStore(secret, srcClient.secretStore); err != nil {
+			if err := destClient.secretStore.AddSecret(secret); err != nil {
 				return fmt.Errorf("failed to add secret from source client %s: %w", srcClient.clientID, err)
 			}
 
-			name, _ := destClient.secretStore.GetSecretNameOrURI(secret.IDDigest)
-			slog.ExtraDebug("transferred secret",
+			name, _ := destClient.secretStore.GetSecretNameOrURI(secret.ID().Digest())
+			// TODO:?
+			// TODO:?
+			// TODO:?
+			slog.Debug("transferred secret",
 				"secret", name,
+				"dgst", secret.ID().Digest(),
 				"src", srcClient.clientID,
 				"dest", destClient.clientID)
 		}

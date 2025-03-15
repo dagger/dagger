@@ -389,6 +389,12 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to collect IDs: %w", err)
 	}
 
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	slog.Debug("RETURNED IDS", "ids", returnedIDs, "num", len(returnedIDs))
+
 	// NOTE: once generalized function caching is enabled we need to ensure that any non-reproducible
 	// cache entries are linked to the result of this call.
 	// See the previous implementation of this for a reference:
@@ -400,7 +406,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	for _, id := range returnedIDs {
 		returnedIDsList = append(returnedIDsList, id)
 	}
-	secretTransferPostCall, err := SecretTransferPostCall(ctx, fn.root, clientID, returnedIDsList...)
+	secretTransferPostCall, err := ResourceTransferPostCall(ctx, fn.root, clientID, returnedIDsList...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create secret transfer post call: %w", err)
 	}

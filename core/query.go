@@ -9,7 +9,6 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/vektah/gqlparser/v2/ast"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/dagql"
@@ -49,7 +48,7 @@ type Server interface {
 	DefaultDeps(context.Context) (*ModDeps, error)
 
 	// The DagQL query cache for the current client's session
-	Cache(context.Context) (dagql.Cache, error)
+	Cache(context.Context) (*dagql.SessionCache, error)
 
 	// Mix in this http endpoint+handler to the current client's session
 	MuxEndpoint(context.Context, string, http.Handler) error
@@ -96,6 +95,9 @@ type Server interface {
 	// or a nested exec). Useful for figuring out where local sources should be resolved from through
 	// chains of dependency modules.
 	NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error)
+
+	// The dagql server for the current client
+	DagqlServer(context.Context) (*dagql.Server, error)
 }
 
 func NewRoot(srv Server) *Query {
@@ -137,31 +139,6 @@ func (q *Query) NewHost() *Host {
 func (q *Query) NewModule() *Module {
 	return &Module{
 		Query: q,
-	}
-}
-
-func (q *Query) NewContainerService(ctx context.Context, ctr *Container) *Service {
-	return &Service{
-		Creator:   trace.SpanContextFromContext(ctx),
-		Query:     q,
-		Container: ctr,
-	}
-}
-
-func (q *Query) NewTunnelService(ctx context.Context, upstream dagql.Instance[*Service], ports []PortForward) *Service {
-	return &Service{
-		Creator:        trace.SpanContextFromContext(ctx),
-		Query:          q,
-		TunnelUpstream: &upstream,
-		TunnelPorts:    ports,
-	}
-}
-
-func (q *Query) NewHostService(ctx context.Context, socks []*Socket) *Service {
-	return &Service{
-		Creator:     trace.SpanContextFromContext(ctx),
-		Query:       q,
-		HostSockets: socks,
 	}
 }
 

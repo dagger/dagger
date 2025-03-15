@@ -269,6 +269,12 @@ func (r *renderer) renderCall(
 	}
 
 	if span != nil {
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		fmt.Fprint(out, out.String("RENDERCALL "+span.ID.String()+" "+span.Name+" "+fmt.Sprintf("%t ", span.Internal)))
+
 		r.renderDuration(out, span)
 		r.renderMetrics(out, span)
 		r.renderCached(out, span)
@@ -299,6 +305,12 @@ func (r *renderer) renderSpan(
 	fmt.Fprint(out, label)
 
 	if span != nil {
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		fmt.Fprint(out, out.String("RENDERSPAN "))
+
 		// TODO: when a span has child spans that have progress, do 2-d progress
 		// fe.renderVertexTasks(out, span, depth)
 		r.renderDuration(out, span)

@@ -300,7 +300,15 @@ func (build *Builder) dialstdioBinary() *dagger.File {
 func (build *Builder) binary(pkg string, version bool, race bool) *dagger.File {
 	base := dag.Go(build.source).Env().With(build.goPlatformEnv)
 	ldflags := []string{
-		"-s", "-w",
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// "-s", "-w",
 	}
 	if version && build.version != "" {
 		ldflags = append(ldflags, "-X", "github.com/dagger/dagger/engine.Version="+build.version)

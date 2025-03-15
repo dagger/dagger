@@ -131,8 +131,8 @@ type RemoteGitRepository struct {
 	Services ServiceBindings
 	Platform Platform
 
-	AuthToken  *Secret
-	AuthHeader *Secret
+	AuthToken  dagql.Instance[*Secret]
+	AuthHeader dagql.Instance[*Secret]
 }
 
 var _ GitRepositoryBackend = (*RemoteGitRepository)(nil)
@@ -293,11 +293,11 @@ func (ref *RemoteGitRef) getState(ctx context.Context, discardGitDir bool) (llb.
 	if ref.Repo.SSHAuthSocket != nil {
 		opts = append(opts, llb.MountSSHSock(ref.Repo.SSHAuthSocket.LLBID()))
 	}
-	if ref.Repo.AuthToken != nil {
-		opts = append(opts, llb.AuthTokenSecret(ref.Repo.AuthToken.LLBID()))
+	if ref.Repo.AuthToken.Self != nil {
+		opts = append(opts, llb.AuthTokenSecret(ref.Repo.AuthToken.ID().Digest().String()))
 	}
-	if ref.Repo.AuthHeader != nil {
-		opts = append(opts, llb.AuthHeaderSecret(ref.Repo.AuthHeader.LLBID()))
+	if ref.Repo.AuthHeader.Self != nil {
+		opts = append(opts, llb.AuthHeaderSecret(ref.Repo.AuthHeader.ID().Digest().String()))
 	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
