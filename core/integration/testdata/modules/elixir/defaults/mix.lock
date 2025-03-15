@@ -1,0 +1,5 @@
+%{
+  "jason": {:hex, :jason, "1.4.4", "b9226785a9aa77b6857ca22832cffa5d5011a667207eb2a0ad56adb5db443b8a", [:mix], [{:decimal, "~> 1.0 or ~> 2.0", [hex: :decimal, repo: "hexpm", optional: true]}], "hexpm", "c5eb0cab91f094599f94d55bc63409236a8ec69a21a67814529e8d5f6cc90b3b"},
+  "nestru": {:hex, :nestru, "1.0.1", "f02321db91b898da3d598c274f2ccba2c41ec5c50c942eabe900474dbfe4bce3", [:mix], [], "hexpm", "e4fbbd6d64b1c8cb37ef590a891f0b6b17b0b880c1c5ce2ac98de02c0ad7417e"},
+  "nimble_options": {:hex, :nimble_options, "1.1.1", "e3a492d54d85fc3fd7c5baf411d9d2852922f66e69476317787a7b2bb000a61b", [:mix], [], "hexpm", "821b2470ca9442c4b6984882fe9bb0389371b8ddec4d45a9504f00a66f650b44"},
+}
