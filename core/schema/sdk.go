@@ -10,11 +10,13 @@ import (
 	"strings"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/mitchellh/mapstructure"
 	"github.com/opencontainers/go-digest"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
 )
 
@@ -95,7 +97,7 @@ func (s *sdkLoader) sdkForModule(
 	}
 
 	// TODO: include sdk source dir from module config dagger.json once we support default-args/scripts
-	return s.newModuleSDK(ctx, query, sdkMod, dagql.Instance[*core.Directory]{})
+	return s.newModuleSDK(ctx, query, sdkMod, dagql.Instance[*core.Directory]{}, sdk.Config)
 }
 
 // parse and validate the name and version from sdkName
@@ -161,17 +163,17 @@ func (s *sdkLoader) builtinSDK(ctx context.Context, root *core.Query, sdk *core.
 
 	switch sdkNameParsed {
 	case SDKGo:
-		return &goSDK{root: root, dag: s.dag}, nil
+		return &goSDK{root: root, dag: s.dag, rawConfig: sdk.Config}, nil
 	case SDKPython:
-		return s.loadBuiltinSDK(ctx, root, sdk.Source, digest.Digest(os.Getenv(distconsts.PythonSDKManifestDigestEnvName)))
+		return s.loadBuiltinSDK(ctx, root, sdk, digest.Digest(os.Getenv(distconsts.PythonSDKManifestDigestEnvName)))
 	case SDKTypescript:
-		return s.loadBuiltinSDK(ctx, root, sdk.Source, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
+		return s.loadBuiltinSDK(ctx, root, sdk, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
 	case SDKJava:
-		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/java" + sdkSuffix}, nil)
+		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/java" + sdkSuffix, Config: sdk.Config}, nil)
 	case SDKPHP:
-		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/php" + sdkSuffix}, nil)
+		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/php" + sdkSuffix, Config: sdk.Config}, nil)
 	case SDKElixir:
-		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/elixir" + sdkSuffix}, nil)
+		return s.sdkForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/elixir" + sdkSuffix, Config: sdk.Config}, nil)
 	}
 
 	return nil, getInvalidBuiltinSDKError(sdk.Source)
@@ -192,6 +194,7 @@ func (s *sdkLoader) newModuleSDK(
 	root *core.Query,
 	sdkModMeta dagql.Instance[*core.Module],
 	optionalFullSDKSourceDir dagql.Instance[*core.Directory],
+	rawConfig map[string]interface{},
 ) (*moduleSDK, error) {
 	dag := dagql.NewServer(root)
 
@@ -231,7 +234,102 @@ func (s *sdkLoader) newModuleSDK(
 		return nil, fmt.Errorf("failed to get sdk object for sdk module %s: %w", sdkModMeta.Self.Name(), err)
 	}
 
-	return &moduleSDK{mod: sdkModMeta, dag: dag, sdk: sdk}, nil
+	return (&moduleSDK{mod: sdkModMeta, dag: dag, sdk: sdk}).withConfig(ctx, rawConfig)
+}
+
+// withConfig function checks if the moduleSDK exposes a function with name `WithConfig`.
+//
+// If the function with that name exists, it calls that function with arguments as read
+// from dagger.json -> sdk.config object.
+//
+// Further, if the value for a specific arg for that function is not specified in dagger.json -> sdk.config object,
+// the default value as specified in the moduleSource is used for that argument.
+func (sdk *moduleSDK) withConfig(ctx context.Context, rawConfig map[string]interface{}) (*moduleSDK, error) {
+	for _, def := range sdk.mod.Self.ObjectDefs {
+		if !def.AsObject.Valid {
+			continue
+		}
+
+		obj := def.AsObject.Value
+		if gqlFieldName(obj.Name) != gqlFieldName(sdk.mod.Self.OriginalName) {
+			continue
+		}
+
+		var withConfigFn *core.Function
+		for _, fn := range obj.Functions {
+			if gqlFieldName(fn.Name) == gqlFieldName("withConfig") {
+				withConfigFn = fn
+				break
+			}
+		}
+
+		if withConfigFn == nil {
+			if len(rawConfig) > 0 {
+				return sdk, fmt.Errorf("sdk does not currently support specifying config")
+			}
+
+			return sdk, nil
+		}
+
+		fieldspec, err := withConfigFn.FieldSpec()
+		if err != nil {
+			return nil, err
+		}
+
+		// check if there are any unknown config keys provided
+		var unusedKeys = []string{}
+		for configKey := range rawConfig {
+			found := false
+			for _, arg := range fieldspec.Args {
+				if arg.Name == configKey {
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				unusedKeys = append(unusedKeys, configKey)
+			}
+		}
+
+		if len(unusedKeys) > 0 {
+			return nil, fmt.Errorf("unknown sdk config keys found %v", unusedKeys)
+		}
+		args := []dagql.NamedInput{}
+		for _, arg := range fieldspec.Args {
+			var valInput = arg.Default
+
+			// override if the argument with same name exists in dagger.json -> sdk.config
+			val, ok := rawConfig[arg.Name]
+			if ok {
+				valInput, err = arg.Type.Decoder().DecodeInput(val)
+				if err != nil {
+					return nil, fmt.Errorf("parsing value for arg %q: %w", arg.Name, err)
+				}
+			}
+
+			args = append(args, dagql.NamedInput{
+				Name:  arg.Name,
+				Value: valInput,
+			})
+		}
+
+		var sdkwithconfig dagql.Object
+		err = sdk.dag.Select(ctx, sdk.sdk, &sdkwithconfig, []dagql.Selector{
+			{
+				Field: "withConfig",
+				Args:  args,
+			},
+		}...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to call withConfig on the sdk module: %w", err)
+		}
+
+		sdk.sdk = sdkwithconfig
+		break
+	}
+
+	return sdk, nil
 }
 
 func (sdk *moduleSDK) RequiredClientGenerationFiles(
@@ -394,7 +492,7 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, deps *core.ModDeps, source da
 func (s *sdkLoader) loadBuiltinSDK(
 	ctx context.Context,
 	root *core.Query,
-	name string,
+	sdk *core.SDKConfig,
 	manifestDigest digest.Digest,
 ) (*moduleSDK, error) {
 	// TODO: currently hardcoding assumption that builtin sdks put *module* source code at
@@ -415,7 +513,7 @@ func (s *sdkLoader) loadBuiltinSDK(
 			Field: "rootfs",
 		},
 	); err != nil {
-		return nil, fmt.Errorf("failed to import full sdk source for sdk %s from engine container filesystem: %w", name, err)
+		return nil, fmt.Errorf("failed to import full sdk source for sdk %s from engine container filesystem: %w", sdk.Source, err)
 	}
 
 	var sdkMod dagql.Instance[*core.Module]
@@ -434,10 +532,10 @@ func (s *sdkLoader) loadBuiltinSDK(
 		},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to import module sdk %s: %w", name, err)
+		return nil, fmt.Errorf("failed to import module sdk %s: %w", sdk.Source, err)
 	}
 
-	return s.newModuleSDK(ctx, root, sdkMod, fullSDKDir)
+	return s.newModuleSDK(ctx, root, sdkMod, fullSDKDir, sdk.Config)
 }
 
 const (
@@ -456,8 +554,13 @@ executing the codegen binary inside it to generate user code and then execute
 it with the resulting /runtime binary.
 */
 type goSDK struct {
-	root *core.Query
-	dag  *dagql.Server
+	root      *core.Query
+	dag       *dagql.Server
+	rawConfig map[string]interface{}
+}
+
+type goSDKConfig struct {
+	GoPrivate string `json:"goprivate,omitempty"`
 }
 
 func (sdk *goSDK) RequiredClientGenerationFiles(_ context.Context) (dagql.Array[dagql.String], error) {
@@ -617,6 +720,15 @@ func (sdk *goSDK) Runtime(
 	}
 	if err := sdk.dag.Select(ctx, ctr, &ctr,
 		dagql.Selector{
+			Field: "withoutUnixSocket",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString("/tmp/dagger-ssh-sock"),
+				},
+			},
+		},
+		dagql.Selector{
 			Field: "withExec",
 			Args: []dagql.NamedInput{
 				{
@@ -763,6 +875,59 @@ func (sdk *goSDK) baseWithCodegen(
 		},
 	}
 
+	var config goSDKConfig
+	var mapstructureMetadata mapstructure.Metadata
+	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		Metadata: &mapstructureMetadata,
+		Result:   &config,
+	})
+	if err != nil {
+		return ctr, err
+	}
+
+	err = decoder.Decode(sdk.rawConfig)
+	if err != nil {
+		return ctr, err
+	}
+
+	if len(mapstructureMetadata.Unused) > 0 {
+		return ctr, fmt.Errorf("unknown sdk config keys found %v", mapstructureMetadata.Unused)
+	}
+
+	configSelectors := getSDKConfigSelectors(ctx, config)
+	if len(configSelectors) > 0 {
+		selectors = append(selectors, configSelectors...)
+	}
+
+	// fetch gitconfig selectors
+	bk, err := src.Self.Query.Buildkit(ctx)
+	if err != nil {
+		return ctr, err
+	}
+
+	gitConfigSelectors, err := gitConfigSelectors(ctx, bk)
+	if err != nil {
+		return ctr, err
+	}
+
+	if len(gitConfigSelectors) > 0 {
+		selectors = append(selectors, gitConfigSelectors...)
+	}
+
+	// TODO(rajatjindal): verify with Erik as to why this
+	// cause failures if we also mount this in Runtime.
+	// Issue we run into is that when we try to run sdk checks
+	// using .dagger, it fails trying to find the socket
+	sshAuthSelectors, err := sdk.getUnixSocketSelector(ctx)
+	if err != nil {
+		return ctr, err
+	}
+	if len(sshAuthSelectors) > 0 {
+		selectors = append(selectors, sshAuthSelectors...)
+	}
+
+	// now that we are done with gitconfig and injecting env
+	// variables, we can run the codegen command.
 	selectors = append(selectors,
 		dagql.Selector{
 			Field: "withoutDefaultArgs",
@@ -780,7 +945,7 @@ func (sdk *goSDK) baseWithCodegen(
 		},
 	)
 
-	if err = sdk.dag.Select(ctx, ctr, &ctr, selectors...); err != nil {
+	if err := sdk.dag.Select(ctx, ctr, &ctr, selectors...); err != nil {
 		return ctr, fmt.Errorf("failed to mount introspection json file into go module sdk container codegen: %w", err)
 	}
 
@@ -931,4 +1096,133 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], er
 		return inst, fmt.Errorf("failed to get container from go module sdk tarball: %w", err)
 	}
 	return ctr, nil
+}
+
+func gitConfigSelectors(ctx context.Context, bk *buildkit.Client) ([]dagql.Selector, error) {
+	// codegen runs `go mod tidy` and for private deps
+	// we allow users to configure GOPRIVATE env variable.
+	// But for it to work, we need to ensure we don't run into
+	// host checking prompt. So customizing GIT_SSH_COMMAND to
+	// allow skipping the prompt.
+	selectors := []dagql.Selector{
+		{
+			Field: "withEnvVariable",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "name",
+					Value: dagql.NewString("GIT_SSH_COMMAND"),
+				},
+				{
+					Name:  "value",
+					Value: dagql.NewString("ssh -o StrictHostKeyChecking=no "),
+				},
+			},
+		},
+	}
+
+	gitconfig, err := bk.GetGitConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, entry := range gitconfig {
+		selectors = append(selectors,
+			dagql.Selector{
+				Field: "withExec",
+				Args: []dagql.NamedInput{
+					{
+						Name: "args",
+						Value: dagql.ArrayInput[dagql.String]{
+							"git", "config", "--global", dagql.NewString(entry.Key), dagql.NewString(entry.Value),
+						},
+					},
+				},
+			})
+	}
+
+	return selectors, nil
+}
+
+func (sdk *goSDK) getUnixSocketSelector(ctx context.Context) ([]dagql.Selector, error) {
+	socketStore, err := sdk.root.Sockets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get socket store: %w", err)
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client metadata from context: %w", err)
+	}
+
+	if clientMetadata.SSHAuthSocketPath == "" {
+		return nil, nil
+	}
+
+	accessor, err := core.GetClientResourceAccessor(ctx, sdk.root, clientMetadata.SSHAuthSocketPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client resource name: %w", err)
+	}
+
+	var sockInst dagql.Instance[*core.Socket]
+	if err := sdk.dag.Select(ctx, sdk.dag.Root(), &sockInst,
+		dagql.Selector{
+			Field: "host",
+		},
+		dagql.Selector{
+			Field: "__internalSocket",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "accessor",
+					Value: dagql.NewString(accessor),
+				},
+			},
+		},
+	); err != nil {
+		return nil, fmt.Errorf("failed to select internal socket: %w", err)
+	}
+
+	if sockInst.Self == nil {
+		return nil, fmt.Errorf("sockInst.Self is NIL")
+	}
+
+	if err := socketStore.AddUnixSocket(sockInst.Self, clientMetadata.ClientID, clientMetadata.SSHAuthSocketPath); err != nil {
+		return nil, fmt.Errorf("failed to add unix socket to store: %w", err)
+	}
+
+	return []dagql.Selector{
+		{
+			Field: "withUnixSocket",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.String("/tmp/dagger-ssh-sock"),
+				},
+				{
+					Name:  "source",
+					Value: dagql.NewID[*core.Socket](sockInst.ID()),
+				},
+			},
+		},
+	}, nil
+}
+
+func getSDKConfigSelectors(_ context.Context, config goSDKConfig) []dagql.Selector {
+	var selectors []dagql.Selector
+	if config.GoPrivate != "" {
+		selectors = append(selectors, dagql.Selector{
+			Field: "withEnvVariable",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "name",
+					Value: dagql.NewString("GOPRIVATE"),
+				},
+				{
+					Name:  "value",
+					Value: dagql.NewString(config.GoPrivate),
+				},
+			},
+		})
+	}
+
+	return selectors
 }

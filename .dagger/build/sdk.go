@@ -145,7 +145,7 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 	sdkCtrTarball := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
 		From(consts.GolangImage).
 		With(build.goPlatformEnv).
-		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"apk", "add", "git", "openssh"}).
 		WithEnvVariable("GOTOOLCHAIN", "auto").
 		WithFile("/usr/local/bin/codegen", build.CodegenBinary()).
 		// these cache directories should match the cache volume locations in the engine's goSDK.base
