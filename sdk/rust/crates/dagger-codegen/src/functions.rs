@@ -203,7 +203,7 @@ impl TypeRefExt for TypeRef {
         self.get_non_null()
             .name
             .as_ref()
-            .map(|n| n.to_lowercase().ends_with("id"))
+            .map(|n| n.ends_with("ID"))
             .unwrap_or(false)
     }
 

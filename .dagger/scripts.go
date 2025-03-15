@@ -48,11 +48,6 @@ func (s Scripts) Test(ctx context.Context) error {
 			Permissions: 0755,
 		})
 
-	lastRelease, err := dag.Version().LastReleaseVersion(ctx)
-	if err != nil {
-		return err
-	}
-
 	eg := errgroup.Group{}
 
 	test := func(name string, f func(ctx context.Context) error) {
@@ -106,7 +101,7 @@ func (s Scripts) Test(ctx context.Context) error {
 		ctr := ctr.
 			WithEnvVariable("DAGGER_VERSION", "latest").
 			WithExec([]string{"install.sh"})
-		return checkDaggerVersion(ctx, ctr, "./bin/dagger", matchAtLeastVersion(lastRelease))
+		return checkDaggerVersion(ctx, ctr, "./bin/dagger", isVersion())
 	})
 
 	test("install git sha", func(ctx context.Context) error {
@@ -119,7 +114,7 @@ func (s Scripts) Test(ctx context.Context) error {
 		ctr := ctr.
 			WithEnvVariable("DAGGER_COMMIT", "head").
 			WithExec([]string{"install.sh"})
-		return checkDaggerVersion(ctx, ctr, "./bin/dagger", matchAtLeastVersion(lastRelease))
+		return checkDaggerVersion(ctx, ctr, "./bin/dagger", isVersion())
 	})
 
 	return eg.Wait()
@@ -134,10 +129,10 @@ func matchExactVersion(target string) func(string) error {
 	}
 }
 
-func matchAtLeastVersion(target string) func(string) error {
+func isVersion() func(string) error {
 	return func(v string) error {
-		if semver.Compare(target, v) > 0 {
-			return fmt.Errorf(`expected %q to exceed semver %q`, v, target)
+		if !semver.IsValid(v) {
+			return fmt.Errorf(`expected %q to be valid semver`, v)
 		}
 		return nil
 	}

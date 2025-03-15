@@ -159,6 +159,8 @@ type daggerClient struct {
 	tracerProvider *sdktrace.TracerProvider
 	loggerProvider *sdklog.LoggerProvider
 	meterProvider  *sdkmetric.MeterProvider
+
+	dag *dagql.Server
 }
 
 type daggerClientState string
@@ -689,6 +691,7 @@ func (srv *Server) initializeDaggerClient(
 	client.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
 	client.meterProvider = sdkmetric.NewMeterProvider(meterOpts...)
 
+	client.dag = dag
 	client.state = clientStateInitialized
 	return nil
 }
@@ -1302,14 +1305,69 @@ func (srv *Server) CurrentServedDeps(ctx context.Context) (*core.ModDeps, error)
 	return client.deps, nil
 }
 
-// The ClientID of the main client caller (i.e. the one who created the session, typically the CLI
-// invoked by the user)
-func (srv *Server) MainClientCallerID(ctx context.Context) (string, error) {
+// The Client metadata of the main client caller (i.e. the one who created the
+// session, typically the CLI invoked by the user)
+func (srv *Server) MainClientCallerMetadata(ctx context.Context) (*engine.ClientMetadata, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return client.daggerSession.mainClientCallerID, nil
+	mainClient, ok := srv.clientFromIDs(client.daggerSession.sessionID, client.daggerSession.mainClientCallerID)
+	if !ok {
+		return nil, fmt.Errorf("failed to retrieve session main client")
+	}
+	return mainClient.clientMetadata, nil
+}
+
+// The nearest ancestor client that is not a module (either a caller from the host like the CLI
+// or a nested exec). Useful for figuring out where local sources should be resolved from through
+// chains of dependency modules.
+func (srv *Server) NonModuleParentClientMetadata(ctx context.Context) (*engine.ClientMetadata, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if client.mod == nil {
+		// not a module client, return the metadata
+		return client.clientMetadata, nil
+	}
+	for i := len(client.parents) - 1; i >= 0; i-- {
+		parent := client.parents[i]
+		if parent.mod == nil {
+			// not a module client, return the metadata
+			return parent.clientMetadata, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no non-module parent found")
+}
+
+// Return the DAGQL server for the main client
+func (srv *Server) MainServer(ctx context.Context) (context.Context, *dagql.Server, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	mainClient, ok := srv.clientFromIDs(clientMetadata.SessionID, client.daggerSession.mainClientCallerID)
+	if !ok {
+		return nil, nil, fmt.Errorf("failed to retrieve session main client")
+	}
+	ctx = engine.ContextWithClientMetadata(ctx, mainClient.clientMetadata)
+	return ctx, mainClient.dag, nil
+}
+
+// Return the DagQL server for the specified client
+func (srv *Server) Server(ctx context.Context) (*dagql.Server, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.dag, nil
 }
 
 // The default deps of every user module (currently just core)
@@ -1400,30 +1458,6 @@ func (srv *Server) OCIStore() content.Store {
 // The lease manager for the engine as a whole
 func (srv *Server) LeaseManager() *leaseutil.Manager {
 	return srv.leaseManager
-}
-
-// The nearest ancestor client that is not a module (either a caller from the host like the CLI
-// or a nested exec). Useful for figuring out where local sources should be resolved from through
-// chains of dependency modules.
-func (srv *Server) NonModuleParentClientMetadata(ctx context.Context) (*engine.ClientMetadata, error) {
-	client, err := srv.clientFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	if client.mod == nil {
-		// not a module client, return the metadata
-		return client.clientMetadata, nil
-	}
-	for i := len(client.parents) - 1; i >= 0; i-- {
-		parent := client.parents[i]
-		if parent.mod == nil {
-			// not a module client, return the metadata
-			return parent.clientMetadata, nil
-		}
-	}
-
-	return nil, fmt.Errorf("no non-module parent found")
 }
 
 type httpError struct {

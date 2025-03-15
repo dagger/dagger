@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alecthomas/chroma/v2/quick"
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dustin/go-humanize"
 	"github.com/muesli/termenv"
@@ -86,12 +88,31 @@ type Frontend interface {
 	SetCloudURL(ctx context.Context, url string, msg string, logged bool)
 
 	// Shell is called when the CLI enters interactive mode.
-	Shell(
-		ctx context.Context,
-		fn func(ctx context.Context, input string) error,
-		autocomplete editline.AutoCompleteFn,
-		prompt func(out TermOutput, fg termenv.Color) string,
-	)
+	Shell(ctx context.Context, handler ShellHandler)
+}
+
+// ShellHandler defines the interface for handling shell interactions
+type ShellHandler interface {
+	// Handle processes shell input
+	Handle(ctx context.Context, input string) error
+
+	// AutoComplete provides shell auto-completion functionality
+	AutoComplete(entireInput [][]rune, line, col int) (string, editline.Completions)
+
+	// IsComplete determines if the current input is a complete command
+	IsComplete(entireInput [][]rune, line int, col int) bool
+
+	// Prompt generates the shell prompt string
+	Prompt(out TermOutput, fg termenv.Color) string
+
+	// Keys returns the keys that will be displayed when the input is focused
+	KeyBindings() []key.Binding
+
+	// ReactToInput allows reacting to live input before it's submitted
+	ReactToInput(msg tea.KeyMsg) bool
+
+	// Shell handlers can man-in-the-middle history items to preserve per-entry modes etc.
+	editline.HistoryEncoder
 }
 
 type Dump struct {
@@ -118,7 +139,7 @@ func (d *Dump) DumpID(out *termenv.Output, id *call.ID) error {
 	if d.Newline != "" {
 		r.newline = d.Newline
 	}
-	err = r.renderCall(out, nil, id.Call(), d.Prefix, false, 0, false, false, false)
+	err = r.renderCall(out, nil, id.Call(), d.Prefix, true, 0, false, false, false)
 	fmt.Fprint(out, r.newline)
 	return err
 }
@@ -288,15 +309,24 @@ func (r *renderer) renderSpan(
 	fmt.Fprint(out, prefix)
 	r.indent(out, depth)
 
+	var contentType string
 	if span != nil {
 		r.renderStatus(out, span, focused)
+		contentType = span.ContentType
 	}
 
-	label := out.String(name)
-	if span != nil && len(span.Links) > 0 {
-		label = label.Italic()
+	switch contentType {
+	case "text/x-shellscript":
+		quick.Highlight(out, name, "bash", "terminal16", "monokai")
+	case "text/markdown":
+		quick.Highlight(out, name, "markdown", "terminal16", "monokai")
+	default:
+		label := out.String(name)
+		if span != nil && len(span.Links) > 0 {
+			label = label.Italic()
+		}
+		fmt.Fprint(out, label)
 	}
-	fmt.Fprint(out, label)
 
 	if span != nil {
 		// TODO: when a span has child spans that have progress, do 2-d progress
@@ -371,11 +401,19 @@ func (r *renderer) renderStatus(out TermOutput, span *dagui.Span, focused bool) 
 		color = termenv.ANSIGreen
 	}
 
+	if span.ActorEmoji != "" {
+		symbol = span.ActorEmoji
+	}
+
 	style := out.String(symbol).Foreground(color)
 	if focused {
 		style = style.Reverse()
 	}
 	symbol = style.String()
+
+	if span.ActorEmoji != "" {
+		fmt.Fprint(out, "\b") // emojis take up two columns, so make room
+	}
 
 	fmt.Fprint(out, symbol)
 	fmt.Fprint(out, out.String(" "))
@@ -403,35 +441,53 @@ func (r *renderer) renderCached(out TermOutput, span *dagui.Span) {
 	}
 }
 
+var metricsVerbosity = map[string]int{
+	telemetry.IOStatDiskReadBytes:      3,
+	telemetry.IOStatDiskWriteBytes:     3,
+	telemetry.IOStatPressureSomeTotal:  3,
+	telemetry.CPUStatPressureSomeTotal: 3,
+	telemetry.CPUStatPressureFullTotal: 3,
+	telemetry.MemoryCurrentBytes:       3,
+	telemetry.MemoryPeakBytes:          3,
+	telemetry.NetstatRxBytes:           3,
+	telemetry.NetstatTxBytes:           3,
+	telemetry.NetstatRxDropped:         3,
+	telemetry.NetstatTxDropped:         3,
+	telemetry.NetstatRxPackets:         3,
+	telemetry.NetstatTxPackets:         3,
+	telemetry.LLMInputTokens:           1,
+	telemetry.LLMOutputTokens:          1,
+}
+
 func (r renderer) renderMetrics(out TermOutput, span *dagui.Span) {
-	if r.Verbosity < dagui.ShowMetricsVerbosity {
-		return
+	if span.CallDigest != "" {
+		if metricsByName := r.db.MetricsByCall[span.CallDigest]; metricsByName != nil {
+			// IO Stats
+			r.renderMetric(out, metricsByName, telemetry.IOStatDiskReadBytes, "Disk Read", humanizeBytes)
+			r.renderMetric(out, metricsByName, telemetry.IOStatDiskWriteBytes, "Disk Write", humanizeBytes)
+			r.renderMetricIfNonzero(out, metricsByName, telemetry.IOStatPressureSomeTotal, "IO Pressure", durationString)
+
+			// CPU Stats
+			r.renderMetricIfNonzero(out, metricsByName, telemetry.CPUStatPressureSomeTotal, "CPU Pressure (some)", durationString)
+			r.renderMetricIfNonzero(out, metricsByName, telemetry.CPUStatPressureFullTotal, "CPU Pressure (full)", durationString)
+
+			// Memory Stats
+			r.renderMetric(out, metricsByName, telemetry.MemoryCurrentBytes, "Memory Bytes (current)", humanizeBytes)
+			r.renderMetric(out, metricsByName, telemetry.MemoryPeakBytes, "Memory Bytes (peak)", humanizeBytes)
+
+			// Network Stats
+			r.renderNetworkMetric(out, metricsByName, telemetry.NetstatRxBytes, telemetry.NetstatRxDropped, telemetry.NetstatRxPackets, "Network Rx")
+			r.renderNetworkMetric(out, metricsByName, telemetry.NetstatTxBytes, telemetry.NetstatTxDropped, telemetry.NetstatTxPackets, "Network Tx")
+		}
 	}
 
-	if span.CallDigest == "" {
-		return
+	if metricsByName := r.db.MetricsBySpan[span.ID]; metricsByName != nil {
+		// LLM Stats
+		r.renderMetric(out, metricsByName, telemetry.LLMInputTokens, "Input Tokens", humanizeTokens)
+		r.renderMetric(out, metricsByName, telemetry.LLMOutputTokens, "Output Tokens", humanizeTokens)
+		r.renderMetric(out, metricsByName, telemetry.LLMInputTokensCacheReads, "Token Cache Reads", humanizeTokens)
+		r.renderMetric(out, metricsByName, telemetry.LLMInputTokensCacheWrites, "Token Cache Writes", humanizeTokens)
 	}
-	metricsByName := r.db.MetricsByCall[span.CallDigest]
-	if metricsByName == nil {
-		return
-	}
-
-	// IO Stats
-	r.renderMetric(out, metricsByName, telemetry.IOStatDiskReadBytes, "Disk Read", humanizeBytes)
-	r.renderMetric(out, metricsByName, telemetry.IOStatDiskWriteBytes, "Disk Write", humanizeBytes)
-	r.renderMetricIfNonzero(out, metricsByName, telemetry.IOStatPressureSomeTotal, "IO Pressure", durationString)
-
-	// CPU Stats
-	r.renderMetricIfNonzero(out, metricsByName, telemetry.CPUStatPressureSomeTotal, "CPU Pressure (some)", durationString)
-	r.renderMetricIfNonzero(out, metricsByName, telemetry.CPUStatPressureFullTotal, "CPU Pressure (full)", durationString)
-
-	// Memory Stats
-	r.renderMetric(out, metricsByName, telemetry.MemoryCurrentBytes, "Memory Bytes (current)", humanizeBytes)
-	r.renderMetric(out, metricsByName, telemetry.MemoryPeakBytes, "Memory Bytes (peak)", humanizeBytes)
-
-	// Network Stats
-	r.renderNetworkMetric(out, metricsByName, telemetry.NetstatRxBytes, telemetry.NetstatRxDropped, telemetry.NetstatRxPackets, "Network Rx")
-	r.renderNetworkMetric(out, metricsByName, telemetry.NetstatTxBytes, telemetry.NetstatTxDropped, telemetry.NetstatTxPackets, "Network Tx")
 }
 
 func (r renderer) renderMetric(
@@ -440,9 +496,12 @@ func (r renderer) renderMetric(
 	metricName string, label string,
 	formatValue func(int64) string,
 ) {
+	if v, ok := metricsVerbosity[metricName]; ok && v > r.Verbosity {
+		return
+	}
 	if dataPoints := metricsByName[metricName]; len(dataPoints) > 0 {
 		lastPoint := dataPoints[len(dataPoints)-1]
-		fmt.Fprint(out, " | ")
+		fmt.Fprint(out, out.String(" "+Diamond+" ").Faint())
 		displayMetric := out.String(fmt.Sprintf("%s: %s", label, formatValue(lastPoint.Value)))
 		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
 		fmt.Fprint(out, displayMetric)
@@ -503,6 +562,10 @@ func durationString(microseconds int64) string {
 
 func humanizeBytes(v int64) string {
 	return humanize.Bytes(uint64(v))
+}
+
+func humanizeTokens(v int64) string {
+	return humanize.Commaf(float64(v))
 }
 
 // var (
