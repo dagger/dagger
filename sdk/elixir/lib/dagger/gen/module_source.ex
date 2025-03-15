@@ -180,6 +180,20 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
+  @doc "A JSON file of the GraphQL schema of every dependencies installed in this module"
+  @spec introspection_json_file(t(), [{:include_self, boolean() | nil}]) :: Dagger.File.t()
+  def introspection_json_file(%__MODULE__{} = module_source, optional_args \\ []) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("introspectionJSONFile")
+      |> QB.maybe_put_arg("includeSelf", optional_args[:include_self])
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
   @doc "The kind of module source (currently local, git or dir)."
   @spec kind(t()) :: {:ok, Dagger.ModuleSourceKind.t()} | {:error, term()}
   def kind(%__MODULE__{} = module_source) do

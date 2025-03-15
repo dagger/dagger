@@ -2333,6 +2333,14 @@ type ModuleSource {
   """A unique identifier for this ModuleSource."""
   id: ModuleSourceID!
 
+  """
+  A JSON file of the GraphQL schema of every dependencies installed in this module
+  """
+  introspectionJSONFile(
+    """Include the schema of the current module in the result"""
+    includeSelf: Boolean
+  ): File!
+
   """The kind of module source (currently local, git or dir)."""
   kind: ModuleSourceKind!
 
