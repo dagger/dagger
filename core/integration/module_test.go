@@ -5864,7 +5864,7 @@ func (m *Foo) HowCoolIsDagger() string {
   "sdk": {
     "source": "go",
     "config": {
-      "goprivate": "github.com/rajatjindal/dagger-test-modules"
+      "goprivate": "github.com/dagger/dagger-test-modules"
     }
   }
 }`
