@@ -154,8 +154,6 @@ package engineconn
 const CLIVersion = %q
 `, version)
 
-	// NOTE: if you change this path, be sure to update .github/workflows/publish.yml so that
-	// provision tests run whenever this file changes.
-	dir := dag.Directory().WithNewFile("sdk/go/internal/engineconn/version.gen.go", versionFile)
+	dir := dag.Directory().WithNewFile("sdk/go/engineconn/version.gen.go", versionFile)
 	return dir, nil
 }
