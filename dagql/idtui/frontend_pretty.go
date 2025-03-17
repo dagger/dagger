@@ -631,20 +631,8 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 	}
 
 	if fe.activePrompt != nil {
-		// Render prompt message
-		fmt.Fprint(countOut, fe.activePrompt.message.View())
-
-		// Render Yes/No buttons
-		yesStyle := countOut.String(" YES ").Foreground(termenv.ANSIGreen)
-		noStyle := countOut.String(" NO ").Foreground(termenv.ANSIRed)
-
-		if fe.activePrompt.yessing {
-			yesStyle = yesStyle.Bold().Reverse()
-		} else {
-			noStyle = noStyle.Bold().Reverse()
-		}
-
-		fmt.Fprintf(countOut, "%s %s\n", yesStyle, noStyle)
+		fmt.Fprintln(countOut)
+		fmt.Fprint(countOut, fe.viewPrompt(countOut))
 	}
 
 	if fe.shell == nil {
@@ -665,6 +653,59 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 
 	fmt.Fprint(out, belowOut)
 	return nil
+}
+
+func (fe *frontendPretty) viewPrompt(out TermOutput) string {
+	message := fe.activePrompt.message.View()
+	width := lipgloss.Width(message)
+
+	// Render Yes/No buttons
+	yesStyles := []termenv.Style{
+		out.String(" "),
+		out.String("Y").Underline(),
+		out.String("ES "),
+	}
+	noStyles := []termenv.Style{
+		out.String(" "),
+		out.String("N").Underline(),
+		out.String("O "),
+	}
+	for i, style := range yesStyles {
+		yesStyles[i] = style.Foreground(termenv.ANSIGreen)
+	}
+	for i, style := range noStyles {
+		noStyles[i] = style.Foreground(termenv.ANSIRed)
+	}
+	if fe.activePrompt.yessing {
+		for i, style := range yesStyles {
+			yesStyles[i] = style.Bold().Reverse()
+		}
+	} else {
+		for i, style := range noStyles {
+			noStyles[i] = style.Bold().Reverse()
+		}
+	}
+
+	var yes, no string
+	for _, style := range yesStyles {
+		yes += style.String()
+	}
+	for _, style := range noStyles {
+		no += style.String()
+	}
+
+	bubble := lipgloss.JoinVertical(
+		lipgloss.Left,
+		message,
+		lipgloss.PlaceHorizontal(width, lipgloss.Center,
+			fmt.Sprintf("%s %s", yes, no),
+		),
+	)
+
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).
+		BorderForeground(ANSIBrightBlack).
+		Padding(1, 2).
+		Render(bubble)
 }
 
 func (fe *frontendPretty) viewKeymap() string {
@@ -1859,7 +1900,7 @@ func (fe *frontendPretty) handlePromptBool(ctx context.Context, message string, 
 	fe.program.Send(tea.Msg(prompt{
 		message: &Markdown{
 			Content: message,
-			Width:   fe.window.Width,
+			Width:   min(max(fe.window.Width/2, 50), 80),
 		},
 		result:  result,
 		yessing: *dest,
@@ -1873,3 +1914,22 @@ func (fe *frontendPretty) handlePromptBool(ctx context.Context, message string, 
 		return nil
 	}
 }
+
+var (
+	ANSIBlack         = lipgloss.Color("0")
+	ANSIRed           = lipgloss.Color("1")
+	ANSIGreen         = lipgloss.Color("2")
+	ANSIYellow        = lipgloss.Color("3")
+	ANSIBlue          = lipgloss.Color("4")
+	ANSIMagenta       = lipgloss.Color("5")
+	ANSICyan          = lipgloss.Color("6")
+	ANSIWhite         = lipgloss.Color("7")
+	ANSIBrightBlack   = lipgloss.Color("8")
+	ANSIBrightRed     = lipgloss.Color("9")
+	ANSIBrightGreen   = lipgloss.Color("10")
+	ANSIBrightYellow  = lipgloss.Color("11")
+	ANSIBrightBlue    = lipgloss.Color("12")
+	ANSIBrightMagenta = lipgloss.Color("13")
+	ANSIBrightCyan    = lipgloss.Color("14")
+	ANSIBrightWhite   = lipgloss.Color("15")
+)

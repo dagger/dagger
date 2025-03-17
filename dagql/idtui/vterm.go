@@ -198,7 +198,12 @@ func init() {
 		os.Getenv("LIGHT") == "" {
 		MarkdownStyle = styles.DarkStyleConfig
 	}
+
+	// We don't need any extra margin.
 	MarkdownStyle.Document.Margin = nil
+
+	// No real point setting a custom foreground, it just looks weird.
+	MarkdownStyle.Document.Color = nil
 }
 
 func (term *Vterm) redraw() {
