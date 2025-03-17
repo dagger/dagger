@@ -260,7 +260,7 @@ func (i *Int) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
-var _ Setter = ID[Typed]{}
+var _ Setter = Int(0)
 
 func (i Int) SetField(v reflect.Value) error {
 	switch v.Interface().(type) {

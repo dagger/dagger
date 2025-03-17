@@ -1352,6 +1352,13 @@ func appendAssign(slice reflect.Value, val any) error {
 	if reflect.TypeOf(val).AssignableTo(slice.Type().Elem()) {
 		slice.Set(reflect.Append(slice, reflect.ValueOf(val)))
 		return nil
+	} else if setter, ok := val.(Setter); ok {
+		dst := reflect.New(slice.Type().Elem()).Elem()
+		if err := setter.SetField(dst); err != nil {
+			return fmt.Errorf("appendAssign: Setter.SetField: %w", err)
+		}
+		slice.Set(reflect.Append(slice, dst))
+		return nil
 	} else {
 		return fmt.Errorf("appendAssign: cannot assign %T to %s", val, slice.Type())
 	}

@@ -582,6 +582,7 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 				// assigning to something like dagql.Typed, don't need to enumerate
 				break
 			}
+			isObj := s.isObjectType(res.Type().Elem.Name())
 			enum, isEnum := res.(Enumerable)
 			if !isEnum {
 				return fmt.Errorf("cannot assign non-Enumerable %T to %s", res, destV.Type())
@@ -604,17 +605,19 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 						continue
 					}
 				}
-				nthID := id.SelectNth(nth)
-				obj, err := s.toSelectable(nthID, val)
-				if err != nil {
-					return fmt.Errorf("select %dth array element: %w", nth, err)
+				if isObj {
+					nthID := id.SelectNth(nth)
+					val, err = s.toSelectable(nthID, val)
+					if err != nil {
+						return fmt.Errorf("select %dth array element: %w", nth, err)
+					}
 				}
-				if err := appendAssign(destV, obj); err != nil {
+				if err := appendAssign(destV, val); err != nil {
 					return err
 				}
 			}
 			return nil
-		} else if _, ok := s.ObjectType(res.Type().Name()); ok {
+		} else if s.isObjectType(res.Type().Name()) {
 			// if the result is an Object, set it as the next selection target, and
 			// assign res to the "hydrated" Object
 			self, err = s.toSelectable(id, res)
@@ -629,6 +632,11 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 		}
 	}
 	return assign(reflect.ValueOf(dest).Elem(), res)
+}
+
+func (s *Server) isObjectType(typeName string) bool {
+	_, ok := s.ObjectType(typeName)
+	return ok
 }
 
 // Attach an install hook

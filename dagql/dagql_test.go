@@ -2378,6 +2378,50 @@ func TestServerSelect(t *testing.T) {
 		}
 	})
 
+	t.Run("array selection into []int", func(t *testing.T) {
+		// Create an array of integers
+		intArray := dagql.NewIntArray(1, 2, 3)
+
+		// Add a field to Query that returns this array
+		dagql.Fields[Query]{
+			dagql.Func("testArray", func(ctx context.Context, self Query, args struct{}) (dagql.Array[dagql.Int], error) {
+				return intArray, nil
+			}),
+		}.Install(srv)
+
+		// Get the root object
+		root := srv.Root()
+
+		// For arrays, we need to use a different approach
+		// First, get the array result
+		var result []int
+		err := srv.Select(ctx, root, &result, dagql.Selector{Field: "testArray"})
+		require.NoError(t, err)
+		require.Equal(t, []int{1, 2, 3}, result)
+	})
+
+	t.Run("array selection into []string", func(t *testing.T) {
+		// Create an array of integers
+		strArray := dagql.NewStringArray("one", "two", "three")
+
+		// Add a field to Query that returns this array
+		dagql.Fields[Query]{
+			dagql.Func("testArray", func(ctx context.Context, self Query, args struct{}) (dagql.Array[dagql.String], error) {
+				return strArray, nil
+			}),
+		}.Install(srv)
+
+		// Get the root object
+		root := srv.Root()
+
+		// For arrays, we need to use a different approach
+		// First, get the array result
+		var result []string
+		err := srv.Select(ctx, root, &result, dagql.Selector{Field: "testArray"})
+		require.NoError(t, err)
+		require.Equal(t, []string{"one", "two", "three"}, result)
+	})
+
 	t.Run("error cases", func(t *testing.T) {
 		// Create a test object
 		testObj := &TestObject{Value: 42, Text: "hello"}
