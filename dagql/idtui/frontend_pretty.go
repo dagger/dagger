@@ -108,6 +108,9 @@ type frontendPretty struct {
 
 	// messages to print before the final render
 	msgPreFinalRender strings.Builder
+
+	// Add prompt field
+	activePrompt *prompt
 }
 
 func NewPretty() Frontend {
@@ -235,6 +238,15 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 
 	// return original err
 	return fe.err
+}
+
+func (fe *frontendPretty) HandlePrompt(ctx context.Context, prompt string, dest any) error {
+	switch x := dest.(type) {
+	case *bool:
+		return fe.handlePromptBool(ctx, prompt, x)
+	default:
+		return fmt.Errorf("unsupported prompt destination type: %T", dest)
+	}
 }
 
 func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
@@ -618,6 +630,11 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 		countOut = focusedBg(countOut)
 	}
 
+	if fe.activePrompt != nil {
+		fmt.Fprintln(countOut)
+		fmt.Fprint(countOut, fe.viewPrompt(countOut))
+	}
+
 	if fe.shell == nil {
 		fmt.Fprint(countOut, fe.viewKeymap())
 	}
@@ -636,6 +653,59 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 
 	fmt.Fprint(out, belowOut)
 	return nil
+}
+
+func (fe *frontendPretty) viewPrompt(out TermOutput) string {
+	message := fe.activePrompt.message.View()
+	width := lipgloss.Width(message)
+
+	// Render Yes/No buttons
+	yesStyles := []termenv.Style{
+		out.String(" "),
+		out.String("Y").Underline(),
+		out.String("ES "),
+	}
+	noStyles := []termenv.Style{
+		out.String(" "),
+		out.String("N").Underline(),
+		out.String("O "),
+	}
+	for i, style := range yesStyles {
+		yesStyles[i] = style.Foreground(termenv.ANSIGreen)
+	}
+	for i, style := range noStyles {
+		noStyles[i] = style.Foreground(termenv.ANSIRed)
+	}
+	if fe.activePrompt.yessing {
+		for i, style := range yesStyles {
+			yesStyles[i] = style.Bold().Reverse()
+		}
+	} else {
+		for i, style := range noStyles {
+			noStyles[i] = style.Bold().Reverse()
+		}
+	}
+
+	var yes, no string
+	for _, style := range yesStyles {
+		yes += style.String()
+	}
+	for _, style := range noStyles {
+		no += style.String()
+	}
+
+	bubble := lipgloss.JoinVertical(
+		lipgloss.Left,
+		message,
+		lipgloss.PlaceHorizontal(width, lipgloss.Center,
+			fmt.Sprintf("%s %s", yes, no),
+		),
+	)
+
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).
+		BorderForeground(ANSIBrightBlack).
+		Padding(1, 2).
+		Render(bubble)
 }
 
 func (fe *frontendPretty) viewKeymap() string {
@@ -1038,6 +1108,41 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		return fe, nil
 
 	case tea.KeyMsg:
+		// Handle prompt input if there's an active prompt
+		if fe.activePrompt != nil {
+			switch msg.String() {
+			case "left", "h", "right", "l":
+				fe.activePrompt.yessing = !fe.activePrompt.yessing
+				return fe, nil
+			case "enter":
+				result := fe.activePrompt.result
+				choice := fe.activePrompt.yessing
+				fe.activePrompt = nil
+				return fe, func() tea.Msg {
+					result <- choice
+					close(result)
+					return nil
+				}
+			case "n", "N":
+				result := fe.activePrompt.result
+				fe.activePrompt = nil
+				return fe, func() tea.Msg {
+					result <- false
+					close(result)
+					return nil
+				}
+			case "y", "Y":
+				result := fe.activePrompt.result
+				fe.activePrompt = nil
+				return fe, func() tea.Msg {
+					result <- true
+					close(result)
+					return nil
+				}
+			}
+			return fe, nil
+		}
+
 		// send all input to editline if it's focused
 		if fe.shell != nil && fe.editlineFocused {
 			// update the prompt in all cases since e.g. going through history
@@ -1186,9 +1291,19 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		// adjust the outermost layer.
 		return fe, tea.Batch(flushCmd, frame(fe.fps))
 
+	case prompt:
+		fe.activePrompt = &msg
+		return fe, nil
+
 	default:
 		return fe, nil
 	}
+}
+
+type prompt struct {
+	message *Markdown
+	result  chan bool
+	yessing bool
 }
 
 func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
@@ -1404,6 +1519,9 @@ func (fe *frontendPretty) setWindowSizeLocked(msg tea.WindowSizeMsg) {
 	fe.logs.SetWidth(msg.Width)
 	if fe.editline != nil {
 		fe.editline.SetSize(msg.Width, msg.Height)
+	}
+	if fe.activePrompt != nil {
+		fe.activePrompt.message.Width = msg.Width
 	}
 }
 
@@ -1776,3 +1894,43 @@ func (bg *BackgroundWriter) Write(p []byte) (n int, err error) {
 func focusedBg(out TermOutput) TermOutput {
 	return NewBackgroundOutput(out, highlightBg)
 }
+
+func (fe *frontendPretty) handlePromptBool(ctx context.Context, message string, dest *bool) error {
+	result := make(chan bool, 1)
+
+	fe.program.Send(tea.Msg(prompt{
+		message: &Markdown{
+			Content: message,
+			Width:   min(max(fe.window.Width/2, 50), 80),
+		},
+		result:  result,
+		yessing: *dest,
+	}))
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case val := <-result:
+		*dest = val
+		return nil
+	}
+}
+
+var (
+	ANSIBlack         = lipgloss.Color("0")
+	ANSIRed           = lipgloss.Color("1")
+	ANSIGreen         = lipgloss.Color("2")
+	ANSIYellow        = lipgloss.Color("3")
+	ANSIBlue          = lipgloss.Color("4")
+	ANSIMagenta       = lipgloss.Color("5")
+	ANSICyan          = lipgloss.Color("6")
+	ANSIWhite         = lipgloss.Color("7")
+	ANSIBrightBlack   = lipgloss.Color("8")
+	ANSIBrightRed     = lipgloss.Color("9")
+	ANSIBrightGreen   = lipgloss.Color("10")
+	ANSIBrightYellow  = lipgloss.Color("11")
+	ANSIBrightBlue    = lipgloss.Color("12")
+	ANSIBrightMagenta = lipgloss.Color("13")
+	ANSIBrightCyan    = lipgloss.Color("14")
+	ANSIBrightWhite   = lipgloss.Color("15")
+)

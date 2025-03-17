@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
+	"github.com/vito/go-interact/interact"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -202,6 +203,19 @@ func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run f
 	fe.db.WriteDot(opts.DotOutputFilePath, opts.DotFocusField, opts.DotShowInternal)
 
 	return runErr
+}
+
+func (fe *frontendPlain) HandlePrompt(ctx context.Context, prompt string, dest any) error {
+	switch x := dest.(type) {
+	case *bool:
+		return fe.handlePromptBool(ctx, prompt, x)
+	default:
+		return fmt.Errorf("unsupported prompt destination type: %T", dest)
+	}
+}
+
+func (fe *frontendPlain) handlePromptBool(_ context.Context, prompt string, dest *bool) error {
+	return interact.NewInteraction(prompt).Resolve(dest)
 }
 
 func (fe *frontendPlain) Opts() *dagui.FrontendOpts {

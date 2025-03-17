@@ -505,6 +505,10 @@ func (llm *LLM) LastReply(ctx context.Context, dag *dagql.Server) (string, error
 // 2. Process replies and tool calls
 // 3. Continue in a loop until no tool calls, or caps are reached
 func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
+	if err := llm.allowed(ctx, dag); err != nil {
+		return nil, err
+	}
+
 	if !llm.dirty {
 		return llm, nil
 	}
@@ -604,6 +608,27 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 	}
 	llm.dirty = false
 	return llm, nil
+}
+
+func (llm *LLM) allowed(ctx context.Context, dag *dagql.Server) error {
+	bk, err := llm.Query.Buildkit(ctx)
+	if err != nil {
+		return err
+	}
+
+	module, err := llm.Query.CurrentModule(ctx)
+	if err != nil {
+		// allow non-module calls
+		if errors.Is(err, ErrNoCurrentModule) {
+			return nil
+		}
+		return fmt.Errorf("failed to figure out module while deciding if llm is allowed: %w", err)
+	}
+	if module.Source.Self.Kind != ModuleSourceKindGit {
+		return nil
+	}
+
+	return bk.AllowLLM(ctx, module.Source.Self.Git.CloneRef)
 }
 
 func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error) {

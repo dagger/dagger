@@ -188,7 +188,7 @@ func (term *Vterm) View() string {
 	return term.viewBuf.String()
 }
 
-var style = styles.LightStyleConfig
+var MarkdownStyle = styles.LightStyleConfig
 
 func init() {
 	if isDark &&
@@ -196,9 +196,14 @@ func init() {
 		// color, and light Markdown on light background is unreadable, so we
 		// use this env var to force the color.
 		os.Getenv("LIGHT") == "" {
-		style = styles.DarkStyleConfig
+		MarkdownStyle = styles.DarkStyleConfig
 	}
-	style.Document.Margin = nil
+
+	// We don't need any extra margin.
+	MarkdownStyle.Document.Margin = nil
+
+	// No real point setting a custom foreground, it just looks weird.
+	MarkdownStyle.Document.Color = nil
 }
 
 func (term *Vterm) redraw() {
@@ -206,7 +211,7 @@ func (term *Vterm) redraw() {
 
 	// First render any Markdown content
 	if term.markdownBuf.Len() > 0 {
-		st := style
+		st := MarkdownStyle
 		// HACK: we want "0" or "255", but termenv.Color doesn't have a
 		// String() method, only Sequence(bool) which prints the ANSI
 		// formatting sequence.
@@ -247,6 +252,65 @@ func (term *Vterm) redraw() {
 
 	// Then render regular terminal content
 	term.Render(term.viewBuf, term.Offset, term.Height)
+}
+
+type Markdown struct {
+	Content    string
+	Background termenv.Color
+	Prefix     string
+	Width      int
+
+	viewBuf     strings.Builder
+	needsRedraw bool
+}
+
+func (m *Markdown) View() string {
+	if !m.needsRedraw && m.viewBuf.Len() > 0 {
+		return m.viewBuf.String()
+	}
+	m.viewBuf.Reset()
+	st := MarkdownStyle
+	// HACK: we want "0" or "255", but termenv.Color doesn't have a
+	// String() method, only Sequence(bool) which prints the ANSI
+	// formatting sequence.
+	if m.Background != nil {
+		switch x := m.Background.(type) {
+		case termenv.ANSIColor, termenv.ANSI256Color:
+			// annoyingly, there's no clean conversion from termenv.Color
+			// back to the value that lipgloss wants, because ANSI 0
+			// translates to "#000000" and we want "0"
+			bg := fmt.Sprintf("%d", x)
+			st.Document.BackgroundColor = &bg
+		default:
+			bg := fmt.Sprint(m.Background)
+			st.Document.BackgroundColor = &bg
+		}
+	}
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithWordWrap(m.Width-lipgloss.Width(m.Prefix)),
+		glamour.WithStyles(st),
+	)
+	if err != nil {
+		return fmt.Sprintf("Error rendering Markdown: %s\n", err)
+	}
+
+	rendered, err := renderer.Render(m.Content)
+	if err != nil {
+		return fmt.Sprintf("Error rendering Markdown: %s\n", err)
+	} else {
+		// Remove leading and trailing newlines
+		rendered = strings.TrimSpace(rendered)
+		// Add prefix to each line of rendered Markdown
+		lines := strings.Split(rendered, "\n")
+		for i, line := range lines {
+			if i > 0 {
+				m.viewBuf.WriteString(m.Prefix)
+			}
+			m.viewBuf.WriteString(line)
+			m.viewBuf.WriteString("\n")
+		}
+	}
+	return m.viewBuf.String()
 }
 
 // Bytes returns the output for the given region of the terminal, with

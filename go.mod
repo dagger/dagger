@@ -103,6 +103,7 @@ require (
 	github.com/urfave/cli v1.22.16
 	github.com/vektah/gqlparser/v2 v2.5.23
 	github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb
+	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.2
 	github.com/vito/midterm v0.2.2
 	github.com/zeebo/xxh3 v1.0.2
@@ -243,7 +244,7 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
-	github.com/google/pprof v0.0.0-20240424215950-a892ee059fd6 // indirect
+	github.com/google/pprof v0.0.0-20250315033105-103756e64e1d // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.24.0 // indirect
