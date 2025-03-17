@@ -11,12 +11,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/server"
-)
-
-const (
-	daggerEngineSockAddr = "unix:///run/dagger/engine.sock"
 )
 
 func defaultBuildkitConfigPath() string {
@@ -48,7 +45,7 @@ func setDefaultBuildkitConfig(cfg *bkconfig.Config, netConf *networkConfig) {
 	}
 
 	// always include default addresses
-	cfg.GRPC.Address = append([]string{appdefaults.Address, daggerEngineSockAddr}, cfg.GRPC.Address...)
+	cfg.GRPC.Address = append([]string{appdefaults.Address, engine.DefaultEngineSockAddr}, cfg.GRPC.Address...)
 
 	isTrue := true
 	cfg.Workers.OCI.Enabled = &isTrue
