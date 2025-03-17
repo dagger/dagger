@@ -84,6 +84,10 @@ func ResourceTransferPostCall(
 		namedSecrets = append(namedSecrets, secretWithPlaintext{inst: secret, plaintext: plaintext})
 	}
 
+	if len(namedSecrets) == 0 {
+		return nopTransfer, nil
+	}
+
 	callerClientMemo := sync.Map{}
 	var postCall func(context.Context) error
 	postCall = func(ctx context.Context) error {
