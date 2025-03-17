@@ -4,6 +4,8 @@ const (
 	EngineImageRepo = "registry.dagger.io/engine"
 	Package         = "github.com/dagger/dagger"
 
+	DefaultEngineSockAddr = "unix:///run/dagger/engine.sock"
+
 	DaggerNameEnv = "_EXPERIMENTAL_DAGGER_ENGINE_NAME"
 
 	DaggerVersionEnv        = "_EXPERIMENTAL_DAGGER_VERSION"
