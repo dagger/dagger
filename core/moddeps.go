@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"github.com/dagger/dagger/dagql"
-	dagintro "github.com/dagger/dagger/dagql/introspection"
 	"slices"
 	"sync"
+
+	dagintro "github.com/dagger/dagger/dagql/introspection"
 )
 
 const (
