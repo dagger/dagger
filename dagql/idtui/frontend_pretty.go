@@ -35,16 +35,6 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-var isDark = termenv.HasDarkBackground()
-
-var highlightBg termenv.Color = termenv.ANSI256Color(255)
-
-func init() {
-	if isDark {
-		highlightBg = termenv.ANSIColor(0)
-	}
-}
-
 var historyFile = filepath.Join(xdg.DataHome, "dagger", "histfile")
 
 var ErrShellExited = errors.New("shell exited")
