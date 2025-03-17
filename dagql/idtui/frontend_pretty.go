@@ -218,6 +218,9 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 	}
 
 	if fe.editline != nil {
+		if err := os.MkdirAll(filepath.Dir(historyFile), 0755); err != nil {
+			slog.Error("failed to create history directory", "err", err)
+		}
 		if err := history.SaveHistory(fe.editline.GetHistory(), historyFile); err != nil {
 			slog.Error("failed to save history", "err", err)
 		}
