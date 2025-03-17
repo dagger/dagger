@@ -403,12 +403,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to collect IDs: %w", err)
 	}
 
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	slog.Debug("RETURNED IDS", "ids", returnedIDs, "num", len(returnedIDs))
-
 	// NOTE: once generalized function caching is enabled we need to ensure that any non-reproducible
 	// cache entries are linked to the result of this call.
 	// See the previous implementation of this for a reference:
