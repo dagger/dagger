@@ -199,30 +199,20 @@ The Dagger module's class name is automatically generated based on the name of t
 
 ### Run the pipeline
 
-Dagger Shell is the fastest way to interact with the Dagger API, allowing access to both core types and custom Dagger Functions using a familiar Bash-like syntax. You'll run most of the commands in this quickstart within Dagger Shell.
+Dagger Shell is the fastest way to interact with the Dagger API, allowing access to both core types and custom Dagger Functions using a familiar Bash-like syntax.
 
 <Tabs groupId="shell">
 <TabItem value="System shell">
+```shell
 dagger -c 'publish .'
+```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
 publish .
 ```
 </TabItem>
 </Tabs>
-
-Start Dagger Shell in interactive mode:
-
-```shell
-dagger
-```
-
-At the interactive prompt, run the command below:
-
-```shell
-⋈ publish .
-```
 
 This single command runs the application's tests, then builds and publishes it as a container image to the [ttl.sh container registry](https://ttl.sh). Here's what you should see:
 
