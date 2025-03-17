@@ -2333,14 +2333,6 @@ type ModuleSource {
   """A unique identifier for this ModuleSource."""
   id: ModuleSourceID!
 
-  """
-  A JSON file of the GraphQL schema of every dependencies installed in this module
-  """
-  introspectionJSONFile(
-    """Include the schema of the current module in the result"""
-    includeSelf: Boolean
-  ): File!
-
   """The kind of module source (currently local, git or dir)."""
   kind: ModuleSourceKind!
 
@@ -2370,6 +2362,14 @@ type ModuleSource {
   The import path corresponding to the root of the git repo this source points to. Only valid for git sources.
   """
   repoRootPath: String!
+
+  """
+  A JSON file with the GraphQL schema introspection, including every dependency installed in this module
+  """
+  schemaIntrospectionFile(
+    """Exclude the given module from the result"""
+    exclude: [String!] = []
+  ): File!
 
   """The SDK configuration of the module."""
   sdk: SDKConfig

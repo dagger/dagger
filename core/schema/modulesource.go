@@ -151,9 +151,9 @@ func (s *moduleSourceSchema) Install() {
 			ArgDoc("outputDir", `The output directory for the generated client.`).
 			ArgDoc("dev", `Generate in developer mode`),
 
-		dagql.NodeFunc("introspectionJSONFile", s.introspectionJSONFile).
-			Doc(`A JSON file of the GraphQL schema of every dependencies installed in this module`).
-			ArgDoc("includeSelf", `Include the schema of the current module in the result`),
+		dagql.NodeFunc("schemaIntrospectionFile", s.schemaIntrospectionFile).
+			Doc(`A JSON file with the GraphQL schema introspection, including every dependency installed in this module`).
+			ArgDoc("exclude", `Exclude the given module from the result`),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.SDKConfig]{}.Install(s.dag)
@@ -1313,11 +1313,11 @@ func (s *moduleSourceSchema) moduleSourceRepoRootPath(
 	return src.Git.RepoRootPath, nil
 }
 
-func (s *moduleSourceSchema) introspectionJSONFile(
+func (s *moduleSourceSchema) schemaIntrospectionFile(
 	ctx context.Context,
 	src dagql.Instance[*core.ModuleSource],
 	args struct {
-		IncludeSelf dagql.Optional[dagql.Boolean]
+		Exclude dagql.Array[dagql.String] `default:"[]"`
 	},
 ) (*core.File, error) {
 	deps, err := s.loadDependencyModules(ctx, src.Self)
@@ -1327,7 +1327,7 @@ func (s *moduleSourceSchema) introspectionJSONFile(
 
 	// If the current module source has sources, we can transform it into a module
 	// to generate self bindings.
-	if args.IncludeSelf.Valid && args.IncludeSelf.Value.Bool() && src.Self.SDK != nil {
+	if src.Self.SDK != nil {
 		var mod dagql.Instance[*core.Module]
 		err = s.dag.Select(ctx, src, &mod, dagql.Selector{
 			Field: "asModule",
@@ -1337,6 +1337,11 @@ func (s *moduleSourceSchema) introspectionJSONFile(
 		}
 
 		deps = mod.Self.Deps.Append(mod.Self)
+	}
+
+	excludeDepLength := args.Exclude.Len()
+	for i := range excludeDepLength {
+		deps = deps.Exclude(args.Exclude[i].String())
 	}
 
 	introspectionJSONFiles, err := deps.SchemaIntrospectionJSONFile(ctx)

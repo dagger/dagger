@@ -5969,27 +5969,6 @@ func (r *ModuleSource) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// ModuleSourceIntrospectionJSONFileOpts contains options for ModuleSource.IntrospectionJSONFile
-type ModuleSourceIntrospectionJSONFileOpts struct {
-	// Include the schema of the current module in the result
-	IncludeSelf bool
-}
-
-// A JSON file of the GraphQL schema of every dependencies installed in this module
-func (r *ModuleSource) IntrospectionJSONFile(opts ...ModuleSourceIntrospectionJSONFileOpts) *File {
-	q := r.query.Select("introspectionJSONFile")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `includeSelf` optional argument
-		if !querybuilder.IsZeroValue(opts[i].IncludeSelf) {
-			q = q.Arg("includeSelf", opts[i].IncludeSelf)
-		}
-	}
-
-	return &File{
-		query: q,
-	}
-}
-
 // The kind of module source (currently local, git or dir).
 func (r *ModuleSource) Kind(ctx context.Context) (ModuleSourceKind, error) {
 	if r.kind != nil {
@@ -6079,6 +6058,27 @@ func (r *ModuleSource) RepoRootPath(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// ModuleSourceSchemaIntrospectionFileOpts contains options for ModuleSource.SchemaIntrospectionFile
+type ModuleSourceSchemaIntrospectionFileOpts struct {
+	// Exclude the given module from the result
+	Exclude []string
+}
+
+// A JSON file with the GraphQL schema introspection, including every dependency installed in this module
+func (r *ModuleSource) SchemaIntrospectionFile(opts ...ModuleSourceSchemaIntrospectionFileOpts) *File {
+	q := r.query.Select("schemaIntrospectionFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+
+	return &File{
+		query: q,
+	}
 }
 
 // The SDK configuration of the module.

@@ -6049,25 +6049,6 @@ class ModuleSource(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(ModuleSourceID)
 
-    def introspection_json_file(
-        self,
-        *,
-        include_self: bool | None = None,
-    ) -> File:
-        """A JSON file of the GraphQL schema of every dependencies installed in
-        this module
-
-        Parameters
-        ----------
-        include_self:
-            Include the schema of the current module in the result
-        """
-        _args = [
-            Arg("includeSelf", include_self, None),
-        ]
-        _ctx = self._select("introspectionJSONFile", _args)
-        return File(_ctx)
-
     async def kind(self) -> ModuleSourceKind:
         """The kind of module source (currently local, git or dir).
 
@@ -6217,6 +6198,25 @@ class ModuleSource(Type):
         _args: list[Arg] = []
         _ctx = self._select("repoRootPath", _args)
         return await _ctx.execute(str)
+
+    def schema_introspection_file(
+        self,
+        *,
+        exclude: list[str] | None = None,
+    ) -> File:
+        """A JSON file with the GraphQL schema introspection, including every
+        dependency installed in this module
+
+        Parameters
+        ----------
+        exclude:
+            Exclude the given module from the result
+        """
+        _args = [
+            Arg("exclude", () if exclude is None else exclude, ()),
+        ]
+        _ctx = self._select("schemaIntrospectionFile", _args)
+        return File(_ctx)
 
     def sdk(self) -> "SDKConfig":
         """The SDK configuration of the module."""

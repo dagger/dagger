@@ -1031,11 +1031,11 @@ export type ModuleConfigClientID = string & { __ModuleConfigClientID: never }
  */
 export type ModuleID = string & { __ModuleID: never }
 
-export type ModuleSourceIntrospectionJsonfileOpts = {
+export type ModuleSourceSchemaIntrospectionFileOpts = {
   /**
-   * Include the schema of the current module in the result
+   * Exclude the given module from the result
    */
-  includeSelf?: boolean
+  exclude?: string[]
 }
 
 export type ModuleSourceWithClientOpts = {
@@ -5715,17 +5715,6 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * A JSON file of the GraphQL schema of every dependencies installed in this module
-   * @param opts.includeSelf Include the schema of the current module in the result
-   */
-  introspectionJSONFile = (
-    opts?: ModuleSourceIntrospectionJsonfileOpts,
-  ): File => {
-    const ctx = this._ctx.select("introspectionJSONFile", { ...opts })
-    return new File(ctx)
-  }
-
-  /**
    * The kind of module source (currently local, git or dir).
    */
   kind = async (): Promise<ModuleSourceKind> => {
@@ -5828,6 +5817,17 @@ export class ModuleSource extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * A JSON file with the GraphQL schema introspection, including every dependency installed in this module
+   * @param opts.exclude Exclude the given module from the result
+   */
+  schemaIntrospectionFile = (
+    opts?: ModuleSourceSchemaIntrospectionFileOpts,
+  ): File => {
+    const ctx = this._ctx.select("schemaIntrospectionFile", { ...opts })
+    return new File(ctx)
   }
 
   /**
