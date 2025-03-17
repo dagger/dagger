@@ -365,7 +365,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		attachables = append(attachables, filesyncer.AsSource(), filesyncer.AsTarget())
 	}
 	if c.Params.PromptHandler != nil {
-		attachables = append(attachables, session.NewPromptAttachable(ctx, c.Params.PromptHandler))
+		attachables = append(attachables, session.NewPromptAttachable(c.Params.PromptHandler))
 	}
 
 	sessionConn, err := c.DialContext(ctx, "", "")

@@ -28,9 +28,7 @@ type PromptResponses struct {
 var promptMutex sync.Mutex
 
 type PromptAttachable struct {
-	rootCtx context.Context
-
-	UnimplementedGitCredentialServer
+	UnimplementedPromptServer
 
 	persistence   *PromptResponses
 	promptHandler PromptHandler
@@ -40,9 +38,8 @@ type PromptHandler interface {
 	HandlePrompt(ctx context.Context, prompt string, dest any) error
 }
 
-func NewPromptAttachable(rootCtx context.Context, promptHandler PromptHandler) PromptAttachable {
+func NewPromptAttachable(promptHandler PromptHandler) PromptAttachable {
 	return PromptAttachable{
-		rootCtx:       rootCtx,
 		persistence:   &PromptResponses{},
 		promptHandler: promptHandler,
 	}
@@ -76,7 +73,7 @@ func (p PromptAttachable) PromptBool(ctx context.Context, req *BoolRequest) (*Bo
 		}
 	}
 
-	var confirm bool
+	var confirm bool = req.GetDefault()
 	if p.promptHandler != nil {
 		if err := p.promptHandler.HandlePrompt(ctx, req.GetPrompt(), &confirm); err != nil {
 			return nil, status.Errorf(codes.Internal, "Failed to handle prompt: %v", err)

@@ -674,9 +674,9 @@ func (c *Client) AllowLLM(ctx context.Context, moduleRepoURL string) error {
 	}
 
 	response, err := session.NewPromptClient(caller.Conn()).PromptBool(ctx, &session.BoolRequest{
-		Prompt:        fmt.Sprintf("Remote module %s attempted to access the LLM API. Allow it?", moduleRepoURL),
+		Prompt:        fmt.Sprintf("Remote module **%s** attempted to access the LLM API. Allow it?", moduleRepoURL),
 		PersistentKey: "allow_llm:" + moduleRepoURL,
-		Default:       false,
+		Default:       false, // TODO: default to true?
 	})
 	if err != nil {
 		return fmt.Errorf("failed to prompt user for LLM API access: %w", err)

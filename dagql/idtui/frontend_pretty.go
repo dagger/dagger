@@ -630,6 +630,23 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 		countOut = focusedBg(countOut)
 	}
 
+	if fe.activePrompt != nil {
+		// Render prompt message
+		fmt.Fprint(countOut, fe.activePrompt.message.View())
+
+		// Render Yes/No buttons
+		yesStyle := countOut.String(" YES ").Foreground(termenv.ANSIGreen)
+		noStyle := countOut.String(" NO ").Foreground(termenv.ANSIRed)
+
+		if fe.activePrompt.yessing {
+			yesStyle = yesStyle.Bold().Reverse()
+		} else {
+			noStyle = noStyle.Bold().Reverse()
+		}
+
+		fmt.Fprintf(countOut, "%s %s\n", yesStyle, noStyle)
+	}
+
 	if fe.shell == nil {
 		fmt.Fprint(countOut, fe.viewKeymap())
 	}
@@ -1054,11 +1071,11 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		if fe.activePrompt != nil {
 			switch msg.String() {
 			case "left", "h", "right", "l":
-				fe.activePrompt.focused = !fe.activePrompt.focused
+				fe.activePrompt.yessing = !fe.activePrompt.yessing
 				return fe, nil
 			case "enter":
 				result := fe.activePrompt.result
-				choice := fe.activePrompt.focused
+				choice := fe.activePrompt.yessing
 				fe.activePrompt = nil
 				return fe, func() tea.Msg {
 					result <- choice
@@ -1234,11 +1251,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		return fe, tea.Batch(flushCmd, frame(fe.fps))
 
 	case prompt:
-		fe.activePrompt = &prompt{
-			message: msg.message,
-			result:  msg.result,
-			focused: msg.focused,
-		}
+		fe.activePrompt = &msg
 		return fe, nil
 
 	default:
@@ -1247,9 +1260,9 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 }
 
 type prompt struct {
-	message string
+	message *Markdown
 	result  chan bool
-	focused bool
+	yessing bool
 }
 
 func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
@@ -1466,31 +1479,14 @@ func (fe *frontendPretty) setWindowSizeLocked(msg tea.WindowSizeMsg) {
 	if fe.editline != nil {
 		fe.editline.SetSize(msg.Width, msg.Height)
 	}
+	if fe.activePrompt != nil {
+		fe.activePrompt.message.Width = msg.Width
+	}
 }
 
 func (fe *frontendPretty) renderLocked() {
 	fe.view.Reset()
 	fe.Render(fe.viewOut)
-	if fe.activePrompt != nil {
-		// Add newline before prompt
-		fmt.Fprintln(fe.viewOut)
-
-		// Render prompt message
-		fmt.Fprintf(fe.viewOut, "%s ", fe.activePrompt.message)
-
-		// Render Yes/No buttons
-		yesStyle := fe.viewOut.String("[Yes]")
-		noStyle := fe.viewOut.String("[No]")
-
-		if fe.activePrompt.focused {
-			yesStyle = yesStyle.Bold().Reverse()
-		} else {
-			noStyle = noStyle.Bold().Reverse()
-		}
-
-		fmt.Fprintf(fe.viewOut, "%s %s", yesStyle, noStyle)
-		fmt.Fprintln(fe.viewOut)
-	}
 }
 
 func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, highlight bool) bool {
@@ -1861,9 +1857,12 @@ func (fe *frontendPretty) handlePromptBool(ctx context.Context, message string, 
 	result := make(chan bool, 1)
 
 	fe.program.Send(tea.Msg(prompt{
-		message: message,
+		message: &Markdown{
+			Content: message,
+			Width:   fe.window.Width,
+		},
 		result:  result,
-		focused: true, // Default to Yes
+		yessing: *dest,
 	}))
 
 	select {
