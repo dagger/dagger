@@ -685,7 +685,7 @@ func (c *Client) AllowLLM(ctx context.Context, moduleRepoURL string) error {
 		return nil
 	}
 
-	return fmt.Errorf("Remote module %s attempted to use LLM tokens, pass --allow-llm=%s or --allow-llm=all to allow", moduleRepoURL, moduleRepoURL)
+	return fmt.Errorf("module %s was denied LLM access; pass --allow-llm=%s or --allow-llm=all to allow", moduleRepoURL, moduleRepoURL)
 }
 
 type TerminalClient struct {

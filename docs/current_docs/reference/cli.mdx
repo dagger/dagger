@@ -16,6 +16,7 @@ dagger [flags]
 ### Options
 
 ```
+      --allow-llm strings            List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
   -c, --code string                  Command to be executed
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
@@ -59,9 +60,10 @@ dagger call [options]
 ### Options
 
 ```
-  -j, --json            Present result as JSON
-  -m, --mod string      Path to the module directory. Either local path or a remote git repo
-  -o, --output string   Save the result to a local file or directory
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+  -j, --json                Present result as JSON
+  -m, --mod string          Path to the module directory. Either local path or a remote git repo
+  -o, --output string       Save the result to a local file or directory
 ```
 
 ### Options inherited from parent commands
@@ -104,8 +106,9 @@ dagger config -m github.com/dagger/hello-dagger
 ### Options
 
 ```
-      --json         output in JSON format
-  -m, --mod string   Path to the module directory. Either local path or a remote git repo
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --json                output in JSON format
+  -m, --mod string          Path to the module directory. Either local path or a remote git repo
 ```
 
 ### Options inherited from parent commands
@@ -190,6 +193,7 @@ dagger develop [options]
 ### Options
 
 ```
+      --allow-llm strings        List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
       --compat string[="skip"]   Engine API version to target (default "latest")
       --license string           License identifier to generate. See https://spdx.org/licenses/ (default "Apache-2.0")
   -m, --mod string               Path to the module directory. Either local path or a remote git repo
@@ -234,7 +238,8 @@ dagger functions [options] [function]...
 ### Options
 
 ```
-  -m, --mod string   Path to the module directory. Either local path or a remote git repo
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+  -m, --mod string          Path to the module directory. Either local path or a remote git repo
 ```
 
 ### Options inherited from parent commands
@@ -327,9 +332,10 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
 ### Options
 
 ```
-      --compat string   Engine API version to target (default "latest")
-  -m, --mod string      Path to the module directory. Either local path or a remote git repo
-  -n, --name string     Name to use for the dependency in the module. Defaults to the name of the module being installed.
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --compat string       Engine API version to target (default "latest")
+  -m, --mod string          Path to the module directory. Either local path or a remote git repo
+  -n, --name string         Name to use for the dependency in the module. Defaults to the name of the module being installed.
 ```
 
 ### Options inherited from parent commands
@@ -440,10 +446,11 @@ EOF
 ### Options
 
 ```
-      --doc string        Read query from file (defaults to reading from stdin)
-  -m, --mod string        Path to the module directory. Either local path or a remote git repo
-      --var strings       List of query variables, in key=value format
-      --var-json string   Query variables in JSON format (overrides --var)
+      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --doc string          Read query from file (defaults to reading from stdin)
+  -m, --mod string          Path to the module directory. Either local path or a remote git repo
+      --var strings         List of query variables, in key=value format
+      --var-json string     Query variables in JSON format (overrides --var)
 ```
 
 ### Options inherited from parent commands

@@ -505,7 +505,7 @@ func (llm *LLM) LastReply(ctx context.Context, dag *dagql.Server) (string, error
 // 2. Process replies and tool calls
 // 3. Continue in a loop until no tool calls, or caps are reached
 func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
-	if err := llm.allowed(ctx, dag); err != nil {
+	if err := llm.allowed(ctx); err != nil {
 		return nil, err
 	}
 
@@ -610,7 +610,7 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 	return llm, nil
 }
 
-func (llm *LLM) allowed(ctx context.Context, dag *dagql.Server) error {
+func (llm *LLM) allowed(ctx context.Context) error {
 	bk, err := llm.Query.Buildkit(ctx)
 	if err != nil {
 		return err
