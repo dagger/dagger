@@ -3,15 +3,19 @@ syntax = "proto3";
 option go_package = "session";
 
 service Prompt {
-  rpc Prompt(PromptRequest) returns (PromptResponse);
+  rpc PromptBool(BoolRequest) returns (BoolResponse);
 }
 
-// right now this is hardcoded to allow llm prompts, but could easily be extended to other prompt use cases
-message PromptRequest {
+message BoolRequest {
+    // the prompt to display to the user
     string prompt = 1;
-    string moduleRepoURL = 2;
+    // if provided, the prompt will be persisted and not reprompted
+    string persistentKey = 2;
+    // the default value to return if the user doesn't respond
+    bool default = 3;
 }
 
-message PromptResponse {
-    string response = 1;
+message BoolResponse {
+    // the response from the user
+    bool response = 1;
 }

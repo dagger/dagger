@@ -24,6 +24,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/dagger/dagger/engine/session"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -89,6 +90,8 @@ type Frontend interface {
 
 	// Shell is called when the CLI enters interactive mode.
 	Shell(ctx context.Context, handler ShellHandler)
+
+	session.PromptHandler
 }
 
 // ShellHandler defines the interface for handling shell interactions

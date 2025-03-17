@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strings"
 	"sync"
 
 	bkcache "github.com/moby/buildkit/cache"
@@ -674,15 +673,15 @@ func (c *Client) AllowLLM(ctx context.Context, moduleRepoURL string) error {
 		return fmt.Errorf("failed to get main client caller for %q: %w", md.ClientID, err)
 	}
 
-	response, err := session.NewPromptClient(caller.Conn()).Prompt(ctx, &session.PromptRequest{
+	response, err := session.NewPromptClient(caller.Conn()).PromptBool(ctx, &session.BoolRequest{
 		Prompt:        fmt.Sprintf("Remote module %s attempted to access the LLM API. Allow it?", moduleRepoURL),
-		ModuleRepoURL: moduleRepoURL,
+		PersistentKey: "allow_llm:" + moduleRepoURL,
+		Default:       false,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to prompt user for LLM API access: %w", err)
 	}
-	input := strings.ToLower(strings.TrimSpace(response.Response))
-	if input == "yes" || input == "y" {
+	if response.Response {
 		return nil
 	}
 

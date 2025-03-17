@@ -89,6 +89,8 @@ type Params struct {
 
 	ServeModule       bool
 	AllowedLLMModules []string
+
+	PromptHandler session.PromptHandler
 }
 
 type Client struct {
@@ -353,8 +355,6 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		session.NewTerminalAttachable(ctx, c.Params.WithTerminal),
 		// Git credentials
 		session.NewGitCredentialAttachable(ctx),
-		// Prompts
-		session.NewPromptAttachable(ctx),
 	}
 	// filesync
 	if !c.DisableHostRW {
@@ -363,6 +363,9 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 			return fmt.Errorf("new filesyncer: %w", err)
 		}
 		attachables = append(attachables, filesyncer.AsSource(), filesyncer.AsTarget())
+	}
+	if c.Params.PromptHandler != nil {
+		attachables = append(attachables, session.NewPromptAttachable(ctx, c.Params.PromptHandler))
 	}
 
 	sessionConn, err := c.DialContext(ctx, "", "")

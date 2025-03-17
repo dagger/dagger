@@ -15,14 +15,14 @@ import (
 )
 
 var (
-	configRoot          = filepath.Join(xdg.ConfigHome, "dagger")
-	allowLLMModulesFile = filepath.Join(configRoot, "allowed-llm-modules.json")
+	configRoot              = filepath.Join(xdg.ConfigHome, "dagger")
+	promptConfirmationsFile = filepath.Join(configRoot, "prompt-confirmations.json")
 )
 
-// LLMAllowedModuleHistory manages the list of LLM modules that the user has allowed
-type LLMAllowedModuleHistory struct {
+// PromptResponses manages the list of LLM modules that the user has allowed
+type PromptResponses struct {
 	// only keyed like this for json marshalling forwards-compatibility
-	Modules map[string]struct{} `json:"allowed_llm_modules"`
+	Responses map[string]struct{} `json:"responses"`
 }
 
 var promptMutex sync.Mutex
@@ -31,13 +31,20 @@ type PromptAttachable struct {
 	rootCtx context.Context
 
 	UnimplementedGitCredentialServer
-	llmAllowedModuleHistory *LLMAllowedModuleHistory
+
+	persistence   *PromptResponses
+	promptHandler PromptHandler
 }
 
-func NewPromptAttachable(rootCtx context.Context) PromptAttachable {
+type PromptHandler interface {
+	HandlePrompt(ctx context.Context, prompt string, dest any) error
+}
+
+func NewPromptAttachable(rootCtx context.Context, promptHandler PromptHandler) PromptAttachable {
 	return PromptAttachable{
-		rootCtx:                 rootCtx,
-		llmAllowedModuleHistory: &LLMAllowedModuleHistory{},
+		rootCtx:       rootCtx,
+		persistence:   &PromptResponses{},
+		promptHandler: promptHandler,
 	}
 }
 
@@ -46,7 +53,7 @@ func (p PromptAttachable) Register(srv *grpc.Server) {
 }
 
 // right now this is hardcoded to allow llm prompts, but could easily be extended to other prompt use cases
-func (p PromptAttachable) Prompt(ctx context.Context, req *PromptRequest) (*PromptResponse, error) {
+func (p PromptAttachable) PromptBool(ctx context.Context, req *BoolRequest) (*BoolResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 
@@ -54,52 +61,52 @@ func (p PromptAttachable) Prompt(ctx context.Context, req *PromptRequest) (*Prom
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid input: Prompt required")
 	}
 
-	if req.ModuleRepoURL == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "Invalid input: ModuleRepoURL required")
-	}
-
 	promptMutex.Lock()
 	defer promptMutex.Unlock()
 
-	allowed, err := p.llmAllowedModuleHistory.contains(req.ModuleRepoURL)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "Failed to check allowed LLM modules: %v", err)
+	if req.PersistentKey != "" {
+		allowed, err := p.persistence.contains(req.PersistentKey)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "Failed to check allowed LLM modules: %v", err)
+		}
+		if allowed {
+			return &BoolResponse{
+				Response: true,
+			}, nil
+		}
 	}
 
-	if allowed {
-		return &PromptResponse{
-			Response: "yes",
-		}, nil
+	var confirm bool
+	if p.promptHandler != nil {
+		if err := p.promptHandler.HandlePrompt(ctx, req.GetPrompt(), &confirm); err != nil {
+			return nil, status.Errorf(codes.Internal, "Failed to handle prompt: %v", err)
+		}
 	}
 
-	// TODO: @vito: actually prompt the user via the frontend
-	userResponse := "no"
-
-	// only persist affirmatives so we reprompt for negatives
-	if userResponse == "yes" {
-		if err := p.llmAllowedModuleHistory.persistResponse(req.ModuleRepoURL); err != nil {
+	if confirm && req.PersistentKey != "" {
+		if err := p.persistence.persistResponse(req.PersistentKey); err != nil {
 			return nil, status.Errorf(codes.Internal, "Failed to persist response: %v", err)
 		}
 	}
 
-	return &PromptResponse{
-		Response: userResponse,
+	return &BoolResponse{
+		Response: confirm,
 	}, nil
 }
 
 // not threadsafe, must be holding promptMutex
-func (a *LLMAllowedModuleHistory) load() error {
+func (a *PromptResponses) load() error {
 	if err := a.ensureFileExists(); err != nil {
 		return err
 	}
 
-	data, err := os.ReadFile(allowLLMModulesFile)
+	data, err := os.ReadFile(promptConfirmationsFile)
 	if err != nil {
 		return err
 	}
 
 	if len(data) == 0 {
-		a.Modules = make(map[string]struct{})
+		a.Responses = make(map[string]struct{})
 		return nil
 	}
 
@@ -107,48 +114,48 @@ func (a *LLMAllowedModuleHistory) load() error {
 		return err
 	}
 
-	if a.Modules == nil {
-		a.Modules = make(map[string]struct{})
+	if a.Responses == nil {
+		a.Responses = make(map[string]struct{})
 	}
 
 	return nil
 }
 
-func (a *LLMAllowedModuleHistory) ensureFileExists() error {
+func (a *PromptResponses) ensureFileExists() error {
 	if err := os.MkdirAll(configRoot, 0755); err != nil {
 		return err
 	}
 
-	_, err := os.Stat(allowLLMModulesFile)
+	_, err := os.Stat(promptConfirmationsFile)
 	if os.IsNotExist(err) {
 		return a.persist()
 	}
 	return err
 }
 
-func (a *LLMAllowedModuleHistory) contains(allowLLMModule string) (bool, error) {
+func (a *PromptResponses) contains(key string) (bool, error) {
 	if err := a.load(); err != nil {
 		return false, err
 	}
-	_, exists := a.Modules[allowLLMModule]
+	_, exists := a.Responses[key]
 	return exists, nil
 }
 
-func (a *LLMAllowedModuleHistory) persistResponse(allowLLMModule string) error {
+func (a *PromptResponses) persistResponse(key string) error {
 	if err := a.load(); err != nil {
 		return err
 	}
 
-	a.Modules[allowLLMModule] = struct{}{}
+	a.Responses[key] = struct{}{}
 
 	return a.persist()
 }
 
-func (a *LLMAllowedModuleHistory) persist() error {
+func (a *PromptResponses) persist() error {
 	data, err := json.MarshalIndent(a, "", "  ")
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(allowLLMModulesFile, data, 0644)
+	return os.WriteFile(promptConfirmationsFile, data, 0644)
 }

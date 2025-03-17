@@ -108,6 +108,9 @@ type frontendPretty struct {
 
 	// messages to print before the final render
 	msgPreFinalRender strings.Builder
+
+	// Add prompt field
+	activePrompt *prompt
 }
 
 func NewPretty() Frontend {
@@ -235,6 +238,15 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 
 	// return original err
 	return fe.err
+}
+
+func (fe *frontendPretty) HandlePrompt(ctx context.Context, prompt string, dest any) error {
+	switch x := dest.(type) {
+	case *bool:
+		return fe.handlePromptBool(ctx, prompt, x)
+	default:
+		return fmt.Errorf("unsupported prompt destination type: %T", dest)
+	}
 }
 
 func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
@@ -1038,6 +1050,41 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		return fe, nil
 
 	case tea.KeyMsg:
+		// Handle prompt input if there's an active prompt
+		if fe.activePrompt != nil {
+			switch msg.String() {
+			case "left", "h", "right", "l":
+				fe.activePrompt.focused = !fe.activePrompt.focused
+				return fe, nil
+			case "enter":
+				result := fe.activePrompt.result
+				choice := fe.activePrompt.focused
+				fe.activePrompt = nil
+				return fe, func() tea.Msg {
+					result <- choice
+					close(result)
+					return nil
+				}
+			case "n", "N":
+				result := fe.activePrompt.result
+				fe.activePrompt = nil
+				return fe, func() tea.Msg {
+					result <- false
+					close(result)
+					return nil
+				}
+			case "y", "Y":
+				result := fe.activePrompt.result
+				fe.activePrompt = nil
+				return fe, func() tea.Msg {
+					result <- true
+					close(result)
+					return nil
+				}
+			}
+			return fe, nil
+		}
+
 		// send all input to editline if it's focused
 		if fe.shell != nil && fe.editlineFocused {
 			// update the prompt in all cases since e.g. going through history
@@ -1186,9 +1233,23 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		// adjust the outermost layer.
 		return fe, tea.Batch(flushCmd, frame(fe.fps))
 
+	case prompt:
+		fe.activePrompt = &prompt{
+			message: msg.message,
+			result:  msg.result,
+			focused: msg.focused,
+		}
+		return fe, nil
+
 	default:
 		return fe, nil
 	}
+}
+
+type prompt struct {
+	message string
+	result  chan bool
+	focused bool
 }
 
 func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
@@ -1410,6 +1471,26 @@ func (fe *frontendPretty) setWindowSizeLocked(msg tea.WindowSizeMsg) {
 func (fe *frontendPretty) renderLocked() {
 	fe.view.Reset()
 	fe.Render(fe.viewOut)
+	if fe.activePrompt != nil {
+		// Add newline before prompt
+		fmt.Fprintln(fe.viewOut)
+
+		// Render prompt message
+		fmt.Fprintf(fe.viewOut, "%s ", fe.activePrompt.message)
+
+		// Render Yes/No buttons
+		yesStyle := fe.viewOut.String("[Yes]")
+		noStyle := fe.viewOut.String("[No]")
+
+		if fe.activePrompt.focused {
+			yesStyle = yesStyle.Bold().Reverse()
+		} else {
+			noStyle = noStyle.Bold().Reverse()
+		}
+
+		fmt.Fprintf(fe.viewOut, "%s %s", yesStyle, noStyle)
+		fmt.Fprintln(fe.viewOut)
+	}
 }
 
 func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, highlight bool) bool {
@@ -1774,4 +1855,22 @@ func (bg *BackgroundWriter) Write(p []byte) (n int, err error) {
 
 func focusedBg(out TermOutput) TermOutput {
 	return NewBackgroundOutput(out, highlightBg)
+}
+
+func (fe *frontendPretty) handlePromptBool(ctx context.Context, message string, dest *bool) error {
+	result := make(chan bool, 1)
+
+	fe.program.Send(tea.Msg(prompt{
+		message: message,
+		result:  result,
+		focused: true, // Default to Yes
+	}))
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case val := <-result:
+		*dest = val
+		return nil
+	}
 }
