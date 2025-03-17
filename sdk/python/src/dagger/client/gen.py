@@ -6263,6 +6263,21 @@ class LLM(Type):
         _ctx = self._select("interfaceTypeDef", _args)
         return InterfaceTypeDef(_ctx)
 
+    def l_lm(self) -> Self:
+        """Retrieve a the current value in the LLM environment, of type LLM
+
+        .. deprecated::
+            use get<TargetType> instead
+        """
+        warnings.warn(
+            'Method "l_lm" is deprecated: use get<TargetType> instead',
+            DeprecationWarning,
+            stacklevel=4,
+        )
+        _args: list[Arg] = []
+        _ctx = self._select("lLM", _args)
+        return LLM(_ctx)
+
     async def last_reply(self) -> str:
         """return the last llm reply from the history
 
@@ -6299,21 +6314,6 @@ class LLM(Type):
         _args: list[Arg] = []
         _ctx = self._select("listTypeDef", _args)
         return ListTypeDef(_ctx)
-
-    def llm(self) -> Self:
-        """Retrieve a the current value in the LLM environment, of type LLM
-
-        .. deprecated::
-            use get<TargetType> instead
-        """
-        warnings.warn(
-            'Method "llm" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
-        _args: list[Arg] = []
-        _ctx = self._select("llm", _args)
-        return LLM(_ctx)
 
     def loop(self) -> Self:
         """synchronize LLM state
@@ -9726,7 +9726,6 @@ class Client(Root):
         *,
         model: str | None = None,
         max_api_calls: int | None = None,
-        multi_object: bool | None = True,
     ) -> LLM:
         """Initialize a Large Language Model (LLM)
 
@@ -9736,12 +9735,10 @@ class Client(Root):
             Model to use
         max_api_calls:
             Cap the number of API calls for this LLM
-        multi_object:
         """
         _args = [
             Arg("model", model, None),
             Arg("maxAPICalls", max_api_calls, None),
-            Arg("multiObject", multi_object, True),
         ]
         _ctx = self._select("llm", _args)
         return LLM(_ctx)

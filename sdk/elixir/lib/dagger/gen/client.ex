@@ -228,18 +228,14 @@ defmodule Dagger.Client do
   end
 
   @doc "Initialize a Large Language Model (LLM)"
-  @spec llm(t(), [
-          {:model, String.t() | nil},
-          {:max_api_calls, integer() | nil},
-          {:multi_object, boolean() | nil}
-        ]) :: Dagger.LLM.t()
+  @spec llm(t(), [{:model, String.t() | nil}, {:max_api_calls, integer() | nil}]) ::
+          Dagger.LLM.t()
   def llm(%__MODULE__{} = client, optional_args \\ []) do
     query_builder =
       client.query_builder
       |> QB.select("llm")
       |> QB.maybe_put_arg("model", optional_args[:model])
       |> QB.maybe_put_arg("maxAPICalls", optional_args[:max_api_calls])
-      |> QB.maybe_put_arg("multiObject", optional_args[:multi_object])
 
     %Dagger.LLM{
       query_builder: query_builder,

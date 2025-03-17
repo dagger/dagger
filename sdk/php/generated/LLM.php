@@ -550,6 +550,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve a the current value in the LLM environment, of type LLM
+     */
+    public function lLM(): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('lLM');
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * return the last llm reply from the history
      */
     public function lastReply(): string
@@ -565,15 +574,6 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('listTypeDef');
         return new \Dagger\ListTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieve a the current value in the LLM environment, of type LLM
-     */
-    public function llm(): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('llm');
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

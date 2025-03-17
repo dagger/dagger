@@ -680,6 +680,19 @@ defmodule Dagger.LLM do
     }
   end
 
+  @deprecated "use get<TargetType> instead"
+  @doc "Retrieve a the current value in the LLM environment, of type LLM"
+  @spec l_lm(t()) :: Dagger.LLM.t()
+  def l_lm(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("lLM")
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
   @doc "return the last llm reply from the history"
   @spec last_reply(t()) :: {:ok, String.t()} | {:error, term()}
   def last_reply(%__MODULE__{} = llm) do
@@ -697,19 +710,6 @@ defmodule Dagger.LLM do
       llm.query_builder |> QB.select("listTypeDef")
 
     %Dagger.ListTypeDef{
-      query_builder: query_builder,
-      client: llm.client
-    }
-  end
-
-  @deprecated "use get<TargetType> instead"
-  @doc "Retrieve a the current value in the LLM environment, of type LLM"
-  @spec llm(t()) :: Dagger.LLM.t()
-  def llm(%__MODULE__{} = llm) do
-    query_builder =
-      llm.query_builder |> QB.select("llm")
-
-    %Dagger.LLM{
       query_builder: query_builder,
       client: llm.client
     }

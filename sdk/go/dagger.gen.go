@@ -5887,6 +5887,17 @@ func (r *LLM) InterfaceTypeDef() *InterfaceTypeDef {
 	}
 }
 
+// Retrieve a the current value in the LLM environment, of type LLM
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) LLM() *LLM {
+	q := r.query.Select("lLM")
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // return the last llm reply from the history
 func (r *LLM) LastReply(ctx context.Context) (string, error) {
 	if r.lastReply != nil {
@@ -5907,17 +5918,6 @@ func (r *LLM) ListTypeDef() *ListTypeDef {
 	q := r.query.Select("listTypeDef")
 
 	return &ListTypeDef{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type LLM
-//
-// Deprecated: use get<TargetType> instead
-func (r *LLM) Llm() *LLM {
-	q := r.query.Select("llm")
-
-	return &LLM{
 		query: q,
 	}
 }
@@ -8766,8 +8766,6 @@ type LlmOpts struct {
 	Model string
 	// Cap the number of API calls for this LLM
 	MaxAPICalls int
-
-	MultiObject bool
 }
 
 // Initialize a Large Language Model (LLM)
@@ -8781,10 +8779,6 @@ func (r *Client) Llm(opts ...LlmOpts) *LLM {
 		// `maxAPICalls` optional argument
 		if !querybuilder.IsZeroValue(opts[i].MaxAPICalls) {
 			q = q.Arg("maxAPICalls", opts[i].MaxAPICalls)
-		}
-		// `multiObject` optional argument
-		if !querybuilder.IsZeroValue(opts[i].MultiObject) {
-			q = q.Arg("multiObject", opts[i].MultiObject)
 		}
 	}
 

@@ -6726,6 +6726,15 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Retrieve a the current value in the LLM environment, of type LLM
+    pub fn l_lm(&self) -> Llm {
+        let query = self.selection.select("lLM");
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// return the last llm reply from the history
     pub async fn last_reply(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("lastReply");
@@ -6735,15 +6744,6 @@ impl Llm {
     pub fn list_type_def(&self) -> ListTypeDef {
         let query = self.selection.select("listTypeDef");
         ListTypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type LLM
-    pub fn llm(&self) -> Llm {
-        let query = self.selection.select("llm");
-        Llm {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -9201,8 +9201,6 @@ pub struct QueryLlmOpts<'a> {
     /// Model to use
     #[builder(setter(into, strip_option), default)]
     pub model: Option<&'a str>,
-    #[builder(setter(into, strip_option), default)]
-    pub multi_object: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryLoadSecretFromNameOpts<'a> {
@@ -9531,9 +9529,6 @@ impl Query {
         }
         if let Some(max_api_calls) = opts.max_api_calls {
             query = query.arg("maxAPICalls", max_api_calls);
-        }
-        if let Some(multi_object) = opts.multi_object {
-            query = query.arg("multiObject", multi_object);
         }
         Llm {
             proc: self.proc.clone(),

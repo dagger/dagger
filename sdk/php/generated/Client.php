@@ -189,7 +189,7 @@ class Client extends Client\AbstractClient
     /**
      * Initialize a Large Language Model (LLM)
      */
-    public function llm(?string $model = null, ?int $maxAPICalls = null, ?bool $multiObject = true): LLM
+    public function llm(?string $model = null, ?int $maxAPICalls = null): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('llm');
         if (null !== $model) {
@@ -197,9 +197,6 @@ class Client extends Client\AbstractClient
         }
         if (null !== $maxAPICalls) {
         $innerQueryBuilder->setArgument('maxAPICalls', $maxAPICalls);
-        }
-        if (null !== $multiObject) {
-        $innerQueryBuilder->setArgument('multiObject', $multiObject);
         }
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

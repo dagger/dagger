@@ -1169,7 +1169,6 @@ export type ClientLlmOpts = {
    * Cap the number of API calls for this LLM
    */
   maxAPICalls?: number
-  multiObject?: boolean
 }
 
 export type ClientLoadSecretFromNameOpts = {
@@ -5675,6 +5674,15 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Retrieve a the current value in the LLM environment, of type LLM
+   * @deprecated use get<TargetType> instead
+   */
+  lLM = (): LLM => {
+    const ctx = this._ctx.select("lLM")
+    return new LLM(ctx)
+  }
+
+  /**
    * return the last llm reply from the history
    */
   lastReply = async (): Promise<string> => {
@@ -5696,15 +5704,6 @@ export class LLM extends BaseClient {
   listTypeDef = (): ListTypeDef => {
     const ctx = this._ctx.select("listTypeDef")
     return new ListTypeDef(ctx)
-  }
-
-  /**
-   * Retrieve a the current value in the LLM environment, of type LLM
-   * @deprecated use get<TargetType> instead
-   */
-  llm = (): LLM => {
-    const ctx = this._ctx.select("llm")
-    return new LLM(ctx)
   }
 
   /**
