@@ -381,9 +381,9 @@ func (*LLM) Type() *ast.Type {
 func (llm *LLM) Clone() *LLM {
 	cp := *llm
 	cp.messages = cloneSlice(cp.messages)
-	cp.promptVars = cloneSlice(cp.promptVars)
 	cp.calls = cloneMap(cp.calls)
-	cp.env.vars = cloneMap(cp.env.vars)
+	cp.promptVars = cloneSlice(cp.promptVars)
+	cp.env = cp.env.Clone()
 	return &cp
 }
 

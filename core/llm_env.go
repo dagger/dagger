@@ -44,6 +44,14 @@ func NewLLMEnv() *LLMEnv {
 	}
 }
 
+func (env *LLMEnv) Clone() *LLMEnv {
+	cp := *env
+	cp.history = cloneSlice(cp.history)
+	cp.vars = cloneMap(cp.vars)
+	cp.objsByHash = cloneMap(cp.objsByHash)
+	return &cp
+}
+
 // Lookup dagql typedef for a given dagql value
 func (env *LLMEnv) typedef(srv *dagql.Server, val dagql.Typed) *ast.Definition {
 	return srv.Schema().Types[val.Type().Name()]
