@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/adrg/xdg"
 	grpc "google.golang.org/grpc"
@@ -51,9 +50,6 @@ func (p PromptAttachable) Register(srv *grpc.Server) {
 
 // right now this is hardcoded to allow llm prompts, but could easily be extended to other prompt use cases
 func (p PromptAttachable) PromptBool(ctx context.Context, req *BoolRequest) (*BoolResponse, error) {
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
-
 	if req.Prompt == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid input: Prompt required")
 	}
