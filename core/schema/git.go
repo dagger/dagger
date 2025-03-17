@@ -213,7 +213,6 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 		authSock = sockInst
 
 	case remote.Scheme == "ssh":
-		// TODO: ???
 		return inst, fmt.Errorf("SSH URLs are not supported without an SSH socket")
 	}
 

@@ -115,13 +115,16 @@ func (c *SessionCache) GetOrInitializeWithCallbacks(
 	}
 
 	res, err = c.cache.GetOrInitializeWithCallbacks(ctx, key, fn)
-	if res != nil && !isZero {
+	if err != nil {
+		return nil, err
+	}
+	if !isZero {
 		c.mu.Lock()
 		c.results = append(c.results, res)
 		c.mu.Unlock()
 	}
 
-	return res, err
+	return res, nil
 }
 
 func (c *SessionCache) ReleaseAll(ctx context.Context) error {

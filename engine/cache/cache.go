@@ -202,15 +202,15 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 func (c *cache[K, V]) wait(ctx context.Context, key K, res *result[K, V]) (*perCallResult[K, V], error) {
 	var hitCache bool
 	var err error
-	// TODO: doc
-	// TODO: doc
-	// TODO: doc
+
+	// first check just if the call is done already, if it is we consider it a cache hit
 	select {
 	case <-res.waitCh:
 		hitCache = true
 		err = res.err
 	default:
-		// wait for either the call to be done or the caller's ctx to be canceled
+		// call wasn't done in fast path check, wait for either the call to
+		// be done or the caller's ctx to be canceled
 		select {
 		case <-res.waitCh:
 			err = res.err
@@ -244,6 +244,10 @@ func (c *cache[K, V]) wait(ctx context.Context, key K, res *result[K, V]) (*perC
 }
 
 func (res *result[K, V]) Result() V {
+	if res == nil {
+		var zero V
+		return zero
+	}
 	return res.val
 }
 
