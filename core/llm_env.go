@@ -295,6 +295,9 @@ func (env *LLMEnv) callCurrent(ctx context.Context, _ any) (any, error) {
 
 // describe returns a string representation of a typed object or object ID
 func (env *LLMEnv) describe(val dagql.Typed) string {
+	if val == nil {
+		return fmt.Sprintf("<nil> (%T)", val)
+	}
 	if obj, ok := dagql.UnwrapAs[dagql.IDable](val); ok {
 		return obj.ID().Type().ToAST().Name() + "@" + obj.ID().Digest().String()
 	}
