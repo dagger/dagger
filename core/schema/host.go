@@ -206,8 +206,17 @@ type setSecretFileArgs struct {
 	Path string
 }
 
-func (s *hostSchema) setSecretFile(ctx context.Context, host *core.Host, args setSecretFileArgs) (dagql.Instance[*core.Secret], error) {
-	return host.SetSecretFile(ctx, s.srv, args.Name, args.Path)
+func (s *hostSchema) setSecretFile(ctx context.Context, host *core.Host, args setSecretFileArgs) (inst dagql.Instance[*core.Secret], err error) {
+	err = s.srv.Select(ctx, s.srv.Root(), inst,
+		dagql.Selector{
+			Field: "secret",
+			Args: []dagql.NamedInput{{
+				Name:  "uri",
+				Value: dagql.NewString("file://" + args.Path),
+			}},
+		},
+	)
+	return inst, err
 }
 
 type hostDirectoryArgs struct {
