@@ -60,7 +60,7 @@ There are various reasons why you might want to write Dagger Functions that call
 Call the Dagger Function:
 
 ```shell
-dagger shell -c 'publish .'
+⋈ publish .
 ```
 
 You should see the application being tested, built, and published to the [ttl.sh container registry](https://ttl.sh):
@@ -71,9 +71,8 @@ You can test the published container image by pulling and running it with `docke
 
 ![Docker run](/img/current_docs/quickstart/docker.gif)
 
-
 :::tip FUNCTION CHAINING
-[Function chaining](../../features/programmable-pipelines.mdx) works the same way, whether you're writing Dagger Function code using a Dagger SDK or invoking a Dagger Function using the Dagger CLI. The following are equivalent:
+[Function chaining](../../features/programmable-pipelines.mdx) works the same way, whether you're writing Dagger Function code using a Dagger SDK or invoking a Dagger Function using Dagger Shell. The following are equivalent:
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -106,12 +105,12 @@ You can test the published container image by pulling and running it with `docke
 ```
 
 </TabItem>
-<TabItem value="Dagger CLI">
+<TabItem value="Dagger Shell">
 ```shell
 # all equivalent
-dagger shell -c 'base | with-exec apk,add,bash,git | publish ttl.sh/bar'
-dagger shell -c 'build | publish ttl.sh/bar'
-dagger shell -c 'build-and-publish'
+⋈ base | with-exec apk,add,bash,git | publish ttl.sh/bar
+⋈ build | publish ttl.sh/bar
+⋈ build-and-publish
 ```
 </TabItem>
 </Tabs>

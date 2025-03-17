@@ -59,7 +59,7 @@ The result of this Dagger Function is a `Container` representing the final produ
 Call the Dagger Function as below:
 
 ```shell
-dagger shell -c 'build .'
+⋈ build .
 ```
 
 Here's what you should see:
@@ -72,13 +72,10 @@ This output means that the build succeeded, and a `Container` type representing 
 
 The `as-service` function can be used to [start a just-in-time container as a local service](../../features/services.mdx) and have any exposed ports forwarded to the host machine. This is similar to Docker Compose, except that you're using code instead of YAML to manage your services.
 
-To see this in action, chain additional function calls to `as-service` and `up` on the returned `Container`:
+To see this in action, chain calls to other functions on the returned `Container` using the pipe (`|`) operator:
 
 ```shell
-dagger call \
-  build --source=. \
-  as-service \
-  up --ports=8080:80
+⋈ build . | as-service | up --ports=8080:80
 ```
 
 By default, Dagger will map each exposed container service port to the same port on the host. Since NGINX operates on port 80, which is often a privileged port on the host, the additional `--ports 8080:80` argument re-maps container port 80 to unprivileged host port 8080.

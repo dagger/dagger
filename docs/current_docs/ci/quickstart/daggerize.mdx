@@ -14,7 +14,7 @@ The best way to understand how Dagger works is by creating a delivery pipeline u
 :::tip DAGGERIZING
 1. Choose a Dagger SDK and bootstrap a new Dagger module for your application's pipeline with `dagger init`.
 2. Construct the pipeline by creating and combining one or more Dagger Functions to produce the desired results. Your Dagger Functions can use the core Dagger API and/or call Dagger Functions from third-party Daggerverse modules.
-3. Use `dagger` to run and test your pipeline locally. Once you're satisfied, transfer your Dagger module and your `dagger` commands to your CI configuration.
+3. Use the Dagger Sehell to run and test your pipeline locally. Once you're satisfied, transfer your Dagger module to your CI configuration.
 :::
 
 ### Get the example application
@@ -50,8 +50,7 @@ Confirmation code: FCNP-SRLM
 
 Once you confirm your authentication code, your Dagger CLI will be authenticated and you will get redirected to your newly created Dagger Cloud organization.
 
-After successfully creating your organization, all future `dagger call` pipelines
-can be inspected in Dagger Cloud.
+After successfully creating your organization, all future Dagger pipelines can be inspected in Dagger Cloud.
 
 ### Initialize a Dagger module
 
@@ -200,10 +199,18 @@ The Dagger module's class name is automatically generated based on the name of t
 
 ### Run the pipeline
 
-Call a Dagger Function to run the pipeline:
+Dagger Shell is the fastest way to interact with the Dagger API, allowing access to both core types and custom Dagger Functions using a familiar Bash-like syntax. You'll run most of the commands in this quickstart within Dagger Shell.
+
+Start Dagger Shell in interactive mode:
 
 ```shell
-dagger shell -c 'publish .'
+dagger
+```
+
+At the interactive prompt, run the command below:
+
+```shell
+⋈ publish .
 ```
 
 This single command runs the application's tests, then builds and publishes it as a container image to the [ttl.sh container registry](https://ttl.sh). Here's what you should see:
@@ -218,5 +225,5 @@ This is called a "Trace". It represents a single run of a Daggerized pipeline, a
 
 :::tip DID YOU NOTICE...
 1. Even though you just tested, built and published a Node.js application, you didn't need to install any dependencies like `node` or `npm` on your local machine. You only needed the Dagger CLI and the ability to run containers. This is a very powerful feature that eliminates all the variability and dependencies related to the host environment and/or configuration.
-1. Subsequent calls to `dagger call publish...` are significantly faster than the first run (try it!). Dagger caches every operation by default and automatically generates a [Directed Acyclic Graph (DAG)](https://en.wikipedia.org/wiki/Directed_acyclic_graph) to run your pipeline steps concurrently to maximize pipeline speed and accuracy.
+1. Subsequent runs of the pipeline are significantly faster than the first run (try it!). Dagger caches every operation by default and automatically generates a [Directed Acyclic Graph (DAG)](https://en.wikipedia.org/wiki/Directed_acyclic_graph) to run your pipeline steps concurrently to maximize pipeline speed and accuracy.
 :::
