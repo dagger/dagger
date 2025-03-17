@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,7 +17,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/iancoleman/strcase"
 	"github.com/joho/godotenv"
-	"github.com/moby/buildkit/identity"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
@@ -118,8 +118,6 @@ type LLMRouter struct {
 	GeminiAPIKey  string
 	GeminiBaseURL string
 	GeminiModel   string
-
-	HistoryReplay []ModelMessage
 }
 
 func (r *LLMRouter) isAnthropicModel(model string) bool {
@@ -140,6 +138,25 @@ func (r *LLMRouter) isMistralModel(model string) bool {
 
 func (r *LLMRouter) isReplay(model string) bool {
 	return strings.HasPrefix(model, "replay-") || strings.HasPrefix(model, "replay/")
+}
+
+func (r *LLMRouter) getReplay(model string) (messages []ModelMessage, _ error) {
+	model, ok := strings.CutPrefix(model, "replay-")
+	if !ok {
+		model, ok = strings.CutPrefix(model, "replay/")
+		if !ok {
+			return nil, fmt.Errorf("model %q is not replayable", model)
+		}
+	}
+
+	result, err := base64.StdEncoding.DecodeString(model)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(result, &messages); err != nil {
+		return nil, err
+	}
+	return messages, nil
 }
 
 func (r *LLMRouter) routeAnthropicModel() *LLMEndpoint {
@@ -193,10 +210,14 @@ func (r *LLMRouter) routeOtherModel() *LLMEndpoint {
 	return endpoint
 }
 
-func (r *LLMRouter) routeReplayModel() *LLMEndpoint {
+func (r *LLMRouter) routeReplayModel(model string) (*LLMEndpoint, error) {
+	replay, err := r.getReplay(model)
+	if err != nil {
+		return nil, err
+	}
 	endpoint := &LLMEndpoint{}
-	endpoint.Client = newHistoryReplay(r.HistoryReplay)
-	return endpoint
+	endpoint.Client = newHistoryReplay(replay)
+	return endpoint, nil
 }
 
 // Return a default model, if configured
@@ -218,9 +239,6 @@ func (r *LLMRouter) DefaultModel() string {
 	if r.GeminiAPIKey != "" {
 		return "gemini-2.0-flash"
 	}
-	if r.HistoryReplay != nil {
-		return "replay/" + identity.NewID()
-	}
 	return ""
 }
 
@@ -231,21 +249,24 @@ func (r *LLMRouter) Route(model string) (*LLMEndpoint, error) {
 		model = r.DefaultModel()
 	}
 	var endpoint *LLMEndpoint
+	var err error
 	switch {
 	case r.isAnthropicModel(model):
 		endpoint = r.routeAnthropicModel()
 	case r.isOpenAIModel(model):
 		endpoint = r.routeOpenAIModel()
 	case r.isGoogleModel(model):
-		googleEndpoint, err := r.routeGoogleModel()
+		endpoint, err = r.routeGoogleModel()
 		if err != nil {
 			return nil, err
 		}
-		endpoint = googleEndpoint
 	case r.isMistralModel(model):
 		return nil, fmt.Errorf("mistral models are not yet supported")
 	case r.isReplay(model):
-		endpoint = r.routeReplayModel()
+		endpoint, err = r.routeReplayModel(model)
+		if err != nil {
+			return nil, err
+		}
 	default:
 		endpoint = r.routeOtherModel()
 	}
@@ -302,17 +323,6 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	r.GeminiModel, err = getenv(ctx, "GEMINI_MODEL")
 	if err != nil {
 		return err
-	}
-
-	historyReplay, err := getenv(ctx, "LLM_HISTORY_REPLAY")
-	if err != nil {
-		return err
-	}
-	if historyReplay != "" {
-		err = json.Unmarshal([]byte(historyReplay), &r.HistoryReplay)
-		if err != nil {
-			return err
-		}
 	}
 
 	return nil
