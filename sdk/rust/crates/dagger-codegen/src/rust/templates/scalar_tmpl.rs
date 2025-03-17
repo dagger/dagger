@@ -15,7 +15,8 @@ pub fn render_scalar(t: &FullType) -> eyre::Result<rust::Tokens> {
 
     if let Some(original_name) = &t.name {
         if original_name.ends_with("ID") {
-            let name_without_id = &name.expect("Name should be available")[..name.expect("Name should be available").len() - 2];
+            let name_without_id = &name.expect("Name should be available")
+                [..name.expect("Name should be available").len() - 2];
 
             return Ok(quote! {
                 #[derive($serialize, $deserialize, PartialEq, Debug, Clone)]

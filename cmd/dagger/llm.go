@@ -217,11 +217,11 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 	if !changed {
 		return nil
 	}
-	var llmId dagger.LLMID
-	if err := syncedLlmQ.Select("id").Bind(&llmId).Execute(ctx); err != nil {
+	var llmID dagger.LLMID
+	if err := syncedLlmQ.Select("id").Bind(&llmID).Execute(ctx); err != nil {
 		return err
 	}
-	s.llm = s.dag.LoadLLMFromID(llmId)
+	s.llm = s.dag.LoadLLMFromID(llmID)
 	return nil
 }
 
@@ -278,14 +278,14 @@ func (s *LLMSession) ShellValue(ctx context.Context, name, typeName string) (str
 	case "String":
 		return s.llm.GetString(ctx, name)
 	default:
-		var objId string
+		var objID string
 		if err := s.dag.QueryBuilder().
 			Select("loadLLMFromID").
 			Arg("id", s.llm).
 			Select(fmt.Sprintf("get%s", typeName)).
 			Arg("name", name).
 			Select("id").
-			Bind(&objId).
+			Bind(&objID).
 			Execute(ctx); err != nil {
 			return "", err
 		}
@@ -296,7 +296,7 @@ func (s *LLMSession) ShellValue(ctx context.Context, name, typeName string) (str
 					Object: "Query",
 					Name:   "load" + typeName + "FromID",
 					Arguments: map[string]any{
-						"id": objId,
+						"id": objID,
 					},
 					ReturnObject: typeName,
 				},

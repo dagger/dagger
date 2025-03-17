@@ -1412,6 +1412,7 @@ func (fe *frontendPretty) renderLocked() {
 	fe.Render(fe.viewOut)
 }
 
+//nolint:gocyclo
 func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, highlight bool) bool {
 	if fe.flushed[row.Span.ID] && fe.editlineFocused {
 		return false
