@@ -28,9 +28,11 @@ func (t *Test) All(
 	// +optional
 	race bool,
 	// +optional
+	envFile *dagger.Secret,
+	// +optional
 	testVerbose bool,
 ) error {
-	return t.test(
+	_, err := t.test(
 		ctx,
 		&testOpts{
 			runTestRegex:  "",
@@ -41,9 +43,11 @@ func (t *Test) All(
 			timeout:       timeout,
 			race:          race,
 			count:         1,
+			envs:          envFile,
 			testVerbose:   testVerbose,
 		},
 	)
+	return err
 }
 
 // Run telemetry tests
@@ -68,16 +72,13 @@ func (t *Test) Telemetry(
 	// +default=1
 	count int,
 	// +optional
+	envFile *dagger.Secret,
+	// +optional
 	verbose bool,
 ) (*dagger.Directory, error) {
-	cmd, err := t.testCmd(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	ran := t.goTest(
-		cmd,
-		&goTestOpts{
+	ran, err := t.test(
+		ctx,
+		&testOpts{
 			runTestRegex:  run,
 			skipTestRegex: skip,
 			pkg:           "./dagql/idtui/",
@@ -87,11 +88,10 @@ func (t *Test) Telemetry(
 			race:          race,
 			count:         count,
 			update:        update,
+			envs:          envFile,
 			testVerbose:   verbose,
-			bench:         false,
 		},
 	)
-	ran, err = ran.Sync(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -139,11 +139,13 @@ func (t *Test) Specific(
 	// +default=1
 	// +optional
 	count int,
+	// +optional
+	envFile *dagger.Secret,
 	// Enable verbose output
 	// +optional
 	testVerbose bool,
 ) error {
-	return t.test(
+	_, err := t.test(
 		ctx,
 		&testOpts{
 			runTestRegex:  run,
@@ -154,9 +156,66 @@ func (t *Test) Specific(
 			timeout:       timeout,
 			race:          race,
 			count:         count,
+			envs:          envFile,
 			testVerbose:   testVerbose,
 		},
 	)
+	return err
+}
+
+// Update specific tests
+func (t *Test) Update(
+	ctx context.Context,
+	// Only run these tests
+	// +optional
+	run string,
+	// Skip these tests
+	// +optional
+	skip string,
+	// +optional
+	// +default="./..."
+	pkg string,
+	// Abort test run on first failure
+	// +optional
+	failfast bool,
+	// How many tests to run in parallel - defaults to the number of CPUs
+	// +optional
+	parallel int,
+	// How long before timing out the test run
+	// +optional
+	timeout string,
+	// +optional
+	race bool,
+	// +default=1
+	// +optional
+	count int,
+	// +optional
+	envFile *dagger.Secret,
+	// Enable verbose output
+	// +optional
+	testVerbose bool,
+) (*dagger.Directory, error) {
+	ran, err := t.test(
+		ctx,
+		&testOpts{
+			runTestRegex:  run,
+			skipTestRegex: skip,
+			pkg:           pkg,
+			failfast:      failfast,
+			parallel:      parallel,
+			timeout:       timeout,
+			race:          race,
+			count:         count,
+			envs:          envFile,
+			testVerbose:   testVerbose,
+			update:        true,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	path := strings.TrimSuffix(pkg, "...")
+	return dag.Directory().WithDirectory(path, ran.Directory(path)), nil
 }
 
 type testOpts struct {
@@ -168,54 +227,25 @@ type testOpts struct {
 	timeout       string
 	race          bool
 	count         int
+	update        bool
+	envs          *dagger.Secret
 	testVerbose   bool
+	bench         bool
 }
 
 func (t *Test) test(
 	ctx context.Context,
 	opts *testOpts,
-) error {
+) (*dagger.Container, error) {
 	cmd, err := t.testCmd(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	_, err = t.goTest(
-		cmd,
-		&goTestOpts{
-			runTestRegex:  opts.runTestRegex,
-			skipTestRegex: opts.skipTestRegex,
-			pkg:           opts.pkg,
-			failfast:      opts.failfast,
-			parallel:      opts.parallel,
-			timeout:       opts.timeout,
-			race:          opts.race,
-			count:         opts.count,
-			update:        false,
-			testVerbose:   opts.testVerbose,
-			bench:         false,
-		},
-	).Sync(ctx)
-	return err
-}
 
-type goTestOpts struct {
-	runTestRegex  string
-	skipTestRegex string
-	pkg           string
-	failfast      bool
-	parallel      int
-	timeout       string
-	race          bool
-	count         int
-	update        bool
-	testVerbose   bool
-	bench         bool
-}
+	if opts.envs != nil {
+		cmd = cmd.WithMountedSecret("/dagger.env", opts.envs)
+	}
 
-func (t *Test) goTest(
-	cmd *dagger.Container,
-	opts *goTestOpts,
-) *dagger.Container {
 	cgoEnabledEnv := "0"
 	args := []string{
 		"go",
@@ -283,7 +313,8 @@ func (t *Test) goTest(
 
 	return cmd.
 		WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
-		WithExec(args)
+		WithExec(args).
+		Sync(ctx)
 }
 
 func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
