@@ -519,9 +519,9 @@ func (r Instance[T]) call(
 		}))
 	}
 	res, err := s.Cache.GetOrInitializeWithCallbacks(ctx, callCacheKey, func(ctx context.Context) (*CacheValWithCallbacks, error) {
-		valWithCallbacks, innerErr := r.Class.Call(ctx, r, newID.Field(), newID.View(), inputArgs)
-		if innerErr != nil {
-			return nil, innerErr
+		valWithCallbacks, err := r.Class.Call(ctx, r, newID.Field(), newID.View(), inputArgs)
+		if err != nil {
+			return nil, err
 		}
 		val := valWithCallbacks.Value
 
@@ -537,32 +537,14 @@ func (r Instance[T]) call(
 			if !ok {
 				return nil, fmt.Errorf("cannot sub-select %dth item from %T", nth, val)
 			}
-			val, innerErr = enum.Nth(nth)
-			if innerErr != nil {
-				return nil, innerErr
+			val, err = enum.Nth(nth)
+			if err != nil {
+				return nil, err
 			}
 			if n, ok := val.(Derefable); ok {
 				val, ok = n.Deref()
 				if !ok {
 					return nil, nil
-				}
-			}
-			nth := int(newID.Nth())
-			if nth != 0 {
-				enum, ok := val.(Enumerable)
-				if !ok {
-					return nil, fmt.Errorf("cannot sub-select %dth item from %T", nth, val)
-				}
-				var err error
-				val, err = enum.Nth(nth)
-				if err != nil {
-					return nil, err
-				}
-				if n, ok := val.(Derefable); ok {
-					val, ok = n.Deref()
-					if !ok {
-						return nil, nil
-					}
 				}
 			}
 		}
