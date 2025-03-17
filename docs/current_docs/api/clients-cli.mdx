@@ -15,7 +15,7 @@ The `dagger shell` and `dagger core` commands let you call the core Dagger API, 
 - You want to use Dagger for simple pipelines that are fully satisfied by the core Dagger API.
 
     <Tabs>
-    <TabItem value="dagger shell">
+    <TabItem value="dagger core">
     ```shell
     dagger core container from --address="cgr.dev/chainguard/wolfi-base" \
       with-exec --args="apk","add","go" \
@@ -26,16 +26,18 @@ The `dagger shell` and `dagger core` commands let you call the core Dagger API, 
       export --path="./hello-from-dagger"
     ```
     </TabItem>
-    <TabItem value="dagger core">
+    <TabItem value="dagger shell">
     ```shell
-    dagger shell -c 'container \
+    dagger <<EOF
+    container \
       | from cgr.dev/chainguard/wolfi-base \
-      | with-exec apk,add, go \
+      | with-exec apk add go \
       | with-directory /src https://github.com/golang/example#master \
       | with-workdir /src/hello \
-      | with-exec go,build,-o,hello,. \
+      | with-exec -- go build -o hello . \
       | file ./hello \
-      | export ./hello-from-dagger'
+      | export ./hello-from-dagger
+    EOF
     ```
     </TabItem>
     </Tabs>

@@ -31,7 +31,7 @@ dagger -m github.com/dagger/dagger/modules/wolfi@v0.16.2 shell -c 'container | w
 Here is another example which chains multiple `Container.withExec()` calls to install the `curl` package in a Wolfi container, send an HTTP request, and return the output:
 
 ```shell
-dagger -m github.com/dagger/dagger/modules/wolfi@v0.16.2 shell -c 'container --packages curl | with-exec curl,-L,dagger.io | stdout'
+dagger -m github.com/dagger/dagger/modules/wolfi@v0.16.2 -c 'container --packages curl | with-exec -- curl -L dagger.io | stdout'
 ```
 
 ## Live-debug container builds
