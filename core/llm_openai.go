@@ -118,11 +118,10 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 		Seed:     openai.Int(0),
 		Model:    openai.F(c.endpoint.Model),
 		Messages: openai.F(openAIMessages),
-		StreamOptions: openai.F(openai.ChatCompletionStreamOptionsParam{
-			IncludeUsage: openai.F(true),
-		}),
 		// call tools one at a time, or else chaining breaks
 	}
+
+	var chatCompletion *openai.ChatCompletion
 
 	if len(tools) > 0 {
 		// OpenAI is picky about this being set if no tools are specified
@@ -140,62 +139,84 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 			})
 		}
 		params.Tools = openai.F(toolParams)
-	}
 
-	stream := c.client.Chat.Completions.NewStreaming(ctx, params)
-	if stream.Err() != nil {
-		// errored establishing connection; bail so stream.Close doesn't panic
-		return nil, stream.Err()
-	}
-	defer stream.Close()
-
-	if stream.Err() != nil {
-		return nil, stream.Err()
-	}
-
-	acc := new(openai.ChatCompletionAccumulator)
-	for stream.Next() {
-		res := stream.Current()
-		acc.AddChunk(res)
-
-		// Keep track of the token usage
-		//
-		// NOTE: so far I'm only seeing 0 back from OpenAI - is this not actually supported?
-		if res.Usage.CompletionTokens > 0 {
-			outputTokens.Record(ctx, acc.Usage.CompletionTokens, metric.WithAttributes(attrs...))
-		}
-		if res.Usage.PromptTokens > 0 {
-			inputTokens.Record(ctx, acc.Usage.PromptTokens, metric.WithAttributes(attrs...))
+		compl, err := c.client.Chat.Completions.New(ctx, params)
+		if err != nil {
+			return nil, err
 		}
 
-		if len(res.Choices) > 0 {
-			if content := res.Choices[0].Delta.Content; content != "" {
+		if compl.Usage.CompletionTokens > 0 {
+			outputTokens.Record(ctx, compl.Usage.CompletionTokens, metric.WithAttributes(attrs...))
+		}
+		if compl.Usage.PromptTokens > 0 {
+			inputTokens.Record(ctx, compl.Usage.PromptTokens, metric.WithAttributes(attrs...))
+		}
+		if len(compl.Choices) > 0 {
+			if content := compl.Choices[0].Message.Content; content != "" {
 				fmt.Fprint(stdio.Stdout, content)
 			}
 		}
+		chatCompletion = compl
+	} else {
+		params.StreamOptions = openai.F(openai.ChatCompletionStreamOptionsParam{
+			IncludeUsage: openai.F(true),
+		})
+		stream := c.client.Chat.Completions.NewStreaming(ctx, params)
+		if stream.Err() != nil {
+			// errored establishing connection; bail so stream.Close doesn't panic
+			return nil, stream.Err()
+		}
+		defer stream.Close()
+
+		if stream.Err() != nil {
+			return nil, stream.Err()
+		}
+
+		acc := new(openai.ChatCompletionAccumulator)
+		for stream.Next() {
+			res := stream.Current()
+			acc.AddChunk(res)
+
+			// Keep track of the token usage
+			//
+			// NOTE: so far I'm only seeing 0 back from OpenAI - is this not actually supported?
+			if res.Usage.CompletionTokens > 0 {
+				outputTokens.Record(ctx, acc.Usage.CompletionTokens, metric.WithAttributes(attrs...))
+			}
+			if res.Usage.PromptTokens > 0 {
+				inputTokens.Record(ctx, acc.Usage.PromptTokens, metric.WithAttributes(attrs...))
+			}
+
+			if len(res.Choices) > 0 {
+				if content := res.Choices[0].Delta.Content; content != "" {
+					fmt.Fprint(stdio.Stdout, content)
+				}
+			}
+		}
+
+		if stream.Err() != nil {
+			return nil, stream.Err()
+		}
+		chatCompletion = &acc.ChatCompletion
 	}
 
-	if stream.Err() != nil {
-		return nil, stream.Err()
-	}
-
-	if len(acc.ChatCompletion.Choices) == 0 {
+	if len(chatCompletion.Choices) == 0 {
 		return nil, fmt.Errorf("no response from model")
 	}
 
-	toolCalls, err := convertOpenAIToolCalls(acc.Choices[0].Message.ToolCalls)
+	toolCalls, err := convertOpenAIToolCalls(chatCompletion.Choices[0].Message.ToolCalls)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert tool calls: %w", err)
 	}
 
 	// Convert OpenAI response to generic LLMResponse
 	return &LLMResponse{
-		Content:   acc.Choices[0].Message.Content,
+		Content:   chatCompletion.Choices[0].Message.Content,
 		ToolCalls: toolCalls,
 		TokenUsage: TokenUsage{
-			InputTokens:  acc.Usage.PromptTokens,
-			OutputTokens: acc.Usage.CompletionTokens,
-			TotalTokens:  acc.Usage.TotalTokens,
+			InputTokens:  chatCompletion.Usage.PromptTokens,
+			OutputTokens: chatCompletion.Usage.CompletionTokens,
+			TotalTokens:  chatCompletion.Usage.TotalTokens,
 		},
 	}, nil
 }
