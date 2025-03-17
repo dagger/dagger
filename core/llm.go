@@ -14,12 +14,17 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/iancoleman/strcase"
 	"github.com/joho/godotenv"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 )
+
+func init() {
+	strcase.ConfigureAcronym("LLM", "LLM")
+}
 
 // An instance of a LLM (large language model), with its state and tool calling environment
 type LLM struct {
