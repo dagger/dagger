@@ -8434,27 +8434,6 @@ func (r *Client) LoadSecretFromID(id SecretID) *Secret {
 	}
 }
 
-// LoadSecretFromNameOpts contains options for Client.LoadSecretFromName
-type LoadSecretFromNameOpts struct {
-	Accessor string
-}
-
-// Load a Secret from its Name.
-func (r *Client) LoadSecretFromName(name string, opts ...LoadSecretFromNameOpts) *Secret {
-	q := r.query.Select("loadSecretFromName")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `accessor` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Accessor) {
-			q = q.Arg("accessor", opts[i].Accessor)
-		}
-	}
-	q = q.Arg("name", name)
-
-	return &Secret{
-		query: q,
-	}
-}
-
 // Load a Service from its ID.
 func (r *Client) LoadServiceFromID(id ServiceID) *Service {
 	q := r.query.Select("loadServiceFromID")

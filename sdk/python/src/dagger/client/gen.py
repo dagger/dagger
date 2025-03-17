@@ -8706,20 +8706,6 @@ class Client(Root):
         _ctx = self._select("loadSecretFromID", _args)
         return Secret(_ctx)
 
-    def load_secret_from_name(
-        self,
-        name: str,
-        *,
-        accessor: str | None = None,
-    ) -> "Secret":
-        """Load a Secret from its Name."""
-        _args = [
-            Arg("name", name),
-            Arg("accessor", accessor, None),
-        ]
-        _ctx = self._select("loadSecretFromName", _args)
-        return Secret(_ctx)
-
     def load_service_from_id(self, id: ServiceID) -> "Service":
         """Load a Service from its ID."""
         _args = [

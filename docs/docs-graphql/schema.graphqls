@@ -3332,9 +3332,6 @@ type Query {
   """Load a Secret from its ID."""
   loadSecretFromID(id: SecretID!): Secret!
 
-  """Load a Secret from its Name."""
-  loadSecretFromName(accessor: String, name: String!): Secret!
-
   """Load a Service from its ID."""
   loadServiceFromID(id: ServiceID!): Service!
 
