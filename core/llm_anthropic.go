@@ -103,7 +103,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 		// This workaround overwrites the empty content to space character
 		// As soon as this issue is resolved, we can remove this hack
 		// https://github.com/anthropics/anthropic-sdk-python/issues/461#issuecomment-2141882744
-		content := msg.Content.(string)
+		content := msg.Content
 		if content == "" {
 			content = " "
 		}
@@ -148,7 +148,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 			messages = append(messages, anthropic.NewAssistantMessage(blocks...))
 		case "system":
 			// Collect all system prompt messages.
-			systemPrompts = append(systemPrompts, anthropic.NewTextBlock(msg.Content.(string)))
+			systemPrompts = append(systemPrompts, anthropic.NewTextBlock(msg.Content))
 		}
 	}
 

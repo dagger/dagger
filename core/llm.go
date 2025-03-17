@@ -75,7 +75,7 @@ type TokenUsage struct {
 // ModelMessage represents a generic message in the LLM conversation
 type ModelMessage struct {
 	Role        string     `json:"role"`
-	Content     any        `json:"content"`
+	Content     string     `json:"content"`
 	ToolCalls   []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID  string     `json:"tool_call_id,omitempty"`
 	ToolErrored bool       `json:"tool_errored,omitempty"`
@@ -490,10 +490,7 @@ func (llm *LLM) LastReply(ctx context.Context, dag *dagql.Server) (string, error
 		if msg.Role != "assistant" {
 			continue
 		}
-		txt, err := msg.Text()
-		if err != nil {
-			return "", err
-		}
+		txt := msg.Content
 		if len(txt) == 0 {
 			continue
 		}
@@ -618,18 +615,10 @@ func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error
 	for _, msg := range llm.messages {
 		switch msg.Role {
 		case "user":
-			txt, err := msg.Text()
-			if err != nil {
-				return nil, err
-			}
-			history = append(history, "🧑 💬"+txt)
+			history = append(history, "🧑 💬"+msg.Content)
 		case "assistant":
-			txt, err := msg.Text()
-			if err != nil {
-				return nil, err
-			}
-			if len(txt) > 0 {
-				history = append(history, "🤖 💬"+txt)
+			if len(msg.Content) > 0 {
+				history = append(history, "🤖 💬"+msg.Content)
 			}
 			for _, call := range msg.ToolCalls {
 				history = append(history, fmt.Sprintf("🤖 💻 %s(%s)", call.Function.Name, call.Function.Arguments))
@@ -743,22 +732,6 @@ func (llm *LLM) WithState(ctx context.Context, objID dagql.IDType, srv *dagql.Se
 // FIXME: deprecated
 func (llm *LLM) State(ctx context.Context, dag *dagql.Server) (dagql.Typed, error) {
 	return llm.Get(ctx, dag, "default")
-}
-
-// Add this method to the Message type
-// TODO: shall this be provider specific ?
-func (msg ModelMessage) Text() (string, error) {
-	switch v := msg.Content.(type) {
-	case string:
-		return v, nil
-	case []any:
-		if len(v) > 0 {
-			if text, ok := v[0].(map[string]any)["text"].(string); ok {
-				return text, nil
-			}
-		}
-	}
-	return "", fmt.Errorf("unable to extract text from message content: %v", msg.Content)
 }
 
 type LLMHook struct {

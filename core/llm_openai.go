@@ -76,7 +76,7 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 	var openAIMessages []openai.ChatCompletionMessageParamUnion
 	for _, msg := range history {
 		if msg.ToolCallID != "" {
-			content := msg.Content.(string)
+			content := msg.Content
 			if msg.ToolErrored {
 				content = "error: " + content
 			}
@@ -86,10 +86,10 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 		var blocks []openai.ChatCompletionContentPartUnionParam
 		switch msg.Role {
 		case "user":
-			blocks = append(blocks, openai.TextPart(msg.Content.(string)))
+			blocks = append(blocks, openai.TextPart(msg.Content))
 			openAIMessages = append(openAIMessages, openai.UserMessageParts(blocks...))
 		case "assistant":
-			assistantMsg := openai.AssistantMessage(msg.Content.(string))
+			assistantMsg := openai.AssistantMessage(msg.Content)
 			calls := make([]openai.ChatCompletionMessageToolCallParam, len(msg.ToolCalls))
 			for i, call := range msg.ToolCalls {
 				args, err := json.Marshal(call.Function.Arguments)
@@ -110,7 +110,7 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 			}
 			openAIMessages = append(openAIMessages, assistantMsg)
 		case "system":
-			openAIMessages = append(openAIMessages, openai.SystemMessage(msg.Content.(string)))
+			openAIMessages = append(openAIMessages, openai.SystemMessage(msg.Content))
 		}
 	}
 

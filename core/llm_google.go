@@ -136,12 +136,12 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 				Name: msg.ToolCallID,
 				// Genai expects a json format response
 				Response: map[string]any{
-					"response": msg.Content.(string),
+					"response": msg.Content,
 					"error":    msg.ToolErrored,
 				},
 			})
 		} else { // just content
-			c := msg.Content.(string)
+			c := msg.Content
 			if c == "" {
 				c = " "
 			}
