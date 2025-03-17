@@ -207,7 +207,7 @@ type setSecretFileArgs struct {
 }
 
 func (s *hostSchema) setSecretFile(ctx context.Context, host *core.Host, args setSecretFileArgs) (inst dagql.Instance[*core.Secret], err error) {
-	err = s.srv.Select(ctx, s.srv.Root(), inst,
+	err = s.srv.Select(ctx, s.srv.Root(), &inst,
 		dagql.Selector{
 			Field: "secret",
 			Args: []dagql.NamedInput{{
