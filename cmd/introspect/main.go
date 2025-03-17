@@ -18,7 +18,7 @@ func main() {
 	ctx := context.Background()
 
 	root := &core.Query{}
-	dag := dagql.NewServer(root, cache.NewCache[digest.Digest, dagql.Typed]())
+	dag := dagql.NewServer(root, dagql.NewSessionCache(cache.NewCache[digest.Digest, dagql.Typed]()))
 	coreMod := &schema.CoreMod{Dag: dag}
 	if err := coreMod.Install(ctx, dag); err != nil {
 		panic(err)
