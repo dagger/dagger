@@ -592,10 +592,10 @@ func (srv *Server) initializeDaggerClient(
 
 	client.modName = opts.ModuleName
 
-	if opts.EncodedModuleID == "" {
-		client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
-		coreMod.Dag.View = engine.BaseVersion(engine.NormalizeVersion(client.clientVersion))
-	} else {
+	client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
+	coreMod.Dag.View = engine.BaseVersion(engine.NormalizeVersion(client.clientVersion))
+
+	if opts.EncodedModuleID != "" {
 		modID := new(call.ID)
 		if err := modID.Decode(opts.EncodedModuleID); err != nil {
 			return fmt.Errorf("failed to decode module ID: %w", err)
