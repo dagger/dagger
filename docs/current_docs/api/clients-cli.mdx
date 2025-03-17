@@ -47,7 +47,7 @@ The `dagger shell` and `dagger core` commands let you call the core Dagger API, 
     <Tabs>
     <TabItem value="dagger shell">
     ```shell
-    dagger shell -c 'container | from alpine | file /etc/os-release | contents'
+    dagger -c 'container | from alpine | file /etc/os-release | contents'
     ```
     </TabItem>
     <TabItem value="dagger core">
@@ -62,7 +62,7 @@ The `dagger shell` and `dagger core` commands let you call the core Dagger API, 
     <Tabs>
     <TabItem value="dagger shell">
     ```shell
-    dagger shell -c 'container | from cgr.dev/chainguard/wolfi-base | terminal'
+    dagger -c 'container | from cgr.dev/chainguard/wolfi-base | terminal'
     ```
     </TabItem>
     <TabItem value="dagger core">
@@ -81,7 +81,7 @@ Here is an example of calling one of the auto-generated Dagger Functions:
 <Tabs>
 <TabItem value="dagger shell">
 ```shell
-dagger shell -c 'container-echo "Welcome to Dagger!" | stdout'
+dagger -c 'container-echo "Welcome to Dagger!" | stdout'
 ```
 </TabItem>
 <TabItem value="dagger call">
@@ -98,7 +98,7 @@ Welcome to Dagger!
 ```
 
 :::tip
-When using `dagger call` and `dagger shell`, all names (functions, arguments, struct fields, etc) are converted into a shell-friendly "kebab-case" style.
+When using the Dagger CLI, all names (functions, arguments, struct fields, etc) are converted into a shell-friendly "kebab-case" style.
 :::
 
 Modules don't need to be installed locally. Dagger lets you consume modules from GitHub repositories as well. You can use Dagger Functions from external modules in exactly the same way as you would use them locally.
