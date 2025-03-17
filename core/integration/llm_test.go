@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -22,96 +24,102 @@ func TestLLM(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(LLMSuite{})
 }
 
-func (LLMSuite) TestHelloWorld(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	assignment := "write a hello world program"
-	src := `
-package main
-
-import (
-	"context"
-	"dagger/test/internal/dagger"
-)
-
-type Test struct{}
-
-func (m *Test) Run(
-	assignment string,
-	model string, // +optional
-) *dagger.Container {
-	return m.llm(assignment, model).ToyWorkspace().Container()
+type LLMTestCase struct {
+	Ref   string
+	Name  string
+	Flags []LLMTestCaseFlag
 }
 
-func (m *Test) Save(
-	ctx context.Context,
-	assignment string,
-	model string, // +optional
-) (string, error) {
-	return m.llm(assignment, model).HistoryJSON(ctx)
+type LLMTestCaseFlag struct {
+	Key      string
+	Value    string
+	Optional bool
 }
 
-func (m *Test) llm(
-	assignment string,
-	model string,
-) *dagger.LLM {
-	return dag.Llm(dagger.LlmOpts{Model: model}).
-		WithToyWorkspace(dag.ToyWorkspace()).
-		WithPromptVar("assignment", assignment).
-		WithPrompt(
-			"You are an expert go programmer. You have access to a workspace.\n" +
-			"Use the read, write, build tools to complete the following assignment.\n" +
-			"Do not try to access the container directly.\n" +
-			"Don't stop until your code builds.\n" +
-			"\n" +
-			"Assignment: $assignment\n",
-		)
+func (flag LLMTestCaseFlag) ToCall() []string {
+	return []string{"--" + flag.Key, flag.Value}
 }
-	`
 
-	modGen := modInit(t, c, "go", src).
-		With(withModInitAt("./toy-workspace", "go", toyWorkspaceSrc)).
-		With(daggerExec("install", "./toy-workspace"))
-
-	recording := "llmtest/hello-world.golden"
-
-	if golden.FlagUpdate() {
-		out, err := modGen.
-			With(daggerForwardSecrets(c)).
-			With(daggerCall("save", "--assignment="+assignment)).
-			Stdout(ctx)
-		require.NoError(t, err)
-
-		if dir := filepath.Dir(recording); dir != "." {
-			err := os.MkdirAll(dir, 0755)
-			require.NoError(t, err)
-		}
-		err = os.WriteFile(recording, []byte(out), 0644)
-		require.NoError(t, err)
+func (flag LLMTestCaseFlag) ToShell() []string {
+	if flag.Optional {
+		return []string{"--" + flag.Key, strconv.Quote(flag.Value)}
 	}
-
-	replayData, err := os.ReadFile(recording)
-	require.NoError(t, err)
-	model := "replay/" + base64.StdEncoding.EncodeToString(replayData)
-
-	t.Run("call", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.
-			With(daggerCall("run", "--assignment="+assignment, "--model="+model, "file", "--path=main.go", "contents")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		testGoProgram(ctx, t, c, dag.Directory().WithNewFile("main.go", out).File("main.go"), regexp.MustCompile("(?i)hello(.*)world"))
-	})
-
-	t.Run("shell", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.
-			With(daggerShell(fmt.Sprintf(`run "%s" --model="%s" | file main.go | contents`, assignment, model))).
-			Stdout(ctx)
-		require.NoError(t, err)
-		testGoProgram(ctx, t, c, dag.Directory().WithNewFile("main.go", out).File("main.go"), regexp.MustCompile("(?i)hello(.*)world"))
-	})
+	return []string{strconv.Quote(flag.Value)}
 }
 
-func (LLMSuite) TestApiLimit(ctx context.Context, t *testctx.T) {
+func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
+	tcs := []LLMTestCase{
+		{
+			Name: "hello-world",
+			Ref:  "./llmtest/go-programmer/",
+			Flags: []LLMTestCaseFlag{
+				{
+					Key:   "assignment",
+					Value: "write a hello world program",
+				},
+			},
+		},
+	}
+	for _, tc := range tcs {
+		t.Run(tc.Name, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			srcPath, err := filepath.Abs(tc.Ref)
+			require.NoError(t, err)
+			ctr := goGitBase(t, c).
+				WithWorkdir("/work").
+				WithMountedDirectory(".", c.Host().Directory(srcPath))
+
+			var flags []string
+			for _, flag := range tc.Flags {
+				flags = append(flags, flag.ToCall()...)
+			}
+
+			recording := fmt.Sprintf("llmtest/%s.golden", tc.Name)
+			if golden.FlagUpdate() {
+				out, err := ctr.
+					With(daggerForwardSecrets(c)).
+					With(daggerCall(append([]string{"save"}, flags...)...)).
+					Stdout(ctx)
+				require.NoError(t, err)
+
+				if dir := filepath.Dir(recording); dir != "." {
+					err := os.MkdirAll(dir, 0755)
+					require.NoError(t, err)
+				}
+				err = os.WriteFile(recording, []byte(out), 0644)
+				require.NoError(t, err)
+			}
+
+			replayData, err := os.ReadFile(recording)
+			require.NoError(t, err)
+			model := "replay/" + base64.StdEncoding.EncodeToString(replayData)
+
+			t.Run("call", func(ctx context.Context, t *testctx.T) {
+				cmd := []string{"--model=" + model, "run"}
+				cmd = append(cmd, flags...)
+				cmd = append(cmd, "file", "--path=main.go", "contents")
+				out, err := ctr.With(daggerCall(cmd...)).Stdout(ctx)
+				require.NoError(t, err)
+				testGoProgram(ctx, t, c, dag.Directory().WithNewFile("main.go", out).File("main.go"), regexp.MustCompile("(?i)hello(.*)world"))
+			})
+
+			t.Run("shell", func(ctx context.Context, t *testctx.T) {
+				var flags []string
+				for _, flag := range tc.Flags {
+					flags = append(flags, flag.ToShell()...)
+				}
+				out, err := ctr.
+					With(daggerShell(fmt.Sprintf(`. --model="%s" | run %s | file main.go | contents`, model, strings.Join(flags, " ")))).
+					Stdout(ctx)
+				require.NoError(t, err)
+				testGoProgram(ctx, t, c, dag.Directory().WithNewFile("main.go", out).File("main.go"), regexp.MustCompile("(?i)hello(.*)world"))
+			})
+		})
+	}
+}
+
+func (LLMSuite) TestAPILimit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	recording := "llmtest/api-limit.golden"
@@ -124,51 +132,6 @@ func (LLMSuite) TestApiLimit(ctx context.Context, t *testctx.T) {
 		Stdout(ctx)
 	requireErrOut(t, err, "reached API call limit: 1")
 }
-
-const toyWorkspaceSrc = `
-package main
-
-import (
-	"context"
-	"dagger/toy-workspace/internal/dagger"
-)
-
-// A toy workspace that can edit files and run 'go build'
-type ToyWorkspace struct {
-	// The workspace's container state.
-	// +internal-use-only
-	Container *dagger.Container
-}
-
-func New() ToyWorkspace {
-	return ToyWorkspace{
-		// Build a base container optimized for Go development
-		Container: dag.Container().
-			From("golang").
-			WithDefaultTerminalCmd([]string{"/bin/bash"}).
-			WithMountedCache("/go/pkg/mod", dag.CacheVolume("go_mod_cache")).
-			WithWorkdir("/app").
-			WithExec([]string{"go", "mod", "init", "main"}),
-	}
-}
-
-// Read a file
-func (w *ToyWorkspace) Read(ctx context.Context) (string, error) {
-	return w.Container.File("main.go").Contents(ctx)
-}
-
-// Write a file
-func (w ToyWorkspace) Write(content string) ToyWorkspace {
-	w.Container = w.Container.WithNewFile("main.go", content)
-	return w
-}
-
-// Build the code at the current directory in the workspace
-func (w *ToyWorkspace) Build(ctx context.Context) error {
-	_, err := w.Container.WithExec([]string{"go", "build", "./..."}).Stderr(ctx)
-	return err
-}
-	`
 
 func testGoProgram(ctx context.Context, t *testctx.T, c *dagger.Client, program *dagger.File, re any) {
 	name, err := program.Name(ctx)
