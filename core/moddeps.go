@@ -3,11 +3,10 @@ package core
 import (
 	"context"
 	"fmt"
-	"sync"
-
 	"github.com/dagger/dagger/dagql"
 	dagintro "github.com/dagger/dagger/dagql/introspection"
 	"slices"
+	"sync"
 )
 
 const (
