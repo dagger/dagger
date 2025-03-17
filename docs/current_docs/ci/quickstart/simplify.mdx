@@ -26,7 +26,7 @@ To understand how this works in practice, let's simplify the pipeline using the 
 Install the Node module as a dependency by running the `dagger install` command shown on its [Daggerverse page](https://daggerverse.dev/mod/github.com/dagger/dagger/sdk/typescript/dev/node):
 
 ```shell
-dagger install github.com/dagger/dagger/sdk/typescript/dev/node@f1aa5e117e163449208519ce6c6b1dbdb8ef5d79
+dagger install github.com/dagger/dagger/sdk/typescript/dev/node@3f3fc28e5a2d139dfe5088278a363a5db7acb356
 ```
 
 :::tip VERSION PINNING
@@ -35,8 +35,8 @@ The exact Git commit for the module version is recorded in `dagger.json`. Dagger
 
 Once you've installed the Node module, start exploring it to see what you can do with it. There are various ways to do this:
 
-- Read the [module's auto-generated documentation](https://daggerverse.dev/mod/github.com/dagger/dagger/sdk/typescript/dev/node@9e59bae142f64975b7c9ad851e6bd4901d43513a) in the Daggerverse.
-- Inspect the [module's source code](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/index.ts).
+- Read the [module's auto-generated documentation](https://daggerverse.dev/mod/github.com/dagger/dagger/sdk/typescript/dev/node@3f3fc28e5a2d139dfe5088278a363a5db7acb356) in the Daggerverse.
+- Inspect the [module's source code](https://github.com/dagger/dagger/blob/3f3fc28e5a2d139dfe5088278a363a5db7acb356/sdk/typescript/dev/node/src/index.ts).
 - Use the Dagger CLI to inspect the module with the command `dagger -m node functions` or `dagger -m node call --help`.
 
 ### Simplify the pipeline
@@ -85,7 +85,7 @@ Update the `dagger/src/main/java/io/dagger/modules/hellodagger/HelloDagger.java`
 
 This code listing revises the Dagger Functions from earlier, replacing calls to the core Dagger API with calls to Dagger Functions from the Node module. This allows you to access pre-defined functionality for working with Node.js applications - for example, obtaining a base image with `npm` and cache volumes already configured, or executing common commands to lint, format, test, and build a Node.js codebase.
 
-If you backtrack a little further and inspect the [Node module's source code](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/index.ts), you'll notice two important things:
+If you backtrack a little further and inspect the [Node module's source code](https://github.com/dagger/dagger/blob/3f3fc28e5a2d139dfe5088278a363a5db7acb356/sdk/typescript/dev/node/src/index.ts), you'll notice two important things:
 
 1. The Node module is written in TypeScript but is called from your Dagger module, which could be in Go, Python,  TypeScript, PHP, or Java. Dagger takes care of the translation via its language-agnostic GraphQL layer.
 1. The Node module is a Dagger module very similar to the one you built in this quickstart. If you inspect its source code, you'll recognize the `dag` client and many of the core Dagger API methods you  used when building your own Dagger Functions.
