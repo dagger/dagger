@@ -176,25 +176,25 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 		})).
 		WithJob(runner.Job("scan-engine", "engine scan")).
 		With(splitTests(runner, "testdev-", true, []testSplit{
-			{"cgroupsv2", []string{"TestProvision", "TestTelemetry"}, &dagger.GhaJobOpts{
+			{"cgroupsv2", []string{"TestProvision", "TestTelemetry"}, 1, &dagger.GhaJobOpts{
 				// HACK: our main runners don't support cgroupsv2
 				Runner: []string{"ubuntu-latest"},
 				// NOTE: needed to silence redis warning logs in tests
 				SetupCommands: []string{"sudo sysctl -w vm.overcommit_memory=1"},
 			}},
-			{"modules", []string{"TestModule"}, &dagger.GhaJobOpts{
+			{"modules", []string{"TestModule"}, 16, &dagger.GhaJobOpts{
 				Runner: []string{PlatinumRunner(true)},
 			}},
-			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"}, &dagger.GhaJobOpts{
+			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"}, 16, &dagger.GhaJobOpts{
 				Runner: []string{PlatinumRunner(true)},
 			}},
-			{"container", []string{"TestContainer"}, &dagger.GhaJobOpts{
+			{"container", []string{"TestContainer"}, 16, &dagger.GhaJobOpts{
 				Runner: []string{PlatinumRunner(true)},
 			}},
-			{"cli-engine", []string{"TestCLI", "TestEngine"}, &dagger.GhaJobOpts{
+			{"cli-engine", []string{"TestCLI", "TestEngine"}, 16, &dagger.GhaJobOpts{
 				Runner: []string{PlatinumRunner(true)},
 			}},
-			{"everything-else", nil, &dagger.GhaJobOpts{
+			{"everything-else", nil, 16, &dagger.GhaJobOpts{
 				Runner: []string{PlatinumRunner(true)},
 			}},
 		}))
@@ -204,8 +204,9 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 }
 
 type testSplit struct {
-	name  string
-	tests []string
+	name     string
+	tests    []string
+	parallel int
 	// runner string
 	opts *dagger.GhaJobOpts
 }
@@ -215,7 +216,10 @@ func splitTests(runner *dagger.Gha, name string, dev bool, splits []testSplit) d
 	return func(w *dagger.GhaWorkflow) *dagger.GhaWorkflow {
 		var doneTests []string
 		for _, split := range splits {
-			command := "test specific --race=true --parallel=16 "
+			command := "test specific --race=true "
+			if split.parallel != 0 {
+				command += fmt.Sprintf("--parallel=%d ", split.parallel)
+			}
 			if split.tests != nil {
 				command += fmt.Sprintf("--run='%s'", strings.Join(split.tests, "|"))
 			} else {

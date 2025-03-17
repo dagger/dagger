@@ -1240,7 +1240,7 @@ jobs:
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                COMMAND: dagger call -q test specific --race=true --parallel=16 --run='TestProvision|TestTelemetry'
+                COMMAND: dagger call -q test specific --race=true --parallel=1 --run='TestProvision|TestTelemetry'
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
                 NO_OUTPUT: "true"
               shell: bash
