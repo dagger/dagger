@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"iter"
 	"strings"
 
 	"github.com/muesli/reflow/indent"
@@ -82,65 +83,150 @@ func (h *shellCallHandler) DependenciesList() string {
 
 func (h *shellCallHandler) MainHelp() string {
 	var doc ShellDoc
-	types := []string{"<command>"}
 
-	doc.Add(
-		"Builtin Commands",
-		nameShortWrapped(h.Builtins(), func(c *ShellCommand) (string, string) {
-			return c.Name(), c.Short()
-		}),
-	)
-
-	if fns := h.getDefaultFunctions(); len(fns) > 0 {
-		doc.Add(
-			"Available Module Functions",
-			nameShortWrapped(fns, func(f *modFunction) (string, string) {
-				return f.CmdName(), f.Short()
-			}),
-		)
-		types = append(types, "<function>")
+	// NB: This grouping by Section may not seem useful right now but the way these
+	// groups are organized is very mercurial so leaving it in to make it easier
+	// to change again later.
+	groups := []shellDocUsagesSection{
+		{
+			"Available Functions",
+			Chain2(
+				// NB: order is important to apply proper shadowing.
+				h.allFunctionUsages(),
+				h.allDependencyUsages(),
+				h.allStdlibUsages(),
+			),
+		},
+	}
+	for s, v := range combineUsages(groups) {
+		doc.Add(s, v)
 	}
 
-	if deps := h.getCurrentDependencies(); len(deps) > 0 {
-		doc.Add(
-			"Available Module Dependencies",
-			nameShortWrapped(deps, func(dep *moduleDef) (string, string) {
-				return dep.Name, dep.Short()
-			}),
-		)
-		types = append(types, "<dependency>")
+	types := "<command>"
+	if len(doc.Groups) > 2 {
+		types += " | <function>"
 	}
 
-	doc.Add("Standard Commands", nameShortWrapped(h.Stdlib(), func(c *ShellCommand) (string, string) {
-		return c.Name(), c.Short()
-	}))
+	doc.Add("Builtin Commands", nameShortWrappedIter(h.allBuiltinUsages()))
 
-	doc.Add("", fmt.Sprintf(`Use ".help %s" for more information.`, strings.Join(types, " | ")))
+	doc.Add("", fmt.Sprintf(`Use ".help %s" for more information.`, types))
 
 	return doc.String()
 }
 
-func (h *shellCallHandler) getDefaultFunctions() []*modFunction {
-	def, _ := h.GetModuleDef(nil)
-	if def == nil {
-		return nil
+// Chain2 chains multiple Seq2 sequences together
+func Chain2[K comparable, V any](seqs ...iter.Seq2[K, V]) iter.Seq2[K, V] {
+	return func(yield func(K, V) bool) {
+		for _, seq := range seqs {
+			for k, v := range seq {
+				if !yield(k, v) {
+					return
+				}
+			}
+		}
 	}
-	if def.MainObject.AsObject.Constructor.HasRequiredArgs() {
-		return nil
-	}
-	fns := def.MainObject.AsFunctionProvider().GetFunctions()
-	if len(fns) == 0 {
-		return nil
-	}
-	return fns
 }
 
-func (h *shellCallHandler) getCurrentDependencies() []*moduleDef {
-	def, _ := h.GetModuleDef(nil)
-	if def == nil {
-		return nil
+type shellDocUsagesSection struct {
+	Section string
+	Usages  iter.Seq2[string, string]
+}
+
+// combineUsages removes shadowed functions, even in different sections or groups
+func combineUsages(groups []shellDocUsagesSection) iter.Seq2[string, string] {
+	return func(yield func(string, string) bool) {
+		seen := make(map[string]struct{})
+
+		// filter out elements that already exist
+		filtered := func(seq iter.Seq2[string, string]) iter.Seq2[string, string] {
+			return func(y func(string, string) bool) {
+				for k, v := range seq {
+					if _, exists := seen[k]; !exists {
+						seen[k] = struct{}{}
+						if !y(k, v) {
+							return
+						}
+					}
+				}
+			}
+		}
+
+		for _, group := range groups {
+			body := nameShortWrappedIter(filtered(group.Usages))
+			if !yield(group.Section, body) {
+				return
+			}
+		}
 	}
-	return def.Dependencies
+}
+
+func (h *shellCallHandler) allFunctionUsages() iter.Seq2[string, string] {
+	return func(yield func(string, string) bool) {
+		def, _ := h.GetModuleDef(nil)
+		if def == nil {
+			return
+		}
+
+		constr := def.MainObject.AsObject.Constructor
+
+		// When using a top-level function, we're automatically making a call
+		// to the constructor without arguments. If it has required arguments
+		// this isn't possible, so don't show them as being immediately available.
+		// It'll at least show the constructor itself (next).
+		if !constr.HasRequiredArgs() {
+			for _, fn := range def.MainObject.AsFunctionProvider().GetFunctions() {
+				if !yield(fn.CmdName(), fn.Short()) {
+					return
+				}
+			}
+		}
+
+		// The module name is a convenience for clarity. Can always use the path (`.`)
+		// No point if there's no arguments though.
+		if len(constr.Args) > 0 {
+			short := constr.Short()
+			if short == "" || short == "-" {
+				short = def.Short()
+			}
+			if !yield(constr.CmdName(), short) {
+				return
+			}
+		}
+	}
+}
+
+func (h *shellCallHandler) allDependencyUsages() iter.Seq2[string, string] {
+	return func(yield func(string, string) bool) {
+		def, _ := h.GetModuleDef(nil)
+		if def == nil {
+			return
+		}
+		for _, dep := range def.Dependencies {
+			if !yield(dep.Name, dep.Short()) {
+				return
+			}
+		}
+	}
+}
+
+func (h *shellCallHandler) allStdlibUsages() iter.Seq2[string, string] {
+	return func(yield func(string, string) bool) {
+		for _, cmd := range h.Stdlib() {
+			if !yield(cmd.Name(), cmd.Short()) {
+				return
+			}
+		}
+	}
+}
+
+func (h *shellCallHandler) allBuiltinUsages() iter.Seq2[string, string] {
+	return func(yield func(string, string) bool) {
+		for _, cmd := range h.Builtins() {
+			if !yield(cmd.Name(), cmd.Short()) {
+				return
+			}
+		}
+	}
 }
 
 func (h *shellCallHandler) StdlibHelp() string {
@@ -241,7 +327,9 @@ type ShellDocSection struct {
 }
 
 func (d *ShellDoc) Add(title, body string) {
-	d.Groups = append(d.Groups, ShellDocSection{Title: title, Body: body})
+	if body != "" {
+		d.Groups = append(d.Groups, ShellDocSection{Title: title, Body: body})
+	}
 }
 
 func (d *ShellDoc) AddSection(title, body string) {
