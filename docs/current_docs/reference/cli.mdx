@@ -10,13 +10,13 @@ pagination_prev: null
 A tool to run CI/CD pipelines in containers, anywhere
 
 ```
-dagger [flags]
+dagger [options] [file...]
 ```
 
 ### Options
 
 ```
-  -c, --code string                  Command to be executed
+  -c, --code string                  Execute shell script passed in as string
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")

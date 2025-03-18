@@ -36,7 +36,7 @@ var (
 )
 
 func shellAddFlags(cmd *cobra.Command) {
-	cmd.Flags().StringVarP(&shellCode, "code", "c", "", "Command to be executed")
+	cmd.Flags().StringVarP(&shellCode, "code", "c", "", "Execute shell script passed in as string")
 	cmd.Flags().BoolVarP(&shellNoLoadModule, "no-mod", "n", false, "Don't load module during shell startup (mutually exclusive with --mod)")
 	cmd.MarkFlagsMutuallyExclusive("mod", "no-mod")
 }
@@ -59,9 +59,6 @@ var shellCmd = &cobra.Command{
 		})
 	},
 	Hidden: true,
-	Annotations: map[string]string{
-		"experimental": "true",
-	},
 }
 
 func newTerminalWriter(fn func([]byte) (int, error)) *terminalWriter {
