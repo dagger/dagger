@@ -298,7 +298,7 @@ func (GitSuite) TestGitTagsSSH(ctx context.Context, t *testctx.T) {
 	t.Run("without SSH auth", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Git(repoURL).Tags(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "Permission denied (publickey)")
+		requireErrOut(t, err, "SSH URLs are not supported without an SSH socket")
 	})
 }
 

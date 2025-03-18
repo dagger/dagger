@@ -224,6 +224,19 @@ func (id *ID) SelectNth(nth int) *ID {
 	)
 }
 
+// Return a new ID with the Module field unset
+func (id *ID) WithoutModule() *ID {
+	return id.Receiver().Append(
+		id.Type().ToAST(),
+		id.Field(),
+		id.View(),
+		nil,
+		int(id.Nth()),
+		"",
+		id.Args()...,
+	)
+}
+
 func (id *ID) Append(
 	ret *ast.Type,
 	field string,

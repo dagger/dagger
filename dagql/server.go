@@ -546,7 +546,7 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (Typed, error) {
 func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Selector) error {
 	// Annotate ctx with the internal flag so we can distinguish self-calls from
 	// user-calls in the UI.
-	ctx = WithInternal(ctx)
+	ctx = withInternal(ctx)
 
 	var res Typed = self
 	var id *call.ID
