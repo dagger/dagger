@@ -15,6 +15,7 @@ module.exports = {
       items: [
         "features/programmable-pipelines",
         "features/modules",
+        "features/shell",
         "features/caching",
         "features/debugging",
         "features/services",
