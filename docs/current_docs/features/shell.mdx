@@ -5,10 +5,90 @@ description: "Iterate faster with familiar Bash-like syntax and autocomplete "
 
 # Shell
 
-Dagger Shell is the fastest way to interact with the Dagger API. Dagger Shell brings the power of pipelines to fully typed API objects while maintaining a familiar Bash-like syntax.
+Dagger Shell is the fastest way to interact with the Dagger API. Dagger Shell brings the power of pipelines to fully typed API objects while maintaining a familiar Bash-like syntax. With autocomplete for core types, modules, and functions, it makes writing and exploring Dagger pipelines smoother than ever.
+
+Dagger Shell enables you to compose pipelines on the fly, by chaining together core Dagger primitives like `Container` and `Directory` with module-defined types and functions. It can be used inline, with scripts, or interactively. It is secure by design, as all commands execute in containers and you have complete control over what goes in or out from the host system.
+
+Here's an example of Dagger Shell in action:
+
+![Dagger Shell](/img/current_docs/features/shell-curl.gif)
+
+Here is another, more complex example:
+
+![Dagger Shell](/img/current_docs/features/shell-build.gif)
+
+:::note
+Dagger Shell allows you to execute Dagger Functions as native shell commands, using a Bash-compatible syntax. However, instead of calling a subprocess for execution, Dagger Shell directly interprets commands within the Dagger CLI and executes them in containers. This means that all your commands execute as API calls in a secure, sandboxed environment, rather than as processes with direct access to the host system.
+:::
+
+## Modes of execution
+
+Dagger Shell supports multiple ways to run commands:
+
+<Tabs groupId="shell">
+<TabItem value="Inline execution">
+```shell
+dagger -c 'container | from alpine | terminal'
+```
+</TabItem>
+<TabItem value="Standard input">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+echo 'container | from alpine | terminal' | dagger
+```
+</TabItem>
+<TabItem value="Script">
+```shell
+dagger script.sh
+```
+</TabItem>
+<TabItem value="Interactive REPL">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+container | from alpine | terminal
+```
+</TabItem>
+</Tabs>
+
+## Built-in help
+
+Dagger Shell provides extensive built-in help:
+
+```shell
+.help             # Shows available commands
+.help MODULE      # Shows description, arguments, and return type for module constructor
+.help FUNCTION    # Shows description, arguments, and return type for function
+MODULE | .help    # Shows available functions for constructor returned by MODULE
+FUNCTION | .help  # Shows available functions for object returned by FUNCTION
+```
+
+![Dagger Shell help](/img/current_docs/features/shell-help.gif)
+
+## Navigation
+
+Dagger Shell presents a virtual filesystem to the user. When Dagger Shell starts, it sets the working directory to an initial context, which defaults to the enclosing Git repository or Dagger module. The user can navigate the virtual filesystem by changing the working directory.
+
+The initial context can be a local filesystem path or a remote filesystem. For example, `dagger -m github.com/dagger/dagger/docs@v0.13.0` changes the context to `github.com/dagger/dagger@v0.13.0` and the working directory to `/docs`.
+
+:::note
+To safeguard access to the host filesystem, the context root cannot be escaped.
+:::
+
+## Modules
+
+If the working directory contains a Dagger module, that module is automatically loaded, and its Dagger Functions can be directly inspected (via `.help`) or invoked.
+
+![Dagger Shell module loading](/img/current_docs/features/shell-module.gif)
+
+## Paths
+
+Filesystem paths are relative to the working directory inside Dagger Shell
+
+- When the working directory is local, any directory or file paths that you pass to Dagger Functions will be interpreted relative to that directory on the host.
+- When the working directory is remote, any directory or file paths will come from that remote directory.
+  - In this latter case, to use files and directories from the host system, they must be referred to using the `host` function.
+
+![Dagger Shell host path](/img/current_docs/features/shell-host-path.gif)
 
 ## Learn more
 
-- [Create and use cache volumes](../api/cache-volumes.mdx)
-- [Invalidate the layer cache](../cookbook/cookbook.mdx#invalidate-cache)
-- [Inspect and prune the cache](../configuration/cache.mdx)
+- [Call the Dagger API using Dagger Shell](../api/clients-cli.mdx)
+- [Chain Dagger Functions using Dagger Shell](../api/chaining.mdx)
