@@ -662,6 +662,8 @@ Without arguments, the current working directory is replaced by the initial cont
 	def := h.GetDef(nil)
 
 	for _, fn := range def.GetCoreFunctions() {
+		def.LoadFunctionTypeDefs(fn)
+
 		// TODO: Don't hardcode this list.
 		promoted := []string{
 			"llm",

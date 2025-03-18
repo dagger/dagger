@@ -443,10 +443,12 @@ func (h *shellCallHandler) ModuleDoc(st *ShellState, m *moduleDef) string {
 	}
 
 	fn := m.MainObject.AsObject.Constructor
+	usage := h.FunctionUseLine(m, fn)
+
 	if len(fn.Args) > 0 {
 		constructor := new(strings.Builder)
 		constructor.WriteString("Usage: ")
-		constructor.WriteString(h.FunctionUseLine(m, fn))
+		constructor.WriteString(usage)
 
 		if fn.Description != "" {
 			constructor.WriteString("\n\n")
@@ -473,47 +475,7 @@ func (h *shellCallHandler) ModuleDoc(st *ShellState, m *moduleDef) string {
 		}
 	}
 
-	// If it's just `.help` and the current module doesn't have required args,
-	// can use the default constructor and show available functions.
-	if st.IsEmpty() && st.ModDigest == "" && !fn.HasRequiredArgs() {
-		if fns := m.MainObject.AsFunctionProvider().GetFunctions(); len(fns) > 0 {
-			doc.Add(
-				"Available Functions",
-				nameShortWrapped(fns, func(f *modFunction) (string, string) {
-					return f.CmdName(), f.Short()
-				}),
-			)
-			doc.Add("", `Use ".help <function>" for more information on a function.`)
-		}
-	}
-
-	return doc.String()
-}
-
-func shellTypeDoc(t *modTypeDef) string {
-	var doc ShellDoc
-
-	fp := t.AsFunctionProvider()
-	if fp == nil {
-		doc.Add(t.KindDisplay(), t.Long())
-
-		// If not an object, only have the type to show.
-		return doc.String()
-	}
-
-	if fp.ProviderName() != "Query" {
-		doc.Add(t.KindDisplay(), t.Long())
-	}
-
-	if fns := fp.GetFunctions(); len(fns) > 0 {
-		doc.Add(
-			"Available Functions",
-			nameShortWrapped(fns, func(f *modFunction) (string, string) {
-				return f.CmdName(), f.Short()
-			}),
-		)
-		doc.Add("", `Use ".help <function>" for more information on a function.`)
-	}
+	doc.Add("Returns", h.shellReturnsDoc(fn.ReturnType, usage))
 
 	return doc.String()
 }
@@ -548,13 +510,59 @@ func (h *shellCallHandler) FunctionDoc(md *moduleDef, fn *modFunction) string {
 		)
 	}
 
-	if rettype := fn.ReturnType.Short(); rettype != "" {
-		doc.Add("Returns", rettype)
+	doc.Add("Returns", h.shellReturnsDoc(fn.ReturnType, usage))
+
+	return doc.String()
+}
+
+func (h *shellCallHandler) shellReturnsDoc(rtype *modTypeDef, usage string) string {
+	sb := new(strings.Builder)
+	sb.WriteString(rtype.Short())
+	usage = strings.TrimSuffix(usage, " [options]")
+
+	var help string
+
+	// NB: this can be too much on a type with many functions (e.g., Container),
+	// but also useful on a module. Keeping for all functions for consistency
+	// (documenting a module is like documenting a function since modules map
+	// to their constructor function).
+	if fp := rtype.AsFunctionProvider(); fp != nil {
+		help = h.FunctionsList(usage, fp.GetFunctions())
 	}
 
-	if fn.ReturnType.AsFunctionProvider() != nil {
-		u := strings.TrimSuffix(usage, " [options]")
-		doc.Add("", fmt.Sprintf(`Use "%s | .help" for available functions.`, u))
+	if help == "" {
+		help = fmt.Sprintf(`Use "%s | .help" for more details.`, usage)
+	}
+
+	sb.WriteString("\n\n")
+	sb.WriteString(help)
+
+	return sb.String()
+}
+
+func shellTypeDoc(t *modTypeDef) string {
+	var doc ShellDoc
+
+	fp := t.AsFunctionProvider()
+	if fp == nil {
+		doc.Add(t.KindDisplay(), t.Long())
+
+		// If not an object, only have the type to show.
+		return doc.String()
+	}
+
+	if fp.ProviderName() != "Query" {
+		doc.Add(t.KindDisplay(), t.Long())
+	}
+
+	if fns := fp.GetFunctions(); len(fns) > 0 {
+		doc.Add(
+			"Available Functions",
+			nameShortWrapped(fns, func(f *modFunction) (string, string) {
+				return f.CmdName(), f.Short()
+			}),
+		)
+		doc.Add("", `Use ".help <function>" for more information on a function.`)
 	}
 
 	return doc.String()
