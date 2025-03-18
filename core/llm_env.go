@@ -126,6 +126,12 @@ func (env *LLMEnv) Tools(srv *dagql.Server) []LLMTool {
 	typedef := env.typedef(srv, env.Current())
 	typeName := typedef.Name
 	for _, field := range typedef.Fields {
+		if strings.HasPrefix(field.Name, "_") {
+			continue
+		}
+		if strings.HasPrefix(field.Name, "load") && strings.HasSuffix(field.Name, "FromID") {
+			continue
+		}
 		tools = append(tools, LLMTool{
 			Name:        typeName + "_" + field.Name,
 			Description: field.Description,

@@ -41,6 +41,8 @@ func (s llmSchema) Install() {
 		dagql.Func("withPromptFile", s.withPromptFile).
 			Doc("append the contents of a file to the llm context").
 			ArgDoc("file", "The file to read the prompt from"),
+		dagql.Func("withQuery", s.withQuery).
+			Doc("Provide the entire Query object to the LLM"),
 		dagql.Func("withPromptVar", s.setString).
 			Doc("Add a string variable to the LLM's environment").
 			ArgDoc("name", "The variable name").
@@ -106,6 +108,10 @@ func (s *llmSchema) withPrompt(ctx context.Context, llm *core.LLM, args struct {
 	Prompt string
 }) (*core.LLM, error) {
 	return llm.WithPrompt(ctx, args.Prompt, s.srv)
+}
+
+func (s *llmSchema) withQuery(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
+	return llm.With(ctx, s.srv, s.srv.Root())
 }
 
 func (s *llmSchema) setString(ctx context.Context, llm *core.LLM, args struct {
