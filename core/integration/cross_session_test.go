@@ -2,18 +2,25 @@ package core
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
+	fs "github.com/tonistiigi/fsutil/copy"
 )
 
 // TODO: more tests:
 // * no cache match when args of various types are different
 // * services (they are stopped when the session is closed atm, right?)
+// * idnetical module invocation (in terms of the gql query) but for different modules across sessions doesn't get de-duped
+
+// TODO: add more tests for longer chains of cache hits that then diverge (i.e. constructor + some function cache hit, then diverge)
 func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testctx.T) {
 	t.Run("basic", func(ctx context.Context, t *testctx.T) {
 		callMod := func(c *dagger.Client) (string, error) {
@@ -137,6 +144,139 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 				}
 			})
 		}
+	})
+
+	t.Run("same schema but different implementations", func(ctx context.Context, t *testctx.T) {
+		// right now calls are cached by module source digest via the `asModule` custom cache key plus
+		// the fact that IDs include the module InstanceID, verify that behavior works as expected
+		callMod := func(c *dagger.Client, t *testctx.T, x string) (string, error) {
+			return goGitBase(t, c).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+				WithNewFile("main.go", `package main
+type Test struct {}
+
+func (t *Test) Fn() string {
+	return "`+x+`"
+}
+`).
+				WithEnvVariable("CACHEBUSTER", identity.NewID()).
+				With(daggerCall("fn")).
+				Stdout(ctx)
+		}
+
+		c1 := connect(ctx, t)
+		out1, err := callMod(c1, t, "1")
+		require.NoError(t, err)
+		require.Equal(t, "1", out1)
+
+		c2 := connect(ctx, t)
+		out2, err := callMod(c2, t, "2")
+		require.NoError(t, err)
+		require.Equal(t, "2", out2)
+	})
+
+	t.Run("same source different clients and first disconnects", func(ctx context.Context, t *testctx.T) {
+		tmpdir1 := t.TempDir()
+
+		depTmpdir1 := filepath.Join(tmpdir1, "dep")
+		err := os.MkdirAll(depTmpdir1, 0755)
+		require.NoError(t, err)
+
+		initDepCmd := hostDaggerCommand(ctx, t, depTmpdir1, "init", "--source=.", "--name=dep", "--sdk=go")
+		initDepOutput, err := initDepCmd.CombinedOutput()
+		require.NoError(t, err, string(initDepOutput))
+		err = os.WriteFile(filepath.Join(depTmpdir1, "main.go"), []byte(`package main
+import (
+	"strconv"
+	"time"
+)
+
+type Dep struct {}
+
+func (*Dep) Fn(rand string) string {
+	return strconv.Itoa(int(time.Now().UnixNano()))
+}
+`), 0644)
+		require.NoError(t, err)
+
+		initCmd := hostDaggerCommand(ctx, t, tmpdir1, "init", "--source=.", "--name=test", "--sdk=go")
+		initOutput, err := initCmd.CombinedOutput()
+		require.NoError(t, err, string(initOutput))
+		installCmd := hostDaggerCommand(ctx, t, tmpdir1, "install", depTmpdir1)
+		installOutput, err := installCmd.CombinedOutput()
+		require.NoError(t, err, string(installOutput))
+
+		err = os.WriteFile(filepath.Join(tmpdir1, "main.go"), []byte(`package main
+import (
+	"context"
+)
+
+type Test struct {}
+
+func (*Test) Fn(ctx context.Context, rand string) (string, error) {
+	return dag.Dep().Fn(ctx, rand)
+}
+`), 0644)
+		require.NoError(t, err)
+
+		tmpdir2 := t.TempDir()
+		err = fs.Copy(ctx, tmpdir1, "/", tmpdir2, "/")
+		require.NoError(t, err)
+
+		c1 := connect(ctx, t)
+		mod1, err := c1.ModuleSource(tmpdir1).AsModule().Sync(ctx)
+		require.NoError(t, err)
+		modID1, err := mod1.ID(ctx)
+		require.NoError(t, err)
+
+		c2 := connect(ctx, t)
+		mod2, err := c2.ModuleSource(tmpdir2).AsModule().Sync(ctx)
+		require.NoError(t, err)
+		modID2, err := mod2.ID(ctx)
+		require.NoError(t, err)
+
+		require.NotEqual(t, modID1, modID2)
+
+		rand := identity.NewID()
+
+		err = mod1.Serve(ctx)
+		require.NoError(t, err)
+		res1, err := testutil.QueryWithClient[struct {
+			Test struct {
+				Fn string
+			}
+		}](c1, t, `{test{fn(rand: "`+rand+`")}}`, nil)
+		require.NoError(t, err)
+		require.NotEmpty(t, res1.Test.Fn)
+
+		err = mod2.Serve(ctx)
+		require.NoError(t, err)
+
+		res2A, err := testutil.QueryWithClient[struct {
+			Test struct {
+				Fn string
+			}
+		}](c2, t, `{test{fn(rand: "`+rand+`")}}`, nil)
+		require.NoError(t, err)
+		require.NotEmpty(t, res2A.Test.Fn)
+
+		require.Equal(t, res1.Test.Fn, res2A.Test.Fn)
+
+		require.NoError(t, c1.Close())
+		err = os.RemoveAll(tmpdir1)
+		require.NoError(t, err)
+
+		rand = identity.NewID()
+		res2B, err := testutil.QueryWithClient[struct {
+			Test struct {
+				Fn string
+			}
+		}](c2, t, `{test{fn(rand: "`+rand+`")}}`, nil)
+		require.NoError(t, err)
+		require.NotEmpty(t, res2B.Test.Fn)
+
+		require.NotEqual(t, res1.Test.Fn, res2B.Test.Fn)
 	})
 }
 

@@ -212,6 +212,33 @@ func (mod *Module) View() (string, bool) {
 	return "", false
 }
 
+func (mod *Module) CacheConfigForCall(
+	ctx context.Context,
+	_ dagql.Object,
+	_ map[string]dagql.Input,
+	cacheCfg dagql.CacheConfig,
+) (*dagql.CacheConfig, error) {
+	currentID := dagql.CurrentID(ctx)
+	// TODO: put this in call pkg if it stays
+	curIDNoMod := currentID.Receiver().Append(
+		currentID.Type().ToAST(),
+		currentID.Field(),
+		currentID.View(),
+		nil,
+		int(currentID.Nth()),
+		"",
+		currentID.Args()...,
+	)
+
+	cacheCfg.Digest = dagql.HashFrom(
+		curIDNoMod.Digest().String(),
+		mod.Source.Self.Digest,
+		mod.NameField,
+		"asModule", // TODO: cleanup
+	)
+	return &cacheCfg, nil
+}
+
 func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
 	var modType ModType
 	var ok bool
