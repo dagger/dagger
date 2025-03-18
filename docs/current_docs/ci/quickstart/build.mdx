@@ -58,9 +58,18 @@ The result of this Dagger Function is a `Container` representing the final produ
 
 Call the Dagger Function as below:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
 ```shell
-⋈ build .
+dagger -c 'build .'
 ```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+build .
+```
+</TabItem>
+</Tabs>
 
 Here's what you should see:
 
@@ -74,9 +83,18 @@ The `as-service` function can be used to [start a just-in-time container as a lo
 
 To see this in action, chain calls to other functions on the returned `Container` using the pipe (`|`) operator:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
 ```shell
-⋈ build . | as-service | up --ports=8080:80
+dagger -c 'build . | as-service | up --ports=8080:80'
 ```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+build . | as-service | up --ports=8080:80
+```
+</TabItem>
+</Tabs>
 
 By default, Dagger will map each exposed container service port to the same port on the host. Since NGINX operates on port 80, which is often a privileged port on the host, the additional `--ports 8080:80` argument re-maps container port 80 to unprivileged host port 8080.
 

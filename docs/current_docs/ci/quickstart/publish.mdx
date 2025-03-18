@@ -59,9 +59,18 @@ There are various reasons why you might want to write Dagger Functions that call
 
 Call the Dagger Function:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
 ```shell
-⋈ publish .
+dagger -c 'publish .'
 ```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+publish .
+```
+</TabItem>
+</Tabs>
 
 You should see the application being tested, built, and published to the [ttl.sh container registry](https://ttl.sh):
 
@@ -105,12 +114,20 @@ You can test the published container image by pulling and running it with `docke
 ```
 
 </TabItem>
-<TabItem value="Dagger Shell">
+<TabItem value="System shell">
 ```shell
 # all equivalent
-⋈ base | with-exec apk,add,bash,git | publish ttl.sh/bar
-⋈ build | publish ttl.sh/bar
-⋈ build-and-publish
+dagger -c 'base | with-exec apk add bash git | publish ttl.sh/bar'
+dagger -c 'build | publish ttl.sh/bar'
+dagger -c build-and-publish
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+# all equivalent
+base | with-exec apk,add,bash,git | publish ttl.sh/bar
+build | publish ttl.sh/bar
+build-and-publish
 ```
 </TabItem>
 </Tabs>

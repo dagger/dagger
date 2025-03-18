@@ -100,11 +100,20 @@ Default paths are only available for `Directory` and `File` arguments. Dagger's 
 
 Run the pipeline:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
 ```shell
-⋈ publish
+dagger -c publish
 ```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+publish
+```
+</TabItem>
+</Tabs>
 
-As before, you should see the application being tested, built, and published to the [ttl.sh container registry](https://ttl.sh). With the default path in place, everything works as before, even though the `source` argument is no longer specified in the Dagger Function call.
+As before, you should see the application being tested, built, and published to the [ttl.sh container registry](https://ttl.sh). With the default path in place, everything works as before, even though no argument is specified in the Dagger Function call.
 
 :::tip PRIVATE CONTAINER REGISTRIES
 This quickstart uses the public [ttl.sh container registry](https://ttl.sh), but Dagger also supports publishing to private registries, including [Docker Hub](../../cookbook/cookbook.mdx#publish-a-container-image-to-a-private-registry), [GitHub Container Registry](../../cookbook/cookbook.mdx#publish-a-container-image-to-a-private-registry), and many others.
