@@ -126,9 +126,10 @@ Note: Ollama has a default context length of 2048. If you need to change this, y
 Here's a list curated by Ollama of models that support tools: [Ollama models supporting tools](https://ollama.com/search?c=tools)
 Any model from Ollama or any other model distributor that supports tools can be used with Dagger.
 
-For example, to pull the `llama3.2` model:
+For example, a good model for working with code is `qwen2.5-coder`. Various sizes of the model can be found here: [Qwen2.5-coder](https://ollama.com/library/qwen2.5-coder)
+To pull `qwen2.5-coder:14b`, which can fit in roughly 16GB of memory:
 ```shell
-ollama pull llama3.2
+ollama pull qwen2.5-coder:14b
 ```
 
 4. Get your host machine's IP address:
@@ -154,13 +155,13 @@ The `/v1/` route refers to Ollama's OpenAI compatible routes. The trailing `/` i
 
 ```plaintext
 OPENAI_BASE_URL=http://YOUR_IP:11434/v1/
-OPENAI_MODEL={your preferred model}
+OPENAI_MODEL=<your preferred model>
 ```
 
-For example, if your IP is 192.168.64.1 and your preferred model is llama3.2:
+For example, if your IP is 192.168.64.1 and your preferred model is qwen2.5-coder:14b:
 ```plaintext
 OPENAI_BASE_URL=http://192.168.64.1:11434/v1/
-OPENAI_MODEL=llama3.2
+OPENAI_MODEL=qwen2.5-coder:14b
 ```
 
 #### Using with Amazon Bedrock (tbd)
