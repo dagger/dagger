@@ -122,15 +122,34 @@ func (LLMSuite) TestCase(ctx context.Context, t *testctx.T) {
 func (LLMSuite) TestAPILimit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	recording := "llmtest/api-limit.golden"
-	replayData, err := os.ReadFile(recording)
-	require.NoError(t, err)
-	model := "replay/" + base64.StdEncoding.EncodeToString(replayData)
+	ctrFn := func(llmFlags string) dagger.WithContainerFunc {
+		return daggerShell(fmt.Sprintf(`llm %s | with-container alpine | with-prompt "tell me the value of PATH and TERM in this container using just envVariable" | historyJSON`, llmFlags))
+	}
 
-	_, err = daggerCliBase(t, c).
-		With(daggerShell(fmt.Sprintf(`llm --max-api-calls=1 --model="%s" | with-container alpine | with-prompt "tell me the value of PATH and TERM in this container using just envVariable"`, model))).
-		Stdout(ctx)
-	requireErrOut(t, err, "reached API call limit: 1")
+	recording := "llmtest/api-limit.golden"
+	if golden.FlagUpdate() {
+		out, err := daggerCliBase(t, c).
+			With(daggerForwardSecrets(c)).
+			With(ctrFn("")).
+			Stdout(ctx)
+		require.NoError(t, err)
+
+		if dir := filepath.Dir(recording); dir != "." {
+			err := os.MkdirAll(dir, 0755)
+			require.NoError(t, err)
+		}
+		err = os.WriteFile(recording, []byte(out), 0644)
+		require.NoError(t, err)
+	} else {
+		replayData, err := os.ReadFile(recording)
+		require.NoError(t, err)
+		llmFlags := fmt.Sprintf("--max-api-calls=1 --model=\"replay/%s\"", base64.StdEncoding.EncodeToString(replayData))
+
+		_, err = daggerCliBase(t, c).
+			With(ctrFn(llmFlags)).
+			Stdout(ctx)
+		requireErrOut(t, err, "reached API call limit: 1")
+	}
 }
 
 func testGoProgram(ctx context.Context, t *testctx.T, c *dagger.Client, program *dagger.File, re any) {

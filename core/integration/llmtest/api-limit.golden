@@ -10,30 +10,29 @@
   },
   {
     "role": "assistant",
-    "content": "I'll help you check the values of PATH and TERM environment variables using the  envVariable",
+    "content": "I can help you check those environment variables using the `Container_envVariable` function. I'll need to make two separate calls to check each variable.",
     "tool_calls": [
       {
-        "id": "call_tJCAiWyEwQCJpWEiFgIP01k1",
+        "id": "toolu_01GNrh7wiTtCcCqUYixutLHu",
         "function": {
-          "name": "envVariable",
+          "name": "Container_envVariable",
           "arguments": {
-            "path": "PATH"
+            "name": "PATH"
           }
         },
         "type": "function"
       }
     ],
     "token_usage": {
-      "InputTokens": 160,
-      "OutputTokens": 15,
-      "TotalTokens": 175
+      "InputTokens": 11849,
+      "OutputTokens": 86,
+      "TotalTokens": 11935
     }
   },
   {
     "role": "user",
-    "content": "/usr/bin",
-    "tool_call_id": "call_tJCAiWyEwQCJpWEiFgIP01k1",
-    "tool_errored": false,
+    "content": "\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"",
+    "tool_call_id": "toolu_01GNrh7wiTtCcCqUYixutLHu",
     "token_usage": {
       "InputTokens": 0,
       "OutputTokens": 0,
@@ -43,10 +42,41 @@
   {
     "role": "assistant",
     "content": "",
+    "tool_calls": [
+      {
+        "id": "toolu_012NeK2HiscYAVJBFdgrapx6",
+        "function": {
+          "name": "Container_envVariable",
+          "arguments": {
+            "name": "TERM"
+          }
+        },
+        "type": "function"
+      }
+    ],
     "token_usage": {
-      "InputTokens": 411,
-      "OutputTokens": 48,
-      "TotalTokens": 459
+      "InputTokens": 49,
+      "OutputTokens": 56,
+      "TotalTokens": 105
+    }
+  },
+  {
+    "role": "user",
+    "content": "null",
+    "tool_call_id": "toolu_012NeK2HiscYAVJBFdgrapx6",
+    "token_usage": {
+      "InputTokens": 0,
+      "OutputTokens": 0,
+      "TotalTokens": 0
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "I've checked both variables and found that:\n- PATH is set to \"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"\n- TERM is not set in the container (returned null)",
+    "token_usage": {
+      "InputTokens": 119,
+      "OutputTokens": 61,
+      "TotalTokens": 180
     }
   }
 ]
