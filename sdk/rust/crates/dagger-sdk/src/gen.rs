@@ -6703,6 +6703,11 @@ impl Llm {
         let query = self.selection.select("history");
         query.execute(self.graphql_client.clone()).await
     }
+    /// return the raw llm message history as json
+    pub async fn history_json(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("historyJSON");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// A unique identifier for this LLM.
     pub async fn id(&self) -> Result<Llmid, DaggerError> {
         let query = self.selection.select("id");

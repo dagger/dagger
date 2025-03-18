@@ -523,6 +523,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * return the raw llm message history as json
+     */
+    public function historyJSON(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('historyJSON');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'historyJSON');
+    }
+
+    /**
      * A unique identifier for this LLM.
      */
     public function id(): LLMId

@@ -2479,6 +2479,9 @@ type LLM {
   """return the llm message history"""
   history: [String!]!
 
+  """return the raw llm message history as json"""
+  historyJSON: String!
+
   """A unique identifier for this LLM."""
   id: LLMID!
 
