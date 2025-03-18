@@ -1,0 +1,7 @@
+{
+  "name": "evals",
+  "engineVersion": "v0.17.1-010101000000-dev-98eece1454ec",
+  "sdk": {
+    "source": "go"
+  }
+}
