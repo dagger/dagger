@@ -152,7 +152,7 @@ func (h *Daggerverse) BumpDaggerVersion(
 		WithExposedPort(1234).
 		WithDefaultArgs([]string{
 			"--addr", "tcp://0.0.0.0:1234",
-			"--addr", "unix:///var/run/buildkit/buildkitd.sock",
+			"--addr", "unix:///var/run/dagger/engine.sock",
 			"--network-cidr", "10.12.34.0/24",
 		}).AsService(dagger.ContainerAsServiceOpts{InsecureRootCapabilities: true, UseEntrypoint: true})
 
@@ -186,16 +186,14 @@ func (h *Daggerverse) BumpDaggerVersion(
 		return err
 	}
 
-	daggerverse, err := dag.Go(daggerio.Directory("daggerverse")).Env().
+	daggerverse := dag.Go(daggerio.Directory("daggerverse")).Env().
 		WithExec([]string{"go", "get", fmt.Sprintf("dagger.io/dagger@v%s", to)}).
-		Sync(ctx)
-	if err != nil {
-		return err
-	}
+		WithExec([]string{"go", "mod", "tidy"})
+	updated := daggerio.WithDirectory("daggerverse", daggerverse.Directory("."))
 
-	updated := daggerio.
-		WithDirectory("/dagger.io/daggerverse", daggerverse.Directory(".")).
-		Directory("/dagger.io")
+	api := dag.Go(daggerio.Directory("api")).Env().
+		WithExec([]string{"go", "mod", "tidy"})
+	updated = updated.WithDirectory("api", api.Directory("."))
 
 	branch := fmt.Sprintf("dgvs-bump-dagger-from-%s-to-%s-with-dagger-main", from, to)
 	commitMsg := fmt.Sprintf("dgvs: Bump Dagger from %s to %s", from, to)
@@ -204,7 +202,7 @@ func (h *Daggerverse) BumpDaggerVersion(
 	if githubAssignee != "" {
 		assignees = append(assignees, githubAssignee)
 	}
-	err = h.Gh.WithSource(updated).
+	err = h.Gh.WithSource(updated.Directory(".")).
 		WithGitExec([]string{"checkout", "-b", branch}).
 		WithGitExec([]string{"add", ".github", "daggerverse", "infra"}).
 		WithGitExec([]string{"config", "user.email", h.GitHubUserEmail}).

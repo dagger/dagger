@@ -132,6 +132,11 @@ public class Entrypoint {
                         dag().typeDef().withKind(TypeDefKind.FLOAT_KIND))
                         .withArg("a", dag().typeDef().withKind(TypeDefKind.FLOAT_KIND))
                         .withArg("b", dag().typeDef().withKind(TypeDefKind.FLOAT_KIND)))
+                .withFunction(
+                    dag().function("doSomething",
+                        dag().typeDef().withKind(TypeDefKind.VOID_KIND).withOptional(true))
+                        .withDescription("Function returning nothing")
+                        .withArg("src", dag().typeDef().withObject("Directory")))
                 .withField("source", dag().typeDef().withObject("Directory"), new TypeDef.WithFieldArguments().withDescription("Project source directory"))
                 .withField("version", dag().typeDef().withKind(TypeDefKind.STRING_KIND))
                 .withConstructor(
@@ -263,6 +268,16 @@ public class Entrypoint {
         }
         float res = obj.addFloat(a, b);
         return JsonConverter.toJSON(res);
+      } else if (fnName.equals("doSomething")) {
+        Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
+        DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
+        Directory src = null;
+        if (inputArgs.get("src") != null) {
+          src = (Directory) JsonConverter.fromJSON(inputArgs.get("src"), Directory.class);
+        }
+        Objects.requireNonNull(src, "src must not be null");
+        obj.doSomething(src);
+        return JsonConverter.toJSON(null);
       } if (fnName.equals("")) {
         Directory source = null;
         if (inputArgs.get("source") != null) {

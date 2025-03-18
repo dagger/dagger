@@ -1,5 +1,6 @@
 ---
 slug: /ai-agents
+description: Learn how to build reproducible AI agents with Dagger using OpenAI, Anthropic, Gemini, Llama, DeepSeek, Qwen, and more.
 ---
 
 # Build AI agents with Dagger
@@ -39,19 +40,22 @@ Here are several example repositories containing examples of Dagger modules with
 
 - [toy-programmer](https://github.com/shykes/toy-programmer): a very, very simple programmer micro-agent for demo purposes
 - [melvin](https://github.com/dagger/agents/tree/main/melvin): Melvin is [Devin](https://devin.ai)'s little cousin 😄. An experimental open-source coding agent, made of small composable modules rather than one monolithic app.
-- [multiagent](https://github.com/dagger/agents/tree/main/multiagent-demo): a demo using multiple LLMs to solve a problem
-- [github-go-coder](https://github.com/dagger/agents/tree/main/github-go-coder): a Go programmer micro-agent that receives assignments from GitHub issues and creates PRs with it's solutions
+- [multiagent](https://github.com/kpenfound/agents/tree/main/multiagent-demo): a demo using multiple LLMs to solve a problem
+- [go-coder](https://github.com/kpenfound/agents/tree/main/go-coder): a Go programmer micro-agent that receives assignments from GitHub issues and creates PRs with it's solutions
 - [cypress-test-writer](https://github.com/jpadams/cypress-test-writer): an agent that compares two branches in git for a UI change and creates a Cypress test to cover the change.
-- [laravel-assistant](https://github.com/jasonmccallister/laravel-assistant): an agent that reviews git changes in a local Laravel project to generate tests.
 - [tictactoe](https://github.com/kpenfound/agents/tree/main/tictactoe): an agent that plays Tic Tac Toe with a human player.
-- [dockerfile-optimizer](https://github.com/dagger/agents/tree/main/dockerfile-optimizer): an agent that analyzes your Dockerfile and suggests improvements for better efficiency, security, and best practices.
+- [dockerfile-optimizer](https://github.com/samalba/agents/tree/main/dockerfile-optimizer): an agent that analyzes your Dockerfile and suggests improvements for better efficiency, security, and best practices.
 - [test-debugger](https://github.com/kpenfound/greetings-api/blob/main/DEBUGGER_AGENT.md): an agent that automatically debugs failing tests in CI.
+- [technical-content-summarizer](https://github.com/jasonmccallister/technical-content-summarizer): an agent that accepts a URL, optional min and max character length and forbidden words and summarizes the content for a non-technical audience.
+- [swe-agent](https://github.com/kpenfound/greetings-api/blob/main/SWE_AGENT.md): an agent that gets assigned GitHub issues and solves them with pull requests.
+
+For more explanation of agent design patterns, see [FAQ](#faq) below.
 
 ## Initial setup
 
 ### 1. Install Dagger with llm support
 
-*Note: the latest version is `0.17.0-llm.8`. It was released on March 8, 2025. If you are running an older build, we recommend upgrading.*
+*Note: the latest version is `0.17.0-llm.10`. It was released on March 17, 2025. If you are running an older build, we recommend upgrading.*
 
 You will need a *development version* of Dagger which adds native support for LLM prompting and tool calling.
 
@@ -60,7 +64,7 @@ Once this feature is merged (current target is 0.17), a development build will n
 Install the development version of LLM-enabled Dagger:
 
 ```console
-curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.17.0-llm.8 BIN_DIR=/usr/local/bin sh
+curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.17.0-llm.10 BIN_DIR=/usr/local/bin sh
 ```
 
 You can adjust `BIN_DIR` to customize where the `dagger` CLI is installed.
@@ -69,7 +73,7 @@ Verify that your Dagger installation works:
 
 ```console
 $ dagger -c version
-v0.17.0-llm.8
+v0.17.0-llm.10
 ```
 
 ### 2.Configure LLM endpoints
@@ -79,7 +83,8 @@ Check the [source code](https://github.com/dagger/dagger/blob/llm/core/llm.go#L2
 
 #### Anthropic
 - `ANTHROPIC_API_KEY`: required
-- `ANTHROPIC_MODEL`: if unset, defaults to latest Claude 3.5 Sonnet
+- `ANTHROPIC_MODEL`: if unset, defaults to `"claude-3-5-sonnet-latest"`
+- [more model name strings](https://docs.anthropic.com/en/docs/about-claude/models/all-models)
 
 #### OpenAI
 - `OPENAI_API_KEY`: required
@@ -87,10 +92,12 @@ Check the [source code](https://github.com/dagger/dagger/blob/llm/core/llm.go#L2
 - **optional extras**
   - `OPENAI_BASE_URL`: for alternative OpenAI-compatible endpoints like Azure or local models
   - `OPENAI_AZURE_VERSION`: for use with [Azure's API to OpenAI](https://learn.microsoft.com/en-us/azure/ai-services/openai/overview). See below.
+- [more model name strings](https://platform.openai.com/docs/models) within individual model docs
 
 #### Google Gemini
 - `GEMINI_API_KEY`: required
 - `GEMINI_MODEL`: default `"gemini-2.0-flash"`
+- [more model name strings](https://ai.google.dev/gemini-api/docs/models/gemini)
 
 Dagger will look for these variables in your environment, or in a `.env` file in the current directory (`.env` files in parent directories are not yet supported).
 
@@ -131,14 +138,12 @@ This step is needed because our LLM type runs inside the engine and needs to rea
 4. Configure the following environment variables (replace `YOUR_IP` with the IP address from step 3):
 
 ```plaintext
-OPENAI_API_KEY="nothing"
 OPENAI_BASE_URL=http://YOUR_IP:11434/v1/
 OPENAI_MODEL=llama3.2
 ```
 
 For example, if your IP is 192.168.64.1:
 ```plaintext
-OPENAI_API_KEY="nothing"
 OPENAI_BASE_URL=http://192.168.64.1:11434/v1/
 OPENAI_MODEL=llama3.2
 ```
@@ -232,3 +237,69 @@ Any time you need to re-generate your client, run:
 ```console
 dagger client generate
 ```
+
+## FAQ
+
+### How does the agentic loop work?
+
+Consider the following code from the [toy-programmer](https://github.com/shykes/toy-programmer):
+
+```go
+result := dag.Llm().
+		WithToyWorkspace(dag.ToyWorkspace().Write("assignment.txt", assignment)).
+		WithPrompt("You are an expert go programmer. You have access to a workspace").
+		WithPrompt("Complete the assignment written at assignment.txt").
+		WithPrompt("Don't stop until the code builds").
+		ToyWorkspace().
+		Container()
+```
+
+This code creates a new LLM, gives it a workspace (described below) with an assignment, and prompts it to complete the assignment. The LLM then runs in a loop, calling tools and iterating on it's work, until it completes the assignment. This loop all happens inside of the LLM object in this code snippet, so the value of `result` is the completed assignment.
+
+### How do I give the LLM access to tools?
+
+Dagger [modules](features/modules.mdx) are collections of Dagger functions. When you give a module to the LLM object, every function is turned into a tool that the LLM can call.
+
+Consider the following code from the [toy-programmer](https://github.com/shykes/toy-programmer):
+
+```go
+result := dag.Llm().
+		WithToyWorkspace(dag.ToyWorkspace().Write("assignment.txt", assignment)).
+		WithPrompt("You are an expert go programmer. You have access to a workspace").
+		WithPrompt("Complete the assignment written at assignment.txt").
+		WithPrompt("Don't stop until the code builds").
+		ToyWorkspace().
+		Container()
+```
+
+In this code, an instance of the `ToyWorkspace` module is given to the LLM, so the LLM can call any function in the `ToyWorkspace` module such as read, write, and build.
+
+### What is this "workspace" object that most of the examples use?
+
+A workspace is a common design pattern that a lot of agents implement. It's simply a Dagger module that provides an object with functions to read and write files, run tests, and generally interact with a Directory or Container. The workspace module is passed to the LLM, and the LLM uses it to complete it's task. The reason this is a popular pattern is because the Directory and Container types have a lot of functions and an LLM can easily get lost or provide inconsistent results. A "workspace", or a Dagger module with limited functions like read/write/test, is an easy way to restrict the tools the LLM has access to, and to provide a consistent interface for the LLM to interact with the environment.
+
+For example workspaces, see [toy-workspace](https://github.com/shykes/toy-programmer/tree/main/toy-workspace) or [kpenfound/dag/workspace](https://github.com/kpenfound/dag/tree/main/workspace)
+
+### How I get information or objects out of the LLM?
+
+Consider the following code from the [toy-programmer](https://github.com/shykes/toy-programmer):
+
+```go
+result := dag.Llm().
+		WithToyWorkspace(dag.ToyWorkspace().Write("assignment.txt", assignment)).
+		WithPrompt("You are an expert go programmer. You have access to a workspace").
+		WithPrompt("Complete the assignment written at assignment.txt").
+		WithPrompt("Don't stop until the code builds").
+		ToyWorkspace().
+		Container()
+```
+
+In this example, the work produced by the LLM is contained in the `ToyWorkspace`, so you want to get that work back out after the LLM is done. The work in `ToyWorkspace` is in it's field `Container`. Because you gave the LLM the workspace using `WithToyWorkspace()`, you can get the resulting toy-workspace and the container within it by chaining `.ToyWorkspace().Container()`. Now `result` is the Container with the completed work.
+
+If you're simply interested in the messaging between the assistant and user, you can use `.History()` to get the full conversation or `.LastReply()` to get the final response.
+
+### My agent isn't behaving properly. How do I debug it?
+
+First, to get more information about the agent's behavior, you can increase the verbosity of the shell or check out the run in Dagger Cloud. This is the best way to see what steps the LLM took, the details of it's thinking between each tool call, and what the tool calls were.
+
+Second, once you understand how the agent is behaving, you can try to adjust the prompt to get the desired behavior. This is often a matter of trial and error, and can be a bit of an art.

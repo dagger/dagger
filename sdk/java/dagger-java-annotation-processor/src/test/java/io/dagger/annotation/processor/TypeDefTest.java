@@ -51,6 +51,15 @@ public class TypeDefTest {
   }
 
   @Test
+  public void testTypeDefVoid() throws ClassNotFoundException {
+    assertThat(
+            DaggerModuleAnnotationProcessor.typeDef(new TypeInfo("void", TypeKind.VOID.name()))
+                .toString())
+        .isEqualTo(
+            "io.dagger.client.Dagger.dag().typeDef().withKind(io.dagger.client.TypeDefKind.VOID_KIND).withOptional(true)");
+  }
+
+  @Test
   public void testTypeDefListString() throws ClassNotFoundException {
     assertThat(
             DaggerModuleAnnotationProcessor.typeDef(
