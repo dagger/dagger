@@ -129,6 +129,7 @@ spec:
             {{- if .Values.engine.hostPath.runVolume.enabled }}
             - name: varrundagger
               mountPath: /var/run/dagger
+            {{- end }}
             {{- if .Values.engine.config }}
             - name: dagger-engine-config
               mountPath: /etc/dagger/engine.toml
