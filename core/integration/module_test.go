@@ -5878,9 +5878,7 @@ func (m *Foo) HowCoolIsDagger() string {
 		// This is simulating a user's setup where they have
 		// 1. ssh auth sock setup
 		// 2. gitconfig file with insteadOf directive
-		// 3. a dagger module that requires a dependency (NOT a dagger dependency)
-		// from a remote private repo.
-		// TODO(rajatjindal): use a private repo owned by dagger and fix the private key (AND REVOKE THIS KEY's access from my repo)
+		// 3. a dagger module that requires a dependency (NOT a dagger dependency) from a remote private repo.
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithExec([]string{"apk", "add", "git", "openssh"}).
