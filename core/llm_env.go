@@ -112,9 +112,9 @@ func (env *LLMEnv) Unset(key string) {
 
 func (env *LLMEnv) Tools(srv *dagql.Server) []LLMTool {
 	var tools []LLMTool
-	if len(env.vars) > 0 {
-		tools = env.Builtins()
-	}
+	// if len(env.vars) > 0 {
+	tools = env.Builtins()
+	// }
 	typedefs := make(map[string]*ast.Definition)
 	for _, val := range env.vars {
 		typedef := env.typedef(srv, val)
