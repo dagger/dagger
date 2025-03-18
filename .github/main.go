@@ -183,19 +183,19 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 				Runner: []string{AltGoldRunner()},
 			}},
 			{"modules", []string{"TestModule"}, &dagger.GhaJobOpts{
-				Runner: []string{PlatinumRunner(true)},
+				Runner: []string{AltGoldRunner()},
 			}},
 			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"}, &dagger.GhaJobOpts{
-				Runner: []string{PlatinumRunner(true)},
+				Runner: []string{AltGoldRunner()},
 			}},
 			{"container", []string{"TestContainer"}, &dagger.GhaJobOpts{
-				Runner: []string{PlatinumRunner(true)},
+				Runner: []string{AltGoldRunner()},
 			}},
 			{"cli-engine", []string{"TestCLI", "TestEngine"}, &dagger.GhaJobOpts{
-				Runner: []string{PlatinumRunner(true)},
+				Runner: []string{AltGoldRunner()},
 			}},
 			{"everything-else", nil, &dagger.GhaJobOpts{
-				Runner: []string{PlatinumRunner(true)},
+				Runner: []string{AltPlatinumRunner()},
 			}},
 		}))
 
@@ -361,4 +361,9 @@ func PlatinumRunner(
 // Alternative Gold runner: Single-tenant with Docker, 16 cpu
 func AltGoldRunner() string {
 	return AltRunner(16)
+}
+
+// Alternative Platinum runner: Single-tenant with Docker, 32 cpu
+func AltPlatinumRunner() string {
+	return AltRunner(32)
 }
