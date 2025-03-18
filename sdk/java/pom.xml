@@ -305,7 +305,7 @@
         <javapoet.version>0.6.0</javapoet.version>
         <javaparser.version>3.26.3</javaparser.version>
         <json-path.version>2.9.0</json-path.version>
-        <junit.version>5.12.0</junit.version>
+        <junit.version>5.12.1</junit.version>
         <maven-assembly-plugin.version>3.7.1</maven-assembly-plugin.version>
         <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
         <maven-failsafe-plugin.version>3.5.2</maven-failsafe-plugin.version>
@@ -317,7 +317,7 @@
         <maven-shade-plugin.version>3.6.0</maven-shade-plugin.version>
         <maven-source-plugin.version>3.3.1</maven-source-plugin.version>
         <versions-maven-plugin.version>2.18.0</versions-maven-plugin.version>
-        <mockito-core.version>5.16.0</mockito-core.version>
+        <mockito-core.version>5.16.1</mockito-core.version>
         <slf4j-api.version>2.0.17</slf4j-api.version>
         <slf4j-simple.version>2.0.17</slf4j-simple.version>
         <smallrye-graphql.version>2.12.1</smallrye-graphql.version>

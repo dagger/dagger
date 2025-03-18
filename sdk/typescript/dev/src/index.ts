@@ -1,7 +1,7 @@
 import { dag, Container, object, func, Directory } from "@dagger.io/dagger"
 
 @object()
-class TypescriptSdkDev {
+export class TypescriptSdkDev {
   /**
    * Project dev environment container.
    *

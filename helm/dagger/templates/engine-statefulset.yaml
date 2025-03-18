@@ -100,7 +100,7 @@ spec:
             - name: data
               mountPath: /var/lib/dagger
             - name: run
-              mountPath: /var/run/buildkit
+              mountPath: /var/run/dagger
             {{- if .Values.engine.config }}
             - name: config
               mountPath: /etc/dagger/engine.toml

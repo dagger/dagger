@@ -19,7 +19,7 @@ const (
 	engineTOMLPath       = "/etc/dagger/engine.toml"
 	engineJSONPath       = "/etc/dagger/engine.json"
 	engineEntrypointPath = "/usr/local/bin/dagger-entrypoint.sh"
-	engineUnixSocketPath = "/var/run/buildkit/buildkitd.sock"
+	engineUnixSocketPath = "/var/run/dagger/engine.sock"
 	cliPath              = "/usr/local/bin/dagger"
 )
 
