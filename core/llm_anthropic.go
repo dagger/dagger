@@ -108,6 +108,26 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 			content = " "
 		}
 
+		if msg.ToolCallID != "" {
+			blocks = append(blocks, anthropic.NewToolResultBlock(
+				msg.ToolCallID,
+				content,
+				msg.ToolErrored,
+			))
+		} else {
+			blocks = append(blocks, anthropic.NewTextBlock(content))
+		}
+
+		// add tool usage blocks first so they get cached when setting
+		// CacheControl below
+		for _, call := range msg.ToolCalls {
+			blocks = append(blocks, anthropic.NewToolUseBlockParam(
+				call.ID,
+				call.Function.Name,
+				call.Function.Arguments,
+			))
+		}
+
 		cacheControl := anthropic.Null[anthropic.CacheControlEphemeralParam]()
 
 		// enable caching based on simple token usage heuristic
@@ -116,29 +136,19 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 			cachedBlocks++
 		}
 
-		// add tool usage blocks first so they get cached when setting
-		// CacheControl below
-		for _, call := range msg.ToolCalls {
-			param := anthropic.NewToolUseBlockParam(
-				call.ID,
-				call.Function.Name,
-				call.Function.Arguments,
-			)
-			blocks = append(blocks, param)
-		}
-
-		if msg.ToolCallID != "" {
-			param := anthropic.NewToolResultBlock(
-				msg.ToolCallID,
-				content,
-				msg.ToolErrored,
-			)
-			param.CacheControl = cacheControl
-			blocks = append(blocks, param)
-		} else {
-			param := anthropic.NewTextBlock(content)
-			param.CacheControl = cacheControl
-			blocks = append(blocks, param)
+		if len(blocks) > 0 {
+			lastBlock := blocks[len(blocks)-1]
+			switch x := lastBlock.(type) {
+			case anthropic.TextBlockParam:
+				x.CacheControl = cacheControl
+				blocks[len(blocks)-1] = x
+			case anthropic.ToolUseBlockParam:
+				x.CacheControl = cacheControl
+				blocks[len(blocks)-1] = x
+			case anthropic.ToolResultBlockParam:
+				x.CacheControl = cacheControl
+				blocks[len(blocks)-1] = x
+			}
 		}
 
 		switch msg.Role {
