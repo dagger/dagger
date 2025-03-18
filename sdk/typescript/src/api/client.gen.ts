@@ -5133,6 +5133,7 @@ export class InterfaceTypeDef extends BaseClient {
 export class LLM extends BaseClient {
   private readonly _id?: LLMID = undefined
   private readonly _getString?: string = undefined
+  private readonly _historyJSON?: string = undefined
   private readonly _lastReply?: string = undefined
   private readonly _model?: string = undefined
   private readonly _provider?: string = undefined
@@ -5146,6 +5147,7 @@ export class LLM extends BaseClient {
     ctx?: Context,
     _id?: LLMID,
     _getString?: string,
+    _historyJSON?: string,
     _lastReply?: string,
     _model?: string,
     _provider?: string,
@@ -5156,6 +5158,7 @@ export class LLM extends BaseClient {
 
     this._id = _id
     this._getString = _getString
+    this._historyJSON = _historyJSON
     this._lastReply = _lastReply
     this._model = _model
     this._provider = _provider
@@ -5651,6 +5654,21 @@ export class LLM extends BaseClient {
     const ctx = this._ctx.select("history")
 
     const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * return the raw llm message history as json
+   */
+  historyJSON = async (): Promise<string> => {
+    if (this._historyJSON) {
+      return this._historyJSON
+    }
+
+    const ctx = this._ctx.select("historyJSON")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }

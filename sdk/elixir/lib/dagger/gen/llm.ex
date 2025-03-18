@@ -645,6 +645,15 @@ defmodule Dagger.LLM do
     Client.execute(llm.client, query_builder)
   end
 
+  @doc "return the raw llm message history as json"
+  @spec history_json(t()) :: {:ok, String.t()} | {:error, term()}
+  def history_json(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("historyJSON")
+
+    Client.execute(llm.client, query_builder)
+  end
+
   @doc "A unique identifier for this LLM."
   @spec id(t()) :: {:ok, Dagger.LLMID.t()} | {:error, term()}
   def id(%__MODULE__{} = llm) do
