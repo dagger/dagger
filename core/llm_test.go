@@ -19,8 +19,7 @@ func (LlmTestQuery) Type() *ast.Type {
 }
 
 type mockSecret struct {
-	Plaintext string `field:"true"`
-	uri       string
+	uri string
 }
 
 func (mockSecret) Type() *ast.Type {
@@ -54,7 +53,7 @@ func TestLlmConfig(t *testing.T) {
 			URI string
 		}) (mockSecret, error) {
 			if _, ok := vars[args.URI]; !ok {
-				t.Errorf("uri not found: %s", args.URI)
+				t.Fatalf("uri not found: %s", args.URI)
 			}
 			return mockSecret{uri: args.URI}, nil
 		}),
