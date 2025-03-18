@@ -5406,9 +5406,15 @@ func daggerExec(args ...string) dagger.WithContainerFunc {
 
 func daggerNonNestedExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: false,
-		})
+		return c.
+			// Don't persist stable client id between runs. this matches the behavior
+			// of actual nested execs. Stable client IDs on the filesystem don't work
+			// when run inside layered containers that can branch off and run in parallel.
+			WithEnvVariable("XDG_STATE_HOME", "/tmp").
+			WithMountedTemp("/tmp").
+			WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
+				ExperimentalPrivilegedNesting: false,
+			})
 	}
 }
 
