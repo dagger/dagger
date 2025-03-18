@@ -357,12 +357,6 @@ func (gs *gitSourceHandler) CacheKey(ctx context.Context, g session.Group, index
 	gs.locker.Lock(remote)
 	defer gs.locker.Unlock(remote)
 
-	if ref := gs.src.Ref; ref != "" && isCommitSHA(ref) {
-		cacheKey := gs.shaToCacheKey(ref)
-		gs.cacheKey = cacheKey
-		return cacheKey, ref, nil, true, nil
-	}
-
 	gs.getAuthToken(ctx, g)
 
 	gitDir, unmountGitDir, err := gs.mountRemote(ctx, remote, gs.auth, g)
@@ -414,6 +408,12 @@ func (gs *gitSourceHandler) CacheKey(ctx context.Context, g session.Group, index
 		return "", "", nil, false, errors.Wrapf(err, "failed to fetch remote %s", urlutil.RedactCredentials(remote))
 	}
 	lines := strings.Split(buf.String(), "\n")
+
+	if ref := gs.src.Ref; ref != "" && isCommitSHA(ref) {
+		cacheKey := gs.shaToCacheKey(ref)
+		gs.cacheKey = cacheKey
+		return cacheKey, ref, nil, true, nil
+	}
 
 	// simulate git-checkout semantics, and make sure to select exactly the right ref
 	var (

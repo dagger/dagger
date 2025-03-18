@@ -247,11 +247,10 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 				// Retrieve credential from host
 				credentials, err := bk.GetCredential(authCtx, remote.Scheme, remote.Host, remote.Path)
 				switch {
-				case err != nil:
-					return inst, fmt.Errorf("failed to retrieve git credentials: %w", err)
-
-				case credentials == nil || credentials.Password == "":
-					return inst, fmt.Errorf("no credentials found for git repository")
+				case err != nil || credentials == nil || credentials.Password == "":
+					// it's possible to provide auth tokens via chained API calls, so warn now but
+					// don't fail. Auth will be checked again before relevant operations later.
+					slog.Warn("Failed to retrieve git credentials: %v", err)
 
 				default:
 					// Credentials found, create and set auth token
