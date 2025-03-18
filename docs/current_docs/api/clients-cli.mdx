@@ -6,27 +6,16 @@ import TabItem from '@theme/TabItem';
 
 # Dagger CLI
 
-The Dagger CLI lets you call both the core and extended Dagger API (the core APIs plus the new APIs provided by Dagger Functions) directly from the command-line via the `dagger shell`, `dagger core` and `dagger call` commands.
+The Dagger CLI lets you call both the core and extended Dagger API (the core APIs plus the new APIs provided by Dagger Functions) directly from the command-line.
 
-## Core Dagger API functions
+## Core API
 
-The `dagger shell` and `dagger core` commands let you call the core Dagger API, without needing to first load a Dagger [module](../features/modules.mdx). This is useful in some scenarios:
+You can call the core Dagger API without needing to first load a Dagger [module](../features/modules.mdx). This is useful in some scenarios:
 
 - You want to use Dagger for simple pipelines that are fully satisfied by the core Dagger API.
 
-    <Tabs>
-    <TabItem value="dagger core">
-    ```shell
-    dagger core container from --address="cgr.dev/chainguard/wolfi-base" \
-      with-exec --args="apk","add","go" \
-      with-directory --path="/src" --directory="https://github.com/golang/example#master" \
-      with-workdir --path="/src/hello" \
-      with-exec --args="go","build","-o","hello","." \
-      file --path="./hello" \
-      export --path="./hello-from-dagger"
-    ```
-    </TabItem>
-    <TabItem value="dagger shell">
+    <Tabs groupId="shell">
+    <TabItem value="System shell">
     ```shell
     dagger <<EOF
     container \
@@ -40,19 +29,50 @@ The `dagger shell` and `dagger core` commands let you call the core Dagger API, 
     EOF
     ```
     </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    container \
+      | from cgr.dev/chainguard/wolfi-base \
+      | with-exec apk add go \
+      | with-directory /src https://github.com/golang/example#master \
+      | with-workdir /src/hello \
+      | with-exec -- go build -o hello . \
+      | file ./hello \
+      | export ./hello-from-dagger
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger core container from --address="cgr.dev/chainguard/wolfi-base" \
+      with-exec --args="apk","add","go" \
+      with-directory --path="/src" --directory="https://github.com/golang/example#master" \
+      with-workdir --path="/src/hello" \
+      with-exec --args="go","build","-o","hello","." \
+      file --path="./hello" \
+      export --path="./hello-from-dagger"
+    ```
+    </TabItem>
     </Tabs>
 
 - You want to experiment with Dagger without having to program a Dagger module.
 
     <Tabs>
-    <TabItem value="dagger shell">
+    <TabItem value="System shell">
     ```shell
     dagger -c 'container | from alpine | file /etc/os-release | contents'
     ```
     </TabItem>
-    <TabItem value="dagger core">
+    <TabItem value="Dagger Shell">
+    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    container | from alpine | file /etc/os-release | contents
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
     ```shell
-    dagger core container from --address=alpine file --path=/etc/os-release contents
+    dagger core container \
+      from --address=alpine \
+      file --path=/etc/os-release \
+      contents
     ```
     </TabItem>
     </Tabs>
@@ -60,84 +80,138 @@ The `dagger shell` and `dagger core` commands let you call the core Dagger API, 
 - You want a nice alternative to `docker run`.
 
     <Tabs>
-    <TabItem value="dagger shell">
+    <TabItem value="System shell">
     ```shell
     dagger -c 'container | from cgr.dev/chainguard/wolfi-base | terminal'
     ```
     </TabItem>
-    <TabItem value="dagger core">
+    <TabItem value="Dagger Shell">
+    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    container | from cgr.dev/chainguard/wolfi-base | terminal
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
     ```shell
-    dagger core container from --address=cgr.dev/chainguard/wolfi-base terminal
+    dagger core container \
+      from --address=cgr.dev/chainguard/wolfi-base \
+      terminal
     ```
     </TabItem>
     </Tabs>
 
-## Custom Dagger functions
+## Extended API
 
-The Dagger API can be extended with Dagger [modules](../features/modules.mdx). The `dagger shell` and `dagger call` commands let you call Dagger Functions from Dagger modules, either remotely or after installing them locally with `dagger install`.
+The Dagger API can be extended with Dagger [modules](../features/modules.mdx). You can call Dagger Functions from these modules, either remotely or after installing them locally with `dagger install`.
 
-Here is an example of calling one of the auto-generated Dagger Functions:
+- Call one of the auto-generated Dagger Functions:
 
-<Tabs>
-<TabItem value="dagger shell">
-```shell
-dagger -c 'container-echo "Welcome to Dagger!" | stdout'
-```
-</TabItem>
-<TabItem value="dagger call">
-```shell
-dagger call container-echo --string-arg="Welcome to Dagger!" stdout
-```
-</TabItem>
-</Tabs>
+    <Tabs>
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'container-echo "Welcome to Dagger!" | stdout'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    container-echo "Welcome to Dagger!" | stdout
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger call container-echo --string-arg="Welcome to Dagger!" stdout
+    ```
+    </TabItem>
+    </Tabs>
 
-Here's what you should see:
+    Here's what you should see:
 
-```shell
-Welcome to Dagger!
-```
+    ```shell
+    Welcome to Dagger!
+    ```
 
-:::tip
-When using the Dagger CLI, all names (functions, arguments, struct fields, etc) are converted into a shell-friendly "kebab-case" style.
-:::
+    :::tip
+    When using Dagger Shell or the Dagger CLI, all names (functions, arguments, struct fields, etc) are converted into a shell-friendly "kebab-case" style.
+    :::
 
-Modules don't need to be installed locally. Dagger lets you consume modules from GitHub repositories as well. You can use Dagger Functions from external modules in exactly the same way as you would use them locally.
+- Modules don't need to be installed locally. Dagger lets you consume modules from GitHub repositories and call their Dagger Functions as though you were calling them locally:
 
-Here is an example of calling a Dagger Function from an external module, which scans container images for vulnerabilities.
+    <Tabs>
+    <TabItem value="System shell">
+    ```shell
+    dagger <<EOF
+    github.com/jpadams/daggerverse/trivy@v0.5.0 \
+      | scan-image ubuntu:latest
+    EOF
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    github.com/jpadams/daggerverse/trivy@v0.5.0 | scan-image ubuntu:latest
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger -m github.com/jpadams/daggerverse/trivy@v0.5.0 call \
+      scan-image --image-ref=ubuntu:latest
+    ```
+    </TabItem>
+    </Tabs>
 
-<Tabs>
-<TabItem value="dagger shell">
-```shell
-dagger -m github.com/jpadams/daggerverse/trivy@v0.5.0 shell -c 'scan-image ubuntu:latest'
-```
-</TabItem>
-<TabItem value="dagger call">
-```shell
-dagger -m github.com/jpadams/daggerverse/trivy@v0.5.0 call scan-image --image-ref=ubuntu:latest
-```
-</TabItem>
-</Tabs>
+    Here's what you should see:
 
-Here's what you should see:
+    ```shell
+    Report Summary
+    ┌──────────────────────────────┬────────┬─────────────────┬─────────┐
+    │            Target            │  Type  │ Vulnerabilities │ Secrets │
+    ├──────────────────────────────┼────────┼─────────────────┼─────────┤
+    │ ubuntu:latest (ubuntu 24.04) │ ubuntu │       23        │    -    │
+    └──────────────────────────────┴────────┴─────────────────┴─────────┘
+    Legend:
+    - '-': Not scanned
+    - '0': Clean (no security findings detected)
 
-```shell
-ubuntu:latest (ubuntu 24.04)
-============================
-Total: 10 (UNKNOWN: 0, LOW: 8, MEDIUM: 2, HIGH: 0, CRITICAL: 0)
-...
-```
+    ubuntu:latest (ubuntu 24.04)
+    ============================
+    Total: 23 (UNKNOWN: 0, LOW: 10, MEDIUM: 13, HIGH: 0, CRITICAL: 0)
+    ...
+    ```
 
-Context-sensitive help is available to list all the arguments accepted by a function:
+- List all the Dagger Functions available in a module using context-sensitive help:
 
-<Tabs>
-<TabItem value="dagger shell">
-```shell
-dagger -m github.com/jpadams/daggerverse/trivy@v0.5.0 shell -c '.help'
-```
-</TabItem>
-<TabItem value="dagger call">
-```shell
-dagger -m github.com/jpadams/daggerverse/trivy@v0.5.0 call scan-image --image-ref=ubuntu:latest
-```
-</TabItem>
-</Tabs>
+    <Tabs>
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'github.com/jpadams/daggerverse/trivy@v0.5.0 | .help'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    github.com/jpadams/daggerverse/trivy@v0.5.0 | .help
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger -m github.com/jpadams/daggerverse/trivy@v0.5.0 call --help
+    ```
+    </TabItem>
+    </Tabs>
+
+- List all the optional and required arguments for a Dagger Function using context-sensitive help:
+
+    <Tabs>
+    <TabItem value="System shell">
+    ```shell
+    dagger -c 'github.com/jpadams/daggerverse/trivy@v0.5.0 | scan-image | .help'
+    ```
+    </TabItem>
+    <TabItem value="Dagger Shell">
+    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    github.com/jpadams/daggerverse/trivy@v0.5.0 | scan-image | .help
+    ```
+    </TabItem>
+    <TabItem value="Dagger CLI">
+    ```shell
+    dagger -m github.com/jpadams/daggerverse/trivy@v0.5.0 call scan-image --help
+    ```
+    </TabItem>
+    </Tabs>
