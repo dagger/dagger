@@ -534,7 +534,7 @@ func (SecretSuite) TestCrossSessionGitAuthLeak(ctx context.Context, t *testctx.T
 		}
 
 		t.Run("auth token", func(ctx context.Context, t *testctx.T) {
-			runTest(ctx, t, authTokenTestCase, "Failed to retrieve credentials")
+			runTest(ctx, t, authTokenTestCase, "Authentication failed")
 		})
 		t.Run("ssh key", func(ctx context.Context, t *testctx.T) {
 			runTest(ctx, t, sshTestCase, "SSH URLs are not supported without an SSH socket")
@@ -594,7 +594,7 @@ func (SecretSuite) TestCrossSessionGitAuthLeak(ctx context.Context, t *testctx.T
 		}
 
 		t.Run("auth token", func(ctx context.Context, t *testctx.T) {
-			runTest(ctx, t, authTokenTestCase, "Failed to retrieve credentials")
+			runTest(ctx, t, authTokenTestCase, "Authentication failed")
 		})
 		t.Run("ssh key", func(ctx context.Context, t *testctx.T) {
 			runTest(ctx, t, sshTestCase, "SSH URLs are not supported without an SSH socket")
