@@ -901,10 +901,10 @@ func (s LLMHook) ExtendLLMType(targetType dagql.ObjectType) error {
 	// Install with<TargetType>()
 	llmType.Extend(
 		dagql.FieldSpec{
-			Name:             "with" + typename,
-			Description:      fmt.Sprintf("Set a variable of type %s in the llm environment", typename),
-			Type:             llmType.Typed(),
-			DeprecatedReason: "use set<TargetType> instead",
+			Name:        "with" + typename,
+			Description: fmt.Sprintf("Set a variable of type %s in the llm environment", typename),
+			Type:        llmType.Typed(),
+			// DeprecatedReason: "use set<TargetType> instead",
 			Args: dagql.InputSpecs{
 				{
 					Name:        "value",
@@ -923,10 +923,10 @@ func (s LLMHook) ExtendLLMType(targetType dagql.ObjectType) error {
 	// Install <targetType>()
 	llmType.Extend(
 		dagql.FieldSpec{
-			Name:             gqlFieldName(typename),
-			Description:      fmt.Sprintf("Retrieve a the current value in the LLM environment, of type %s", typename),
-			Type:             targetType.Typed(),
-			DeprecatedReason: "use get<TargetType> instead",
+			Name:        gqlFieldName(typename),
+			Description: fmt.Sprintf("Retrieve a the current value in the LLM environment, of type %s", typename),
+			Type:        targetType.Typed(),
+			// DeprecatedReason: "use get<TargetType> instead",
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			llm := self.(dagql.Instance[*LLM]).Self
