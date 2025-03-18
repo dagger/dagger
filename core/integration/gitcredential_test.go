@@ -217,6 +217,6 @@ func (m *Test) Fn(ctx context.Context, dir *dagger.Directory) ([]string, error) 
 
 		_, err = execWithEnv(ctx, t, modDir, nil, "-m", "https://github.com/grouville/daggerverse-private.git/zip", "functions")
 		require.Error(t, err)
-		requireErrOut(t, err, "Failed to retrieve credentials")
+		requireErrOut(t, err, "Authentication failed")
 	})
 }
