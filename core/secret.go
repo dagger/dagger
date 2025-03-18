@@ -51,14 +51,12 @@ func (secret *Secret) Clone() *Secret {
 type SecretStore struct {
 	bkSessionManager *bksession.Manager
 	secrets          map[digest.Digest]dagql.Instance[*Secret]
-	plaintexts       map[digest.Digest][]byte
 	mu               sync.RWMutex
 }
 
 func NewSecretStore(bkSessionManager *bksession.Manager) *SecretStore {
 	return &SecretStore{
 		secrets:          map[digest.Digest]dagql.Instance[*Secret]{},
-		plaintexts:       map[digest.Digest][]byte{},
 		bkSessionManager: bkSessionManager,
 	}
 }

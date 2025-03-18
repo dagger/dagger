@@ -585,12 +585,6 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return inst, err
 	}
 
-	// the directory is not necessarily content-hashed, make it so and use that as our digest
-	gitSrc.ContextDirectory, err = core.MakeDirectoryContentHashed(ctx, bk, gitSrc.ContextDirectory)
-	if err != nil {
-		return inst, fmt.Errorf("failed to hash git context directory: %w", err)
-	}
-
 	gitSrc.Digest = gitSrc.CalcDigest().String()
 
 	inst, err = dagql.NewInstanceForCurrentID(ctx, s.dag, query, gitSrc)
@@ -849,12 +843,6 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		)
 		if err != nil {
 			return err
-		}
-
-		// the directory is not necessarily content-hashed, make it such so we can use that in our digest
-		src.ContextDirectory, err = core.MakeDirectoryContentHashed(ctx, bk, src.ContextDirectory)
-		if err != nil {
-			return fmt.Errorf("failed to hash git context directory: %w", err)
 		}
 	}
 

@@ -218,23 +218,14 @@ func (mod *Module) CacheConfigForCall(
 	_ map[string]dagql.Input,
 	cacheCfg dagql.CacheConfig,
 ) (*dagql.CacheConfig, error) {
-	currentID := dagql.CurrentID(ctx)
-	// TODO: put this in call pkg if it stays
-	curIDNoMod := currentID.Receiver().Append(
-		currentID.Type().ToAST(),
-		currentID.Field(),
-		currentID.View(),
-		nil,
-		int(currentID.Nth()),
-		"",
-		currentID.Args()...,
-	)
-
+	// Function calls on a module should be cached based on the module's content hash, not
+	// the module ID digest (which has a per-client cache key in order to deal with
+	// local dir and git repo loading)
+	curIDNoMod := dagql.CurrentID(ctx).WithoutModule()
 	cacheCfg.Digest = dagql.HashFrom(
 		curIDNoMod.Digest().String(),
 		mod.Source.Self.Digest,
-		mod.NameField,
-		"asModule", // TODO: cleanup
+		mod.NameField, // the module source content digest only includes the original name
 	)
 	return &cacheCfg, nil
 }
