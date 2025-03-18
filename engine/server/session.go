@@ -1347,24 +1347,6 @@ func (srv *Server) NonModuleParentClientMetadata(ctx context.Context) (*engine.C
 	return nil, fmt.Errorf("no non-module parent found")
 }
 
-// Return the DAGQL server for the main client
-func (srv *Server) MainServer(ctx context.Context) (context.Context, *dagql.Server, error) {
-	client, err := srv.clientFromContext(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	mainClient, ok := srv.clientFromIDs(clientMetadata.SessionID, client.daggerSession.mainClientCallerID)
-	if !ok {
-		return nil, nil, fmt.Errorf("failed to retrieve session main client")
-	}
-	ctx = engine.ContextWithClientMetadata(ctx, mainClient.clientMetadata)
-	return ctx, mainClient.dag, nil
-}
-
 // Return the DagQL server for the specified client
 func (srv *Server) Server(ctx context.Context) (*dagql.Server, error) {
 	client, err := srv.clientFromContext(ctx)

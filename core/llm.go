@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client/secretprovider"
 	"github.com/iancoleman/strcase"
 	"github.com/joho/godotenv"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -332,8 +332,8 @@ func NewLLMRouter(ctx context.Context, srv *dagql.Server) (_ *LLMRouter, rerr er
 	router := new(LLMRouter)
 	// Get the secret plaintext, from either a URI (provider lookup) or a plaintext (no-op)
 	loadSecret := func(ctx context.Context, uriOrPlaintext string) (string, error) {
-		var result string
-		if u, err := url.Parse(uriOrPlaintext); err == nil && (u.Scheme == "op" || u.Scheme == "vault" || u.Scheme == "env" || u.Scheme == "file") {
+		if _, _, err := secretprovider.ResolverForID(uriOrPlaintext); err == nil {
+			var result string
 			// If it's a valid secret reference:
 			if err := srv.Select(ctx, srv.Root(), &result,
 				dagql.Selector{
