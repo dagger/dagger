@@ -32,8 +32,13 @@ func (t *Test) All(
 	// +optional
 	testVerbose bool,
 ) error {
-	_, err := t.test(
+	cmd, err := t.testCmd(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = t.test(
 		ctx,
+		cmd,
 		&testOpts{
 			runTestRegex:  "",
 			skipTestRegex: "",
@@ -46,7 +51,7 @@ func (t *Test) All(
 			envs:          envFile,
 			testVerbose:   testVerbose,
 		},
-	)
+	).Sync(ctx)
 	return err
 }
 
@@ -76,8 +81,13 @@ func (t *Test) Telemetry(
 	// +optional
 	verbose bool,
 ) (*dagger.Directory, error) {
+	cmd, err := t.testCmd(ctx)
+	if err != nil {
+		return nil, err
+	}
 	ran, err := t.test(
 		ctx,
+		cmd,
 		&testOpts{
 			runTestRegex:  run,
 			skipTestRegex: skip,
@@ -91,7 +101,7 @@ func (t *Test) Telemetry(
 			envs:          envFile,
 			testVerbose:   verbose,
 		},
-	)
+	).Sync(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -145,8 +155,13 @@ func (t *Test) Specific(
 	// +optional
 	testVerbose bool,
 ) error {
-	_, err := t.test(
+	cmd, err := t.testCmd(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = t.test(
 		ctx,
+		cmd,
 		&testOpts{
 			runTestRegex:  run,
 			skipTestRegex: skip,
@@ -159,7 +174,7 @@ func (t *Test) Specific(
 			envs:          envFile,
 			testVerbose:   testVerbose,
 		},
-	)
+	).Sync(ctx)
 	return err
 }
 
@@ -195,8 +210,13 @@ func (t *Test) Update(
 	// +optional
 	testVerbose bool,
 ) (*dagger.Directory, error) {
+	cmd, err := t.testCmd(ctx)
+	if err != nil {
+		return nil, err
+	}
 	ran, err := t.test(
 		ctx,
+		cmd,
 		&testOpts{
 			runTestRegex:  run,
 			skipTestRegex: skip,
@@ -210,7 +230,7 @@ func (t *Test) Update(
 			testVerbose:   testVerbose,
 			update:        true,
 		},
-	)
+	).Sync(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -235,13 +255,9 @@ type testOpts struct {
 
 func (t *Test) test(
 	ctx context.Context,
+	cmd *dagger.Container,
 	opts *testOpts,
-) (*dagger.Container, error) {
-	cmd, err := t.testCmd(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+) *dagger.Container {
 	if opts.envs != nil {
 		cmd = cmd.WithMountedSecret("/dagger.env", opts.envs)
 	}
@@ -313,8 +329,7 @@ func (t *Test) test(
 
 	return cmd.
 		WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
-		WithExec(args).
-		Sync(ctx)
+		WithExec(args)
 }
 
 func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
