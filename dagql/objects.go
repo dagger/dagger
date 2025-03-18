@@ -441,7 +441,8 @@ func (r Instance[T]) preselect(ctx context.Context, sel Selector) (map[string]In
 	if field.CacheSpec.GetCacheConfig != nil {
 		origDgst := newID.Digest()
 
-		cacheCfg, err := field.CacheSpec.GetCacheConfig(ctx, r, inputArgs, CacheConfig{
+		idCtx := idToContext(ctx, newID)
+		cacheCfg, err := field.CacheSpec.GetCacheConfig(idCtx, r, inputArgs, CacheConfig{
 			Digest: origDgst,
 		})
 		if err != nil {

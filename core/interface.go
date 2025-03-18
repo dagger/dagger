@@ -321,6 +321,28 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				}
 				return wrapIface(ifaceReturnType, objReturnType, res)
 			},
+			CacheSpec: dagql.CacheSpec{
+				GetCacheConfig: func(
+					ctx context.Context,
+					parentObj dagql.Object,
+					args map[string]dagql.Input,
+					cacheCfg dagql.CacheConfig,
+				) (*dagql.CacheConfig, error) {
+					parent, ok := parentObj.(dagql.Instance[*InterfaceAnnotatedValue])
+					if !ok {
+						return nil, fmt.Errorf("unexpected parent object type %T", parentObj)
+					}
+					runtimeVal := parent.Self
+
+					// TODO: support core types too
+					userModObj, ok := runtimeVal.UnderlyingType.(*ModuleObjectType)
+					if !ok {
+						return nil, fmt.Errorf("unexpected underlying type %T for interface resolver %s.%s", runtimeVal.UnderlyingType, ifaceName, fieldDef.Name)
+					}
+
+					return userModObj.mod.CacheConfigForCall(ctx, parentObj, args, cacheCfg)
+				},
+			},
 		})
 	}
 

@@ -57,6 +57,27 @@ func Query(t *testctx.T, query string, res any, opts *QueryOptions, clientOpts .
 	)
 }
 
+func QueryWithClient[R any](c *dagger.Client, t *testctx.T, query string, opts *QueryOptions) (*R, error) {
+	if opts == nil {
+		opts = &QueryOptions{}
+	}
+
+	ctx := t.Context()
+	r := new(R)
+	err := c.Do(ctx,
+		&dagger.Request{
+			Query:     query,
+			Variables: opts.Variables,
+			OpName:    opts.Operation,
+		},
+		&dagger.Response{Data: r},
+	)
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
 func newSecret(ctx context.Context, c *dagger.Client, name, value string) (*core.SecretID, error) {
 	query := `query Secret($name: String!, $value: String!) {
         setSecret(name: $name, plaintext: $value) {
