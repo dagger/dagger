@@ -271,6 +271,19 @@ func (ref *RemoteGitRef) Commit(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
+	if len(ref.Repo.Services) > 0 {
+		svcs, err := ref.Query.Services(ctx)
+		if err != nil {
+			return "", err
+		}
+		detach, _, err := svcs.StartBindings(ctx, ref.Repo.Services)
+		if err != nil {
+			return "", err
+		}
+		defer detach()
+	}
+
 	p, err := resolveProvenance(ctx, bk, st)
 	if err != nil {
 		return "", err

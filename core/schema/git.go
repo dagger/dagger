@@ -278,7 +278,9 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 				}
 
 			default:
-				return inst, fmt.Errorf("failed to list remote refs: %w", err)
+				// it's possible to provide auth tokens via chained API calls, so warn now but
+				// don't fail. Auth will be checked again before relevant operations later.
+				slog.Warn("failed to list remote refs: %v", err)
 			}
 		}
 	}
@@ -463,6 +465,15 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef
 		return DagOpDirectory(ctx, s.srv, parent, args, s.tree, nil)
 	}
 
+	query, ok := s.srv.Root().(dagql.Instance[*core.Query])
+	if !ok {
+		return inst, fmt.Errorf("failed to get root query")
+	}
+	bk, err := query.Self.Buildkit(ctx)
+	if err != nil {
+		return inst, err
+	}
+
 	dir, err := parent.Self.Tree(ctx, s.srv, args.DiscardGitDir)
 	if err != nil {
 		return inst, err
@@ -471,6 +482,45 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef
 	if err != nil {
 		return inst, err
 	}
+
+	var dgstInputs []string
+
+	// use the commit for the base of the content hash
+	var commit string
+	err = s.srv.Select(ctx, parent, &commit, dagql.Selector{Field: "commit"})
+	if err != nil {
+		return inst, err
+	}
+	dgstInputs = append(dgstInputs, commit)
+
+	usedAuth := false
+	remoteURL := ""
+	if remoteRepo, ok := parent.Self.Repo.Backend.(*core.RemoteGitRepository); ok {
+		remoteURL = remoteRepo.URL
+		usedAuth = remoteRepo.AuthToken.Self != nil ||
+			remoteRepo.AuthHeader.Self != nil ||
+			remoteRepo.SSHAuthSocket != nil
+	}
+	if usedAuth {
+		// do a full hash of the actual files/dirs in the private git repo so
+		// that the cache key of the returned value can't be known unless the
+		// full contents are already known
+		dgst, err := core.GetContentHashFromDirectory(ctx, bk, inst)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get content hash: %w", err)
+		}
+		dgstInputs = append(dgstInputs, dgst.String())
+	}
+
+	includedGitDir := !parent.Self.Repo.DiscardGitDir && !args.DiscardGitDir
+	if includedGitDir && remoteURL != "" {
+		// the contents of the directory have references to relevant remote git
+		// state, so we include the remote URL in the hash
+		dgstInputs = append(dgstInputs, remoteURL)
+	}
+
+	inst = inst.WithDigest(dagql.HashFrom(dgstInputs...))
+
 	return inst, nil
 }
 
@@ -484,6 +534,15 @@ type treeArgsLegacy struct {
 func (s *gitSchema) treeLegacy(ctx context.Context, parent dagql.Instance[*core.GitRef], args treeArgsLegacy) (inst dagql.Instance[*core.Directory], _ error) {
 	if parent.Self.UseDagOp() && !core.DagOpInContext[core.FSDagOp](ctx) {
 		return DagOpDirectory(ctx, s.srv, parent, args, s.treeLegacy, nil)
+	}
+
+	query, ok := s.srv.Root().(dagql.Instance[*core.Query])
+	if !ok {
+		return inst, fmt.Errorf("failed to get root query")
+	}
+	bk, err := query.Self.Buildkit(ctx)
+	if err != nil {
+		return inst, err
 	}
 
 	var authSock *core.Socket
@@ -513,6 +572,45 @@ func (s *gitSchema) treeLegacy(ctx context.Context, parent dagql.Instance[*core.
 	if err != nil {
 		return inst, err
 	}
+
+	var dgstInputs []string
+
+	// use the commit for the base of the content hash
+	var commit string
+	err = s.srv.Select(ctx, parent, &commit, dagql.Selector{Field: "commit"})
+	if err != nil {
+		return inst, err
+	}
+	dgstInputs = append(dgstInputs, commit)
+
+	usedAuth := false
+	remoteURL := ""
+	if remoteRepo, ok := parent.Self.Repo.Backend.(*core.RemoteGitRepository); ok {
+		remoteURL = remoteRepo.URL
+		usedAuth = remoteRepo.AuthToken.Self != nil ||
+			remoteRepo.AuthHeader.Self != nil ||
+			remoteRepo.SSHAuthSocket != nil
+	}
+	if usedAuth {
+		// do a full hash of the actual files/dirs in the private git repo so
+		// that the cache key of the returned value can't be known unless the
+		// full contents are already known
+		dgst, err := core.GetContentHashFromDirectory(ctx, bk, inst)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get content hash: %w", err)
+		}
+		dgstInputs = append(dgstInputs, dgst.String())
+	}
+
+	includedGitDir := !parent.Self.Repo.DiscardGitDir && !args.DiscardGitDir
+	if includedGitDir && remoteURL != "" {
+		// the contents of the directory have references to relevant remote git
+		// state, so we include the remote URL in the hash
+		dgstInputs = append(dgstInputs, remoteURL)
+	}
+
+	inst = inst.WithDigest(dagql.HashFrom(dgstInputs...))
+
 	return inst, nil
 }
 
