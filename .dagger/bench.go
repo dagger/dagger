@@ -108,9 +108,9 @@ func (b *Bench) bench(
 	ctx context.Context,
 	opts *benchOpts,
 ) error {
-	run := func(cmdBase *dagger.Container) (*dagger.Container, error) {
+	run := func(cmd *dagger.Container) *dagger.Container {
 		return b.Test.test(
-			ctx,
+			cmd,
 			&testOpts{
 				runTestRegex:  opts.runTestRegex,
 				skipTestRegex: opts.skipTestRegex,
@@ -133,12 +133,12 @@ func (b *Bench) bench(
 	}
 
 	if opts.prewarm {
-		_, err = run(cmd.WithEnvVariable("TESTCTX_PREWARM", "true"))
+		_, err = run(cmd.WithEnvVariable("TESTCTX_PREWARM", "true")).Sync(ctx)
 		if err != nil {
 			return fmt.Errorf("failed during prewarm run: %w", err)
 		}
 	}
-	_, err = run(cmd)
+	_, err = run(cmd).Sync(ctx)
 
 	return err
 }
