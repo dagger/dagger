@@ -1,0 +1,100 @@
+---
+slug: /ai-agents/quickstart2
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Quickstart
+
+Some basic opening text here about what the quickstart is going to accomplish.
+
+## Installation and configuration
+
+Link to installation and LLM provider configuration instructions.
+
+## Let an LLM call tools in your repository
+
+### Check the current default LLM
+
+Run `dagger` to enter a dagger shell, then:
+
+```bash
+llm | model
+```
+
+If you've correctly configured the LLM provider, you should see the model name. To change the model, run `.model {model name}`
+
+### Clone the quickstart repo
+
+Setup the project as described in [the CI quickstart](/ci/quickstart/daggerize)
+
+### Work with the repo in prompt mode
+
+1. TEMPORARY: give the current context to the llm: `. | .llm`
+1. TEMPORARY: create a source var for the llm: `source=$(directory | with-directory / .)`
+1. Enter prompt mode with `>`
+1. Prompt the LLM to check the test results: `do the tests pass?`
+
+## Create an agentic function
+
+### Write a function to debug test failures
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+Edit the agent (`main.go`) and add a new function:
+```go
+func (m *MyAgent) Debug(ctx context.Context) (string, error) {
+	return dag.Llm().
+		WithContainer(m.BuildEnv(source).WithExec([]string{"npm", "run", "test:unit", "run"})).
+		WithPrompt("You have a container that runs the unit tests. Get the stdout. If there is an error, tell me how to solve the error").
+		LastReply(ctx)
+}
+```
+
+</TabItem>
+<TabItem value="Python">
+
+Edit the agent (`src/myagent/main.py`) and add a new function:
+```python
+@function
+async def debug(self) -> str:
+    return (
+        await dag.llm()
+    		.with_container(self.build_env(source).with_exec(["npm", "run", "test:unit", "run"]))
+    		.with_prompt("You have a container that runs the unit tests. Get the stdout. If there is an error, tell me how to solve the error")
+    		.last_reply()
+    )
+```
+
+</TabItem>
+<TabItem value="Typescript">
+
+Edit the agent (`src/index.ts`) and add a new function:
+```typescript
+@func()
+async debug(): Promise<string> {
+	return dag.Llm().
+		withContainer(this.buildEnv(source).withExec(["npm", "run", "test:unit", "run"])).
+		withPrompt("You have a container that runs the unit tests. Get the stdout. If there is an error, tell me how to solve the error").
+		lastReply()
+}
+```
+
+</TabItem>
+</Tabs>
+
+### Now run your new function in the Dagger shell
+
+Run `dagger` to enter the shell, and then run your new function:
+
+```bash
+debug
+```
+
+If the tests failed, the agent should tell us some steps we can take to resolve the test failures.
+
+
+## Next steps
+
+Look at the [Dagger AI Agents](/ai-agents#examples) page for more examples and ideas for your agent.
