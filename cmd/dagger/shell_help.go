@@ -84,18 +84,32 @@ func (h *shellCallHandler) DependenciesList() string {
 func (h *shellCallHandler) MainHelp() string {
 	var doc ShellDoc
 
-	// NB: This grouping by Section may not seem useful right now but the way these
-	// groups are organized is very mercurial so leaving it in to make it easier
+	// NB: These (empty) section names may not seem useful right now but the way
+	// these groups are organized is mercurial so leaving it in to make it easier
 	// to change again later.
+	// NB: order is important to apply proper shadowing, except for the builtins.
+	// They would technically come first but we want them ordered last.
+	// It doesn't matter because of the `.` prefix.
 	groups := []shellDocUsagesSection{
 		{
-			"Available Functions",
-			Chain2(
-				// NB: order is important to apply proper shadowing.
-				h.allFunctionUsages(),
-				h.allDependencyUsages(),
-				h.allStdlibUsages(),
-			),
+			"",
+			h.allFunctionUsages(),
+		},
+		{
+			"",
+			h.allLoadedModules(),
+		},
+		{
+			"",
+			h.allDependencyUsages(),
+		},
+		{
+			"",
+			h.allStdlibUsages(),
+		},
+		{
+			"",
+			h.allBuiltinUsages(),
 		},
 	}
 	for s, v := range combineUsages(groups) {
@@ -106,8 +120,6 @@ func (h *shellCallHandler) MainHelp() string {
 	if len(doc.Groups) > 2 {
 		types += " | <function>"
 	}
-
-	doc.Add("Builtin Commands", nameShortWrappedIter(h.allBuiltinUsages()))
 
 	doc.Add("", fmt.Sprintf(`Use ".help %s" for more information.`, types))
 
@@ -133,6 +145,8 @@ type shellDocUsagesSection struct {
 }
 
 // combineUsages removes shadowed functions, even in different sections or groups
+//
+// Returns the section's name and compiled string of usages, in the order they were passed.
 func combineUsages(groups []shellDocUsagesSection) iter.Seq2[string, string] {
 	return func(yield func(string, string) bool) {
 		seen := make(map[string]struct{})
@@ -160,6 +174,10 @@ func combineUsages(groups []shellDocUsagesSection) iter.Seq2[string, string] {
 	}
 }
 
+// allFunctionUsages returns a sequence of all top-level module functions, as name and short description
+//
+// If the constructor has any required arguments this will be empty because
+// users won't be able to use the module's functions directly.
 func (h *shellCallHandler) allFunctionUsages() iter.Seq2[string, string] {
 	return func(yield func(string, string) bool) {
 		def, _ := h.GetModuleDef(nil)
@@ -180,21 +198,35 @@ func (h *shellCallHandler) allFunctionUsages() iter.Seq2[string, string] {
 				}
 			}
 		}
-
-		// The module name is a convenience for clarity. Can always use the path (`.`)
-		// No point if there's no arguments though.
-		if len(constr.Args) > 0 {
-			short := constr.Short()
-			if short == "" || short == "-" {
-				short = def.Short()
-			}
-			if !yield(constr.CmdName(), short) {
-				return
-			}
-		}
 	}
 }
 
+// allLoadedModules returns a sequence of a single module if one is currently loaded
+func (h *shellCallHandler) allLoadedModules() iter.Seq2[string, string] {
+	return func(yield func(string, string) bool) {
+		def, _ := h.GetModuleDef(nil)
+		if def == nil {
+			return
+		}
+
+		constr := def.MainObject.AsObject.Constructor
+
+		// The module name is a convenience for clarity. Can always use the path (`.`)
+		// No point if there's no arguments though.
+		if len(constr.Args) == 0 {
+			return
+		}
+
+		short := constr.Short()
+		if short == "" || short == "-" {
+			short = def.Short()
+		}
+
+		yield(constr.CmdName(), short)
+	}
+}
+
+// allDependencyUsages returns a sequence of all dependencies, as name and short description
 func (h *shellCallHandler) allDependencyUsages() iter.Seq2[string, string] {
 	return func(yield func(string, string) bool) {
 		def, _ := h.GetModuleDef(nil)
@@ -209,6 +241,7 @@ func (h *shellCallHandler) allDependencyUsages() iter.Seq2[string, string] {
 	}
 }
 
+// allStdlibUsages returns a sequence of all stdlib commands, as name and short description
 func (h *shellCallHandler) allStdlibUsages() iter.Seq2[string, string] {
 	return func(yield func(string, string) bool) {
 		for _, cmd := range h.Stdlib() {
@@ -219,6 +252,7 @@ func (h *shellCallHandler) allStdlibUsages() iter.Seq2[string, string] {
 	}
 }
 
+// allBuiltinUsages returns a sequence of all builtin commands, as name and short description
 func (h *shellCallHandler) allBuiltinUsages() iter.Seq2[string, string] {
 	return func(yield func(string, string) bool) {
 		for _, cmd := range h.Builtins() {
