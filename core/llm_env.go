@@ -111,20 +111,16 @@ func (env *LLMEnv) Unset(key string) {
 }
 
 func (env *LLMEnv) Tools(srv *dagql.Server) []LLMTool {
-	var tools []LLMTool
-	// if len(env.vars) > 0 {
-	tools = env.Builtins()
-	// }
-	typedefs := make(map[string]*ast.Definition)
-	for _, val := range env.vars {
-		typedef := env.typedef(srv, val)
-		typedefs[typedef.Name] = typedef
+	return append(env.Builtins(srv), env.tools(srv, env.Current())...)
+}
+
+func (env *LLMEnv) tools(srv *dagql.Server, obj dagql.Typed) []LLMTool {
+	if obj == nil {
+		return nil
 	}
-	if env.Current() == nil {
-		return tools
-	}
-	typedef := env.typedef(srv, env.Current())
+	typedef := env.typedef(srv, obj)
 	typeName := typedef.Name
+	var tools []LLMTool
 	for _, field := range typedef.Fields {
 		if strings.HasPrefix(field.Name, "_") {
 			continue
@@ -133,7 +129,7 @@ func (env *LLMEnv) Tools(srv *dagql.Server) []LLMTool {
 			continue
 		}
 		tools = append(tools, LLMTool{
-			Name:        typeName + "_" + field.Name,
+			Name:        typeName + "_" + field.Name, // TODO: try var_field.Name?
 			Description: field.Description,
 			Schema:      fieldArgsToJSONSchema(field),
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
@@ -321,32 +317,32 @@ func (env *LLMEnv) describe(val dagql.Typed) string {
 	return val.Type().Name()
 }
 
-func (env *LLMEnv) Builtins() []LLMTool {
+func (env *LLMEnv) Builtins(srv *dagql.Server) []LLMTool {
 	builtins := []LLMTool{
-		{
-			Name:        "_objects",
-			Description: "List saved objects with their types",
-			Schema: map[string]any{
-				"type":       "object",
-				"properties": map[string]any{},
-			},
-			Call: env.callObjects,
-		},
-		{
-			Name:        "_selectTools",
-			Description: "Load an object's functions/tools",
-			Schema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"name": map[string]any{
-						"type":        "string",
-						"description": "Variable name or hash of the object to load",
-					},
-				},
-				"required": []string{"name"},
-			},
-			Call: env.callSelectTools,
-		},
+		// {
+		// 	Name:        "_objects",
+		// 	Description: "List saved objects with their types. IMPORTANT: call this any time you seem to be missing objects for the request. Learn what objects are available, and then learn what tools they provide.",
+		// 	Schema: map[string]any{
+		// 		"type":       "object",
+		// 		"properties": map[string]any{},
+		// 	},
+		// 	Call: env.callObjects,
+		// },
+		// {
+		// 	Name:        "_selectTools",
+		// 	Description: "Load an object's functions/tools. IMPORTANT: call this any time you seem to be missing tools for the request. This is a cheap option, so there is never a reason to give up without trying it first.",
+		// 	Schema: map[string]any{
+		// 		"type": "object",
+		// 		"properties": map[string]any{
+		// 			"name": map[string]any{
+		// 				"type":        "string",
+		// 				"description": "Variable name or hash of the object to load",
+		// 			},
+		// 		},
+		// 		"required": []string{"name"},
+		// 	},
+		// 	Call: env.callSelectTools,
+		// },
 		{
 			Name:        "_save",
 			Description: "Save the current object as a named variable",
@@ -386,15 +382,15 @@ func (env *LLMEnv) Builtins() []LLMTool {
 		// 	},
 		// 	Call: env.callType,
 		// },
-		{
-			Name:        "_current",
-			Description: "Print the value of the current object",
-			Schema: map[string]any{
-				"type":       "object",
-				"properties": map[string]any{},
-			},
-			Call: env.callCurrent,
-		},
+		// {
+		// 	Name:        "_current",
+		// 	Description: "Print the value of the current object",
+		// 	Schema: map[string]any{
+		// 		"type":       "object",
+		// 		"properties": map[string]any{},
+		// 	},
+		// 	Call: env.callCurrent,
+		// },
 		{
 			Name:        "_scratch",
 			Description: "Clear the current object selection",
@@ -407,6 +403,25 @@ func (env *LLMEnv) Builtins() []LLMTool {
 				return nil, nil
 			},
 		},
+	}
+	for name, val := range env.vars {
+		desc := fmt.Sprintf("Use tools for the variable %s (%s):\n", name, env.describe(val))
+		tools := env.tools(srv, val)
+		for _, tool := range tools {
+			desc += fmt.Sprintf("\n- %s", tool.Name)
+		}
+		builtins = append(builtins, LLMTool{
+			Name:        "_select_" + name,
+			Description: desc,
+			Schema: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{},
+			},
+			Call: func(ctx context.Context, _ any) (any, error) {
+				env.With(val)
+				return fmt.Sprintf("Switched tools to %s.", env.describe(val)), nil
+			},
+		})
 	}
 	// Attach builtin telemetry
 	for i, builtin := range builtins {
