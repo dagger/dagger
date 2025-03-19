@@ -484,6 +484,12 @@ func (llm *LLM) WithPrompt(
 			if err != nil {
 				return ""
 			}
+			if _, isObj := dagql.UnwrapAs[dagql.Object](val); isObj {
+				// for objects, just preserve the variable reference
+				// TODO: a bit hacky, trying to work around the auto expansion
+				// and rely solely on variable names
+				return fmt.Sprintf("$%s", key)
+			}
 			return fmt.Sprintf("%s", val)
 		})
 	}
