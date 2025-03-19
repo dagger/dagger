@@ -82,11 +82,14 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                 qName,
                 new EnumInfo(
                     element.getSimpleName().toString(),
+                    parseJavaDocDescription(element),
                     element.getEnclosedElements().stream()
                         .filter(elt -> elt.getKind() == ElementKind.ENUM_CONSTANT)
-                        .map(Element::getSimpleName)
-                        .map(Name::toString)
-                        .toArray(String[]::new)));
+                        .map(
+                            elt ->
+                                new EnumValueInfo(
+                                    elt.getSimpleName().toString(), parseJavaDocDescription(elt)))
+                        .toArray(EnumValueInfo[]::new)));
           }
         } else if (element.getKind() == ElementKind.PACKAGE) {
           if (hasModuleAnnotation) {
@@ -373,9 +376,23 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
       }
       for (var enumInfo : moduleInfo.enumInfos().values()) {
         rm.addCode("\n    .withEnum(")
-            .addCode("\n        $T.dag().typeDef().withEnum($S)", Dagger.class, enumInfo.name());
+            .addCode("\n        $T.dag().typeDef().withEnum($S", Dagger.class, enumInfo.name());
+        if (isNotBlank(enumInfo.description())) {
+          rm.addCode(
+              ", new $T.WithEnumArguments().withDescription($S)",
+              TypeDef.class,
+              enumInfo.description());
+        }
+        rm.addCode(")"); // end of dag().TypeDef().withEnum(
         for (var enumValue : enumInfo.values()) {
-          rm.addCode("\n            .withEnumValue($S)", enumValue);
+          rm.addCode("\n            .withEnumValue($S", enumValue.value());
+          if (isNotBlank(enumValue.description())) {
+            rm.addCode(
+                ", new $T.WithEnumValueArguments().withDescription($S)",
+                io.dagger.client.TypeDef.class,
+                enumValue.description());
+          }
+          rm.addCode(")"); // end of .withEnumValue(
         }
         rm.addCode(")"); // end of .withEnum(
       }

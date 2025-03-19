@@ -14,9 +14,12 @@ import java.util.concurrent.ExecutionException;
 /** Dagger Java Module main object */
 @Object
 public class DaggerJava {
+  /** Severities */
   @Enum
   public enum Severity {
+    /** Debug severity */
     DEBUG,
+    /** Info severity */
     INFO,
     WARN,
     ERROR,
