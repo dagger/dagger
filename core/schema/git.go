@@ -99,7 +99,7 @@ func (s *gitSchema) Install() {
 
 type gitArgs struct {
 	URL                     string
-	KeepGitDir              *bool `default:"true"`
+	KeepGitDir              dagql.Optional[dagql.Boolean] `default:"true"`
 	ExperimentalServiceHost dagql.Optional[core.ServiceID]
 
 	SSHKnownHosts string                        `name:"sshKnownHosts" default:""`
@@ -211,7 +211,38 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 		if err := socketStore.AddUnixSocket(sockInst.Self, clientMetadata.ClientID, clientMetadata.SSHAuthSocketPath); err != nil {
 			return inst, fmt.Errorf("failed to add unix socket to store: %w", err)
 		}
-		authSock = sockInst
+
+		// reinvoke this API with the socket as an explicit arg so it shows up in the DAG
+		selectArgs := []dagql.NamedInput{
+			{
+				Name:  "url",
+				Value: dagql.NewString(args.URL),
+			},
+			{
+				Name:  "sshAuthSocket",
+				Value: dagql.Opt(dagql.NewID[*core.Socket](sockInst.ID())),
+			},
+		}
+		if args.KeepGitDir.Valid {
+			selectArgs = append(selectArgs, dagql.NamedInput{
+				Name:  "keepGitDir",
+				Value: dagql.Opt(args.KeepGitDir.Value),
+			})
+		}
+		if args.ExperimentalServiceHost.Valid {
+			selectArgs = append(selectArgs, dagql.NamedInput{
+				Name:  "experimentalServiceHost",
+				Value: dagql.Opt(dagql.NewID[*core.Service](args.ExperimentalServiceHost.Value.ID())),
+			})
+		}
+		if args.SSHKnownHosts != "" {
+			selectArgs = append(selectArgs, dagql.NamedInput{
+				Name:  "sshKnownHosts",
+				Value: dagql.Opt(dagql.NewString(args.SSHKnownHosts)),
+			})
+		}
+		err = s.srv.Select(ctx, parent, &inst, dagql.Selector{Field: "git", Args: selectArgs})
+		return inst, err
 
 	case remote.Scheme == "ssh":
 		return inst, fmt.Errorf("SSH URLs are not supported without an SSH socket")
@@ -288,9 +319,9 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 
 	// 4. Handle git directory configuration
 	discardGitDir := false
-	if args.KeepGitDir != nil {
+	if args.KeepGitDir.Valid {
 		slog.Warn("The 'keepGitDir' argument is deprecated. Use `tree`'s `discardGitDir' instead.")
-		discardGitDir = !*args.KeepGitDir
+		discardGitDir = !args.KeepGitDir.Value.Bool()
 	}
 
 	inst, err = dagql.NewInstanceForCurrentID(ctx, s.srv, parent, &core.GitRepository{
@@ -359,7 +390,7 @@ type gitArgsLegacy struct {
 func (s *gitSchema) gitLegacy(ctx context.Context, parent dagql.Instance[*core.Query], args gitArgsLegacy) (dagql.Instance[*core.GitRepository], error) {
 	return s.git(ctx, parent, gitArgs{
 		URL:                     args.URL,
-		KeepGitDir:              &args.KeepGitDir,
+		KeepGitDir:              dagql.Opt(dagql.NewBoolean(args.KeepGitDir)),
 		ExperimentalServiceHost: args.ExperimentalServiceHost,
 		SSHKnownHosts:           args.SSHKnownHosts,
 		SSHAuthSocket:           args.SSHAuthSocket,
