@@ -1598,12 +1598,40 @@ type Error {
 
   """A description of the error."""
   message: String!
+
+  """The extensions of the error."""
+  values: [ErrorValue!]!
+
+  """Add a value to the error."""
+  withValue(
+    """The name of the value."""
+    name: String!
+
+    """The value to store on the error."""
+    value: JSON!
+  ): Error!
 }
 
 """
 The `ErrorID` scalar type represents an identifier for an object of type Error.
 """
 scalar ErrorID
+
+type ErrorValue {
+  """A unique identifier for this ErrorValue."""
+  id: ErrorValueID!
+
+  """The name of the value."""
+  name: String!
+
+  """The value."""
+  value: JSON!
+}
+
+"""
+The `ErrorValueID` scalar type represents an identifier for an object of type ErrorValue.
+"""
+scalar ErrorValueID
 
 """
 A definition of a field on a custom object defined in a Module.
@@ -2168,6 +2196,929 @@ The `ListTypeDefID` scalar type represents an identifier for an object of type L
 """
 scalar ListTypeDefID
 
+type LLM {
+  """
+  Retrieve a the current value in the LLM environment, of type CacheVolume
+  """
+  cacheVolume: CacheVolume! @deprecated(reason: "use get<TargetType> instead")
+
+  """Retrieve a the current value in the LLM environment, of type Container"""
+  container: Container! @deprecated(reason: "use get<TargetType> instead")
+
+  """
+  Retrieve a the current value in the LLM environment, of type CurrentModule
+  """
+  currentModule: CurrentModule! @deprecated(reason: "use get<TargetType> instead")
+
+  """Retrieve a the current value in the LLM environment, of type Directory"""
+  directory: Directory! @deprecated(reason: "use get<TargetType> instead")
+
+  """
+  Retrieve a the current value in the LLM environment, of type EnumTypeDef
+  """
+  enumTypeDef: EnumTypeDef! @deprecated(reason: "use get<TargetType> instead")
+
+  """
+  Retrieve a the current value in the LLM environment, of type EnumValueTypeDef
+  """
+  enumValueTypeDef: EnumValueTypeDef! @deprecated(reason: "use get<TargetType> instead")
+
+  """Retrieve a the current value in the LLM environment, of type Error"""
+  error: Error! @deprecated(reason: "use get<TargetType> instead")
+
+  """
+  Retrieve a the current value in the LLM environment, of type ErrorValue
+  """
+  errorValue: ErrorValue! @deprecated(reason: "use get<TargetType> instead")
+
+  """
+  Retrieve a the current value in the LLM environment, of type FieldTypeDef
+  """
+  fieldTypeDef: FieldTypeDef! @deprecated(reason: "use get<TargetType> instead")
+
+  """Retrieve a the current value in the LLM environment, of type File"""
+  file: File! @deprecated(reason: "use get<TargetType> instead")
+
+  """Retrieve a the current value in the LLM environment, of type Function"""
+  function: Function! @deprecated(reason: "use get<TargetType> instead")
+
+  """
+  Retrieve a the current value in the LLM environment, of type FunctionArg
+  """
+  functionArg: FunctionArg! @deprecated(reason: "use get<TargetType> instead")
+
+  """
+  Retrieve a the current value in the LLM environment, of type FunctionCall
+  """
+  functionCall: FunctionCall! @deprecated(reason: "use get<TargetType> instead")
+
+  """
+  Retrieve a the current value in the LLM environment, of type FunctionCallArgValue
+  """
+  functionCallArgValue: FunctionCallArgValue! @deprecated(reason: "use get<TargetType> instead")
+
+  """
+  Retrieve a the current value in the LLM environment, of type GeneratedCode
+  """
+  generatedCode: GeneratedCode! @deprecated(reason: "use get<TargetType> instead")
+
+  """Retrieve a variable in the llm environment, of type CacheVolume"""
+  getCacheVolume(
+    """The name of the variable"""
+    name: String!
+  ): CacheVolume!
+
+  """Retrieve a variable in the llm environment, of type Container"""
+  getContainer(
+    """The name of the variable"""
+    name: String!
+  ): Container!
+
+  """Retrieve a variable in the llm environment, of type CurrentModule"""
+  getCurrentModule(
+    """The name of the variable"""
+    name: String!
+  ): CurrentModule!
+
+  """Retrieve a variable in the llm environment, of type Directory"""
+  getDirectory(
+    """The name of the variable"""
+    name: String!
+  ): Directory!
+
+  """Retrieve a variable in the llm environment, of type EnumTypeDef"""
+  getEnumTypeDef(
+    """The name of the variable"""
+    name: String!
+  ): EnumTypeDef!
+
+  """Retrieve a variable in the llm environment, of type EnumValueTypeDef"""
+  getEnumValueTypeDef(
+    """The name of the variable"""
+    name: String!
+  ): EnumValueTypeDef!
+
+  """Retrieve a variable in the llm environment, of type Error"""
+  getError(
+    """The name of the variable"""
+    name: String!
+  ): Error!
+
+  """Retrieve a variable in the llm environment, of type ErrorValue"""
+  getErrorValue(
+    """The name of the variable"""
+    name: String!
+  ): ErrorValue!
+
+  """Retrieve a variable in the llm environment, of type FieldTypeDef"""
+  getFieldTypeDef(
+    """The name of the variable"""
+    name: String!
+  ): FieldTypeDef!
+
+  """Retrieve a variable in the llm environment, of type File"""
+  getFile(
+    """The name of the variable"""
+    name: String!
+  ): File!
+
+  """Retrieve a variable in the llm environment, of type Function"""
+  getFunction(
+    """The name of the variable"""
+    name: String!
+  ): Function!
+
+  """Retrieve a variable in the llm environment, of type FunctionArg"""
+  getFunctionArg(
+    """The name of the variable"""
+    name: String!
+  ): FunctionArg!
+
+  """Retrieve a variable in the llm environment, of type FunctionCall"""
+  getFunctionCall(
+    """The name of the variable"""
+    name: String!
+  ): FunctionCall!
+
+  """
+  Retrieve a variable in the llm environment, of type FunctionCallArgValue
+  """
+  getFunctionCallArgValue(
+    """The name of the variable"""
+    name: String!
+  ): FunctionCallArgValue!
+
+  """Retrieve a variable in the llm environment, of type GeneratedCode"""
+  getGeneratedCode(
+    """The name of the variable"""
+    name: String!
+  ): GeneratedCode!
+
+  """Retrieve a variable in the llm environment, of type GitRef"""
+  getGitRef(
+    """The name of the variable"""
+    name: String!
+  ): GitRef!
+
+  """Retrieve a variable in the llm environment, of type GitRepository"""
+  getGitRepository(
+    """The name of the variable"""
+    name: String!
+  ): GitRepository!
+
+  """Retrieve a variable in the llm environment, of type InputTypeDef"""
+  getInputTypeDef(
+    """The name of the variable"""
+    name: String!
+  ): InputTypeDef!
+
+  """Retrieve a variable in the llm environment, of type InterfaceTypeDef"""
+  getInterfaceTypeDef(
+    """The name of the variable"""
+    name: String!
+  ): InterfaceTypeDef!
+
+  """Retrieve a variable in the llm environment, of type ListTypeDef"""
+  getListTypeDef(
+    """The name of the variable"""
+    name: String!
+  ): ListTypeDef!
+
+  """Retrieve a variable in the llm environment, of type LLM"""
+  getLLM(
+    """The name of the variable"""
+    name: String!
+  ): LLM!
+
+  """Retrieve a variable in the llm environment, of type Module"""
+  getModule(
+    """The name of the variable"""
+    name: String!
+  ): Module!
+
+  """Retrieve a variable in the llm environment, of type ModuleConfigClient"""
+  getModuleConfigClient(
+    """The name of the variable"""
+    name: String!
+  ): ModuleConfigClient!
+
+  """Retrieve a variable in the llm environment, of type ModuleSource"""
+  getModuleSource(
+    """The name of the variable"""
+    name: String!
+  ): ModuleSource!
+
+  """Retrieve a variable in the llm environment, of type ObjectTypeDef"""
+  getObjectTypeDef(
+    """The name of the variable"""
+    name: String!
+  ): ObjectTypeDef!
+
+  """Retrieve a variable in the llm environment, of type ScalarTypeDef"""
+  getScalarTypeDef(
+    """The name of the variable"""
+    name: String!
+  ): ScalarTypeDef!
+
+  """Retrieve a variable in the llm environment, of type SDKConfig"""
+  getSDKConfig(
+    """The name of the variable"""
+    name: String!
+  ): SDKConfig
+
+  """Retrieve a variable in the llm environment, of type Secret"""
+  getSecret(
+    """The name of the variable"""
+    name: String!
+  ): Secret!
+
+  """Retrieve a variable in the llm environment, of type Service"""
+  getService(
+    """The name of the variable"""
+    name: String!
+  ): Service!
+
+  """Retrieve a variable in the llm environment, of type Socket"""
+  getSocket(
+    """The name of the variable"""
+    name: String!
+  ): Socket!
+
+  """Retrieve a variable in the llm environment, of type SourceMap"""
+  getSourceMap(
+    """The name of the variable"""
+    name: String!
+  ): SourceMap!
+
+  """Get a string variable from the LLM's environment"""
+  getString(
+    """The variable name"""
+    name: String!
+  ): String!
+
+  """Retrieve a variable in the llm environment, of type Terminal"""
+  getTerminal(
+    """The name of the variable"""
+    name: String!
+  ): Terminal!
+
+  """Retrieve a variable in the llm environment, of type TypeDef"""
+  getTypeDef(
+    """The name of the variable"""
+    name: String!
+  ): TypeDef!
+
+  """Retrieve a the current value in the LLM environment, of type GitRef"""
+  gitRef: GitRef! @deprecated(reason: "use get<TargetType> instead")
+
+  """
+  Retrieve a the current value in the LLM environment, of type GitRepository
+  """
+  gitRepository: GitRepository! @deprecated(reason: "use get<TargetType> instead")
+
+  """return the llm message history"""
+  history: [String!]!
+
+  """return the raw llm message history as json"""
+  historyJSON: String!
+
+  """A unique identifier for this LLM."""
+  id: LLMID!
+
+  """
+  Retrieve a the current value in the LLM environment, of type InputTypeDef
+  """
+  inputTypeDef: InputTypeDef! @deprecated(reason: "use get<TargetType> instead")
+
+  """
+  Retrieve a the current value in the LLM environment, of type InterfaceTypeDef
+  """
+  interfaceTypeDef: InterfaceTypeDef! @deprecated(reason: "use get<TargetType> instead")
+
+  """return the last llm reply from the history"""
+  lastReply: String!
+
+  """
+  Retrieve a the current value in the LLM environment, of type ListTypeDef
+  """
+  listTypeDef: ListTypeDef! @deprecated(reason: "use get<TargetType> instead")
+
+  """Retrieve a the current value in the LLM environment, of type LLM"""
+  lLM: LLM! @deprecated(reason: "use get<TargetType> instead")
+
+  """synchronize LLM state"""
+  loop: LLM! @deprecated(reason: "use sync")
+
+  """return the model used by the llm"""
+  model: String!
+
+  """Retrieve a the current value in the LLM environment, of type Module"""
+  module: Module! @deprecated(reason: "use get<TargetType> instead")
+
+  """
+  Retrieve a the current value in the LLM environment, of type ModuleConfigClient
+  """
+  moduleConfigClient: ModuleConfigClient! @deprecated(reason: "use get<TargetType> instead")
+
+  """
+  Retrieve a the current value in the LLM environment, of type ModuleSource
+  """
+  moduleSource: ModuleSource! @deprecated(reason: "use get<TargetType> instead")
+
+  """
+  Retrieve a the current value in the LLM environment, of type ObjectTypeDef
+  """
+  objectTypeDef: ObjectTypeDef! @deprecated(reason: "use get<TargetType> instead")
+
+  """return the provider used by the llm"""
+  provider: String!
+
+  """
+  Retrieve a the current value in the LLM environment, of type ScalarTypeDef
+  """
+  scalarTypeDef: ScalarTypeDef! @deprecated(reason: "use get<TargetType> instead")
+
+  """Retrieve a the current value in the LLM environment, of type SDKConfig"""
+  sdkconfig: SDKConfig @deprecated(reason: "use get<TargetType> instead")
+
+  """Retrieve a the current value in the LLM environment, of type Secret"""
+  secret: Secret! @deprecated(reason: "use get<TargetType> instead")
+
+  """Retrieve a the current value in the LLM environment, of type Service"""
+  service: Service! @deprecated(reason: "use get<TargetType> instead")
+
+  """Set a variable of type CacheVolume in the llm environment"""
+  setCacheVolume(
+    """The name of the variable"""
+    name: String!
+
+    """The CacheVolume value to assign to the variable"""
+    value: CacheVolumeID!
+  ): LLM!
+
+  """Set a variable of type Container in the llm environment"""
+  setContainer(
+    """The name of the variable"""
+    name: String!
+
+    """The Container value to assign to the variable"""
+    value: ContainerID!
+  ): LLM!
+
+  """Set a variable of type CurrentModule in the llm environment"""
+  setCurrentModule(
+    """The name of the variable"""
+    name: String!
+
+    """The CurrentModule value to assign to the variable"""
+    value: CurrentModuleID!
+  ): LLM!
+
+  """Set a variable of type Directory in the llm environment"""
+  setDirectory(
+    """The name of the variable"""
+    name: String!
+
+    """The Directory value to assign to the variable"""
+    value: DirectoryID!
+  ): LLM!
+
+  """Set a variable of type EnumTypeDef in the llm environment"""
+  setEnumTypeDef(
+    """The name of the variable"""
+    name: String!
+
+    """The EnumTypeDef value to assign to the variable"""
+    value: EnumTypeDefID!
+  ): LLM!
+
+  """Set a variable of type EnumValueTypeDef in the llm environment"""
+  setEnumValueTypeDef(
+    """The name of the variable"""
+    name: String!
+
+    """The EnumValueTypeDef value to assign to the variable"""
+    value: EnumValueTypeDefID!
+  ): LLM!
+
+  """Set a variable of type Error in the llm environment"""
+  setError(
+    """The name of the variable"""
+    name: String!
+
+    """The Error value to assign to the variable"""
+    value: ErrorID!
+  ): LLM!
+
+  """Set a variable of type ErrorValue in the llm environment"""
+  setErrorValue(
+    """The name of the variable"""
+    name: String!
+
+    """The ErrorValue value to assign to the variable"""
+    value: ErrorValueID!
+  ): LLM!
+
+  """Set a variable of type FieldTypeDef in the llm environment"""
+  setFieldTypeDef(
+    """The name of the variable"""
+    name: String!
+
+    """The FieldTypeDef value to assign to the variable"""
+    value: FieldTypeDefID!
+  ): LLM!
+
+  """Set a variable of type File in the llm environment"""
+  setFile(
+    """The name of the variable"""
+    name: String!
+
+    """The File value to assign to the variable"""
+    value: FileID!
+  ): LLM!
+
+  """Set a variable of type Function in the llm environment"""
+  setFunction(
+    """The name of the variable"""
+    name: String!
+
+    """The Function value to assign to the variable"""
+    value: FunctionID!
+  ): LLM!
+
+  """Set a variable of type FunctionArg in the llm environment"""
+  setFunctionArg(
+    """The name of the variable"""
+    name: String!
+
+    """The FunctionArg value to assign to the variable"""
+    value: FunctionArgID!
+  ): LLM!
+
+  """Set a variable of type FunctionCall in the llm environment"""
+  setFunctionCall(
+    """The name of the variable"""
+    name: String!
+
+    """The FunctionCall value to assign to the variable"""
+    value: FunctionCallID!
+  ): LLM!
+
+  """Set a variable of type FunctionCallArgValue in the llm environment"""
+  setFunctionCallArgValue(
+    """The name of the variable"""
+    name: String!
+
+    """The FunctionCallArgValue value to assign to the variable"""
+    value: FunctionCallArgValueID!
+  ): LLM!
+
+  """Set a variable of type GeneratedCode in the llm environment"""
+  setGeneratedCode(
+    """The name of the variable"""
+    name: String!
+
+    """The GeneratedCode value to assign to the variable"""
+    value: GeneratedCodeID!
+  ): LLM!
+
+  """Set a variable of type GitRef in the llm environment"""
+  setGitRef(
+    """The name of the variable"""
+    name: String!
+
+    """The GitRef value to assign to the variable"""
+    value: GitRefID!
+  ): LLM!
+
+  """Set a variable of type GitRepository in the llm environment"""
+  setGitRepository(
+    """The name of the variable"""
+    name: String!
+
+    """The GitRepository value to assign to the variable"""
+    value: GitRepositoryID!
+  ): LLM!
+
+  """Set a variable of type InputTypeDef in the llm environment"""
+  setInputTypeDef(
+    """The name of the variable"""
+    name: String!
+
+    """The InputTypeDef value to assign to the variable"""
+    value: InputTypeDefID!
+  ): LLM!
+
+  """Set a variable of type InterfaceTypeDef in the llm environment"""
+  setInterfaceTypeDef(
+    """The name of the variable"""
+    name: String!
+
+    """The InterfaceTypeDef value to assign to the variable"""
+    value: InterfaceTypeDefID!
+  ): LLM!
+
+  """Set a variable of type ListTypeDef in the llm environment"""
+  setListTypeDef(
+    """The name of the variable"""
+    name: String!
+
+    """The ListTypeDef value to assign to the variable"""
+    value: ListTypeDefID!
+  ): LLM!
+
+  """Set a variable of type LLM in the llm environment"""
+  setLLM(
+    """The name of the variable"""
+    name: String!
+
+    """The LLM value to assign to the variable"""
+    value: LLMID!
+  ): LLM!
+
+  """Set a variable of type Module in the llm environment"""
+  setModule(
+    """The name of the variable"""
+    name: String!
+
+    """The Module value to assign to the variable"""
+    value: ModuleID!
+  ): LLM!
+
+  """Set a variable of type ModuleConfigClient in the llm environment"""
+  setModuleConfigClient(
+    """The name of the variable"""
+    name: String!
+
+    """The ModuleConfigClient value to assign to the variable"""
+    value: ModuleConfigClientID!
+  ): LLM!
+
+  """Set a variable of type ModuleSource in the llm environment"""
+  setModuleSource(
+    """The name of the variable"""
+    name: String!
+
+    """The ModuleSource value to assign to the variable"""
+    value: ModuleSourceID!
+  ): LLM!
+
+  """Set a variable of type ObjectTypeDef in the llm environment"""
+  setObjectTypeDef(
+    """The name of the variable"""
+    name: String!
+
+    """The ObjectTypeDef value to assign to the variable"""
+    value: ObjectTypeDefID!
+  ): LLM!
+
+  """Set a variable of type ScalarTypeDef in the llm environment"""
+  setScalarTypeDef(
+    """The name of the variable"""
+    name: String!
+
+    """The ScalarTypeDef value to assign to the variable"""
+    value: ScalarTypeDefID!
+  ): LLM!
+
+  """Set a variable of type SDKConfig in the llm environment"""
+  setSDKConfig(
+    """The name of the variable"""
+    name: String!
+
+    """The SDKConfig value to assign to the variable"""
+    value: SDKConfigID!
+  ): LLM!
+
+  """Set a variable of type Secret in the llm environment"""
+  setSecret(
+    """The name of the variable"""
+    name: String!
+
+    """The Secret value to assign to the variable"""
+    value: SecretID!
+  ): LLM!
+
+  """Set a variable of type Service in the llm environment"""
+  setService(
+    """The name of the variable"""
+    name: String!
+
+    """The Service value to assign to the variable"""
+    value: ServiceID!
+  ): LLM!
+
+  """Set a variable of type Socket in the llm environment"""
+  setSocket(
+    """The name of the variable"""
+    name: String!
+
+    """The Socket value to assign to the variable"""
+    value: SocketID!
+  ): LLM!
+
+  """Set a variable of type SourceMap in the llm environment"""
+  setSourceMap(
+    """The name of the variable"""
+    name: String!
+
+    """The SourceMap value to assign to the variable"""
+    value: SourceMapID!
+  ): LLM!
+
+  """Add a string variable to the LLM's environment"""
+  setString(
+    """The variable name"""
+    name: String!
+
+    """The variable value"""
+    value: String!
+  ): LLM!
+
+  """Set a variable of type Terminal in the llm environment"""
+  setTerminal(
+    """The name of the variable"""
+    name: String!
+
+    """The Terminal value to assign to the variable"""
+    value: TerminalID!
+  ): LLM!
+
+  """Set a variable of type TypeDef in the llm environment"""
+  setTypeDef(
+    """The name of the variable"""
+    name: String!
+
+    """The TypeDef value to assign to the variable"""
+    value: TypeDefID!
+  ): LLM!
+
+  """Retrieve a the current value in the LLM environment, of type Socket"""
+  socket: Socket! @deprecated(reason: "use get<TargetType> instead")
+
+  """Retrieve a the current value in the LLM environment, of type SourceMap"""
+  sourceMap: SourceMap! @deprecated(reason: "use get<TargetType> instead")
+
+  """synchronize LLM state"""
+  sync: LLMID!
+
+  """Retrieve a the current value in the LLM environment, of type Terminal"""
+  terminal: Terminal! @deprecated(reason: "use get<TargetType> instead")
+
+  """print documentation for available tools"""
+  tools: String!
+
+  """Retrieve a the current value in the LLM environment, of type TypeDef"""
+  typeDef: TypeDef! @deprecated(reason: "use get<TargetType> instead")
+
+  """list variables in the LLM environment"""
+  variables: [LLMVariable!]!
+
+  """Set a variable of type CacheVolume in the llm environment"""
+  withCacheVolume(
+    """The CacheVolume value to assign to the variable"""
+    value: CacheVolumeID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type Container in the llm environment"""
+  withContainer(
+    """The Container value to assign to the variable"""
+    value: ContainerID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type CurrentModule in the llm environment"""
+  withCurrentModule(
+    """The CurrentModule value to assign to the variable"""
+    value: CurrentModuleID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type Directory in the llm environment"""
+  withDirectory(
+    """The Directory value to assign to the variable"""
+    value: DirectoryID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type EnumTypeDef in the llm environment"""
+  withEnumTypeDef(
+    """The EnumTypeDef value to assign to the variable"""
+    value: EnumTypeDefID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type EnumValueTypeDef in the llm environment"""
+  withEnumValueTypeDef(
+    """The EnumValueTypeDef value to assign to the variable"""
+    value: EnumValueTypeDefID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type Error in the llm environment"""
+  withError(
+    """The Error value to assign to the variable"""
+    value: ErrorID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type ErrorValue in the llm environment"""
+  withErrorValue(
+    """The ErrorValue value to assign to the variable"""
+    value: ErrorValueID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type FieldTypeDef in the llm environment"""
+  withFieldTypeDef(
+    """The FieldTypeDef value to assign to the variable"""
+    value: FieldTypeDefID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type File in the llm environment"""
+  withFile(
+    """The File value to assign to the variable"""
+    value: FileID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type Function in the llm environment"""
+  withFunction(
+    """The Function value to assign to the variable"""
+    value: FunctionID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type FunctionArg in the llm environment"""
+  withFunctionArg(
+    """The FunctionArg value to assign to the variable"""
+    value: FunctionArgID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type FunctionCall in the llm environment"""
+  withFunctionCall(
+    """The FunctionCall value to assign to the variable"""
+    value: FunctionCallID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type FunctionCallArgValue in the llm environment"""
+  withFunctionCallArgValue(
+    """The FunctionCallArgValue value to assign to the variable"""
+    value: FunctionCallArgValueID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type GeneratedCode in the llm environment"""
+  withGeneratedCode(
+    """The GeneratedCode value to assign to the variable"""
+    value: GeneratedCodeID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type GitRef in the llm environment"""
+  withGitRef(
+    """The GitRef value to assign to the variable"""
+    value: GitRefID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type GitRepository in the llm environment"""
+  withGitRepository(
+    """The GitRepository value to assign to the variable"""
+    value: GitRepositoryID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type InputTypeDef in the llm environment"""
+  withInputTypeDef(
+    """The InputTypeDef value to assign to the variable"""
+    value: InputTypeDefID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type InterfaceTypeDef in the llm environment"""
+  withInterfaceTypeDef(
+    """The InterfaceTypeDef value to assign to the variable"""
+    value: InterfaceTypeDefID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type ListTypeDef in the llm environment"""
+  withListTypeDef(
+    """The ListTypeDef value to assign to the variable"""
+    value: ListTypeDefID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type LLM in the llm environment"""
+  withLLM(
+    """The LLM value to assign to the variable"""
+    value: LLMID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """swap out the llm model"""
+  withModel(
+    """The model to use"""
+    model: String!
+  ): LLM!
+
+  """Set a variable of type Module in the llm environment"""
+  withModule(
+    """The Module value to assign to the variable"""
+    value: ModuleID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type ModuleConfigClient in the llm environment"""
+  withModuleConfigClient(
+    """The ModuleConfigClient value to assign to the variable"""
+    value: ModuleConfigClientID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type ModuleSource in the llm environment"""
+  withModuleSource(
+    """The ModuleSource value to assign to the variable"""
+    value: ModuleSourceID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type ObjectTypeDef in the llm environment"""
+  withObjectTypeDef(
+    """The ObjectTypeDef value to assign to the variable"""
+    value: ObjectTypeDefID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """append a prompt to the llm context"""
+  withPrompt(
+    """The prompt to send"""
+    prompt: String!
+  ): LLM!
+
+  """append the contents of a file to the llm context"""
+  withPromptFile(
+    """The file to read the prompt from"""
+    file: FileID!
+  ): LLM!
+
+  """Add a string variable to the LLM's environment"""
+  withPromptVar(
+    """The variable name"""
+    name: String!
+
+    """The variable value"""
+    value: String!
+  ): LLM!
+
+  """Set a variable of type ScalarTypeDef in the llm environment"""
+  withScalarTypeDef(
+    """The ScalarTypeDef value to assign to the variable"""
+    value: ScalarTypeDefID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type SDKConfig in the llm environment"""
+  withSDKConfig(
+    """The SDKConfig value to assign to the variable"""
+    value: SDKConfigID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type Secret in the llm environment"""
+  withSecret(
+    """The Secret value to assign to the variable"""
+    value: SecretID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type Service in the llm environment"""
+  withService(
+    """The Service value to assign to the variable"""
+    value: ServiceID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type Socket in the llm environment"""
+  withSocket(
+    """The Socket value to assign to the variable"""
+    value: SocketID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type SourceMap in the llm environment"""
+  withSourceMap(
+    """The SourceMap value to assign to the variable"""
+    value: SourceMapID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type Terminal in the llm environment"""
+  withTerminal(
+    """The Terminal value to assign to the variable"""
+    value: TerminalID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+
+  """Set a variable of type TypeDef in the llm environment"""
+  withTypeDef(
+    """The TypeDef value to assign to the variable"""
+    value: TypeDefID!
+  ): LLM! @deprecated(reason: "use set<TargetType> instead")
+}
+
+"""
+The `LLMID` scalar type represents an identifier for an object of type LLM.
+"""
+scalar LLMID
+
+type LLMVariable {
+  hash: String!
+
+  """A unique identifier for this LLMVariable."""
+  id: LLMVariableID!
+  name: String!
+  typeName: String!
+}
+
+"""
+The `LLMVariableID` scalar type represents an identifier for an object of type LLMVariable.
+"""
+scalar LLMVariableID
+
 """A Dagger module."""
 type Module {
   """The dependencies of the module."""
@@ -2669,6 +3620,15 @@ type Query {
     url: String!
   ): File!
 
+  """Initialize a Large Language Model (LLM)"""
+  llm(
+    """Cap the number of API calls for this LLM"""
+    maxAPICalls: Int
+
+    """Model to use"""
+    model: String
+  ): LLM!
+
   """Load a CacheVolume from its ID."""
   loadCacheVolumeFromID(id: CacheVolumeID!): CacheVolume!
 
@@ -2704,6 +3664,9 @@ type Query {
 
   """Load a Error from its ID."""
   loadErrorFromID(id: ErrorID!): Error!
+
+  """Load a ErrorValue from its ID."""
+  loadErrorValueFromID(id: ErrorValueID!): ErrorValue!
 
   """Load a FieldTypeDef from its ID."""
   loadFieldTypeDefFromID(id: FieldTypeDefID!): FieldTypeDef!
@@ -2746,6 +3709,12 @@ type Query {
 
   """Load a ListTypeDef from its ID."""
   loadListTypeDefFromID(id: ListTypeDefID!): ListTypeDef!
+
+  """Load a LLM from its ID."""
+  loadLLMFromID(id: LLMID!): LLM!
+
+  """Load a LLMVariable from its ID."""
+  loadLLMVariableFromID(id: LLMVariableID!): LLMVariable!
 
   """Load a ModuleConfigClient from its ID."""
   loadModuleConfigClientFromID(id: ModuleConfigClientID!): ModuleConfigClient!

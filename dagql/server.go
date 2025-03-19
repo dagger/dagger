@@ -43,13 +43,14 @@ func init() {
 // Server represents a GraphQL server whose schema is dynamically modified at
 // runtime.
 type Server struct {
-	root        Object
-	telemetry   AroundFunc
-	objects     map[string]ObjectType
-	scalars     map[string]ScalarType
-	typeDefs    map[string]TypeDef
-	directives  map[string]DirectiveSpec
-	installLock *sync.Mutex
+	root         Object
+	telemetry    AroundFunc
+	objects      map[string]ObjectType
+	scalars      map[string]ScalarType
+	typeDefs     map[string]TypeDef
+	directives   map[string]DirectiveSpec
+	installLock  *sync.Mutex
+	installHooks []InstallHook
 
 	// View is the view that is applied to all queries on this server
 	View string
@@ -59,6 +60,11 @@ type Server struct {
 	//
 	// TODO: copy-on-write
 	Cache Cache
+}
+
+type InstallHook interface {
+	InstallObject(ObjectType)
+	// FIXME: add support for other install functions
 }
 
 // AroundFunc is a function that is called around every non-cached selection.
@@ -228,18 +234,20 @@ type Loadable interface {
 	Load(context.Context, *Server) (Typed, error)
 }
 
-// InstallObject installs the given Object type into the schema.
-func (s *Server) InstallObject(class ObjectType) {
+// InstallObject installs the given Object type into the schema, or returns the
+// previously installed type if it was already present
+func (s *Server) InstallObject(class ObjectType) ObjectType {
 	s.installLock.Lock()
-	defer s.installLock.Unlock()
-	s.installObject(class)
-}
 
-func (s *Server) installObject(class ObjectType) {
+	if class, ok := s.objects[class.TypeName()]; ok {
+		s.installLock.Unlock()
+		return class
+	}
+
 	s.objects[class.TypeName()] = class
-
 	if idType, hasID := class.IDType(); hasID {
 		s.scalars[idType.TypeName()] = idType
+
 		s.Root().ObjectType().Extend(
 			FieldSpec{
 				Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
@@ -272,13 +280,25 @@ func (s *Server) installObject(class ObjectType) {
 			},
 		)
 	}
+	s.installLock.Unlock()
+
+	for _, hook := range s.installHooks {
+		hook.InstallObject(class)
+	}
+
+	return class
 }
 
-// InstallScalar installs the given Scalar type into the schema.
-func (s *Server) InstallScalar(scalar ScalarType) {
+// InstallScalar installs the given Scalar type into the schema, or returns the
+// previously installed type if it was already present
+func (s *Server) InstallScalar(scalar ScalarType) ScalarType {
 	s.installLock.Lock()
 	defer s.installLock.Unlock()
+	if scalar, ok := s.scalars[scalar.TypeName()]; ok {
+		return scalar
+	}
 	s.scalars[scalar.TypeName()] = scalar
+	return scalar
 }
 
 // InstallDirective installs the given Directive type into the schema.
@@ -548,38 +568,56 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 			return fmt.Errorf("select: %w", err)
 		}
 
-		if _, ok := s.ObjectType(res.Type().Name()); ok {
-			if enum, isEnum := res.(Enumerable); isEnum {
-				// HACK: list of objects must be the last selection right now unless nth used in Selector.
-				if i+1 < len(sels) {
-					return fmt.Errorf("cannot sub-select enum of %s", res.Type())
+		if res == nil {
+			// null result; nothing to do
+			return nil
+		}
+
+		destV := reflect.ValueOf(dest).Elem()
+		if res.Type().Elem != nil {
+			if i+1 < len(sels) {
+				return fmt.Errorf("cannot sub-select enum of %s", res.Type())
+			}
+			if destV.Type().Kind() != reflect.Slice {
+				// assigning to something like dagql.Typed, don't need to enumerate
+				break
+			}
+			isObj := s.isObjectType(res.Type().Elem.Name())
+			enum, isEnum := res.(Enumerable)
+			if !isEnum {
+				return fmt.Errorf("cannot assign non-Enumerable %T to %s", res, destV.Type())
+			}
+			// HACK: list of objects must be the last selection right now unless nth used in Selector.
+			if i+1 < len(sels) {
+				return fmt.Errorf("cannot sub-select enum of %s", res.Type())
+			}
+			for nth := 1; nth <= enum.Len(); nth++ {
+				val, err := enum.Nth(nth)
+				if err != nil {
+					return fmt.Errorf("nth %d: %w", nth, err)
 				}
-				for nth := 1; nth <= enum.Len(); nth++ {
-					val, err := enum.Nth(nth)
-					if err != nil {
-						return fmt.Errorf("nth %d: %w", nth, err)
-					}
-					if wrapped, ok := val.(Derefable); ok {
-						val, ok = wrapped.Deref()
-						if !ok {
-							if err := appendAssign(reflect.ValueOf(dest).Elem(), nil); err != nil {
-								return err
-							}
-							continue
+				if wrapped, ok := val.(Derefable); ok {
+					val, ok = wrapped.Deref()
+					if !ok {
+						if err := appendAssign(destV, nil); err != nil {
+							return err
 						}
+						continue
 					}
+				}
+				if isObj {
 					nthID := id.SelectNth(nth)
-					obj, err := s.toSelectable(nthID, val)
+					val, err = s.toSelectable(nthID, val)
 					if err != nil {
 						return fmt.Errorf("select %dth array element: %w", nth, err)
 					}
-					if err := appendAssign(reflect.ValueOf(dest).Elem(), obj); err != nil {
-						return err
-					}
 				}
-				return nil
+				if err := appendAssign(destV, val); err != nil {
+					return err
+				}
 			}
-
+			return nil
+		} else if s.isObjectType(res.Type().Name()) {
 			// if the result is an Object, set it as the next selection target, and
 			// assign res to the "hydrated" Object
 			self, err = s.toSelectable(id, res)
@@ -594,6 +632,18 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 		}
 	}
 	return assign(reflect.ValueOf(dest).Elem(), res)
+}
+
+func (s *Server) isObjectType(typeName string) bool {
+	_, ok := s.ObjectType(typeName)
+	return ok
+}
+
+// Attach an install hook
+func (s *Server) AddInstallHook(hook InstallHook) {
+	s.installLock.Lock()
+	s.installHooks = append(s.installHooks, hook)
+	s.installLock.Unlock()
 }
 
 func (s *Server) SelectID(ctx context.Context, self Object, sels ...Selector) (*call.ID, error) {
@@ -1040,7 +1090,7 @@ func setInputObjectFields(obj any, vals map[string]any) error {
 		}
 		if input != nil { // will be nil for optional fields
 			if err := assign(fieldV, input); err != nil {
-				return fmt.Errorf("assign %q: %w", fieldT.Name, err)
+				return fmt.Errorf("assign input object %q as %+v (%T): %w", fieldT.Name, input, input, err)
 			}
 		}
 	}

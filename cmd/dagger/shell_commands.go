@@ -201,6 +201,148 @@ func (h *shellCallHandler) Stdlib() []*ShellCommand {
 	return l
 }
 
+func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
+	return []*ShellCommand{
+		{
+			Use:         ".shell",
+			Description: "Switch into shell mode",
+			GroupID:     "llm",
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
+				h.mode = modeShell
+				return nil
+			},
+		},
+		{
+			Use:         ".prompt",
+			Description: "Switch into prompt mode",
+			GroupID:     "llm",
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
+				// Initialize LLM if not already done
+				_, err := h.llm(ctx)
+				if err != nil {
+					return err
+				}
+				h.mode = modePrompt
+				return nil
+			},
+		},
+		{
+			Use:         ".clear",
+			Description: "Clear the LLM history",
+			GroupID:     "llm",
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
+				if h.llmSession == nil {
+					return fmt.Errorf("LLM not initialized")
+				}
+				h.llmSession = h.llmSession.Clear()
+				return nil
+			},
+		},
+		{
+			Use:         ".compact",
+			Description: "Compact the LLM history",
+			GroupID:     "llm",
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
+				if h.llmSession == nil {
+					return fmt.Errorf("LLM not initialized")
+				}
+				newLLM, err := h.llmSession.Compact(ctx)
+				if err != nil {
+					return err
+				}
+				h.llmSession = newLLM
+				return nil
+			},
+		},
+		{
+			Use:         ".history",
+			Description: "Show the LLM history",
+			GroupID:     "llm",
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, _ []string, _ *ShellState) error {
+				if h.llmSession == nil {
+					return fmt.Errorf("LLM not initialized")
+				}
+				_, err := h.llmSession.History(ctx)
+				return err
+			},
+		},
+		{
+			Use:         ".model [model]",
+			Description: "Swap out the LLM model",
+			GroupID:     "llm",
+			Args:        ExactArgs(1),
+			State:       NoState,
+			Run: func(ctx context.Context, _ *ShellCommand, args []string, _ *ShellState) error {
+				llm, err := h.llm(ctx)
+				if err != nil {
+					return err
+				}
+				newLLM, err := llm.Model(ctx, args[0])
+				if err != nil {
+					return err
+				}
+				h.llmSession = newLLM
+				h.llmModel = newLLM.model
+				return nil
+			},
+		},
+		{
+			Use:         ".llm",
+			Description: "Update or access the LLM state",
+			GroupID:     "llm",
+			Args:        NoArgs,
+			State:       AnyState,
+			Run: func(ctx context.Context, _ *ShellCommand, _ []string, st *ShellState) error {
+				s, err := h.llm(ctx)
+				if err != nil {
+					return err
+				}
+				res, err := h.StateResult(ctx, st)
+				if err != nil {
+					return err
+				}
+				if res != nil {
+					if !res.IsObject() {
+						return fmt.Errorf("invalid value: %q (type: %v)", res.Value, res.typeDef)
+					}
+					id := res.Value.(string)
+					newLLM, err := s.WithState(ctx, res.typeDef.Name(), id)
+					if err != nil {
+						return err
+					}
+					h.llmSession = newLLM
+				}
+				llmID, err := h.llmSession.llm.ID(ctx)
+				if err != nil {
+					return err
+				}
+				return h.Save(ctx, ShellState{
+					Calls: []FunctionCall{
+						{
+							Object: "Query",
+							Name:   "loadLLMFromID",
+							Arguments: map[string]any{
+								"id": llmID,
+							},
+							ReturnObject: "LLM",
+						},
+					},
+				})
+			},
+		},
+	}
+}
+
 func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 	var builtins []*ShellCommand
 	var stdlib []*ShellCommand
@@ -421,6 +563,41 @@ Without arguments, the current working directory is replaced by the initial cont
 			},
 		},
 		&ShellCommand{
+			Use:         ".refresh",
+			Description: `Refresh the schema and reload all module functions`,
+			GroupID:     moduleGroup.ID,
+			Args:        NoArgs,
+			State:       NoState,
+			Run: func(ctx context.Context, cmd *ShellCommand, args []string, st *ShellState) error {
+				// Get current module definition
+				def := h.GetDef(st)
+
+				// Re-initialize the module to get fresh schema
+				var newDef *moduleDef
+				var err error
+				if def.Source == nil {
+					newDef, err = initializeCore(ctx, h.dag)
+				} else {
+					newDef, err = initializeModule(ctx, h.dag, def.Source)
+				}
+				if err != nil {
+					return fmt.Errorf("failed to reinitialize module: %w", err)
+				}
+
+				// Update handler state with new definition
+				h.mu.Lock()
+				h.modDefs.Store(def.SourceDigest, newDef)
+				h.mu.Unlock()
+
+				// Reload type definitions
+				if err := newDef.loadTypeDefs(ctx, h.dag); err != nil {
+					return fmt.Errorf("failed to reload type definitions: %w", err)
+				}
+
+				return nil
+			},
+		},
+		&ShellCommand{
 			Use:         shellDepsCmdName,
 			Description: "Dependencies from the module loaded in the current context",
 			GroupID:     moduleGroup.ID,
@@ -479,11 +656,15 @@ Without arguments, the current working directory is replaced by the initial cont
 		cobraToShellCommand(moduleUpdateCmd),
 	)
 
+	// Add LLM commands
+	builtins = append(builtins, h.llmBuiltins()...)
+
 	def := h.GetDef(nil)
 
 	for _, fn := range def.GetCoreFunctions() {
 		// TODO: Don't hardcode this list.
 		promoted := []string{
+			"llm",
 			"cache-volume",
 			"container",
 			"directory",

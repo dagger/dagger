@@ -25,6 +25,42 @@ type Literal interface {
 	gatherCalls(map[string]*callpbv1.Call)
 }
 
+// ToLiteral converts any JSON-serializable value to a Literal.
+func ToLiteral(val any) (Literal, error) {
+	switch v := val.(type) {
+	case string:
+		return NewLiteralString(v), nil
+	case bool:
+		return NewLiteralBool(v), nil
+	case int64:
+		return NewLiteralInt(v), nil
+	case float64:
+		return NewLiteralFloat(v), nil
+	case []any:
+		list := make([]Literal, len(v))
+		for i, val := range v {
+			lit, err := ToLiteral(val)
+			if err != nil {
+				return nil, err
+			}
+			list[i] = lit
+		}
+		return NewLiteralList(list...), nil
+	case map[string]any:
+		args := make([]*Argument, 0, len(v))
+		for k, val := range v {
+			lit, err := ToLiteral(val)
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, NewArgument(k, lit, false))
+		}
+		return NewLiteralObject(args...), nil
+	default:
+		return nil, fmt.Errorf("unknown literal value type %T", v)
+	}
+}
+
 type LiteralID struct {
 	id *ID
 }

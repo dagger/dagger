@@ -24,7 +24,12 @@ func (s *errorSchema) Install() {
 			ArgDoc("message", `A brief description of the error.`),
 	}.Install(s.dag)
 
-	dagql.Fields[*core.Error]{}.Install(s.dag)
+	dagql.Fields[*core.Error]{
+		dagql.Func("withValue", s.withValue).
+			Doc(`Add a value to the error.`),
+	}.Install(s.dag)
+
+	dagql.Fields[*core.ErrorValue]{}.Install(s.dag)
 }
 
 func (s *errorSchema) error(ctx context.Context, _ *core.Query, args struct {
@@ -35,4 +40,15 @@ func (s *errorSchema) error(ctx context.Context, _ *core.Query, args struct {
 	return &core.Error{
 		Message: args.Message,
 	}, nil
+}
+
+func (s *errorSchema) withValue(ctx context.Context, self *core.Error, args struct {
+	Name  string    `doc:"The name of the value."`
+	Value core.JSON `doc:"The value to store on the error."`
+}) (*core.Error, error) {
+	self.Values = append(self.Values, &core.ErrorValue{
+		Name:  args.Name,
+		Value: args.Value,
+	})
+	return self, nil
 }

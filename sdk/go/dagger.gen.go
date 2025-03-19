@@ -134,6 +134,9 @@ type EnvVariableID string
 // The `ErrorID` scalar type represents an identifier for an object of type Error.
 type ErrorID string
 
+// The `ErrorValueID` scalar type represents an identifier for an object of type ErrorValue.
+type ErrorValueID string
+
 // The `FieldTypeDefID` scalar type represents an identifier for an object of type FieldTypeDef.
 type FieldTypeDefID string
 
@@ -172,6 +175,12 @@ type InterfaceTypeDefID string
 
 // An arbitrary JSON-encoded value.
 type JSON string
+
+// The `LLMID` scalar type represents an identifier for an object of type LLM.
+type LLMID string
+
+// The `LLMVariableID` scalar type represents an identifier for an object of type LLMVariable.
+type LLMVariableID string
 
 // The `LabelID` scalar type represents an identifier for an object of type Label.
 type LabelID string
@@ -3417,6 +3426,14 @@ type Error struct {
 	id      *ErrorID
 	message *string
 }
+type WithErrorFunc func(r *Error) *Error
+
+// With calls the provided function with current Error.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Error) With(f WithErrorFunc) *Error {
+	return f(r)
+}
 
 func (r *Error) WithGraphQLQuery(q *querybuilder.Selection) *Error {
 	return &Error{
@@ -3472,6 +3489,130 @@ func (r *Error) Message(ctx context.Context) (string, error) {
 	q := r.query.Select("message")
 
 	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The extensions of the error.
+func (r *Error) Values(ctx context.Context) ([]ErrorValue, error) {
+	q := r.query.Select("values")
+
+	q = q.Select("id")
+
+	type values struct {
+		Id ErrorValueID
+	}
+
+	convert := func(fields []values) []ErrorValue {
+		out := []ErrorValue{}
+
+		for i := range fields {
+			val := ErrorValue{id: &fields[i].Id}
+			val.query = q.Root().Select("loadErrorValueFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []values
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Add a value to the error.
+func (r *Error) WithValue(name string, value JSON) *Error {
+	q := r.query.Select("withValue")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Error{
+		query: q,
+	}
+}
+
+type ErrorValue struct {
+	query *querybuilder.Selection
+
+	id    *ErrorValueID
+	name  *string
+	value *JSON
+}
+
+func (r *ErrorValue) WithGraphQLQuery(q *querybuilder.Selection) *ErrorValue {
+	return &ErrorValue{
+		query: q,
+	}
+}
+
+// A unique identifier for this ErrorValue.
+func (r *ErrorValue) ID(ctx context.Context) (ErrorValueID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ErrorValueID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ErrorValue) XXX_GraphQLType() string {
+	return "ErrorValue"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ErrorValue) XXX_GraphQLIDType() string {
+	return "ErrorValueID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ErrorValue) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ErrorValue) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The name of the value.
+func (r *ErrorValue) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The value.
+func (r *ErrorValue) Value(ctx context.Context) (JSON, error) {
+	if r.value != nil {
+		return *r.value, nil
+	}
+	q := r.query.Select("value")
+
+	var response JSON
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -5110,6 +5251,1881 @@ func (r *InterfaceTypeDef) SourceModuleName(ctx context.Context) (string, error)
 		return *r.sourceModuleName, nil
 	}
 	q := r.query.Select("sourceModuleName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+type LLM struct {
+	query *querybuilder.Selection
+
+	getString   *string
+	historyJSON *string
+	id          *LLMID
+	lastReply   *string
+	model       *string
+	provider    *string
+	sync        *LLMID
+	tools       *string
+}
+type WithLLMFunc func(r *LLM) *LLM
+
+// With calls the provided function with current LLM.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *LLM) With(f WithLLMFunc) *LLM {
+	return f(r)
+}
+
+func (r *LLM) WithGraphQLQuery(q *querybuilder.Selection) *LLM {
+	return &LLM{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type CacheVolume
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) CacheVolume() *CacheVolume {
+	q := r.query.Select("cacheVolume")
+
+	return &CacheVolume{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type Container
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) Container() *Container {
+	q := r.query.Select("container")
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type CurrentModule
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) CurrentModule() *CurrentModule {
+	q := r.query.Select("currentModule")
+
+	return &CurrentModule{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type Directory
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) Directory() *Directory {
+	q := r.query.Select("directory")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type EnumTypeDef
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) EnumTypeDef() *EnumTypeDef {
+	q := r.query.Select("enumTypeDef")
+
+	return &EnumTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type EnumValueTypeDef
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) EnumValueTypeDef() *EnumValueTypeDef {
+	q := r.query.Select("enumValueTypeDef")
+
+	return &EnumValueTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type Error
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) Error() *Error {
+	q := r.query.Select("error")
+
+	return &Error{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type ErrorValue
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) ErrorValue() *ErrorValue {
+	q := r.query.Select("errorValue")
+
+	return &ErrorValue{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type FieldTypeDef
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) FieldTypeDef() *FieldTypeDef {
+	q := r.query.Select("fieldTypeDef")
+
+	return &FieldTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type File
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) File() *File {
+	q := r.query.Select("file")
+
+	return &File{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type Function
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) Function() *Function {
+	q := r.query.Select("function")
+
+	return &Function{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type FunctionArg
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) FunctionArg() *FunctionArg {
+	q := r.query.Select("functionArg")
+
+	return &FunctionArg{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type FunctionCall
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) FunctionCall() *FunctionCall {
+	q := r.query.Select("functionCall")
+
+	return &FunctionCall{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type FunctionCallArgValue
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) FunctionCallArgValue() *FunctionCallArgValue {
+	q := r.query.Select("functionCallArgValue")
+
+	return &FunctionCallArgValue{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type GeneratedCode
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) GeneratedCode() *GeneratedCode {
+	q := r.query.Select("generatedCode")
+
+	return &GeneratedCode{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type CacheVolume
+func (r *LLM) GetCacheVolume(name string) *CacheVolume {
+	q := r.query.Select("getCacheVolume")
+	q = q.Arg("name", name)
+
+	return &CacheVolume{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type Container
+func (r *LLM) GetContainer(name string) *Container {
+	q := r.query.Select("getContainer")
+	q = q.Arg("name", name)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type CurrentModule
+func (r *LLM) GetCurrentModule(name string) *CurrentModule {
+	q := r.query.Select("getCurrentModule")
+	q = q.Arg("name", name)
+
+	return &CurrentModule{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type Directory
+func (r *LLM) GetDirectory(name string) *Directory {
+	q := r.query.Select("getDirectory")
+	q = q.Arg("name", name)
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type EnumTypeDef
+func (r *LLM) GetEnumTypeDef(name string) *EnumTypeDef {
+	q := r.query.Select("getEnumTypeDef")
+	q = q.Arg("name", name)
+
+	return &EnumTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type EnumValueTypeDef
+func (r *LLM) GetEnumValueTypeDef(name string) *EnumValueTypeDef {
+	q := r.query.Select("getEnumValueTypeDef")
+	q = q.Arg("name", name)
+
+	return &EnumValueTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type Error
+func (r *LLM) GetError(name string) *Error {
+	q := r.query.Select("getError")
+	q = q.Arg("name", name)
+
+	return &Error{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type ErrorValue
+func (r *LLM) GetErrorValue(name string) *ErrorValue {
+	q := r.query.Select("getErrorValue")
+	q = q.Arg("name", name)
+
+	return &ErrorValue{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type FieldTypeDef
+func (r *LLM) GetFieldTypeDef(name string) *FieldTypeDef {
+	q := r.query.Select("getFieldTypeDef")
+	q = q.Arg("name", name)
+
+	return &FieldTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type File
+func (r *LLM) GetFile(name string) *File {
+	q := r.query.Select("getFile")
+	q = q.Arg("name", name)
+
+	return &File{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type Function
+func (r *LLM) GetFunction(name string) *Function {
+	q := r.query.Select("getFunction")
+	q = q.Arg("name", name)
+
+	return &Function{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type FunctionArg
+func (r *LLM) GetFunctionArg(name string) *FunctionArg {
+	q := r.query.Select("getFunctionArg")
+	q = q.Arg("name", name)
+
+	return &FunctionArg{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type FunctionCall
+func (r *LLM) GetFunctionCall(name string) *FunctionCall {
+	q := r.query.Select("getFunctionCall")
+	q = q.Arg("name", name)
+
+	return &FunctionCall{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type FunctionCallArgValue
+func (r *LLM) GetFunctionCallArgValue(name string) *FunctionCallArgValue {
+	q := r.query.Select("getFunctionCallArgValue")
+	q = q.Arg("name", name)
+
+	return &FunctionCallArgValue{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type GeneratedCode
+func (r *LLM) GetGeneratedCode(name string) *GeneratedCode {
+	q := r.query.Select("getGeneratedCode")
+	q = q.Arg("name", name)
+
+	return &GeneratedCode{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type GitRef
+func (r *LLM) GetGitRef(name string) *GitRef {
+	q := r.query.Select("getGitRef")
+	q = q.Arg("name", name)
+
+	return &GitRef{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type GitRepository
+func (r *LLM) GetGitRepository(name string) *GitRepository {
+	q := r.query.Select("getGitRepository")
+	q = q.Arg("name", name)
+
+	return &GitRepository{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type InputTypeDef
+func (r *LLM) GetInputTypeDef(name string) *InputTypeDef {
+	q := r.query.Select("getInputTypeDef")
+	q = q.Arg("name", name)
+
+	return &InputTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type InterfaceTypeDef
+func (r *LLM) GetInterfaceTypeDef(name string) *InterfaceTypeDef {
+	q := r.query.Select("getInterfaceTypeDef")
+	q = q.Arg("name", name)
+
+	return &InterfaceTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type LLM
+func (r *LLM) GetLLM(name string) *LLM {
+	q := r.query.Select("getLLM")
+	q = q.Arg("name", name)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type ListTypeDef
+func (r *LLM) GetListTypeDef(name string) *ListTypeDef {
+	q := r.query.Select("getListTypeDef")
+	q = q.Arg("name", name)
+
+	return &ListTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type Module
+func (r *LLM) GetModule(name string) *Module {
+	q := r.query.Select("getModule")
+	q = q.Arg("name", name)
+
+	return &Module{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type ModuleConfigClient
+func (r *LLM) GetModuleConfigClient(name string) *ModuleConfigClient {
+	q := r.query.Select("getModuleConfigClient")
+	q = q.Arg("name", name)
+
+	return &ModuleConfigClient{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type ModuleSource
+func (r *LLM) GetModuleSource(name string) *ModuleSource {
+	q := r.query.Select("getModuleSource")
+	q = q.Arg("name", name)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type ObjectTypeDef
+func (r *LLM) GetObjectTypeDef(name string) *ObjectTypeDef {
+	q := r.query.Select("getObjectTypeDef")
+	q = q.Arg("name", name)
+
+	return &ObjectTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type SDKConfig
+func (r *LLM) GetSDKConfig(name string) *SDKConfig {
+	q := r.query.Select("getSDKConfig")
+	q = q.Arg("name", name)
+
+	return &SDKConfig{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type ScalarTypeDef
+func (r *LLM) GetScalarTypeDef(name string) *ScalarTypeDef {
+	q := r.query.Select("getScalarTypeDef")
+	q = q.Arg("name", name)
+
+	return &ScalarTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type Secret
+func (r *LLM) GetSecret(name string) *Secret {
+	q := r.query.Select("getSecret")
+	q = q.Arg("name", name)
+
+	return &Secret{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type Service
+func (r *LLM) GetService(name string) *Service {
+	q := r.query.Select("getService")
+	q = q.Arg("name", name)
+
+	return &Service{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type Socket
+func (r *LLM) GetSocket(name string) *Socket {
+	q := r.query.Select("getSocket")
+	q = q.Arg("name", name)
+
+	return &Socket{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type SourceMap
+func (r *LLM) GetSourceMap(name string) *SourceMap {
+	q := r.query.Select("getSourceMap")
+	q = q.Arg("name", name)
+
+	return &SourceMap{
+		query: q,
+	}
+}
+
+// Get a string variable from the LLM's environment
+func (r *LLM) GetString(ctx context.Context, name string) (string, error) {
+	if r.getString != nil {
+		return *r.getString, nil
+	}
+	q := r.query.Select("getString")
+	q = q.Arg("name", name)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Retrieve a variable in the llm environment, of type Terminal
+func (r *LLM) GetTerminal(name string) *Terminal {
+	q := r.query.Select("getTerminal")
+	q = q.Arg("name", name)
+
+	return &Terminal{
+		query: q,
+	}
+}
+
+// Retrieve a variable in the llm environment, of type TypeDef
+func (r *LLM) GetTypeDef(name string) *TypeDef {
+	q := r.query.Select("getTypeDef")
+	q = q.Arg("name", name)
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type GitRef
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) GitRef() *GitRef {
+	q := r.query.Select("gitRef")
+
+	return &GitRef{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type GitRepository
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) GitRepository() *GitRepository {
+	q := r.query.Select("gitRepository")
+
+	return &GitRepository{
+		query: q,
+	}
+}
+
+// return the llm message history
+func (r *LLM) History(ctx context.Context) ([]string, error) {
+	q := r.query.Select("history")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// return the raw llm message history as json
+func (r *LLM) HistoryJSON(ctx context.Context) (string, error) {
+	if r.historyJSON != nil {
+		return *r.historyJSON, nil
+	}
+	q := r.query.Select("historyJSON")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this LLM.
+func (r *LLM) ID(ctx context.Context) (LLMID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response LLMID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLM) XXX_GraphQLType() string {
+	return "LLM"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLM) XXX_GraphQLIDType() string {
+	return "LLMID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLM) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLM) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Retrieve a the current value in the LLM environment, of type InputTypeDef
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) InputTypeDef() *InputTypeDef {
+	q := r.query.Select("inputTypeDef")
+
+	return &InputTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type InterfaceTypeDef
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) InterfaceTypeDef() *InterfaceTypeDef {
+	q := r.query.Select("interfaceTypeDef")
+
+	return &InterfaceTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type LLM
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) LLM() *LLM {
+	q := r.query.Select("lLM")
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// return the last llm reply from the history
+func (r *LLM) LastReply(ctx context.Context) (string, error) {
+	if r.lastReply != nil {
+		return *r.lastReply, nil
+	}
+	q := r.query.Select("lastReply")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Retrieve a the current value in the LLM environment, of type ListTypeDef
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) ListTypeDef() *ListTypeDef {
+	q := r.query.Select("listTypeDef")
+
+	return &ListTypeDef{
+		query: q,
+	}
+}
+
+// synchronize LLM state
+//
+// Deprecated: use sync
+func (r *LLM) Loop() *LLM {
+	q := r.query.Select("loop")
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// return the model used by the llm
+func (r *LLM) Model(ctx context.Context) (string, error) {
+	if r.model != nil {
+		return *r.model, nil
+	}
+	q := r.query.Select("model")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Retrieve a the current value in the LLM environment, of type Module
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) Module() *Module {
+	q := r.query.Select("module")
+
+	return &Module{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type ModuleConfigClient
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) ModuleConfigClient() *ModuleConfigClient {
+	q := r.query.Select("moduleConfigClient")
+
+	return &ModuleConfigClient{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type ModuleSource
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) ModuleSource() *ModuleSource {
+	q := r.query.Select("moduleSource")
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type ObjectTypeDef
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) ObjectTypeDef() *ObjectTypeDef {
+	q := r.query.Select("objectTypeDef")
+
+	return &ObjectTypeDef{
+		query: q,
+	}
+}
+
+// return the provider used by the llm
+func (r *LLM) Provider(ctx context.Context) (string, error) {
+	if r.provider != nil {
+		return *r.provider, nil
+	}
+	q := r.query.Select("provider")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Retrieve a the current value in the LLM environment, of type ScalarTypeDef
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) ScalarTypeDef() *ScalarTypeDef {
+	q := r.query.Select("scalarTypeDef")
+
+	return &ScalarTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type SDKConfig
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) Sdkconfig() *SDKConfig {
+	q := r.query.Select("sdkconfig")
+
+	return &SDKConfig{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type Secret
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) Secret() *Secret {
+	q := r.query.Select("secret")
+
+	return &Secret{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type Service
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) Service() *Service {
+	q := r.query.Select("service")
+
+	return &Service{
+		query: q,
+	}
+}
+
+// Set a variable of type CacheVolume in the llm environment
+func (r *LLM) SetCacheVolume(name string, value *CacheVolume) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setCacheVolume")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type Container in the llm environment
+func (r *LLM) SetContainer(name string, value *Container) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setContainer")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type CurrentModule in the llm environment
+func (r *LLM) SetCurrentModule(name string, value *CurrentModule) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setCurrentModule")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type Directory in the llm environment
+func (r *LLM) SetDirectory(name string, value *Directory) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setDirectory")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type EnumTypeDef in the llm environment
+func (r *LLM) SetEnumTypeDef(name string, value *EnumTypeDef) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setEnumTypeDef")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type EnumValueTypeDef in the llm environment
+func (r *LLM) SetEnumValueTypeDef(name string, value *EnumValueTypeDef) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setEnumValueTypeDef")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type Error in the llm environment
+func (r *LLM) SetError(name string, value *Error) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setError")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type ErrorValue in the llm environment
+func (r *LLM) SetErrorValue(name string, value *ErrorValue) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setErrorValue")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type FieldTypeDef in the llm environment
+func (r *LLM) SetFieldTypeDef(name string, value *FieldTypeDef) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setFieldTypeDef")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type File in the llm environment
+func (r *LLM) SetFile(name string, value *File) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setFile")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type Function in the llm environment
+func (r *LLM) SetFunction(name string, value *Function) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setFunction")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type FunctionArg in the llm environment
+func (r *LLM) SetFunctionArg(name string, value *FunctionArg) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setFunctionArg")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type FunctionCall in the llm environment
+func (r *LLM) SetFunctionCall(name string, value *FunctionCall) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setFunctionCall")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type FunctionCallArgValue in the llm environment
+func (r *LLM) SetFunctionCallArgValue(name string, value *FunctionCallArgValue) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setFunctionCallArgValue")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type GeneratedCode in the llm environment
+func (r *LLM) SetGeneratedCode(name string, value *GeneratedCode) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setGeneratedCode")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type GitRef in the llm environment
+func (r *LLM) SetGitRef(name string, value *GitRef) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setGitRef")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type GitRepository in the llm environment
+func (r *LLM) SetGitRepository(name string, value *GitRepository) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setGitRepository")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type InputTypeDef in the llm environment
+func (r *LLM) SetInputTypeDef(name string, value *InputTypeDef) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setInputTypeDef")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type InterfaceTypeDef in the llm environment
+func (r *LLM) SetInterfaceTypeDef(name string, value *InterfaceTypeDef) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setInterfaceTypeDef")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type LLM in the llm environment
+func (r *LLM) SetLLM(name string, value *LLM) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setLLM")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type ListTypeDef in the llm environment
+func (r *LLM) SetListTypeDef(name string, value *ListTypeDef) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setListTypeDef")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type Module in the llm environment
+func (r *LLM) SetModule(name string, value *Module) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setModule")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type ModuleConfigClient in the llm environment
+func (r *LLM) SetModuleConfigClient(name string, value *ModuleConfigClient) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setModuleConfigClient")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type ModuleSource in the llm environment
+func (r *LLM) SetModuleSource(name string, value *ModuleSource) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setModuleSource")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type ObjectTypeDef in the llm environment
+func (r *LLM) SetObjectTypeDef(name string, value *ObjectTypeDef) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setObjectTypeDef")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type SDKConfig in the llm environment
+func (r *LLM) SetSDKConfig(name string, value *SDKConfig) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setSDKConfig")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type ScalarTypeDef in the llm environment
+func (r *LLM) SetScalarTypeDef(name string, value *ScalarTypeDef) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setScalarTypeDef")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type Secret in the llm environment
+func (r *LLM) SetSecret(name string, value *Secret) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setSecret")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type Service in the llm environment
+func (r *LLM) SetService(name string, value *Service) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setService")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type Socket in the llm environment
+func (r *LLM) SetSocket(name string, value *Socket) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setSocket")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type SourceMap in the llm environment
+func (r *LLM) SetSourceMap(name string, value *SourceMap) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setSourceMap")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Add a string variable to the LLM's environment
+func (r *LLM) SetString(name string, value string) *LLM {
+	q := r.query.Select("setString")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type Terminal in the llm environment
+func (r *LLM) SetTerminal(name string, value *Terminal) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setTerminal")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type TypeDef in the llm environment
+func (r *LLM) SetTypeDef(name string, value *TypeDef) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("setTypeDef")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type Socket
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) Socket() *Socket {
+	q := r.query.Select("socket")
+
+	return &Socket{
+		query: q,
+	}
+}
+
+// Retrieve a the current value in the LLM environment, of type SourceMap
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) SourceMap() *SourceMap {
+	q := r.query.Select("sourceMap")
+
+	return &SourceMap{
+		query: q,
+	}
+}
+
+// synchronize LLM state
+func (r *LLM) Sync(ctx context.Context) (*LLM, error) {
+	q := r.query.Select("sync")
+
+	var id LLMID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &LLM{
+		query: q.Root().Select("loadLLMFromID").Arg("id", id),
+	}, nil
+}
+
+// Retrieve a the current value in the LLM environment, of type Terminal
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) Terminal() *Terminal {
+	q := r.query.Select("terminal")
+
+	return &Terminal{
+		query: q,
+	}
+}
+
+// print documentation for available tools
+func (r *LLM) Tools(ctx context.Context) (string, error) {
+	if r.tools != nil {
+		return *r.tools, nil
+	}
+	q := r.query.Select("tools")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Retrieve a the current value in the LLM environment, of type TypeDef
+//
+// Deprecated: use get<TargetType> instead
+func (r *LLM) TypeDef() *TypeDef {
+	q := r.query.Select("typeDef")
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// list variables in the LLM environment
+func (r *LLM) Variables(ctx context.Context) ([]LLMVariable, error) {
+	q := r.query.Select("variables")
+
+	q = q.Select("id")
+
+	type variables struct {
+		Id LLMVariableID
+	}
+
+	convert := func(fields []variables) []LLMVariable {
+		out := []LLMVariable{}
+
+		for i := range fields {
+			val := LLMVariable{id: &fields[i].Id}
+			val.query = q.Root().Select("loadLLMVariableFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []variables
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Set a variable of type CacheVolume in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithCacheVolume(value *CacheVolume) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withCacheVolume")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type Container in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithContainer(value *Container) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withContainer")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type CurrentModule in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithCurrentModule(value *CurrentModule) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withCurrentModule")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type Directory in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithDirectory(value *Directory) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withDirectory")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type EnumTypeDef in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithEnumTypeDef(value *EnumTypeDef) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withEnumTypeDef")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type EnumValueTypeDef in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithEnumValueTypeDef(value *EnumValueTypeDef) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withEnumValueTypeDef")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type Error in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithError(value *Error) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withError")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type ErrorValue in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithErrorValue(value *ErrorValue) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withErrorValue")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type FieldTypeDef in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithFieldTypeDef(value *FieldTypeDef) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withFieldTypeDef")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type File in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithFile(value *File) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withFile")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type Function in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithFunction(value *Function) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withFunction")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type FunctionArg in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithFunctionArg(value *FunctionArg) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withFunctionArg")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type FunctionCall in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithFunctionCall(value *FunctionCall) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withFunctionCall")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type FunctionCallArgValue in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithFunctionCallArgValue(value *FunctionCallArgValue) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withFunctionCallArgValue")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type GeneratedCode in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithGeneratedCode(value *GeneratedCode) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withGeneratedCode")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type GitRef in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithGitRef(value *GitRef) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withGitRef")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type GitRepository in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithGitRepository(value *GitRepository) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withGitRepository")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type InputTypeDef in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithInputTypeDef(value *InputTypeDef) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withInputTypeDef")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type InterfaceTypeDef in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithInterfaceTypeDef(value *InterfaceTypeDef) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withInterfaceTypeDef")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type LLM in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithLLM(value *LLM) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withLLM")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type ListTypeDef in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithListTypeDef(value *ListTypeDef) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withListTypeDef")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// swap out the llm model
+func (r *LLM) WithModel(model string) *LLM {
+	q := r.query.Select("withModel")
+	q = q.Arg("model", model)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type Module in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithModule(value *Module) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withModule")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type ModuleConfigClient in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithModuleConfigClient(value *ModuleConfigClient) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withModuleConfigClient")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type ModuleSource in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithModuleSource(value *ModuleSource) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withModuleSource")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type ObjectTypeDef in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithObjectTypeDef(value *ObjectTypeDef) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withObjectTypeDef")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// append a prompt to the llm context
+func (r *LLM) WithPrompt(prompt string) *LLM {
+	q := r.query.Select("withPrompt")
+	q = q.Arg("prompt", prompt)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// append the contents of a file to the llm context
+func (r *LLM) WithPromptFile(file *File) *LLM {
+	assertNotNil("file", file)
+	q := r.query.Select("withPromptFile")
+	q = q.Arg("file", file)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Add a string variable to the LLM's environment
+func (r *LLM) WithPromptVar(name string, value string) *LLM {
+	q := r.query.Select("withPromptVar")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type SDKConfig in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithSDKConfig(value *SDKConfig) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withSDKConfig")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type ScalarTypeDef in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithScalarTypeDef(value *ScalarTypeDef) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withScalarTypeDef")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type Secret in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithSecret(value *Secret) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withSecret")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type Service in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithService(value *Service) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withService")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type Socket in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithSocket(value *Socket) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withSocket")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type SourceMap in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithSourceMap(value *SourceMap) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withSourceMap")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type Terminal in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithTerminal(value *Terminal) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withTerminal")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Set a variable of type TypeDef in the llm environment
+//
+// Deprecated: use set<TargetType> instead
+func (r *LLM) WithTypeDef(value *TypeDef) *LLM {
+	assertNotNil("value", value)
+	q := r.query.Select("withTypeDef")
+	q = q.Arg("value", value)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+type LLMVariable struct {
+	query *querybuilder.Selection
+
+	hash     *string
+	id       *LLMVariableID
+	name     *string
+	typeName *string
+}
+
+func (r *LLMVariable) WithGraphQLQuery(q *querybuilder.Selection) *LLMVariable {
+	return &LLMVariable{
+		query: q,
+	}
+}
+
+func (r *LLMVariable) Hash(ctx context.Context) (string, error) {
+	if r.hash != nil {
+		return *r.hash, nil
+	}
+	q := r.query.Select("hash")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this LLMVariable.
+func (r *LLMVariable) ID(ctx context.Context) (LLMVariableID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response LLMVariableID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMVariable) XXX_GraphQLType() string {
+	return "LLMVariable"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMVariable) XXX_GraphQLIDType() string {
+	return "LLMVariableID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMVariable) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMVariable) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+func (r *LLMVariable) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *LLMVariable) TypeName(ctx context.Context) (string, error) {
+	if r.typeName != nil {
+		return *r.typeName, nil
+	}
+	q := r.query.Select("typeName")
 
 	var response string
 
@@ -6758,6 +8774,33 @@ func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	}
 }
 
+// LlmOpts contains options for Client.Llm
+type LlmOpts struct {
+	// Model to use
+	Model string
+	// Cap the number of API calls for this LLM
+	MaxAPICalls int
+}
+
+// Initialize a Large Language Model (LLM)
+func (r *Client) Llm(opts ...LlmOpts) *LLM {
+	q := r.query.Select("llm")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `model` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Model) {
+			q = q.Arg("model", opts[i].Model)
+		}
+		// `maxAPICalls` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MaxAPICalls) {
+			q = q.Arg("maxAPICalls", opts[i].MaxAPICalls)
+		}
+	}
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // Load a CacheVolume from its ID.
 func (r *Client) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
 	q := r.query.Select("loadCacheVolumeFromID")
@@ -6878,6 +8921,16 @@ func (r *Client) LoadErrorFromID(id ErrorID) *Error {
 	}
 }
 
+// Load a ErrorValue from its ID.
+func (r *Client) LoadErrorValueFromID(id ErrorValueID) *ErrorValue {
+	q := r.query.Select("loadErrorValueFromID")
+	q = q.Arg("id", id)
+
+	return &ErrorValue{
+		query: q,
+	}
+}
+
 // Load a FieldTypeDef from its ID.
 func (r *Client) LoadFieldTypeDefFromID(id FieldTypeDefID) *FieldTypeDef {
 	q := r.query.Select("loadFieldTypeDefFromID")
@@ -6994,6 +9047,26 @@ func (r *Client) LoadInterfaceTypeDefFromID(id InterfaceTypeDefID) *InterfaceTyp
 	q = q.Arg("id", id)
 
 	return &InterfaceTypeDef{
+		query: q,
+	}
+}
+
+// Load a LLM from its ID.
+func (r *Client) LoadLLMFromID(id LLMID) *LLM {
+	q := r.query.Select("loadLLMFromID")
+	q = q.Arg("id", id)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Load a LLMVariable from its ID.
+func (r *Client) LoadLLMVariableFromID(id LLMVariableID) *LLMVariable {
+	q := r.query.Select("loadLLMVariableFromID")
+	q = q.Arg("id", id)
+
+	return &LLMVariable{
 		query: q,
 	}
 }

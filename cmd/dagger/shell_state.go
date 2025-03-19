@@ -412,6 +412,7 @@ func (h *shellCallHandler) resolveState(ctx context.Context, key string) (string
 	if err != nil {
 		return "", err
 	}
+	h.lastResult = r
 	return r.String()
 }
 
