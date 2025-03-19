@@ -319,7 +319,13 @@ func (m *JavaSdk) buildJar(
 			// set the module name as an environment variable so we ensure constructor is only on main object
 			WithEnvVariable("_DAGGER_JAVA_SDK_MODULE_NAME", m.moduleConfig.name).
 			// build the final jar
-			WithExec([]string{"mvn", "clean", "package", "-DskipTests"}))
+			WithExec([]string{
+				"mvn",
+				"clean",
+				"package",
+				"-DskipTests",
+				// "-e", // this is just for debug purpose, uncomment if needed
+			}))
 }
 
 // finalJar will return the jar corresponding to the user module built
