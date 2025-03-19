@@ -25,7 +25,6 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/session"
-	"github.com/dagger/dagger/engine/slog"
 )
 
 type (
@@ -204,7 +203,7 @@ func (r *renderer) renderCall(
 	focused bool,
 ) error {
 	if r.rendering[call.Digest] {
-		slog.Warn("cycle detected while rendering call", "span", span.Name, "call", call.String())
+		fmt.Fprintf(out, "<cycle detected: %s>", call.Digest)
 		return nil
 	}
 	r.rendering[call.Digest] = true
