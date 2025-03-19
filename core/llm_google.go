@@ -279,8 +279,21 @@ func bbiSchemaToGenaiSchema(bbi map[string]any) *genai.Schema {
 		case "default": // just setting Nullable=true. Genai Schema does not have Default
 			schema.Nullable = true
 		case "type":
-			gtype := bbiTypeToGenaiType(param.(string))
-			schema.Type = gtype
+			switch x := param.(type) {
+			case string:
+				gtype := bbiTypeToGenaiType(x)
+				schema.Type = gtype
+			case []string:
+				if len(x) == 2 {
+					gtype := bbiTypeToGenaiType(x[0])
+					schema.Type = gtype
+					if x[1] == "null" {
+						schema.Nullable = true
+					}
+				} else {
+					panic(fmt.Sprintf("unexpected bbi schema array: %+v (%T)", x, x))
+				}
+			}
 		// case "format": // ignoring format. Genai is very picky about format values
 		// 	schema.Format = param.(string)
 		case "items":

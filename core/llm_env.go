@@ -490,13 +490,15 @@ func toolToID(name string, args any) *call.ID {
 
 func fieldArgsToJSONSchema(field *ast.FieldDefinition) map[string]any {
 	schema := map[string]any{
-		"type":       "object",
-		"properties": map[string]any{},
+		"type":                 "object",
+		"properties":           map[string]any{},
+		"additionalProperties": false,
+		"strict":               true,
 	}
 	properties := schema["properties"].(map[string]any)
 	required := []string{}
 	for _, arg := range field.Arguments {
-		argSchema := typeToJSONSchema(arg.Type)
+		argSchema := typeToJSONSchema(arg.Type, arg.DefaultValue != nil)
 
 		// Add description if present
 		if arg.Description != "" {
@@ -511,9 +513,9 @@ func fieldArgsToJSONSchema(field *ast.FieldDefinition) map[string]any {
 		properties[arg.Name] = argSchema
 
 		// Track required fields (non-null without default)
-		if arg.Type.NonNull && arg.DefaultValue == nil {
-			required = append(required, arg.Name)
-		}
+		// if arg.Type.NonNull && arg.DefaultValue == nil {
+		required = append(required, arg.Name)
+		// }
 	}
 	if len(required) > 0 {
 		schema["required"] = required
@@ -521,33 +523,39 @@ func fieldArgsToJSONSchema(field *ast.FieldDefinition) map[string]any {
 	return schema
 }
 
-func typeToJSONSchema(t *ast.Type) map[string]any {
+func typeToJSONSchema(t *ast.Type, hasDefault bool) map[string]any {
 	schema := map[string]any{}
 
+	var type_ string
 	// Handle lists
 	if t.Elem != nil {
-		schema["type"] = "array"
-		schema["items"] = typeToJSONSchema(t.Elem)
-		return schema
+		type_ = "array"
+		schema["items"] = typeToJSONSchema(t.Elem, false)
+	} else {
+		// Handle base types
+		switch t.NamedType {
+		case "Int":
+			type_ = "integer"
+		case "Float":
+			type_ = "number"
+		case "String":
+			type_ = "string"
+		case "Boolean":
+			type_ = "boolean"
+		case "ID":
+			type_ = "string"
+			schema["format"] = "id"
+		default:
+			// For custom types, use string format with the type name
+			type_ = "string"
+			schema["format"] = t.NamedType
+		}
 	}
 
-	// Handle base types
-	switch t.NamedType {
-	case "Int":
-		schema["type"] = "integer"
-	case "Float":
-		schema["type"] = "number"
-	case "String":
-		schema["type"] = "string"
-	case "Boolean":
-		schema["type"] = "boolean"
-	case "ID":
-		schema["type"] = "string"
-		schema["format"] = "id"
-	default:
-		// For custom types, use string format with the type name
-		schema["type"] = "string"
-		schema["format"] = t.NamedType
+	if t.NonNull && !hasDefault {
+		schema["type"] = type_
+	} else {
+		schema["type"] = []string{type_, "null"}
 	}
 
 	return schema
