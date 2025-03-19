@@ -66,11 +66,13 @@ dagger run python main.py
 }
 
 var waitDelay time.Duration
-var runFocus bool
+var runNoLoadModule bool
 
 func init() {
 	// don't require -- to disambiguate subcommand flags
 	runCmd.Flags().SetInterspersed(false)
+
+	runCmd.Flags().BoolVarP(&runNoLoadModule, "no-mod", "n", false, "Don't load module during run startup")
 
 	runCmd.Flags().DurationVar(
 		&waitDelay,
@@ -78,8 +80,6 @@ func init() {
 		10*time.Second,
 		"max duration to wait between SIGTERM and SIGKILL on interrupt",
 	)
-
-	runCmd.Flags().BoolVar(&runFocus, "focus", false, "Only show output for focused commands.")
 }
 
 func Run(cmd *cobra.Command, args []string) error {
@@ -122,7 +122,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 	return withEngine(ctx, client.Params{
 		SecretToken: sessionToken,
-		ServeModule: true,
+		ServeModule: !runNoLoadModule,
 	}, func(ctx context.Context, engineClient *client.Client) error {
 		sessionL, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
