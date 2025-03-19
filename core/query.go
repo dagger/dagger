@@ -51,6 +51,9 @@ type Server interface {
 	// The DagQL query cache for the current client's session
 	Cache(context.Context) (dagql.Cache, error)
 
+	// The DagQL server for the current client's session
+	Server(context.Context) (*dagql.Server, error)
+
 	// Mix in this http endpoint+handler to the current client's session
 	MuxEndpoint(context.Context, string, http.Handler) error
 
