@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -493,14 +494,11 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef
 	}
 	dgstInputs = append(dgstInputs, commit)
 
-	usedAuth := false
-	remoteURL := ""
-	if remoteRepo, ok := parent.Self.Repo.Backend.(*core.RemoteGitRepository); ok {
-		remoteURL = remoteRepo.URL
-		usedAuth = remoteRepo.AuthToken.Self != nil ||
-			remoteRepo.AuthHeader.Self != nil ||
-			remoteRepo.SSHAuthSocket != nil
-	}
+	remoteRepo, isRemoteRepo := parent.Self.Repo.Backend.(*core.RemoteGitRepository)
+	usedAuth := isRemoteRepo &&
+		remoteRepo.AuthToken.Self != nil ||
+		remoteRepo.AuthHeader.Self != nil ||
+		remoteRepo.SSHAuthSocket != nil
 	if usedAuth {
 		// do a full hash of the actual files/dirs in the private git repo so
 		// that the cache key of the returned value can't be known unless the
@@ -509,14 +507,22 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef
 		if err != nil {
 			return inst, fmt.Errorf("failed to get content hash: %w", err)
 		}
-		dgstInputs = append(dgstInputs, dgst.String())
+		dgstInputs = append(dgstInputs, dgst.String(),
+			// also include what auth methods are used, currently we can't
+			// handle a cache hit where the result has a different auth
+			// method than the caller used (i.e. a git repo is pulled w/
+			// a token but hits cache for a dir where a ssh sock was used)
+			strconv.FormatBool(remoteRepo.AuthToken.Self != nil),
+			strconv.FormatBool(remoteRepo.AuthHeader.Self != nil),
+			strconv.FormatBool(remoteRepo.SSHAuthSocket != nil),
+		)
 	}
 
 	includedGitDir := !parent.Self.Repo.DiscardGitDir && !args.DiscardGitDir
-	if includedGitDir && remoteURL != "" {
+	if includedGitDir && remoteRepo != nil {
 		// the contents of the directory have references to relevant remote git
 		// state, so we include the remote URL in the hash
-		dgstInputs = append(dgstInputs, remoteURL)
+		dgstInputs = append(dgstInputs, remoteRepo.URL)
 	}
 
 	inst = inst.WithDigest(dagql.HashFrom(dgstInputs...))

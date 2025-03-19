@@ -135,7 +135,7 @@ func (fn *ModuleFunction) recordCall(ctx context.Context) {
 // It first load the argument set by the user.
 // Then the default values.
 // Finally the contextual arguments.
-func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]*FunctionCallArgValue, error) {
+func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts, execMD *buildkit.ExecutionMetadata) ([]*FunctionCallArgValue, error) {
 	callInputs := make([]*FunctionCallArgValue, len(opts.Inputs))
 	hasArg := map[string]bool{}
 
@@ -200,7 +200,7 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 	eg, ctx := errgroup.WithContext(ctx)
 	for i, arg := range ctxArgs {
 		eg.Go(func() error {
-			ctxVal, err := fn.loadContextualArg(ctx, opts.Server, arg)
+			ctxVal, err := fn.loadContextualArg(ctx, opts.Server, arg, execMD)
 			if err != nil {
 				return fmt.Errorf("failed to load contextual arg %q: %w", arg.Name, err)
 			}
@@ -234,7 +234,24 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	// Calls without function name are internal and excluded.
 	fn.recordCall(ctx)
 
-	callInputs, err := fn.setCallInputs(ctx, opts)
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	execMD := buildkit.ExecutionMetadata{
+		ClientID:          identity.NewID(),
+		CallID:            dagql.CurrentID(ctx),
+		ExecID:            identity.NewID(),
+		CachePerSession:   !opts.Cache,
+		Internal:          true,
+		ModuleName:        mod.NameField,
+		CacheByCall:       !opts.SkipCallDigestCacheKey,
+		ParentIDs:         map[digest.Digest]*resource.ID{},
+		AllowedLLMModules: clientMetadata.AllowedLLMModules,
+	}
+
+	callInputs, err := fn.setCallInputs(ctx, opts, &execMD)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set call inputs: %w", err)
 	}
@@ -252,22 +269,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to marshal parent value: %w", err)
 	}
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	execMD := buildkit.ExecutionMetadata{
-		ClientID:          identity.NewID(),
-		CallID:            dagql.CurrentID(ctx),
-		ExecID:            identity.NewID(),
-		CachePerSession:   !opts.Cache,
-		Internal:          true,
-		ModuleName:        mod.NameField,
-		CacheByCall:       !opts.SkipCallDigestCacheKey,
-		AllowedLLMModules: clientMetadata.AllowedLLMModules,
-	}
-
 	if opts.ParentTyped != nil {
 		// collect any client resources stored in parent fields (secrets/sockets/etc.) and grant
 		// this function client access
@@ -281,7 +282,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		if !ok {
 			return nil, fmt.Errorf("failed to find mod type for parent %q", fn.objDef.Name)
 		}
-		execMD.ParentIDs = map[digest.Digest]*resource.ID{}
 		if err := parentModType.CollectCoreIDs(ctx, opts.ParentTyped, execMD.ParentIDs); err != nil {
 			return nil, fmt.Errorf("failed to collect IDs from parent fields: %w", err)
 		}
@@ -523,7 +523,12 @@ func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 // For file, it will loa the directory containing the file and then query the file ID from this directory.
 //
 // This functions returns the ID of the loaded object.
-func (fn *ModuleFunction) loadContextualArg(ctx context.Context, dag *dagql.Server, arg *FunctionArg) (JSON, error) {
+func (fn *ModuleFunction) loadContextualArg(
+	ctx context.Context,
+	dag *dagql.Server,
+	arg *FunctionArg,
+	execMD *buildkit.ExecutionMetadata,
+) (JSON, error) {
 	if arg.TypeDef.Kind != TypeDefKindObject {
 		return nil, fmt.Errorf("contextual argument %q must be a Directory or a File", arg.OriginalName)
 	}
@@ -540,6 +545,7 @@ func (fn *ModuleFunction) loadContextualArg(ctx context.Context, dag *dagql.Serv
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", arg.DefaultPath, err)
 		}
+		execMD.ParentIDs[dir.ID().Digest()] = &resource.ID{ID: *dir.ID()}
 
 		dirID, err := dir.ID().Encode()
 		if err != nil {
@@ -547,6 +553,7 @@ func (fn *ModuleFunction) loadContextualArg(ctx context.Context, dag *dagql.Serv
 		}
 
 		return JSON(fmt.Sprintf(`"%s"`, dirID)), nil
+
 	case "File":
 		slog.Debug("moduleFunction.loadContextualArg: loading contextual file", "fn", arg.Name, "file", arg.DefaultPath)
 
@@ -559,6 +566,7 @@ func (fn *ModuleFunction) loadContextualArg(ctx context.Context, dag *dagql.Serv
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", dirPath, err)
 		}
+		execMD.ParentIDs[dir.ID().Digest()] = &resource.ID{ID: *dir.ID()}
 
 		var fileID FileID
 
@@ -585,6 +593,7 @@ func (fn *ModuleFunction) loadContextualArg(ctx context.Context, dag *dagql.Serv
 		}
 
 		return JSON(fmt.Sprintf(`"%s"`, encodedFileID)), nil
+
 	default:
 		return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
 	}
