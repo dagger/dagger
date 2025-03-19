@@ -59,8 +59,10 @@ Expected stderr:
 │ │ │ │ │ │ source: ✔ Directory.withoutFile(path: "dagger.gen.go"): Directory! X.Xs
 │ │ │ │ │ ): Container! X.Xs
 │ │ │ │ ✔ .withWorkdir(path: "/src"): Container! X.Xs
+│ │ │ │ ✔ .withEnvVariable(name: "GIT_SSH_COMMAND", value: "ssh -o StrictHostKeyChecking=no "): Container! X.Xs
 │ │ │ │ ✔ .withoutDefaultArgs: Container! X.Xs
 │ │ │ │ $ .withExec(args: ["codegen", "--output", "/src", "--module-source-path", "/src", "--module-name", "viztest", "--introspection-json-path", "/schema.json"]): Container! X.Xs CACHED
+│ │ │ │ ✔ .withoutUnixSocket(path: "/tmp/dagger-ssh-sock"): Container! X.Xs
 │ │ │ │ $ .withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs CACHED
 │ │ │ │ ✔ .withEntrypoint(args: ["/runtime"]): Container! X.Xs
 │ │ │ │ ✔ .withWorkdir(path: "/scratch"): Container! X.Xs
@@ -69,12 +71,13 @@ Expected stderr:
 │ │ │ ✔ asModule getModDef X.Xs
 │ │ │ │ ✔ module: Module! X.Xs
 │ │ ✔ .serve: Void X.Xs
+│ │ ┃ <nil>
 │ ✔ inspecting module metadata X.Xs
 │ │ ✔ ModuleSource.kind: ModuleSourceKind! X.Xs
 │ │ ┃ LOCAL_SOURCE
 │ │
 │ │ ✔ ModuleSource.digest: String! X.Xs
-│ │ ┃ xxh3:0724b85200c28a1d
+│ │ ┃ xxh3:XXXXXXXXXXXXXXXX
 │ │
 │ │ ✔ ModuleSource.asString: String! X.Xs
 │ │ ┃ /app/dagql/idtui/viztest
@@ -93,7 +96,7 @@ Expected stderr:
 ✔ parsing command line arguments X.Xs
 
 ✔ viztest: Viztest! X.Xs
-✔ .diskMetrics: String! X.Xs ◆ CPU Pressure (some): 3.154ms ◆ CPU Pressure (full): 2.434ms ◆ Memory Bytes (current): X.X B ◆ Memory Bytes (peak): X.X B ◆ Network Tx: X.X B
+✔ .diskMetrics: String! X.Xs ◆ CPU Pressure (some): X.Xs ◆ CPU Pressure (full): X.Xs ◆ Memory Bytes (current): X.X B ◆ Memory Bytes (peak): X.X B ◆ Network Tx: X.X B
 │ ✔ container: Container! X.Xs
 │ $ .from(address: "alpine"): Container! X.Xs CACHED
 │ │ ✔ resolving docker.io/library/alpine:latest X.Xs
@@ -103,10 +106,10 @@ Expected stderr:
 │ │ $ Container.from(address: "docker.io/library/alpine:latest@sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"): Container! X.Xs CACHED
 │ │ │ ✔ resolving docker.io/library/alpine:latest@sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX X.Xs
 │ ✔ .withEnvVariable(name: "cache_bust", value: "20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"): Container! X.Xs
-│ ✔ .withExec(args: ["sh", "-c", "dd if=/dev/urandom of=random_file bs=1M count=1000 && sync"]): Container! X.Xs ◆ Disk Read: X.X B ◆ Disk Write: X.X B ◆ IO Pressure: 3.398ms ◆ CPU Pressure (some): 7.017ms ◆ CPU Pressure (full): 6.977ms ◆ Memory Bytes (current): X.X B ◆ Memory Bytes (peak): X.X B ◆ Network Rx: X.X B ◆ Network Tx: X.X B
+│ ✔ .withExec(args: ["sh", "-c", "dd if=/dev/urandom of=random_file bs=1M count=1000 && sync"]): Container! X.Xs ◆ Disk Read: X.X B ◆ Disk Write: X.X B ◆ IO Pressure: X.Xs ◆ CPU Pressure (some): X.Xs ◆ CPU Pressure (full): X.Xs ◆ Memory Bytes (current): X.X B ◆ Memory Bytes (peak): X.X B ◆ Network Tx: X.X B
 │ ┃ 1000+0 records in
 │ ┃ 1000+0 records out
-│ ┃ 1048576000 bytes (1000.0MB) copied, 3.794420 seconds, 263.5MB/s
+│ ┃ XX bytes (X.X B) copied, X.X seconds, X.X B/s
 │ ✔ .stdout: String! X.Xs
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

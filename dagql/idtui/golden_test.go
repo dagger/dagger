@@ -379,11 +379,34 @@ var scrubs = []scrubber{
 		"docker.io/library/alpine:latest@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d",
 		"sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
 	},
+	// xxh3:... digests
+	{
+		regexp.MustCompile(`xxh3:[a-f0-9]{16}`),
+		// an almost natural deadbeef!
+		"xxh3:0724b85200c28a1d",
+		"xxh3:XXXXXXXXXXXXXXXX",
+	},
 	// byte quantities
 	{
-		regexp.MustCompile(`\d+(\.\d+)?\s(B|kB|MB|GB|TB)`),
+		regexp.MustCompile(`\d+(\.\d+)?\s?(B|kB|MB|GB|TB)`),
 		"9.3 kB",
 		"X.X B",
+	},
+	{
+		regexp.MustCompile(`\d+?\sbytes`),
+		"1048576000 bytes",
+		"XX bytes",
+	},
+	// duration quantities
+	{
+		regexp.MustCompile(`\d+(\.\d+)?(ms|s)`),
+		"4.063ms",
+		"X.Xs",
+	},
+	{
+		regexp.MustCompile(`\d+(\.\d+)?\s(seconds|minutes)`),
+		"4.063 seconds",
+		"X.X seconds",
 	},
 }
 
