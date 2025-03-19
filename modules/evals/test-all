@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+env MODELS=gpt-4o,gemini-2.0-flash,claude-3-5-sonnet-latest go test
