@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
@@ -108,7 +107,9 @@ type shellCallHandler struct {
 
 	// llm is the LLM session for the shell
 	llmSession *LLMSession
+	llmErr     error // error initializing LLM
 	llmModel   string
+	llmL       sync.Mutex // synchronizing LLM init status
 
 	// mu is used to synchronize access to the workdir and interpreter
 	mu sync.RWMutex
@@ -392,12 +393,15 @@ func (h *shellCallHandler) Prompt(out idtui.TermOutput, fg termenv.Color) string
 		sb.WriteString(out.String(out.String(" ").String()).String())
 	case modePrompt:
 		// initialize LLM session if not already initialized
-		llm, err := h.llm(context.TODO())
+		llm, err := h.llmMaybe()
 		if err != nil {
 			sb.WriteString(out.String(err.Error()).Bold().Foreground(termenv.ANSIRed).String())
 			sb.WriteString(out.String(" ").String())
-		} else {
+		} else if llm != nil {
 			sb.WriteString(out.String(llm.model).Bold().Foreground(termenv.ANSICyan).String())
+			sb.WriteString(out.String(" ").String())
+		} else {
+			sb.WriteString(out.String("loading...").Bold().Foreground(termenv.ANSIYellow).String())
 			sb.WriteString(out.String(" ").String())
 		}
 		sb.WriteString(out.String(idtui.LLMPrompt).Bold().Foreground(fg).String())
@@ -450,30 +454,46 @@ func (h *shellCallHandler) IsComplete(entireInput [][]rune, line int, col int) b
 	return true
 }
 
-func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
-	if h.llmSession == nil {
-		// this blocks the UI, so set a brief timeout
-		ctx, cancel := context.WithTimeout(ctx, time.Second)
-		defer cancel()
-		s, err := NewLLMSession(ctx, h.dag, h.llmModel, h)
-		if err != nil {
-			return nil, err
-		}
-		h.llmSession = s
-	}
-	return h.llmSession, nil
+func (h *shellCallHandler) llmMaybe() (*LLMSession, error) {
+	h.llmL.Lock()
+	defer h.llmL.Unlock()
+	return h.llmSession, h.llmErr
 }
 
-func (h *shellCallHandler) ReactToInput(msg tea.KeyMsg) bool {
+func (h *shellCallHandler) llm(ctx context.Context) (*LLMSession, error) {
+	if s, e := h.llmMaybe(); s != nil || e != nil {
+		return s, e
+	}
+
+	// initialize without the lock held
+	s, err := NewLLMSession(ctx, h.dag, h.llmModel, h)
+
+	h.llmL.Lock()
+	defer h.llmL.Unlock()
+
+	if err != nil {
+		h.llmErr = err
+		return nil, err
+	}
+	h.llmSession = s
+	return h.llmSession, h.llmErr
+}
+
+func (h *shellCallHandler) ReactToInput(ctx context.Context, msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case ">":
 		h.mode = modePrompt
-		return true
+		return func() tea.Msg {
+			h.llm(ctx) // initialize LLM
+			return idtui.UpdatePromptMsg{}
+		}
 	case "!":
 		h.mode = modeShell
-		return true
+		return func() tea.Msg {
+			return idtui.UpdatePromptMsg{}
+		}
 	}
-	return false
+	return nil
 }
 
 func (h *shellCallHandler) EncodeHistory(entry string) string {

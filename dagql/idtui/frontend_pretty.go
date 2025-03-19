@@ -1095,6 +1095,10 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		fe.shellRunning = false
 		return fe, nil
 
+	case UpdatePromptMsg:
+		fe.updatePrompt()
+		return fe, nil
+
 	case tea.KeyMsg:
 		// Handle prompt input if there's an active prompt
 		if fe.activePrompt != nil {
@@ -1161,8 +1165,11 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				fe.recalculateViewLocked()
 				return fe, nil
 			default:
-				if fe.editline.AtStart() && fe.shell.ReactToInput(msg) {
-					return fe, nil
+				if fe.editline.AtStart() {
+					cmd := fe.shell.ReactToInput(fe.runCtx, msg)
+					if cmd != nil {
+						return fe, cmd
+					}
 				}
 			}
 			el, cmd := fe.editline.Update(msg)
@@ -1287,6 +1294,8 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		return fe, nil
 	}
 }
+
+type UpdatePromptMsg struct{}
 
 type prompt struct {
 	message *Markdown

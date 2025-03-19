@@ -112,7 +112,7 @@ type ShellHandler interface {
 	KeyBindings() []key.Binding
 
 	// ReactToInput allows reacting to live input before it's submitted
-	ReactToInput(msg tea.KeyMsg) bool
+	ReactToInput(ctx context.Context, msg tea.KeyMsg) tea.Cmd
 
 	// Shell handlers can man-in-the-middle history items to preserve per-entry modes etc.
 	editline.HistoryEncoder
