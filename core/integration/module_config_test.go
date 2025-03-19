@@ -945,7 +945,7 @@ func (m *Coolsdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dag
 				With(daggerCall("fn", "directory", "--path", "subdir", "entries")).
 				Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "keepdir", strings.TrimSpace(out))
+			require.Equal(t, "keepdir/", strings.TrimSpace(out))
 
 			out, err = ctr.
 				With(daggerCall("fn", "directory", "--path", "subdir/keepdir", "entries")).
@@ -959,7 +959,7 @@ func (m *Coolsdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dag
 				With(daggerCallAt("../work", "fn", "directory", "--path", "subdir", "entries")).
 				Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "keepdir", strings.TrimSpace(out))
+			require.Equal(t, "keepdir/", strings.TrimSpace(out))
 
 			// call should still work after develop
 			ctr = ctr.With(daggerExec("develop"))
@@ -968,7 +968,7 @@ func (m *Coolsdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dag
 				With(daggerCall("fn", "directory", "--path", "subdir", "entries")).
 				Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "keepdir", strings.TrimSpace(out))
+			require.Equal(t, "keepdir/", strings.TrimSpace(out))
 			out, err = ctr.
 				With(daggerCall("fn", "directory", "--path", "subdir/keepdir", "entries")).
 				Stdout(ctx)

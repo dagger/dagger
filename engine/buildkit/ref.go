@@ -590,7 +590,7 @@ func ReadSnapshotPath(ctx context.Context, c *Client, mntable snapshot.Mountable
 type WalkDirRequest struct {
 	Path           string
 	IncludePattern string
-	Callback       func(path string, info *fstypes.Stat) error
+	Callback       func(path string, info os.FileInfo) error
 }
 
 // walkDir is inspired by cacheutil.ReadDir, but instead executes a callback on
@@ -614,12 +614,7 @@ func walkDir(ctx context.Context, mount snapshot.Mountable, req WalkDirRequest) 
 			if err != nil {
 				return fmt.Errorf("walking %q: %w", root, err)
 			}
-			stat, ok := info.Sys().(*fstypes.Stat)
-			if !ok {
-				// This "can't happen(tm)".
-				return fmt.Errorf("expected a *fsutil.Stat but got %T", info.Sys())
-			}
-			return req.Callback(path, stat)
+			return req.Callback(path, info)
 		})
 	})
 }

@@ -127,6 +127,7 @@ type daggerClient struct {
 	secretStore *core.SecretStore
 	socketStore *core.SocketStore
 
+	dag       *dagql.Server
 	dagqlRoot *core.Query
 
 	// if the client is coming from a module, this is that module
@@ -690,6 +691,7 @@ func (srv *Server) initializeDaggerClient(
 	client.meterProvider = sdkmetric.NewMeterProvider(meterOpts...)
 
 	client.state = clientStateInitialized
+	client.dag = dag
 	return nil
 }
 
@@ -1328,6 +1330,15 @@ func (srv *Server) Cache(ctx context.Context) (dagql.Cache, error) {
 		return nil, err
 	}
 	return client.daggerSession.dagqlCache, nil
+}
+
+// The DagQL server for the current client's session
+func (srv *Server) Server(ctx context.Context) (*dagql.Server, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.dag, nil
 }
 
 // Mix in this http endpoint+handler to the current client's session
