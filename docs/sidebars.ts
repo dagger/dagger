@@ -33,6 +33,11 @@ module.exports = {
       id: "agents",
     },
     {
+      type: "doc",
+      label: "Examples",
+      id: "examples",
+    },
+    {
       type: "category",
       label: "Dagger for CI",
       items: [
