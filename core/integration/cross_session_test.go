@@ -15,11 +15,6 @@ import (
 	fs "github.com/tonistiigi/fsutil/copy"
 )
 
-// TODO: more tests:
-// * no cache match when args of various types are different
-// * services (they are stopped when the session is closed atm, right?)
-// * idnetical module invocation (in terms of the gql query) but for different modules across sessions doesn't get de-duped
-
 // TODO: add more tests for longer chains of cache hits that then diverge (i.e. constructor + some function cache hit, then diverge)
 func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testctx.T) {
 	t.Run("basic", func(ctx context.Context, t *testctx.T) {
@@ -351,7 +346,6 @@ func (ModuleSuite) TestCrossSessionServices(ctx context.Context, t *testctx.T) {
 
 		require.NoError(t, c1.Close())
 		// TODO: not sure if we can do much better than this...
-		// time.Sleep(15 * time.Second)
 		time.Sleep(5 * time.Second)
 
 		c3 := connect(ctx, t)
@@ -363,105 +357,6 @@ func (ModuleSuite) TestCrossSessionServices(ctx context.Context, t *testctx.T) {
 		require.NotEqual(t, out1, out3)
 		require.NotEqual(t, out2, out3)
 	})
-
-	/* TODO:
-	t.Run("nested", func(ctx context.Context, t *testctx.T) {
-		callMod := func(c *dagger.Client, rand string) (string, error) {
-			return goGitBase(t, c).
-				WithWorkdir("/work/servicer").
-				With(daggerExec("init", "--name=servicer", "--sdk=go", "--source=.")).
-				WithNewFile("main.go", `package main
-
-	import (
-		"dagger/servicer/internal/dagger"
-	)
-
-	type Servicer struct {}
-
-	func (*Servicer) EchoSvc() *dagger.Service {
-		return dag.Container().
-			From("alpine:3.20").
-			WithExec([]string{"apk", "add", "socat"}).
-			WithExposedPort(1234).
-			// echo server, writes what it reads
-			WithDefaultArgs([]string{"socat", "tcp-l:1234,fork", "exec:/bin/cat"}).
-			AsService()
-	}
-	`,
-				).
-				WithWorkdir("/work/caller").
-				With(daggerExec("init", "--name=caller", "--sdk=go", "--source=.")).
-				WithNewFile("main.go", `package main
-
-	import (
-		"context"
-		"strconv"
-		"time"
-	)
-
-	type Caller struct {}
-
-	func (*Caller) CallSvc(ctx context.Context) (string, error) {
-		rand := strconv.Itoa(int(time.Now().UnixNano()))
-		return dag.Container().
-			From("alpine:3.20").
-			WithExec([]string{"apk", "add", "netcat-openbsd"}).
-			WithServiceBinding("echoer", dag.Servicer().EchoSvc()).
-			WithEnvVariable("CACHEBUSTER", rand).
-			WithExec([]string{"sh", "-c", "echo -n $CACHEBUSTER | nc -N echoer 1234"}).
-			Stdout(ctx)
-	}
-	`,
-				).
-				With(daggerExec("install", "/work/servicer")).
-				WithWorkdir("/work").
-				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-				WithNewFile("main.go", `package main
-
-	import (
-		"context"
-	)
-
-	type Test struct {}
-
-	func (*Test) Fn(ctx context.Context, rand string) (string, error) {
-		return dag.Caller().CallSvc(ctx, rand)
-	}
-	`,
-				).
-				With(daggerExec("install", "/work/caller")).
-				With(daggerCall("fn", "--rand", rand)).
-				Stdout(ctx)
-		}
-
-		c1 := connect(ctx, t)
-		rand1 := identity.NewID()
-		out1, err := callMod(c1, rand1)
-		require.NoError(t, err)
-		require.Equal(t, rand1, out1)
-
-		c2 := connect(ctx, t)
-		rand2 := identity.NewID()
-		out2, err := callMod(c2, rand2)
-		require.NoError(t, err)
-		require.Equal(t, rand2, out2)
-
-		require.NotEqual(t, out1, out2)
-
-		require.NoError(t, c1.Close())
-		// TODO: not sure if we can do much better than this...
-		time.Sleep(15 * time.Second)
-
-		c3 := connect(ctx, t)
-		rand3 := identity.NewID()
-		out3, err := callMod(c3, rand3)
-		require.NoError(t, err)
-		require.Equal(t, rand3, out3)
-
-		require.NotEqual(t, out1, out3)
-		require.NotEqual(t, out2, out3)
-	})
-	*/
 }
 
 func (SecretSuite) TestCrossSessionGitAuthLeak(ctx context.Context, t *testctx.T) {
@@ -604,7 +499,6 @@ func (SecretSuite) TestCrossSessionGitAuthLeak(ctx context.Context, t *testctx.T
 
 // TODO: more tests:
 // * equivalent for sockets
-// * use secret URIs
 func (ModuleSuite) TestCrossSessionSecrets(ctx context.Context, t *testctx.T) {
 	// verify that if a function call does SetSecret and is cached, the secret is
 	// successfully transferred to clients even if they are in a different session
@@ -706,5 +600,77 @@ func (*Caller) Fn(ctx context.Context, val string) (string, error) {
 		require.Equal(t, randVal2, out2)
 
 		require.NotEqual(t, out1, out2)
+	})
+
+	t.Run("secret uris", func(ctx context.Context, t *testctx.T) {
+		tmpdir := t.TempDir()
+		initCmd := hostDaggerCommand(ctx, t, tmpdir, "init", "--source=.", "--name=test", "--sdk=go")
+		initOutput, err := initCmd.CombinedOutput()
+		require.NoError(t, err, string(initOutput))
+		err = os.WriteFile(filepath.Join(tmpdir, "main.go"), []byte(`package main
+import (
+	"context"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (*Test) Fn(ctx context.Context, secret *dagger.Secret) (*dagger.Container, error) {
+	return dag.Container().From("alpine:3.20").
+		WithSecretVariable("TOPSECRET", secret).
+		Sync(ctx)
+}
+`), 0644)
+		require.NoError(t, err)
+
+		c1 := connect(ctx, t)
+		err = c1.ModuleSource(tmpdir).AsModule().Serve(ctx)
+		require.NoError(t, err)
+
+		secretID1, err := c1.Secret("cmd://echo -n foo").ID(ctx)
+		require.NoError(t, err)
+
+		res1, err := testutil.QueryWithClient[struct {
+			Test struct {
+				Fn struct {
+					ID dagger.ContainerID
+				}
+			}
+		}](c1, t, `{test{fn(secret:"`+string(secretID1)+`"){id}}}`, nil)
+		require.NoError(t, err)
+		ctrID1 := res1.Test.Fn.ID
+		require.NotEmpty(t, ctrID1)
+		_, err = c1.LoadContainerFromID(ctrID1).
+			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			WithExec([]string{"true"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+
+		c2 := connect(ctx, t)
+		err = c2.ModuleSource(tmpdir).AsModule().Serve(ctx)
+		require.NoError(t, err)
+
+		secretID2, err := c2.Secret("cmd://echo -n foo").ID(ctx)
+		require.NoError(t, err)
+
+		res2, err := testutil.QueryWithClient[struct {
+			Test struct {
+				Fn struct {
+					ID dagger.ContainerID
+				}
+			}
+		}](c2, t, `{test{fn(secret:"`+string(secretID2)+`"){id}}}`, nil)
+		require.NoError(t, err)
+		ctrID2 := res2.Test.Fn.ID
+		require.NotEmpty(t, ctrID2)
+
+		require.NoError(t, c1.Close())
+
+		_, err = c2.LoadContainerFromID(ctrID2).
+			WithEnvVariable("CACHEBUSTER", identity.NewID()).
+			WithExec([]string{"true"}).
+			Stdout(ctx)
+		require.NoError(t, err)
 	})
 }
