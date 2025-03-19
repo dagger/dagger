@@ -98,10 +98,6 @@ func (s *secretSchema) setSecret(
 	parent dagql.Instance[*core.Query],
 	args setSecretArgs,
 ) (i dagql.Instance[*core.Secret], err error) {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return i, fmt.Errorf("failed to get client metadata from context: %w", err)
-	}
 	accessor, err := core.GetClientResourceAccessor(ctx, parent.Self, args.Name)
 	if err != nil {
 		return i, fmt.Errorf("failed to get client resource accessor: %w", err)
@@ -109,7 +105,6 @@ func (s *secretSchema) setSecret(
 	dgst := dagql.HashFrom(
 		args.Name,
 		accessor,
-		clientMetadata.SessionID,
 	)
 
 	currentID := dagql.CurrentID(ctx)
