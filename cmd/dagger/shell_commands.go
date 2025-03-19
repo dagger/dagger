@@ -363,6 +363,7 @@ loaded as the default automatically, making its functions available at the top l
 Without arguments, the current working directory is replaced by the initial context.
 `,
 			GroupID: moduleGroup.ID,
+			Hidden:  true,
 			Args:    MaximumArgs(1),
 			State:   NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
@@ -377,6 +378,7 @@ Without arguments, the current working directory is replaced by the initial cont
 			Use:         ".pwd",
 			Description: "Print the current working directory's absolute path",
 			GroupID:     moduleGroup.ID,
+			Hidden:      true,
 			Args:        NoArgs,
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
@@ -390,6 +392,7 @@ Without arguments, the current working directory is replaced by the initial cont
 			Use:         ".ls [path]",
 			Description: "List files in the current working directory",
 			GroupID:     moduleGroup.ID,
+			Hidden:      true,
 			Args:        MaximumArgs(1),
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
@@ -421,6 +424,7 @@ Without arguments, the current working directory is replaced by the initial cont
 			Use:         shellDepsCmdName,
 			Description: "Dependencies from the module loaded in the current context",
 			GroupID:     moduleGroup.ID,
+			Hidden:      true,
 			Args:        NoArgs,
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
@@ -440,6 +444,7 @@ Without arguments, the current working directory is replaced by the initial cont
 		&ShellCommand{
 			Use:         shellStdlibCmdName,
 			Description: "Standard library functions",
+			Hidden:      true,
 			Args:        NoArgs,
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, _ []string, _ *ShellState) error {
@@ -455,6 +460,7 @@ Without arguments, the current working directory is replaced by the initial cont
 		&ShellCommand{
 			Use:         ".core [function]",
 			Description: "Load any core Dagger type",
+			Hidden:      true,
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
 				return h.Save(ctx, h.NewCoreState())
@@ -541,6 +547,7 @@ func cobraToShellCommand(c *cobra.Command) *ShellCommand {
 		Use:         "." + c.Use,
 		Description: c.Short,
 		GroupID:     c.GroupID,
+		Hidden:      true,
 		State:       NoState,
 		Run: func(ctx context.Context, cmd *ShellCommand, args []string, _ *ShellState) error {
 			// Re-execute the dagger command (hack)

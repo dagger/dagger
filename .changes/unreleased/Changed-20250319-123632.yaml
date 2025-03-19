@@ -1,0 +1,6 @@
+kind: Changed
+body: Stabilized Dagger Shell
+time: 2025-03-19T12:36:32.465472-01:00
+custom:
+    Author: helderco
+    PR: "9896"
