@@ -152,9 +152,9 @@ public class Entrypoint {
                         .withArg("source", dag().typeDef().withObject("Directory").withOptional(true), new Function.WithArgArguments().withDescription("Project source directory"))
                         .withArg("version", dag().typeDef().withKind(TypeDefKind.STRING_KIND), new Function.WithArgArguments().withDescription("Go version").withDefaultValue(JSON.from("\"1.23.2\"")))))
         .withEnum(
-            dag().typeDef().withEnum("Severity")
-                .withEnumValue("DEBUG")
-                .withEnumValue("INFO")
+            dag().typeDef().withEnum("Severity", new TypeDef.WithEnumArguments().withDescription("Severities"))
+                .withEnumValue("DEBUG", new TypeDef.WithEnumValueArguments().withDescription("Debug severity"))
+                .withEnumValue("INFO", new TypeDef.WithEnumValueArguments().withDescription("Info severity"))
                 .withEnumValue("WARN")
                 .withEnumValue("ERROR")
                 .withEnumValue("FATAL"));
