@@ -148,12 +148,12 @@ spec:
         {{- if .Values.engine.hostPath.dataVolume.enabled }}
         - name: varlibdagger
           hostPath:
-            path: /var/lib/dagger
+            path: /var/lib/dagger-{{ include "dagger.fullname" . }}
         {{- end }}
         {{- if .Values.engine.hostPath.runVolume.enabled }}
         - name: varrundagger
           hostPath:
-            path: /var/run/dagger
+            path: /var/run/dagger-{{ include "dagger.fullname" . }}
         {{- end }}
         {{- if (or .Values.engine.config .Values.engine.configJson) }}
         - name: dagger-engine-config
