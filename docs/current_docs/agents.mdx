@@ -119,7 +119,20 @@ You can use Ollama as a local LLM provider. Here's how to set it up:
 OLLAMA_HOST="0.0.0.0:11434" ollama serve
 ```
 
-3. Get your host machine's IP address:
+Note: Ollama has a default context length of 2048. If you need to change this, you can set the `OLLAMA_CONTEXT_LENGTH` environment variable.
+
+3. Pull some models to your local Ollama service:
+
+Here's a list curated by Ollama of models that support tools: [Ollama models supporting tools](https://ollama.com/search?c=tools)
+Any model from Ollama or any other model distributor that supports tools can be used with Dagger.
+
+For example, a good model for working with code is `qwen2.5-coder`. Various sizes of the model can be found here: [Qwen2.5-coder](https://ollama.com/library/qwen2.5-coder)
+To pull `qwen2.5-coder:14b`, which can fit in roughly 16GB of memory:
+```shell
+ollama pull qwen2.5-coder:14b
+```
+
+4. Get your host machine's IP address:
 
 On macOS / Linux (modern distributions):
 
@@ -135,27 +148,21 @@ ip addr | grep "inet " | grep -v 127.0.0.1
 
 This step is needed because our LLM type runs inside the engine and needs to reach your local Ollama service. While we're potentially exploring the implementatin of automatic tunneling, for now you'll need to use your machine's actual IP address instead of localhost to allow the containers to communicate with Ollama.
 
-4. Configure the following environment variables (replace `YOUR_IP` with the IP address from step 3):
+5. Configure the following environment variables (replace `YOUR_IP` with the IP address from step 3):
+
+Here you will also specify a default model to use. This can be changed at runtime.
+The `/v1/` route refers to Ollama's OpenAI compatible routes. The trailing `/` is required.
 
 ```plaintext
 OPENAI_BASE_URL=http://YOUR_IP:11434/v1/
-OPENAI_MODEL=llama3.2
+OPENAI_MODEL=<your preferred model>
 ```
 
-For example, if your IP is 192.168.64.1:
+For example, if your IP is 192.168.64.1 and your preferred model is qwen2.5-coder:14b:
 ```plaintext
 OPENAI_BASE_URL=http://192.168.64.1:11434/v1/
-OPENAI_MODEL=llama3.2
+OPENAI_MODEL=qwen2.5-coder:14b
 ```
-
-5. Pull some models to your local Ollama service:
-
-```shell
-ollama pull llama3.2
-```
-
-Note that to successfully give the LLM Dagger's API to use as a tool, the model should support tools.
-Here's a list curated by Ollama of models that support tools: [Ollama models supporting tools](https://ollama.com/search?c=tools)
 
 #### Using with Amazon Bedrock (tbd)
 
