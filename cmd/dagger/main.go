@@ -122,9 +122,10 @@ func init() {
 }
 
 var rootCmd = &cobra.Command{
-	Use:           "dagger",
-	Short:         "A tool to run CI/CD pipelines in containers, anywhere",
-	SilenceErrors: true, // handled in func main() instead
+	Use:                   "dagger [options] [file...]",
+	Short:                 "A tool to run composable workflows in containers",
+	SilenceErrors:         true, // handled in func main() instead
+	DisableFlagsInUseLine: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// if we got this far, CLI parsing worked just fine; no
 		// need to show usage for runtime errors
