@@ -297,7 +297,7 @@ func (env *LLMEnv) callUndo(ctx context.Context, _ any) (any, error) {
 	if len(env.history) > 0 {
 		env.history = env.history[:len(env.history)-1]
 	}
-	return env.Current(), nil
+	return env.describe(env.Current()), nil
 }
 
 func (env *LLMEnv) callCurrent(ctx context.Context, _ any) (any, error) {
