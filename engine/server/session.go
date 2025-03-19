@@ -129,6 +129,7 @@ type daggerClient struct {
 	secretStore *core.SecretStore
 	socketStore *core.SocketStore
 
+	dag       *dagql.Server
 	dagqlRoot *core.Query
 
 	// if the client is coming from a module, this is that module
@@ -161,8 +162,6 @@ type daggerClient struct {
 	tracerProvider *sdktrace.TracerProvider
 	loggerProvider *sdklog.LoggerProvider
 	meterProvider  *sdkmetric.MeterProvider
-
-	dag *dagql.Server
 }
 
 type daggerClientState string
@@ -1347,15 +1346,6 @@ func (srv *Server) NonModuleParentClientMetadata(ctx context.Context) (*engine.C
 	return nil, fmt.Errorf("no non-module parent found")
 }
 
-// Return the DagQL server for the specified client
-func (srv *Server) Server(ctx context.Context) (*dagql.Server, error) {
-	client, err := srv.clientFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return client.dag, nil
-}
-
 // The default deps of every user module (currently just core)
 func (srv *Server) DefaultDeps(ctx context.Context) (*core.ModDeps, error) {
 	client, err := srv.clientFromContext(ctx)
@@ -1372,6 +1362,15 @@ func (srv *Server) Cache(ctx context.Context) (dagql.Cache, error) {
 		return nil, err
 	}
 	return client.daggerSession.dagqlCache, nil
+}
+
+// The DagQL server for the current client's session
+func (srv *Server) Server(ctx context.Context) (*dagql.Server, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.dag, nil
 }
 
 // Mix in this http endpoint+handler to the current client's session

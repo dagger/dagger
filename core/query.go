@@ -56,6 +56,9 @@ type Server interface {
 	// The DagQL query cache for the current client's session
 	Cache(context.Context) (dagql.Cache, error)
 
+	// The DagQL server for the current client's session
+	Server(context.Context) (*dagql.Server, error)
+
 	// Mix in this http endpoint+handler to the current client's session
 	MuxEndpoint(context.Context, string, http.Handler) error
 
@@ -96,9 +99,6 @@ type Server interface {
 
 	// The default local cache policy to use for automatic local cache GC.
 	EngineLocalCachePolicy() *bkclient.PruneInfo
-
-	// Return the DagQL server for the specified client
-	Server(context.Context) (*dagql.Server, error)
 }
 
 func NewRoot(srv Server) *Query {
