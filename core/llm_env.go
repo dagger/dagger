@@ -37,6 +37,11 @@ type LLMEnv struct {
 	objsByHash map[digest.Digest]dagql.Typed
 }
 
+type maskedValue struct {
+	dagql.Typed
+	mask []string
+}
+
 func NewLLMEnv() *LLMEnv {
 	return &LLMEnv{
 		vars:       map[string]dagql.Typed{},
@@ -65,12 +70,18 @@ func (env *LLMEnv) Current() dagql.Typed {
 	return env.history[len(env.history)-1]
 }
 
-func (env *LLMEnv) With(val dagql.Typed) {
+func (env *LLMEnv) With(val dagql.Typed, functionMask []string) {
+	if len(functionMask) > 0 {
+		val = maskedValue{val, functionMask}
+	}
 	env.history = append(env.history, val)
 }
 
 // Save a value at the given key
-func (env *LLMEnv) Set(key string, value dagql.Typed) string {
+func (env *LLMEnv) Set(key string, value dagql.Typed, functionMask []string) string {
+	if len(functionMask) > 0 {
+		value = maskedValue{value, functionMask}
+	}
 	prev := env.vars[key]
 	env.vars[key] = value
 	if obj, ok := dagql.UnwrapAs[dagql.Object](value); ok {
@@ -124,8 +135,22 @@ func (env *LLMEnv) Tools(srv *dagql.Server) []LLMTool {
 		return tools
 	}
 	typedef := env.typedef(srv, env.Current())
+	var functionMask []string
+	if masked, isMasked := env.Current().(maskedValue); isMasked {
+		functionMask = masked.mask
+	}
 	typeName := typedef.Name
 	for _, field := range typedef.Fields {
+		masked := false
+		for i := range functionMask {
+			if functionMask[i] == field.Name {
+				masked = true
+				break
+			}
+		}
+		if masked {
+			continue
+		}
 		tools = append(tools, LLMTool{
 			Name:        typeName + "_" + field.Name,
 			Description: field.Description,
@@ -284,7 +309,7 @@ func (env *LLMEnv) callSelectTools(ctx context.Context, args any) (any, error) {
 
 func (env *LLMEnv) callSave(ctx context.Context, args any) (any, error) {
 	name := args.(map[string]any)["name"].(string)
-	return env.Set(name, env.Current()), nil
+	return env.Set(name, env.Current(), nil), nil
 }
 
 func (env *LLMEnv) callUndo(ctx context.Context, _ any) (any, error) {

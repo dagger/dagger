@@ -711,7 +711,7 @@ func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (string, err
 	return string(result), nil
 }
 
-func (llm *LLM) Set(ctx context.Context, dag *dagql.Server, key string, value dagql.Typed) (*LLM, error) {
+func (llm *LLM) Set(ctx context.Context, dag *dagql.Server, key string, value dagql.Typed, functionMask []string) (*LLM, error) {
 	if id, ok := value.(dagql.IDType); ok {
 		obj, err := dag.Load(ctx, id.ID())
 		if err != nil {
@@ -722,7 +722,7 @@ func (llm *LLM) Set(ctx context.Context, dag *dagql.Server, key string, value da
 	llm = llm.Clone()
 	llm.messages = append(llm.messages, ModelMessage{
 		Role:    "user",
-		Content: llm.env.Set(key, value),
+		Content: llm.env.Set(key, value, functionMask),
 	})
 	llm.dirty = true
 	return llm, nil
@@ -736,7 +736,7 @@ func (llm *LLM) Get(ctx context.Context, dag *dagql.Server, key string) (dagql.T
 	return llm.env.Get(key)
 }
 
-func (llm *LLM) With(ctx context.Context, dag *dagql.Server, value dagql.Typed) (*LLM, error) {
+func (llm *LLM) With(ctx context.Context, dag *dagql.Server, value dagql.Typed, functionMask []string) (*LLM, error) {
 	if id, ok := value.(dagql.IDType); ok {
 		obj, err := dag.Load(ctx, id.ID())
 		if err != nil {
@@ -745,7 +745,7 @@ func (llm *LLM) With(ctx context.Context, dag *dagql.Server, value dagql.Typed) 
 		value = obj
 	}
 	llm = llm.Clone()
-	llm.env.With(value)
+	llm.env.With(value, functionMask)
 	llm.dirty = true
 	return llm, nil
 }
@@ -806,7 +806,7 @@ func (llm *LLM) WithState(ctx context.Context, objID dagql.IDType, srv *dagql.Se
 	if err != nil {
 		return nil, err
 	}
-	return llm.Set(ctx, srv, "default", obj)
+	return llm.Set(ctx, srv, "default", obj, nil)
 }
 
 // FIXME: deprecated
@@ -858,13 +858,29 @@ func (s LLMHook) ExtendLLMType(targetType dagql.ObjectType) error {
 					Description: fmt.Sprintf("The %s value to assign to the variable", typename),
 					Type:        idType,
 				},
+				{
+					Name:        "functionMask",
+					Description: fmt.Sprintf("Array of function names to mask (hide) in this binding. Use this to restrict LLM access to parts of an object", typename),
+					Type:        dagql.Optional[dagql.ArrayInput[dagql.String]]{},
+				},
 			},
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			llm := self.(dagql.Instance[*LLM]).Self
 			name := args["name"].(dagql.String).String()
 			value := args["value"].(dagql.Typed)
-			return llm.Set(ctx, s.Server, name, value)
+			var functionMask []string
+			if arg := args["functionMask"].(dagql.Optional[dagql.ArrayInput[dagql.String]]); arg.Valid {
+				elmts := arg.Value.ToArray()
+				for i := 0; i < elmts.Len(); i++ {
+					elmt, err := elmts.Nth(i)
+					if err != nil {
+						return nil, err
+					}
+					functionMask = append(functionMask, elmt.(dagql.String).String())
+				}
+			}
+			return llm.Set(ctx, s.Server, name, value, functionMask)
 			// id := args["value"].(dagql.IDType)
 		},
 		dagql.CacheSpec{},
@@ -911,12 +927,28 @@ func (s LLMHook) ExtendLLMType(targetType dagql.ObjectType) error {
 					Description: fmt.Sprintf("The %s value to assign to the variable", typename),
 					Type:        idType,
 				},
+				{
+					Name:        "functionMask",
+					Description: fmt.Sprintf("Array of function names to mask (hide) in this binding. Use this to restrict LLM access to parts of an object", typename),
+					Type:        dagql.Optional[dagql.ArrayInput[dagql.String]]{},
+				},
 			},
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			llm := self.(dagql.Instance[*LLM]).Self
 			value := args["value"].(dagql.Typed)
-			return llm.With(ctx, s.Server, value)
+			var functionMask []string
+			if arg := args["functionMask"].(dagql.Optional[dagql.ArrayInput[dagql.String]]); arg.Valid {
+				elmts := arg.Value.ToArray()
+				for i := 0; i < elmts.Len(); i++ {
+					elmt, err := elmts.Nth(i)
+					if err != nil {
+						return nil, err
+					}
+					functionMask = append(functionMask, elmt.(dagql.String).String())
+				}
+			}
+			return llm.With(ctx, s.Server, value, functionMask)
 		},
 		dagql.CacheSpec{},
 	)

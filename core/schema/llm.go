@@ -113,7 +113,7 @@ func (s *llmSchema) setString(ctx context.Context, llm *core.LLM, args struct {
 	Name  string
 	Value dagql.String
 }) (*core.LLM, error) {
-	return llm.Set(ctx, s.srv, args.Name, args.Value)
+	return llm.Set(ctx, s.srv, args.Name, args.Value, nil)
 }
 
 func (s *llmSchema) getString(ctx context.Context, llm *core.LLM, args struct {
