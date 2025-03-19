@@ -76,17 +76,17 @@ Expected stderr:
 │ │ ✔ ModuleSource.kind: ModuleSourceKind! X.Xs
 │ │ ┃ LOCAL_SOURCE
 │ │
-│ │ ✔ ModuleSource.digest: String! X.Xs
-│ │ ┃ xxh3:XXXXXXXXXXXXXXXX
-│ │
 │ │ ✔ ModuleSource.asString: String! X.Xs
 │ │ ┃ /app/dagql/idtui/viztest
 │ │
-│ │ ✔ ModuleSource.sourceRootSubpath: String! X.Xs
-│ │ ┃ .
+│ │ ✔ ModuleSource.digest: String! X.Xs
+│ │ ┃ xxh3:XXXXXXXXXXXXXXXX
 │ │
 │ │ ✔ Module.name: String! X.Xs
 │ │ ┃ viztest
+│ │
+│ │ ✔ ModuleSource.sourceRootSubpath: String! X.Xs
+│ │ ┃ .
 │ │
 │ │ ✔ Module.description: String! X.Xs
 │ │
@@ -96,7 +96,7 @@ Expected stderr:
 ✔ parsing command line arguments X.Xs
 
 ✔ viztest: Viztest! X.Xs
-✔ .diskMetrics: String! X.Xs ◆ CPU Pressure (some): X.Xs ◆ CPU Pressure (full): X.Xs ◆ Memory Bytes (current): X.X B ◆ Memory Bytes (peak): X.X B ◆ Network Tx: X.X B
+✔ .diskMetrics: String! X.Xs ◆ CPU Pressure (some): X.Xs ◆ CPU Pressure (full): X.Xs ◆ Memory Bytes (current): X.X B ◆ Memory Bytes (peak): X.X B ◆ Network Rx: X.X B ◆ Network Tx: X.X B
 │ ✔ container: Container! X.Xs
 │ $ .from(address: "alpine"): Container! X.Xs CACHED
 │ │ ✔ resolving docker.io/library/alpine:latest X.Xs

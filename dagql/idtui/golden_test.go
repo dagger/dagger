@@ -399,7 +399,7 @@ var scrubs = []scrubber{
 	},
 	// duration quantities
 	{
-		regexp.MustCompile(`\d+(\.\d+)?(ms|s)`),
+		regexp.MustCompile(`\d+(\.\d+)?(µs|ms|s)`),
 		"4.063ms",
 		"X.Xs",
 	},
