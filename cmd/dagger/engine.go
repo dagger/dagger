@@ -89,7 +89,6 @@ func withEngine(
 
 		params.WithTerminal = withTerminal
 
-		// wip implem
 		params.Stdin = os.Stdin
 		params.Stdout = os.Stdout
 
