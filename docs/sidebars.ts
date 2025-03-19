@@ -36,7 +36,7 @@ module.exports = {
       },
       collapsible: true,
       collapsed: true,
-      items: ["agents/quickstart", "agents/quickstart2"],
+      items: ["agents/quickstart"],
     },
     {
       type: "category",

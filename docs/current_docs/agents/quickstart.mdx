@@ -4,119 +4,148 @@ slug: /ai-agents/quickstart
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Quickstart
+# Build your first coding agent
 
-Some basic opening text here about what the quickstart is going to accomplish.
+Estimated time: 5 minutes
+
+In this guide you will create your first coding agent!
+
+The agent will use an LLM of your choosing to solve a coding prompt. The agent will have access to tools to write code and validate it.
 
 ## Installation and configuration
 
-Link to installation and LLM provider configuration instructions.
+Follow the [Dagger AI Agents](/ai-agents#initial-setup) instructions to install and configure Dagger.
 
-## Give an LLM tools
+## Create a Dagger module
 
-### Check the current default LLM
+### In an empty directory, create a new Dagger module
 
-Run `dagger` to enter a dagger shell, then:
+First, you will create a Dagger module. This module will be the place where you write your agent functions.
 
-```bash
-llm | model
-```
-
-If you've correctly configured the LLM provider, you should see the model name. To change the model, run `.model {model name}`
-
-### Create a variable that points to a weather module
-
-The `weather` variable will reference the weather module on GitHub
-
-```plaintext
-weather=$(github.com/kpenfound/dag/weather)
-```
-
-### Enter prompt mode and let the LLM use the weather module
-
-Enter prompt mode with `>`
-
-Let the LLM use the weather module:
-```plaintext
-what is the current weather in paris?
-```
-
-You should see the LLM find the function `Weather.City` in the weather module and call it with the argument `Paris`.
-
-## Write your first agent
-
-Create an agent module that uses the weather module
-
-### Initialize a new module
-
-Exit the dagger shell session if you haven't already (Ctrl+D)
-In an empty directory create a module with the SDK of your choice. You can use Go, Python, Typescript, PHP, or Java:
+You can write your module in Go, Python, Typescript, PHP, or Java. Choose the SDK you are most comfortable with.
 
 ```bash
-dagger init --sdk {your choice} --name my-agent
+dagger init --sdk {your sdk choice} --name coding-agent
 ```
 
-### Install the weather module as a dependency:
+This will generate a bunch of files that make up the Dagger module, including some boilerplate functions as examples.
+
+To see the generated functions, run:
 
 ```bash
-dagger install github.com/kpenfound/dag/weather
+dagger functions
 ```
 
-### Create a new function with an LLM
+You should see information about the generated `container-echo` and `grep-dir` functions.
+
+### Install a module dependency
+
+Before you write the agent's function, this agent has a dependency that needs to be installed. This dependency provides the environment the LLM you use to solve the coding prompt.
+
+For more information about the environment concept, see [what is a workspace](/ai-agents#what-is-this-workspace-object-that-most-of-the-examples-use).
+
+```bash
+dagger install github.com/shykes/toy-programmer/toy-workspace
+```
+
+Toy-workspace is a Dagger module that provides a simple workspace for the agent. It has a Container as it's state and functions to read, write, and build the code.
+
+## Write your agent fuction
+
+### Edit the agent file
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-Edit the agent (`main.go`) and replace the generated functions with this new one:
-```go
-func (m *MyAgent) Chat(ctx context.Context, prompt string) (string, error) {
-	return dag.Llm().
-		WithWeather(dag.Weather()).
-		WithPrompt(prompt).
-		LastReply(ctx)
-}
+Edit the agent (`main.go`) and replace the generated code with this code:
+
+```go file=./snippets/coding-agent/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-Edit the agent (`src/myagent/main.py`) and replace the generated functions with this new one:
-```python
-@function
-async def chat(self, prompt: str) -> str:
-    return (
-        await dag.llm()
-    		.with_weather(dag.weather())
-    		.with_prompt(prompt)
-    		.last_reply()
-    )
+Edit the agent (`src/coding_agent/main.py`) and replace the generated code with this code:
+```python file=./snippets/coding-agent/python/src/coding_agent/main.py
 ```
 
 </TabItem>
 <TabItem value="Typescript">
 
-Edit the agent (`src/index.ts`) and replace the generated functions with this new one:
-```typescript
-@func()
-async chat(prompt: string): Promise<string> {
-	return dag.Llm().
-		withWeather(dag.weather()).
-		withPrompt(prompt).
-		lastReply()
-}
+Edit the agent (`src/index.ts`) and replace the generated code with this code:
+```typescript file=./snippets/coding-agent/typescript/src/index.ts
+```
+
+</TabItem>
+<TabItem value="PHP">
+
+Edit the agent (`src/CodingAgent.php`) and replace the generated code with this code:
+```php file=./snippets/coding-agent/php/src/CodingAgent.php
+```
+
+</TabItem>
+<TabItem value="Java">
+
+Edit the agent (`src/main/java/io/dagger/modules/codingagent/CodingAgent.java`) and replace the generated code with this code:
+```java file=./snippets/coding-agent/java/src/main/java/io/dagger/modules/codingagent/CodingAgent.java
 ```
 
 </TabItem>
 </Tabs>
 
+In this code you created a function called `go-program` that takes in an assignment and returns a Container.
+
+- The instance of toy-workspace is given to the LLM to provide it tools to write and validate code.
+- The prompt is passed to the LLM to solve.
+- The LLM will use the tools in the workspace to write code, validate it, and loop until the code passes validation.
+- You return a container by chaining `llm -> toy-workspace -> container`. This works because you gave the LLM the toy-workspace earlier in the chain.
+
 ### Now run your new function in the Dagger shell
 
-Run `dagger` to enter the shell, and then run your new function:
+Run `dagger` to enter the shell.
+
+Check out the help text for your new function:
 
 ```bash
-chat "do I need to wear a jacket today in Paris?"
+.help
+.help go-program
+```
+
+This should show how to use the `go-program` function.
+
+Make sure your LLM provider has been properly configured:
+
+```bash
+llm | model
+```
+
+This should show the model you've configured to use with your provider.
+
+Now run the function:
+
+```bash
+go-program "write a curl clone"
+```
+
+You'll see the agent receive the prompt, write code, validate it, and return the container.
+If the LLM fails to write code that passes validation, try adding more helpful guidance to the prompt in your function.
+
+Once it has successfully written code, you can get a terminal in the container:
+
+```bash
+go-program "write a curl clone" | terminal
+```
+
+Run the program. This will look slightly different depending on how the LLM wrote the code:
+
+```bash
+> ls
+# should see a main.go and a go.mod, maybe other files
+> go run main.go https://dagger.io
 ```
 
 ## Next steps
 
-Look at the [Dagger AI Agents](/ai-agents#examples) page for more examples and ideas for your agent.
+Congratulations! You've created your first coding agent. You can now use this agent to solve coding prompts using an LLM.
+
+Now that you've grasped the basics of building an agent, look at the [Dagger AI Agents](/ai-agents#examples) page for more examples and ideas for your next agent.
