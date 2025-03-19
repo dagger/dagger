@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	daggerVersion      = "v0.16.2"
+	daggerVersion      = "v0.16.3"
 	upstreamRepository = "dagger/dagger"
 	defaultRunner      = "ubuntu-latest"
 	publicToken        = "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
@@ -166,31 +166,22 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 		WithJob(runner.Job("engine-lint", "engine lint", dagger.GhaJobOpts{
 			Runner: []string{GoldRunner(false)},
 		})).
-		WithJob(runner.Job("scripts-lint", "scripts lint")).
+		WithJob(runner.Job("scripts", "check --targets=scripts")).
 		WithJob(runner.Job("cli-test-publish", "cli test-publish")).
-		WithJob(runner.Job("engine-test-publish", "engine publish --image=dagger-engine.dev --tag=main --dry-run")).
+		WithJob(runner.Job("cli-test-publish", "cli test-publish", dagger.GhaJobOpts{
+			Runner: []string{GoldRunner(false)},
+		})).
+		WithJob(runner.Job("engine-test-publish", "engine publish --image=dagger-engine.dev --tag=main --dry-run", dagger.GhaJobOpts{
+			Runner: []string{GoldRunner(false)},
+		})).
 		WithJob(runner.Job("scan-engine", "engine scan")).
-		With(splitTests(runner, "test-", false, []testSplit{
-			{"modules", []string{"TestModule"}, &dagger.GhaJobOpts{
-				Runner: []string{GoldRunner(false)},
-			}},
-			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"}, &dagger.GhaJobOpts{
-				Runner: []string{GoldRunner(false)},
-			}},
-			{"cli-engine", []string{"TestCLI", "TestEngine"}, &dagger.GhaJobOpts{
-				Runner: []string{GoldRunner(false)},
-			}},
+		With(splitTests(runner, "testdev-", true, []testSplit{
 			{"cgroupsv2", []string{"TestProvision", "TestTelemetry"}, &dagger.GhaJobOpts{
 				// HACK: our main runners don't support cgroupsv2
 				Runner: []string{"ubuntu-latest"},
 				// NOTE: needed to silence redis warning logs in tests
 				SetupCommands: []string{"sudo sysctl -w vm.overcommit_memory=1"},
 			}},
-			{"everything-else", nil, &dagger.GhaJobOpts{
-				Runner: []string{PlatinumRunner(false)},
-			}},
-		})).
-		With(splitTests(runner, "testdev-", true, []testSplit{
 			{"modules", []string{"TestModule"}, &dagger.GhaJobOpts{
 				Runner: []string{PlatinumRunner(true)},
 			}},
@@ -198,6 +189,12 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 				Runner: []string{PlatinumRunner(true)},
 			}},
 			{"container", []string{"TestContainer"}, &dagger.GhaJobOpts{
+				Runner: []string{PlatinumRunner(true)},
+			}},
+			{"cli-engine", []string{"TestCLI", "TestEngine"}, &dagger.GhaJobOpts{
+				Runner: []string{PlatinumRunner(true)},
+			}},
+			{"everything-else", nil, &dagger.GhaJobOpts{
 				Runner: []string{PlatinumRunner(true)},
 			}},
 		}))

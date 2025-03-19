@@ -33,18 +33,19 @@ var (
 )
 
 const (
-	Directory    string = "Directory"
-	Container    string = "Container"
-	File         string = "File"
-	Secret       string = "Secret"
-	Service      string = "Service"
-	PortForward  string = "PortForward"
-	CacheVolume  string = "CacheVolume"
-	ModuleSource string = "ModuleSource"
-	Module       string = "Module"
-	Platform     string = "Platform"
-	Socket       string = "Socket"
-	Terminal     string = "Terminal"
+	Directory     string = "Directory"
+	Container     string = "Container"
+	File          string = "File"
+	Secret        string = "Secret"
+	Service       string = "Service"
+	PortForward   string = "PortForward"
+	CacheVolume   string = "CacheVolume"
+	ModuleSource  string = "ModuleSource"
+	Module        string = "Module"
+	Platform      string = "Platform"
+	Socket        string = "Socket"
+	GitRepository string = "GitRepository"
+	GitRef        string = "GitRef"
 )
 
 var (

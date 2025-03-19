@@ -21,6 +21,15 @@ import (
 )
 
 func main() {
+	switch os.Args[0] {
+	case "/.init":
+		mainInit()
+	case "/proc/self/exe":
+		mainSession()
+	}
+}
+
+func mainInit() {
 	sigCh := make(chan os.Signal, 16)
 	// Handle every signal other than a few exceptions noted at the end.
 	// Importantly, by handling all these signals, the child process will start with
@@ -90,7 +99,9 @@ func main() {
 	}
 
 	if _, ok := os.LookupEnv("DAGGER_SESSION_TOKEN"); ok {
-		go serveSession()
+		if err := startSessionSubprocess(); err != nil {
+			panic(err)
+		}
 	}
 
 	// run the child in a new session
@@ -117,8 +128,7 @@ func main() {
 	}
 	child, err := os.StartProcess(fullPath, os.Args[1:], &os.ProcAttr{
 		Files: []*os.File{os.Stdin, os.Stdout, os.Stderr},
-
-		Sys: &sysProcAttr,
+		Sys:   &sysProcAttr,
 	})
 	if err != nil {
 		panic(err)
@@ -180,7 +190,17 @@ func main() {
 	}
 }
 
-func serveSession() {
+func startSessionSubprocess() error {
+	// start the session subprocess
+	cmd := exec.Command("/proc/self/exe")
+	cmd.ExtraFiles = []*os.File{os.NewFile(3, "session-conn")}
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setsid: true,
+	}
+	return cmd.Start()
+}
+
+func mainSession() {
 	ctx := context.Background()
 
 	attachables := []bksession.Attachable{
@@ -190,8 +210,8 @@ func serveSession() {
 		client.SocketProvider{EnableHostNetworkAccess: true},
 		// host=>container networking
 		session.NewTunnelListenerAttachable(ctx),
-		// Git credentials
-		session.NewGitCredentialAttachable(ctx),
+		// Git attachable
+		session.NewGitAttachable(ctx),
 	}
 	// filesync
 	filesyncer, err := client.NewFilesyncer()

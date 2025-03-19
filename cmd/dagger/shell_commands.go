@@ -89,7 +89,7 @@ type PositionalArgs func(args []string) error
 func MinimumArgs(n int) PositionalArgs {
 	return func(args []string) error {
 		if len(args) < n {
-			return fmt.Errorf("requires at least %d arg(s), received %d", n, len(args))
+			return fmt.Errorf("requires at least %d argument(s), received %d", n, len(args))
 		}
 		return nil
 	}
@@ -98,7 +98,7 @@ func MinimumArgs(n int) PositionalArgs {
 func MaximumArgs(n int) PositionalArgs {
 	return func(args []string) error {
 		if len(args) > n {
-			return fmt.Errorf("accepts at most %d arg(s), received %d", n, len(args))
+			return fmt.Errorf("accepts at most %d argument(s), received %d", n, len(args))
 		}
 		return nil
 	}
@@ -107,7 +107,7 @@ func MaximumArgs(n int) PositionalArgs {
 func ExactArgs(n int) PositionalArgs {
 	return func(args []string) error {
 		if len(args) < n {
-			return fmt.Errorf("missing %d positional argument(s)", n-len(args))
+			return fmt.Errorf("requires %d positional argument(s), received %d", n, len(args))
 		}
 		if len(args) > n {
 			return fmt.Errorf("accepts at most %d positional argument(s), received %d", n, len(args))
@@ -137,16 +137,16 @@ func (c *ShellCommand) Execute(ctx context.Context, h *shellCallHandler, args []
 	case AnyState:
 	case RequiredState:
 		if st == nil {
-			return fmt.Errorf("command %q must be piped\nusage: %s", c.Name(), c.Use)
+			return fmt.Errorf("command %q must be piped\n\nUsage: %s", c.Name(), c.Use)
 		}
 	case NoState:
 		if st != nil {
-			return fmt.Errorf("command %q cannot be piped\nusage: %s", c.Name(), c.Use)
+			return fmt.Errorf("command %q cannot be piped\n\nUsage: %s", c.Name(), c.Use)
 		}
 	}
 	if c.Args != nil {
 		if err := c.Args(args); err != nil {
-			return fmt.Errorf("command %q %w\nusage: %s", c.Name(), err, c.Use)
+			return fmt.Errorf("command %q %w\n\nUsage: %s", c.Name(), err, c.Use)
 		}
 	}
 	// resolve state values in arguments

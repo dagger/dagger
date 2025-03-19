@@ -1,0 +1,9 @@
+kind: Changed
+body: |-
+  The default unix socket used to connect to the engine is now at /run/dagger/engine.sock
+
+  The previous socket path still exists for backwards compatibility but may be removed in a future version.
+time: 2025-03-17T10:29:36.720646434-07:00
+custom:
+  Author: sipsma
+  PR: "9866"

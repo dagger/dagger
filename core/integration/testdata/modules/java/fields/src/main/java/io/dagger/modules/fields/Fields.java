@@ -5,18 +5,30 @@ import io.dagger.module.annotation.Object;
 
 @Object
 public class Fields {
-  public String version;
+  @Function
+  private String version;
+
+  public String publicVersion;
+
+  private String internalVersion;
 
   public Fields() {}
 
   @Function
   public Fields withVersion(String version) {
     this.version = version;
+    this.internalVersion = version;
+    this.publicVersion = version;
     return this;
   }
 
   @Function
   public String getVersion() {
     return version;
+  }
+
+  @Function
+  public String getInternalVersion() {
+    return internalVersion;
   }
 }

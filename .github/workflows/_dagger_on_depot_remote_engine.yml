@@ -15,7 +15,7 @@ on:
       dagger:
         description: "Dagger version"
         type: string
-        default: "0.16.2"
+        default: "0.16.3"
         required: false
       ubuntu:
         description: "Ubuntu version"
@@ -34,13 +34,13 @@ jobs:
       - name: Warm up Engine
         run: dagger core version
       - name: ${{ inputs.function }}
-        uses: ./.github/actions/call
+        uses: ./.github/actions/call-ci-alt-runner
         with:
           function: ${{ inputs.function }}
           version: v${{ inputs.dagger }}
           dev-engine: ${{ inputs.dev }}
       - name: ${{ inputs.function }} (CACHE TEST)
-        uses: ./.github/actions/call
+        uses: ./.github/actions/call-ci-alt-runner
         with:
           function: ${{ inputs.function }}
           version: v${{ inputs.dagger }}

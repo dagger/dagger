@@ -10,7 +10,7 @@ import {
 import { Commands } from "./commands"
 
 @object()
-class Node {
+export class Node {
   @func()
   version = "22.11.0-alpine@sha256:b64ced2e7cd0a4816699fe308ce6e8a08ccba463c757c00c14cd372e3d2c763e"
 
@@ -105,7 +105,7 @@ class Node {
    */
   @func()
   install(pkgs: string[] = []): Node {
-    this.container = this.container.withExec(["install", ...pkgs], {"useEntrypoint": true})
+    this.container = this.container.withExec(["install", ...pkgs], { useEntrypoint: true })
 
     return this
   }

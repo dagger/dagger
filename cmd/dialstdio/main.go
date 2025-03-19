@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/moby/buildkit/util/appdefaults"
+	"github.com/dagger/dagger/engine"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -22,7 +22,7 @@ var (
 func init() {
 	syscall.Umask(0)
 
-	rootCmd.PersistentFlags().StringVar(&addr, "addr", appdefaults.Address, "The address serving the grpc api")
+	rootCmd.PersistentFlags().StringVar(&addr, "addr", engine.DefaultEngineSockAddr, "The address serving the grpc api")
 	rootCmd.PersistentFlags().IntVar(&timeoutSeconds, "timeout", 5, "The timeout in seconds for connecting to the grpc api")
 }
 

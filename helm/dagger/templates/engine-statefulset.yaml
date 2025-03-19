@@ -61,17 +61,24 @@ spec:
           args:
             {{- toYaml .Values.engine.args | nindent 12 }}
           {{- end }}
-          {{- if .Values.magicache.enabled }}
+          {{- if (or .Values.engine.env .Values.magicache.enabled) }}
           env:
+            {{- if .Values.engine.env }}
+            {{- toYaml .Values.engine.env | nindent 12 }}
+            {{- end }}
+            {{- if .Values.magicache.enabled }}
             - name: _EXPERIMENTAL_DAGGER_CACHESERVICE_URL
               value: {{ required "A magicache url is required" .Values.magicache.url }}
+            {{- end }}
+          {{- end }}
+          {{- if .Values.magicache.enabled }}
           envFrom:
             - secretRef:
-                {{- if .Values.magicache.secretName }}
-                name: {{ .Values.magicache.secretName }}
-                {{- else }}
-                name: {{ include "dagger.fullname" . }}-magicache-token
-                {{- end }}
+              {{- if .Values.magicache.secretName }}
+              name: {{ .Values.magicache.secretName }}
+              {{- else }}
+              name: {{ include "dagger.fullname" . }}-magicache-token
+              {{- end }}
           {{- end }}
           securityContext:
             privileged: true
@@ -93,7 +100,7 @@ spec:
             - name: data
               mountPath: /var/lib/dagger
             - name: run
-              mountPath: /var/run/buildkit
+              mountPath: /var/run/dagger
             {{- if .Values.engine.config }}
             - name: config
               mountPath: /etc/dagger/engine.toml

@@ -25,7 +25,7 @@
 #>
 
 Param (
-    [Parameter(Mandatory = $false)][System.Management.Automation.SemanticVersion]$DaggerVersion,
+    [Parameter(Mandatory = $false)][string]$DaggerVersion,
     [Parameter(Mandatory = $false)][string][ValidatePattern("^(?:head|(?:[0-9a-fA-F]{40}))?$")]$DaggerCommit,
     [Parameter(Mandatory = $false)][string]$DownloadPath = [System.IO.Path]::GetTempFileName(),
     [Parameter(Mandatory = $false)][string]$InstallPath = "$env:USERPROFILE\dagger",
@@ -168,6 +168,17 @@ Please check https://docs.dagger.io/install
 
     $latestVersion = $response -replace "v", ""
     return [System.Management.Automation.SemanticVersion]::Parse($latestVersion)
+}
+
+function Find-Version {
+    $body = $null
+    try {
+        $response = Invoke-RestMethod "https://dl.dagger.io/dagger/versions/$DaggerVersion" -Body $body
+    } catch {
+        return $DaggerVersion
+    }
+    $version = $response -replace "v", ""
+    return [System.Management.Automation.SemanticVersion]::Parse($version)
 }
 
 # This function returns the file name of the Dagger zip file to download.
@@ -314,8 +325,10 @@ Dagger compiles for AMD64, ARM64, and ARM architectures only.
     }
 
     # If the user does not provide a version, we will find the latest version
-    if ($null -eq $DaggerVersion) {
+    if ("" -eq $DaggerVersion) {
         $DaggerVersion = Find-LatestVersion
+    } else {
+        $DaggerVersion = Find-Version
     }
 
     # Interactive allows customisation of the installation

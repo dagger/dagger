@@ -19,7 +19,7 @@ concurrency:
 jobs:
     dotnet:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-3-4c' || 'ubuntu-latest' }}
         name: dotnet
         steps:
             - name: Checkout
@@ -53,7 +53,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.16.2
+                DAGGER_VERSION: v0.16.3
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -65,6 +65,10 @@ jobs:
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     ls -lh $(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN)
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  # use runner host baked into the cli for dev jobs
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 # Run a simple query to "warm up" the engine
@@ -89,6 +93,10 @@ jobs:
                 # We don't rely on PATH because the GHA runner messes with that
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                # use runner host baked into the cli for dev jobs
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
@@ -208,7 +216,7 @@ jobs:
         timeout-minutes: 20
     dotnet-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-3-8c-dind' || 'ubuntu-latest' }}
         name: dotnet-dev
         steps:
             - name: Checkout
@@ -272,8 +280,13 @@ jobs:
                 fi
 
                 $DAGGER_SOURCE/hack/build
-                export PATH=$DAGGER_SOURCE/bin:$PATH
+                export PATH=$(realpath ./bin):$PATH
                 echo "PATH=$PATH" >>"${GITHUB_ENV}"
+
+                export _EXPERIMENTAL_DAGGER_CLI_BIN=$(which dagger)
+                echo "_EXPERIMENTAL_DAGGER_CLI_BIN=$_EXPERIMENTAL_DAGGER_CLI_BIN" >>"${GITHUB_ENV}"
+
+                echo "USE_DEV_ENGINE=y" >> "${GITHUB_ENV}"
 
                 echo "::endgroup::"
               env:
@@ -291,6 +304,10 @@ jobs:
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     ls -lh $(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN)
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  # use runner host baked into the cli for dev jobs
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 # Run a simple query to "warm up" the engine
@@ -315,6 +332,10 @@ jobs:
                 # We don't rely on PATH because the GHA runner messes with that
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                # use runner host baked into the cli for dev jobs
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
@@ -434,7 +455,7 @@ jobs:
         timeout-minutes: 20
     elixir:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-3-4c' || 'ubuntu-latest' }}
         name: elixir
         steps:
             - name: Checkout
@@ -468,7 +489,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.16.2
+                DAGGER_VERSION: v0.16.3
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -480,6 +501,10 @@ jobs:
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     ls -lh $(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN)
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  # use runner host baked into the cli for dev jobs
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 # Run a simple query to "warm up" the engine
@@ -504,6 +529,10 @@ jobs:
                 # We don't rely on PATH because the GHA runner messes with that
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                # use runner host baked into the cli for dev jobs
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
@@ -623,7 +652,7 @@ jobs:
         timeout-minutes: 20
     elixir-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-3-8c-dind' || 'ubuntu-latest' }}
         name: elixir-dev
         steps:
             - name: Checkout
@@ -687,8 +716,13 @@ jobs:
                 fi
 
                 $DAGGER_SOURCE/hack/build
-                export PATH=$DAGGER_SOURCE/bin:$PATH
+                export PATH=$(realpath ./bin):$PATH
                 echo "PATH=$PATH" >>"${GITHUB_ENV}"
+
+                export _EXPERIMENTAL_DAGGER_CLI_BIN=$(which dagger)
+                echo "_EXPERIMENTAL_DAGGER_CLI_BIN=$_EXPERIMENTAL_DAGGER_CLI_BIN" >>"${GITHUB_ENV}"
+
+                echo "USE_DEV_ENGINE=y" >> "${GITHUB_ENV}"
 
                 echo "::endgroup::"
               env:
@@ -706,6 +740,10 @@ jobs:
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     ls -lh $(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN)
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  # use runner host baked into the cli for dev jobs
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 # Run a simple query to "warm up" the engine
@@ -730,6 +768,10 @@ jobs:
                 # We don't rely on PATH because the GHA runner messes with that
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                # use runner host baked into the cli for dev jobs
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
@@ -849,7 +891,7 @@ jobs:
         timeout-minutes: 20
     go:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-3-4c' || 'ubuntu-latest' }}
         name: go
         steps:
             - name: Checkout
@@ -883,7 +925,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.16.2
+                DAGGER_VERSION: v0.16.3
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -895,6 +937,10 @@ jobs:
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     ls -lh $(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN)
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  # use runner host baked into the cli for dev jobs
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 # Run a simple query to "warm up" the engine
@@ -919,6 +965,10 @@ jobs:
                 # We don't rely on PATH because the GHA runner messes with that
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                # use runner host baked into the cli for dev jobs
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
@@ -1038,7 +1088,7 @@ jobs:
         timeout-minutes: 20
     go-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-3-8c-dind' || 'ubuntu-latest' }}
         name: go-dev
         steps:
             - name: Checkout
@@ -1102,8 +1152,13 @@ jobs:
                 fi
 
                 $DAGGER_SOURCE/hack/build
-                export PATH=$DAGGER_SOURCE/bin:$PATH
+                export PATH=$(realpath ./bin):$PATH
                 echo "PATH=$PATH" >>"${GITHUB_ENV}"
+
+                export _EXPERIMENTAL_DAGGER_CLI_BIN=$(which dagger)
+                echo "_EXPERIMENTAL_DAGGER_CLI_BIN=$_EXPERIMENTAL_DAGGER_CLI_BIN" >>"${GITHUB_ENV}"
+
+                echo "USE_DEV_ENGINE=y" >> "${GITHUB_ENV}"
 
                 echo "::endgroup::"
               env:
@@ -1121,6 +1176,10 @@ jobs:
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     ls -lh $(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN)
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  # use runner host baked into the cli for dev jobs
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 # Run a simple query to "warm up" the engine
@@ -1145,6 +1204,10 @@ jobs:
                 # We don't rely on PATH because the GHA runner messes with that
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                # use runner host baked into the cli for dev jobs
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
@@ -1264,7 +1327,7 @@ jobs:
         timeout-minutes: 20
     java:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-3-4c' || 'ubuntu-latest' }}
         name: java
         steps:
             - name: Checkout
@@ -1298,7 +1361,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.16.2
+                DAGGER_VERSION: v0.16.3
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -1310,6 +1373,10 @@ jobs:
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     ls -lh $(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN)
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  # use runner host baked into the cli for dev jobs
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 # Run a simple query to "warm up" the engine
@@ -1334,6 +1401,10 @@ jobs:
                 # We don't rely on PATH because the GHA runner messes with that
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                # use runner host baked into the cli for dev jobs
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
@@ -1453,7 +1524,7 @@ jobs:
         timeout-minutes: 20
     java-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-3-8c-dind' || 'ubuntu-latest' }}
         name: java-dev
         steps:
             - name: Checkout
@@ -1517,8 +1588,13 @@ jobs:
                 fi
 
                 $DAGGER_SOURCE/hack/build
-                export PATH=$DAGGER_SOURCE/bin:$PATH
+                export PATH=$(realpath ./bin):$PATH
                 echo "PATH=$PATH" >>"${GITHUB_ENV}"
+
+                export _EXPERIMENTAL_DAGGER_CLI_BIN=$(which dagger)
+                echo "_EXPERIMENTAL_DAGGER_CLI_BIN=$_EXPERIMENTAL_DAGGER_CLI_BIN" >>"${GITHUB_ENV}"
+
+                echo "USE_DEV_ENGINE=y" >> "${GITHUB_ENV}"
 
                 echo "::endgroup::"
               env:
@@ -1536,6 +1612,10 @@ jobs:
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     ls -lh $(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN)
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  # use runner host baked into the cli for dev jobs
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 # Run a simple query to "warm up" the engine
@@ -1560,6 +1640,10 @@ jobs:
                 # We don't rely on PATH because the GHA runner messes with that
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                # use runner host baked into the cli for dev jobs
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
@@ -1679,7 +1763,7 @@ jobs:
         timeout-minutes: 20
     php:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-3-4c' || 'ubuntu-latest' }}
         name: php
         steps:
             - name: Checkout
@@ -1713,7 +1797,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.16.2
+                DAGGER_VERSION: v0.16.3
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -1725,6 +1809,10 @@ jobs:
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     ls -lh $(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN)
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  # use runner host baked into the cli for dev jobs
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 # Run a simple query to "warm up" the engine
@@ -1749,6 +1837,10 @@ jobs:
                 # We don't rely on PATH because the GHA runner messes with that
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                # use runner host baked into the cli for dev jobs
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
@@ -1868,7 +1960,7 @@ jobs:
         timeout-minutes: 20
     php-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-3-8c-dind' || 'ubuntu-latest' }}
         name: php-dev
         steps:
             - name: Checkout
@@ -1932,8 +2024,13 @@ jobs:
                 fi
 
                 $DAGGER_SOURCE/hack/build
-                export PATH=$DAGGER_SOURCE/bin:$PATH
+                export PATH=$(realpath ./bin):$PATH
                 echo "PATH=$PATH" >>"${GITHUB_ENV}"
+
+                export _EXPERIMENTAL_DAGGER_CLI_BIN=$(which dagger)
+                echo "_EXPERIMENTAL_DAGGER_CLI_BIN=$_EXPERIMENTAL_DAGGER_CLI_BIN" >>"${GITHUB_ENV}"
+
+                echo "USE_DEV_ENGINE=y" >> "${GITHUB_ENV}"
 
                 echo "::endgroup::"
               env:
@@ -1951,6 +2048,10 @@ jobs:
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     ls -lh $(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN)
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  # use runner host baked into the cli for dev jobs
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 # Run a simple query to "warm up" the engine
@@ -1975,6 +2076,10 @@ jobs:
                 # We don't rely on PATH because the GHA runner messes with that
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                # use runner host baked into the cli for dev jobs
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
@@ -2094,7 +2199,7 @@ jobs:
         timeout-minutes: 20
     python:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-3-4c' || 'ubuntu-latest' }}
         name: python
         steps:
             - name: Checkout
@@ -2128,7 +2233,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.16.2
+                DAGGER_VERSION: v0.16.3
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -2140,6 +2245,10 @@ jobs:
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     ls -lh $(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN)
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  # use runner host baked into the cli for dev jobs
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 # Run a simple query to "warm up" the engine
@@ -2164,6 +2273,10 @@ jobs:
                 # We don't rely on PATH because the GHA runner messes with that
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                # use runner host baked into the cli for dev jobs
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
@@ -2283,7 +2396,7 @@ jobs:
         timeout-minutes: 20
     python-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-3-8c-dind' || 'ubuntu-latest' }}
         name: python-dev
         steps:
             - name: Checkout
@@ -2347,8 +2460,13 @@ jobs:
                 fi
 
                 $DAGGER_SOURCE/hack/build
-                export PATH=$DAGGER_SOURCE/bin:$PATH
+                export PATH=$(realpath ./bin):$PATH
                 echo "PATH=$PATH" >>"${GITHUB_ENV}"
+
+                export _EXPERIMENTAL_DAGGER_CLI_BIN=$(which dagger)
+                echo "_EXPERIMENTAL_DAGGER_CLI_BIN=$_EXPERIMENTAL_DAGGER_CLI_BIN" >>"${GITHUB_ENV}"
+
+                echo "USE_DEV_ENGINE=y" >> "${GITHUB_ENV}"
 
                 echo "::endgroup::"
               env:
@@ -2366,6 +2484,10 @@ jobs:
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     ls -lh $(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN)
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  # use runner host baked into the cli for dev jobs
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 # Run a simple query to "warm up" the engine
@@ -2390,6 +2512,10 @@ jobs:
                 # We don't rely on PATH because the GHA runner messes with that
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                # use runner host baked into the cli for dev jobs
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
@@ -2509,7 +2635,7 @@ jobs:
         timeout-minutes: 20
     rust:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-3-4c' || 'ubuntu-latest' }}
         name: rust
         steps:
             - name: Checkout
@@ -2543,7 +2669,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.16.2
+                DAGGER_VERSION: v0.16.3
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -2555,6 +2681,10 @@ jobs:
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     ls -lh $(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN)
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  # use runner host baked into the cli for dev jobs
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 # Run a simple query to "warm up" the engine
@@ -2579,6 +2709,10 @@ jobs:
                 # We don't rely on PATH because the GHA runner messes with that
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                # use runner host baked into the cli for dev jobs
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
@@ -2698,7 +2832,7 @@ jobs:
         timeout-minutes: 20
     rust-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-3-8c-dind' || 'ubuntu-latest' }}
         name: rust-dev
         steps:
             - name: Checkout
@@ -2762,8 +2896,13 @@ jobs:
                 fi
 
                 $DAGGER_SOURCE/hack/build
-                export PATH=$DAGGER_SOURCE/bin:$PATH
+                export PATH=$(realpath ./bin):$PATH
                 echo "PATH=$PATH" >>"${GITHUB_ENV}"
+
+                export _EXPERIMENTAL_DAGGER_CLI_BIN=$(which dagger)
+                echo "_EXPERIMENTAL_DAGGER_CLI_BIN=$_EXPERIMENTAL_DAGGER_CLI_BIN" >>"${GITHUB_ENV}"
+
+                echo "USE_DEV_ENGINE=y" >> "${GITHUB_ENV}"
 
                 echo "::endgroup::"
               env:
@@ -2781,6 +2920,10 @@ jobs:
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     ls -lh $(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN)
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  # use runner host baked into the cli for dev jobs
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 # Run a simple query to "warm up" the engine
@@ -2805,6 +2948,10 @@ jobs:
                 # We don't rely on PATH because the GHA runner messes with that
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                # use runner host baked into the cli for dev jobs
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
@@ -2924,7 +3071,7 @@ jobs:
         timeout-minutes: 20
     typescript:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-3-4c' || 'ubuntu-latest' }}
         name: typescript
         steps:
             - name: Checkout
@@ -2958,7 +3105,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.16.2
+                DAGGER_VERSION: v0.16.3
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -2970,6 +3117,10 @@ jobs:
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     ls -lh $(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN)
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  # use runner host baked into the cli for dev jobs
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 # Run a simple query to "warm up" the engine
@@ -2994,6 +3145,10 @@ jobs:
                 # We don't rely on PATH because the GHA runner messes with that
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                # use runner host baked into the cli for dev jobs
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
@@ -3113,7 +3268,7 @@ jobs:
         timeout-minutes: 20
     typescript-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-2-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-3-8c-dind' || 'ubuntu-latest' }}
         name: typescript-dev
         steps:
             - name: Checkout
@@ -3177,8 +3332,13 @@ jobs:
                 fi
 
                 $DAGGER_SOURCE/hack/build
-                export PATH=$DAGGER_SOURCE/bin:$PATH
+                export PATH=$(realpath ./bin):$PATH
                 echo "PATH=$PATH" >>"${GITHUB_ENV}"
+
+                export _EXPERIMENTAL_DAGGER_CLI_BIN=$(which dagger)
+                echo "_EXPERIMENTAL_DAGGER_CLI_BIN=$_EXPERIMENTAL_DAGGER_CLI_BIN" >>"${GITHUB_ENV}"
+
+                echo "USE_DEV_ENGINE=y" >> "${GITHUB_ENV}"
 
                 echo "::endgroup::"
               env:
@@ -3196,6 +3356,10 @@ jobs:
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     ls -lh $(dirname $_EXPERIMENTAL_DAGGER_CLI_BIN)
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  # use runner host baked into the cli for dev jobs
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 # Run a simple query to "warm up" the engine
@@ -3220,6 +3384,10 @@ jobs:
                 # We don't rely on PATH because the GHA runner messes with that
                 if [[ -n "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]]; then
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
+                fi
+                # use runner host baked into the cli for dev jobs
+                if [[ -n "$USE_DEV_ENGINE" ]]; then
+                  unset _EXPERIMENTAL_DAGGER_RUNNER_HOST
                 fi
 
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"

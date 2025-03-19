@@ -6,11 +6,11 @@ import (
 	"dagger/compatcheck/schemadiff"
 	_ "embed"
 	"fmt"
+	"math/rand/v2"
 	"runtime"
 
 	"github.com/moby/buildkit/identity"
 	"github.com/tidwall/gjson"
-	"golang.org/x/exp/rand"
 	"golang.org/x/mod/semver"
 )
 
@@ -127,7 +127,7 @@ func engineServiceWithVersion(version string, withs ...func(*dagger.Container) *
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithExec([]string{
 			"--addr", "tcp://0.0.0.0:1234",
-			"--addr", "unix:///var/run/buildkit/buildkitd.sock",
+			"--addr", "unix:///var/run/dagger/engine.sock",
 			// // avoid network conflicts with other tests
 			"--network-name", deviceName,
 			"--network-cidr", cidr,
@@ -139,6 +139,6 @@ func engineServiceWithVersion(version string, withs ...func(*dagger.Container) *
 
 // creates a network CIDR to use for running the engine
 func getUniqueNestedEngineNetwork() (deviceName string, cidr string) {
-	random := rand.Intn(240)
+	random := rand.IntN(240)
 	return fmt.Sprintf("dagger%d", random), fmt.Sprintf("10.89.%d.0/24", random)
 }

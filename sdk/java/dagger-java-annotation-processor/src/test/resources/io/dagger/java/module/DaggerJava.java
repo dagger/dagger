@@ -13,12 +13,16 @@ import java.util.concurrent.ExecutionException;
 /** Dagger Java Module main object */
 @Object
 public class DaggerJava {
-  private String notExportedField;
+  private transient String notExportedField;
 
   /** Project source directory */
   public Directory source;
 
-  public String version;
+  // this field will also be exposed as a Dagger Field, even if private
+  @Function private String version;
+
+  // this field will be serialized but not exposed as a field
+  private Container container;
 
   public DaggerJava() {}
 
@@ -132,5 +136,11 @@ public class DaggerJava {
   @Function
   public float addFloat(float a, float b) {
     return a + b;
+  }
+
+  /** Function returning nothing */
+  @Function
+  public void doSomething(Directory src) {
+    // do something
   }
 }

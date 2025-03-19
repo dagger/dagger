@@ -16,7 +16,6 @@ import io.dagger.module.info.FunctionInfo;
 import io.dagger.module.info.ModuleInfo;
 import io.dagger.module.info.ObjectInfo;
 import io.dagger.module.info.ParameterInfo;
-import jakarta.json.bind.JsonbBuilder;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.util.*;
@@ -139,10 +138,13 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           List<FieldInfo> fieldInfoInfos =
               typeElement.getEnclosedElements().stream()
                   .filter(elt -> elt.getKind() == ElementKind.FIELD)
-                  .filter(elt -> elt.getModifiers().contains(Modifier.PUBLIC))
+                  .filter(elt -> !elt.getModifiers().contains(Modifier.TRANSIENT))
+                  .filter(elt -> !elt.getModifiers().contains(Modifier.STATIC))
+                  .filter(elt -> !elt.getModifiers().contains(Modifier.FINAL))
                   .filter(
                       elt ->
-                          !elt.getModifiers().containsAll(List.of(Modifier.STATIC, Modifier.FINAL)))
+                          elt.getModifiers().contains(Modifier.PUBLIC)
+                              || elt.getAnnotation(Function.class) != null)
                   .map(
                       elt -> {
                         String fieldName = elt.getSimpleName().toString();
@@ -350,8 +352,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
               .addParameter(String.class, "parentName")
               .addParameter(String.class, "fnName")
               .addParameter(
-                  ParameterizedTypeName.get(Map.class, String.class, JSON.class), "inputArgs")
-              .beginControlFlow("try (var jsonb = $T.create())", JsonbBuilder.class);
+                  ParameterizedTypeName.get(Map.class, String.class, JSON.class), "inputArgs");
       var firstObj = true;
       for (var objectInfo : moduleInfo.objects()) {
         if (firstObj) {
@@ -397,8 +398,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           im.endControlFlow(); // functions
         }
       }
-      im.endControlFlow(); // objects
-      im.endControlFlow() // try json
+      im.endControlFlow() // objects
           .addStatement(
               "throw new $T(new $T(\"unknown function \" + fnName))",
               InvocationTargetException.class,
@@ -547,8 +547,12 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
       }
     }
 
-    if (objectInfo.constructor().isPresent() && fnInfo.name().equals("<init>")) {
+    boolean returnsVoid = fnInfo.returnType().typeName().equals("void");
+    boolean isConstructor = objectInfo.constructor().isPresent() && fnInfo.name().equals("<init>");
+    if (isConstructor) {
       code.add("$T res = new $T(", objName, objName);
+    } else if (returnsVoid) {
+      code.add("obj.$L(", fnInfo.qName());
     } else {
       code.add(fnReturnType).add(" res = obj.$L(", fnInfo.qName());
     }
@@ -565,7 +569,11 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
                     .collect(Collectors.toList()),
                 ", "))
         .add(");\n");
-    code.addStatement("return $T.toJSON(res)", JsonConverter.class);
+    if (returnsVoid && !isConstructor) {
+      code.addStatement("return $T.toJSON(null)", JsonConverter.class);
+    } else {
+      code.addStatement("return $T.toJSON(res)", JsonConverter.class);
+    }
 
     return code.build();
   }
@@ -661,6 +669,12 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           Dagger.class,
           TypeDefKind.class,
           TypeDefKind.BOOLEAN_KIND.name());
+    } else if (name.equals("void")) {
+      return CodeBlock.of(
+          "$T.dag().typeDef().withKind($T.$L).withOptional(true)",
+          Dagger.class,
+          TypeDefKind.class,
+          TypeDefKind.VOID_KIND.name());
     } else if (name.startsWith("java.util.List<")) {
       name = name.substring("java.util.List<".length(), name.length() - 1);
       return CodeBlock.of(
