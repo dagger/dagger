@@ -18,12 +18,11 @@ import (
 )
 
 type GenaiClient struct {
-	client              *genai.Client
-	endpoint            *LLMEndpoint
-	defaultSystemPrompt string
+	client   *genai.Client
+	endpoint *LLMEndpoint
 }
 
-func newGenaiClient(endpoint *LLMEndpoint, defaultSystemPrompt string) (*GenaiClient, error) {
+func newGenaiClient(endpoint *LLMEndpoint) (*GenaiClient, error) {
 	opts := []option.ClientOption{option.WithAPIKey(endpoint.Key)}
 	if endpoint.Key != "" {
 		opts = append(opts, option.WithAPIKey(endpoint.Key))
@@ -37,9 +36,8 @@ func newGenaiClient(endpoint *LLMEndpoint, defaultSystemPrompt string) (*GenaiCl
 		return nil, err
 	}
 	return &GenaiClient{
-		client:              client,
-		endpoint:            endpoint,
-		defaultSystemPrompt: defaultSystemPrompt,
+		client:   client,
+		endpoint: endpoint,
 	}, err
 }
 
@@ -82,12 +80,11 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 
 	// set system prompt
 	model.SystemInstruction = &genai.Content{
-		Parts: []genai.Part{genai.Text(c.defaultSystemPrompt)},
-		Role:  "system",
+		Role: "system",
 	}
 
 	// convert tools to Genai tool format.
-	var toolsConfig []*genai.Tool
+	fns := []*genai.FunctionDeclaration{}
 	for _, tool := range tools {
 		fd := &genai.FunctionDeclaration{
 			Name:        tool.Name,
@@ -98,13 +95,13 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 		if len(schema.Properties) > 0 {
 			fd.Parameters = schema
 		}
-		toolsConfig = append(toolsConfig, &genai.Tool{
-			FunctionDeclarations: []*genai.FunctionDeclaration{
-				fd,
-			},
-		})
+		fns = append(fns, fd)
 	}
-	model.Tools = toolsConfig
+	model.Tools = []*genai.Tool{
+		&genai.Tool{
+			FunctionDeclarations: fns,
+		},
+	}
 
 	// convert history to genai.Content
 	genaiHistory := []*genai.Content{}
@@ -112,21 +109,28 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 		return nil, fmt.Errorf("genai history cannot be empty")
 	}
 
+	model.SystemInstruction = &genai.Content{
+		Parts: []genai.Part{},
+		Role:  "system",
+	}
+
 	for _, msg := range history {
-		// Valid Content.Role values are "user" and "model"
-		var role string
+		var content *genai.Content
 		switch msg.Role {
+		case "system":
+			content = model.SystemInstruction
 		case "user", "function":
-			role = "user"
+			content = &genai.Content{
+				Parts: []genai.Part{},
+				Role:  "user",
+			}
 		case "model", "assistant":
-			role = "model"
+			content = &genai.Content{
+				Parts: []genai.Part{},
+				Role:  "model",
+			}
 		default:
 			return nil, fmt.Errorf("unexpected role %s", msg.Role)
-		}
-
-		content := &genai.Content{
-			Parts: []genai.Part{},
-			Role:  role,
 		}
 
 		// message was a tool call
@@ -156,7 +160,12 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 			})
 		}
 
-		genaiHistory = append(genaiHistory, content)
+		if content.Role != "system" {
+			genaiHistory = append(genaiHistory, content)
+		}
+	}
+	if len(model.SystemInstruction.Parts) == 0 {
+		model.SystemInstruction.Parts = []genai.Part{genai.Text(defaultSystemPrompt)}
 	}
 
 	// Pop last message from history for SendMessage

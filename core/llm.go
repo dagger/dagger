@@ -27,6 +27,19 @@ func init() {
 	strcase.ConfigureAcronym("LLM", "LLM")
 }
 
+// TODO: is this the right place for this? is there an argument for or against
+// it being here, and/or for it being overrideable?
+const defaultSystemPrompt = `You are an AI assistant that interacts with an immutable GraphQL API by calling tools that return new state objects.
+Instead of modifying objects in place, each tool call produces a new state, which updates the available set of tools.
+Your environment changes dynamically as you navigate through different states.
+
+State is preserved, and previous states can be accessed by saving them as variables using the _save tool.
+To explore effectively, prioritize discovering new states over efficiency.
+You may need to make exploratory tool calls to understand the available actions.
+
+Your goal is to autonomously interact with the API, selecting and chaining tools to achieve tasks.
+When completing a task, save the final result using the _save tool.`
+
 // An instance of a LLM (large language model), with its state and tool calling environment
 type LLM struct {
 	Query *Query
@@ -160,13 +173,12 @@ func (r *LLMRouter) getReplay(model string) (messages []ModelMessage, _ error) {
 }
 
 func (r *LLMRouter) routeAnthropicModel() *LLMEndpoint {
-	defaultSystemPrompt := "You are a helpful AI assistant. You can use tools to accomplish the user's requests"
 	endpoint := &LLMEndpoint{
 		BaseURL:  r.AnthropicBaseURL,
 		Key:      r.AnthropicAPIKey,
 		Provider: Anthropic,
 	}
-	endpoint.Client = newAnthropicClient(endpoint, defaultSystemPrompt)
+	endpoint.Client = newAnthropicClient(endpoint)
 
 	return endpoint
 }
@@ -183,13 +195,12 @@ func (r *LLMRouter) routeOpenAIModel() *LLMEndpoint {
 }
 
 func (r *LLMRouter) routeGoogleModel() (*LLMEndpoint, error) {
-	defaultSystemPrompt := "You are a helpful AI assistant. You can use tools to accomplish the user's requests"
 	endpoint := &LLMEndpoint{
 		BaseURL:  r.GeminiBaseURL,
 		Key:      r.GeminiAPIKey,
 		Provider: Google,
 	}
-	client, err := newGenaiClient(endpoint, defaultSystemPrompt)
+	client, err := newGenaiClient(endpoint)
 	if err != nil {
 		return nil, err
 	}
