@@ -16,7 +16,7 @@ func (dev *DaggerDev) Check(ctx context.Context,
 	targets []string,
 ) error {
 	var routes checkRouter
-	routes.Add(Check{"docs", (&Docs{Dagger: dev}).Lint})
+	routes.Add(Check{"docs", dag.Docs().Lint})
 	routes.Add(Check{"scripts/lint", dev.Scripts().Lint})
 	routes.Add(Check{"scripts/test", dev.Scripts().Test})
 	routes.Add(Check{"helm/lint", dag.Helm().Lint})

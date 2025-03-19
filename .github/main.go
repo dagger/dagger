@@ -73,7 +73,7 @@ func New() *CI {
 			ci.DaggerRunner,
 			false,
 			"docs",
-			"docs lint",
+			"check --targets=docs",
 		).
 		withWorkflow(
 			ci.GithubRunner,
