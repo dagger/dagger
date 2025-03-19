@@ -152,11 +152,6 @@ func (dev *DaggerDev) Engine() *DaggerEngine {
 	return &DaggerEngine{Dagger: dev}
 }
 
-// Develop the Dagger documentation
-func (dev *DaggerDev) Docs() *Docs {
-	return &Docs{Dagger: dev}
-}
-
 // Run Dagger scripts
 func (dev *DaggerDev) Scripts() *Scripts {
 	return &Scripts{Dagger: dev}
@@ -179,7 +174,7 @@ func (dev *DaggerDev) Generate(ctx context.Context) (*dagger.Directory, error) {
 
 	eg.Go(func() error {
 		var err error
-		docs = dev.Docs().Generate()
+		docs = dag.Docs().Generate()
 		docs, err = docs.Sync(ctx)
 		return err
 	})

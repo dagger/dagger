@@ -39,7 +39,7 @@ func New(
 func (r *Releaser) Bump(version string) *dagger.Directory {
 	return dag.Directory().
 		WithDirectory("", r.Dagger.SDK().All().Bump(version)).
-		WithDirectory("", r.Dagger.Docs().Bump(version)).
+		WithDirectory("", dag.Docs().Bump(version)).
 		WithFile("helm/dagger/Chart.yaml", dag.Helm().SetVersion(version))
 }
 
@@ -235,7 +235,7 @@ func (r *Releaser) Publish(
 			Link: "https://docs.dagger.io",
 		}
 		if !dryRun {
-			err = r.Dagger.Docs().Publish(ctx, netlifyToken)
+			err = dag.Docs().Publish(ctx, netlifyToken)
 			if err != nil {
 				artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 			}

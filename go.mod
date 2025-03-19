@@ -18,7 +18,7 @@ replace (
 
 require (
 	github.com/1password/onepassword-sdk-go v0.2.0
-	github.com/99designs/gqlgen v0.17.66
+	github.com/99designs/gqlgen v0.17.68
 	github.com/Khan/genqlient v0.8.0
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2
@@ -28,8 +28,8 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/charmbracelet/bubbles v0.20.0
 	github.com/charmbracelet/bubbletea v1.3.4
-	github.com/charmbracelet/glamour v0.8.0
-	github.com/charmbracelet/lipgloss v1.0.0
+	github.com/charmbracelet/glamour v0.9.0
+	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/cellbuf v0.0.13
 	github.com/containerd/console v1.0.4
 	github.com/containerd/containerd v1.7.26
@@ -62,7 +62,7 @@ require (
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/google/uuid v1.6.0
 	github.com/googleapis/gax-go/v2 v2.12.5
-	github.com/goproxy/goproxy v0.19.2
+	github.com/goproxy/goproxy v0.20.0
 	github.com/hashicorp/vault/api v1.16.0
 	github.com/hashicorp/vault/api/auth/approle v0.9.0
 	github.com/iancoleman/strcase v0.3.0
@@ -141,7 +141,7 @@ require (
 	google.golang.org/protobuf v1.36.5
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools/v3 v3.5.2
-	modernc.org/sqlite v1.36.0
+	modernc.org/sqlite v1.36.1
 	mvdan.cc/sh/v3 v3.11.0
 	resenje.org/singleflight v0.4.3
 )
@@ -321,8 +321,8 @@ require (
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	github.com/yuin/goldmark v1.7.4 // indirect
-	github.com/yuin/goldmark-emoji v1.0.3 // indirect
+	github.com/yuin/goldmark v1.7.8 // indirect
+	github.com/yuin/goldmark-emoji v1.0.5 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.57.0 // indirect
