@@ -36,6 +36,15 @@ func daggerShellNoMod(script string) dagger.WithContainerFunc {
 	}
 }
 
+func daggerShellAllowAllLLM(script string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec([]string{"dagger", "--allow-llm=all"}, dagger.ContainerWithExecOpts{
+			Stdin:                         script,
+			ExperimentalPrivilegedNesting: true,
+		})
+	}
+}
+
 func (ShellSuite) TestDefaultToModule(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

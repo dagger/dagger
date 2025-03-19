@@ -152,6 +152,32 @@ func (LLMSuite) TestAPILimit(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	directCallModuleRef := "github.com/cwlbraa/dagger-test-modules/llm-dir-module-depender/llm-test-module"
+
+	ctrFn := func(llmFlags string) dagger.WithContainerFunc {
+		// return daggerCall("-m", directCallModuleRef, "--allow-llm=all", "save", "--string-arg", "greet me")
+		return daggerShellAllowAllLLM(fmt.Sprintf(`%s | save wat`, directCallModuleRef))
+	}
+
+	recording := "llmtest/allow-llm.golden"
+	if golden.FlagUpdate() {
+		out, err := daggerCliBase(t, c).
+			With(daggerForwardSecrets(c)).
+			With(ctrFn("")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		if dir := filepath.Dir(recording); dir != "." {
+			err := os.MkdirAll(dir, 0755)
+			require.NoError(t, err)
+		}
+		err = os.WriteFile(recording, []byte(out), 0644)
+		require.NoError(t, err)
+	}
+}
+
 func testGoProgram(ctx context.Context, t *testctx.T, c *dagger.Client, program *dagger.File, re any) {
 	name, err := program.Name(ctx)
 	require.NoError(t, err)
