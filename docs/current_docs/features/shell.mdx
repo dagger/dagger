@@ -13,9 +13,57 @@ Dagger Shell enables you to compose pipelines on the fly, by chaining together c
 
 Here's an example of Dagger Shell in action:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+container
+  | from alpine
+  | with-exec apk add curl
+  | with-exec -- curl -L https://dagger.io
+  | stdout
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+container | from alpine | with-exec apk add curl | with-exec -- curl -L https://dagger.io | stdout
+```
+</TabItem>
+</Tabs>
+
 ![Dagger Shell](/img/current_docs/features/shell-curl.gif)
 
-Here is another, more complex example:
+Here's another, more complex example:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+container \
+  | from cgr.dev/chainguard/wolfi-base \
+  | with-exec apk add go \
+  | with-directory /src https://github.com/golang/example#master \
+  | with-workdir /src/hello \
+  | with-exec -- go build -o hello . \
+  | file ./hello \
+  | export ./hello-from-dagger
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+container \
+  | from cgr.dev/chainguard/wolfi-base \
+  | with-exec apk add go \
+  | with-directory /src https://github.com/golang/example#master \
+  | with-workdir /src/hello \
+  | with-exec -- go build -o hello . \
+  | file ./hello \
+  | export ./hello-from-dagger
+```
+</TabItem>
+</Tabs>
 
 ![Dagger Shell](/img/current_docs/features/shell-build.gif)
 
@@ -92,6 +140,31 @@ Filesystem paths are relative to the working directory inside Dagger Shell
 - When the working directory is local, any directory or file paths that you pass to Dagger Functions will be interpreted relative to that directory on the host.
 - When the working directory is remote, any directory or file paths will come from that remote directory.
   - In this latter case, to use files and directories from the host system, they must be referred to using the `host` function.
+
+Here's an example:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+github.com/dagger/dagger/modules/wolfi@v0.16.2 \
+  | container \
+  | with-file /README.md $(host | file ./README.md) \
+  | with-exec cat /README.md \
+  | stdout
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+github.com/dagger/dagger/modules/wolfi@v0.16.2 \
+  | container \
+  | with-file /README.md $(host | file ./README.md) \
+  | with-exec cat /README.md \
+  | stdout
+```
+</TabItem>
+</Tabs>
 
 ![Dagger Shell host path](/img/current_docs/features/shell-host-path.gif)
 
