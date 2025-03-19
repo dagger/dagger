@@ -308,6 +308,7 @@ func (JavaSuite) TestEnum(_ context.Context, t *testctx.T) {
 			Stdout(ctx)
 
 		require.Error(t, err)
+		requireErrOut(t, err, "value should be one of LOW,MEDIUM,HIGH")
 	})
 
 	t.Run("can return an enum value", func(ctx context.Context, t *testctx.T) {
@@ -325,7 +326,18 @@ func (JavaSuite) TestEnum(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "enums").
-			With(daggerCall("get-severities")).
+			With(daggerCall("get-severities-list")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "LOW\nMEDIUM\nHIGH\n", out)
+	})
+
+	t.Run("can return an array of enum values", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "enums").
+			With(daggerCall("get-severities-array")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -336,11 +348,22 @@ func (JavaSuite) TestEnum(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "enums").
-			With(daggerCall("to-string", "--severities=MEDIUM,LOW")).
+			With(daggerCall("list-to-string", "--severities=MEDIUM,LOW")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "MEDIUM,LOW,", out)
+		require.Equal(t, "MEDIUM,LOW", out)
+	})
+
+	t.Run("can read array of enum values", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := javaModule(t, c, "enums").
+			With(daggerCall("array-to-string", "--severities=HIGH,LOW")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "HIGH,LOW", out)
 	})
 }
 

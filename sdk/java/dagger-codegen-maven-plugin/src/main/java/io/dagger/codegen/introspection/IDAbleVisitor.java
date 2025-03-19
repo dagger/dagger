@@ -33,6 +33,12 @@ public class IDAbleVisitor extends AbstractMultiTypesVisitor {
                         JsonbBuilder.class,
                         JsonbConfig.class,
                         ClassName.bestGuess("io.dagger.client.FieldsStrategy"))
+                    .beginControlFlow("if (object instanceof $T<?>)", Enum.class)
+                    .addStatement(
+                        "return $T.from(jsonb.toJson((($T<?>) object).name()))",
+                        ClassName.bestGuess("JSON"),
+                        Enum.class)
+                    .endControlFlow()
                     .addStatement(
                         "return $T.from(jsonb.toJson(object))", ClassName.bestGuess("JSON"))
                     .endControlFlow()

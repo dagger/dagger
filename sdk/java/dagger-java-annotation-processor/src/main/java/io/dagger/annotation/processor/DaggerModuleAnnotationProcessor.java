@@ -249,14 +249,12 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
               boolean isOptional = false;
               var optionalType =
                   processingEnv.getElementUtils().getTypeElement(Optional.class.getName()).asType();
-              if (tm instanceof DeclaredType dt) {
-                if (processingEnv
-                    .getTypeUtils()
-                    .isSameType(dt.asElement().asType(), optionalType)) {
-                  isOptional = true;
-                  tm = dt.getTypeArguments().get(0);
-                  tk = tm.getKind();
-                }
+              if (tm instanceof DeclaredType dt
+                  && processingEnv.getTypeUtils().isSameType(dt.asElement().asType(), optionalType)
+                  && !dt.getTypeArguments().isEmpty()) {
+                isOptional = true;
+                tm = dt.getTypeArguments().get(0);
+                tk = tm.getKind();
               }
 
               Default defaultAnnotation = param.getAnnotation(Default.class);
@@ -357,7 +355,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
         for (var fieldInfo : objectInfo.fields()) {
           rm.addCode("\n            .withField(")
               .addCode("$S, ", fieldInfo.name())
-              .addCode(typeDef(moduleInfo.enumInfos().keySet(), fieldInfo.type()));
+              .addCode(DaggerType.of(fieldInfo.type()).toDaggerTypeDef());
           if (isNotBlank(fieldInfo.description())) {
             rm.addCode(", new $T.WithFieldArguments()", io.dagger.client.TypeDef.class)
                 .addCode(".withDescription($S)", fieldInfo.description());
@@ -527,7 +525,11 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
 
   private static CodeBlock functionInvoke(ObjectInfo objectInfo, FunctionInfo fnInfo) {
     CodeBlock.Builder code = CodeBlock.builder();
-    CodeBlock fnReturnType = typeName(fnInfo.returnType());
+    CodeBlock fnReturnType = DaggerType.of(fnInfo.returnType()).toJavaType();
+
+    CodeBlock startAsList = CodeBlock.of("$T.asList(", Arrays.class);
+    CodeBlock endAsList = CodeBlock.of(")");
+    CodeBlock empty = CodeBlock.of("");
 
     ClassName objName = ClassName.bestGuess(objectInfo.qualifiedName());
     if (objectInfo.constructor().isPresent() && !fnInfo.name().equals("<init>")) {
@@ -541,7 +543,9 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     }
 
     for (var parameterInfo : fnInfo.parameters()) {
-      CodeBlock paramType = typeName(parameterInfo.type());
+      DaggerType type = DaggerType.of(parameterInfo.type());
+      CodeBlock paramType = type.toJavaType();
+      CodeBlock classType = type.toClass();
 
       String defaultValue = "null";
       TypeKind tk = getTypeKind(parameterInfo.type().kindName());
@@ -561,14 +565,12 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
           .beginControlFlow("if (inputArgs.get($S) != null)", parameterInfo.name())
           .addStatement(
               CodeBlock.builder()
-                  .add(
-                      "$L = $T.fromJSON(inputArgs.get($S), ",
-                      parameterInfo.name(),
-                      JsonConverter.class,
-                      parameterInfo.name())
-                  .add(paramType)
-                  .add(".class")
+                  .add("$L = ", parameterInfo.name())
+                  .add(type.isList() ? startAsList : empty)
+                  .add("$T.fromJSON(inputArgs.get($S), ", JsonConverter.class, parameterInfo.name())
+                  .add(classType)
                   .add(")")
+                  .add(type.isList() ? endAsList : empty)
                   .build())
           .endControlFlow();
 
@@ -630,15 +632,15 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
             .add("\n                    ")
             .add(
                 isConstructor
-                    ? typeDef(enums, tiFromName(objectInfo.qualifiedName()))
-                    : typeDef(enums, fnInfo.returnType()))
+                    ? DaggerType.of(objectInfo.qualifiedName()).toDaggerTypeDef()
+                    : DaggerType.of(fnInfo.returnType()).toDaggerTypeDef())
             .add(")");
     if (isNotBlank(fnInfo.description())) {
       code.add("\n                    .withDescription($S)", fnInfo.description());
     }
     for (var parameterInfo : fnInfo.parameters()) {
       code.add("\n                    .withArg($S, ", parameterInfo.name())
-          .add(typeDef(enums, parameterInfo.type()));
+          .add(DaggerType.of(parameterInfo.type()).toDaggerTypeDef());
       if (parameterInfo.optional()) {
         code.add(".withOptional(true)");
       }
@@ -684,6 +686,8 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
       return true;
     }
 
+    DaggerType.setKnownEnums(moduleInfo.enumInfos().keySet());
+
     try {
       JavaFile f = generate(moduleInfo);
 
@@ -693,157 +697,6 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     }
 
     return true;
-  }
-
-  static CodeBlock typeDef(Set<String> enums, TypeInfo ti) throws ClassNotFoundException {
-    String name = ti.typeName();
-    if (enums.contains(name)) {
-      return CodeBlock.of(
-          "$T.dag().typeDef().withEnum($S)",
-          Dagger.class,
-          name.substring(name.lastIndexOf('.') + 1));
-    }
-    if (name.equals("int")) {
-      return CodeBlock.of(
-          "$T.dag().typeDef().withKind($T.$L)",
-          Dagger.class,
-          TypeDefKind.class,
-          TypeDefKind.INTEGER_KIND.name());
-    } else if (name.equals("boolean")) {
-      return CodeBlock.of(
-          "$T.dag().typeDef().withKind($T.$L)",
-          Dagger.class,
-          TypeDefKind.class,
-          TypeDefKind.BOOLEAN_KIND.name());
-    } else if (name.equals("void")) {
-      return CodeBlock.of(
-          "$T.dag().typeDef().withKind($T.$L).withOptional(true)",
-          Dagger.class,
-          TypeDefKind.class,
-          TypeDefKind.VOID_KIND.name());
-    } else if (name.startsWith("java.util.List<")) {
-      name = name.substring("java.util.List<".length(), name.length() - 1);
-      return CodeBlock.of(
-          "$T.dag().typeDef().withListOf($L)",
-          Dagger.class,
-          typeDef(enums, tiFromName(name)).toString());
-    } else if (!ti.kindName().isEmpty() && TypeKind.valueOf(ti.kindName()) == TypeKind.ARRAY) {
-      // in that case the type name is com.example.Type[]
-      // so we remove the [] to get the underlying type
-      name = name.substring(0, name.length() - 2);
-      return CodeBlock.of(
-          "$T.dag().typeDef().withListOf($L)",
-          Dagger.class,
-          typeDef(enums, tiFromName(name)).toString());
-    } else if (name.startsWith("java.util.Optional<")) {
-      name = name.substring("java.util.Optional<".length(), name.length() - 1);
-      return typeName(tiFromName(name));
-    }
-
-    try {
-      var clazz = Class.forName(name);
-      if (clazz.isEnum()) {
-        String typeName = name.substring(name.lastIndexOf('.') + 1);
-        return CodeBlock.of("$T.dag().typeDef().withEnum($S)", Dagger.class, typeName);
-      } else if (Scalar.class.isAssignableFrom(clazz)) {
-        String typeName = name.substring(name.lastIndexOf('.') + 1);
-        return CodeBlock.of("$T.dag().typeDef().withScalar($S)", Dagger.class, typeName);
-      }
-    } catch (ClassNotFoundException e) {
-      // we are ignoring here any ClassNotFoundException
-      // not ideal but as we only use the clazz to check if it's an enum that should be good
-    }
-
-    try {
-      if (name.startsWith("java.lang.")) {
-        name = name.substring(name.lastIndexOf('.') + 1);
-      }
-      var kindName = (name + "_kind").toUpperCase();
-      var kind = TypeDefKind.valueOf(kindName);
-      return CodeBlock.of(
-          "$T.dag().typeDef().withKind($T.$L)", Dagger.class, TypeDefKind.class, kind.name());
-    } catch (IllegalArgumentException e) {
-      String typeName = name.substring(name.lastIndexOf('.') + 1);
-      return CodeBlock.of("$T.dag().typeDef().withObject($S)", Dagger.class, typeName);
-    }
-  }
-
-  static TypeInfo tiFromName(String name) {
-    if (name.equals("boolean")) {
-      return new TypeInfo(name, TypeKind.BOOLEAN.name());
-    } else if (name.equals("byte")) {
-      return new TypeInfo(name, TypeKind.BYTE.name());
-    } else if (name.equals("short")) {
-      return new TypeInfo(name, TypeKind.SHORT.name());
-    } else if (name.equals("int")) {
-      return new TypeInfo(name, TypeKind.INT.name());
-    } else if (name.equals("long")) {
-      return new TypeInfo(name, TypeKind.LONG.name());
-    } else if (name.equals("char")) {
-      return new TypeInfo(name, TypeKind.CHAR.name());
-    } else if (name.equals("float")) {
-      return new TypeInfo(name, TypeKind.FLOAT.name());
-    } else if (name.equals("double")) {
-      return new TypeInfo(name, TypeKind.DOUBLE.name());
-    } else if (name.equals("void")) {
-      return new TypeInfo(name, TypeKind.VOID.name());
-    } else {
-      return new TypeInfo(name, "");
-    }
-  }
-
-  static CodeBlock typeName(TypeInfo ti) {
-    try {
-      TypeKind tk = TypeKind.valueOf(ti.kindName());
-      if (tk == TypeKind.BOOLEAN) {
-        return CodeBlock.of("$T", boolean.class);
-      } else if (tk == TypeKind.BYTE) {
-        return CodeBlock.of("$T", byte.class);
-      } else if (tk == TypeKind.SHORT) {
-        return CodeBlock.of("$T", short.class);
-      } else if (tk == TypeKind.INT) {
-        return CodeBlock.of("$T", int.class);
-      } else if (tk == TypeKind.LONG) {
-        return CodeBlock.of("$T", long.class);
-      } else if (tk == TypeKind.CHAR) {
-        return CodeBlock.of("$T", char.class);
-      } else if (tk == TypeKind.FLOAT) {
-        return CodeBlock.of("$T", float.class);
-      } else if (tk == TypeKind.DOUBLE) {
-        return CodeBlock.of("$T", double.class);
-      } else if (tk == TypeKind.VOID) {
-        return CodeBlock.of("$T", void.class);
-      } else if (tk == TypeKind.ARRAY) {
-        return CodeBlock.builder()
-            .add(typeName(tiFromName(ti.typeName().substring(0, ti.typeName().length() - 2))))
-            .add("[]")
-            .build();
-      }
-    } catch (IllegalArgumentException ignored) {
-    }
-    String name = ti.typeName();
-    if (name.startsWith("java.util.List<")) {
-      return CodeBlock.of("$T", List.class);
-    }
-    if (name.startsWith("java.util.Optional<")) {
-      return CodeBlock.of("$T", Optional.class);
-    }
-    try {
-      Class<?> clazz = Class.forName(name);
-      return CodeBlock.of("$T", clazz);
-    } catch (ClassNotFoundException e) {
-      return CodeBlock.of(
-          "$T",
-          ClassName.get(
-              name.substring(0, name.lastIndexOf(".")), name.substring(name.lastIndexOf(".") + 1)));
-    }
-  }
-
-  private String trimDoc(String doc) {
-    if (doc == null) {
-      return null;
-    }
-    return String.join("\n", doc.lines().map(String::trim).toList());
   }
 
   private static Boolean isNotBlank(String str) {

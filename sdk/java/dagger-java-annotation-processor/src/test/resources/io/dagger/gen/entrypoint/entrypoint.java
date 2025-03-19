@@ -17,13 +17,14 @@ import io.dagger.client.Platform;
 import io.dagger.client.TypeDef;
 import io.dagger.client.TypeDefKind;
 import io.dagger.java.module.DaggerJava;
-import io.dagger.java.module.DaggerJava.Severity;
 import java.lang.Class;
 import java.lang.Error;
 import java.lang.Exception;
+import java.lang.Integer;
 import java.lang.InterruptedException;
 import java.lang.String;
 import java.lang.reflect.InvocationTargetException;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -99,10 +100,10 @@ public class Entrypoint {
                         .withArg("value", dag().typeDef().withKind(TypeDefKind.INTEGER_KIND)))
                 .withFunction(
                     dag().function("doThings",
-                        dag().typeDef().withListOf(io.dagger.client.Dagger.dag().typeDef().withKind(io.dagger.client.TypeDefKind.INTEGER_KIND)))
-                        .withArg("stringArray", dag().typeDef().withListOf(io.dagger.client.Dagger.dag().typeDef().withKind(io.dagger.client.TypeDefKind.STRING_KIND)))
-                        .withArg("ints", dag().typeDef().withListOf(io.dagger.client.Dagger.dag().typeDef().withKind(io.dagger.client.TypeDefKind.INTEGER_KIND)))
-                        .withArg("containers", dag().typeDef().withListOf(io.dagger.client.Dagger.dag().typeDef().withObject("Container"))))
+                        dag().typeDef().withListOf(dag().typeDef().withKind(TypeDefKind.INTEGER_KIND)))
+                        .withArg("stringArray", dag().typeDef().withListOf(dag().typeDef().withKind(TypeDefKind.STRING_KIND)))
+                        .withArg("ints", dag().typeDef().withListOf(dag().typeDef().withKind(TypeDefKind.INTEGER_KIND)))
+                        .withArg("containers", dag().typeDef().withListOf(dag().typeDef().withObject("Container"))))
                 .withFunction(
                     dag().function("nonNullableNoDefault",
                         dag().typeDef().withKind(TypeDefKind.STRING_KIND))
@@ -210,14 +211,14 @@ public class Entrypoint {
           stringArray = JsonConverter.fromJSON(inputArgs.get("stringArray"), String[].class);
         }
         Objects.requireNonNull(stringArray, "stringArray must not be null");
-        List ints = null;
+        List<Integer> ints = null;
         if (inputArgs.get("ints") != null) {
-          ints = JsonConverter.fromJSON(inputArgs.get("ints"), List.class);
+          ints = Arrays.asList(JsonConverter.fromJSON(inputArgs.get("ints"), Integer[].class));
         }
         Objects.requireNonNull(ints, "ints must not be null");
-        List containers = null;
+        List<Container> containers = null;
         if (inputArgs.get("containers") != null) {
-          containers = JsonConverter.fromJSON(inputArgs.get("containers"), List.class);
+          containers = Arrays.asList(JsonConverter.fromJSON(inputArgs.get("containers"), Container[].class));
         }
         Objects.requireNonNull(containers, "containers must not be null");
         int[] res = obj.doThings(stringArray, ints, containers);
@@ -293,9 +294,9 @@ public class Entrypoint {
       } else if (fnName.equals("printSeverity")) {
         Class clazz = Class.forName("io.dagger.java.module.DaggerJava");
         DaggerJava obj = (DaggerJava) JsonConverter.fromJSON(parentJson, clazz);
-        Severity severity = null;
+        DaggerJava.Severity severity = null;
         if (inputArgs.get("severity") != null) {
-          severity = JsonConverter.fromJSON(inputArgs.get("severity"), Severity.class);
+          severity = JsonConverter.fromJSON(inputArgs.get("severity"), DaggerJava.Severity.class);
         }
         Objects.requireNonNull(severity, "severity must not be null");
         String res = obj.printSeverity(severity);
