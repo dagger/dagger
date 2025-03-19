@@ -152,7 +152,6 @@ func (h *Daggerverse) BumpDaggerVersion(
 		WithExposedPort(1234).
 		WithDefaultArgs([]string{
 			"--addr", "tcp://0.0.0.0:1234",
-			"--addr", "unix:///var/run/dagger/engine.sock",
 			"--network-cidr", "10.12.34.0/24",
 		}).AsService(dagger.ContainerAsServiceOpts{InsecureRootCapabilities: true, UseEntrypoint: true})
 
