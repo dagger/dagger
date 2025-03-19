@@ -1645,7 +1645,8 @@ func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui
 
 func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, span *dagui.Span, depth int, prefix string) {
 	for _, span := range span.Errors().Order {
-		if span.Status.Description == "" {
+		errText := span.Status.Description
+		if errText == "" {
 			continue
 		}
 
@@ -1654,16 +1655,12 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, span *dag
 		indentWidth := depth * 2 // Assuming indent is 2 spaces per depth level
 		markerWidth := 2         // "! " prefix
 		availableWidth := fe.window.Width - prefixWidth - indentWidth - markerWidth
-
-		if availableWidth <= 0 {
-			availableWidth = 20 // Minimum width to prevent issues
+		if availableWidth > 0 {
+			errText = cellbuf.Wrap(errText, availableWidth, "")
 		}
 
-		// Use lipgloss.Wrap to handle word wrapping
-		wrappedText := cellbuf.Wrap(span.Status.Description, availableWidth, "")
-
 		// Print each wrapped line with proper indentation
-		for _, line := range strings.Split(wrappedText, "\n") {
+		for _, line := range strings.Split(errText, "\n") {
 			if line == "" {
 				continue
 			}
