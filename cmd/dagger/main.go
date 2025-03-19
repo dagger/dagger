@@ -123,7 +123,7 @@ func init() {
 
 var rootCmd = &cobra.Command{
 	Use:                   "dagger [options] [file...]",
-	Short:                 "A tool to run CI/CD pipelines in containers, anywhere",
+	Short:                 "A tool to run composable workflows in containers",
 	SilenceErrors:         true, // handled in func main() instead
 	DisableFlagsInUseLine: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {

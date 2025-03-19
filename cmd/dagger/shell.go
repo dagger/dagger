@@ -36,7 +36,7 @@ var (
 )
 
 func shellAddFlags(cmd *cobra.Command) {
-	cmd.Flags().StringVarP(&shellCode, "code", "c", "", "Execute shell script passed in as string")
+	cmd.Flags().StringVarP(&shellCode, "command", "c", "", "Execute a dagger shell command")
 	cmd.Flags().BoolVarP(&shellNoLoadModule, "no-mod", "n", false, "Don't load module during shell startup (mutually exclusive with --mod)")
 	cmd.MarkFlagsMutuallyExclusive("mod", "no-mod")
 }
