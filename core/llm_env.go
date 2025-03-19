@@ -354,7 +354,9 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) []LLMTool {
 						"description": "Variable name to save the object as",
 					},
 				},
-				"required": []string{"name"},
+				"required":             []string{"name"},
+				"strict":               true,
+				"additionalProperties": false,
 			},
 			Call: env.callSave,
 		},
@@ -362,8 +364,11 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) []LLMTool {
 			Name:        "_undo",
 			Description: "Roll back the last action",
 			Schema: map[string]any{
-				"type":       "object",
-				"properties": map[string]any{},
+				"type":                 "object",
+				"properties":           map[string]any{},
+				"strict":               true,
+				"required":             []string{},
+				"additionalProperties": false,
 			},
 			Call: env.callUndo,
 		},
@@ -395,8 +400,11 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) []LLMTool {
 			Name:        "_scratch",
 			Description: "Clear the current object selection",
 			Schema: map[string]any{
-				"type":       "object",
-				"properties": map[string]any{},
+				"type":                 "object",
+				"properties":           map[string]any{},
+				"strict":               true,
+				"required":             []string{},
+				"additionalProperties": false,
 			},
 			Call: func(ctx context.Context, _ any) (any, error) {
 				env.history = append(env.history, nil)
@@ -414,8 +422,11 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) []LLMTool {
 			Name:        "_select_" + name,
 			Description: desc,
 			Schema: map[string]any{
-				"type":       "object",
-				"properties": map[string]any{},
+				"type":                 "object",
+				"properties":           map[string]any{},
+				"strict":               true,
+				"required":             []string{},
+				"additionalProperties": false,
 			},
 			Call: func(ctx context.Context, _ any) (any, error) {
 				env.With(val)
