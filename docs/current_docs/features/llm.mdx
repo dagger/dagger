@@ -1,0 +1,97 @@
+---
+slug: /features/llm
+displayed_sidebar: current
+title: LLM
+---
+
+# LLM Support
+
+Dagger provides native support for building AI agents with features like reproducible execution, end-to-end observability, multi-model support, and more.
+
+## Architecture
+
+Dagger's module system allows implementing agentic features as modular components that you can integrate into your application, or use individually.
+
+Each module has the following features:
+
+- **Containerized Execution**: Runs in containers for maximum portability and reproducibility
+- **Flexible Interfaces**: Can be run from the command-line or programmatically via an API
+- **Cross-Language Support**: Generated bindings for Go, Python, TypeScript, PHP (experimental), Java (experimental), and Rust (experimental)
+- **Complete Observability**: End-to-end tracing of prompts, tool calls, and even low-level system operations
+- **Extensible Design**: Add your own modules in any language
+- **Platform Independence**: No infrastructure lock-in, runs on any hosting provider that can run containers
+
+## Supported LLM Providers
+
+Dagger uses standard environment variables to route LLM requests:
+
+### Anthropic
+- `ANTHROPIC_API_KEY`: required
+- `ANTHROPIC_MODEL`: if unset, defaults to `"claude-3-5-sonnet-latest"`
+- [Model reference](https://docs.anthropic.com/en/docs/about-claude/models/all-models)
+
+### OpenAI
+- `OPENAI_API_KEY`: required
+- `OPENAI_MODEL`: if unset, defaults to `"gpt-4o"`
+- [Model reference](https://platform.openai.com/docs/models)
+
+### Google (Gemini)
+- `GOOGLE_API_KEY`: required
+- `GOOGLE_MODEL`: if unset, defaults to `"gemini-1.5-pro"`
+- [Model reference](https://ai.google.dev/models/gemini)
+
+### Ollama
+- `OLLAMA_HOST`: if unset, defaults to `"http://localhost:11434"`
+- `OLLAMA_MODEL`: if unset, defaults to `"llama3"`
+- [Model reference](https://ollama.com/library)
+
+## Advanced Usage
+
+### Tool Calling
+
+Dagger supports tool calling, allowing LLMs to interact with your application:
+
+```go
+func (m *MyModule) WithTools(ctx context.Context) *MyModule {
+    // Define tools the LLM can use
+    return m
+}
+```
+
+### Workspace Management
+
+Provide a workspace for the LLM to operate in:
+
+```go
+func (m *MyModule) WithWorkspace(ctx context.Context, dir *Directory) *MyModule {
+    // Give the LLM access to files
+    return m
+}
+```
+
+### Multi-Agent Systems
+
+Create systems with multiple specialized agents:
+
+```go
+func (m *MultiAgentSystem) WithAgents(ctx context.Context, agents ...*Agent) *MultiAgentSystem {
+    // Combine multiple agents
+    return m
+}
+```
+
+## Design Patterns
+
+Common patterns for building effective AI agents with Dagger:
+
+1. **Tool-Using Agents**: Equip agents with tools to interact with external systems
+2. **Multi-Agent Systems**: Coordinate multiple specialized agents to solve complex problems
+3. **Human-in-the-Loop**: Include human feedback and oversight in agent workflows
+4. **Workspace-Based**: Give agents a workspace to read and write files
+
+## Community Resources
+
+- [Join our Discord](https://discord.gg/dagger-io) for discussions and support
+- [Twitter thread](https://x.com/solomonstre/status/1891205257516003344) with examples and demos
+- [GitHub repository](https://github.com/dagger/agents) with example agents
+- [Examples page](/examples) with a collection of examples including AI agents

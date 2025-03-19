@@ -1,0 +1,98 @@
+---
+slug: /quickstart/build-ai-agent
+displayed_sidebar: current
+title: Build AI Agent
+---
+
+# Build AI Agent
+
+This guide will help you build an AI agent using Dagger.
+
+## Prerequisites
+
+- Dagger CLI installed
+- An API key for one of the supported LLM providers (Anthropic, OpenAI, etc.)
+
+## Steps
+
+### 1. Install Dagger with LLM support
+
+```console
+curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.17.0-llm.10 BIN_DIR=/usr/local/bin sh
+```
+
+Verify your installation:
+
+```console
+dagger -c version
+```
+
+### 2. Configure LLM endpoints
+
+Dagger uses standard environment variables to route LLM requests. Set up one of the following providers:
+
+**Anthropic:**
+```bash
+export ANTHROPIC_API_KEY="your-api-key"
+export ANTHROPIC_MODEL="claude-3-5-sonnet-latest" # Optional, this is the default
+```
+
+**OpenAI:**
+```bash
+export OPENAI_API_KEY="your-api-key"
+export OPENAI_MODEL="gpt-4o" # Optional, defaults to gpt-4o
+```
+
+### 3. Initialize your Dagger project
+
+```bash
+dagger init
+```
+
+### 4. Create a simple agent module
+
+Create a file named `main.go` with this simple agent implementation:
+
+```go
+package main
+
+import (
+	"context"
+)
+
+type Llm struct{}
+
+func (m *Llm) WithPrompt(ctx context.Context, prompt string) *Llm {
+	return m
+}
+
+func (m *Llm) Ask(ctx context.Context, question string) (string, error) {
+	// This will be handled by Dagger's LLM integration
+	return "", nil
+}
+
+func New() *Llm {
+	return &Llm{}
+}
+```
+
+### 5. Run your agent
+
+```bash
+dagger call ask --question "What is Dagger?"
+```
+
+## Example Projects
+
+For inspiration, check out these example agent projects:
+
+- [toy-programmer](https://github.com/shykes/toy-programmer): A simple programmer micro-agent
+- [melvin](https://github.com/dagger/agents/tree/main/melvin): An experimental open-source coding agent
+- [multiagent](https://github.com/kpenfound/agents/tree/main/multiagent-demo): A demo using multiple LLMs
+
+## Next Steps
+
+- [Convert an existing application into an agent](/quickstart/convert-into-agent)
+- [Learn more about Dagger's LLM support](/features/llm)
+- [Explore more AI agent examples](/examples#ai-agent-examples)
+- [Join our Discord](https://discord.gg/dagger-io) for help and examples
