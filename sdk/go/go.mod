@@ -2,7 +2,7 @@ module dagger.io/dagger
 
 go 1.23.0
 
-toolchain go1.23.6
+toolchain go1.24.1
 
 retract (
 	// retract SDK releases with known issues
@@ -12,7 +12,7 @@ retract (
 )
 
 require (
-	github.com/99designs/gqlgen v0.17.66
+	github.com/99designs/gqlgen v0.17.68
 	github.com/Khan/genqlient v0.8.0
 	github.com/adrg/xdg v0.5.3
 	github.com/mitchellh/go-homedir v1.1.0
