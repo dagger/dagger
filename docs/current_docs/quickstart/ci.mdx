@@ -1,0 +1,436 @@
+---
+slug: /quickstart/ci
+displayed_sidebar: current
+title: Modernize CI
+---
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+import BrowserOnly from "@docusaurus/BrowserOnly";
+import PartialInstallCli from '../partials/_install-cli.mdx';
+
+# Modernize CI
+
+This guide will help you modernize your CI pipeline using Dagger. Dagger is a programmable tool that lets you replace your software project's artisanal scripts with a modern API and cross-language scripting engine.
+
+## What is Dagger for CI?
+
+Dagger helps you create a consistent, reliable development and testing environment on your local host and ensure that everything your CI can do, your local environment can do too.
+
+Dagger provides:
+- The Dagger API, which lets you use core primitives to stitch together powerful pipelines out of containers, artifacts, network services, and secrets – all in type-safe Go, Python, TypeScript, PHP, or Java.
+- Dagger Functions, which let you encapsulate code into software components which can be loaded into any Dagger Engine, and called by other Dagger Functions.
+- The Dagger CLI, which lets you create, inspect and invoke Dagger Functions from the command line.
+- Dagger Cloud, which lets you visualize your Dagger pipelines, streamline them, and debug errors.
+- The Daggerverse, which lets you search and consume publicly available Dagger Functions.
+
+## Prerequisites
+
+Before beginning, ensure that:
+- You have an existing CI/CD pipeline you want to modernize
+- You have [Git](https://git-scm.com/downloads) and a container runtime installed on your system and running. This can be [Docker](https://docs.docker.com/engine/install/), but you can also use Podman, nerdctl, or other Docker-like systems.
+- You have a GitHub account (optional, only if configuring Dagger Cloud)
+
+## Install the Dagger CLI
+
+<PartialInstallCli />
+
+## Daggerize Your Application
+
+The best way to understand how Dagger works is by creating a delivery pipeline using Dagger Functions - a process we call "Daggerizing".
+
+:::tip DAGGERIZING
+1. Choose a Dagger SDK and bootstrap a new Dagger module for your application's pipeline with `dagger init`.
+2. Construct the pipeline by creating and combining one or more Dagger Functions to produce the desired results. Your Dagger Functions can use the core Dagger API and/or call Dagger Functions from third-party Daggerverse modules.
+3. Use `dagger call` to run and test your pipeline locally. Once you're satisfied, transfer your Dagger module and your `dagger call` commands to your CI configuration.
+:::
+
+### Get an Example Application
+
+For this quickstart, you can use a skeleton Vue framework application that returns a "Hello from Dagger!" welcome page:
+
+```shell
+git clone https://github.com/dagger/hello-dagger
+cd hello-dagger
+```
+
+### Visualize in Dagger Cloud (optional)
+
+Dagger Cloud provides a visual interface to help you understand and debug your Dagger pipelines. To use it:
+
+1. Sign up for a free Dagger Cloud account at https://dagger.io/
+2. Configure the Dagger CLI to use your Dagger Cloud account:
+   ```shell
+   dagger cloud login
+   ```
+
+### Construct a Pipeline Using Dagger Functions
+
+Dagger Functions are regular code, written in Go, Python, TypeScript, PHP, or Java using the corresponding Dagger SDK. They consist of a series of method/function calls, such as "pull a container image", "copy a file", "forward a TCP port", and so on, which can be chained together.
+
+<Tabs groupId="language">
+<TabItem value="typescript" label="TypeScript">
+
+```shell
+dagger init --name=ci --sdk=typescript
+```
+
+This creates a new Dagger module with a TypeScript SDK. Now, edit the `src/index.ts` file to define your pipeline:
+
+```typescript
+import { dag, Container, Directory } from "@dagger.io/dagger";
+
+export default async function test(
+  source: Directory = dag.currentDirectory()
+): Promise<boolean> {
+  // Get Node image
+  const node = dag
+    .container()
+    .from("node:18")
+    .withDirectory("/src", source)
+    .withWorkdir("/src")
+    .withExec(["npm", "install"])
+    .withExec(["npm", "run", "test"]);
+
+  // Get test result
+  const result = await node.exitCode();
+  return result === 0;
+}
+
+export async function build(
+  source: Directory = dag.currentDirectory()
+): Promise<Directory> {
+  // Get Node image
+  const node = dag
+    .container()
+    .from("node:18")
+    .withDirectory("/src", source)
+    .withWorkdir("/src")
+    .withExec(["npm", "install"])
+    .withExec(["npm", "run", "build"]);
+
+  // Return build output
+  return node.directory("./dist");
+}
+
+export async function publish(
+  source: Directory = dag.currentDirectory()
+): Promise<string> {
+  // Get build output
+  const dist = await build(source);
+
+  // Get nginx image
+  const nginx = dag
+    .container()
+    .from("nginx:alpine")
+    .withDirectory("/usr/share/nginx/html", dist);
+
+  // Publish to registry
+  const ref = await nginx.publish("ttl.sh/hello-dagger:1h");
+  return ref;
+}
+```
+
+</TabItem>
+<TabItem value="go" label="Go">
+
+```shell
+dagger init --name=ci --sdk=go
+```
+
+This creates a new Dagger module with a Go SDK. Now, edit the `main.go` file to define your pipeline:
+
+```go
+package main
+
+import (
+	"context"
+)
+
+type Ci struct{}
+
+// Test the application
+func (m *Ci) Test(ctx context.Context) (bool, error) {
+	// Get Node image
+	node := dag.Container().
+		From("node:18").
+		WithDirectory("/src", dag.CurrentDirectory()).
+		WithWorkdir("/src").
+		WithExec([]string{"npm", "install"}).
+		WithExec([]string{"npm", "run", "test"})
+
+	// Get test result
+	exitCode, err := node.ExitCode(ctx)
+	if err != nil {
+		return false, err
+	}
+	return exitCode == 0, nil
+}
+
+// Build the application
+func (m *Ci) Build(ctx context.Context) (*Directory, error) {
+	// Get Node image
+	node := dag.Container().
+		From("node:18").
+		WithDirectory("/src", dag.CurrentDirectory()).
+		WithWorkdir("/src").
+		WithExec([]string{"npm", "install"}).
+		WithExec([]string{"npm", "run", "build"})
+
+	// Return build output
+	return node.Directory("./dist"), nil
+}
+
+// Publish the application
+func (m *Ci) Publish(ctx context.Context) (string, error) {
+	// Get build output
+	dist, err := m.Build(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	// Get nginx image
+	nginx := dag.Container().
+		From("nginx:alpine").
+		WithDirectory("/usr/share/nginx/html", dist)
+
+	// Publish to registry
+	ref, err := nginx.Publish(ctx, "ttl.sh/hello-dagger:1h")
+	if err != nil {
+		return "", err
+	}
+	return ref, nil
+}
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```shell
+dagger init --name=ci --sdk=python
+```
+
+This creates a new Dagger module with a Python SDK. Now, edit the `src/main.py` file to define your pipeline:
+
+```python
+import dagger
+from dagger import dag, function, object_type
+
+@object_type
+class Ci:
+    @function
+    async def test(self) -> bool:
+        # Get Node image
+        node = dag.container().from_("node:18") \
+            .with_directory("/src", dag.current_directory()) \
+            .with_workdir("/src") \
+            .with_exec(["npm", "install"]) \
+            .with_exec(["npm", "run", "test"])
+
+        # Get test result
+        result = await node.exit_code()
+        return result == 0
+
+    @function
+    async def build(self) -> dagger.Directory:
+        # Get Node image
+        node = dag.container().from_("node:18") \
+            .with_directory("/src", dag.current_directory()) \
+            .with_workdir("/src") \
+            .with_exec(["npm", "install"]) \
+            .with_exec(["npm", "run", "build"])
+
+        # Return build output
+        return node.directory("./dist")
+
+    @function
+    async def publish(self) -> str:
+        # Get build output
+        dist = await self.build()
+
+        # Get nginx image
+        nginx = dag.container().from_("nginx:alpine") \
+            .with_directory("/usr/share/nginx/html", dist)
+
+        # Publish to registry
+        ref = await nginx.publish("ttl.sh/hello-dagger:1h")
+        return ref
+```
+
+</TabItem>
+</Tabs>
+
+### Run the Pipeline
+
+Now you can run your pipeline functions using the Dagger CLI:
+
+```shell
+# Run tests
+dagger call test
+
+# Build the application
+dagger call build --output ./build
+
+# Publish the application
+dagger call publish
+```
+
+### Simplify with Daggerverse Modules
+
+The Daggerverse contains pre-built modules that can simplify your pipeline. For example, you can use the `node` module:
+
+```shell
+dagger install github.com/dagger/dagger/sdk/node@main
+```
+
+Then update your pipeline to use it:
+
+<Tabs groupId="language">
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+import { dag, Directory } from "@dagger.io/dagger";
+import { Node } from "@dagger.io/dagger/sdk/node";
+
+export default async function test(
+  source: Directory = dag.currentDirectory()
+): Promise<boolean> {
+  const node = dag.node();
+  const result = await node.withSource(source).test();
+  return result;
+}
+
+export async function build(
+  source: Directory = dag.currentDirectory()
+): Promise<Directory> {
+  const node = dag.node();
+  const dist = await node.withSource(source).build();
+  return dist;
+}
+
+export async function publish(
+  source: Directory = dag.currentDirectory()
+): Promise<string> {
+  const dist = await build(source);
+  const ref = await dag.container()
+    .from("nginx:alpine")
+    .withDirectory("/usr/share/nginx/html", dist)
+    .publish("ttl.sh/hello-dagger:1h");
+  return ref;
+}
+```
+
+</TabItem>
+</Tabs>
+
+## Integrate with Your CI Provider
+
+Once your pipeline is working locally, you can integrate it with your CI provider. Here's how to do it with some popular CI systems:
+
+### GitHub Actions
+
+```yaml
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  dagger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dagger/dagger-for-github@v5
+      - name: Run tests
+        run: dagger call test
+      - name: Build
+        run: dagger call build --output ./build
+      - name: Publish (on main branch only)
+        if: github.ref == 'refs/heads/main'
+        run: dagger call publish
+```
+
+### GitLab CI
+
+```yaml
+image: alpine:latest
+
+stages:
+  - test
+  - build
+  - publish
+
+before_script:
+  - apk add curl
+  - curl -L https://dl.dagger.io/dagger/install.sh | sh
+  - mv bin/dagger /usr/local/bin
+  - dagger version
+
+test:
+  stage: test
+  script:
+    - dagger call test
+
+build:
+  stage: build
+  script:
+    - dagger call build --output ./build
+  artifacts:
+    paths:
+      - build/
+
+publish:
+  stage: publish
+  script:
+    - dagger call publish
+  only:
+    - main
+```
+
+### CircleCI
+
+```yaml
+version: 2.1
+
+jobs:
+  dagger:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Install Dagger
+          command: |
+            curl -L https://dl.dagger.io/dagger/install.sh | sh
+            mv bin/dagger /usr/local/bin
+      - run:
+          name: Run tests
+          command: dagger call test
+      - run:
+          name: Build
+          command: dagger call build --output ./build
+      - run:
+          name: Publish (on main branch only)
+          command: |
+            if [ "${CIRCLE_BRANCH}" == "main" ]; then
+              dagger call publish
+            fi
+
+workflows:
+  version: 2
+  build-and-test:
+    jobs:
+      - dagger
+```
+
+## Next Steps
+
+- [Create an MCP server](/quickstart/create-mcp-server)
+- [Build an AI agent](/quickstart/build-ai-agent)
+- [Convert an existing application into an agent](/quickstart/convert-into-agent)
+- [Learn about Dagger's LLM support](/features/llm)
+- [Explore more CI/CD examples](/examples#cicd-examples)

@@ -2,8 +2,25 @@ module.exports = {
   current: [
     {
       type: "doc",
-      label: "Introduction",
+      label: "Overview",
       id: "index",
+    },
+    {
+      type: "category",
+      label: "Quickstart",
+      collapsible: true,
+      collapsed: false,
+      items: [
+        "quickstart/build-ai-agent",
+        "quickstart/ci",
+        "quickstart/convert-into-agent",
+        "quickstart/create-mcp-server"
+      ],
+    },
+    {
+      type: "doc",
+      label: "Examples",
+      id: "examples",
     },
     {
       type: "category",
@@ -13,74 +30,16 @@ module.exports = {
         id: "features/index",
       },
       items: [
-        "features/programmable-pipelines",
-        "features/modules",
         "features/caching",
         "features/debugging",
-        "features/services",
+        "features/llm",
+        "features/modules",
+        "features/programmable-pipelines",
         "features/secrets",
-        "features/visualization",
+        "features/services",
+        "features/visualization"
       ],
-    },
-    {
-      type: "doc",
-      label: "Installation",
-      id: "install",
-    },
-    {
-      type: "doc",
-      label: "Dagger for AI Agents",
-      id: "agents",
-    },
-    {
-      type: "category",
-      label: "Dagger for CI",
-      items: [
-        {
-          type: "category",
-          label: "Quickstart",
-          link: {
-            type: "doc",
-            id: "ci/quickstart/index",
-          },
-          items: [
-            "ci/quickstart/cli",
-            "ci/quickstart/daggerize",
-            "ci/quickstart/env",
-            "ci/quickstart/test",
-            "ci/quickstart/build",
-            "ci/quickstart/publish",
-            "ci/quickstart/simplify",
-            "ci/quickstart/conclusion",
-          ],
-        },
-        {
-          type: "doc",
-          label: "Day 2",
-          id: "ci/adopting",
-        },
-        {
-          type: "category",
-          label: "Integrating with CI",
-          link: {
-            type: "doc",
-            id: "ci/integrations/ci",
-          },
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "ci/integrations/argo-workflows",
-            "ci/integrations/aws-codebuild",
-            "ci/integrations/azure-pipelines",
-            "ci/integrations/circleci",
-            "ci/integrations/github-actions",
-            "ci/integrations/gitlab",
-            "ci/integrations/jenkins",
-            "ci/integrations/tekton",
-          ],
-        },
-      ],
-    },
+    },    
     {
       type: "category",
       label: "Dagger API",
@@ -190,17 +149,25 @@ module.exports = {
       label: "Integrations",
       link: {
         type: "doc",
-        id: "ci/integrations/index",
+        id: "ci/integrations/ci",
       },
       collapsible: true,
       collapsed: true,
       items: [
+        "ci/integrations/argo-workflows",
+        "ci/integrations/aws-codebuild",
+        "ci/integrations/azure-pipelines",
+        "ci/integrations/circleci",
         "ci/integrations/github",
+        "ci/integrations/github-actions",
+        "ci/integrations/gitlab",
         "ci/integrations/google-cloud-run",
+        "ci/integrations/jenkins",
         "ci/integrations/kubernetes",
         "ci/integrations/nerdctl",
         "ci/integrations/openshift",
         "ci/integrations/podman",
+        "ci/integrations/tekton"
       ],
     },
     {

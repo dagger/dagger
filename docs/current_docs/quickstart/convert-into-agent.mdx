@@ -1,0 +1,97 @@
+---
+slug: /quickstart/convert-into-agent
+displayed_sidebar: current
+title: Convert Into Agent
+---
+
+# Convert Into Agent
+
+This guide will help you convert an existing application into an AI agent using Dagger.
+
+## Prerequisites
+
+- Existing application codebase
+- Dagger CLI installed (with LLM support)
+- API key for a supported LLM provider
+
+## Steps
+
+### 1. Analyze your application
+
+Identify components in your application that could benefit from AI capabilities:
+- User interfaces that could use natural language processing
+- Decision-making processes that could be enhanced with AI
+- Repetitive tasks that could be automated
+
+### 2. Add Dagger integration
+
+1. Initialize Dagger in your project:
+
+```bash
+dagger init
+```
+
+2. Create a Dagger module that wraps your application:
+
+```go
+package main
+
+import (
+	"context"
+)
+
+// YourApp represents your existing application
+type YourApp struct{}
+
+// Add agent capabilities to your app
+type Agent struct {
+	App *YourApp
+}
+
+func (a *Agent) WithApp(ctx context.Context, app *YourApp) *Agent {
+	return &Agent{App: app}
+}
+
+func (a *Agent) Process(ctx context.Context, input string) (string, error) {
+	// This will be handled by Dagger's LLM integration
+	return "", nil
+}
+
+func New() *Agent {
+	return &Agent{}
+}
+```
+
+### 3. Implement agent capabilities
+
+Add LLM integration to your module:
+
+```go
+func (a *Agent) Process(ctx context.Context, input string) (string, error) {
+	// Get the DAG from context
+	dag := ctx.Value("dag").(interface{})
+	
+	// Use the LLM to process the input
+	result := dag.Llm().
+		WithPrompt("You are an assistant for " + a.App.Name() + ".").
+		WithPrompt("Process the following input: " + input).
+		Ask(input)
+	
+	return result, nil
+}
+```
+
+## Real-World Examples
+
+Check out these examples of applications converted to agents:
+
+- [go-coder](https://github.com/kpenfound/agents/tree/main/go-coder): A Go programmer that receives assignments from GitHub issues
+- [cypress-test-writer](https://github.com/jpadams/cypress-test-writer): An agent that compares branches and creates Cypress tests
+- [dockerfile-optimizer](https://github.com/samalba/agents/tree/main/dockerfile-optimizer): An agent that analyzes Dockerfiles and suggests improvements
+
+## Next Steps
+
+- [Explore more agent examples](https://github.com/dagger/agents)
+- [Learn more about Dagger's LLM support](/features/llm)
+- [Browse our examples collection](/examples#ai-agent-examples)
+- [Join our Discord](https://discord.gg/dagger-io) for help and examples
