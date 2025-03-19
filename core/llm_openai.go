@@ -129,6 +129,9 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 		// call tools one at a time, or else chaining breaks
 	}
 
+	dbgEnc.Encode("---------------------------------------------")
+	dbgEnc.Encode(params)
+
 	if len(tools) > 0 {
 		// OpenAI is picky about this being set if no tools are specified
 		params.ParallelToolCalls = openai.Opt(false)
@@ -161,6 +164,8 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 	for stream.Next() {
 		res := stream.Current()
 		acc.AddChunk(res)
+
+		dbgEnc.Encode(res)
 
 		// Keep track of the token usage
 		//
