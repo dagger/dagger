@@ -58,30 +58,66 @@ func (h *Helm) Test(ctx context.Context) error {
 		return err
 	}
 
-	defaultEngine, err := kubectl.
+	engine, err := kubectl.
 		WithExec([]string{
 			"helm", "install", "--wait", "--create-namespace", "--namespace=dagger",
-			"--set=engine.image.ref=registry.dagger.io/engine:main", "dagger", "."}).
+			"--set=engine.image.ref=registry.dagger.io/engine:main",
+			"dagger", ".",
+		}).
 		Sync(ctx)
 	if err != nil {
 		return err
 	}
-
-	err = runDaggerQuery(ctx, "dagger-dagger-helm-engine", "DaemonSet", defaultEngine)
+	err = runTests(ctx, "dagger-dagger-helm-engine", "DaemonSet", 0, engine)
 	if err != nil {
 		return err
 	}
 
-	secondEngine, err := kubectl.
+	engineWithPort, err := kubectl.
 		WithExec([]string{
 			"helm", "install", "--wait", "--create-namespace", "--namespace=dagger",
-			"--set=engine.image.ref=registry.dagger.io/engine:main", "--set=engine.kind=StatefulSet", "dagger2", "."}).
+			"--set=engine.image.ref=registry.dagger.io/engine:main",
+			"--set=engine.port=5678",
+			"dagger2", ".",
+		}).
 		Sync(ctx)
 	if err != nil {
 		return err
 	}
+	err = runTests(ctx, "dagger2-dagger-helm-engine", "DaemonSet", 5678, engineWithPort)
+	if err != nil {
+		return err
+	}
 
-	err = runDaggerQuery(ctx, "dagger2-dagger-helm-engine", "StatefulSet", secondEngine)
+	engineStateful, err := kubectl.
+		WithExec([]string{
+			"helm", "install", "--wait", "--create-namespace", "--namespace=dagger",
+			"--set=engine.image.ref=registry.dagger.io/engine:main",
+			"--set=engine.kind=StatefulSet",
+			"dagger3", ".",
+		}).
+		Sync(ctx)
+	if err != nil {
+		return err
+	}
+	err = runTests(ctx, "dagger3-dagger-helm-engine", "StatefulSet", 0, engineStateful)
+	if err != nil {
+		return err
+	}
+
+	engineStatefulWithPort, err := kubectl.
+		WithExec([]string{
+			"helm", "install", "--wait", "--create-namespace", "--namespace=dagger",
+			"--set=engine.image.ref=registry.dagger.io/engine:main",
+			"--set=engine.kind=StatefulSet",
+			"--set=engine.port=5678",
+			"dagger4", ".",
+		}).
+		Sync(ctx)
+	if err != nil {
+		return err
+	}
+	err = runTests(ctx, "dagger4-dagger-helm-engine", "StatefulSet", 0, engineStatefulWithPort)
 	if err != nil {
 		return err
 	}
@@ -101,7 +137,7 @@ func (h *Helm) chart() *dagger.Container {
 		WithWorkdir("/dagger-helm")
 }
 
-func runDaggerQuery(ctx context.Context, engineName string, engineKind string, kubectl *dagger.Container) error {
+func runTests(ctx context.Context, engineName string, engineKind string, port int, kubectl *dagger.Container) error {
 	podName, err := kubectl.WithExec([]string{
 		"kubectl", "get", "pod",
 		"--selector=name=" + engineName,
@@ -110,26 +146,6 @@ func runDaggerQuery(ctx context.Context, engineName string, engineKind string, k
 	}).Stdout(ctx)
 	if err != nil {
 		return err
-	}
-
-	stdout, err := kubectl.
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", fmt.Sprintf("kube-pod://%s?namespace=dagger", podName)).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v0.16.0-000000000000").
-		WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{
-			Stdin: `{
-				container {
-					from(address:"alpine") {
-						withExec(args: ["uname", "-a"]) { stdout }
-					}
-				}
-			}`,
-		}).
-		Stdout(ctx)
-	if err != nil {
-		return err
-	}
-	if !strings.Contains(stdout, "Linux") {
-		return fmt.Errorf("expected to be a Linux container, got: %s", stdout)
 	}
 
 	kind, err := kubectl.WithExec([]string{
@@ -145,6 +161,42 @@ func runDaggerQuery(ctx context.Context, engineName string, engineKind string, k
 		return fmt.Errorf("expected to be a %s, got: %s", engineKind, kind)
 	}
 
+	byKubePod := kubectl.
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", fmt.Sprintf("kube-pod://%s?namespace=dagger", podName)).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v0.16.0-000000000000")
+	if err := testDaggerQuery(ctx, "dagger query", byKubePod); err != nil {
+		return err
+	}
+
+	if port != 0 {
+		byTCP := kubectl.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://localhost:4000").
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v0.16.0-000000000000")
+		if err := testDaggerQuery(ctx, fmt.Sprintf("kubectl port-forward --namespace=dagger pods/%s 4000:%d & dagger query", podName, port), byTCP); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func testDaggerQuery(ctx context.Context, command string, kubectl *dagger.Container) error {
+	stdout, err := kubectl.WithExec([]string{"sh", "-c", command}, dagger.ContainerWithExecOpts{
+		Stdin: `{
+				container {
+					from(address:"alpine") {
+						withExec(args: ["uname", "-a"]) { stdout }
+					}
+				}
+			}`,
+	}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(stdout, "Linux") {
+		return fmt.Errorf("expected to be a Linux container, got: %s", stdout)
+	}
 	return nil
 }
 
