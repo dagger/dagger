@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"dagger/evals/internal/dagger"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dagger/testctx"
@@ -17,16 +19,41 @@ func TestMain(m *testing.M) {
 }
 
 func TestEvals(t *testing.T) {
+	if models := os.Getenv("MODELS"); models != "" {
+		// TODO: testctx should have a pattern for this
+		t.Parallel()
+		for _, model := range strings.Split(models, ",") {
+			if model == "" {
+				continue
+			}
+			t.Run(model, func(t *testing.T) {
+				testctx.New(t,
+					testctx.WithParallel(),
+					oteltest.WithTracing[*testing.T](),
+					oteltest.WithLogging[*testing.T]()).
+					RunTests(EvalsSuite{
+						Model: model,
+					})
+			})
+		}
+		return
+	}
+
 	testctx.New(t,
 		testctx.WithParallel(),
 		oteltest.WithTracing[*testing.T](),
-		oteltest.WithLogging[*testing.T]()).RunTests(EvalsSuite{})
+		oteltest.WithLogging[*testing.T]()).
+		RunTests(EvalsSuite{})
 }
 
-type EvalsSuite struct{}
+type EvalsSuite struct {
+	Model string
+}
 
-func (EvalsSuite) TestUndoSingle(ctx context.Context, t *testctx.T) {
-	evals := &Evals{}
+func (s EvalsSuite) TestUndoSingle(ctx context.Context, t *testctx.T) {
+	evals := &Evals{
+		Model: s.Model,
+	}
 
 	res := evals.UndoSingle()
 
@@ -59,8 +86,10 @@ func (EvalsSuite) TestUndoSingle(ctx context.Context, t *testctx.T) {
 	}
 }
 
-func (EvalsSuite) TestBuildMulti(ctx context.Context, t *testctx.T) {
-	evals := &Evals{}
+func (s EvalsSuite) TestBuildMulti(ctx context.Context, t *testctx.T) {
+	evals := &Evals{
+		Model: s.Model,
+	}
 
 	res := evals.BuildMulti()
 
