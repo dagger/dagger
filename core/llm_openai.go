@@ -74,6 +74,8 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 
 	// Convert generic Message to OpenAI specific format
 	var openAIMessages []openai.ChatCompletionMessageParamUnion
+
+	var hasSystemPrompt bool
 	for _, msg := range history {
 		if msg.ToolCallID != "" {
 			content := msg.Content
@@ -110,8 +112,12 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 			}
 			openAIMessages = append(openAIMessages, assistantMsg)
 		case "system":
+			hasSystemPrompt = true
 			openAIMessages = append(openAIMessages, openai.SystemMessage(msg.Content))
 		}
+	}
+	if !hasSystemPrompt {
+		openAIMessages = append(openAIMessages, openai.SystemMessage(defaultSystemPrompt))
 	}
 
 	params := openai.ChatCompletionNewParams{
