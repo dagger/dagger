@@ -12,27 +12,13 @@ class MyModule {
      */
     source: Directory,
     /**
-     * Directory exclusion pattern
+     * Exclusion pattern
      */
-    excludeDirectory?: string,
-    /**
-     * File exclusion pattern
-     */
-    excludeFile?: string,
+    exclude?: string[],
   ): Container {
-    let filteredSource = source
-
-    if (!excludeDirectory) {
-      filteredSource = filteredSource.withoutDirectory(excludeDirectory)
-    }
-
-    if (!excludeFile) {
-      filteredSource = filteredSource.withoutFile(excludeFile)
-    }
-
     return dag
       .container()
       .from("alpine:latest")
-      .withDirectory("/src", filteredSource)
+      .withDirectory("/src", source, { exclude: exclude })
   }
 }
