@@ -1,0 +1,13 @@
+{
+  "name": "go-programmer",
+  "engineVersion": "v0.16.3",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "toy-workspace",
+      "source": "toy-workspace"
+    }
+  ]
+}

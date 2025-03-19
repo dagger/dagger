@@ -172,7 +172,9 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 	return nil
 }
 
-func (mod *Module) TypeDefs(ctx context.Context) ([]*TypeDef, error) {
+func (mod *Module) TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, error) {
+	// TODO: use dag arg to reflect dynamic updates (if/when we support that)
+
 	typeDefs := make([]*TypeDef, 0, len(mod.ObjectDefs)+len(mod.InterfaceDefs)+len(mod.EnumDefs))
 
 	for _, def := range mod.ObjectDefs {
@@ -615,8 +617,12 @@ type Mod interface {
 	// If checkDirectDeps is true, then its direct dependencies will also be checked.
 	ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error)
 
-	// TypeDefs gets the TypeDefs exposed by this module (not including dependencies)
-	TypeDefs(ctx context.Context) ([]*TypeDef, error)
+	// TypeDefs gets the TypeDefs exposed by this module (not including
+	// dependencies) from the given unified schema. Implicitly, TypeDefs
+	// returned by this module include any extensions installed by other
+	// modules from the unified schema. (e.g. LLM which is extended with each
+	// type via middleware)
+	TypeDefs(ctx context.Context, dag *dagql.Server) ([]*TypeDef, error)
 }
 
 // ClientGenerator is an interface that a module can implements to give client generation capabilities.
@@ -765,6 +771,7 @@ func (mod *Module) WithDescription(desc string) *Module {
 
 func (mod *Module) WithObject(ctx context.Context, def *TypeDef) (*Module, error) {
 	mod = mod.Clone()
+
 	if !def.AsObject.Valid {
 		return nil, fmt.Errorf("expected object type def, got %s: %+v", def.Kind, def)
 	}

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -120,11 +119,8 @@ func (DaggerCMDSuite) TestShellAutocomplete(ctx context.Context, t *testctx.T) {
 	t.Cleanup(func() { client.Close() })
 
 	handler := &shellCallHandler{
-		dag:    client,
-		stdin:  nil,
-		stdout: io.Discard,
-		stderr: io.Discard,
-		debug:  debug,
+		dag:   client,
+		debug: debug,
 	}
 	require.NoError(t, handler.RunAll(ctx, nil))
 	autoComplete := shellAutoComplete{handler}

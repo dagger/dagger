@@ -2,7 +2,10 @@ package idtui
 
 import (
 	"io"
+	"os"
+	"sync"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 )
 
@@ -33,4 +36,38 @@ func ColorProfile() termenv.Profile {
 	} else {
 		return termenv.ANSI
 	}
+}
+
+var bgOnce = &sync.Once{}
+
+type AdaptiveColor struct {
+	Light termenv.Color
+	Dark  termenv.Color
+}
+
+func (c AdaptiveColor) Sequence(bg bool) string {
+	if HasDarkBackground() {
+		return c.Dark.Sequence(bg)
+	}
+	return c.Light.Sequence(bg)
+}
+
+func HasDarkBackground() bool {
+	bgOnce.Do(func() {
+		if os.Getenv("FORCE_LIGHT_MODE") != "" ||
+			os.Getenv("THEME_MODE") == "light" ||
+			os.Getenv("LIGHT") != "" {
+			lipgloss.SetHasDarkBackground(false)
+		} else if os.Getenv("FORCE_DARK_MODE") != "" ||
+			os.Getenv("THEME_MODE") == "dark" ||
+			os.Getenv("DARK") != "" {
+			lipgloss.SetHasDarkBackground(true)
+		}
+	})
+	return lipgloss.HasDarkBackground()
+}
+
+var highlightBg = AdaptiveColor{
+	Light: termenv.ANSI256Color(255),
+	Dark:  termenv.ANSI256Color(0),
 }

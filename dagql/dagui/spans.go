@@ -136,14 +136,16 @@ type SpanSnapshot struct {
 	Cached   bool `json:",omitempty"`
 
 	// UI preferences reported by the span, or applied to it (sync=>passthrough)
-	Internal     bool   `json:",omitempty"`
-	Encapsulate  bool   `json:",omitempty"`
-	Encapsulated bool   `json:",omitempty"`
-	Passthrough  bool   `json:",omitempty"`
-	Ignore       bool   `json:",omitempty"`
-	Reveal       bool   `json:",omitempty"`
-	ActorEmoji   string `json:",omitempty"`
-	Message      string `json:",omitempty"`
+	Internal     bool `json:",omitempty"`
+	Encapsulate  bool `json:",omitempty"`
+	Encapsulated bool `json:",omitempty"`
+	Passthrough  bool `json:",omitempty"`
+	Ignore       bool `json:",omitempty"`
+	Reveal       bool `json:",omitempty"`
+
+	ActorEmoji  string `json:",omitempty"`
+	Message     string `json:",omitempty"`
+	ContentType string `json:",omitempty"`
 
 	Inputs []string `json:",omitempty"`
 	Output string   `json:",omitempty"`
@@ -217,6 +219,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 
 	case telemetry.EffectIDAttr:
 		snapshot.EffectID = val.(string)
+
+	case telemetry.ContentTypeAttr:
+		snapshot.ContentType = val.(string)
 
 	case "rpc.service":
 		// encapsulate these by default; we only maybe want to see these if their

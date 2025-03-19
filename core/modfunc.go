@@ -22,6 +22,7 @@ import (
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
@@ -244,14 +245,20 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to marshal parent value: %w", err)
 	}
 
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	execMD := buildkit.ExecutionMetadata{
-		ClientID:        identity.NewID(),
-		CallID:          dagql.CurrentID(ctx),
-		ExecID:          identity.NewID(),
-		CachePerSession: !opts.Cache,
-		Internal:        true,
-		ModuleName:      mod.NameField,
-		CacheByCall:     !opts.SkipCallDigestCacheKey,
+		ClientID:          identity.NewID(),
+		CallID:            dagql.CurrentID(ctx),
+		ExecID:            identity.NewID(),
+		CachePerSession:   !opts.Cache,
+		Internal:          true,
+		ModuleName:        mod.NameField,
+		CacheByCall:       !opts.SkipCallDigestCacheKey,
+		AllowedLLMModules: clientMetadata.AllowedLLMModules,
 	}
 
 	if opts.ParentTyped != nil {
@@ -332,7 +339,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 			if err != nil {
 				return nil, fmt.Errorf("failed to load error instance: %w", err)
 			}
-			return nil, errors.New(errInst.Self.Message)
+			return nil, errInst.Self
 		}
 		if fn.metadata.OriginalName == "" {
 			return nil, fmt.Errorf("call constructor: %w", err)

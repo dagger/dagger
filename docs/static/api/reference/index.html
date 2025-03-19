@@ -43,6 +43,7 @@
               <li><a href="#query-git">git</a></li>
               <li><a href="#query-host">host</a></li>
               <li><a href="#query-http">http</a></li>
+              <li><a href="#query-llm">llm</a></li>
               <li><a href="#query-loadCacheVolumeFromID">loadCacheVolumeFromID</a></li>
               <li><a href="#query-loadContainerFromID">loadContainerFromID</a></li>
               <li><a href="#query-loadCurrentModuleFromID">loadCurrentModuleFromID</a></li>
@@ -55,6 +56,7 @@
               <li><a href="#query-loadEnumValueTypeDefFromID">loadEnumValueTypeDefFromID</a></li>
               <li><a href="#query-loadEnvVariableFromID">loadEnvVariableFromID</a></li>
               <li><a href="#query-loadErrorFromID">loadErrorFromID</a></li>
+              <li><a href="#query-loadErrorValueFromID">loadErrorValueFromID</a></li>
               <li><a href="#query-loadFieldTypeDefFromID">loadFieldTypeDefFromID</a></li>
               <li><a href="#query-loadFileFromID">loadFileFromID</a></li>
               <li><a href="#query-loadFunctionArgFromID">loadFunctionArgFromID</a></li>
@@ -67,6 +69,8 @@
               <li><a href="#query-loadHostFromID">loadHostFromID</a></li>
               <li><a href="#query-loadInputTypeDefFromID">loadInputTypeDefFromID</a></li>
               <li><a href="#query-loadInterfaceTypeDefFromID">loadInterfaceTypeDefFromID</a></li>
+              <li><a href="#query-loadLLMFromID">loadLLMFromID</a></li>
+              <li><a href="#query-loadLLMVariableFromID">loadLLMVariableFromID</a></li>
               <li><a href="#query-loadLabelFromID">loadLabelFromID</a></li>
               <li><a href="#query-loadListTypeDefFromID">loadListTypeDefFromID</a></li>
               <li><a href="#query-loadModuleConfigClientFromID">loadModuleConfigClientFromID</a></li>
@@ -122,6 +126,8 @@
               <li><a href="#definition-EnvVariableID">EnvVariableID</a></li>
               <li><a href="#definition-Error">Error</a></li>
               <li><a href="#definition-ErrorID">ErrorID</a></li>
+              <li><a href="#definition-ErrorValue">ErrorValue</a></li>
+              <li><a href="#definition-ErrorValueID">ErrorValueID</a></li>
               <li><a href="#definition-FieldTypeDef">FieldTypeDef</a></li>
               <li><a href="#definition-FieldTypeDefID">FieldTypeDefID</a></li>
               <li><a href="#definition-File">File</a></li>
@@ -150,6 +156,10 @@
               <li><a href="#definition-InterfaceTypeDef">InterfaceTypeDef</a></li>
               <li><a href="#definition-InterfaceTypeDefID">InterfaceTypeDefID</a></li>
               <li><a href="#definition-JSON">JSON</a></li>
+              <li><a href="#definition-LLM">LLM</a></li>
+              <li><a href="#definition-LLMID">LLMID</a></li>
+              <li><a href="#definition-LLMVariable">LLMVariable</a></li>
+              <li><a href="#definition-LLMVariableID">LLMVariableID</a></li>
               <li><a href="#definition-Label">Label</a></li>
               <li><a href="#definition-LabelID">LabelID</a></li>
               <li><a href="#definition-ListTypeDef">ListTypeDef</a></li>
@@ -977,6 +987,64 @@
               </div>
             </div>
           </section>
+          <section id="query-llm" class="operation operation-query" data-traverse-target="query-llm">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>llm</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Initialize a Large Language Model (LLM)</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-LLM"><code>LLM!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>maxAPICalls</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span>
+                        </td>
+                        <td> Cap the number of API calls for this LLM </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>model</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
+                        </td>
+                        <td> Model to use </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-loadCacheVolumeFromID" class="operation operation-query" data-traverse-target="query-loadCacheVolumeFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -1613,6 +1681,59 @@
               </div>
             </div>
           </section>
+          <section id="query-loadErrorValueFromID" class="operation operation-query" data-traverse-target="query-loadErrorValueFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadErrorValueFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a ErrorValue from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-ErrorValue"><code>ErrorValue!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-ErrorValueID"><code>ErrorValueID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-loadFieldTypeDefFromID" class="operation operation-query" data-traverse-target="query-loadFieldTypeDefFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -2232,6 +2353,112 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-InterfaceTypeDefID"><code>InterfaceTypeDefID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadLLMFromID" class="operation operation-query" data-traverse-target="query-loadLLMFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadLLMFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a LLM from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-LLM"><code>LLM!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-LLMID"><code>LLMID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadLLMVariableFromID" class="operation operation-query" data-traverse-target="query-loadLLMVariableFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadLLMVariableFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a LLMVariable from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-LLMVariable"><code>LLMVariable!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-LLMVariableID"><code>LLMVariableID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -6107,6 +6334,31 @@
                         <td data-property-name=""><a class="property-name" id="Error-message" href="#Error-message"><code>message</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> A description of the error. </td>
                       </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Error-values" href="#Error-values"><code>values</code></a> - <span class="property-type"><a href="#definition-ErrorValue"><code>[ErrorValue!]!</code></a></span> </td>
+                        <td> The extensions of the error. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Error-withValue" href="#Error-withValue"><code>withValue</code></a> - <span class="property-type"><a href="#definition-Error"><code>Error!</code></a></span> </td>
+                        <td> Add a value to the error. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the value.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-JSON"><code>JSON!</code></a></span></h6>
+                                <p>The value to store on the error.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -6123,6 +6375,55 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>ErrorID</code> scalar type represents an identifier for an object of type Error.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-ErrorValue" class="definition definition-object" data-traverse-target="definition-ErrorValue">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ErrorValue</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ErrorValue-id" href="#ErrorValue-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ErrorValueID"><code>ErrorValueID!</code></a></span> </td>
+                        <td> A unique identifier for this ErrorValue. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ErrorValue-name" href="#ErrorValue-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The name of the value. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ErrorValue-value" href="#ErrorValue-value"><code>value</code></a> - <span class="property-type"><a href="#definition-JSON"><code>JSON!</code></a></span> </td>
+                        <td> The value. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-ErrorValueID" class="definition definition-scalar" data-traverse-target="definition-ErrorValueID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ErrorValueID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>ErrorValueID</code> scalar type represents an identifier for an object of type ErrorValue.</p>
                 </div>
               </div>
             </div>
@@ -7448,6 +7749,2263 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>An arbitrary JSON-encoded value.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-LLM" class="definition definition-object" data-traverse-target="definition-LLM">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">LLM</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-cacheVolume" href="#LLM-cacheVolume"><code>cacheVolume</code></a> - <span class="property-type"><a href="#definition-CacheVolume"><code>CacheVolume!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type CacheVolume <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-container" href="#LLM-container"><code>container</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type Container <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-currentModule" href="#LLM-currentModule"><code>currentModule</code></a> - <span class="property-type"><a href="#definition-CurrentModule"><code>CurrentModule!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type CurrentModule <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-directory" href="#LLM-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type Directory <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-enumTypeDef" href="#LLM-enumTypeDef"><code>enumTypeDef</code></a> - <span class="property-type"><a href="#definition-EnumTypeDef"><code>EnumTypeDef!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type EnumTypeDef <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-enumValueTypeDef" href="#LLM-enumValueTypeDef"><code>enumValueTypeDef</code></a> - <span class="property-type"><a href="#definition-EnumValueTypeDef"><code>EnumValueTypeDef!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type EnumValueTypeDef <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-error" href="#LLM-error"><code>error</code></a> - <span class="property-type"><a href="#definition-Error"><code>Error!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type Error <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-errorValue" href="#LLM-errorValue"><code>errorValue</code></a> - <span class="property-type"><a href="#definition-ErrorValue"><code>ErrorValue!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type ErrorValue <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-fieldTypeDef" href="#LLM-fieldTypeDef"><code>fieldTypeDef</code></a> - <span class="property-type"><a href="#definition-FieldTypeDef"><code>FieldTypeDef!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type FieldTypeDef <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-file" href="#LLM-file"><code>file</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type File <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-function" href="#LLM-function"><code>function</code></a> - <span class="property-type"><a href="#definition-Function"><code>Function!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type Function <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-functionArg" href="#LLM-functionArg"><code>functionArg</code></a> - <span class="property-type"><a href="#definition-FunctionArg"><code>FunctionArg!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type FunctionArg <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-functionCall" href="#LLM-functionCall"><code>functionCall</code></a> - <span class="property-type"><a href="#definition-FunctionCall"><code>FunctionCall!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type FunctionCall <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-functionCallArgValue" href="#LLM-functionCallArgValue"><code>functionCallArgValue</code></a> - <span class="property-type"><a href="#definition-FunctionCallArgValue"><code>FunctionCallArgValue!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type FunctionCallArgValue <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-generatedCode" href="#LLM-generatedCode"><code>generatedCode</code></a> - <span class="property-type"><a href="#definition-GeneratedCode"><code>GeneratedCode!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type GeneratedCode <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getCacheVolume" href="#LLM-getCacheVolume"><code>getCacheVolume</code></a> - <span class="property-type"><a href="#definition-CacheVolume"><code>CacheVolume!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type CacheVolume </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getContainer" href="#LLM-getContainer"><code>getContainer</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type Container </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getCurrentModule" href="#LLM-getCurrentModule"><code>getCurrentModule</code></a> - <span class="property-type"><a href="#definition-CurrentModule"><code>CurrentModule!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type CurrentModule </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getDirectory" href="#LLM-getDirectory"><code>getDirectory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type Directory </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getEnumTypeDef" href="#LLM-getEnumTypeDef"><code>getEnumTypeDef</code></a> - <span class="property-type"><a href="#definition-EnumTypeDef"><code>EnumTypeDef!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type EnumTypeDef </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getEnumValueTypeDef" href="#LLM-getEnumValueTypeDef"><code>getEnumValueTypeDef</code></a> - <span class="property-type"><a href="#definition-EnumValueTypeDef"><code>EnumValueTypeDef!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type EnumValueTypeDef </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getError" href="#LLM-getError"><code>getError</code></a> - <span class="property-type"><a href="#definition-Error"><code>Error!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type Error </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getErrorValue" href="#LLM-getErrorValue"><code>getErrorValue</code></a> - <span class="property-type"><a href="#definition-ErrorValue"><code>ErrorValue!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type ErrorValue </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getFieldTypeDef" href="#LLM-getFieldTypeDef"><code>getFieldTypeDef</code></a> - <span class="property-type"><a href="#definition-FieldTypeDef"><code>FieldTypeDef!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type FieldTypeDef </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getFile" href="#LLM-getFile"><code>getFile</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type File </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getFunction" href="#LLM-getFunction"><code>getFunction</code></a> - <span class="property-type"><a href="#definition-Function"><code>Function!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type Function </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getFunctionArg" href="#LLM-getFunctionArg"><code>getFunctionArg</code></a> - <span class="property-type"><a href="#definition-FunctionArg"><code>FunctionArg!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type FunctionArg </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getFunctionCall" href="#LLM-getFunctionCall"><code>getFunctionCall</code></a> - <span class="property-type"><a href="#definition-FunctionCall"><code>FunctionCall!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type FunctionCall </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getFunctionCallArgValue" href="#LLM-getFunctionCallArgValue"><code>getFunctionCallArgValue</code></a> - <span class="property-type"><a href="#definition-FunctionCallArgValue"><code>FunctionCallArgValue!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type FunctionCallArgValue </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getGeneratedCode" href="#LLM-getGeneratedCode"><code>getGeneratedCode</code></a> - <span class="property-type"><a href="#definition-GeneratedCode"><code>GeneratedCode!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type GeneratedCode </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getGitRef" href="#LLM-getGitRef"><code>getGitRef</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type GitRef </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getGitRepository" href="#LLM-getGitRepository"><code>getGitRepository</code></a> - <span class="property-type"><a href="#definition-GitRepository"><code>GitRepository!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type GitRepository </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getInputTypeDef" href="#LLM-getInputTypeDef"><code>getInputTypeDef</code></a> - <span class="property-type"><a href="#definition-InputTypeDef"><code>InputTypeDef!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type InputTypeDef </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getInterfaceTypeDef" href="#LLM-getInterfaceTypeDef"><code>getInterfaceTypeDef</code></a> - <span class="property-type"><a href="#definition-InterfaceTypeDef"><code>InterfaceTypeDef!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type InterfaceTypeDef </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getListTypeDef" href="#LLM-getListTypeDef"><code>getListTypeDef</code></a> - <span class="property-type"><a href="#definition-ListTypeDef"><code>ListTypeDef!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type ListTypeDef </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getLLM" href="#LLM-getLLM"><code>getLLM</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type LLM </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getModule" href="#LLM-getModule"><code>getModule</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type Module </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getModuleConfigClient" href="#LLM-getModuleConfigClient"><code>getModuleConfigClient</code></a> - <span class="property-type"><a href="#definition-ModuleConfigClient"><code>ModuleConfigClient!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type ModuleConfigClient </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getModuleSource" href="#LLM-getModuleSource"><code>getModuleSource</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type ModuleSource </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getObjectTypeDef" href="#LLM-getObjectTypeDef"><code>getObjectTypeDef</code></a> - <span class="property-type"><a href="#definition-ObjectTypeDef"><code>ObjectTypeDef!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type ObjectTypeDef </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getScalarTypeDef" href="#LLM-getScalarTypeDef"><code>getScalarTypeDef</code></a> - <span class="property-type"><a href="#definition-ScalarTypeDef"><code>ScalarTypeDef!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type ScalarTypeDef </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getSDKConfig" href="#LLM-getSDKConfig"><code>getSDKConfig</code></a> - <span class="property-type"><a href="#definition-SDKConfig"><code>SDKConfig</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type SDKConfig </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getSecret" href="#LLM-getSecret"><code>getSecret</code></a> - <span class="property-type"><a href="#definition-Secret"><code>Secret!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type Secret </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getService" href="#LLM-getService"><code>getService</code></a> - <span class="property-type"><a href="#definition-Service"><code>Service!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type Service </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getSocket" href="#LLM-getSocket"><code>getSocket</code></a> - <span class="property-type"><a href="#definition-Socket"><code>Socket!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type Socket </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getSourceMap" href="#LLM-getSourceMap"><code>getSourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type SourceMap </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getString" href="#LLM-getString"><code>getString</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Get a string variable from the LLM's environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The variable name</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getTerminal" href="#LLM-getTerminal"><code>getTerminal</code></a> - <span class="property-type"><a href="#definition-Terminal"><code>Terminal!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type Terminal </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-getTypeDef" href="#LLM-getTypeDef"><code>getTypeDef</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
+                        <td> Retrieve a variable in the llm environment, of type TypeDef </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-gitRef" href="#LLM-gitRef"><code>gitRef</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type GitRef <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-gitRepository" href="#LLM-gitRepository"><code>gitRepository</code></a> - <span class="property-type"><a href="#definition-GitRepository"><code>GitRepository!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type GitRepository <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-history" href="#LLM-history"><code>history</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
+                        <td> return the llm message history </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-historyJSON" href="#LLM-historyJSON"><code>historyJSON</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> return the raw llm message history as json </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-id" href="#LLM-id"><code>id</code></a> - <span class="property-type"><a href="#definition-LLMID"><code>LLMID!</code></a></span> </td>
+                        <td> A unique identifier for this LLM. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-inputTypeDef" href="#LLM-inputTypeDef"><code>inputTypeDef</code></a> - <span class="property-type"><a href="#definition-InputTypeDef"><code>InputTypeDef!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type InputTypeDef <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-interfaceTypeDef" href="#LLM-interfaceTypeDef"><code>interfaceTypeDef</code></a> - <span class="property-type"><a href="#definition-InterfaceTypeDef"><code>InterfaceTypeDef!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type InterfaceTypeDef <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-lastReply" href="#LLM-lastReply"><code>lastReply</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> return the last llm reply from the history </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-listTypeDef" href="#LLM-listTypeDef"><code>listTypeDef</code></a> - <span class="property-type"><a href="#definition-ListTypeDef"><code>ListTypeDef!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type ListTypeDef <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-lLM" href="#LLM-lLM"><code>lLM</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type LLM <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-loop" href="#LLM-loop"><code>loop</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> synchronize LLM state <span class="deprecation-reason">use sync</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-model" href="#LLM-model"><code>model</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> return the model used by the llm </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-module" href="#LLM-module"><code>module</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type Module <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-moduleConfigClient" href="#LLM-moduleConfigClient"><code>moduleConfigClient</code></a> - <span class="property-type"><a href="#definition-ModuleConfigClient"><code>ModuleConfigClient!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type ModuleConfigClient <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-moduleSource" href="#LLM-moduleSource"><code>moduleSource</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type ModuleSource <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-objectTypeDef" href="#LLM-objectTypeDef"><code>objectTypeDef</code></a> - <span class="property-type"><a href="#definition-ObjectTypeDef"><code>ObjectTypeDef!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type ObjectTypeDef <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-provider" href="#LLM-provider"><code>provider</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> return the provider used by the llm </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-scalarTypeDef" href="#LLM-scalarTypeDef"><code>scalarTypeDef</code></a> - <span class="property-type"><a href="#definition-ScalarTypeDef"><code>ScalarTypeDef!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type ScalarTypeDef <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-sdkconfig" href="#LLM-sdkconfig"><code>sdkconfig</code></a> - <span class="property-type"><a href="#definition-SDKConfig"><code>SDKConfig</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type SDKConfig <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-secret" href="#LLM-secret"><code>secret</code></a> - <span class="property-type"><a href="#definition-Secret"><code>Secret!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type Secret <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-service" href="#LLM-service"><code>service</code></a> - <span class="property-type"><a href="#definition-Service"><code>Service!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type Service <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setCacheVolume" href="#LLM-setCacheVolume"><code>setCacheVolume</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type CacheVolume in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-CacheVolumeID"><code>CacheVolumeID!</code></a></span></h6>
+                                <p>The CacheVolume value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setContainer" href="#LLM-setContainer"><code>setContainer</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type Container in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ContainerID"><code>ContainerID!</code></a></span></h6>
+                                <p>The Container value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setCurrentModule" href="#LLM-setCurrentModule"><code>setCurrentModule</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type CurrentModule in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-CurrentModuleID"><code>CurrentModuleID!</code></a></span></h6>
+                                <p>The CurrentModule value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setDirectory" href="#LLM-setDirectory"><code>setDirectory</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type Directory in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span></h6>
+                                <p>The Directory value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setEnumTypeDef" href="#LLM-setEnumTypeDef"><code>setEnumTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type EnumTypeDef in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-EnumTypeDefID"><code>EnumTypeDefID!</code></a></span></h6>
+                                <p>The EnumTypeDef value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setEnumValueTypeDef" href="#LLM-setEnumValueTypeDef"><code>setEnumValueTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type EnumValueTypeDef in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-EnumValueTypeDefID"><code>EnumValueTypeDefID!</code></a></span></h6>
+                                <p>The EnumValueTypeDef value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setError" href="#LLM-setError"><code>setError</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type Error in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ErrorID"><code>ErrorID!</code></a></span></h6>
+                                <p>The Error value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setErrorValue" href="#LLM-setErrorValue"><code>setErrorValue</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type ErrorValue in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ErrorValueID"><code>ErrorValueID!</code></a></span></h6>
+                                <p>The ErrorValue value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setFieldTypeDef" href="#LLM-setFieldTypeDef"><code>setFieldTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type FieldTypeDef in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FieldTypeDefID"><code>FieldTypeDefID!</code></a></span></h6>
+                                <p>The FieldTypeDef value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setFile" href="#LLM-setFile"><code>setFile</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type File in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FileID"><code>FileID!</code></a></span></h6>
+                                <p>The File value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setFunction" href="#LLM-setFunction"><code>setFunction</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type Function in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FunctionID"><code>FunctionID!</code></a></span></h6>
+                                <p>The Function value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setFunctionArg" href="#LLM-setFunctionArg"><code>setFunctionArg</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type FunctionArg in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FunctionArgID"><code>FunctionArgID!</code></a></span></h6>
+                                <p>The FunctionArg value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setFunctionCall" href="#LLM-setFunctionCall"><code>setFunctionCall</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type FunctionCall in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FunctionCallID"><code>FunctionCallID!</code></a></span></h6>
+                                <p>The FunctionCall value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setFunctionCallArgValue" href="#LLM-setFunctionCallArgValue"><code>setFunctionCallArgValue</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type FunctionCallArgValue in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FunctionCallArgValueID"><code>FunctionCallArgValueID!</code></a></span></h6>
+                                <p>The FunctionCallArgValue value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setGeneratedCode" href="#LLM-setGeneratedCode"><code>setGeneratedCode</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type GeneratedCode in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-GeneratedCodeID"><code>GeneratedCodeID!</code></a></span></h6>
+                                <p>The GeneratedCode value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setGitRef" href="#LLM-setGitRef"><code>setGitRef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type GitRef in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-GitRefID"><code>GitRefID!</code></a></span></h6>
+                                <p>The GitRef value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setGitRepository" href="#LLM-setGitRepository"><code>setGitRepository</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type GitRepository in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-GitRepositoryID"><code>GitRepositoryID!</code></a></span></h6>
+                                <p>The GitRepository value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setInputTypeDef" href="#LLM-setInputTypeDef"><code>setInputTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type InputTypeDef in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-InputTypeDefID"><code>InputTypeDefID!</code></a></span></h6>
+                                <p>The InputTypeDef value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setInterfaceTypeDef" href="#LLM-setInterfaceTypeDef"><code>setInterfaceTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type InterfaceTypeDef in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-InterfaceTypeDefID"><code>InterfaceTypeDefID!</code></a></span></h6>
+                                <p>The InterfaceTypeDef value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setListTypeDef" href="#LLM-setListTypeDef"><code>setListTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type ListTypeDef in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ListTypeDefID"><code>ListTypeDefID!</code></a></span></h6>
+                                <p>The ListTypeDef value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setLLM" href="#LLM-setLLM"><code>setLLM</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type LLM in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-LLMID"><code>LLMID!</code></a></span></h6>
+                                <p>The LLM value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setModule" href="#LLM-setModule"><code>setModule</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type Module in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ModuleID"><code>ModuleID!</code></a></span></h6>
+                                <p>The Module value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setModuleConfigClient" href="#LLM-setModuleConfigClient"><code>setModuleConfigClient</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type ModuleConfigClient in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ModuleConfigClientID"><code>ModuleConfigClientID!</code></a></span></h6>
+                                <p>The ModuleConfigClient value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setModuleSource" href="#LLM-setModuleSource"><code>setModuleSource</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type ModuleSource in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ModuleSourceID"><code>ModuleSourceID!</code></a></span></h6>
+                                <p>The ModuleSource value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setObjectTypeDef" href="#LLM-setObjectTypeDef"><code>setObjectTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type ObjectTypeDef in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ObjectTypeDefID"><code>ObjectTypeDefID!</code></a></span></h6>
+                                <p>The ObjectTypeDef value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setScalarTypeDef" href="#LLM-setScalarTypeDef"><code>setScalarTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type ScalarTypeDef in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ScalarTypeDefID"><code>ScalarTypeDefID!</code></a></span></h6>
+                                <p>The ScalarTypeDef value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setSDKConfig" href="#LLM-setSDKConfig"><code>setSDKConfig</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type SDKConfig in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SDKConfigID"><code>SDKConfigID!</code></a></span></h6>
+                                <p>The SDKConfig value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setSecret" href="#LLM-setSecret"><code>setSecret</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type Secret in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID!</code></a></span></h6>
+                                <p>The Secret value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setService" href="#LLM-setService"><code>setService</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type Service in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ServiceID"><code>ServiceID!</code></a></span></h6>
+                                <p>The Service value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setSocket" href="#LLM-setSocket"><code>setSocket</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type Socket in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SocketID"><code>SocketID!</code></a></span></h6>
+                                <p>The Socket value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setSourceMap" href="#LLM-setSourceMap"><code>setSourceMap</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type SourceMap in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID!</code></a></span></h6>
+                                <p>The SourceMap value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setString" href="#LLM-setString"><code>setString</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Add a string variable to the LLM's environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The variable name</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The variable value</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setTerminal" href="#LLM-setTerminal"><code>setTerminal</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type Terminal in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-TerminalID"><code>TerminalID!</code></a></span></h6>
+                                <p>The Terminal value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-setTypeDef" href="#LLM-setTypeDef"><code>setTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type TypeDef in the llm environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the variable</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-TypeDefID"><code>TypeDefID!</code></a></span></h6>
+                                <p>The TypeDef value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-socket" href="#LLM-socket"><code>socket</code></a> - <span class="property-type"><a href="#definition-Socket"><code>Socket!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type Socket <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-sourceMap" href="#LLM-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type SourceMap <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-sync" href="#LLM-sync"><code>sync</code></a> - <span class="property-type"><a href="#definition-LLMID"><code>LLMID!</code></a></span> </td>
+                        <td> synchronize LLM state </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-terminal" href="#LLM-terminal"><code>terminal</code></a> - <span class="property-type"><a href="#definition-Terminal"><code>Terminal!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type Terminal <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-tools" href="#LLM-tools"><code>tools</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> print documentation for available tools </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-typeDef" href="#LLM-typeDef"><code>typeDef</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
+                        <td> Retrieve a the current value in the LLM environment, of type TypeDef <span class="deprecation-reason">use get<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-variables" href="#LLM-variables"><code>variables</code></a> - <span class="property-type"><a href="#definition-LLMVariable"><code>[LLMVariable!]!</code></a></span> </td>
+                        <td> list variables in the LLM environment </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withCacheVolume" href="#LLM-withCacheVolume"><code>withCacheVolume</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type CacheVolume in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-CacheVolumeID"><code>CacheVolumeID!</code></a></span></h6>
+                                <p>The CacheVolume value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withContainer" href="#LLM-withContainer"><code>withContainer</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type Container in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ContainerID"><code>ContainerID!</code></a></span></h6>
+                                <p>The Container value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withCurrentModule" href="#LLM-withCurrentModule"><code>withCurrentModule</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type CurrentModule in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-CurrentModuleID"><code>CurrentModuleID!</code></a></span></h6>
+                                <p>The CurrentModule value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withDirectory" href="#LLM-withDirectory"><code>withDirectory</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type Directory in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span></h6>
+                                <p>The Directory value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withEnumTypeDef" href="#LLM-withEnumTypeDef"><code>withEnumTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type EnumTypeDef in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-EnumTypeDefID"><code>EnumTypeDefID!</code></a></span></h6>
+                                <p>The EnumTypeDef value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withEnumValueTypeDef" href="#LLM-withEnumValueTypeDef"><code>withEnumValueTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type EnumValueTypeDef in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-EnumValueTypeDefID"><code>EnumValueTypeDefID!</code></a></span></h6>
+                                <p>The EnumValueTypeDef value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withError" href="#LLM-withError"><code>withError</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type Error in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ErrorID"><code>ErrorID!</code></a></span></h6>
+                                <p>The Error value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withErrorValue" href="#LLM-withErrorValue"><code>withErrorValue</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type ErrorValue in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ErrorValueID"><code>ErrorValueID!</code></a></span></h6>
+                                <p>The ErrorValue value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withFieldTypeDef" href="#LLM-withFieldTypeDef"><code>withFieldTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type FieldTypeDef in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FieldTypeDefID"><code>FieldTypeDefID!</code></a></span></h6>
+                                <p>The FieldTypeDef value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withFile" href="#LLM-withFile"><code>withFile</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type File in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FileID"><code>FileID!</code></a></span></h6>
+                                <p>The File value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withFunction" href="#LLM-withFunction"><code>withFunction</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type Function in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FunctionID"><code>FunctionID!</code></a></span></h6>
+                                <p>The Function value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withFunctionArg" href="#LLM-withFunctionArg"><code>withFunctionArg</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type FunctionArg in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FunctionArgID"><code>FunctionArgID!</code></a></span></h6>
+                                <p>The FunctionArg value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withFunctionCall" href="#LLM-withFunctionCall"><code>withFunctionCall</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type FunctionCall in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FunctionCallID"><code>FunctionCallID!</code></a></span></h6>
+                                <p>The FunctionCall value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withFunctionCallArgValue" href="#LLM-withFunctionCallArgValue"><code>withFunctionCallArgValue</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type FunctionCallArgValue in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-FunctionCallArgValueID"><code>FunctionCallArgValueID!</code></a></span></h6>
+                                <p>The FunctionCallArgValue value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withGeneratedCode" href="#LLM-withGeneratedCode"><code>withGeneratedCode</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type GeneratedCode in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-GeneratedCodeID"><code>GeneratedCodeID!</code></a></span></h6>
+                                <p>The GeneratedCode value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withGitRef" href="#LLM-withGitRef"><code>withGitRef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type GitRef in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-GitRefID"><code>GitRefID!</code></a></span></h6>
+                                <p>The GitRef value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withGitRepository" href="#LLM-withGitRepository"><code>withGitRepository</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type GitRepository in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-GitRepositoryID"><code>GitRepositoryID!</code></a></span></h6>
+                                <p>The GitRepository value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withInputTypeDef" href="#LLM-withInputTypeDef"><code>withInputTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type InputTypeDef in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-InputTypeDefID"><code>InputTypeDefID!</code></a></span></h6>
+                                <p>The InputTypeDef value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withInterfaceTypeDef" href="#LLM-withInterfaceTypeDef"><code>withInterfaceTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type InterfaceTypeDef in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-InterfaceTypeDefID"><code>InterfaceTypeDefID!</code></a></span></h6>
+                                <p>The InterfaceTypeDef value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withListTypeDef" href="#LLM-withListTypeDef"><code>withListTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type ListTypeDef in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ListTypeDefID"><code>ListTypeDefID!</code></a></span></h6>
+                                <p>The ListTypeDef value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withLLM" href="#LLM-withLLM"><code>withLLM</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type LLM in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-LLMID"><code>LLMID!</code></a></span></h6>
+                                <p>The LLM value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withModel" href="#LLM-withModel"><code>withModel</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> swap out the llm model </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>model</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The model to use</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withModule" href="#LLM-withModule"><code>withModule</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type Module in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ModuleID"><code>ModuleID!</code></a></span></h6>
+                                <p>The Module value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withModuleConfigClient" href="#LLM-withModuleConfigClient"><code>withModuleConfigClient</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type ModuleConfigClient in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ModuleConfigClientID"><code>ModuleConfigClientID!</code></a></span></h6>
+                                <p>The ModuleConfigClient value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withModuleSource" href="#LLM-withModuleSource"><code>withModuleSource</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type ModuleSource in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ModuleSourceID"><code>ModuleSourceID!</code></a></span></h6>
+                                <p>The ModuleSource value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withObjectTypeDef" href="#LLM-withObjectTypeDef"><code>withObjectTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type ObjectTypeDef in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ObjectTypeDefID"><code>ObjectTypeDefID!</code></a></span></h6>
+                                <p>The ObjectTypeDef value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withPrompt" href="#LLM-withPrompt"><code>withPrompt</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> append a prompt to the llm context </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>prompt</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The prompt to send</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withPromptFile" href="#LLM-withPromptFile"><code>withPromptFile</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> append the contents of a file to the llm context </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>file</code></span> - <span class="property-type"><a href="#definition-FileID"><code>FileID!</code></a></span></h6>
+                                <p>The file to read the prompt from</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withPromptVar" href="#LLM-withPromptVar"><code>withPromptVar</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Add a string variable to the LLM's environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The variable name</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The variable value</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withScalarTypeDef" href="#LLM-withScalarTypeDef"><code>withScalarTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type ScalarTypeDef in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ScalarTypeDefID"><code>ScalarTypeDefID!</code></a></span></h6>
+                                <p>The ScalarTypeDef value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withSDKConfig" href="#LLM-withSDKConfig"><code>withSDKConfig</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type SDKConfig in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SDKConfigID"><code>SDKConfigID!</code></a></span></h6>
+                                <p>The SDKConfig value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withSecret" href="#LLM-withSecret"><code>withSecret</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type Secret in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID!</code></a></span></h6>
+                                <p>The Secret value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withService" href="#LLM-withService"><code>withService</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type Service in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ServiceID"><code>ServiceID!</code></a></span></h6>
+                                <p>The Service value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withSocket" href="#LLM-withSocket"><code>withSocket</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type Socket in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SocketID"><code>SocketID!</code></a></span></h6>
+                                <p>The Socket value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withSourceMap" href="#LLM-withSourceMap"><code>withSourceMap</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type SourceMap in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID!</code></a></span></h6>
+                                <p>The SourceMap value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withTerminal" href="#LLM-withTerminal"><code>withTerminal</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type Terminal in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-TerminalID"><code>TerminalID!</code></a></span></h6>
+                                <p>The Terminal value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="LLM-withTypeDef" href="#LLM-withTypeDef"><code>withTypeDef</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Set a variable of type TypeDef in the llm environment <span class="deprecation-reason">use set<targettype> instead</targettype></span>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-TypeDefID"><code>TypeDefID!</code></a></span></h6>
+                                <p>The TypeDef value to assign to the variable</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-LLMID" class="definition definition-scalar" data-traverse-target="definition-LLMID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">LLMID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>LLMID</code> scalar type represents an identifier for an object of type LLM.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-LLMVariable" class="definition definition-object" data-traverse-target="definition-LLMVariable">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">LLMVariable</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLMVariable-hash" href="#LLMVariable-hash"><code>hash</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLMVariable-id" href="#LLMVariable-id"><code>id</code></a> - <span class="property-type"><a href="#definition-LLMVariableID"><code>LLMVariableID!</code></a></span> </td>
+                        <td> A unique identifier for this LLMVariable. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLMVariable-name" href="#LLMVariable-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLMVariable-typeName" href="#LLMVariable-typeName"><code>typeName</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-LLMVariableID" class="definition definition-scalar" data-traverse-target="definition-LLMVariableID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">LLMVariableID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>LLMVariableID</code> scalar type represents an identifier for an object of type LLMVariable.</p>
                 </div>
               </div>
             </div>
