@@ -29,7 +29,7 @@ func daggerShell(script string) dagger.WithContainerFunc {
 
 func daggerShellNoMod(script string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec([]string{"dagger", "-n"}, dagger.ContainerWithExecOpts{
+		return c.WithExec([]string{"dagger", "-M"}, dagger.ContainerWithExecOpts{
 			Stdin:                         script,
 			ExperimentalPrivilegedNesting: true,
 		})
