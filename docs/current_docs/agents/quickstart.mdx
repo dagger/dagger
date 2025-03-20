@@ -24,9 +24,33 @@ First, you will create a Dagger module. This module will be the place where you 
 
 You can write your module in Go, Python, Typescript, PHP, or Java. Choose the SDK you are most comfortable with.
 
+<Tabs groupId="language">
+<TabItem value="Go">
 ```bash
-dagger init --sdk {your sdk choice} --name coding-agent
+dagger init --sdk go --name coding-agent
 ```
+</TabItem>
+<TabItem value="Python">
+```bash
+dagger init --sdk python --name coding-agent
+```
+</TabItem>
+<TabItem value="Typescript">
+```bash
+dagger init --sdk typescript --name coding-agent
+```
+</TabItem>
+<TabItem value="PHP">
+```bash
+dagger init --sdk php --name coding-agent
+```
+</TabItem>
+<TabItem value="Java">
+```bash
+dagger init --sdk java --name coding-agent
+```
+</TabItem>
+</Tabs>
 
 This will generate a bunch of files that make up the Dagger module, including some boilerplate functions as examples.
 
@@ -48,7 +72,7 @@ For more information about the environment concept, see [what is a workspace](/a
 dagger install github.com/shykes/toy-programmer/toy-workspace
 ```
 
-Toy-workspace is a Dagger module that provides a simple workspace for the agent. It has a Container as it's state and functions to read, write, and build the code.
+Toy-workspace is a Dagger module that provides a simple workspace for the agent. It has a Container as its state and functions to read, write, and build the code.
 
 ## Write your agent fuction
 
