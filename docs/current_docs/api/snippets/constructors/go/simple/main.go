@@ -7,10 +7,8 @@ import (
 )
 
 func New(
-	// +optional
 	// +default="Hello"
 	greeting string,
-	// +optional
 	// +default="World"
 	name string,
 ) *MyModule {
