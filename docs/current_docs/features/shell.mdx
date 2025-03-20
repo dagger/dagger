@@ -104,11 +104,10 @@ container | from alpine | terminal
 Dagger Shell provides extensive built-in help:
 
 ```shell
-.help             # Shows available commands
-.help MODULE      # Shows description, arguments, and return type for module constructor
-.help FUNCTION    # Shows description, arguments, and return type for function
-MODULE | .help    # Shows available functions for constructor returned by MODULE
-FUNCTION | .help  # Shows available functions for object returned by FUNCTION
+.help               # Shows available commands
+.help <module>      # Shows description, entrypoint arguments, and available functions
+.help <function>    # Shows description, arguments, and return type for function
+<function> | .help  # Shows available functions for object returned by <function>
 ```
 
 ![Dagger Shell help](/img/current_docs/features/shell-help.gif)
