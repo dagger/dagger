@@ -135,10 +135,10 @@ If only the core Dagger API is needed, the `-n` (`--no-mod`) flag can be provide
 
 ## Paths
 
-Filesystem paths are relative to the working directory inside Dagger Shell
+Filesystem paths are handled differently depending on the initial context of the module loaded in Dagger Shell.
 
-- When the working directory is local, any directory or file paths that you pass to Dagger Functions will be interpreted relative to that directory on the host.
-- When the working directory is remote, any directory or file paths will come from that remote directory.
+- If the loaded module is local, or if no module is loaded, directories or files will come from the host system.
+- If the loaded module is remote, directories or files will come from that remote directory.
   - In this latter case, to use files and directories from the host system, they must be referred to using the `host` function.
 
 Here's an example:
