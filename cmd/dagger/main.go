@@ -1,14 +1,18 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"iter"
+	"maps"
 	"os"
 	"os/signal"
 	"runtime/pprof"
 	runtimetrace "runtime/trace"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -482,12 +486,21 @@ func wrapCmdDescription(name, short string, padding int) string {
 }
 
 func nameShortWrapped[S ~[]E, E any](s S, f func(e E) (string, string)) string {
+	return nameShortWrappedIter(func(yield func(string, string) bool) {
+		for _, v := range s {
+			if !yield(f(v)) {
+				return
+			}
+		}
+	})
+}
+
+func nameShortWrappedIter(s iter.Seq2[string, string]) string {
 	minPadding := 11
 	maxLen := 0
 	lines := []string{}
 
-	for _, e := range s {
-		name, short := f(e)
+	for name, short := range Sorted2(s) {
 		nameLen := len(name)
 		if nameLen > maxLen {
 			maxLen = nameLen
@@ -509,6 +522,18 @@ func nameShortWrapped[S ~[]E, E any](s S, f func(e E) (string, string)) string {
 		sb.WriteString("\n")
 	}
 	return sb.String()
+}
+
+// Sorted2 returns a new Seq2 iterator ordered by the first element.
+func Sorted2[K cmp.Ordered, V any](x iter.Seq2[K, V]) iter.Seq2[K, V] {
+	return func(yield func(K, V) bool) {
+		m := maps.Collect(x)
+		for _, k := range slices.Sorted(maps.Keys(m)) {
+			if !yield(k, m[k]) {
+				return
+			}
+		}
+	}
 }
 
 // toUpperBold returns the given string in uppercase and bold.

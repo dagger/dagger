@@ -1,12 +1,12 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
 	"os/exec"
 	"slices"
-	"sort"
 	"strings"
 
 	"dagger.io/dagger/telemetry"
@@ -361,7 +361,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 		},
 		&ShellCommand{
 			Use:         ".help [command | function | module | type]\n<function> | .help [function]",
-			Description: `Show documentation for a command, function, module, or type.`,
+			Description: `Show documentation for a command, function, module, or type`,
 			Args:        MaximumArgs(1),
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, st *ShellState) error {
 				var err error
@@ -711,12 +711,12 @@ Without arguments, the current working directory is replaced by the initial cont
 		)
 	}
 
-	sort.Slice(builtins, func(i, j int) bool {
-		return builtins[i].Use < builtins[j].Use
+	slices.SortStableFunc(builtins, func(x, y *ShellCommand) int {
+		return cmp.Compare(x.Use, y.Use)
 	})
 
-	sort.Slice(stdlib, func(i, j int) bool {
-		return stdlib[i].Use < stdlib[j].Use
+	slices.SortStableFunc(stdlib, func(x, y *ShellCommand) int {
+		return cmp.Compare(x.Use, y.Use)
 	})
 
 	h.builtins = builtins
