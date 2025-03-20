@@ -18,14 +18,14 @@ Here are a few examples:
     <TabItem value="System shell">
     ```shell
     dagger <<EOF
-    container \
-      | from cgr.dev/chainguard/wolfi-base \
-      | with-exec apk add go \
-      | with-directory /src https://github.com/golang/example#master \
-      | with-workdir /src/hello \
-      | with-exec -- go build -o hello . \
-      | file ./hello \
-      | export ./hello-from-dagger
+    container |
+      from cgr.dev/chainguard/wolfi-base |
+      with-exec apk add go |
+      with-directory /src https://github.com/golang/example#master |
+      with-workdir /src/hello |
+      with-exec -- go build -o hello . |
+      file ./hello |
+      export ./hello-from-dagger
     EOF
     ```
     </TabItem>
@@ -110,8 +110,8 @@ Here are a few examples:
     <TabItem value="System shell">
     ```shell
     dagger <<EOF
-    github.com/jpadams/daggerverse/trivy@v0.5.0 \
-      | scan-image ubuntu:latest
+    github.com/jpadams/daggerverse/trivy@v0.5.0 |
+      scan-image ubuntu:latest
     EOF
     ```
     </TabItem>

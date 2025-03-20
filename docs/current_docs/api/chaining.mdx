@@ -18,10 +18,10 @@ Here is an example of chaining a `Container.withExec()` call to a container retu
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-github.com/dagger/dagger/modules/wolfi@v0.16.2 \
-  | container \
-  | with-exec ls /etc/ \
-  | stdout
+github.com/dagger/dagger/modules/wolfi@v0.16.2 |
+  container |
+  with-exec ls /etc/ |
+  stdout
 EOF
 ```
 </TabItem>
@@ -49,10 +49,10 @@ Here is an example of chaining a `Container.withExec()` function call to a conta
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-github.com/dagger/dagger/modules/wolfi@v0.16.2 \
-  | container \
-  | with-exec cat /etc/os-release \
-  | stdout
+github.com/dagger/dagger/modules/wolfi@v0.16.2 |
+  container |
+  with-exec cat /etc/os-release |
+  stdout
 EOF
 ```
 </TabItem>
@@ -80,11 +80,11 @@ Here is an example of chaining a `Container.withExec()` function call to do the 
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-github.com/dagger/dagger/modules/wolfi@v0.16.2 \
-  | container \
-  | with-exec rm /etc/os-release \
-  | with-exec ls /etc \
-  | stdout
+github.com/dagger/dagger/modules/wolfi@v0.16.2 |
+  container |
+  with-exec rm /etc/os-release |
+  with-exec ls /etc |
+  stdout
 EOF
 ```
 </TabItem>
@@ -114,10 +114,10 @@ Here is another example which chains multiple `Container.withExec()` calls to in
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-github.com/dagger/dagger/modules/wolfi@v0.16.2 \
-  | container --packages curl \
-  | with-exec -- curl -L dagger.io \
-  | stdout
+github.com/dagger/dagger/modules/wolfi@v0.16.2 |
+  container --packages curl |
+  with-exec -- curl -L dagger.io |
+  stdout
 EOF
 ```
 </TabItem>
@@ -197,9 +197,9 @@ Here is an example of exporting the build directory returned by a Go builder Dag
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-github.com/kpenfound/dagger-modules/golang@v0.2.1 \
-  | build ./cmd/dagger --source=https://github.com/dagger/dagger \
-  | export ./my-build
+github.com/kpenfound/dagger-modules/golang@v0.2.1 |
+  build ./cmd/dagger --source=https://github.com/dagger/dagger |
+  export ./my-build
 EOF
 ```
 </TabItem>
@@ -227,9 +227,9 @@ Here is an example of exporting the build directory returned by the same Dagger 
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-github.com/kpenfound/dagger-modules/golang@v0.2.1 \
-  | build ./cmd/dagger --source=https://github.com/dagger/dagger \
-  | export ./my-build --wipe
+github.com/kpenfound/dagger-modules/golang@v0.2.1 |
+  build ./cmd/dagger --source=https://github.com/dagger/dagger |
+  export ./my-build --wipe
 EOF
 ```
 </TabItem>
@@ -255,10 +255,10 @@ Instead of exporting an entire directory, you can also export a file. Here is an
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-github.com/kpenfound/dagger-modules/golang@v0.2.1 \
-  | build ./cmd/dagger --source=https://github.com/dagger/dagger \
-  | file ./dagger \
-  | export ./my-file
+github.com/kpenfound/dagger-modules/golang@v0.2.1 |
+  build ./cmd/dagger --source=https://github.com/dagger/dagger |
+  file ./dagger |
+  export ./my-file
 EOF
 ```
 </TabItem>
@@ -286,10 +286,10 @@ Here is another example, this time exporting the results of a `ruff` linter Dagg
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-github.com/dagger/dagger/modules/ruff \
-  | lint https://github.com/dagger/dagger \
-  | report \
-  | export /tmp/report.json
+github.com/dagger/dagger/modules/ruff |
+  lint https://github.com/dagger/dagger |
+  report |
+  export /tmp/report.json
 EOF
 ```
 </TabItem>
@@ -339,10 +339,10 @@ Here is an example of listing the contents of a directory returned by a Dagger F
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-github.com/kpenfound/dagger-modules/golang@v0.2.1 \
-  | build . --source=https://github.com/golang/example#master:/hello \
-  | directory . \
-  | entries
+github.com/kpenfound/dagger-modules/golang@v0.2.1 |
+  build . --source=https://github.com/golang/example#master:/hello |
+  directory . |
+  entries
 EOF
 ```
 </TabItem>
@@ -370,10 +370,10 @@ Here is an example of using the `File.contents()` method to print the JSON repor
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-github.com/dagger/dagger/modules/ruff \
-  | lint https://github.com/dagger/dagger \
-  | report \
-  | contents
+github.com/dagger/dagger/modules/ruff |
+  lint https://github.com/dagger/dagger |
+  report |
+  contents
 EOF
 ```
 </TabItem>
@@ -401,10 +401,10 @@ Similar, the `File` object exposes a method to return the size of the correspond
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-github.com/sagikazarmark/daggerverse/arc@40057665476af62e617cc8def9ef5a87735264a9 \
-  | archive-directory dagger-cli https://github.com/dagger/dagger#main:cmd/dagger \
-  | create zip \
-  | size
+github.com/sagikazarmark/daggerverse/arc@40057665476af62e617cc8def9ef5a87735264a9 |
+  archive-directory dagger-cli https://github.com/dagger/dagger#main:cmd/dagger |
+  create zip |
+  size
 EOF
 ```
 </TabItem>
@@ -536,11 +536,11 @@ The example below uploads the entire current directory to the container filesyst
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-github.com/dagger/dagger/modules/wolfi@v0.16.2 \
-  | container \
-  | with-directory /src . \
-  | with-exec ls /src \
-  | stdout
+github.com/dagger/dagger/modules/wolfi@v0.16.2 |
+  container |
+  with-directory /src . |
+  with-exec ls /src |
+  stdout
 EOF
 ```
 </TabItem>
@@ -570,11 +570,11 @@ Here is an example of passing a `README.md` file from the host to a container bu
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-github.com/dagger/dagger/modules/wolfi@v0.16.2 \
-  | container \
-  | with-file /README.md $(host | file ./README.md) \
-  | with-exec cat /README.md \
-  | stdout
+github.com/dagger/dagger/modules/wolfi@v0.16.2 |
+  container |
+  with-file /README.md $(host | file ./README.md) |
+  with-exec cat /README.md |
+  stdout
 EOF
 ```
 </TabItem>
