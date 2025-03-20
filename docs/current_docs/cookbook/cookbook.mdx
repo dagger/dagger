@@ -844,12 +844,12 @@ The following Dagger module uses a constructor to set a module-wide `Directory` 
     <Tabs groupId="shell">
     <TabItem value="System shell">
     ```shell
-    dagger -c '. --source $(host | directory /home/admin/images) | foo'
+    dagger -c 'my-module --source $(host | directory /home/admin/images) | foo'
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
     ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-    . --source $(host | directory /home/admin/images) | foo
+    my-module --source $(host | directory /home/admin/images) | foo
     ```
     </TabItem>
     <TabItem value="Dagger CLI">
@@ -2416,12 +2416,12 @@ Execute a Dagger Function which performs different types of tests by executing o
     <Tabs groupId="shell">
     <TabItem value="System shell">
     ```shell
-    dagger -c '. . | run-all-tests'
+    dagger -c 'my-module $(host | directory .) | run-all-tests'
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
     ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-    . . | run-all-tests
+    my-module $(host | directory .) | run-all-tests
     ```
     </TabItem>
     <TabItem value="Dagger CLI">
