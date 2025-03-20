@@ -486,7 +486,11 @@ EOF
 </TabItem>
 <TabItem value="Dagger Shell">
 ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-container | from alpine:latest  | with-directory /src https://github.com/dagger/dagger | with-exec ls /src | stdout
+container |
+  from alpine:latest |
+  with-directory /src https://github.com/dagger/dagger |
+  with-exec ls /src |
+  stdout
 ```
 </TabItem>
 <TabItem value="Dagger CLI">
