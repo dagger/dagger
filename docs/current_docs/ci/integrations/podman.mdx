@@ -24,8 +24,20 @@ sudo ln -s $(which podman) /usr/local/bin/docker
 ```
 
 :::note
-RHEL 8.x users may need to additionally execute `modprobe iptable_nat`.
+Podman Desktop on Mac and RHEL 8.x users may need to additionally execute `modprobe iptable_nat`.
 :::
+
+To access the VM used by Podman Desktop on Mac 
+
+```shell
+# list podman machines
+podman machine list 
+
+# ssh to the machine
+podman machine ssh podman-machine-default
+
+sudo modprobe iptable_nat
+```
 
 ## Resources
 
