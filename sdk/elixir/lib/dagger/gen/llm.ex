@@ -10,7 +10,7 @@ defmodule Dagger.LLM do
   defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
-  @deprecated "use get<TargetType> instead"
+
   @doc "Retrieve a the current value in the LLM environment, of type CacheVolume"
   @spec cache_volume(t()) :: Dagger.CacheVolume.t()
   def cache_volume(%__MODULE__{} = llm) do
@@ -23,7 +23,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type Container"
   @spec container(t()) :: Dagger.Container.t()
   def container(%__MODULE__{} = llm) do
@@ -36,7 +35,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type CurrentModule"
   @spec current_module(t()) :: Dagger.CurrentModule.t()
   def current_module(%__MODULE__{} = llm) do
@@ -49,7 +47,15 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
+  @doc "returns the type of the current state"
+  @spec current_type(t()) :: {:ok, String.t() | nil} | {:error, term()}
+  def current_type(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("currentType")
+
+    Client.execute(llm.client, query_builder)
+  end
+
   @doc "Retrieve a the current value in the LLM environment, of type Directory"
   @spec directory(t()) :: Dagger.Directory.t()
   def directory(%__MODULE__{} = llm) do
@@ -62,7 +68,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type EnumTypeDef"
   @spec enum_type_def(t()) :: Dagger.EnumTypeDef.t()
   def enum_type_def(%__MODULE__{} = llm) do
@@ -75,7 +80,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type EnumValueTypeDef"
   @spec enum_value_type_def(t()) :: Dagger.EnumValueTypeDef.t()
   def enum_value_type_def(%__MODULE__{} = llm) do
@@ -88,7 +92,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type Error"
   @spec error(t()) :: Dagger.Error.t()
   def error(%__MODULE__{} = llm) do
@@ -101,7 +104,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type ErrorValue"
   @spec error_value(t()) :: Dagger.ErrorValue.t()
   def error_value(%__MODULE__{} = llm) do
@@ -114,7 +116,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type FieldTypeDef"
   @spec field_type_def(t()) :: Dagger.FieldTypeDef.t()
   def field_type_def(%__MODULE__{} = llm) do
@@ -127,7 +128,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type File"
   @spec file(t()) :: Dagger.File.t()
   def file(%__MODULE__{} = llm) do
@@ -140,7 +140,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type Function"
   @spec function(t()) :: Dagger.Function.t()
   def function(%__MODULE__{} = llm) do
@@ -153,7 +152,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type FunctionArg"
   @spec function_arg(t()) :: Dagger.FunctionArg.t()
   def function_arg(%__MODULE__{} = llm) do
@@ -166,7 +164,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type FunctionCall"
   @spec function_call(t()) :: Dagger.FunctionCall.t()
   def function_call(%__MODULE__{} = llm) do
@@ -179,7 +176,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type FunctionCallArgValue"
   @spec function_call_arg_value(t()) :: Dagger.FunctionCallArgValue.t()
   def function_call_arg_value(%__MODULE__{} = llm) do
@@ -192,7 +188,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type GeneratedCode"
   @spec generated_code(t()) :: Dagger.GeneratedCode.t()
   def generated_code(%__MODULE__{} = llm) do
@@ -610,7 +605,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type GitRef"
   @spec git_ref(t()) :: Dagger.GitRef.t()
   def git_ref(%__MODULE__{} = llm) do
@@ -623,7 +617,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type GitRepository"
   @spec git_repository(t()) :: Dagger.GitRepository.t()
   def git_repository(%__MODULE__{} = llm) do
@@ -663,7 +656,6 @@ defmodule Dagger.LLM do
     Client.execute(llm.client, query_builder)
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type InputTypeDef"
   @spec input_type_def(t()) :: Dagger.InputTypeDef.t()
   def input_type_def(%__MODULE__{} = llm) do
@@ -676,7 +668,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type InterfaceTypeDef"
   @spec interface_type_def(t()) :: Dagger.InterfaceTypeDef.t()
   def interface_type_def(%__MODULE__{} = llm) do
@@ -689,7 +680,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type LLM"
   @spec l_lm(t()) :: Dagger.LLM.t()
   def l_lm(%__MODULE__{} = llm) do
@@ -711,7 +701,6 @@ defmodule Dagger.LLM do
     Client.execute(llm.client, query_builder)
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type ListTypeDef"
   @spec list_type_def(t()) :: Dagger.ListTypeDef.t()
   def list_type_def(%__MODULE__{} = llm) do
@@ -724,7 +713,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use sync"
   @doc "synchronize LLM state"
   @spec loop(t()) :: Dagger.LLM.t()
   def loop(%__MODULE__{} = llm) do
@@ -746,7 +734,6 @@ defmodule Dagger.LLM do
     Client.execute(llm.client, query_builder)
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type Module"
   @spec module(t()) :: Dagger.Module.t()
   def module(%__MODULE__{} = llm) do
@@ -759,7 +746,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type ModuleConfigClient"
   @spec module_config_client(t()) :: Dagger.ModuleConfigClient.t()
   def module_config_client(%__MODULE__{} = llm) do
@@ -772,7 +758,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type ModuleSource"
   @spec module_source(t()) :: Dagger.ModuleSource.t()
   def module_source(%__MODULE__{} = llm) do
@@ -785,7 +770,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type ObjectTypeDef"
   @spec object_type_def(t()) :: Dagger.ObjectTypeDef.t()
   def object_type_def(%__MODULE__{} = llm) do
@@ -807,7 +791,6 @@ defmodule Dagger.LLM do
     Client.execute(llm.client, query_builder)
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type ScalarTypeDef"
   @spec scalar_type_def(t()) :: Dagger.ScalarTypeDef.t()
   def scalar_type_def(%__MODULE__{} = llm) do
@@ -820,7 +803,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type SDKConfig"
   @spec sdkconfig(t()) :: Dagger.SDKConfig.t() | nil
   def sdkconfig(%__MODULE__{} = llm) do
@@ -833,7 +815,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type Secret"
   @spec secret(t()) :: Dagger.Secret.t()
   def secret(%__MODULE__{} = llm) do
@@ -846,7 +827,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type Service"
   @spec service(t()) :: Dagger.Service.t()
   def service(%__MODULE__{} = llm) do
@@ -1370,7 +1350,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type Socket"
   @spec socket(t()) :: Dagger.Socket.t()
   def socket(%__MODULE__{} = llm) do
@@ -1383,7 +1362,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type SourceMap"
   @spec source_map(t()) :: Dagger.SourceMap.t()
   def source_map(%__MODULE__{} = llm) do
@@ -1414,7 +1392,6 @@ defmodule Dagger.LLM do
     end
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type Terminal"
   @spec terminal(t()) :: Dagger.Terminal.t()
   def terminal(%__MODULE__{} = llm) do
@@ -1436,7 +1413,6 @@ defmodule Dagger.LLM do
     Client.execute(llm.client, query_builder)
   end
 
-  @deprecated "use get<TargetType> instead"
   @doc "Retrieve a the current value in the LLM environment, of type TypeDef"
   @spec type_def(t()) :: Dagger.TypeDef.t()
   def type_def(%__MODULE__{} = llm) do
@@ -1469,7 +1445,6 @@ defmodule Dagger.LLM do
     end
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type CacheVolume in the llm environment"
   @spec with_cache_volume(t(), Dagger.CacheVolume.t()) :: Dagger.LLM.t()
   def with_cache_volume(%__MODULE__{} = llm, value) do
@@ -1484,7 +1459,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type Container in the llm environment"
   @spec with_container(t(), Dagger.Container.t()) :: Dagger.LLM.t()
   def with_container(%__MODULE__{} = llm, value) do
@@ -1497,7 +1471,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type CurrentModule in the llm environment"
   @spec with_current_module(t(), Dagger.CurrentModule.t()) :: Dagger.LLM.t()
   def with_current_module(%__MODULE__{} = llm, value) do
@@ -1512,7 +1485,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type Directory in the llm environment"
   @spec with_directory(t(), Dagger.Directory.t()) :: Dagger.LLM.t()
   def with_directory(%__MODULE__{} = llm, value) do
@@ -1525,7 +1497,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type EnumTypeDef in the llm environment"
   @spec with_enum_type_def(t(), Dagger.EnumTypeDef.t()) :: Dagger.LLM.t()
   def with_enum_type_def(%__MODULE__{} = llm, value) do
@@ -1540,7 +1511,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type EnumValueTypeDef in the llm environment"
   @spec with_enum_value_type_def(t(), Dagger.EnumValueTypeDef.t()) :: Dagger.LLM.t()
   def with_enum_value_type_def(%__MODULE__{} = llm, value) do
@@ -1555,7 +1525,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type Error in the llm environment"
   @spec with_error(t(), Dagger.Error.t()) :: Dagger.LLM.t()
   def with_error(%__MODULE__{} = llm, value) do
@@ -1568,7 +1537,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type ErrorValue in the llm environment"
   @spec with_error_value(t(), Dagger.ErrorValue.t()) :: Dagger.LLM.t()
   def with_error_value(%__MODULE__{} = llm, value) do
@@ -1583,7 +1551,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type FieldTypeDef in the llm environment"
   @spec with_field_type_def(t(), Dagger.FieldTypeDef.t()) :: Dagger.LLM.t()
   def with_field_type_def(%__MODULE__{} = llm, value) do
@@ -1598,7 +1565,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type File in the llm environment"
   @spec with_file(t(), Dagger.File.t()) :: Dagger.LLM.t()
   def with_file(%__MODULE__{} = llm, value) do
@@ -1611,7 +1577,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type Function in the llm environment"
   @spec with_function(t(), Dagger.Function.t()) :: Dagger.LLM.t()
   def with_function(%__MODULE__{} = llm, value) do
@@ -1624,7 +1589,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type FunctionArg in the llm environment"
   @spec with_function_arg(t(), Dagger.FunctionArg.t()) :: Dagger.LLM.t()
   def with_function_arg(%__MODULE__{} = llm, value) do
@@ -1639,7 +1603,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type FunctionCall in the llm environment"
   @spec with_function_call(t(), Dagger.FunctionCall.t()) :: Dagger.LLM.t()
   def with_function_call(%__MODULE__{} = llm, value) do
@@ -1654,7 +1617,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type FunctionCallArgValue in the llm environment"
   @spec with_function_call_arg_value(t(), Dagger.FunctionCallArgValue.t()) :: Dagger.LLM.t()
   def with_function_call_arg_value(%__MODULE__{} = llm, value) do
@@ -1669,7 +1631,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type GeneratedCode in the llm environment"
   @spec with_generated_code(t(), Dagger.GeneratedCode.t()) :: Dagger.LLM.t()
   def with_generated_code(%__MODULE__{} = llm, value) do
@@ -1684,7 +1645,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type GitRef in the llm environment"
   @spec with_git_ref(t(), Dagger.GitRef.t()) :: Dagger.LLM.t()
   def with_git_ref(%__MODULE__{} = llm, value) do
@@ -1697,7 +1657,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type GitRepository in the llm environment"
   @spec with_git_repository(t(), Dagger.GitRepository.t()) :: Dagger.LLM.t()
   def with_git_repository(%__MODULE__{} = llm, value) do
@@ -1712,7 +1671,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type InputTypeDef in the llm environment"
   @spec with_input_type_def(t(), Dagger.InputTypeDef.t()) :: Dagger.LLM.t()
   def with_input_type_def(%__MODULE__{} = llm, value) do
@@ -1727,7 +1685,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type InterfaceTypeDef in the llm environment"
   @spec with_interface_type_def(t(), Dagger.InterfaceTypeDef.t()) :: Dagger.LLM.t()
   def with_interface_type_def(%__MODULE__{} = llm, value) do
@@ -1742,7 +1699,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type LLM in the llm environment"
   @spec with_llm(t(), Dagger.LLM.t()) :: Dagger.LLM.t()
   def with_llm(%__MODULE__{} = llm, value) do
@@ -1755,7 +1711,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type ListTypeDef in the llm environment"
   @spec with_list_type_def(t(), Dagger.ListTypeDef.t()) :: Dagger.LLM.t()
   def with_list_type_def(%__MODULE__{} = llm, value) do
@@ -1782,7 +1737,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type Module in the llm environment"
   @spec with_module(t(), Dagger.Module.t()) :: Dagger.LLM.t()
   def with_module(%__MODULE__{} = llm, value) do
@@ -1795,7 +1749,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type ModuleConfigClient in the llm environment"
   @spec with_module_config_client(t(), Dagger.ModuleConfigClient.t()) :: Dagger.LLM.t()
   def with_module_config_client(%__MODULE__{} = llm, value) do
@@ -1810,7 +1763,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type ModuleSource in the llm environment"
   @spec with_module_source(t(), Dagger.ModuleSource.t()) :: Dagger.LLM.t()
   def with_module_source(%__MODULE__{} = llm, value) do
@@ -1825,7 +1777,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type ObjectTypeDef in the llm environment"
   @spec with_object_type_def(t(), Dagger.ObjectTypeDef.t()) :: Dagger.LLM.t()
   def with_object_type_def(%__MODULE__{} = llm, value) do
@@ -1891,7 +1842,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type SDKConfig in the llm environment"
   @spec with_sdk_config(t(), Dagger.SDKConfig.t()) :: Dagger.LLM.t()
   def with_sdk_config(%__MODULE__{} = llm, value) do
@@ -1904,7 +1854,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type ScalarTypeDef in the llm environment"
   @spec with_scalar_type_def(t(), Dagger.ScalarTypeDef.t()) :: Dagger.LLM.t()
   def with_scalar_type_def(%__MODULE__{} = llm, value) do
@@ -1919,7 +1868,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type Secret in the llm environment"
   @spec with_secret(t(), Dagger.Secret.t()) :: Dagger.LLM.t()
   def with_secret(%__MODULE__{} = llm, value) do
@@ -1932,7 +1880,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type Service in the llm environment"
   @spec with_service(t(), Dagger.Service.t()) :: Dagger.LLM.t()
   def with_service(%__MODULE__{} = llm, value) do
@@ -1945,7 +1892,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type Socket in the llm environment"
   @spec with_socket(t(), Dagger.Socket.t()) :: Dagger.LLM.t()
   def with_socket(%__MODULE__{} = llm, value) do
@@ -1958,7 +1904,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type SourceMap in the llm environment"
   @spec with_source_map(t(), Dagger.SourceMap.t()) :: Dagger.LLM.t()
   def with_source_map(%__MODULE__{} = llm, value) do
@@ -1971,7 +1916,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type Terminal in the llm environment"
   @spec with_terminal(t(), Dagger.Terminal.t()) :: Dagger.LLM.t()
   def with_terminal(%__MODULE__{} = llm, value) do
@@ -1984,7 +1928,6 @@ defmodule Dagger.LLM do
     }
   end
 
-  @deprecated "use set<TargetType> instead"
   @doc "Set a variable of type TypeDef in the llm environment"
   @spec with_type_def(t(), Dagger.TypeDef.t()) :: Dagger.LLM.t()
   def with_type_def(%__MODULE__{} = llm, value) do

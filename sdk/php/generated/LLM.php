@@ -38,6 +38,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * returns the type of the current state
+     */
+    public function currentType(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('currentType');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'currentType');
+    }
+
+    /**
      * Retrieve a the current value in the LLM environment, of type Directory
      */
     public function directory(): Directory

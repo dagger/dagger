@@ -6100,6 +6100,11 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// returns the type of the current state
+    pub async fn current_type(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("currentType");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Retrieve a the current value in the LLM environment, of type Directory
     pub fn directory(&self) -> Directory {
         let query = self.selection.select("directory");
