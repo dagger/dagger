@@ -213,10 +213,8 @@ func (m *ElixirSdk) WithSDK(introspectionJSON *dagger.File) *ElixirSdk {
 
 func (m *ElixirSdk) WithDaggerCodegen() *dagger.Container {
 	codegenPath := path.Join(sdkSrc, "dagger_codegen")
-	_, codegenBuildCache := mixProjectCaches("dagger-codegen")
 	return m.baseContainer(dag.Container()).
 		WithMountedDirectory(sdkSrc, m.SdkSourceDir).
-		WithMountedCache(path.Join(codegenPath, "_build"), codegenBuildCache).
 		WithWorkdir(codegenPath)
 }
 
