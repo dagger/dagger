@@ -17,6 +17,10 @@ Dagger Functions execute in containers and thus do not have default access to yo
 - Local network services: Dagger Functions that accept an argument of type `Service` can be passed local network services in the form `tcp://HOST:PORT`.
 :::
 
+:::note
+When passing values to Dagger Functions within Dagger Shell, required arguments are positional, while flags can be placed anywhere.
+:::
+
 ## String arguments
 
 Here is an example of a Dagger Function that accepts a string argument:
@@ -143,10 +147,11 @@ dagger -m github.com/shykes/daggerverse/hello@v0.3.0 call hello --greeting=$GREE
 
 ## Boolean arguments
 
-To pass a Boolean argument to a Dagger Function, simply add the corresponding flag, like so:
-
+:::note
+When passing optional Boolean arguments:
 - To set the argument to true: `--foo=true` or `--foo` (Dagger CLI), `true` (Dagger Shell)
 - To set the argument to false: `--foo=false` (Dagger CLI), `false` (Dagger Shell)
+:::
 
 Here is an example of a Dagger Function that accepts a Boolean argument:
 
