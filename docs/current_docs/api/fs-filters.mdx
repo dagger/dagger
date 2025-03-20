@@ -127,8 +127,8 @@ Here are a few examples of useful patterns:
 </TabItem>
 <TabItem value="Python">
 ```python
-# exclude Go tests and test data
-Ignore(["**_test.go", "**/testdata/**"])
+# exclude Pytest tests and test data
+Ignore(["tests/", ".pytest_cache"])
 
 # exclude binaries
 Ignore(["bin"])
@@ -145,14 +145,11 @@ Ignore([".git", "**/.gitignore"])
 </TabItem>
 <TabItem value="TypeScript">
 ```typescript
-// exclude tests and test data
-@argument({ ignore: ["**_test.go", "**/testdata/**"] })
+// exclude Mocha tests
+@argument({ ignore: ["**.spec.ts"] })
 
 // exclude binaries
 @argument({ ignore: ["bin"] })
-
-// exclude Python dependencies
-@argument({ ignore: ["**/.venv", "**/__pycache__"] })
 
 // exclude Node.js dependencies
 @argument({ ignore: ["**/node_modules"] })
@@ -163,7 +160,7 @@ Ignore([".git", "**/.gitignore"])
 </TabItem>
 <TabItem value="PHP">
 ```php
-// exclude tests and test data
+// exclude PHPUnit tests and test data
 #[Ignore('tests/', '.phpunit.cache', '.phpunit.result.cache')]
 
 // exclude third party dependencies
