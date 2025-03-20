@@ -94,7 +94,7 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, she
 }
 
 func (s *LLMSession) reset() {
-	s.llm = s.dag.Llm(dagger.LlmOpts{Model: s.model})
+	s.llm = s.dag.Llm(dagger.LlmOpts{Model: s.model}).WithQuery()
 }
 
 func (s *LLMSession) Fork() *LLMSession {
