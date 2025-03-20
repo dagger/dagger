@@ -434,9 +434,15 @@ func (h *shellCallHandler) ModuleDoc(st *ShellState, m *moduleDef) string {
 
 	meta := new(strings.Builder)
 	meta.WriteString(m.Name)
-	if m.Description != "" {
+
+	// Prefer description on main object
+	description := m.MainObject.AsObject.Description
+	if description == "" {
+		description = m.Description
+	}
+	if description != "" {
 		meta.WriteString("\n\n")
-		meta.WriteString(m.Description)
+		meta.WriteString(description)
 	}
 	if meta.Len() > 0 {
 		doc.Add("Module", meta.String())
@@ -475,7 +481,15 @@ func (h *shellCallHandler) ModuleDoc(st *ShellState, m *moduleDef) string {
 		}
 	}
 
-	doc.Add("Returns", h.shellReturnsDoc(fn.ReturnType, usage))
+	if fns := m.MainObject.AsFunctionProvider().GetFunctions(); len(fns) > 0 {
+		doc.Add(
+			"Available Functions",
+			nameShortWrapped(fns, func(f *modFunction) (string, string) {
+				return f.CmdName(), f.Short()
+			}),
+		)
+		doc.Add("", `Use ".help <function>" for more information on a function.`)
+	}
 
 	return doc.String()
 }
@@ -510,34 +524,18 @@ func (h *shellCallHandler) FunctionDoc(md *moduleDef, fn *modFunction) string {
 		)
 	}
 
-	doc.Add("Returns", h.shellReturnsDoc(fn.ReturnType, usage))
-
-	return doc.String()
-}
-
-func (h *shellCallHandler) shellReturnsDoc(rtype *modTypeDef, usage string) string {
-	sb := new(strings.Builder)
-	sb.WriteString(rtype.Short())
 	usage = strings.TrimSuffix(usage, " [options]")
 
-	var help string
+	doc.Add(
+		"Returns",
+		fmt.Sprintf(`%s
 
-	// NB: this can be too much on a type with many functions (e.g., Container),
-	// but also useful on a module. Keeping for all functions for consistency
-	// (documenting a module is like documenting a function since modules map
-	// to their constructor function).
-	if fp := rtype.AsFunctionProvider(); fp != nil {
-		help = h.FunctionsList(usage, fp.GetFunctions())
-	}
+Use "%s | .help" for more details.`,
+			fn.ReturnType.Short(),
+			strings.TrimSuffix(usage, " [options]"),
+		))
 
-	if help == "" {
-		help = fmt.Sprintf(`Use "%s | .help" for more details.`, usage)
-	}
-
-	sb.WriteString("\n\n")
-	sb.WriteString(help)
-
-	return sb.String()
+	return doc.String()
 }
 
 func shellTypeDoc(t *modTypeDef) string {
