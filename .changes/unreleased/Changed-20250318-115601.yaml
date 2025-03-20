@@ -1,7 +1,0 @@
-kind: Changed
-body: |
-    Fields that return directory paths such as `Directory.glob` and `Directory.entries` now return a trailing slash to distinguish from regular files
-time: 2025-03-18T11:56:01.005811499Z
-custom:
-    Author: jedevc
-    PR: "9118"
