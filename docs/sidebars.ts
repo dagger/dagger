@@ -102,6 +102,7 @@ module.exports = {
         "api/cache-volumes",
         "api/secrets",
         "api/terminal",
+        "api/engine",
         {
           type: "category",
           label: "Calling the API",
@@ -131,7 +132,6 @@ module.exports = {
             "api/interfaces",
             "api/custom-types",
             "api/state",
-            "api/engine",
           ],
         },
         {
