@@ -7,7 +7,7 @@ toolchain go1.24.0
 require github.com/iancoleman/strcase v0.3.0
 
 require (
-	github.com/99designs/gqlgen v0.17.66
+	github.com/99designs/gqlgen v0.17.68
 	github.com/Khan/genqlient v0.8.0
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
@@ -32,7 +32,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.34.0
 	go.opentelemetry.io/otel/trace v1.34.0
 	go.opentelemetry.io/proto/otlp v1.3.1
-	golang.org/x/mod v0.23.0
+	golang.org/x/mod v0.24.0
 	golang.org/x/net v0.37.0 // indirect
 	golang.org/x/sync v0.12.0
 	golang.org/x/sys v0.31.0 // indirect
