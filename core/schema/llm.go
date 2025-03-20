@@ -66,7 +66,7 @@ func (s llmSchema) Install() {
 		}).
 			Doc("synchronize LLM state"),
 		dagql.Func("loop", s.loop).
-			Deprecated("use sync").
+			// Deprecated("use sync").
 			Doc("synchronize LLM state"),
 		dagql.Func("tools", s.tools).
 			Doc("print documentation for available tools"),
