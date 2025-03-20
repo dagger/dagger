@@ -187,18 +187,17 @@ You will also want to ensure you _always_ cherry-pick a few special commits:
 
 </details>
 
+- [ ] Ensure that `.changes/.next` contains `$ENGINE_VERSION` - if it doesn't,
+      update it now!
+
 - [ ] Determine the next release version (use `patch`/`minor`/`major` to set the release type):
 
 ```console
-export ENGINE_VERSION_TYPE=patch
-export ENGINE_VERSION="$(changie next $ENGINE_VERSION_TYPE)"
+export ENGINE_VERSION="$(dagger call -m version next-release-version)"
 
 # this is required to interpolate $ENGINE_VERSION to the SDK release notes
 export CHANGIE_ENGINE_VERSION="$ENGINE_VERSION"
 ```
-
-- [ ] Ensure that `.changes/.next` contains `$ENGINE_VERSION` - if it doesn't,
-      update it now!
 
 - [ ] Create the target release notes branch for a PR - e.g. `prep-v0.12.4`.
   - 🚨 Non-main branch release only: This PR will also include the cherry-picked commits mentioned above.
