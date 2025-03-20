@@ -17,10 +17,10 @@ Here's an example of Dagger Shell in action:
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-container
-  | from alpine
-  | with-exec apk add curl
-  | with-exec -- curl -L https://dagger.io
+container \
+  | from alpine \
+  | with-exec apk add curl \
+  | with-exec -- curl -L https://dagger.io \
   | stdout
 EOF
 ```
