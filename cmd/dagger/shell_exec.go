@@ -306,16 +306,16 @@ func (h *shellCallHandler) StateLookup(ctx context.Context, name string) (*Shell
 			return &st, nil
 		}
 
-		// 2. Dependency short name
-		if dep := md.GetDependency(name); dep != nil {
-			depSt, _, err := h.GetDependency(ctx, name)
-			return depSt, err
-		}
-
-		// 3. Is it the current module's name?
+		// 2. Is it the current module's name?
 		if md.Name == name {
 			st := h.newModState(md.SourceDigest)
 			return &st, nil
+		}
+
+		// 3. Dependency short name
+		if dep := md.GetDependency(name); dep != nil {
+			depSt, _, err := h.GetDependency(ctx, name)
+			return depSt, err
 		}
 	}
 
