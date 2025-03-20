@@ -526,27 +526,28 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef
 	dgstInputs = append(dgstInputs, commit)
 
 	remoteRepo, isRemoteRepo := parent.Self.Repo.Backend.(*core.RemoteGitRepository)
-	usedAuth := isRemoteRepo &&
-		remoteRepo.AuthToken.Self != nil ||
-		remoteRepo.AuthHeader.Self != nil ||
-		remoteRepo.SSHAuthSocket != nil
-	if usedAuth {
-		// do a full hash of the actual files/dirs in the private git repo so
-		// that the cache key of the returned value can't be known unless the
-		// full contents are already known
-		dgst, err := core.GetContentHashFromDirectory(ctx, bk, inst)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get content hash: %w", err)
+	if isRemoteRepo {
+		usedAuth := remoteRepo.AuthToken.Self != nil ||
+			remoteRepo.AuthHeader.Self != nil ||
+			remoteRepo.SSHAuthSocket != nil
+		if usedAuth {
+			// do a full hash of the actual files/dirs in the private git repo so
+			// that the cache key of the returned value can't be known unless the
+			// full contents are already known
+			dgst, err := core.GetContentHashFromDirectory(ctx, bk, inst)
+			if err != nil {
+				return inst, fmt.Errorf("failed to get content hash: %w", err)
+			}
+			dgstInputs = append(dgstInputs, dgst.String(),
+				// also include what auth methods are used, currently we can't
+				// handle a cache hit where the result has a different auth
+				// method than the caller used (i.e. a git repo is pulled w/
+				// a token but hits cache for a dir where a ssh sock was used)
+				strconv.FormatBool(remoteRepo.AuthToken.Self != nil),
+				strconv.FormatBool(remoteRepo.AuthHeader.Self != nil),
+				strconv.FormatBool(remoteRepo.SSHAuthSocket != nil),
+			)
 		}
-		dgstInputs = append(dgstInputs, dgst.String(),
-			// also include what auth methods are used, currently we can't
-			// handle a cache hit where the result has a different auth
-			// method than the caller used (i.e. a git repo is pulled w/
-			// a token but hits cache for a dir where a ssh sock was used)
-			strconv.FormatBool(remoteRepo.AuthToken.Self != nil),
-			strconv.FormatBool(remoteRepo.AuthHeader.Self != nil),
-			strconv.FormatBool(remoteRepo.SSHAuthSocket != nil),
-		)
 	}
 
 	includedGitDir := !parent.Self.Repo.DiscardGitDir && !args.DiscardGitDir
