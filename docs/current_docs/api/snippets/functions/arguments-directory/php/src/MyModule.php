@@ -13,7 +13,7 @@ use function Dagger\dag;
 class MyModule
 {
     #[DaggerFunction]
-    public function tree(Directory $src, string $depth): string
+    public function tree(Directory $src, string $depth = "1"): string
     {
         return dag()
             ->container()

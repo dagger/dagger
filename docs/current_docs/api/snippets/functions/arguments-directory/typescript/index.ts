@@ -3,7 +3,7 @@ import { dag, Directory, object, func } from "@dagger.io/dagger"
 @object()
 class MyModule {
   @func()
-  async tree(src: Directory, depth: string): Promise<string> {
+  async tree(src: Directory, depth: string = "1"): Promise<string> {
     return await dag
       .container()
       .from("alpine:latest")

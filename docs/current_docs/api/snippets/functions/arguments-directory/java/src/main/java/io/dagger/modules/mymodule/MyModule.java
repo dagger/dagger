@@ -12,7 +12,7 @@ import java.util.concurrent.ExecutionException;
 @Object
 public class MyModule {
   @Function
-  public String tree(Directory src, String depth)
+  public String tree(Directory src, @Default("1") String depth)
       throws ExecutionException, DaggerQueryException, InterruptedException {
     return dag().container()
         .from("alpine:latest")

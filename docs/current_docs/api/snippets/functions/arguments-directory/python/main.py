@@ -5,7 +5,7 @@ from dagger import dag, function, object_type
 @object_type
 class MyModule:
     @function
-    async def tree(self, src: dagger.Directory, depth: str) -> str:
+    async def tree(self, src: dagger.Directory, depth: str = "1") -> str:
         return await (
             dag.container()
             .from_("alpine:latest")
