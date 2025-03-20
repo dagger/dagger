@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"dagger.io/dagger"
 	"github.com/creack/pty"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -945,7 +944,7 @@ func (LegacySuite) TestDirectoryTrailingSlash(ctx context.Context, t *testctx.T)
 	// Ensure that the legacy methods that return paths don't return trailing
 	// slashes for directories.
 
-	c := connect(ctx, t, dagger.WithVersionOverride("v0.16.0"))
+	c := connect(ctx, t)
 
 	modGen := goGitBase(t, c).
 		With(daggerExec("init", "--name=bare", "--sdk=go", "--source=.")).
