@@ -74,7 +74,7 @@ spec:
             - "--addr"
             - "tcp://0.0.0.0:{{ .Values.engine.port }}"
             - "--addr"
-            - "unix:///var/run/dagger/engine.sock"
+            - "unix:///run/dagger/engine.sock"
             {{- end }}
             {{- if .Values.engine.args }}
             {{- toYaml .Values.engine.args | nindent 12 }}
@@ -136,7 +136,7 @@ spec:
               mountPath: /var/lib/dagger
             {{- if .Values.engine.hostPath.runVolume.enabled }}
             - name: run
-              mountPath: /var/run/dagger
+              mountPath: /run/dagger
             {{- end }}
             {{- if .Values.engine.config }}
             - name: config
@@ -161,7 +161,7 @@ spec:
         {{- if .Values.engine.hostPath.runVolume.enabled }}
         - name: run
           hostPath:
-            path: /var/run/dagger-{{ include "dagger.fullname" . }}
+            path: /run/dagger-{{ include "dagger.fullname" . }}
         {{- end }}
         {{- if (or .Values.engine.config .Values.engine.configJson) }}
         - name: config
