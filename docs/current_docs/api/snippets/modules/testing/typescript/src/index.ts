@@ -1,11 +1,11 @@
-import { object, func } from "@dagger.io/dagger";
+import { object, func } from "@dagger.io/dagger"
 
 @object()
 export class Greeter {
-  greeting: string;
+  greeting: string
 
   constructor(greeting = "Hello") {
-    this.greeting = greeting;
+    this.greeting = greeting
   }
 
   /**
@@ -13,6 +13,6 @@ export class Greeter {
    */
   @func()
   hello(name: string): string {
-    return `${this.greeting}, ${name}!`;
+    return `${this.greeting}, ${name}!`
   }
 }
