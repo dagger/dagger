@@ -1,0 +1,182 @@
+---
+slug: /features/shell
+description: "Iterate faster with familiar Bash-like syntax and autocomplete"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Interactive Shell
+
+Dagger Shell is the fastest way to interact with the Dagger API. Dagger Shell brings the power of pipelines to fully typed API objects while maintaining a familiar Bash-like syntax. With autocomplete for core types, modules, and functions, it makes writing and exploring Dagger pipelines smoother than ever.
+
+Dagger Shell enables you to compose pipelines on the fly, by chaining together core Dagger primitives like `Container` and `Directory` with module-defined types and functions. It can be used inline, with scripts, or interactively. It is secure by design, as all commands execute in containers and you have complete control over what goes in or out from the host system.
+
+Here's an example of Dagger Shell in action:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+container |
+  from alpine |
+  with-exec apk add curl |
+  with-exec -- curl -L https://dagger.io |
+  stdout
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+container | from alpine | with-exec apk add curl | with-exec -- curl -L https://dagger.io | stdout
+```
+</TabItem>
+</Tabs>
+
+![Dagger Shell](/img/current_docs/features/shell-curl.gif)
+
+Here's another, more complex example:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+container |
+  from cgr.dev/chainguard/wolfi-base |
+  with-exec apk add go |
+  with-directory /src https://github.com/golang/example#master |
+  with-workdir /src/hello |
+  with-exec -- go build -o hello . |
+  file ./hello |
+  export ./hello-from-dagger
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+container |
+  from cgr.dev/chainguard/wolfi-base |
+  with-exec apk add go |
+  with-directory /src https://github.com/golang/example#master |
+  with-workdir /src/hello |
+  with-exec -- go build -o hello . |
+  file ./hello |
+  export ./hello-from-dagger
+```
+</TabItem>
+</Tabs>
+
+![Dagger Shell](/img/current_docs/features/shell-build.gif)
+
+:::note
+Dagger Shell allows you to execute Dagger Functions as native shell commands, using a Bash-compatible syntax. However, instead of calling a subprocess for execution, Dagger Shell directly interprets commands within the Dagger CLI and executes them in containers. This means that all your commands execute as API calls in a secure, sandboxed environment, rather than as processes with direct access to the host system.
+:::
+
+## Modes of execution
+
+Dagger Shell supports multiple ways to run commands:
+
+<Tabs groupId="shell">
+<TabItem value="Inline execution">
+```shell
+dagger -c 'container | from alpine | terminal'
+```
+</TabItem>
+<TabItem value="Standard input">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+echo 'container | from alpine | terminal' | dagger
+```
+</TabItem>
+<TabItem value="Script">
+```shell
+echo 'container | from alpine | with-exec cat /etc/os-release | stdout' > script.sh
+dagger script.sh
+```
+</TabItem>
+<TabItem value="Interactive REPL">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+container | from alpine | terminal
+```
+</TabItem>
+</Tabs>
+
+## Built-in help
+
+Dagger Shell provides extensive built-in help:
+
+```shell
+.help               # Shows available commands
+.help <module>      # Shows description, entrypoint arguments, and available functions
+.help <function>    # Shows description, arguments, and return type for function
+<function> | .help  # Shows details on the type returned by <function>, including available functions if an object
+```
+
+![Dagger Shell help](/img/current_docs/features/shell-help.gif)
+
+## Navigation
+
+Dagger Shell presents a virtual filesystem to the user. When Dagger Shell starts, it sets the working directory to an initial context, which defaults to the enclosing Git repository or Dagger module. The user can navigate the virtual filesystem by changing the working directory.
+
+The initial context can be a local filesystem path or a remote filesystem. For example, `dagger -m github.com/dagger/dagger/docs@v0.13.0` changes the context to `github.com/dagger/dagger@v0.13.0` and the working directory to `/docs`.
+
+:::note
+To safeguard access to the host filesystem, the context root cannot be escaped.
+:::
+
+## Modules
+
+If the working directory contains a Dagger module, that module is automatically loaded, and its Dagger Functions can be directly inspected (via `.help`) or invoked.
+
+![Dagger Shell module loading](/img/current_docs/features/shell-module.gif)
+
+:::tip
+If only the core Dagger API is needed, the `-n` (`--no-mod`) flag can be provided. This reduces the startup time because the Dagger CLI doesn't try to find and load a current module.
+:::
+
+## Paths
+
+Filesystem paths are handled differently depending on the initial context of the module loaded in Dagger Shell.
+
+- If the loaded module is local, or if no module is loaded, directories or files will come from the host system.
+- If the loaded module is remote, directories or files will come from that remote directory.
+  - In this latter case, to use files and directories from the host system, they must be referred to using the `host` function.
+
+Here's an example:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+github.com/dagger/dagger/modules/wolfi@v0.16.2 |
+  container |
+  with-file /README.md $(host | file ./README.md) |
+  with-exec cat /README.md |
+  stdout
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+github.com/dagger/dagger/modules/wolfi@v0.16.2 |
+  container |
+  with-file /README.md $(host | file ./README.md) |
+  with-exec cat /README.md |
+  stdout
+```
+</TabItem>
+</Tabs>
+
+![Dagger Shell host path](/img/current_docs/features/shell-host-path.gif)
+
+## Differences from Bash
+
+While inspired by Bash, Dagger Shell introduces key differences:
+
+- API objects as first-class citizens: Instead of executing system processes, you work with structured API objects.
+- Pipe operator enhancements: Functions return objects, and piping allows direct access to object methods.
+- No host execution: Dagger Shell prevents running commands on the host for safety and consistency.
+- Hidden traditional Bash builtins: Dagger Shell prioritizes API interactions over system commands.
+
+## Learn more
+
+- [Call the Dagger API using Dagger Shell](../api/clients-cli.mdx)
+- [Chain Dagger Functions using Dagger Shell](../api/chaining.mdx)
