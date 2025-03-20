@@ -43,14 +43,56 @@ Here is an example of a Dagger Function that takes two arguments: an image refer
 </TabItem>
 </Tabs>
 
-Enumeration choices will be displayed when calling `--help` on a Dagger Function:
+Enumeration choices will be displayed when calling `--help` or `.help` on a Dagger Function:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c '.help scan'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+.help scan
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call scan --help
 ```
+</TabItem>
+</Tabs>
 
 The result will be:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+USAGE
+  scan <ref> <severity>
+
+REQUIRED ARGUMENTS
+  ref string
+  severity MyModuleSeverity   (possible values: UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL)
+
+RETURNS
+  string - Primitive type.
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell
+USAGE
+  scan <ref> <severity>
+
+REQUIRED ARGUMENTS
+  ref string
+  severity MyModuleSeverity   (possible values: UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL)
+
+RETURNS
+  string - Primitive type.
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 USAGE
   dagger call scan [arguments]
@@ -59,16 +101,48 @@ ARGUMENTS
       --ref string                                  [required]
       --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL   [required]
 ```
+</TabItem>
+</Tabs>
 
 Here's an example of calling the Dagger Function with an invalid enum argument:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'scan hello-world:latest FOO'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+scan hello-world:latest FOO
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call scan --ref=hello-world:latest --severity=FOO
 ```
+</TabItem>
+</Tabs>
 
 This will result in an error that displays possible values, as follows:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+! function "scan": invalid argument "FOO" for "--severity" flag: value should be one of UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+! Usage: scan <ref> <severity>
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell
+! function "scan": invalid argument "FOO" for "--severity" flag: value should be one of UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+! Usage: scan <ref> <severity>
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 Error: invalid argument "FOO" for "--severity" flag: value should be one of UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
 Run 'dagger call scan --help' for usage.
 ```
+</TabItem>
+</Tabs>

@@ -10,7 +10,7 @@ When you pass a directory to a Dagger Function as argument, Dagger uploads every
 
 ## Directory arguments
 
-Dagger Functions do not have access to the filesystem of the host you invoke the Dagger Function from (i.e. the host you execute a CLI command like `dagger call` from). Instead, host files and directories need to be explicitly passed as command-line arguments to Dagger Functions.
+Dagger Functions do not have access to the filesystem of the host you invoke the Dagger Function from (i.e. the host you execute a CLI command like `dagger` from). Instead, host files and directories need to be explicitly passed as command-line arguments to Dagger Functions.
 
 There are two important reasons for this.
 
@@ -292,24 +292,80 @@ debug(
 
 Calling the function will show you the directory’s digest and top level entries. The digest is content addressed, so it changes if there are changes in the contents of the directory. Looking at the entries field you may be able to spot an interloper:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'debug .'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+debug .
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call debug --source=.
 ```
+</TabItem>
+</Tabs>
 
 You can also list all files, recursively to check it more deeply:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
 ```shell
-dagger call debug  --source=. glob --pattern="**/*"
+dagger -c 'debug . | glob "**/*"'
 ```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+debug . | glob "**/*"
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call debug --source=. glob --pattern="**/*"
+```
+</TabItem>
+</Tabs>
 
 You can open the directory in an interactive terminal to inspect the filesystem:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
 ```shell
-dagger call debug  --source=. terminal
+dagger -c 'debug . | terminal'
 ```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+debug . | terminal
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call debug --source=. terminal
+```
+</TabItem>
+</Tabs>
 
 You can export the filtered directory to your host and check it with local tools:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
 ```shell
-dagger call debug  --source=. export --path=audit
+dagger -c 'debug . | export audit'
 ```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+debug . | export audit
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call debug --source=. export --path=audit
+```
+</TabItem>
+</Tabs>
