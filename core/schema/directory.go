@@ -389,60 +389,68 @@ func getDockerIgnoreFileContent(ctx context.Context, parent dagql.Instance[*core
 	return content, nil
 }
 
-func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.Instance[*core.Directory], args dirDockerBuildArgs) (*core.Container, error) {
-	platform := parent.Self.Query.Platform()
-	if args.Platform.Valid {
-		platform = args.Platform.Value
-	}
-
-	var dockerIgnoreContents []byte
-	var err error
+func applyDockerIgnore(ctx context.Context, srv *dagql.Server, parent dagql.Instance[*core.Directory], dockerfile string) (dagql.Instance[*core.Directory], error) {
+	var buildctxDir dagql.Instance[*core.Directory]
 
 	// use dockerfile specific .dockerfile if that exists
 	// https://docs.docker.com/build/concepts/context/#filename-and-location
-	specificDockerIgnoreFile := args.Dockerfile + ".dockerignore"
-	dockerIgnoreContents, err = getDockerIgnoreFileContent(ctx, parent, specificDockerIgnoreFile)
+	specificDockerIgnoreFile := dockerfile + ".dockerignore"
+	dockerIgnoreContents, err := getDockerIgnoreFileContent(ctx, parent, specificDockerIgnoreFile)
 	if err != nil {
-		return nil, err
+		return buildctxDir, err
 	}
 
 	// fallback on default .dockerignore file
 	if len(dockerIgnoreContents) == 0 {
 		dockerIgnoreContents, err = getDockerIgnoreFileContent(ctx, parent, ".dockerignore")
 		if err != nil {
-			return nil, err
+			return buildctxDir, err
 		}
 	}
 
 	excludes, err := ignorefile.ReadAll(bytes.NewBuffer(dockerIgnoreContents))
 	if err != nil {
-		return nil, err
+		return buildctxDir, err
+	}
+
+	// if no excludes, return the parent directory itself
+	if len(excludes) == 0 {
+		return parent, nil
 	}
 
 	// apply the dockerignore exclusions
-	var buildctxDir dagql.Instance[*core.Directory]
-	if len(excludes) > 0 {
-		err = s.srv.Select(ctx, parent, &buildctxDir,
-			dagql.Selector{
-				Field: "withDirectory",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.NewString("buildctx")},
-					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(excludes...))},
-					{Name: "directory", Value: dagql.NewID[*core.Directory](parent.ID())},
-				},
+	err = srv.Select(ctx, parent, &buildctxDir,
+		dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString("buildctx")},
+				{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(excludes...))},
+				{Name: "directory", Value: dagql.NewID[*core.Directory](parent.ID())},
 			},
-			dagql.Selector{
-				Field: "directory",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.NewString("buildctx")},
-				},
+		},
+		dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString("buildctx")},
 			},
-		)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		buildctxDir = parent
+		},
+	)
+	if err != nil {
+		return buildctxDir, err
+	}
+
+	return buildctxDir, nil
+}
+
+func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.Instance[*core.Directory], args dirDockerBuildArgs) (*core.Container, error) {
+	platform := parent.Self.Query.Platform()
+	if args.Platform.Valid {
+		platform = args.Platform.Value
+	}
+
+	buildctxDir, err := applyDockerIgnore(ctx, s.srv, parent, args.Dockerfile)
+	if err != nil {
+		return nil, err
 	}
 
 	ctr, err := core.NewContainer(parent.Self.Query, platform)
