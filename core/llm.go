@@ -712,16 +712,21 @@ func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error
 	for _, msg := range llm.messages {
 		switch msg.Role {
 		case "user":
-			history = append(history, "🧑 💬"+msg.Content)
+			history = append(history, "🧑 💬 "+msg.Content)
 		case "assistant":
 			if len(msg.Content) > 0 {
-				history = append(history, "🤖 💬"+msg.Content)
+				history = append(history, "🤖 💬 "+msg.Content)
 			}
 			for _, call := range msg.ToolCalls {
-				history = append(history, fmt.Sprintf("🤖 💻 %s(%s)", call.Function.Name, call.Function.Arguments))
-				if result, ok := llm.calls[call.ID]; ok {
-					history = append(history, fmt.Sprintf("💻 %s", result))
+				args, err := json.Marshal(call.Function.Arguments)
+				if err != nil {
+					return nil, err
 				}
+				item := fmt.Sprintf("🤖 💻 %s(%s)", call.Function.Name, args)
+				if result, ok := llm.calls[call.ID]; ok {
+					item += " => " + strings.TrimSpace(result)
+				}
+				history = append(history, item)
 			}
 		}
 	}
