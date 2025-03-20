@@ -39,6 +39,11 @@ module.exports = {
       items: ["agents/quickstart"],
     },
     {
+      type: "doc",
+      label: "Examples",
+      id: "examples",
+    },
+    {
       type: "category",
       label: "Dagger for CI",
       items: [
