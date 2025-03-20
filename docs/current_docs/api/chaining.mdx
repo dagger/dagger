@@ -27,10 +27,10 @@ EOF
 </TabItem>
 <TabItem value="Dagger Shell">
 ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-github.com/dagger/dagger/modules/wolfi@v0.16.2 \
-  | container \
-  | with-exec ls /etc/ \
-  | stdout
+github.com/dagger/dagger/modules/wolfi@v0.16.2 |
+  container |
+  with-exec ls /etc/ |
+  stdout
 ```
 </TabItem>
 <TabItem value="Dagger CLI">
@@ -58,10 +58,10 @@ EOF
 </TabItem>
 <TabItem value="Dagger Shell">
 ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-github.com/dagger/dagger/modules/wolfi@v0.16.2 \
-  | container \
-  | with-exec cat /etc/os-release \
-  | stdout
+github.com/dagger/dagger/modules/wolfi@v0.16.2 |
+  container |
+  with-exec cat /etc/os-release |
+  stdout
 ```
 </TabItem>
 <TabItem value="Dagger CLI">
@@ -90,11 +90,11 @@ EOF
 </TabItem>
 <TabItem value="Dagger Shell">
 ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-github.com/dagger/dagger/modules/wolfi@v0.16.2 \
-  | container \
-  | with-exec rm /etc/os-release \
-  | with-exec ls /etc \
-  | stdout
+github.com/dagger/dagger/modules/wolfi@v0.16.2 |
+  container |
+  with-exec rm /etc/os-release |
+  with-exec ls /etc |
+  stdout
 ```
 </TabItem>
 <TabItem value="Dagger CLI">
@@ -123,10 +123,10 @@ EOF
 </TabItem>
 <TabItem value="Dagger Shell">
 ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-github.com/dagger/dagger/modules/wolfi@v0.16.2 \
-  | container --packages curl \
-  | with-exec -- curl -L dagger.io \
-  | stdout
+github.com/dagger/dagger/modules/wolfi@v0.16.2 |
+  container --packages curl |
+  with-exec -- curl -L dagger.io |
+  stdout
 ```
 </TabItem>
 <TabItem value="Dagger CLI">
@@ -205,9 +205,9 @@ EOF
 </TabItem>
 <TabItem value="Dagger Shell">
 ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-github.com/kpenfound/dagger-modules/golang@v0.2.1 \
-  | build ./cmd/dagger --source=https://github.com/dagger/dagger \
-  | export ./my-build
+github.com/kpenfound/dagger-modules/golang@v0.2.1 |
+  build ./cmd/dagger --source=https://github.com/dagger/dagger |
+  export ./my-build
 ```
 </TabItem>
 <TabItem value="Dagger CLI">
@@ -235,9 +235,9 @@ EOF
 </TabItem>
 <TabItem value="Dagger Shell">
 ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-github.com/kpenfound/dagger-modules/golang@v0.2.1 \
-  | build ./cmd/dagger --source=https://github.com/dagger/dagger \
-  | export ./my-build --wipe
+github.com/kpenfound/dagger-modules/golang@v0.2.1 |
+  build ./cmd/dagger --source=https://github.com/dagger/dagger |
+  export ./my-build --wipe
 ```
 </TabItem>
 <TabItem value="Dagger CLI">
@@ -264,10 +264,10 @@ EOF
 </TabItem>
 <TabItem value="Dagger Shell">
 ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-github.com/kpenfound/dagger-modules/golang@v0.2.1 \
-  | build ./cmd/dagger --source=https://github.com/dagger/dagger \
-  | file ./dagger \
-  | export ./my-file
+github.com/kpenfound/dagger-modules/golang@v0.2.1 |
+  build ./cmd/dagger --source=https://github.com/dagger/dagger |
+  file ./dagger |
+  export ./my-file
 ```
 </TabItem>
 <TabItem value="Dagger CLI">
@@ -295,10 +295,10 @@ EOF
 </TabItem>
 <TabItem value="Dagger Shell">
 ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-github.com/dagger/dagger/modules/ruff \
-  | lint https://github.com/dagger/dagger \
-  | report \
-  | export /tmp/report.json
+github.com/dagger/dagger/modules/ruff |
+  lint https://github.com/dagger/dagger |
+  report |
+  export /tmp/report.json
 ```
 </TabItem>
 <TabItem value="Dagger CLI">
@@ -348,10 +348,10 @@ EOF
 </TabItem>
 <TabItem value="Dagger Shell">
 ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-github.com/kpenfound/dagger-modules/golang@v0.2.1 \
-  | build . --source=https://github.com/golang/example#master:/hello \
-  | directory . \
-  | entries
+github.com/kpenfound/dagger-modules/golang@v0.2.1 |
+  build . --source=https://github.com/golang/example#master:/hello |
+  directory . |
+  entries
 ```
 </TabItem>
 <TabItem value="Dagger CLI">
@@ -379,10 +379,10 @@ EOF
 </TabItem>
 <TabItem value="Dagger Shell">
 ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-github.com/dagger/dagger/modules/ruff \
-  | lint https://github.com/dagger/dagger \
-  | report \
-  | contents
+github.com/dagger/dagger/modules/ruff |
+  lint https://github.com/dagger/dagger |
+  report |
+  contents
 ```
 </TabItem>
 <TabItem value="Dagger CLI">
@@ -410,10 +410,10 @@ EOF
 </TabItem>
 <TabItem value="Dagger Shell">
 ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-github.com/sagikazarmark/daggerverse/arc@40057665476af62e617cc8def9ef5a87735264a9 \
-  | archive-directory dagger-cli https://github.com/dagger/dagger#main:cmd/dagger \
-  | create zip \
-  | size
+github.com/sagikazarmark/daggerverse/arc@40057665476af62e617cc8def9ef5a87735264a9 |
+  archive-directory dagger-cli https://github.com/dagger/dagger#main:cmd/dagger |
+  create zip |
+  size
 ```
 </TabItem>
 <TabItem value="Dagger CLI">
@@ -546,11 +546,11 @@ EOF
 </TabItem>
 <TabItem value="Dagger Shell">
 ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-github.com/dagger/dagger/modules/wolfi@v0.16.2 \
-  | container \
-  | with-directory /src . \
-  | with-exec ls /src \
-  | stdout
+github.com/dagger/dagger/modules/wolfi@v0.16.2 |
+  container |
+  with-directory /src . |
+  with-exec ls /src |
+  stdout
 ```
 </TabItem>
 <TabItem value="Dagger CLI">
@@ -580,11 +580,11 @@ EOF
 </TabItem>
 <TabItem value="Dagger Shell">
 ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-github.com/dagger/dagger/modules/wolfi@v0.16.2 \
-  | container \
-  | with-file /README.md $(host | file ./README.md) \
-  | with-exec cat /README.md \
-  | stdout
+github.com/dagger/dagger/modules/wolfi@v0.16.2 |
+  container |
+  with-file /README.md $(host | file ./README.md) |
+  with-exec cat /README.md |
+  stdout
 ```
 </TabItem>
 <TabItem value="Dagger CLI">

@@ -31,14 +31,14 @@ Here are a few examples:
     </TabItem>
     <TabItem value="Dagger Shell">
     ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-    container \
-      | from cgr.dev/chainguard/wolfi-base \
-      | with-exec apk add go \
-      | with-directory /src https://github.com/golang/example#master \
-      | with-workdir /src/hello \
-      | with-exec -- go build -o hello . \
-      | file ./hello \
-      | export ./hello-from-dagger
+    container |
+      from cgr.dev/chainguard/wolfi-base |
+      with-exec apk add go |
+      with-directory /src https://github.com/golang/example#master |
+      with-workdir /src/hello |
+      with-exec -- go build -o hello . |
+      file ./hello |
+      export ./hello-from-dagger
     ```
     </TabItem>
     <TabItem value="Dagger CLI">
