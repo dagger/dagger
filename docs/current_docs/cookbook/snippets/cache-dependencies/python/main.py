@@ -22,7 +22,9 @@ class MyModule:
             .with_exec(["pip", "install", "-r", "requirements.txt"])
 
             # if using poetry
-            .with_mounted_cache("/root/.cache/pypoetry", dag.cache_volume("poetry_cache"))
+            .with_mounted_cache(
+                "/root/.cache/pypoetry", dag.cache_volume("poetry_cache")
+            )
             .with_exec(
                 [
                     "pip",
