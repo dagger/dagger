@@ -25,8 +25,8 @@ EOF
 </TabItem>
 <TabItem value="Dagger Shell">
 ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-container | from node:21 | with-directory /src https://github.com/dagger/hello-dagger \
-  | with-workdir /src | with-mounted-cache /root/.npm node-21 | with-exec npm install
+container | from node:21 | with-directory /src https://github.com/dagger/hello-dagger |
+  with-workdir /src | with-mounted-cache /root/.npm node-21 | with-exec npm install
 ```
 </TabItem>
 <TabItem value="Dagger CLI">

@@ -102,9 +102,9 @@ EOF
 </TabItem>
 <TabItem value="Dagger Shell">
 ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-container | from golang:latest | with-directory /src https://github.com/dagger/dagger#main \
-  | with-workdir /src/cmd/dagger | with-exec -- go build -o dagger . \
-  | file ./dagger | export ./dagger.bin
+container | from golang:latest | with-directory /src https://github.com/dagger/dagger#main |
+  with-workdir /src/cmd/dagger | with-exec -- go build -o dagger . |
+  file ./dagger | export ./dagger.bin
 ```
 </TabItem>
 <TabItem value="Dagger CLI">
