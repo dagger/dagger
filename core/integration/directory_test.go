@@ -1000,6 +1000,26 @@ CMD cat /secret
 		require.Equal(t, "content in foo file", content)
 	})
 
+	t.Run("ignores .dockerignore for dockerfile with name 'Dockerfile' if Dockerfile.dockerignore exists", func(ctx context.Context, t *testctx.T) {
+		src := contextDir.
+			WithNewFile("foo.txt", "content in foo file").
+			WithNewFile("bar.txt", "content in bar file").
+			WithNewFile("Dockerfile",
+				`FROM golang:1.18.2-alpine
+		WORKDIR /src
+		COPY . .
+		`).
+			WithNewFile(".dockerignore", "foo.txt").
+			WithNewFile("Dockerfile.dockerignore", "bar.txt")
+
+		_, err := src.DockerBuild().Directory("/src").File("bar.txt").Contents(ctx)
+		require.ErrorContains(t, err, "/src/bar.txt: no such file or directory")
+
+		content, err := src.DockerBuild().Directory("/src").File("foo.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "content in foo file", content)
+	})
+
 	t.Run("use .dockerignore for dockerfile with name 'myfoo' if myfoo.dockerignore does not exist", func(ctx context.Context, t *testctx.T) {
 		src := contextDir.
 			WithNewFile("foo.txt", "content in foo file").
