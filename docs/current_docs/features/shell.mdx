@@ -168,6 +168,15 @@ github.com/dagger/dagger/modules/wolfi@v0.16.2 \
 
 ![Dagger Shell host path](/img/current_docs/features/shell-host-path.gif)
 
+## Differences from Bash
+
+While inspired by Bash, Dagger Shell introduces key differences:
+
+- API objects as first-class citizens: Instead of executing system processes, you work with structured API objects.
+- Pipe operator enhancements: Functions return objects, and piping allows direct access to object methods.
+- No host execution: Dagger Shell prevents running commands on the host for safety and consistency.
+- Hidden traditional Bash builtins: Dagger Shell prioritizes API interactions over system commands.
+
 ## Learn more
 
 - [Call the Dagger API using Dagger Shell](../api/clients-cli.mdx)
