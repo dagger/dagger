@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -106,6 +107,9 @@ type ExecutionMetadata struct {
 	// list of remote modules allowed to access LLM APIs
 	// any value of "all" bypasses restrictions, a nil slice imposes them
 	AllowedLLMModules []string
+
+	// Lock in case concurrent writers needed for fields above
+	sync.Mutex `json:"-"`
 }
 
 const executionMetadataKey = "dagger.executionMetadata"

@@ -545,7 +545,9 @@ func (fn *ModuleFunction) loadContextualArg(
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", arg.DefaultPath, err)
 		}
+		execMD.Lock()
 		execMD.ParentIDs[dir.ID().Digest()] = &resource.ID{ID: *dir.ID()}
+		execMD.Unlock()
 
 		dirID, err := dir.ID().Encode()
 		if err != nil {
@@ -566,7 +568,9 @@ func (fn *ModuleFunction) loadContextualArg(
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", dirPath, err)
 		}
+		execMD.Lock()
 		execMD.ParentIDs[dir.ID().Digest()] = &resource.ID{ID: *dir.ID()}
+		execMD.Unlock()
 
 		var fileID FileID
 
