@@ -585,9 +585,7 @@ Without arguments, the current working directory is replaced by the initial cont
 				}
 
 				// Update handler state with new definition
-				h.mu.Lock()
 				h.modDefs.Store(def.SourceDigest, newDef)
-				h.mu.Unlock()
 
 				// Reload type definitions
 				if err := newDef.loadTypeDefs(ctx, h.dag); err != nil {
