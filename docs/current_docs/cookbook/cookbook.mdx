@@ -317,9 +317,9 @@ When working with private Git repositories, ensure that [SSH authentication is p
     <TabItem value="System shell">
     ```shell
     dagger <<EOF
-    clone https://github.com/dagger/dagger TAG v0.12.1 \
-      | file /src/CHANGELOG.md \
-      | contents
+    clone https://github.com/dagger/dagger TAG v0.12.1 |
+      file /src/CHANGELOG.md |
+      contents
     EOF
     ```
     </TabItem>
@@ -344,8 +344,8 @@ When working with private Git repositories, ensure that [SSH authentication is p
     <TabItem value="System shell">
     ```shell
     dagger <<EOF
-    clone https://github.com/dagger/dagger COMMIT 196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 \
-      | terminal
+    clone https://github.com/dagger/dagger COMMIT 196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 |
+      terminal
     EOF
     ```
     </TabItem>
@@ -459,9 +459,9 @@ The following Dagger Function accepts a `File` argument, which could reference e
     <TabItem value="System shell">
     ```shell
     dagger <<EOF
-    copy-file https://github.com/dagger/dagger.git#main:README.md \
-      | file /src/README.md \
-      | contents
+    copy-file https://github.com/dagger/dagger.git#main:README.md |
+      file /src/README.md |
+      contents
     EOF
     ```
     </TabItem>
@@ -541,9 +541,9 @@ This is an example of [post-call filtering](../api/fs-filters.mdx#post-call-filt
     <TabItem value="System shell">
     ```shell
     dagger <<EOF
-    copy-directory-with-exclusions https://github.com/dagger/dagger#main --exclude=*.md \
-      | directory /src \
-      | entries
+    copy-directory-with-exclusions https://github.com/dagger/dagger#main --exclude=*.md |
+      directory /src |
+      entries
     EOF
     ```
     </TabItem>
@@ -568,9 +568,9 @@ This is an example of [post-call filtering](../api/fs-filters.mdx#post-call-filt
     <TabItem value="System shell">
     ```shell
     dagger <<EOF
-    copy-directory-with-exclusions ssh://git@github.com/user/foo#main --exclude=*.md \
-      | directory /src \
-      | entries
+    copy-directory-with-exclusions ssh://git@github.com/user/foo#main --exclude=*.md |
+      directory /src |
+      entries
     EOF
     ```
     </TabItem>
@@ -640,9 +640,9 @@ This is an example of [post-call filtering](../api/fs-filters.mdx#post-call-filt
     <TabItem value="System shell">
     ```shell
     dagger <<EOF
-    read-file-http https://raw.githubusercontent.com/dagger/dagger/refs/heads/main/README.md \
-      | file /src/myfile \
-      | contents
+    read-file-http https://raw.githubusercontent.com/dagger/dagger/refs/heads/main/README.md |
+      file /src/myfile |
+      contents
     EOF
     ```
     </TabItem>
