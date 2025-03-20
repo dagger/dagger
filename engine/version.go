@@ -35,7 +35,7 @@ var (
 
 	// MinimumClientVersion is used by the engine to determine the minimum
 	// allowed client version that can connect to that engine.
-	MinimumClientVersion = "v0.16.0"
+	MinimumClientVersion = "v0.17.0"
 
 	// MinimumModuleVersion is used by the engine to determine the minimum
 	// allowed module engine version that can connect to this engine.
