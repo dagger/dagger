@@ -6,13 +6,13 @@ import TabItem from '@theme/TabItem';
 
 # Dagger CLI
 
-The Dagger CLI lets you call both the core and extended Dagger API (the core APIs plus the new APIs provided by Dagger Functions) directly from the command-line.
+The Dagger CLI lets you call both the core and extended Dagger API (the core APIs plus the new APIs provided by external Dagger modules) directly from the command-line.
 
-## Core API
+You can call the API interactively (`dagger`) or non-interactively (`dagger -c`, `dagger call`, or `dagger core`).
 
-You can call the core Dagger API without needing to first load a Dagger [module](../features/modules.mdx). This is useful in some scenarios:
+Here are a few examples:
 
-- You want to use Dagger for simple pipelines that are fully satisfied by the core Dagger API.
+- Create a simple pipeline that is fully satisfied by the core Dagger API, without needing to program a Dagger module:
 
     <Tabs groupId="shell">
     <TabItem value="System shell">
@@ -54,30 +54,7 @@ You can call the core Dagger API without needing to first load a Dagger [module]
     </TabItem>
     </Tabs>
 
-- You want to experiment with Dagger without having to program a Dagger module.
-
-    <Tabs>
-    <TabItem value="System shell">
-    ```shell
-    dagger -c 'container | from alpine | file /etc/os-release | contents'
-    ```
-    </TabItem>
-    <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-    container | from alpine | file /etc/os-release | contents
-    ```
-    </TabItem>
-    <TabItem value="Dagger CLI">
-    ```shell
-    dagger core container \
-      from --address=alpine \
-      file --path=/etc/os-release \
-      contents
-    ```
-    </TabItem>
-    </Tabs>
-
-- You want a nice alternative to `docker run`.
+- Use Dagger as an alternative to `docker run`.
 
     <Tabs>
     <TabItem value="System shell">
@@ -99,9 +76,9 @@ You can call the core Dagger API without needing to first load a Dagger [module]
     </TabItem>
     </Tabs>
 
-## Extended API
-
-The Dagger API can be extended with Dagger [modules](../features/modules.mdx). You can call Dagger Functions from these modules, either remotely or after installing them locally with `dagger install`.
+    :::tip
+    If only the core Dagger API is needed, the `-n` (`--no-mod`) flag can be provided. This results in quicker startup, because the Dagger CLI doesn't try to find and load a current module.
+    :::
 
 - Call one of the auto-generated Dagger Functions:
 
@@ -123,14 +100,8 @@ The Dagger API can be extended with Dagger [modules](../features/modules.mdx). Y
     </TabItem>
     </Tabs>
 
-    Here's what you should see:
-
-    ```shell
-    Welcome to Dagger!
-    ```
-
     :::tip
-    When using Dagger Shell or the Dagger CLI, all names (functions, arguments, struct fields, etc) are converted into a shell-friendly "kebab-case" style.
+    When using the Dagger CLI, all names (functions, arguments, struct fields, etc) are converted into a shell-friendly "kebab-case" style.
     :::
 
 - Modules don't need to be installed locally. Dagger lets you consume modules from GitHub repositories and call their Dagger Functions as though you were calling them locally:
@@ -156,25 +127,6 @@ The Dagger API can be extended with Dagger [modules](../features/modules.mdx). Y
     ```
     </TabItem>
     </Tabs>
-
-    Here's what you should see:
-
-    ```shell
-    Report Summary
-    ┌──────────────────────────────┬────────┬─────────────────┬─────────┐
-    │            Target            │  Type  │ Vulnerabilities │ Secrets │
-    ├──────────────────────────────┼────────┼─────────────────┼─────────┤
-    │ ubuntu:latest (ubuntu 24.04) │ ubuntu │       23        │    -    │
-    └──────────────────────────────┴────────┴─────────────────┴─────────┘
-    Legend:
-    - '-': Not scanned
-    - '0': Clean (no security findings detected)
-
-    ubuntu:latest (ubuntu 24.04)
-    ============================
-    Total: 23 (UNKNOWN: 0, LOW: 10, MEDIUM: 13, HIGH: 0, CRITICAL: 0)
-    ...
-    ```
 
 - List all the Dagger Functions available in a module using context-sensitive help:
 
