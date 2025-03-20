@@ -50,11 +50,20 @@ This Dagger Function works merely as a CLI wrapper. It starts with the `Containe
 
 ### Call the Dagger Function
 
-Call the Dagger Function as below:
+Call the Dagger Function:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
 ```shell
-dagger call test --source=.
+dagger -c 'test .'
 ```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+test .
+```
+</TabItem>
+</Tabs>
 
 Here's what you should see:
 
