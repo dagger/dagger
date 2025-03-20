@@ -7833,6 +7833,12 @@ class LLM(Type):
         _ctx = self._select("withPromptVar", _args)
         return LLM(_ctx)
 
+    def with_query(self) -> Self:
+        """Provide the entire Query object to the LLM"""
+        _args: list[Arg] = []
+        _ctx = self._select("withQuery", _args)
+        return LLM(_ctx)
+
     def with_sdk_config(self, value: "SDKConfig") -> Self:
         """Set a variable of type SDKConfig in the llm environment
 

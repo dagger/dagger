@@ -6545,6 +6545,14 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Provide the entire Query object to the LLM
+   */
+  withQuery = (): LLM => {
+    const ctx = this._ctx.select("withQuery")
+    return new LLM(ctx)
+  }
+
+  /**
    * Set a variable of type SDKConfig in the llm environment
    * @param value The SDKConfig value to assign to the variable
    * @deprecated use set<TargetType> instead

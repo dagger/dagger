@@ -6938,6 +6938,15 @@ func (r *LLM) WithPromptVar(name string, value string) *LLM {
 	}
 }
 
+// Provide the entire Query object to the LLM
+func (r *LLM) WithQuery() *LLM {
+	q := r.query.Select("withQuery")
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // Set a variable of type SDKConfig in the llm environment
 //
 // Deprecated: use set<TargetType> instead

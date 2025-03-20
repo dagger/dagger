@@ -8278,6 +8278,15 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Provide the entire Query object to the LLM
+    pub fn with_query(&self) -> Llm {
+        let query = self.selection.select("withQuery");
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Set a variable of type SDKConfig in the llm environment
     ///
     /// # Arguments

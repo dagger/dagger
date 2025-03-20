@@ -3051,6 +3051,9 @@ type LLM {
     value: String!
   ): LLM!
 
+  """Provide the entire Query object to the LLM"""
+  withQuery: LLM!
+
   """Set a variable of type ScalarTypeDef in the llm environment"""
   withScalarTypeDef(
     """The ScalarTypeDef value to assign to the variable"""

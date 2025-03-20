@@ -1443,6 +1443,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Provide the entire Query object to the LLM
+     */
+    public function withQuery(): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withQuery');
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Set a variable of type SDKConfig in the llm environment
      */
     public function withSDKConfig(SDKConfigId|SDKConfig $value): LLM
