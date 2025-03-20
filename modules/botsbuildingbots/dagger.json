@@ -1,0 +1,13 @@
+{
+  "name": "bots-building-bots",
+  "engineVersion": "v0.17.0-010101000000-dev-6f06b8ae444c",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "workspace",
+      "source": "workspace"
+    }
+  ]
+}

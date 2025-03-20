@@ -5,11 +5,27 @@ import (
 )
 
 type Evals struct {
-	Model string
+	LLM *dagger.LLM
+}
+
+func New() *Evals {
+	return &Evals{
+		LLM: dag.Llm(),
+	}
+}
+
+func (m *Evals) WithModel(model string) *Evals {
+	m.LLM = dag.Llm(dagger.LlmOpts{Model: model})
+	return m
+}
+
+func (m *Evals) WithSystemPrompt(prompt string) *Evals {
+	m.LLM = m.LLM.WithSystemPrompt(prompt)
+	return m
 }
 
 func (m *Evals) UndoSingle() *dagger.Container {
-	return dag.Llm(dagger.LlmOpts{Model: m.Model}).
+	return m.LLM.
 		WithQuery().
 		WithPrompt("give me a container for PHP 7 development").
 		Loop().
@@ -20,12 +36,15 @@ func (m *Evals) UndoSingle() *dagger.Container {
 		Container()
 }
 
-func (m *Evals) BuildMulti() *dagger.File {
-	return dag.Llm(dagger.LlmOpts{Model: m.Model}).
+func (m *Evals) BuildMultiLLM() *dagger.LLM {
+	return m.LLM.
 		SetDirectory("repo", dag.Git("https://github.com/vito/booklit").Head().Tree()).
 		SetContainer("ctr", dag.Container().From("golang")).
 		WithPrompt("Mount $repo into $ctr and build ./cmd/booklit").
 		WithPrompt("Disable CGo for maximum compatibility.").
-		WithPrompt("Return the binary as a File.").
-		File()
+		WithPrompt("Return the binary as a File.")
+}
+
+func (m *Evals) BuildMulti() *dagger.File {
+	return m.BuildMultiLLM().File()
 }
