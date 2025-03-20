@@ -488,7 +488,9 @@ func (h *shellCallHandler) ModuleDoc(st *ShellState, m *moduleDef) string {
 				return f.CmdName(), f.Short()
 			}),
 		)
-		doc.Add("", `Use ".help <function>" for more information on a function.`)
+		doc.Add("", fmt.Sprintf(`Use "%s | .help <function>" for more information on a function.`,
+			strings.TrimSuffix(usage, " [options]"),
+		))
 	}
 
 	return doc.String()
