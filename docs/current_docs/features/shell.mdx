@@ -17,11 +17,11 @@ Here's an example of Dagger Shell in action:
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-container \
-  | from alpine \
-  | with-exec apk add curl \
-  | with-exec -- curl -L https://dagger.io \
-  | stdout
+container |
+  from alpine |
+  with-exec apk add curl |
+  with-exec -- curl -L https://dagger.io |
+  stdout
 EOF
 ```
 </TabItem>
@@ -40,27 +40,27 @@ Here's another, more complex example:
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-container \
-  | from cgr.dev/chainguard/wolfi-base \
-  | with-exec apk add go \
-  | with-directory /src https://github.com/golang/example#master \
-  | with-workdir /src/hello \
-  | with-exec -- go build -o hello . \
-  | file ./hello \
-  | export ./hello-from-dagger
+container |
+  from cgr.dev/chainguard/wolfi-base |
+  with-exec apk add go |
+  with-directory /src https://github.com/golang/example#master |
+  with-workdir /src/hello |
+  with-exec -- go build -o hello . |
+  file ./hello |
+  export ./hello-from-dagger
 EOF
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
 ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-container \
-  | from cgr.dev/chainguard/wolfi-base \
-  | with-exec apk add go \
-  | with-directory /src https://github.com/golang/example#master \
-  | with-workdir /src/hello \
-  | with-exec -- go build -o hello . \
-  | file ./hello \
-  | export ./hello-from-dagger
+container |
+  from cgr.dev/chainguard/wolfi-base |
+  with-exec apk add go |
+  with-directory /src https://github.com/golang/example#master |
+  with-workdir /src/hello |
+  with-exec -- go build -o hello . |
+  file ./hello |
+  export ./hello-from-dagger
 ```
 </TabItem>
 </Tabs>
@@ -146,21 +146,21 @@ Here's an example:
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-github.com/dagger/dagger/modules/wolfi@v0.16.2 \
-  | container \
-  | with-file /README.md $(host | file ./README.md) \
-  | with-exec cat /README.md \
-  | stdout
+github.com/dagger/dagger/modules/wolfi@v0.16.2 |
+  container |
+  with-file /README.md $(host | file ./README.md) |
+  with-exec cat /README.md |
+  stdout
 EOF
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
 ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-github.com/dagger/dagger/modules/wolfi@v0.16.2 \
-  | container \
-  | with-file /README.md $(host | file ./README.md) \
-  | with-exec cat /README.md \
-  | stdout
+github.com/dagger/dagger/modules/wolfi@v0.16.2 |
+  container |
+  with-file /README.md $(host | file ./README.md) |
+  with-exec cat /README.md |
+  stdout
 ```
 </TabItem>
 </Tabs>
