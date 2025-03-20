@@ -354,6 +354,45 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 		_, err := c.Container().Build(src).Sync(ctx)
 		require.NotEmpty(t, err)
 	})
+
+	t.Run("confirm .dockerignore compatibility with docker", func(ctx context.Context, t *testctx.T) {
+		src := contextDir.
+			WithNewFile("foo", "foo-contents").
+			WithNewFile("bar", "bar-contents").
+			WithNewFile("baz", "baz-contents").
+			WithNewFile("bay", "bay-contents").
+			WithNewFile("Dockerfile",
+				`FROM golang:1.18.2-alpine
+	WORKDIR /src
+	COPY . .
+	`).
+			WithNewFile(".dockerignore", `
+	ba*
+	Dockerfile
+	!bay
+	.dockerignore
+	`)
+
+		content, err := c.Container().Build(src).Directory("/src").File("foo").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foo-contents", content)
+
+		cts, err := c.Container().Build(src).Directory("/src").File(".dockerignore").Contents(ctx)
+		require.ErrorContains(t, err, "/src/.dockerignore: no such file or directory", fmt.Sprintf("cts is %s", cts))
+
+		_, err = c.Container().Build(src).Directory("/src").File("Dockerfile").Contents(ctx)
+		require.ErrorContains(t, err, "/src/Dockerfile: no such file or directory")
+
+		_, err = c.Container().Build(src).Directory("/src").File("bar").Contents(ctx)
+		require.ErrorContains(t, err, "/src/bar: no such file or directory")
+
+		_, err = c.Container().Build(src).Directory("/src").File("baz").Contents(ctx)
+		require.ErrorContains(t, err, "/src/baz: no such file or directory")
+
+		content, err = c.Container().Build(src).Directory("/src").File("bay").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "bay-contents", content)
+	})
 }
 
 func (ContainerSuite) TestWithRootFS(ctx context.Context, t *testctx.T) {
