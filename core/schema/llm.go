@@ -72,6 +72,8 @@ func (s llmSchema) Install() {
 			Doc("print documentation for available tools"),
 		dagql.Func("variables", s.variables).
 			Doc("list variables in the LLM environment"),
+		dagql.Func("currentType", s.currentType).
+			Doc("returns the type of the current state"),
 	}.Install(s.srv)
 	dagql.Fields[*core.LLMVariable]{}.Install(s.srv)
 	hook := core.LLMHook{Server: s.srv}
@@ -187,4 +189,8 @@ func (s *llmSchema) tools(ctx context.Context, llm *core.LLM, _ struct{}) (dagql
 
 func (s *llmSchema) variables(ctx context.Context, llm *core.LLM, _ struct{}) ([]*core.LLMVariable, error) {
 	return llm.Variables(ctx, s.srv)
+}
+
+func (s *llmSchema) currentType(ctx context.Context, llm *core.LLM, _ struct{}) (dagql.Nullable[dagql.String], error) {
+	return llm.CurrentType(ctx, s.srv)
 }

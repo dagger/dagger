@@ -800,6 +800,20 @@ func (llm *LLM) Variables(ctx context.Context, dag *dagql.Server) ([]*LLMVariabl
 	return vars, nil
 }
 
+func (llm *LLM) CurrentType(ctx context.Context, dag *dagql.Server) (dagql.Nullable[dagql.String], error) {
+	var res dagql.Nullable[dagql.String]
+	llm, err := llm.Sync(ctx, dag)
+	if err != nil {
+		return res, err
+	}
+	if llm.env.Current() == nil {
+		return res, nil
+	}
+	res.Value = dagql.String(llm.env.Current().Type().Name())
+	res.Valid = true
+	return res, nil
+}
+
 // FIXME: deprecated
 func (llm *LLM) WithState(ctx context.Context, objID dagql.IDType, srv *dagql.Server) (*LLM, error) {
 	obj, err := srv.Load(ctx, objID.ID())
