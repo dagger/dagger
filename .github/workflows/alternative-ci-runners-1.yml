@@ -16,13 +16,12 @@ jobs:
   docs-lint-on-depot-remote-engine:
     uses: ./.github/workflows/_dagger_on_depot_remote_engine.yml
     with:
-      function: docs lint
+      function: check --targets=docs
   docs-lint-on-depot-local-engine:
     uses: ./.github/workflows/_dagger_on_depot_local_engine.yml
     with:
-      function: docs lint
+      function: check --targets=docs
       dev: true
-      timeout: 20
 
   sdk-go-on-depot-remote-engine:
     needs: docs-lint-on-depot-remote-engine
