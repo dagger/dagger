@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"iter"
+	"slices"
 	"strings"
 
 	"github.com/muesli/reflow/indent"
@@ -84,36 +85,24 @@ func (h *shellCallHandler) DependenciesList() string {
 func (h *shellCallHandler) MainHelp() string {
 	var doc ShellDoc
 
-	// NB: These (empty) section names may not seem useful right now but the way
-	// these groups are organized is mercurial so leaving it in to make it easier
-	// to change again later.
-	// NB: order is important to apply proper shadowing, except for the builtins.
-	// They would technically come first but we want them ordered last.
-	// It doesn't matter because of the `.` prefix.
-	groups := []shellDocUsagesSection{
-		{
-			"",
-			h.allFunctionUsages(),
-		},
-		{
-			"",
-			h.allLoadedModules(),
-		},
-		{
-			"",
-			h.allDependencyUsages(),
-		},
-		{
-			"",
-			h.allStdlibUsages(),
-		},
-		{
-			"",
-			h.allBuiltinUsages(),
-		},
-	}
-	for s, v := range combineUsages(groups) {
-		doc.Add(s, v)
+	// NB: Order is important to apply proper shadowing. This reflects the
+	// lookup order when the handler executes a command.
+	groups := slices.Collect(combineUsages(
+		h.allBuiltinUsages(),
+		h.allFunctionUsages(),
+		h.allLoadedModules(),
+		h.allDependencyUsages(),
+		h.allStdlibUsages(),
+	))
+
+	// move builtins to last
+	groups = append(groups[1:], groups[0])
+
+	// move module before its functions
+	groups[0], groups[1] = groups[1], groups[0]
+
+	for _, group := range groups {
+		doc.Add("", group)
 	}
 
 	types := "<command>"
@@ -126,29 +115,11 @@ func (h *shellCallHandler) MainHelp() string {
 	return doc.String()
 }
 
-// Chain2 chains multiple Seq2 sequences together
-func Chain2[K comparable, V any](seqs ...iter.Seq2[K, V]) iter.Seq2[K, V] {
-	return func(yield func(K, V) bool) {
-		for _, seq := range seqs {
-			for k, v := range seq {
-				if !yield(k, v) {
-					return
-				}
-			}
-		}
-	}
-}
-
-type shellDocUsagesSection struct {
-	Section string
-	Usages  iter.Seq2[string, string]
-}
-
 // combineUsages removes shadowed functions, even in different sections or groups
 //
-// Returns the section's name and compiled string of usages, in the order they were passed.
-func combineUsages(groups []shellDocUsagesSection) iter.Seq2[string, string] {
-	return func(yield func(string, string) bool) {
+// Returns the section's compiled string of usages, in the order they were passed.
+func combineUsages(groups ...iter.Seq2[string, string]) iter.Seq[string] {
+	return func(yield func(string) bool) {
 		seen := make(map[string]struct{})
 
 		// filter out elements that already exist
@@ -165,9 +136,9 @@ func combineUsages(groups []shellDocUsagesSection) iter.Seq2[string, string] {
 			}
 		}
 
-		for _, group := range groups {
-			body := nameShortWrappedIter(filtered(group.Usages))
-			if !yield(group.Section, body) {
+		for _, usages := range groups {
+			body := nameShortWrappedIter(filtered(usages))
+			if !yield(body) {
 				return
 			}
 		}
@@ -202,6 +173,10 @@ func (h *shellCallHandler) allFunctionUsages() iter.Seq2[string, string] {
 }
 
 // allLoadedModules returns a sequence of a single module if one is currently loaded
+//
+// The function name can be misleading since we only consider one module to
+// be the "current" module, at least at the moment. Making this a sequence
+// helps to combine in `combineUsages` function.
 func (h *shellCallHandler) allLoadedModules() iter.Seq2[string, string] {
 	return func(yield func(string, string) bool) {
 		def, _ := h.GetModuleDef(nil)
