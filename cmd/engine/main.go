@@ -114,7 +114,10 @@ func addFlags(app *cli.App) {
 		cli.StringSliceFlag{
 			Name:  "addr",
 			Usage: "listening address (socket or tcp)",
-			Value: &cli.StringSlice{defaultConf.GRPC.Address[0]},
+			Value: func() *cli.StringSlice {
+				slice := cli.StringSlice(defaultConf.GRPC.Address)
+				return &slice
+			}(),
 		},
 		cli.StringFlag{
 			Name:  "group",
@@ -481,6 +484,8 @@ func serveAPI(
 	if len(addrs) == 0 {
 		return errors.New("--addr cannot be empty")
 	}
+	addrs = removeDuplicates(addrs)
+
 	tlsConfig, err := serverCredentials(cfg.TLS)
 	if err != nil {
 		return err
@@ -520,6 +525,19 @@ func serveAPI(
 		errCh <- eg.Wait()
 	}()
 	return nil
+}
+
+// removeDuplicates removes duplicate items from the slice, preserving the original order
+func removeDuplicates[T comparable](in []T) (out []T) {
+	exists := map[T]struct{}{}
+	for _, v := range in {
+		if _, ok := exists[v]; ok {
+			continue
+		}
+		out = append(out, v)
+		exists[v] = struct{}{}
+	}
+	return out
 }
 
 //nolint:gocyclo

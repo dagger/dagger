@@ -6,7 +6,7 @@ data:
   config.toml: |
     concurrent = 10
     [[runners]]
-      environment = ["HOME=/tmp","FF_GITLAB_REGISTRY_HELPER_IMAGE=1", "_EXPERIMENTAL_DAGGER_RUNNER_HOST=unix:///var/run/dagger/engine.sock"]
+      environment = ["HOME=/tmp","FF_GITLAB_REGISTRY_HELPER_IMAGE=1", "_EXPERIMENTAL_DAGGER_RUNNER_HOST=unix:///run/dagger/engine.sock"]
       pre_build_script = "export PATH=\"/tmp/:$PATH\""
       name = "GitLab Runner with Dagger"
       url = YOUR-GITLAB-URL
@@ -29,5 +29,5 @@ data:
         run_as_user = 0
         [[runners.kubernetes.volumes.host_path]]
           name = "dagger"
-          mount_path = "/var/run/dagger"
-          host_path = "/var/run/dagger"
+          mount_path = "/run/dagger"
+          host_path = "/run/dagger"
