@@ -582,10 +582,10 @@ func (srv *Server) initializeDaggerClient(
 	// setup the graphql server + module/function state for the client
 	client.dagqlRoot = core.NewRoot(srv)
 
-	dag := dagql.NewServer(client.dagqlRoot, client.daggerSession.dagqlCache)
-	dag.Around(core.AroundFunc)
-	coreMod := &schema.CoreMod{Dag: dag}
-	if err := coreMod.Install(ctx, dag); err != nil {
+	client.dag = dagql.NewServer(client.dagqlRoot, client.daggerSession.dagqlCache)
+	client.dag.Around(core.AroundFunc)
+	coreMod := &schema.CoreMod{Dag: client.dag}
+	if err := coreMod.Install(ctx, client.dag); err != nil {
 		return fmt.Errorf("failed to install core module: %w", err)
 	}
 	client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
@@ -693,7 +693,6 @@ func (srv *Server) initializeDaggerClient(
 	client.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
 	client.meterProvider = sdkmetric.NewMeterProvider(meterOpts...)
 
-	client.dag = dag
 	client.state = clientStateInitialized
 	return nil
 }
