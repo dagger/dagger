@@ -113,7 +113,7 @@ class _DaggerPropagationConfigurator(_BaseConfigurator):
             context.attach(ctx)
 
 
-class LiveSpanProcessor(sdktrace.ConcurrentMultiSpanProcessor):
+class LiveSpanProcessor(sdktrace.SynchronousMultiSpanProcessor):
     """Live span processor implementation.
 
     It's a SpanProcessor whose on_start calls on_end on the underlying
