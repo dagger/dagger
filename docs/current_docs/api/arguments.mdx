@@ -476,11 +476,11 @@ Here is an example of passing a remote repository (Dagger's open-source reposito
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-container \
-  | from alpine:latest \
-  | with-directory /src https://github.com/dagger/dagger \
-  | with-exec ls /src \
-  | stdout
+container |
+  from alpine:latest |
+  with-directory /src https://github.com/dagger/dagger |
+  with-exec ls /src |
+  stdout
 EOF
 ```
 </TabItem>
@@ -507,11 +507,11 @@ The same repository can also be accessed using SSH. Note that this requires [SSH
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-container \
-  | from alpine:latest \
-  | with-directory /src ssh://git@github.com/dagger/dagger \
-  | with-exec ls /src \
-  | stdout
+container |
+  from alpine:latest |
+  with-directory /src ssh://git@github.com/dagger/dagger |
+  with-exec ls /src |
+  stdout
 EOF
 ```
 </TabItem>
@@ -875,8 +875,8 @@ Here is an example of passing this host service as argument to a PostgreSQL clie
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-github.com/kpenfound/dagger-modules/postgres@v0.1.0 \
-  | client tcp://localhost:5432 postgres postgres postgres
+github.com/kpenfound/dagger-modules/postgres@v0.1.0 |
+  client tcp://localhost:5432 postgres postgres postgres
 EOF
 ```
 </TabItem>

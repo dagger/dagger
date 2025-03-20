@@ -16,10 +16,10 @@ To create a pipeline with the Dagger API, you call multiple functions, combining
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-container \
-  | from alpine \
-  | file /etc/os-release \
-  | contents
+container |
+  from alpine |
+  file /etc/os-release |
+  contents
 EOF
 ```
 </TabItem>
@@ -52,10 +52,10 @@ Here's an example:
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-container \
-  | with-directory /src https://github.com/dagger/dagger \
-  | directory /src \
-  | entries
+container |
+  with-directory /src https://github.com/dagger/dagger |
+  directory /src |
+  entries
 EOF
 ```
 </TabItem>
@@ -90,13 +90,13 @@ Although you may not have realized it, you've already seen function chaining in 
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-container \
-  | from golang:latest \
-  | with-directory /src https://github.com/dagger/dagger#main \
-  | with-workdir /src/cmd/dagger \
-  | with-exec -- go build -o dagger . \
-  | file ./dagger \
-  | export ./dagger.bin
+container |
+  from golang:latest |
+  with-directory /src https://github.com/dagger/dagger#main |
+  with-workdir /src/cmd/dagger |
+  with-exec -- go build -o dagger . |
+  file ./dagger |
+  export ./dagger.bin
 EOF
 ```
 </TabItem>
@@ -157,10 +157,10 @@ Functions can be chained with the CLI, or programmatically in a [custom Dagger f
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-container \
-  | from alpine:latest \
-  | with-entrypoint  cat /etc/os-release \
-  | publish ttl.sh/my-alpine
+container |
+  from alpine:latest |
+  with-entrypoint  cat /etc/os-release |
+  publish ttl.sh/my-alpine
 EOF
 ```
 </TabItem>

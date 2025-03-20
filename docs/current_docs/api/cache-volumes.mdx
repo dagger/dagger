@@ -14,12 +14,12 @@ Here's an example:
 <TabItem value="System shell">
 ```shell
 dagger <<EOF
-container \
-  | from node:21 \
-  | with-directory /src https://github.com/dagger/hello-dagger \
-  | with-workdir /src \
-  | with-mounted-cache /root/.npm node-21 \
-  | with-exec npm install
+container |
+  from node:21 |
+  with-directory /src https://github.com/dagger/hello-dagger |
+  with-workdir /src |
+  with-mounted-cache /root/.npm node-21 |
+  with-exec npm install
 EOF
 ```
 </TabItem>
