@@ -9,7 +9,6 @@ type MyModule struct{}
 
 func (m *MyModule) Hello(
 	ctx context.Context,
-	// +optional
 	// +default="world"
 	name string,
 ) (string, error) {
