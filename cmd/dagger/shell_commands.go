@@ -422,11 +422,11 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 							return h.Print(ctx, h.DepsHelp())
 						}
 						// Example: `.deps | .help <dependency>`
-						depSt, depDef, err := h.GetDependency(ctx, args[0])
+						_, depDef, err := h.GetDependency(ctx, args[0])
 						if err != nil {
 							return err
 						}
-						return h.Print(ctx, h.ModuleDoc(depSt, depDef))
+						return h.Print(ctx, h.ModuleDoc(depDef))
 
 					case st.IsCore():
 						// Document core
@@ -447,7 +447,7 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 						}
 						// Document module
 						// Example: `.help [module]`
-						return h.Print(ctx, h.ModuleDoc(st, def))
+						return h.Print(ctx, h.ModuleDoc(def))
 					}
 				}
 

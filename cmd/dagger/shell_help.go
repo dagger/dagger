@@ -429,7 +429,7 @@ func (h *shellCallHandler) FunctionFullUseLine(md *moduleDef, fn *modFunction) s
 	return usage
 }
 
-func (h *shellCallHandler) ModuleDoc(st *ShellState, m *moduleDef) string {
+func (h *shellCallHandler) ModuleDoc(m *moduleDef) string {
 	var doc ShellDoc
 
 	meta := new(strings.Builder)
