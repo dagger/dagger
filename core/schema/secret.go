@@ -28,9 +28,6 @@ func (s *secretSchema) Install() {
 			ArgDoc("name", `The user defined name for this secret`).
 			ArgDoc("plaintext", `The plaintext of the secret`).
 			ArgSensitive("plaintext"),
-
-		// TODO: re-add LoadSecretFromName for back compat?
-		// TODO: re-add LoadSecretFromName for back compat?
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Secret]{
