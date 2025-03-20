@@ -399,13 +399,11 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.Instance
 	var err error
 
 	// use dockerfile specific .dockerfile if that exists
-	if args.Dockerfile != "Dockerfile" {
-		// https://docs.docker.com/build/concepts/context/#filename-and-location
-		specificDockerIgnoreFile := args.Dockerfile + ".dockerignore"
-		dockerIgnoreContents, err = getDockerIgnoreFileContent(ctx, parent, specificDockerIgnoreFile)
-		if err != nil {
-			return nil, err
-		}
+	// https://docs.docker.com/build/concepts/context/#filename-and-location
+	specificDockerIgnoreFile := args.Dockerfile + ".dockerignore"
+	dockerIgnoreContents, err = getDockerIgnoreFileContent(ctx, parent, specificDockerIgnoreFile)
+	if err != nil {
+		return nil, err
 	}
 
 	// fallback on default .dockerignore file
@@ -421,13 +419,14 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.Instance
 		return nil, err
 	}
 
-	var destdir dagql.Instance[*core.Directory]
+	// apply the dockerignore exclusions
+	var buildctxDir dagql.Instance[*core.Directory]
 	if len(excludes) > 0 {
-		err = s.srv.Select(ctx, parent, &destdir,
+		err = s.srv.Select(ctx, parent, &buildctxDir,
 			dagql.Selector{
 				Field: "withDirectory",
 				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.NewString("./filtered")},
+					{Name: "path", Value: dagql.NewString("buildctx")},
 					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(excludes...))},
 					{Name: "directory", Value: dagql.NewID[*core.Directory](parent.ID())},
 				},
@@ -435,7 +434,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.Instance
 			dagql.Selector{
 				Field: "directory",
 				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.NewString("./filtered")},
+					{Name: "path", Value: dagql.NewString("buildctx")},
 				},
 			},
 		)
@@ -443,7 +442,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.Instance
 			return nil, err
 		}
 	} else {
-		destdir = parent
+		buildctxDir = parent
 	}
 
 	ctr, err := core.NewContainer(parent.Self.Query, platform)
@@ -462,7 +461,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent dagql.Instance
 	return ctr.Build(
 		ctx,
 		parent.Self,
-		destdir.Self,
+		buildctxDir.Self,
 		args.Dockerfile,
 		collectInputsSlice(args.BuildArgs),
 		args.Target,
