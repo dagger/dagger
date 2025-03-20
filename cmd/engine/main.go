@@ -535,7 +535,7 @@ func applyMainFlags(c *cli.Context, cfg *bkconfig.Config) error {
 	}
 
 	if c.IsSet("addr") || len(cfg.GRPC.Address) == 0 {
-		cfg.GRPC.Address = c.StringSlice("addr")
+		cfg.GRPC.Address = append(cfg.GRPC.Address, c.StringSlice("addr")...)
 	}
 
 	if c.IsSet("allow-insecure-entitlement") {

@@ -64,7 +64,6 @@ func devEngineContainer(c *dagger.Client, withs ...func(*dagger.Container) *dagg
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithDefaultArgs([]string{
 			"--addr", "tcp://0.0.0.0:1234",
-			"--addr", "unix:///var/run/dagger/engine.sock",
 			// avoid network conflicts with other tests
 			"--network-name", deviceName,
 			"--network-cidr", cidr,

@@ -38,8 +38,6 @@ func defaultBuildkitConfig() (bkconfig.Config, error) {
 }
 
 func setDefaultBuildkitConfig(cfg *bkconfig.Config, netConf *networkConfig) {
-	orig := *cfg
-
 	if cfg.Root == "" {
 		cfg.Root = distconsts.EngineDefaultStateDir
 	}
@@ -72,21 +70,6 @@ func setDefaultBuildkitConfig(cfg *bkconfig.Config, netConf *networkConfig) {
 	}
 	if cfg.Workers.Containerd.Platforms == nil {
 		cfg.Workers.Containerd.Platforms = server.FormatPlatforms(archutil.SupportedPlatforms(false))
-	}
-
-	if userns.RunningInUserNS() {
-		// if buildkitd is being executed as the mapped-root (not only EUID==0 but also $USER==root)
-		// in a user namespace, we need to enable the rootless mode but
-		// we don't want to honor $HOME for setting up default paths.
-		if u := os.Getenv("USER"); u != "" && u != "root" {
-			if orig.Root == "" {
-				cfg.Root = appdefaults.UserRoot()
-			}
-			if len(orig.GRPC.Address) == 0 {
-				cfg.GRPC.Address = []string{appdefaults.UserAddress()}
-			}
-			appdefaults.EnsureUserAddressDir()
-		}
 	}
 }
 
