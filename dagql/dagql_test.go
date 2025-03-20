@@ -2270,7 +2270,7 @@ func TestCustomDigest(t *testing.T) {
 
 func TestServerSelect(t *testing.T) {
 	// Create a new server with a simple object hierarchy for testing
-	srv := dagql.NewServer(Query{})
+	srv := dagql.NewServer(Query{}, newCache())
 
 	// Install test types
 	InstallTestTypes(srv)
@@ -2620,7 +2620,7 @@ func (hook *testInstallHook) InstallObject(class dagql.ObjectType) {
 }
 
 func TestInstallHooks(t *testing.T) {
-	srv := dagql.NewServer(Query{})
+	srv := dagql.NewServer(Query{}, newCache())
 	srv.AddInstallHook(&testInstallHook{srv})
 	points.Install[Query](srv)
 
