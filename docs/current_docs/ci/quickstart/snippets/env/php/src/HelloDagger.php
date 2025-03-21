@@ -6,6 +6,7 @@ namespace DaggerModule;
 
 use Dagger\Attribute\DaggerFunction;
 use Dagger\Attribute\DaggerObject;
+use Dagger\Attribute\DefaultPath;
 use Dagger\Attribute\Doc;
 use Dagger\Container;
 use Dagger\Directory;
@@ -17,8 +18,10 @@ class HelloDagger
 {
     #[DaggerFunction]
     #[Doc('Build a ready-to-use development environment')]
-    public function buildEnv(Directory $source): Container
-    {
+    public function buildEnv(
+        #[DefaultPath('/')]
+        Directory $source,
+    ): Container {
         $nodeCache = dag()
             ->cacheVolume('node');
 

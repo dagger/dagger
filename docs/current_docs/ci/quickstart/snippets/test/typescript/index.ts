@@ -1,4 +1,11 @@
-import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
+import {
+  dag,
+  Container,
+  Directory,
+  object,
+  func,
+  argument,
+} from "@dagger.io/dagger"
 
 @object()
 class HelloDagger {
@@ -6,7 +13,9 @@ class HelloDagger {
    * Return the result of running unit tests
    */
   @func()
-  async test(source: Directory): Promise<string> {
+  async test(
+    @argument({ defaultPath: "/" }) source: Directory,
+  ): Promise<string> {
     // get the build environment container
     // by calling another Dagger Function
     return (

@@ -12,7 +12,11 @@ import (
 type HelloDagger struct{}
 
 // Publish the application container after building and testing it on-the-fly
-func (m *HelloDagger) Publish(ctx context.Context, source *dagger.Directory) (string, error) {
+func (m *HelloDagger) Publish(
+	ctx context.Context,
+	// +defaultPath="/"
+	source *dagger.Directory,
+) (string, error) {
 	// call Dagger Function to run unit tests
 	_, err := m.Test(ctx, source)
 	if err != nil {
