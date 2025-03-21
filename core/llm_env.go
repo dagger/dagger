@@ -431,10 +431,15 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) []LLMTool {
 			Name:        "_save",
 			Description: "Save the current object as a named variable",
 			Schema: map[string]any{
-				"type":                 "object",
-				"properties":           map[string]any{},
+				"type": "object",
+				"properties": map[string]any{
+					"name": map[string]any{
+						"type":        "string",
+						"description": "Variable name to print the type of",
+					},
+				},
 				"strict":               true,
-				"required":             []string{},
+				"required":             []string{"name"},
 				"additionalProperties": false,
 			},
 			Call: ToolFunc(env.callSave),
