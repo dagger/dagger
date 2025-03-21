@@ -34,7 +34,7 @@ class HelloDagger
     #[Doc('Build the application container')]
     public function build(
         #[DefaultPath('/')]
-        Directory $source
+        Directory $source,
     ): Container
     {
         $build = dag()

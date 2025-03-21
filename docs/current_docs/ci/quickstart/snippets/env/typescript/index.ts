@@ -6,7 +6,7 @@ class HelloDagger {
    * Build a ready-to-use development environment
    */
   @func()
-  buildEnv(source: Directory): Container {
+  buildEnv(@argument({ defaultPath: "/" }) source: Directory): Container {
     // create a Dagger cache volume for dependencies
     const nodeCache = dag.cacheVolume("node")
     return (

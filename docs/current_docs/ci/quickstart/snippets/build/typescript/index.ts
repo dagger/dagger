@@ -6,7 +6,7 @@ class HelloDagger {
    * Build the application container
    */
   @func()
-  build(source: Directory): Container {
+  build(@argument({ defaultPath: "/" }) source: Directory): Container {
     // get the build environment container
     // by calling another Dagger Function
     const build = this.buildEnv(source)

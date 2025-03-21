@@ -1,7 +1,8 @@
 import random
+from typing import Annotated
 
 import dagger
-from dagger import dag, function, object_type
+from dagger import DefaultPath, dag, function, object_type
 
 
 @object_type
@@ -15,7 +16,10 @@ class HelloDagger:
         )
 
     @function
-    def build(self, source: dagger.Directory) -> dagger.Container:
+    def build(
+        self,
+        source: Annotated[dagger.Directory, DefaultPath("/")],
+    ) -> dagger.Container:
         """Build the application container"""
         build = (
             self.build_env(source)
@@ -30,7 +34,10 @@ class HelloDagger:
         )
 
     @function
-    async def test(self, source: dagger.Directory) -> str:
+    async def test(
+        self,
+        source: Annotated[dagger.Directory, DefaultPath("/")],
+    ) -> str:
         """Return the result of running unit tests"""
         return await (
             self.build_env(source)
@@ -39,7 +46,10 @@ class HelloDagger:
         )
 
     @function
-    def build_env(self, source: dagger.Directory) -> dagger.Container:
+    def build_env(
+        self,
+        source: Annotated[dagger.Directory, DefaultPath("/")],
+    ) -> dagger.Container:
         """Build a ready-to-use development environment"""
         node_cache = dag.cache_volume("node")
         return (

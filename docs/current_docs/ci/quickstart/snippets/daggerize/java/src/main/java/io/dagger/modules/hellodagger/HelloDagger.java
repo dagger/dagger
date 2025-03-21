@@ -6,6 +6,7 @@ import io.dagger.client.Container;
 import io.dagger.client.DaggerQueryException;
 import io.dagger.client.Directory;
 import io.dagger.client.CacheVolume;
+import io.dagger.module.annotation.DefaultPath;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
@@ -16,7 +17,7 @@ import java.util.concurrent.ExecutionException;
 public class HelloDagger {
   /** Publish the application container after building and testing it on-the-fly */
   @Function
-  public String publish(Directory source)
+  public String publish(@DefaultPath("/") Directory source)
       throws InterruptedException, ExecutionException, DaggerQueryException {
     this.test(source);
     return this.build(source).
@@ -25,7 +26,7 @@ public class HelloDagger {
 
   /** Build the application container */
   @Function
-  public Container build(Directory source)
+  public Container build(@DefaultPath("/") Directory source)
       throws InterruptedException, ExecutionException, DaggerQueryException {
     Directory build = this
         .buildEnv(source)
@@ -39,7 +40,7 @@ public class HelloDagger {
 
   /** Return the result of running unit tests */
   @Function
-  public String test(Directory source)
+  public String test(@DefaultPath("/") Directory source)
       throws InterruptedException, ExecutionException, DaggerQueryException {
     return this
         .buildEnv(source)
@@ -49,7 +50,7 @@ public class HelloDagger {
 
   /** Build a ready-to-use development environment */
   @Function
-  public Container buildEnv(Directory source)
+  public Container buildEnv(@DefaultPath("/") Directory source)
       throws InterruptedException, ExecutionException, DaggerQueryException {
     CacheVolume nodeCache = dag().cacheVolume("node");
     return dag().container()
