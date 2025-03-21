@@ -5,27 +5,29 @@ import (
 )
 
 type Evals struct {
-	LLM *dagger.LLM
+	Model        string
+	Attempt      int
+	SystemPrompt string
 }
 
-func New() *Evals {
+func New(attempt int) *Evals {
 	return &Evals{
-		LLM: dag.LLM(),
+		Attempt: attempt,
 	}
 }
 
 func (m *Evals) WithModel(model string) *Evals {
-	m.LLM = dag.LLM(dagger.LLMOpts{Model: model})
+	m.Model = model
 	return m
 }
 
 func (m *Evals) WithSystemPrompt(prompt string) *Evals {
-	m.LLM = m.LLM.WithSystemPrompt(prompt)
+	m.SystemPrompt = prompt
 	return m
 }
 
 func (m *Evals) UndoSingle() *dagger.Container {
-	return m.LLM.
+	return m.LLM().
 		WithQuery().
 		WithPrompt("give me a container for PHP 7 development").
 		Loop().
@@ -37,7 +39,7 @@ func (m *Evals) UndoSingle() *dagger.Container {
 }
 
 func (m *Evals) BuildMultiLLM() *dagger.LLM {
-	return m.LLM.
+	return m.LLM().
 		SetDirectory("repo", dag.Git("https://github.com/vito/booklit").Head().Tree()).
 		SetContainer("ctr", dag.Container().From("golang")).
 		WithPrompt("Mount $repo into $ctr and build ./cmd/booklit").
@@ -47,4 +49,12 @@ func (m *Evals) BuildMultiLLM() *dagger.LLM {
 
 func (m *Evals) BuildMulti() *dagger.File {
 	return m.BuildMultiLLM().File()
+}
+
+func (m *Evals) LLM() *dagger.LLM {
+	return dag.LLM(dagger.LLMOpts{
+		Model: m.Model,
+	}).
+		WithSystemPrompt(m.SystemPrompt).
+		Attempt(m.Attempt)
 }
