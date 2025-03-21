@@ -91,7 +91,9 @@ func withEngine(
 		params.Interactive = interactive
 		params.InteractiveCommand = interactiveCommandParsed
 
-		params.PromptHandler = Frontend
+		if hasTTY {
+			params.PromptHandler = Frontend
+		}
 
 		// Connect to and run with the engine
 		sess, ctx, err := client.Connect(ctx, params)

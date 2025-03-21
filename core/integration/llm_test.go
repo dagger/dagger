@@ -224,6 +224,15 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 		}
 	})
 
+	t.Run("noninteractive prompt fail", func(ctx context.Context, t *testctx.T) {
+		args := []string{modelFlag, "save", "--string-arg", "greet me"}
+
+		_, err = daggerCliBase(t, c).
+			With(daggerCallAt(directCallModuleRef, args...)).
+			Stdout(ctx)
+		require.Error(t, err)
+	})
+
 	// // TODO, not yet implemented
 	// t.Run("environment variable", func(ctx context.Context, t *testctx.T) {
 	// 	_, err = daggerCliBase(t, c).
