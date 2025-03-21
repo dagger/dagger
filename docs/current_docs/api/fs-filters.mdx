@@ -1,6 +1,8 @@
 ---
 slug: /api/filters
 ---
+
+
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
@@ -86,6 +88,14 @@ Here's an example of a Dagger Function that excludes everything in a given direc
 ```
 
 </TabItem>
+<TabItem value="Java">
+
+Here's an example of a Dagger Function that excludes everything in a given directory except Java source code files:
+
+```java file=./snippets/fs-filters/pre-call/java/MyModule.java
+```
+
+</TabItem>
 </Tabs>
 
 Here are a few examples of useful patterns:
@@ -145,6 +155,24 @@ Ignore([".git", "**/.gitignore"])
 @argument({ ignore: [".git", "**/.gitignore"] })
 ```
 </TabItem>
+<TabItem value="Java">
+```java
+// exclude Go tests and test data
+@Ignore({"**_test.go", "**/testdata/**"})
+
+// exclude binaries
+@Ignore({"bin"})
+
+// exclude Python dependencies
+@Ignore({"**/.venv", "**/__pycache__"})
+
+// exclude Node.js dependencies
+@Ignore({"**/node_modules"})
+
+// exclude Git metadata
+@Ignore({".git", "**/.gitignore"})
+```
+</TabItem>
 </Tabs>
 
 ## Post-call filtering
@@ -177,6 +205,14 @@ To implement a post-call filter in your Dagger Function, use the `include` and `
 To implement a post-call filter in your Dagger Function, use the `include` and `exclude` parameters when working with `Directory` objects. Here's an example:
 
 ```typescript file=./snippets/fs-filters/post-call/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="Java">
+
+To implement a post-call filter in your Dagger Function, use the `Container.WithDirectoryArguments` class which support `withInclude` and `withExclude` functions when working with `Directory` objects. Here's an example:
+
+```java file=./snippets/fs-filters/post-call/java/MyModule.java
 ```
 
 </TabItem>
@@ -238,6 +274,25 @@ const dirOpts = { include: ["*.zip"] }
 const dirOpts = { exclude: ["*.git"] }
 ```
 </TabItem>
+<TabItem value="Java">
+```java
+// exclude all Markdown files
+var dirOpts = new Container.WithDirectoryArguments()
+    .withExclude(List.of("*.md*"));
+
+// include only the build output directory
+var dirOpts = new Container.WithDirectoryArguments()
+    .withInclude(List.of("build"));
+
+// include only ZIP files
+var dirOpts = new Container.WithDirectoryArguments()
+    .withInclude(List.of("*.zip"));
+
+// exclude Git metadata
+var dirOpts = new Container.WithDirectoryArguments()
+    .withExclude(List.of("*.git"));
+```
+</TabItem>
 </Tabs>
 
 ## Debugging
@@ -285,6 +340,14 @@ debug(
    @argument({ ignore: ["*", "!analytics"] }) source: Directory,
 ): Directory {
   return source
+}
+```
+</TabItem>
+<TabItem value="Java">
+```java
+@Function
+public Directory debug(@Ignore({"*", "!analytics"}) Directory source) {
+    return source;
 }
 ```
 </TabItem>

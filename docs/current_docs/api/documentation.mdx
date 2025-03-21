@@ -64,6 +64,32 @@ The following code snippet shows how to add documentation for:
 ```
 
 </TabItem>
+<TabItem value="Java">
+
+The following code snippet shows how to add documentation for:
+
+- Function methods
+- Function arguments
+
+```java file=./snippets/documentation/java/main/MyModule.java
+```
+
+The documentation of the module is added in the `package-info.java` file.
+
+```java
+/**
+ * A simple example module to say hello.
+ *
+ * Further documentation for the module here.
+ */
+@Module
+package io.dagger.modules.mymodule;
+
+import io.dagger.module.annotation.Module;
+
+```
+
+</TabItem>
 </Tabs>
 
 Here is an example of the result from `dagger functions`:
@@ -112,6 +138,12 @@ The following code snippet shows how to add documentation for an object and its 
 <TabItem value="PHP">
 
 ```php file=./snippets/documentation/php/object/src/MyModule.php
+```
+
+</TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/documentation/java/object/MyModule.java
 ```
 
 </TabItem>

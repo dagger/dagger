@@ -67,6 +67,15 @@ In the PHP SDK the constructor must be the [magic method `__construct`](https://
 As with any method, only public methods with the `#[DaggerFunction]` attribute will be registered with Dagger.
 :::
 </TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/constructors/java/simple/MyModule.java
+```
+
+:::info
+In the Java SDK, the constructor must be public. A public **empty** constructor is also required in order to create the object from the serialized data.
+:::
+</TabItem>
 </Tabs>
 
 Here is an example call for this Dagger Function:
@@ -143,6 +152,12 @@ When assigning default values to complex types in TypeScript, it is necessary to
 <TabItem value="PHP">
 
 ```php file=./snippets/constructors/php/default-object/src/MyModule.php
+```
+
+</TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/constructors/java/default-object/MyModule.java
 ```
 
 </TabItem>
