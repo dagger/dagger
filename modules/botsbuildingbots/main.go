@@ -26,7 +26,10 @@ func (m *BotsBuildingBots) Singularity(
 		WithPrompt("Focus on framing - once you find a good framing, the prompt shouldn't need to be too long.").
 		WithPrompt("After each evaluation, analyze the success rate and history and generate a report. If 100% of the attempts succeeded, you may stop. If not, explain your thought process for the next iteration.").
 		WithPrompt("Keep going until you find the best prompt.").
-		WithWorkspace(dag.Workspace(model, dagger.WorkspaceOpts{Evals: evals})).
+		WithWorkspace(dag.Workspace(dagger.WorkspaceOpts{
+			Model: model,
+			Evals: evals,
+		})).
 		Workspace().
 		SystemPrompt(ctx)
 }
