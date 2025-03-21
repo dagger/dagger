@@ -203,19 +203,19 @@ func (env *LLMEnv) call(ctx context.Context,
 			if idStr, ok := val.(string); ok {
 				envVal, err := env.Get(idStr)
 				if err != nil {
-					return nil, fmt.Errorf("tool call: %s: failed to get self: %w", fieldDef.Name, err)
+					return nil, err
 				}
 				if obj, ok := dagql.UnwrapAs[dagql.Object](envVal); ok {
 					enc, err := obj.ID().Encode()
 					if err != nil {
-						return nil, fmt.Errorf("tool call: %s: failed to encode ID: %w", fieldDef.Name, err)
+						return nil, err
 					}
 					val = enc
 				} else {
-					return nil, fmt.Errorf("tool call: %s: expected object, got %T", fieldDef.Name, val)
+					return nil, fmt.Errorf("expected object, got %T", val)
 				}
 			} else {
-				return nil, fmt.Errorf("tool call: %s: expected string, got %T", fieldDef.Name, val)
+				return nil, fmt.Errorf("expected string, got %T", val)
 			}
 		}
 		input, err := arg.Type.Decoder().DecodeInput(val)
