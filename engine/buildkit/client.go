@@ -656,7 +656,7 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 	}
 }
 
-func (c *Client) AllowLLM(ctx context.Context, moduleRepoURL string) error {
+func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error {
 	// the flag hasn't allowed this LLM call, so prompt the user
 	caller, err := c.GetMainClientCaller()
 	if err != nil {
