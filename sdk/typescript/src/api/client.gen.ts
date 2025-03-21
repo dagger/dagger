@@ -1188,10 +1188,6 @@ export type ClientLlmOpts = {
   maxAPICalls?: number
 }
 
-export type ClientLoadSecretFromNameOpts = {
-  accessor?: string
-}
-
 export type ClientModuleSourceOpts = {
   /**
    * The pinned version of the module source
@@ -8495,17 +8491,6 @@ export class Client extends BaseClient {
    */
   loadSecretFromID = (id: SecretID): Secret => {
     const ctx = this._ctx.select("loadSecretFromID", { id })
-    return new Secret(ctx)
-  }
-
-  /**
-   * Load a Secret from its Name.
-   */
-  loadSecretFromName = (
-    name: string,
-    opts?: ClientLoadSecretFromNameOpts,
-  ): Secret => {
-    const ctx = this._ctx.select("loadSecretFromName", { name, ...opts })
     return new Secret(ctx)
   }
 
