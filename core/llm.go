@@ -800,6 +800,20 @@ func (llm *LLM) Variables(ctx context.Context, dag *dagql.Server) ([]*LLMVariabl
 	return vars, nil
 }
 
+func (llm *LLM) CurrentType(ctx context.Context, dag *dagql.Server) (dagql.Nullable[dagql.String], error) {
+	var res dagql.Nullable[dagql.String]
+	llm, err := llm.Sync(ctx, dag)
+	if err != nil {
+		return res, err
+	}
+	if llm.env.Current() == nil {
+		return res, nil
+	}
+	res.Value = dagql.String(llm.env.Current().Type().Name())
+	res.Valid = true
+	return res, nil
+}
+
 // FIXME: deprecated
 func (llm *LLM) WithState(ctx context.Context, objID dagql.IDType, srv *dagql.Server) (*LLM, error) {
 	obj, err := srv.Load(ctx, objID.ID())
@@ -901,10 +915,10 @@ func (s LLMHook) ExtendLLMType(targetType dagql.ObjectType) error {
 	// Install with<TargetType>()
 	llmType.Extend(
 		dagql.FieldSpec{
-			Name:             "with" + typename,
-			Description:      fmt.Sprintf("Set a variable of type %s in the llm environment", typename),
-			Type:             llmType.Typed(),
-			DeprecatedReason: "use set<TargetType> instead",
+			Name:        "with" + typename,
+			Description: fmt.Sprintf("Set a variable of type %s in the llm environment", typename),
+			Type:        llmType.Typed(),
+			// DeprecatedReason: "use set<TargetType> instead",
 			Args: dagql.InputSpecs{
 				{
 					Name:        "value",
@@ -923,10 +937,10 @@ func (s LLMHook) ExtendLLMType(targetType dagql.ObjectType) error {
 	// Install <targetType>()
 	llmType.Extend(
 		dagql.FieldSpec{
-			Name:             gqlFieldName(typename),
-			Description:      fmt.Sprintf("Retrieve a the current value in the LLM environment, of type %s", typename),
-			Type:             targetType.Typed(),
-			DeprecatedReason: "use get<TargetType> instead",
+			Name:        gqlFieldName(typename),
+			Description: fmt.Sprintf("Retrieve a the current value in the LLM environment, of type %s", typename),
+			Type:        targetType.Typed(),
+			// DeprecatedReason: "use get<TargetType> instead",
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			llm := self.(dagql.Instance[*LLM]).Self

@@ -372,7 +372,7 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		defer h.state.debug(ctx)
 	}
 
-	// Run shell command - optionally sync vars back to LLM after running
+	// Run shell command
 	return h.run(ctx, strings.NewReader(line), "")
 }
 
