@@ -233,14 +233,13 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 		require.Error(t, err)
 	})
 
-	// // TODO, not yet implemented
-	// t.Run("environment variable", func(ctx context.Context, t *testctx.T) {
-	// 	_, err = daggerCliBase(t, c).
-	// 		WithEnvVariable("DAGGER_ALLOW_LLM", "all").
-	// 		With(daggerCallAt(dependerModuleRef, modelFlag, "save", "--string-arg", "greet me")).
-	// 		Stdout(ctx)
-	// 	require.NoError(t, err)
-	// })
+	t.Run("environment variable", func(ctx context.Context, t *testctx.T) {
+		_, err = daggerCliBase(t, c).
+			WithEnvVariable("DAGGER_ALLOW_LLM", "all").
+			With(daggerCallAt(dependerModuleRef, modelFlag, "save", "--string-arg", "greet me")).
+			Stdout(ctx)
+		require.NoError(t, err)
+	})
 
 	t.Run("shell allow all", func(ctx context.Context, t *testctx.T) {
 		_, err = daggerCliBase(t, c).
@@ -269,8 +268,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 
 			tty := console.Tty()
-			// err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
-			err = pty.Setsize(tty, &pty.Winsize{Rows: 20, Cols: 90}) // TODO: switch back to a small one
+			err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 60}) // for plain, we should make this wider, like 150
 			require.NoError(t, err)
 
 			cmd := hostDaggerCommand(
@@ -290,12 +288,21 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 			name     string
 			allowLLM string
 			module   string
+			plain    bool
 		}{
 			{
 				name:     "direct remote module call",
 				allowLLM: "",
 				module:   directCallModuleRef,
 			},
+			// TODO: find a way to test plain tui.
+			// under test, it doesn't acknowledge input, but works fine irl
+			// {
+			// 	name:     "plain tui direct remote module call",
+			// 	allowLLM: "",
+			// 	module:   directCallModuleRef,
+			// 	plain:    true,
+			// },
 			{
 				name:     "allowed unrelated, calling direct",
 				allowLLM: "github.com/dagger/dagger",
@@ -316,8 +323,12 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 
 		for _, tc := range tcs {
 			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+				progressFlag := "--progress=auto"
+				if tc.plain {
+					progressFlag = "--progress=plain"
+				}
 				cmd, console := consoleDagger(
-					"call", "-m", tc.module, "--allow-llm", tc.allowLLM, modelFlag, "save", "--string-arg", "greet me",
+					progressFlag, "call", "-m", tc.module, "--allow-llm", tc.allowLLM, modelFlag, "save", "--string-arg", "greet me",
 				)
 				defer console.Close()
 
