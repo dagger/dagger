@@ -129,6 +129,40 @@ func (env *LLMEnv) Tools(srv *dagql.Server) []LLMTool {
 	return append(env.Builtins(srv), env.tools(srv, env.Current())...)
 }
 
+// ToolFunc reuses our regular GraphQL args handling sugar for tools.
+func ToolFunc[T any](fn func(context.Context, T) (any, error)) func(context.Context, any) (any, error) {
+	return func(ctx context.Context, args any) (any, error) {
+		vals, ok := args.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("invalid arguments: %T", args)
+		}
+		var t T
+		specs, err := dagql.InputSpecsForType(t, true)
+		if err != nil {
+			return nil, err
+		}
+		inputs := map[string]dagql.Input{}
+		for _, spec := range specs {
+			var input dagql.Input
+			if arg, provided := vals[spec.Name]; provided {
+				input, err = spec.Type.Decoder().DecodeInput(arg)
+				if err != nil {
+					return nil, fmt.Errorf("decode arg %q (%+v): %w", spec.Name, arg, err)
+				}
+			} else if spec.Default != nil {
+				input = spec.Default
+			} else if spec.Type.Type().NonNull {
+				return nil, fmt.Errorf("required argument %s not provided", spec.Name)
+			}
+			inputs[spec.Name] = input
+		}
+		if err := specs.Decode(inputs, &t); err != nil {
+			return nil, err
+		}
+		return fn(ctx, t)
+	}
+}
+
 func (env *LLMEnv) tools(srv *dagql.Server, obj dagql.Typed) []LLMTool {
 	if obj == nil {
 		return nil
@@ -292,9 +326,10 @@ func (env *LLMEnv) callSelectTools(ctx context.Context, args any) (any, error) {
 	return fmt.Sprintf("Switched tools to %s.", env.describe(value)), nil
 }
 
-func (env *LLMEnv) callSave(ctx context.Context, args any) (any, error) {
-	name := args.(map[string]any)["name"].(string)
-	return env.Set(name, env.Current()), nil
+func (env *LLMEnv) callSave(ctx context.Context, args struct {
+	Name string
+}) (any, error) {
+	return env.Set(args.Name, env.Current()), nil
 }
 
 func (env *LLMEnv) callUndo(ctx context.Context, _ any) (any, error) {
@@ -351,35 +386,6 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) []LLMTool {
 		// 	},
 		// 	Call: env.callSelectTools,
 		// },
-		{
-			Name:        "_save",
-			Description: "Save the current object as a named variable",
-			Schema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"name": map[string]any{
-						"type":        "string",
-						"description": "Variable name to save the object as",
-					},
-				},
-				"required":             []string{"name"},
-				"strict":               true,
-				"additionalProperties": false,
-			},
-			Call: env.callSave,
-		},
-		{
-			Name:        "_undo",
-			Description: "Roll back the last action",
-			Schema: map[string]any{
-				"type":                 "object",
-				"properties":           map[string]any{},
-				"strict":               true,
-				"required":             []string{},
-				"additionalProperties": false,
-			},
-			Call: env.callUndo,
-		},
 		// TODO: don't think we need this
 		// {
 		// 	Name:        "_type",
@@ -419,6 +425,31 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) []LLMTool {
 				return nil, nil
 			},
 		},
+	}
+	if cur := env.Current(); cur != nil {
+		builtins = append(builtins, LLMTool{
+			Name:        "_save",
+			Description: "Save the current object as a named variable",
+			Schema: map[string]any{
+				"type":                 "object",
+				"properties":           map[string]any{},
+				"strict":               true,
+				"required":             []string{},
+				"additionalProperties": false,
+			},
+			Call: ToolFunc(env.callSave),
+		}, LLMTool{
+			Name:        "_undo",
+			Description: "Roll back the last action",
+			Schema: map[string]any{
+				"type":                 "object",
+				"properties":           map[string]any{},
+				"strict":               true,
+				"required":             []string{},
+				"additionalProperties": false,
+			},
+			Call: ToolFunc(env.callUndo),
+		})
 	}
 	for name, val := range env.vars {
 		desc := fmt.Sprintf("Use tools for the variable %s (%s):\n", name, env.describe(val))

@@ -1069,7 +1069,7 @@ func MustInputSpec(val Type) InputObjectSpec {
 	if desc, ok := val.(Descriptive); ok {
 		spec.Description = desc.TypeDescription()
 	}
-	inputs, err := inputSpecsForType(val, true)
+	inputs, err := InputSpecsForType(val, true)
 	if err != nil {
 		panic(fmt.Errorf("input specs for %T: %w", val, err))
 	}
