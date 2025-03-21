@@ -4,6 +4,7 @@ description: Learn how to build reproducible AI agents with Dagger using OpenAI,
 ---
 
 import PartialInstallCli from './partials/_install-cli.mdx';
+import Examples from '@site/src/components/Examples';
 import { daggerVersion } from './partials/version';
 
 # Build AI agents with Dagger
@@ -41,17 +42,7 @@ See also [this Twitter thread](https://x.com/solomonstre/status/1891205257516003
 
 Here are several example repositories containing examples of Dagger modules with agentic capabilities, which you can use as inspiration.
 
-- [toy-programmer](https://github.com/shykes/toy-programmer): a very, very simple programmer micro-agent for demo purposes
-- [melvin](https://github.com/dagger/agents/tree/main/melvin): Melvin is [Devin](https://devin.ai)'s little cousin 😄. An experimental open-source coding agent, made of small composable modules rather than one monolithic app.
-- [multiagent](https://github.com/kpenfound/agents/tree/main/multiagent-demo): a demo using multiple LLMs to solve a problem
-- [go-coder](https://github.com/kpenfound/agents/tree/main/go-coder): a Go programmer micro-agent that receives assignments from GitHub issues and creates PRs with it's solutions
-- [cypress-test-writer](https://github.com/jpadams/cypress-test-writer): an agent that compares two branches in git for a UI change and creates a Cypress test to cover the change.
-- [tictactoe](https://github.com/kpenfound/agents/tree/main/tictactoe): an agent that plays Tic Tac Toe with a human player.
-- [dockerfile-optimizer](https://github.com/samalba/agents/tree/main/dockerfile-optimizer): an agent that analyzes your Dockerfile and suggests improvements for better efficiency, security, and best practices.
-- [test-debugger](https://github.com/kpenfound/greetings-api/blob/main/DEBUGGER_AGENT.md): an agent that automatically debugs failing tests in CI.
-- [technical-content-summarizer](https://github.com/jasonmccallister/technical-content-summarizer): an agent that accepts a URL, optional min and max character length and forbidden words and summarizes the content for a non-technical audience.
-- [swe-agent](https://github.com/kpenfound/greetings-api/blob/main/SWE_AGENT.md): an agent that gets assigned GitHub issues and solves them with pull requests.
-- [database-agent](https://github.com/jasonmccallister/database-agent): An agent that connects to an existing database and allows the user to ask plain language questions to explore and query a database.
+<Examples showAgentsExample="true" />
 
 For more explanation of agent design patterns, see [FAQ](#faq) below.
 
