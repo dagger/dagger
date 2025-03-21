@@ -5,14 +5,17 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/dag"
+	"github.com/creack/pty"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"gotest.tools/v3/golden"
@@ -155,7 +158,9 @@ func (LLMSuite) TestAPILimit(ctx context.Context, t *testctx.T) {
 func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
+	// llm-test-module passes a prompt to LLM and sets a random string variable to bust cache
 	directCallModuleRef := "github.com/cwlbraa/dagger-test-modules/llm-dir-module-depender/llm-test-module"
+	// llm-dir-module-depender depends on directCall module via a relative path
 	dependerModuleRef := "github.com/cwlbraa/dagger-test-modules/llm-dir-module-depender"
 
 	recording := "llmtest/allow-llm.golden"
@@ -178,33 +183,55 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	modelFlag := fmt.Sprintf("--model=replay/%s", base64.StdEncoding.EncodeToString(replayData))
 
-	t.Run("direct allow all", func(ctx context.Context, t *testctx.T) {
-		_, err = daggerCliBase(t, c).
-			With(daggerCallAt(directCallModuleRef, "--allow-llm=all", modelFlag, "save", "--string-arg", "greet me")).
-			Stdout(ctx)
-		require.NoError(t, err)
+	t.Run("allowed calls", func(ctx context.Context, t *testctx.T) {
+		tcs := []struct {
+			name     string
+			module   string
+			allowLLM string
+		}{
+			{
+				name:     "direct allow all",
+				module:   directCallModuleRef,
+				allowLLM: "all",
+			},
+			{
+				name:     "direct allow specific module",
+				module:   directCallModuleRef,
+				allowLLM: directCallModuleRef,
+			},
+			{
+				name:     "depender allow all",
+				module:   dependerModuleRef,
+				allowLLM: "all",
+			},
+			{
+				name:     "depender allow specific module",
+				module:   dependerModuleRef,
+				allowLLM: directCallModuleRef,
+			},
+			// we only test various permutations of remote module LLM use, local modules don't require the flag and that's covered by the toy-programmer case
+		}
+
+		for _, tc := range tcs {
+			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+				args := []string{"--allow-llm", tc.allowLLM, modelFlag, "save", "--string-arg", "greet me"}
+
+				_, err = daggerCliBase(t, c).
+					With(daggerCallAt(tc.module, args...)).
+					Stdout(ctx)
+				require.NoError(t, err)
+			})
+		}
 	})
 
-	t.Run("direct allow specific module", func(ctx context.Context, t *testctx.T) {
-		_, err = daggerCliBase(t, c).
-			With(daggerCallAt(directCallModuleRef, "--allow-llm", directCallModuleRef, modelFlag, "save", "--string-arg", "greet me")).
-			Stdout(ctx)
-		require.NoError(t, err)
-	})
-
-	t.Run("depender allow all", func(ctx context.Context, t *testctx.T) {
-		_, err = daggerCliBase(t, c).
-			With(daggerCallAt(dependerModuleRef, "--allow-llm=all", modelFlag, "save", "--string-arg", "greet me")).
-			Stdout(ctx)
-		require.NoError(t, err)
-	})
-
-	t.Run("depender allow specific module", func(ctx context.Context, t *testctx.T) {
-		_, err = daggerCliBase(t, c).
-			With(daggerCallAt(dependerModuleRef, "--allow-llm", directCallModuleRef, modelFlag, "save", "--string-arg", "greet me")).
-			Stdout(ctx)
-		require.NoError(t, err)
-	})
+	// // TODO, not yet implemented
+	// t.Run("environment variable", func(ctx context.Context, t *testctx.T) {
+	// 	_, err = daggerCliBase(t, c).
+	// 		WithEnvVariable("DAGGER_ALLOW_LLM", "all").
+	// 		With(daggerCallAt(dependerModuleRef, modelFlag, "save", "--string-arg", "greet me")).
+	// 		Stdout(ctx)
+	// 	require.NoError(t, err)
+	// })
 
 	t.Run("shell allow all", func(ctx context.Context, t *testctx.T) {
 		_, err = daggerCliBase(t, c).
@@ -226,19 +253,85 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 	})
 
-	// // TODO, not yet implemented
-	// t.Run("environment variable", func(ctx context.Context, t *testctx.T) {
-	// 	_, err = daggerCliBase(t, c).
-	// 		WithEnvVariable("DAGGER_ALLOW_LLM", "all").
-	// 		With(daggerCallAt(dependerModuleRef, modelFlag, "save", "--string-arg", "greet me")).
-	// 		Stdout(ctx)
-	// 	require.NoError(t, err)
-	// })
+	t.Run("prompt calls", func(ctx context.Context, t *testctx.T) {
+		consoleDagger := func(args ...string) (*exec.Cmd, *tuiConsole) {
+			t.Helper()
+			console, err := newTUIConsole(t, 60*time.Second)
+			require.NoError(t, err)
 
-}
+			tty := console.Tty()
+			// err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
+			err = pty.Setsize(tty, &pty.Winsize{Rows: 20, Cols: 90}) // TODO: switch back to a small one
+			require.NoError(t, err)
 
-func (LLMSuite) TestPromptAllowLLM(ctx context.Context, t *testctx.T) {
-	t.Skip("TODO: these need to use a host CLI so we can futz with TTYs")
+			cmd := hostDaggerCommand(
+				ctx,
+				t,
+				t.TempDir(),
+				args...,
+			)
+			cmd.Stdin = tty
+			cmd.Stdout = tty
+			cmd.Stderr = tty
+
+			return cmd, console
+		}
+
+		tcs := []struct {
+			name     string
+			allowLLM string
+			module   string
+		}{
+			{
+				name:     "direct remote module call",
+				allowLLM: "",
+				module:   directCallModuleRef,
+			},
+			{
+				name:     "allowed unrelated, calling direct",
+				allowLLM: "github.com/dagger/dagger",
+				module:   directCallModuleRef,
+			},
+			{
+				name:     "allowed depender, calling direct",
+				allowLLM: dependerModuleRef,
+				module:   directCallModuleRef,
+			},
+			{
+				// this should prompt for the dependency
+				name:     "allowed depender, calling depender",
+				allowLLM: dependerModuleRef,
+				module:   dependerModuleRef,
+			},
+		}
+
+		for _, tc := range tcs {
+			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+				cmd, console := consoleDagger(
+					"call", "-m", tc.module, "--allow-llm", tc.allowLLM, modelFlag, "save", "--string-arg", "greet me",
+				)
+				defer console.Close()
+
+				err = cmd.Start()
+				require.NoError(t, err)
+
+				_, err = console.ExpectString("attempted to access the LLM API. Allow it?")
+				require.NoError(t, err)
+
+				// only test the  "no" case- the yes case persists history and requires special handling
+				_, err = console.SendLine("n")
+				require.NoError(t, err)
+
+				_, err = console.ExpectString("was denied LLM access")
+				require.NoError(t, err)
+
+				go console.ExpectEOF()
+
+				err = cmd.Wait()
+				require.Error(t, err)
+			})
+		}
+	})
 }
 
 func testGoProgram(ctx context.Context, t *testctx.T, c *dagger.Client, program *dagger.File, re any) {

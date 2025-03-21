@@ -680,10 +680,10 @@ func (llm *LLM) allowed(ctx context.Context) error {
 
 	bk, err := llm.Query.Buildkit(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("llm sync failed fetching bk client for llm allow prompting: %w", err)
 	}
 
-	return bk.AllowLLM(ctx, moduleUrl)
+	return bk.PromptAllowLLM(ctx, moduleUrl)
 }
 
 func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error) {
