@@ -8,7 +8,10 @@ from dagger import DefaultPath, dag, function, object_type
 @object_type
 class HelloDagger:
     @function
-    async def publish(self, source: dagger.Directory) -> str:
+    async def publish(
+        self,
+        source: Annotated[dagger.Directory, DefaultPath("/")],
+    ) -> str:
         """Publish the application container after building and testing it on-the-fly"""
         await self.test(source)
         return await self.build(source).publish(
