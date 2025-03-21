@@ -10,12 +10,12 @@ type Evals struct {
 
 func New() *Evals {
 	return &Evals{
-		LLM: dag.Llm(),
+		LLM: dag.LLM(),
 	}
 }
 
 func (m *Evals) WithModel(model string) *Evals {
-	m.LLM = dag.Llm(dagger.LlmOpts{Model: model})
+	m.LLM = dag.LLM(dagger.LLMOpts{Model: model})
 	return m
 }
 

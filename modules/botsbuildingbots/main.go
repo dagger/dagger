@@ -10,7 +10,7 @@ func (m *BotsBuildingBots) Singularity(
 	// +default=""
 	model string,
 ) (string, error) {
-	return dag.Llm().
+	return dag.LLM().
 		WithPrompt("You are an LLM prompt engineer trying to find the best system prompt for a dynamic tool calling system.").
 		WithPrompt("After each evaluation, analyze the returned message history and grade its efficiency.").
 		WithPrompt("Focus on framing - once you find a good framing, the prompt shouldn't need to be too long.").

@@ -29,30 +29,34 @@ func (w *Workspace) ReplaceSystemPrompt(prompt string) *Workspace {
 
 // Evaluate the LLM and return the history of prompts, responses, and tool calls.
 func (w *Workspace) Evaluate(ctx context.Context) ([]string, error) {
-	llm, err := dag.Evals().
-		WithModel(w.Model).
-		WithSystemPrompt(w.SystemPrompt).
-		BuildMultiLlm().
-		Sync(ctx)
-	if err != nil {
-		return nil, err
+	var allHistory []string
+	for i := range 10 {
+		llm, err := dag.Evals().
+			WithModel(w.Model).
+			WithSystemPrompt(w.SystemPrompt).
+			BuildMultiLLM().
+			Sync(ctx)
+		if err != nil {
+			return nil, err
+		}
+		res := llm.File()
+		ctr := dag.Container().
+			From("alpine").
+			WithFile("/bin/booklit", res).
+			WithExec([]string{"chmod", "+x", "/bin/booklit"}).
+			WithExec([]string{"/bin/booklit", "--version"})
+		out, err := ctr.Stdout(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(out) != "0.0.0-dev" {
+			return nil, fmt.Errorf("unexpected version: %q\n\nhistory:\n%s", out, strings.Join(history, "\n"))
+		}
+		history, err := llm.History(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return history, nil
 	}
-	history, err := llm.History(ctx)
-	if err != nil {
-		return nil, err
-	}
-	res := llm.File()
-	ctr := dag.Container().
-		From("alpine").
-		WithFile("/bin/booklit", res).
-		WithExec([]string{"chmod", "+x", "/bin/booklit"}).
-		WithExec([]string{"/bin/booklit", "--version"})
-	out, err := ctr.Stdout(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(out) != "0.0.0-dev" {
-		return nil, fmt.Errorf("unexpected version: %q\n\nhistory:\n%s", out, strings.Join(history, "\n"))
-	}
-	return history, nil
+	return
 }
