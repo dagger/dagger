@@ -150,7 +150,6 @@ func (ci *CI) withSDKWorkflows(runner *dagger.Gha, name string, sdks ...string) 
 	for _, sdk := range sdks {
 		command := daggerCommand("check --targets=sdk/" + sdk)
 		w = w.
-			WithJob(runner.Job(sdk, command)).
 			WithJob(runner.Job(sdk+"-dev", command, dagger.GhaJobOpts{
 				DaggerVersion: ".",
 				Runner:        []string{SilverRunner(true)},
