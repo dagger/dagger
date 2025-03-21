@@ -198,11 +198,13 @@
 <abbr title="Dagger\LLM">LLM</abbr>::container</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>Retrieve a the current value in the LLM environment, of type Container</p></dd><dt><a href="Dagger/LLM.html#method_currentModule">
 <abbr title="Dagger\LLM">LLM</abbr>::currentModule</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>Retrieve a the current value in the LLM environment, of type CurrentModule</p></dd><dt><a href="Dagger/ModuleSource.html#method_cloneRef">
+                    <dd><p>Retrieve a the current value in the LLM environment, of type CurrentModule</p></dd><dt><a href="Dagger/LLM.html#method_currentType">
+<abbr title="Dagger\LLM">LLM</abbr>::currentType</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
+                    <dd><p>returns the type of the current state</p></dd><dt><a href="Dagger/ModuleSource.html#method_cloneRef">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::cloneRef</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The ref to clone the root of the git repo from. Only valid for git sources.</p></dd><dt><a href="Dagger/ModuleSource.html#method_commit">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::commit</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>The resolved commit of the git repo this source points to. Only valid for git sources.</p></dd><dt><a href="Dagger/ModuleSource.html#method_configClients">
+                    <dd><p>The resolved commit of the git repo this source points to.</p></dd><dt><a href="Dagger/ModuleSource.html#method_configClients">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::configClients</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The clients generated for the module.</p></dd><dt><a href="Dagger/ModuleSource.html#method_configExists">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::configExists</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -518,11 +520,13 @@
                     <dd><p>Information about the host environment.</p></dd><dt><a href="Dagger/HostId.html"><abbr title="Dagger\HostId">HostId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>HostID</code> scalar type represents an identifier for an object of type Host.</p></dd><dt><a href="Dagger/LLM.html#method_history">
 <abbr title="Dagger\LLM">LLM</abbr>::history</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>return the llm message history</p></dd><dt><a href="Dagger/LLMVariable.html#method_hash">
+                    <dd><p>return the llm message history</p></dd><dt><a href="Dagger/LLM.html#method_historyJSON">
+<abbr title="Dagger\LLM">LLM</abbr>::historyJSON</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
+                    <dd><p>return the raw llm message history as json</p></dd><dt><a href="Dagger/LLMVariable.html#method_hash">
 <abbr title="Dagger\LLMVariable">LLMVariable</abbr>::hash</a>() &mdash; <em>Method in class <a href="Dagger/LLMVariable.html"><abbr title="Dagger\LLMVariable">LLMVariable</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/ModuleSource.html#method_htmlRepoURL">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::htmlRepoURL</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources.</p></dd><dt><a href="Dagger/ModuleSource.html#method_htmlURL">
+                    <dd><p>The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).</p></dd><dt><a href="Dagger/ModuleSource.html#method_htmlURL">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::htmlURL</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The URL to the source's git repo in a web browser. Only valid for git sources.</p></dd><dt><a href="Dagger/Service.html#method_hostname">
 <abbr title="Dagger\Service">Service</abbr>::hostname</a>() &mdash; <em>Method in class <a href="Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a></em></dt>
@@ -726,9 +730,7 @@
 <abbr title="Dagger\Client">Client</abbr>::loadScalarTypeDefFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a ScalarTypeDef from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadSecretFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadSecretFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Load a Secret from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadSecretFromName">
-<abbr title="Dagger\Client">Client</abbr>::loadSecretFromName</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Load a Secret from its Name.</p></dd><dt><a href="Dagger/Client.html#method_loadServiceFromID">
+                    <dd><p>Load a Secret from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadServiceFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadServiceFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a Service from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadSocketFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadSocketFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -1155,7 +1157,7 @@
 <abbr title="Dagger\Label">Label</abbr>::value</a>() &mdash; <em>Method in class <a href="Dagger/Label.html"><abbr title="Dagger\Label">Label</abbr></a></em></dt>
                     <dd><p>The label value.</p></dd><dt><a href="Dagger/ModuleSource.html#method_version">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::version</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>The specified version of the git repo this source points to. Only valid for git sources.</p></dd>        </dl><h2 id="letterW">W</h2>
+                    <dd><p>The specified version of the git repo this source points to.</p></dd>        </dl><h2 id="letterW">W</h2>
         <dl id="indexW"><dt><a href="Dagger/Container.html#method_withAnnotation">
 <abbr title="Dagger\Container">Container</abbr>::withAnnotation</a>() &mdash; <em>Method in class <a href="Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></em></dt>
                     <dd><p>Retrieves this container plus the given OCI anotation.</p></dd><dt><a href="Dagger/Container.html#method_withDefaultArgs">
@@ -1338,7 +1340,9 @@
 <abbr title="Dagger\LLM">LLM</abbr>::withPromptFile</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>append the contents of a file to the llm context</p></dd><dt><a href="Dagger/LLM.html#method_withPromptVar">
 <abbr title="Dagger\LLM">LLM</abbr>::withPromptVar</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
-                    <dd><p>Add a string variable to the LLM's environment</p></dd><dt><a href="Dagger/LLM.html#method_withSDKConfig">
+                    <dd><p>Add a string variable to the LLM's environment</p></dd><dt><a href="Dagger/LLM.html#method_withQuery">
+<abbr title="Dagger\LLM">LLM</abbr>::withQuery</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
+                    <dd><p>Provide the entire Query object to the LLM</p></dd><dt><a href="Dagger/LLM.html#method_withSDKConfig">
 <abbr title="Dagger\LLM">LLM</abbr>::withSDKConfig</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>Set a variable of type SDKConfig in the llm environment</p></dd><dt><a href="Dagger/LLM.html#method_withScalarTypeDef">
 <abbr title="Dagger\LLM">LLM</abbr>::withScalarTypeDef</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
