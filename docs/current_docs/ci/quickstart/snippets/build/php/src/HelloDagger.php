@@ -21,8 +21,7 @@ class HelloDagger
     public function build(
       #[DefaultPath('/')]
       Directory $source,
-    ): Container
-    {
+    ): Container {
         $build = $this
             // get the build environment container
             // by calling another Dagger Function

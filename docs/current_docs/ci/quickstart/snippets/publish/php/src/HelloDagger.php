@@ -21,8 +21,7 @@ class HelloDagger
     public function publish(
       #[DefaultPath('/')]
       Directory $source,
-    ): string
-    {
+    ): string {
         // call Dagger Function to run unit tests
         $this->test($source);
 

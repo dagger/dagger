@@ -21,8 +21,7 @@ class HelloDagger
     public function publish(
       #[DefaultPath('/')]
       Directory $source,
-    ): string
-    {
+    ): string {
         $this->test($source);
 
         return $this
@@ -35,8 +34,7 @@ class HelloDagger
     public function build(
       #[DefaultPath('/')]
       Directory $source,
-    ): Container
-    {
+    ): Container {
         $build = $this
             ->buildEnv($source)
             ->withExec(['npm', 'run', 'build'])
@@ -54,8 +52,7 @@ class HelloDagger
     public function test(
       #[DefaultPath('/')]
       Directory $source,
-    ): string
-    {
+    ): string {
         return $this
             ->buildEnv($source)
             ->withExec(['npm', 'run', 'test:unit', 'run'])
@@ -67,8 +64,7 @@ class HelloDagger
     public function buildEnv(
       #[DefaultPath('/')]
       Directory $source,
-    ): Container
-    {
+    ): Container {
         $nodeCache = dag()
             ->cacheVolume('node');
 

@@ -21,8 +21,7 @@ class HelloDagger
     public function buildEnv(
         #[DefaultPath('/')]
         Directory $source,
-    ): Container
-    {
+    ): Container {
         $nodeCache = dag()
             ->cacheVolume('node');
 

@@ -35,8 +35,7 @@ class HelloDagger
     public function build(
         #[DefaultPath('/')]
         Directory $source,
-    ): Container
-    {
+    ): Container {
         $build = dag()
             ->node(null, $this->buildEnv($source))
             ->commands()
