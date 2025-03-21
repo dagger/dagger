@@ -96,7 +96,7 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, she
 }
 
 func (s *LLMSession) reset() {
-	s.llm = s.dag.Llm(dagger.LlmOpts{Model: s.model}).WithQuery()
+	s.llm = s.dag.LLM(dagger.LLMOpts{Model: s.model}).WithQuery()
 }
 
 func (s *LLMSession) Fork() *LLMSession {
@@ -163,7 +163,7 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 	s.syncedVars = make(map[string]digest.Digest)
 	maps.Copy(s.syncedVars, oldVars)
 
-	syncedLlmQ := s.dag.QueryBuilder().
+	syncedLLMQ := s.dag.QueryBuilder().
 		Select("loadLLMFromID").
 		Arg("id", s.llm)
 
@@ -202,7 +202,7 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 					return err
 				}
 				typeName := typeDef.Name()
-				syncedLlmQ = syncedLlmQ.
+				syncedLLMQ = syncedLLMQ.
 					Select(fmt.Sprintf("set%s", typeName)).
 					Arg("name", name).
 					Arg("value", id)
@@ -210,7 +210,7 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 			}
 		} else {
 			s.syncedVars[name] = dagql.HashFrom(value.String())
-			syncedLlmQ = syncedLlmQ.
+			syncedLLMQ = syncedLLMQ.
 				Select("setString").
 				Arg("name", name).
 				Arg("value", value.String())
@@ -220,7 +220,7 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 		return nil
 	}
 	var llmID dagger.LLMID
-	if err := syncedLlmQ.Select("id").Bind(&llmID).Execute(ctx); err != nil {
+	if err := syncedLLMQ.Select("id").Bind(&llmID).Execute(ctx); err != nil {
 		return err
 	}
 	s.llm = s.dag.LoadLLMFromID(llmID)
@@ -381,7 +381,7 @@ func (s *LLMSession) Compact(ctx context.Context) (_ *LLMSession, rerr error) {
 	if err != nil {
 		return s, err
 	}
-	fresh := s.dag.Llm(dagger.LlmOpts{
+	fresh := s.dag.LLM(dagger.LLMOpts{
 		Model: s.model,
 	})
 	compacted, err := fresh.WithPrompt(summary).Sync(ctx)
