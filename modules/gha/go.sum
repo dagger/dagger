@@ -1,7 +1,7 @@
 dario.cat/mergo v1.0.1 h1:Ra4+bf83h2ztPIQYNP99R6m+Y7KfnARDfID+a+vLl4s=
 dario.cat/mergo v1.0.1/go.mod h1:uNxQE+84aUszobStD9th8a29P2fMDhsBdgRYvZOxGmk=
-github.com/99designs/gqlgen v0.17.66 h1:2/SRc+h3115fCOZeTtsqrB5R5gTGm+8qCAwcrZa+CXA=
-github.com/99designs/gqlgen v0.17.66/go.mod h1:gucrb5jK5pgCKzAGuOMMVU9C8PnReecHEHd2UxLQwCg=
+github.com/99designs/gqlgen v0.17.68 h1:vH6jTShCv7sgz1ejXEDNqho7KWlA4ZwSWzVsxyhypAM=
+github.com/99designs/gqlgen v0.17.68/go.mod h1:fvCiqQAu2VLhKXez2xFvLmE47QgAPf/KTPN5XQ4rsHQ=
 github.com/Khan/genqlient v0.8.0 h1:Hd1a+E1CQHYbMEKakIkvBH3zW0PWEeiX6Hp1i2kP2WE=
 github.com/Khan/genqlient v0.8.0/go.mod h1:hn70SpYjWteRGvxTwo0kfaqg4wxvndECGkfa1fdDdYI=
 github.com/andreyvit/diff v0.0.0-20170406064948-c7f18ee00883 h1:bvNMNQO63//z+xNgfBlViaCIJKLlCJ6/fmUseuG0wVQ=
@@ -81,8 +81,8 @@ go.opentelemetry.io/proto/otlp v1.3.1 h1:TrMUixzpM0yuc/znrFTP9MMRh8trP93mkCiDVeX
 go.opentelemetry.io/proto/otlp v1.3.1/go.mod h1:0X1WI4de4ZsLrrJNLAQbFeLCm3T7yBkR0XqQ7niQU+8=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
 go.uber.org/goleak v1.3.0/go.mod h1:CoHD4mav9JJNrW/WLlf7HGZPjdw8EucARQHekz1X6bE=
-golang.org/x/mod v0.23.0 h1:Zb7khfcRGKk+kqfxFaP5tZqCnDZMjC5VtUBs87Hr6QM=
-golang.org/x/mod v0.23.0/go.mod h1:6SkKJ3Xj0I0BrPOZoBy3bdMptDDU9oJrpohJ3eWZ1fY=
+golang.org/x/mod v0.24.0 h1:ZfthKaKaT4NrhGVZHO1/WDTwGES4De8KtWO0SIbNJMU=
+golang.org/x/mod v0.24.0/go.mod h1:IXM97Txy2VM4PJ3gI61r1YEk/gAj6zAHN3AdZt6S9Ww=
 golang.org/x/net v0.37.0 h1:1zLorHbz+LYj7MQlSf1+2tPIIgibq2eL5xkrGk6f+2c=
 golang.org/x/net v0.37.0/go.mod h1:ivrbrMbzFq5J41QOQh0siUuly180yBYtLp+CKbEaFx8=
 golang.org/x/sync v0.12.0 h1:MHc5BpPuC30uJk597Ri8TV3CNZcTLu6B6z4lJy+g6Jw=

@@ -83,6 +83,13 @@ func (dev *DaggerDev) WithModCodegen() *DaggerDev {
 	return &clone
 }
 
+func (dev *DaggerDev) WithModCodegenTargets(targets []string) *DaggerDev {
+	clone := *dev
+	clone.ModCodegen = true
+	clone.ModCodegenTargets = targets
+	return &clone
+}
+
 // Develop the Dagger CLI
 func (dev *DaggerDev) CLI() *CLI {
 	return &CLI{Dagger: dev}

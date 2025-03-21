@@ -190,10 +190,6 @@ func (h *Daggerverse) BumpDaggerVersion(
 		WithExec([]string{"go", "mod", "tidy"})
 	updated := daggerio.WithDirectory("daggerverse", daggerverse.Directory("."))
 
-	api := dag.Go(daggerio.Directory("api")).Env().
-		WithExec([]string{"go", "mod", "tidy"})
-	updated = updated.WithDirectory("api", api.Directory("."))
-
 	branch := fmt.Sprintf("dgvs-bump-dagger-from-%s-to-%s-with-dagger-main", from, to)
 	commitMsg := fmt.Sprintf("dgvs: Bump Dagger from %s to %s", from, to)
 

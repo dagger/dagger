@@ -11,7 +11,7 @@ require (
 require github.com/Masterminds/semver/v3 v3.3.0 // indirect
 
 require (
-	github.com/99designs/gqlgen v0.17.66
+	github.com/99designs/gqlgen v0.17.68
 	github.com/Khan/genqlient v0.8.0
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect

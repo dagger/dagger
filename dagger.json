@@ -1,6 +1,6 @@
 {
   "name": "dagger-dev",
-  "engineVersion": "v0.16.3",
+  "engineVersion": "v0.17.0",
   "sdk": {
     "source": "go"
   },

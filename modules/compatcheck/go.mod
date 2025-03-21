@@ -9,11 +9,11 @@ require (
 	github.com/moby/buildkit v0.15.2
 	github.com/stretchr/testify v1.10.0
 	github.com/tidwall/gjson v1.17.3
-	golang.org/x/mod v0.23.0
+	golang.org/x/mod v0.24.0
 )
 
 require (
-	github.com/99designs/gqlgen v0.17.66
+	github.com/99designs/gqlgen v0.17.68
 	github.com/Khan/genqlient v0.8.0
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect

@@ -105,7 +105,7 @@ func (t TypescriptSDK) Lint(ctx context.Context) (rerr error) {
 			span.End()
 		}()
 		return dag.
-			Go(t.Dagger.WithModCodegen().Source()).
+			Go(t.Dagger.WithModCodegenTargets([]string{typescriptRuntimeSubdir}).Source()).
 			Lint(ctx, dagger.GoLintOpts{Packages: []string{typescriptRuntimeSubdir}})
 	})
 
