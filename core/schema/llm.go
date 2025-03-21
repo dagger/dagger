@@ -71,6 +71,8 @@ func (s llmSchema) Install() {
 		dagql.Func("loop", s.loop).
 			// Deprecated("use sync").
 			Doc("synchronize LLM state"),
+		dagql.Func("attempt", s.attempt).
+			Doc("create a branch in the LLM's history"),
 		dagql.Func("tools", s.tools).
 			Doc("print documentation for available tools"),
 		dagql.Func("variables", s.variables).
@@ -158,6 +160,13 @@ func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args stru
 
 func (s *llmSchema) loop(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
 	return llm.Sync(ctx, s.srv)
+}
+
+func (s *llmSchema) attempt(_ context.Context, llm *core.LLM, _ struct {
+	Number int
+}) (*core.LLM, error) {
+	// nothing to do; we've "forked" it by nature of changing the query
+	return llm, nil
 }
 
 func (s *llmSchema) llm(ctx context.Context, parent *core.Query, args struct {
