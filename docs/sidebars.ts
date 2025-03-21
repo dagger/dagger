@@ -142,6 +142,7 @@ module.exports = {
           items: [
             "api/module-structure",
             "api/remote-modules",
+            "api/module-tests",
             "api/daggerverse",
             {
               type: "link",
