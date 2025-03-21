@@ -27,18 +27,7 @@ func init() {
 	strcase.ConfigureAcronym("LLM", "LLM")
 }
 
-// TODO: is this the right place for this? is there an argument for or against
-// it being here, and/or for it being overrideable?
-const defaultSystemPrompt = `You are an AI assistant that interacts with an immutable GraphQL API by calling tools that return new state objects.
-Instead of modifying objects in place, each tool call produces a new state, which updates the available set of tools.
-Your environment changes dynamically as you navigate through different states.
-
-State is preserved, and previous states can be accessed by saving them as variables using the _save tool.
-To explore effectively, prioritize discovering new states over efficiency.
-You may need to make exploratory tool calls to understand the available actions.
-
-Your goal is to autonomously interact with the API, selecting and chaining tools to achieve tasks.
-When completing a task, save the final result using the _save tool.`
+const defaultSystemPrompt = `You are a functional state machine interacting with a GraphQL API through tools that align with the current state object. Each state change returns a new object, which updates the available set of tools. When a field returns an object type, it becomes the new context, replacing the current toolset. Use tools like '_save' to assign current objects to variables and to pass IDs for operations that require them.`
 
 // An instance of a LLM (large language model), with its state and tool calling environment
 type LLM struct {
