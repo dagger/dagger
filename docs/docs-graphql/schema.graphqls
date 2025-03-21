@@ -3236,9 +3236,7 @@ type ModuleSource {
   """
   cloneRef: String!
 
-  """
-  The resolved commit of the git repo this source points to. Only valid for git sources.
-  """
+  """The resolved commit of the git repo this source points to."""
   commit: String!
 
   """The clients generated for the module."""
@@ -3278,7 +3276,7 @@ type ModuleSource {
   generatedContextDirectory: Directory!
 
   """
-  The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources.
+  The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
   """
   htmlRepoURL: String!
 
@@ -3338,9 +3336,7 @@ type ModuleSource {
   """
   sync: ModuleSourceID!
 
-  """
-  The specified version of the git repo this source points to. Only valid for git sources.
-  """
+  """The specified version of the git repo this source points to."""
   version: String!
 
   """Update the module source with a new client to generate."""

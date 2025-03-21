@@ -4,6 +4,9 @@ query ModuleConfig($source: ModuleSourceID!) {
     digest
     asString
     sourceRootSubpath
+    commit
+    version
+    htmlRepoURL
     module: asModule {
       name
       description
