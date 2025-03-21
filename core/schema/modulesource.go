@@ -150,6 +150,10 @@ func (s *moduleSourceSchema) Install() {
 			ArgDoc("generator", `The generator to use`).
 			ArgDoc("outputDir", `The output directory for the generated client.`).
 			ArgDoc("dev", `Generate in developer mode`),
+
+		dagql.NodeFunc("schemaIntrospectionFile", s.schemaIntrospectionFile).
+			Doc(`A JSON file with the GraphQL schema introspection, including every dependency installed in this module`).
+			ArgDoc("exclude", `Exclude the given module from the result`),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.SDKConfig]{}.Install(s.dag)
@@ -1308,6 +1312,45 @@ func (s *moduleSourceSchema) moduleSourceRepoRootPath(
 	}
 
 	return src.Git.RepoRootPath, nil
+}
+
+func (s *moduleSourceSchema) schemaIntrospectionFile(
+	ctx context.Context,
+	src dagql.Instance[*core.ModuleSource],
+	args struct {
+		Exclude dagql.Array[dagql.String] `default:"[]"`
+	},
+) (*core.File, error) {
+	deps, err := s.loadDependencyModules(ctx, src.Self)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load dependency modules: %w", err)
+	}
+
+	// If the current module source has sources, we can transform it into a module
+	// to generate self bindings.
+	if src.Self.SDK != nil {
+		var mod dagql.Instance[*core.Module]
+		err = s.dag.Select(ctx, src, &mod, dagql.Selector{
+			Field: "asModule",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to transform module source into module: %w", err)
+		}
+
+		deps = mod.Self.Deps.Append(mod.Self)
+	}
+
+	excludeDepLength := args.Exclude.Len()
+	for i := range excludeDepLength {
+		deps = deps.Exclude(args.Exclude[i].String())
+	}
+
+	introspectionJSONFiles, err := deps.SchemaIntrospectionJSONFile(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get introspection json files: %w", err)
+	}
+
+	return introspectionJSONFiles.Self, nil
 }
 
 func (s *moduleSourceSchema) moduleSourceWithEngineVersion(

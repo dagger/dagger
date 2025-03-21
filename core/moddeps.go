@@ -3,9 +3,11 @@ package core
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/dagger/dagger/dagql"
+
 	dagintro "github.com/dagger/dagger/dagql/introspection"
 )
 
@@ -53,6 +55,17 @@ func (d *ModDeps) Append(mods ...Mod) *ModDeps {
 	deps := append([]Mod{}, d.Mods...)
 	deps = append(deps, mods...)
 	return NewModDeps(d.root, deps)
+}
+
+func (d *ModDeps) Exclude(modName string) *ModDeps {
+	for i, mod := range d.Mods {
+		if mod.Name() == modName {
+			d.Mods = slices.Delete(d.Mods, i, i+1)
+			return d
+		}
+	}
+
+	return d
 }
 
 // The combined schema exposed by each mod in this set of dependencies

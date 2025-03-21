@@ -8475,6 +8475,25 @@ class ModuleSource(Type):
         _ctx = self._select("repoRootPath", _args)
         return await _ctx.execute(str)
 
+    def schema_introspection_file(
+        self,
+        *,
+        exclude: list[str] | None = None,
+    ) -> File:
+        """A JSON file with the GraphQL schema introspection, including every
+        dependency installed in this module
+
+        Parameters
+        ----------
+        exclude:
+            Exclude the given module from the result
+        """
+        _args = [
+            Arg("exclude", () if exclude is None else exclude, ()),
+        ]
+        _ctx = self._select("schemaIntrospectionFile", _args)
+        return File(_ctx)
+
     def sdk(self) -> "SDKConfig":
         """The SDK configuration of the module."""
         _args: list[Arg] = []

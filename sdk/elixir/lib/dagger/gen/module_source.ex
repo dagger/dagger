@@ -246,6 +246,20 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
+  @doc "A JSON file with the GraphQL schema introspection, including every dependency installed in this module"
+  @spec schema_introspection_file(t(), [{:exclude, [String.t()]}]) :: Dagger.File.t()
+  def schema_introspection_file(%__MODULE__{} = module_source, optional_args \\ []) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("schemaIntrospectionFile")
+      |> QB.maybe_put_arg("exclude", optional_args[:exclude])
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
   @doc "The SDK configuration of the module."
   @spec sdk(t()) :: Dagger.SDKConfig.t() | nil
   def sdk(%__MODULE__{} = module_source) do

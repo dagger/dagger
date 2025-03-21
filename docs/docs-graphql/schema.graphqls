@@ -3320,6 +3320,14 @@ type ModuleSource {
   """
   repoRootPath: String!
 
+  """
+  A JSON file with the GraphQL schema introspection, including every dependency installed in this module
+  """
+  schemaIntrospectionFile(
+    """Exclude the given module from the result"""
+    exclude: [String!] = []
+  ): File!
+
   """The SDK configuration of the module."""
   sdk: SDKConfig
 

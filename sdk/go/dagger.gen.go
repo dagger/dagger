@@ -7965,6 +7965,27 @@ func (r *ModuleSource) RepoRootPath(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// ModuleSourceSchemaIntrospectionFileOpts contains options for ModuleSource.SchemaIntrospectionFile
+type ModuleSourceSchemaIntrospectionFileOpts struct {
+	// Exclude the given module from the result
+	Exclude []string
+}
+
+// A JSON file with the GraphQL schema introspection, including every dependency installed in this module
+func (r *ModuleSource) SchemaIntrospectionFile(opts ...ModuleSourceSchemaIntrospectionFileOpts) *File {
+	q := r.query.Select("schemaIntrospectionFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+	}
+
+	return &File{
+		query: q,
+	}
+}
+
 // The SDK configuration of the module.
 func (r *ModuleSource) SDK() *SDKConfig {
 	q := r.query.Select("sdk")

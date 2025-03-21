@@ -1046,6 +1046,13 @@ export type ModuleConfigClientID = string & { __ModuleConfigClientID: never }
  */
 export type ModuleID = string & { __ModuleID: never }
 
+export type ModuleSourceSchemaIntrospectionFileOpts = {
+  /**
+   * Exclude the given module from the result
+   */
+  exclude?: string[]
+}
+
 export type ModuleSourceWithClientOpts = {
   /**
    * Generate in developer mode
@@ -7476,6 +7483,17 @@ export class ModuleSource extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * A JSON file with the GraphQL schema introspection, including every dependency installed in this module
+   * @param opts.exclude Exclude the given module from the result
+   */
+  schemaIntrospectionFile = (
+    opts?: ModuleSourceSchemaIntrospectionFileOpts,
+  ): File => {
+    const ctx = this._ctx.select("schemaIntrospectionFile", { ...opts })
+    return new File(ctx)
   }
 
   /**

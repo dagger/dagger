@@ -213,6 +213,18 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * A JSON file with the GraphQL schema introspection, including every dependency installed in this module
+     */
+    public function schemaIntrospectionFile(?array $exclude = null): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('schemaIntrospectionFile');
+        if (null !== $exclude) {
+        $innerQueryBuilder->setArgument('exclude', $exclude);
+        }
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The SDK configuration of the module.
      */
     public function sdk(): SDKConfig
