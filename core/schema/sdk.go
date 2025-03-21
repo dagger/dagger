@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -539,9 +540,10 @@ func (s *sdkLoader) loadBuiltinSDK(
 }
 
 const (
-	goSDKUserModContextDirPath = "/src"
-	goSDKRuntimePath           = "/runtime"
-	goSDKIntrospectionJSONPath = "/schema.json"
+	goSDKUserModContextDirPath  = "/src"
+	goSDKRuntimePath            = "/runtime"
+	goSDKIntrospectionJSONPath  = "/schema.json"
+	goSDKDependenciesConfigPath = "/dependencies.json"
 )
 
 /*
@@ -592,6 +594,55 @@ func (sdk *goSDK) GenerateClient(
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
 		dagql.String(fmt.Sprintf("--dev=%t", dev)),
 		"--client-only",
+	}
+
+	type dependencyConfig struct {
+		Name string
+		Pin  string
+		Ref  string
+	}
+
+	dependencies := []dependencyConfig{}
+
+	// Send the dependencies reference to the codegen so it can embed their loading.
+	for _, dep := range modSource.Self.Dependencies {
+		if dep.Self.Kind == core.ModuleSourceKindGit {
+			dependencies = append(dependencies, dependencyConfig{
+				Name: dep.Self.ModuleOriginalName,
+				Pin:  dep.Self.Pin(),
+				Ref:  dep.Self.AsString(),
+			})
+		}
+	}
+
+	// If there are dependencies, we pass the config files to the codegen
+	if len(dependencies) > 0 {
+		dependenciesConfig, err := json.Marshal(dependencies)
+		if err != nil {
+			return inst, fmt.Errorf("failed to marshal dependencies config: %w", err)
+		}
+
+		if err := sdk.dag.Select(ctx, ctr, &ctr,
+			dagql.Selector{
+				Field: "withNewFile",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "path",
+						Value: dagql.String(goSDKDependenciesConfigPath),
+					},
+					{
+						Name:  "contents",
+						Value: dagql.String(string(dependenciesConfig)),
+					},
+				},
+			}); err != nil {
+			return inst, fmt.Errorf("failed to add dependencies config file: %w", err)
+		}
+
+		codegenArgs = append(
+			codegenArgs,
+			dagql.NewString(fmt.Sprintf("--dependencies-json-file-path=%s", goSDKDependenciesConfigPath)),
+		)
 	}
 
 	err = sdk.dag.Select(ctx, ctr, &ctr,

@@ -88,8 +88,9 @@ const (
 	GenDir         = "sdk"
 	NodeModulesDir = "node_modules"
 
-	schemaPath     = "/schema.json"
-	codegenBinPath = "/codegen"
+	schemaPath             = "/schema.json"
+	dependenciesConfigPath = "/dependencies.json"
+	codegenBinPath         = "/codegen"
 )
 
 // ModuleRuntime returns a container with the node or bun entrypoint ready to be called.
@@ -199,16 +200,77 @@ func (t *TypescriptSdk) GenerateClient(
 		WithMountedFile(schemaPath, introspectionJSON).
 		// Mount the current module directory.
 		WithDirectory(workdirPath, modSource.ContextDirectory()).
-		WithWorkdir(filepath.Join(workdirPath, currentModuleDirectoryPath)).
+		WithWorkdir(filepath.Join(workdirPath, currentModuleDirectoryPath))
+
+	codegenArgs := []string{
+		"/codegen",
+		"--lang", "typescript",
+		"--output", outputDir,
+		"--introspection-json-path", schemaPath,
+		fmt.Sprintf("--dev=%t", dev),
+		"--client-only",
+	}
+
+	type dependencyConfig struct {
+		Name string
+		Pin  string
+		Ref  string
+	}
+
+	dependencies, err := modSource.Dependencies(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module dependencies: %w", err)
+	}
+
+	dependenciesConfig := []dependencyConfig{}
+	// Add remote dependency reference to the codegen arguments.
+	for _, dep := range dependencies {
+		depKind, err := dep.Kind(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get dependency kind: %w", err)
+		}
+
+		if depKind != dagger.ModuleSourceKindGitSource {
+			continue
+		}
+
+		depRef, err := dep.AsString(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get module dependency ref: %w", err)
+		}
+
+		depPin, err := dep.Pin(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get module dependency pin: %w", err)
+		}
+
+		depName, err := dep.ModuleOriginalName(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get module dependency name: %w", err)
+		}
+
+		dependenciesConfig = append(dependenciesConfig, dependencyConfig{
+			Name: depName,
+			Pin:  depPin,
+			Ref:  depRef,
+		})
+	}
+
+	if len(dependenciesConfig) > 0 {
+		depenciesJSONConfig, err := json.Marshal(dependenciesConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal dependencies config: %w", err)
+		}
+
+		ctr = ctr.WithNewFile(dependenciesConfigPath, string(depenciesJSONConfig))
+		codegenArgs = append(codegenArgs,
+			fmt.Sprintf("--dependencies-json-file-path=%s", dependenciesConfigPath),
+		)
+	}
+
+	ctr = ctr.
 		// Execute the code generator using the given introspection file.
-		WithExec([]string{
-			codegenBinPath,
-			"--lang", "typescript",
-			"--output", outputDir,
-			"--introspection-json-path", schemaPath,
-			fmt.Sprintf("--dev=%t", dev),
-			"--client-only",
-		}, dagger.ContainerWithExecOpts{
+		WithExec(codegenArgs, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 
@@ -322,7 +384,7 @@ func (t *TypescriptSdk) Base() (*dagger.Container, error) {
 		return ctr.
 			WithoutEntrypoint().
 			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", tsdistconsts.DefaultBunVersion)), dagger.ContainerWithMountedCacheOpts{
-				Sharing: dagger.Private,
+				Sharing: dagger.CacheSharingModePrivate,
 			}), nil
 	case Node:
 		return ctr.
