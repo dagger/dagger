@@ -844,12 +844,12 @@ The following Dagger module uses a constructor to set a module-wide `Directory` 
     <Tabs groupId="shell">
     <TabItem value="System shell">
     ```shell
-    dagger -c 'my-module --source $(host | directory /home/admin/images) | foo'
+    dagger -c 'my-module --source $(host | directory /src/myapp) | foo'
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
     ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-    my-module --source $(host | directory /home/admin/images) | foo
+    my-module --source $(host | directory /src/myapp) | foo
     ```
     </TabItem>
     <TabItem value="Dagger CLI">
