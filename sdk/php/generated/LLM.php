@@ -38,6 +38,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * returns the type of the current state
+     */
+    public function currentType(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('currentType');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'currentType');
+    }
+
+    /**
      * Retrieve a the current value in the LLM environment, of type Directory
      */
     public function directory(): Directory
@@ -1439,6 +1448,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPromptVar');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('value', $value);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Provide the entire Query object to the LLM
+     */
+    public function withQuery(): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withQuery');
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

@@ -5261,6 +5261,7 @@ func (r *InterfaceTypeDef) SourceModuleName(ctx context.Context) (string, error)
 type LLM struct {
 	query *querybuilder.Selection
 
+	currentType *string
 	getString   *string
 	historyJSON *string
 	id          *LLMID
@@ -5286,8 +5287,6 @@ func (r *LLM) WithGraphQLQuery(q *querybuilder.Selection) *LLM {
 }
 
 // Retrieve a the current value in the LLM environment, of type CacheVolume
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) CacheVolume() *CacheVolume {
 	q := r.query.Select("cacheVolume")
 
@@ -5297,8 +5296,6 @@ func (r *LLM) CacheVolume() *CacheVolume {
 }
 
 // Retrieve a the current value in the LLM environment, of type Container
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) Container() *Container {
 	q := r.query.Select("container")
 
@@ -5308,8 +5305,6 @@ func (r *LLM) Container() *Container {
 }
 
 // Retrieve a the current value in the LLM environment, of type CurrentModule
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) CurrentModule() *CurrentModule {
 	q := r.query.Select("currentModule")
 
@@ -5318,9 +5313,20 @@ func (r *LLM) CurrentModule() *CurrentModule {
 	}
 }
 
+// returns the type of the current state
+func (r *LLM) CurrentType(ctx context.Context) (string, error) {
+	if r.currentType != nil {
+		return *r.currentType, nil
+	}
+	q := r.query.Select("currentType")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // Retrieve a the current value in the LLM environment, of type Directory
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) Directory() *Directory {
 	q := r.query.Select("directory")
 
@@ -5330,8 +5336,6 @@ func (r *LLM) Directory() *Directory {
 }
 
 // Retrieve a the current value in the LLM environment, of type EnumTypeDef
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) EnumTypeDef() *EnumTypeDef {
 	q := r.query.Select("enumTypeDef")
 
@@ -5341,8 +5345,6 @@ func (r *LLM) EnumTypeDef() *EnumTypeDef {
 }
 
 // Retrieve a the current value in the LLM environment, of type EnumValueTypeDef
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) EnumValueTypeDef() *EnumValueTypeDef {
 	q := r.query.Select("enumValueTypeDef")
 
@@ -5352,8 +5354,6 @@ func (r *LLM) EnumValueTypeDef() *EnumValueTypeDef {
 }
 
 // Retrieve a the current value in the LLM environment, of type Error
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) Error() *Error {
 	q := r.query.Select("error")
 
@@ -5363,8 +5363,6 @@ func (r *LLM) Error() *Error {
 }
 
 // Retrieve a the current value in the LLM environment, of type ErrorValue
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) ErrorValue() *ErrorValue {
 	q := r.query.Select("errorValue")
 
@@ -5374,8 +5372,6 @@ func (r *LLM) ErrorValue() *ErrorValue {
 }
 
 // Retrieve a the current value in the LLM environment, of type FieldTypeDef
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) FieldTypeDef() *FieldTypeDef {
 	q := r.query.Select("fieldTypeDef")
 
@@ -5385,8 +5381,6 @@ func (r *LLM) FieldTypeDef() *FieldTypeDef {
 }
 
 // Retrieve a the current value in the LLM environment, of type File
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) File() *File {
 	q := r.query.Select("file")
 
@@ -5396,8 +5390,6 @@ func (r *LLM) File() *File {
 }
 
 // Retrieve a the current value in the LLM environment, of type Function
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) Function() *Function {
 	q := r.query.Select("function")
 
@@ -5407,8 +5399,6 @@ func (r *LLM) Function() *Function {
 }
 
 // Retrieve a the current value in the LLM environment, of type FunctionArg
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) FunctionArg() *FunctionArg {
 	q := r.query.Select("functionArg")
 
@@ -5418,8 +5408,6 @@ func (r *LLM) FunctionArg() *FunctionArg {
 }
 
 // Retrieve a the current value in the LLM environment, of type FunctionCall
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) FunctionCall() *FunctionCall {
 	q := r.query.Select("functionCall")
 
@@ -5429,8 +5417,6 @@ func (r *LLM) FunctionCall() *FunctionCall {
 }
 
 // Retrieve a the current value in the LLM environment, of type FunctionCallArgValue
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) FunctionCallArgValue() *FunctionCallArgValue {
 	q := r.query.Select("functionCallArgValue")
 
@@ -5440,8 +5426,6 @@ func (r *LLM) FunctionCallArgValue() *FunctionCallArgValue {
 }
 
 // Retrieve a the current value in the LLM environment, of type GeneratedCode
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) GeneratedCode() *GeneratedCode {
 	q := r.query.Select("generatedCode")
 
@@ -5795,8 +5779,6 @@ func (r *LLM) GetTypeDef(name string) *TypeDef {
 }
 
 // Retrieve a the current value in the LLM environment, of type GitRef
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) GitRef() *GitRef {
 	q := r.query.Select("gitRef")
 
@@ -5806,8 +5788,6 @@ func (r *LLM) GitRef() *GitRef {
 }
 
 // Retrieve a the current value in the LLM environment, of type GitRepository
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) GitRepository() *GitRepository {
 	q := r.query.Select("gitRepository")
 
@@ -5880,8 +5860,6 @@ func (r *LLM) MarshalJSON() ([]byte, error) {
 }
 
 // Retrieve a the current value in the LLM environment, of type InputTypeDef
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) InputTypeDef() *InputTypeDef {
 	q := r.query.Select("inputTypeDef")
 
@@ -5891,8 +5869,6 @@ func (r *LLM) InputTypeDef() *InputTypeDef {
 }
 
 // Retrieve a the current value in the LLM environment, of type InterfaceTypeDef
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) InterfaceTypeDef() *InterfaceTypeDef {
 	q := r.query.Select("interfaceTypeDef")
 
@@ -5902,8 +5878,6 @@ func (r *LLM) InterfaceTypeDef() *InterfaceTypeDef {
 }
 
 // Retrieve a the current value in the LLM environment, of type LLM
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) LLM() *LLM {
 	q := r.query.Select("lLM")
 
@@ -5926,8 +5900,6 @@ func (r *LLM) LastReply(ctx context.Context) (string, error) {
 }
 
 // Retrieve a the current value in the LLM environment, of type ListTypeDef
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) ListTypeDef() *ListTypeDef {
 	q := r.query.Select("listTypeDef")
 
@@ -5937,8 +5909,6 @@ func (r *LLM) ListTypeDef() *ListTypeDef {
 }
 
 // synchronize LLM state
-//
-// Deprecated: use sync
 func (r *LLM) Loop() *LLM {
 	q := r.query.Select("loop")
 
@@ -5961,8 +5931,6 @@ func (r *LLM) Model(ctx context.Context) (string, error) {
 }
 
 // Retrieve a the current value in the LLM environment, of type Module
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) Module() *Module {
 	q := r.query.Select("module")
 
@@ -5972,8 +5940,6 @@ func (r *LLM) Module() *Module {
 }
 
 // Retrieve a the current value in the LLM environment, of type ModuleConfigClient
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) ModuleConfigClient() *ModuleConfigClient {
 	q := r.query.Select("moduleConfigClient")
 
@@ -5983,8 +5949,6 @@ func (r *LLM) ModuleConfigClient() *ModuleConfigClient {
 }
 
 // Retrieve a the current value in the LLM environment, of type ModuleSource
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) ModuleSource() *ModuleSource {
 	q := r.query.Select("moduleSource")
 
@@ -5994,8 +5958,6 @@ func (r *LLM) ModuleSource() *ModuleSource {
 }
 
 // Retrieve a the current value in the LLM environment, of type ObjectTypeDef
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) ObjectTypeDef() *ObjectTypeDef {
 	q := r.query.Select("objectTypeDef")
 
@@ -6018,8 +5980,6 @@ func (r *LLM) Provider(ctx context.Context) (string, error) {
 }
 
 // Retrieve a the current value in the LLM environment, of type ScalarTypeDef
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) ScalarTypeDef() *ScalarTypeDef {
 	q := r.query.Select("scalarTypeDef")
 
@@ -6029,8 +5989,6 @@ func (r *LLM) ScalarTypeDef() *ScalarTypeDef {
 }
 
 // Retrieve a the current value in the LLM environment, of type SDKConfig
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) Sdkconfig() *SDKConfig {
 	q := r.query.Select("sdkconfig")
 
@@ -6040,8 +5998,6 @@ func (r *LLM) Sdkconfig() *SDKConfig {
 }
 
 // Retrieve a the current value in the LLM environment, of type Secret
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) Secret() *Secret {
 	q := r.query.Select("secret")
 
@@ -6051,8 +6007,6 @@ func (r *LLM) Secret() *Secret {
 }
 
 // Retrieve a the current value in the LLM environment, of type Service
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) Service() *Service {
 	q := r.query.Select("service")
 
@@ -6469,8 +6423,6 @@ func (r *LLM) SetTypeDef(name string, value *TypeDef) *LLM {
 }
 
 // Retrieve a the current value in the LLM environment, of type Socket
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) Socket() *Socket {
 	q := r.query.Select("socket")
 
@@ -6480,8 +6432,6 @@ func (r *LLM) Socket() *Socket {
 }
 
 // Retrieve a the current value in the LLM environment, of type SourceMap
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) SourceMap() *SourceMap {
 	q := r.query.Select("sourceMap")
 
@@ -6504,8 +6454,6 @@ func (r *LLM) Sync(ctx context.Context) (*LLM, error) {
 }
 
 // Retrieve a the current value in the LLM environment, of type Terminal
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) Terminal() *Terminal {
 	q := r.query.Select("terminal")
 
@@ -6528,8 +6476,6 @@ func (r *LLM) Tools(ctx context.Context) (string, error) {
 }
 
 // Retrieve a the current value in the LLM environment, of type TypeDef
-//
-// Deprecated: use get<TargetType> instead
 func (r *LLM) TypeDef() *TypeDef {
 	q := r.query.Select("typeDef")
 
@@ -6572,8 +6518,6 @@ func (r *LLM) Variables(ctx context.Context) ([]LLMVariable, error) {
 }
 
 // Set a variable of type CacheVolume in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithCacheVolume(value *CacheVolume) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withCacheVolume")
@@ -6585,8 +6529,6 @@ func (r *LLM) WithCacheVolume(value *CacheVolume) *LLM {
 }
 
 // Set a variable of type Container in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithContainer(value *Container) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withContainer")
@@ -6598,8 +6540,6 @@ func (r *LLM) WithContainer(value *Container) *LLM {
 }
 
 // Set a variable of type CurrentModule in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithCurrentModule(value *CurrentModule) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withCurrentModule")
@@ -6611,8 +6551,6 @@ func (r *LLM) WithCurrentModule(value *CurrentModule) *LLM {
 }
 
 // Set a variable of type Directory in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithDirectory(value *Directory) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withDirectory")
@@ -6624,8 +6562,6 @@ func (r *LLM) WithDirectory(value *Directory) *LLM {
 }
 
 // Set a variable of type EnumTypeDef in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithEnumTypeDef(value *EnumTypeDef) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withEnumTypeDef")
@@ -6637,8 +6573,6 @@ func (r *LLM) WithEnumTypeDef(value *EnumTypeDef) *LLM {
 }
 
 // Set a variable of type EnumValueTypeDef in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithEnumValueTypeDef(value *EnumValueTypeDef) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withEnumValueTypeDef")
@@ -6650,8 +6584,6 @@ func (r *LLM) WithEnumValueTypeDef(value *EnumValueTypeDef) *LLM {
 }
 
 // Set a variable of type Error in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithError(value *Error) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withError")
@@ -6663,8 +6595,6 @@ func (r *LLM) WithError(value *Error) *LLM {
 }
 
 // Set a variable of type ErrorValue in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithErrorValue(value *ErrorValue) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withErrorValue")
@@ -6676,8 +6606,6 @@ func (r *LLM) WithErrorValue(value *ErrorValue) *LLM {
 }
 
 // Set a variable of type FieldTypeDef in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithFieldTypeDef(value *FieldTypeDef) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withFieldTypeDef")
@@ -6689,8 +6617,6 @@ func (r *LLM) WithFieldTypeDef(value *FieldTypeDef) *LLM {
 }
 
 // Set a variable of type File in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithFile(value *File) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withFile")
@@ -6702,8 +6628,6 @@ func (r *LLM) WithFile(value *File) *LLM {
 }
 
 // Set a variable of type Function in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithFunction(value *Function) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withFunction")
@@ -6715,8 +6639,6 @@ func (r *LLM) WithFunction(value *Function) *LLM {
 }
 
 // Set a variable of type FunctionArg in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithFunctionArg(value *FunctionArg) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withFunctionArg")
@@ -6728,8 +6650,6 @@ func (r *LLM) WithFunctionArg(value *FunctionArg) *LLM {
 }
 
 // Set a variable of type FunctionCall in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithFunctionCall(value *FunctionCall) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withFunctionCall")
@@ -6741,8 +6661,6 @@ func (r *LLM) WithFunctionCall(value *FunctionCall) *LLM {
 }
 
 // Set a variable of type FunctionCallArgValue in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithFunctionCallArgValue(value *FunctionCallArgValue) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withFunctionCallArgValue")
@@ -6754,8 +6672,6 @@ func (r *LLM) WithFunctionCallArgValue(value *FunctionCallArgValue) *LLM {
 }
 
 // Set a variable of type GeneratedCode in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithGeneratedCode(value *GeneratedCode) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withGeneratedCode")
@@ -6767,8 +6683,6 @@ func (r *LLM) WithGeneratedCode(value *GeneratedCode) *LLM {
 }
 
 // Set a variable of type GitRef in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithGitRef(value *GitRef) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withGitRef")
@@ -6780,8 +6694,6 @@ func (r *LLM) WithGitRef(value *GitRef) *LLM {
 }
 
 // Set a variable of type GitRepository in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithGitRepository(value *GitRepository) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withGitRepository")
@@ -6793,8 +6705,6 @@ func (r *LLM) WithGitRepository(value *GitRepository) *LLM {
 }
 
 // Set a variable of type InputTypeDef in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithInputTypeDef(value *InputTypeDef) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withInputTypeDef")
@@ -6806,8 +6716,6 @@ func (r *LLM) WithInputTypeDef(value *InputTypeDef) *LLM {
 }
 
 // Set a variable of type InterfaceTypeDef in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithInterfaceTypeDef(value *InterfaceTypeDef) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withInterfaceTypeDef")
@@ -6819,8 +6727,6 @@ func (r *LLM) WithInterfaceTypeDef(value *InterfaceTypeDef) *LLM {
 }
 
 // Set a variable of type LLM in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithLLM(value *LLM) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withLLM")
@@ -6832,8 +6738,6 @@ func (r *LLM) WithLLM(value *LLM) *LLM {
 }
 
 // Set a variable of type ListTypeDef in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithListTypeDef(value *ListTypeDef) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withListTypeDef")
@@ -6855,8 +6759,6 @@ func (r *LLM) WithModel(model string) *LLM {
 }
 
 // Set a variable of type Module in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithModule(value *Module) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withModule")
@@ -6868,8 +6770,6 @@ func (r *LLM) WithModule(value *Module) *LLM {
 }
 
 // Set a variable of type ModuleConfigClient in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithModuleConfigClient(value *ModuleConfigClient) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withModuleConfigClient")
@@ -6881,8 +6781,6 @@ func (r *LLM) WithModuleConfigClient(value *ModuleConfigClient) *LLM {
 }
 
 // Set a variable of type ModuleSource in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithModuleSource(value *ModuleSource) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withModuleSource")
@@ -6894,8 +6792,6 @@ func (r *LLM) WithModuleSource(value *ModuleSource) *LLM {
 }
 
 // Set a variable of type ObjectTypeDef in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithObjectTypeDef(value *ObjectTypeDef) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withObjectTypeDef")
@@ -6938,9 +6834,16 @@ func (r *LLM) WithPromptVar(name string, value string) *LLM {
 	}
 }
 
+// Provide the entire Query object to the LLM
+func (r *LLM) WithQuery() *LLM {
+	q := r.query.Select("withQuery")
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // Set a variable of type SDKConfig in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithSDKConfig(value *SDKConfig) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withSDKConfig")
@@ -6952,8 +6855,6 @@ func (r *LLM) WithSDKConfig(value *SDKConfig) *LLM {
 }
 
 // Set a variable of type ScalarTypeDef in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithScalarTypeDef(value *ScalarTypeDef) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withScalarTypeDef")
@@ -6965,8 +6866,6 @@ func (r *LLM) WithScalarTypeDef(value *ScalarTypeDef) *LLM {
 }
 
 // Set a variable of type Secret in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithSecret(value *Secret) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withSecret")
@@ -6978,8 +6877,6 @@ func (r *LLM) WithSecret(value *Secret) *LLM {
 }
 
 // Set a variable of type Service in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithService(value *Service) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withService")
@@ -6991,8 +6888,6 @@ func (r *LLM) WithService(value *Service) *LLM {
 }
 
 // Set a variable of type Socket in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithSocket(value *Socket) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withSocket")
@@ -7004,8 +6899,6 @@ func (r *LLM) WithSocket(value *Socket) *LLM {
 }
 
 // Set a variable of type SourceMap in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithSourceMap(value *SourceMap) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withSourceMap")
@@ -7017,8 +6910,6 @@ func (r *LLM) WithSourceMap(value *SourceMap) *LLM {
 }
 
 // Set a variable of type Terminal in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithTerminal(value *Terminal) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withTerminal")
@@ -7030,8 +6921,6 @@ func (r *LLM) WithTerminal(value *Terminal) *LLM {
 }
 
 // Set a variable of type TypeDef in the llm environment
-//
-// Deprecated: use set<TargetType> instead
 func (r *LLM) WithTypeDef(value *TypeDef) *LLM {
 	assertNotNil("value", value)
 	q := r.query.Select("withTypeDef")
