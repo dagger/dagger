@@ -7662,7 +7662,7 @@ func (r *ModuleSource) CloneRef(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The resolved commit of the git repo this source points to. Only valid for git sources.
+// The resolved commit of the git repo this source points to.
 func (r *ModuleSource) Commit(ctx context.Context) (string, error) {
 	if r.commit != nil {
 		return *r.commit, nil
@@ -7808,7 +7808,7 @@ func (r *ModuleSource) GeneratedContextDirectory() *Directory {
 	}
 }
 
-// The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources.
+// The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
 func (r *ModuleSource) HTMLRepoURL(ctx context.Context) (string, error) {
 	if r.htmlRepoURL != nil {
 		return *r.htmlRepoURL, nil
@@ -8013,7 +8013,7 @@ func (r *ModuleSource) Sync(ctx context.Context) (*ModuleSource, error) {
 	}, nil
 }
 
-// The specified version of the git repo this source points to. Only valid for git sources.
+// The specified version of the git repo this source points to.
 func (r *ModuleSource) Version(ctx context.Context) (string, error) {
 	if r.version != nil {
 		return *r.version, nil
