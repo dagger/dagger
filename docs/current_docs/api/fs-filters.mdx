@@ -101,6 +101,8 @@ Here's an example of a Dagger Function that excludes everything in a given direc
 Here's an example of a Dagger Function that excludes everything in a given directory except Java source code files:
 
 ```java file=./snippets/fs-filters/pre-call/java/MyModule.java
+```
+
 </TabItem>
 </Tabs>
 
@@ -195,6 +197,7 @@ Ignore([".git", "**/.gitignore"])
 
 // exclude Git metadata
 @Ignore({".git", "**/.gitignore"})
+```
 </TabItem>
 </Tabs>
 
@@ -244,6 +247,8 @@ To implement a post-call filter in your Dagger Function, use the `include` and `
 To implement a post-call filter in your Dagger Function, use the `Container.WithDirectoryArguments` class which support `withInclude` and `withExclude` functions when working with `Directory` objects. Here's an example:
 
 ```java file=./snippets/fs-filters/post-call/java/MyModule.java
+```
+
 </TabItem>
 </Tabs>
 
@@ -335,6 +340,7 @@ var dirOpts = new Container.WithDirectoryArguments()
 // exclude Git metadata
 var dirOpts = new Container.WithDirectoryArguments()
     .withExclude(List.of("*.git"));
+```
 </TabItem>
 </Tabs>
 
@@ -403,6 +409,7 @@ debug(
 public Directory debug(@Ignore({"*", "!analytics"}) Directory source) {
     return source;
 }
+```
 </TabItem>
 </Tabs>
 
