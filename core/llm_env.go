@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -147,28 +146,7 @@ func (env *LLMEnv) tools(srv *dagql.Server, obj dagql.Typed) []LLMTool {
 			Description: field.Description,
 			Schema:      fieldArgsToJSONSchema(field),
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
-				ctx, span := Tracer(ctx).Start(ctx,
-					fmt.Sprintf("🤖💻 %s %v", typeName+"."+field.Name, args),
-					telemetry.Passthrough(),
-					telemetry.Reveal())
-				defer telemetry.End(span, func() error {
-					return rerr
-				})
-				result, err := env.call(ctx, srv, field, args)
-				if err != nil {
-					return nil, err
-				}
-				stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-				defer stdio.Close()
-				switch v := result.(type) {
-				case string:
-					fmt.Fprint(stdio.Stdout, v)
-				default:
-					enc := json.NewEncoder(stdio.Stdout)
-					enc.SetIndent("", "  ")
-					enc.Encode(v)
-				}
-				return result, nil
+				return env.call(ctx, srv, field, args)
 			},
 		})
 	}
@@ -182,7 +160,20 @@ func (env *LLMEnv) call(ctx context.Context,
 	fieldDef *ast.FieldDefinition,
 	// The arguments to the call. Example: {"args": ["go", "build"], "redirectStderr", "/dev/null"}
 	args any,
-) (any, error) {
+) (_ any, rerr error) {
+	var validated bool
+	ctx, span := Tracer(ctx).Start(ctx,
+		fmt.Sprintf("🤖💻 %s %v", fieldDef.Name, args),
+		telemetry.Passthrough(),
+		telemetry.Reveal())
+	defer telemetry.End(span, func() error {
+		if rerr != nil && !validated {
+			// only reveal for "plumbing" errors, not errors from the field, since
+			// those will already be shown
+			span.SetAttributes(attribute.Bool(telemetry.UIPassthroughAttr, false))
+		}
+		return rerr
+	})
 	// 1. CONVERT CALL INPUTS (BRAIN -> BODY)
 	argsMap, ok := args.(map[string]any)
 	if !ok {
@@ -241,6 +232,7 @@ func (env *LLMEnv) call(ctx context.Context,
 			Value: input,
 		})
 	}
+	validated = true
 	// 2. MAKE THE CALL
 	if retObjType, ok := srv.ObjectType(field.Type.Type().Name()); ok {
 		var val dagql.Typed
