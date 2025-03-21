@@ -756,6 +756,58 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"runtimeDetection":{"version":"bun@1.1.23"}}`, out)
 	})
+
+	t.Run("should detect deno.json", func(ctx context.Context, t *testctx.T) {
+		modGen := c.Container().From("node:20-alpine").
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("/work/deno.json", `{}`).
+			With(daggerExec("init", "--name=Runtime-Detection", "--sdk=typescript", "--source=.")).
+			With(sdkSource("typescript", `
+			import { object, func } from "@dagger.io/dagger";
+
+			@object()
+			export class RuntimeDetection {
+				@func()
+				echoRuntime(): string {
+					const isDenoRuntime = typeof Deno === "object";
+					return isDenoRuntime ? "deno" : "node";
+				}
+			}
+		`))
+
+		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"deno"}}`, out)
+	})
+
+	t.Run("should detect specific pinned deno version", func(ctx context.Context, t *testctx.T) {
+		modGen := c.Container().From("node:20-alpine").
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("/work/deno.json", `{
+			  "dagger": {
+    			"baseImage": "denoland/deno:alpine-2.2.0@sha256:a58f2e1f8ba2681efd2425aada5da77a6edc6020da921332d20393efe24be431"
+				}
+			}`).
+			With(daggerExec("init", "--name=Runtime-Detection", "--sdk=typescript", "--source=.")).
+			With(sdkSource("typescript", `
+			import { object, func } from "@dagger.io/dagger";
+
+			@object()
+			export class RuntimeDetection {
+				@func()
+				version(): string {
+					const version = Deno.version.deno
+					return "deno" + "@" + version
+				}
+			}
+		`))
+
+		out, err := modGen.With(daggerQuery(`{runtimeDetection{version}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"runtimeDetection":{"version":"deno@2.2.0"}}`, out)
+	})
 }
 
 func (TypescriptSuite) TestCustomBaseImage(ctx context.Context, t *testctx.T) {
