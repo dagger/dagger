@@ -72,6 +72,16 @@ public function greeting(): string
 ```
 
 </TabItem>
+<TabItem value="Java">
+
+```java
+@Function
+public String greeting() throws ExecutionException, DaggerQueryException, InterruptedException {
+    return dag().hello().hello();
+}
+```
+
+</TabItem>
 </Tabs>
 
 Here is a more complex example. It is a Dagger Function that utilizes a module from the Daggerverse to build a Go project, then chains a Dagger API method to open an interactive terminal session in the build directory.
@@ -99,6 +109,10 @@ Next, create a new Dagger Function:
 </TabItem>
 <TabItem value="PHP">
 ```php file=./snippets/dependencies/chaining/php/src/MyModule.php
+```
+</TabItem>
+<TabItem value="Java">
+```java file=./snippets/dependencies/chaining/java/MyModule.java
 ```
 </TabItem>
 </Tabs>
