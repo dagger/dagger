@@ -88,6 +88,10 @@ func withEngine(
 		params.EngineMetrics = telemetry.MetricExporters
 
 		params.WithTerminal = withTerminal
+
+		params.Stdin = os.Stdin
+		params.Stdout = os.Stdout
+
 		params.Interactive = interactive
 		params.InteractiveCommand = interactiveCommandParsed
 

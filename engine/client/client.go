@@ -91,6 +91,9 @@ type Params struct {
 	AllowedLLMModules []string
 
 	PromptHandler session.PromptHandler
+
+	Stdin  io.Reader
+	Stdout io.Writer
 }
 
 type Client struct {
@@ -355,6 +358,8 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		session.NewTerminalAttachable(ctx, c.Params.WithTerminal),
 		// Git attachable
 		session.NewGitAttachable(ctx),
+		// pipe
+		session.NewPipeAttachable(ctx, c.Params.Stdin, c.Params.Stdout),
 	}
 	// filesync
 	if !c.DisableHostRW {
