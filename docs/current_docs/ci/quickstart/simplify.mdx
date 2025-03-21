@@ -90,12 +90,6 @@ If you backtrack a little further and inspect the [Node module's source code](ht
 1. The Node module is written in TypeScript but is called from your Dagger module, which could be in Go, Python,  TypeScript, PHP, or Java. Dagger takes care of the translation via its language-agnostic GraphQL layer.
 1. The Node module is a Dagger module very similar to the one you built in this quickstart. If you inspect its source code, you'll recognize the `dag` client and many of the core Dagger API methods you  used when building your own Dagger Functions.
 
-There's one other improvement in this revised pipeline. Every Dagger Function now specifies a default path (`/`) for the `source` directory argument. This means that if no `source` argument is provided on the command line, Dagger will default to the root of the Git repository as the location of the application's source code.
-
-:::tip DEFAULT PATHS
-Default paths are only available for `Directory` and `File` arguments. Dagger's [default path resolution](../../api/default-paths.mdx) differs depending on whether the paths are (a) absolute or relative; and (b) in Git or non-Git contexts.
-:::
-
 ### Run the pipeline
 
 Run the pipeline:
@@ -113,7 +107,7 @@ publish
 </TabItem>
 </Tabs>
 
-As before, you should see the application being tested, built, and published to the [ttl.sh container registry](https://ttl.sh). With the default path in place, everything works as before, even though no argument is specified in the Dagger Function call.
+As before, you should see the application being tested, built, and published to the [ttl.sh container registry](https://ttl.sh). Everything works exactly as before, even though the pipeline is now using a Daggerverse module.
 
 :::tip PRIVATE CONTAINER REGISTRIES
 This quickstart uses the public [ttl.sh container registry](https://ttl.sh), but Dagger also supports publishing to private registries, including [Docker Hub](../../cookbook/cookbook.mdx#publish-a-container-image-to-a-private-registry), [GitHub Container Registry](../../cookbook/cookbook.mdx#publish-a-container-image-to-a-private-registry), and many others.

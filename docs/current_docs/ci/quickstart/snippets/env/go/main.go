@@ -5,7 +5,10 @@ import "dagger/hello-dagger/internal/dagger"
 type HelloDagger struct{}
 
 // Build a ready-to-use development environment
-func (m *HelloDagger) BuildEnv(source *dagger.Directory) *dagger.Container {
+func (m *HelloDagger) BuildEnv(
+	// +defaultPath="/"
+	source *dagger.Directory,
+) *dagger.Container {
 	// create a Dagger cache volume for dependencies
 	nodeCache := dag.CacheVolume("node")
 	return dag.Container().

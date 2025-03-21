@@ -1,11 +1,16 @@
+from typing import Annotated
+
 import dagger
-from dagger import dag, function, object_type
+from dagger import DefaultPath, dag, function, object_type
 
 
 @object_type
 class HelloDagger:
     @function
-    def build(self, source: dagger.Directory) -> dagger.Container:
+    def build(
+        self,
+        source: Annotated[dagger.Directory, DefaultPath("/")],
+    ) -> dagger.Container:
         """Build the application container"""
         build = (
             # get the build environment container

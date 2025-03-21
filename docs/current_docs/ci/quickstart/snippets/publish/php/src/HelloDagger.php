@@ -6,6 +6,7 @@ namespace DaggerModule;
 
 use Dagger\Attribute\DaggerFunction;
 use Dagger\Attribute\DaggerObject;
+use Dagger\Attribute\DefaultPath;
 use Dagger\Attribute\Doc;
 use Dagger\Container;
 use Dagger\Directory;
@@ -17,8 +18,10 @@ class HelloDagger
 {
     #[DaggerFunction]
     #[Doc('Publish the application container after building and testing it on-the-fly')]
-    public function publish(Directory $source): string
-    {
+    public function publish(
+      #[DefaultPath('/')]
+      Directory $source,
+    ): string {
         // call Dagger Function to run unit tests
         $this->test($source);
 
