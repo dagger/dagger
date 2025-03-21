@@ -12,7 +12,7 @@ Dagger also supports publishing container images to [GitHub Container Registry](
 
 GitHub contains a shorthand redirect at the `/merge` endpoint that allows you to reference the correct branch of a repository from a pull request (PR), without needing to know anything about the fork or branch where the PR came from.
 
-By default, the Dagger `Directory` type works with both local directories and [remote Git repositories](../../cookbook#copy-a-directory-or-remote-repository-to-a-container). This makes it possible to work with the directory tree at the root of a Git repository or a given branch.
+By default, the Dagger `Directory` type works with both local directories and [remote Git repositories](../../cookbook/cookbook.mdx#copy-a-directory-or-remote-repository-to-a-container). This makes it possible to work with the directory tree at the root of a Git repository or a given branch.
 
 By combining these two features, Dagger users can write Dagger Functions that directly use GitHub pull requests as arguments.
 
