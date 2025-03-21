@@ -41,7 +41,7 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "The resolved commit of the git repo this source points to. Only valid for git sources."
+  @doc "The resolved commit of the git repo this source points to."
   @spec commit(t()) :: {:ok, String.t()} | {:error, term()}
   def commit(%__MODULE__{} = module_source) do
     query_builder =
@@ -153,7 +153,7 @@ defmodule Dagger.ModuleSource do
     }
   end
 
-  @doc "The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources."
+  @doc "The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket)."
   @spec html_repo_url(t()) :: {:ok, String.t()} | {:error, term()}
   def html_repo_url(%__MODULE__{} = module_source) do
     query_builder =
@@ -294,7 +294,7 @@ defmodule Dagger.ModuleSource do
     end
   end
 
-  @doc "The specified version of the git repo this source points to. Only valid for git sources."
+  @doc "The specified version of the git repo this source points to."
   @spec version(t()) :: {:ok, String.t()} | {:error, term()}
   def version(%__MODULE__{} = module_source) do
     query_builder =

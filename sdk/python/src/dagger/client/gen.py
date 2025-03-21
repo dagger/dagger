@@ -8100,8 +8100,7 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     async def commit(self) -> str:
-        """The resolved commit of the git repo this source points to. Only valid
-        for git sources.
+        """The resolved commit of the git repo this source points to.
 
         Returns
         -------
@@ -8259,7 +8258,7 @@ class ModuleSource(Type):
 
     async def html_repo_url(self) -> str:
         """The URL to access the web view of the repository (e.g., GitHub,
-        GitLab, Bitbucket). Only valid for git sources.
+        GitLab, Bitbucket).
 
         Returns
         -------
@@ -8548,8 +8547,7 @@ class ModuleSource(Type):
         return self.sync().__await__()
 
     async def version(self) -> str:
-        """The specified version of the git repo this source points to. Only
-        valid for git sources.
+        """The specified version of the git repo this source points to.
 
         Returns
         -------

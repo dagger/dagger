@@ -7225,7 +7225,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The resolved commit of the git repo this source points to. Only valid for git sources.
+   * The resolved commit of the git repo this source points to.
    */
   commit = async (): Promise<string> => {
     if (this._commit) {
@@ -7344,7 +7344,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources.
+   * The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
    */
   htmlRepoURL = async (): Promise<string> => {
     if (this._htmlRepoURL) {
@@ -7528,7 +7528,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The specified version of the git repo this source points to. Only valid for git sources.
+   * The specified version of the git repo this source points to.
    */
   version = async (): Promise<string> => {
     if (this._version) {

@@ -8751,7 +8751,7 @@ impl ModuleSource {
         let query = self.selection.select("cloneRef");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The resolved commit of the git repo this source points to. Only valid for git sources.
+    /// The resolved commit of the git repo this source points to.
     pub async fn commit(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("commit");
         query.execute(self.graphql_client.clone()).await
@@ -8821,7 +8821,7 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources.
+    /// The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
     pub async fn html_repo_url(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("htmlRepoURL");
         query.execute(self.graphql_client.clone()).await
@@ -8895,7 +8895,7 @@ impl ModuleSource {
         let query = self.selection.select("sync");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The specified version of the git repo this source points to. Only valid for git sources.
+    /// The specified version of the git repo this source points to.
     pub async fn version(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("version");
         query.execute(self.graphql_client.clone()).await
