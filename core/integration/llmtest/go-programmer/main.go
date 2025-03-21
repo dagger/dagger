@@ -21,6 +21,7 @@ func (m *GoProgrammer) Run(
 	return m.llm(assignment).ToyWorkspace().Container()
 }
 
+// this is a hack at least until we can return the LLM type to have a better way to save/replay history
 func (m *GoProgrammer) Save(
 	ctx context.Context,
 	assignment string,

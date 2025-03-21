@@ -656,21 +656,11 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 	}
 }
 
-func (c *Client) AllowLLM(ctx context.Context, moduleRepoURL string) error {
-	md, err := engine.ClientMetadataFromContext(ctx) // not mainclient
-	if err != nil {
-		return fmt.Errorf("llm sync failed fetching client metadata from context: %w", err)
-	}
-	for _, allowedModule := range md.AllowedLLMModules {
-		if allowedModule == "all" || moduleRepoURL == allowedModule {
-			return nil
-		}
-	}
-
+func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error {
 	// the flag hasn't allowed this LLM call, so prompt the user
 	caller, err := c.GetMainClientCaller()
 	if err != nil {
-		return fmt.Errorf("failed to get main client caller for %q: %w", md.ClientID, err)
+		return fmt.Errorf("failed to get main client caller to to prompt for allow llm: %w", err)
 	}
 
 	response, err := session.NewPromptClient(caller.Conn()).PromptBool(ctx, &session.BoolRequest{

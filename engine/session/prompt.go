@@ -48,7 +48,6 @@ func (p PromptAttachable) Register(srv *grpc.Server) {
 	RegisterPromptServer(srv, p)
 }
 
-// right now this is hardcoded to allow llm prompts, but could easily be extended to other prompt use cases
 func (p PromptAttachable) PromptBool(ctx context.Context, req *BoolRequest) (*BoolResponse, error) {
 	if req.Prompt == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid input: Prompt required")
