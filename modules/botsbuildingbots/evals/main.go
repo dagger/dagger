@@ -52,9 +52,14 @@ func (m *Evals) BuildMulti() *dagger.File {
 }
 
 func (m *Evals) LLM() *dagger.LLM {
-	return dag.LLM(dagger.LLMOpts{
+	llm := dag.LLM(dagger.LLMOpts{
 		Model: m.Model,
-	}).
-		WithSystemPrompt(m.SystemPrompt).
-		Attempt(m.Attempt)
+	})
+	if m.SystemPrompt != "" {
+		llm = llm.WithSystemPrompt(m.SystemPrompt)
+	}
+	if m.Attempt > 0 {
+		llm = llm.Attempt(m.Attempt)
+	}
+	return llm
 }

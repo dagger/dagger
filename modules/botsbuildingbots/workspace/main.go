@@ -22,11 +22,11 @@ type Workspace struct {
 //go:embed start.md
 var initialPrompt string
 
-func New(model string,
+func New(
+	// +default=""
+	model string,
 	// +default=2
 	evals int,
-	// +defaultPath=./start.md
-	start *dagger.File,
 ) *Workspace {
 	return &Workspace{
 		Model:        model,
