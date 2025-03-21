@@ -75,150 +75,157 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
 
     for (TypeElement annotation : annotations) {
       for (Element element : roundEnv.getElementsAnnotatedWith(annotation)) {
-        if (element.getKind() == ElementKind.ENUM && element.getAnnotation(Enum.class) != null) {
-          String qName = ((TypeElement) element).getQualifiedName().toString();
-          if (!enumInfos.containsKey(qName)) {
-            enumInfos.put(
-                qName,
-                new EnumInfo(
-                    element.getSimpleName().toString(),
-                    parseJavaDocDescription(element),
-                    element.getEnclosedElements().stream()
-                        .filter(elt -> elt.getKind() == ElementKind.ENUM_CONSTANT)
-                        .map(
-                            elt ->
-                                new EnumValueInfo(
-                                    elt.getSimpleName().toString(), parseJavaDocDescription(elt)))
-                        .toArray(EnumValueInfo[]::new)));
-          }
-        } else if (element.getKind() == ElementKind.PACKAGE) {
-          if (hasModuleAnnotation) {
-            throw new IllegalStateException("Only one @Module annotation is allowed");
-          }
-          hasModuleAnnotation = true;
-          moduleDescription = parseModuleDescription(element);
-        } else if (element.getKind() == ElementKind.CLASS
-            || element.getKind() == ElementKind.RECORD) {
-          TypeElement typeElement = (TypeElement) element;
-          String qName = typeElement.getQualifiedName().toString();
-          String name = typeElement.getAnnotation(Object.class).value();
-          if (name.isEmpty()) {
-            name = typeElement.getSimpleName().toString();
-          }
-
-          boolean mainObject = areSimilar(name, moduleName);
-
-          if (!element.getModifiers().contains(Modifier.PUBLIC)) {
-            throw new RuntimeException(
-                "The class %s must be public if annotated with @Object".formatted(qName));
-          }
-
-          boolean hasDefaultConstructor =
-              typeElement.getEnclosedElements().stream()
-                      .filter(elt -> elt.getKind() == ElementKind.CONSTRUCTOR)
-                      .map(ExecutableElement.class::cast)
-                      .filter(constructor -> constructor.getModifiers().contains(Modifier.PUBLIC))
-                      .anyMatch(constructor -> constructor.getParameters().isEmpty())
-                  || typeElement.getEnclosedElements().stream()
-                      .noneMatch(elt -> elt.getKind() == ElementKind.CONSTRUCTOR);
-
-          if (!hasDefaultConstructor) {
-            throw new RuntimeException(
-                "The class %s must have a public no-argument constructor that calls super()"
-                    .formatted(qName));
-          }
-
-          Optional<FunctionInfo> constructorInfo = Optional.empty();
-          if (mainObject) {
-            List<? extends Element> constructorDefs =
-                typeElement.getEnclosedElements().stream()
-                    .filter(elt -> elt.getKind() == ElementKind.CONSTRUCTOR)
-                    .filter(elt -> !((ExecutableElement) elt).getParameters().isEmpty())
-                    .toList();
-            if (constructorDefs.size() == 1) {
-              Element elt = constructorDefs.get(0);
-              constructorInfo =
-                  Optional.of(
-                      new FunctionInfo(
-                          "<init>",
-                          "",
-                          parseFunctionDescription(elt),
-                          new TypeInfo(
-                              ((ExecutableElement) elt).getReturnType().toString(),
-                              ((ExecutableElement) elt).getReturnType().getKind().name()),
-                          parseParameters((ExecutableElement) elt).toArray(new ParameterInfo[0])));
-            } else if (constructorDefs.size() > 1) {
-              // There's more than one non-empty constructor, but Dagger only supports to expose a
-              // single one
-              throw new RuntimeException(
-                  "The class %s must have a single non-empty constructor".formatted(qName));
+        switch (element.getKind()) {
+          case ENUM -> {
+            if (element.getAnnotation(Enum.class) != null) {
+              String qName = ((TypeElement) element).getQualifiedName().toString();
+              if (!enumInfos.containsKey(qName)) {
+                enumInfos.put(
+                    qName,
+                    new EnumInfo(
+                        element.getSimpleName().toString(),
+                        parseJavaDocDescription(element),
+                        element.getEnclosedElements().stream()
+                            .filter(elt -> elt.getKind() == ElementKind.ENUM_CONSTANT)
+                            .map(
+                                elt ->
+                                    new EnumValueInfo(
+                                        elt.getSimpleName().toString(),
+                                        parseJavaDocDescription(elt)))
+                            .toArray(EnumValueInfo[]::new)));
+              }
             }
           }
+          case PACKAGE -> {
+            if (hasModuleAnnotation) {
+              throw new IllegalStateException("Only one @Module annotation is allowed");
+            }
+            hasModuleAnnotation = true;
+            moduleDescription = parseModuleDescription(element);
+          }
+          case CLASS, RECORD -> {
+            TypeElement typeElement = (TypeElement) element;
+            String qName = typeElement.getQualifiedName().toString();
+            String name = typeElement.getAnnotation(Object.class).value();
+            if (name.isEmpty()) {
+              name = typeElement.getSimpleName().toString();
+            }
 
-          List<FieldInfo> fieldInfoInfos =
-              typeElement.getEnclosedElements().stream()
-                  .filter(elt -> elt.getKind() == ElementKind.FIELD)
-                  .filter(elt -> !elt.getModifiers().contains(Modifier.TRANSIENT))
-                  .filter(elt -> !elt.getModifiers().contains(Modifier.STATIC))
-                  .filter(elt -> !elt.getModifiers().contains(Modifier.FINAL))
-                  .filter(
-                      elt ->
-                          elt.getModifiers().contains(Modifier.PUBLIC)
-                              || elt.getAnnotation(Function.class) != null)
-                  .map(
-                      elt -> {
-                        String fieldName = elt.getSimpleName().toString();
-                        TypeMirror tm = elt.asType();
-                        TypeKind tk = tm.getKind();
-                        FieldInfo f =
-                            new FieldInfo(
-                                fieldName,
-                                parseSimpleDescription(elt),
-                                new TypeInfo(tm.toString(), tk.name()));
-                        return f;
-                      })
-                  .toList();
-          List<FunctionInfo> functionInfos =
-              typeElement.getEnclosedElements().stream()
-                  .filter(elt -> elt.getKind() == ElementKind.METHOD)
-                  .filter(elt -> elt.getAnnotation(Function.class) != null)
-                  .map(
-                      elt -> {
-                        Function moduleFunction = elt.getAnnotation(Function.class);
-                        String fName = moduleFunction.value();
-                        String fqName = elt.getSimpleName().toString();
-                        if (fName.isEmpty()) {
-                          fName = fqName;
-                        }
-                        if (!elt.getModifiers().contains(Modifier.PUBLIC)) {
-                          throw new RuntimeException(
-                              "The method %s#%s must be public if annotated with @Function"
-                                  .formatted(qName, fqName));
-                        }
+            boolean mainObject = areSimilar(name, moduleName);
 
-                        List<ParameterInfo> parameterInfos =
-                            parseParameters((ExecutableElement) elt);
+            if (!element.getModifiers().contains(Modifier.PUBLIC)) {
+              throw new RuntimeException(
+                  "The class %s must be public if annotated with @Object".formatted(qName));
+            }
 
-                        TypeMirror tm = ((ExecutableElement) elt).getReturnType();
-                        TypeKind tk = tm.getKind();
-                        FunctionInfo functionInfo =
-                            new FunctionInfo(
-                                fName,
-                                fqName,
-                                parseFunctionDescription(elt),
-                                new TypeInfo(tm.toString(), tk.name()),
-                                parameterInfos.toArray(new ParameterInfo[parameterInfos.size()]));
-                        return functionInfo;
-                      })
-                  .toList();
-          annotatedObjects.add(
-              new ObjectInfo(
-                  name,
-                  qName,
-                  parseObjectDescription(typeElement),
-                  fieldInfoInfos.toArray(new FieldInfo[fieldInfoInfos.size()]),
-                  functionInfos.toArray(new FunctionInfo[functionInfos.size()]),
-                  constructorInfo));
+            boolean hasDefaultConstructor =
+                typeElement.getEnclosedElements().stream()
+                        .filter(elt -> elt.getKind() == ElementKind.CONSTRUCTOR)
+                        .map(ExecutableElement.class::cast)
+                        .filter(constructor -> constructor.getModifiers().contains(Modifier.PUBLIC))
+                        .anyMatch(constructor -> constructor.getParameters().isEmpty())
+                    || typeElement.getEnclosedElements().stream()
+                        .noneMatch(elt -> elt.getKind() == ElementKind.CONSTRUCTOR);
+
+            if (!hasDefaultConstructor) {
+              throw new RuntimeException(
+                  "The class %s must have a public no-argument constructor that calls super()"
+                      .formatted(qName));
+            }
+
+            Optional<FunctionInfo> constructorInfo = Optional.empty();
+            if (mainObject) {
+              List<? extends Element> constructorDefs =
+                  typeElement.getEnclosedElements().stream()
+                      .filter(elt -> elt.getKind() == ElementKind.CONSTRUCTOR)
+                      .filter(elt -> !((ExecutableElement) elt).getParameters().isEmpty())
+                      .toList();
+              if (constructorDefs.size() == 1) {
+                Element elt = constructorDefs.get(0);
+                constructorInfo =
+                    Optional.of(
+                        new FunctionInfo(
+                            "<init>",
+                            "",
+                            parseFunctionDescription(elt),
+                            new TypeInfo(
+                                ((ExecutableElement) elt).getReturnType().toString(),
+                                ((ExecutableElement) elt).getReturnType().getKind().name()),
+                            parseParameters((ExecutableElement) elt)
+                                .toArray(new ParameterInfo[0])));
+              } else if (constructorDefs.size() > 1) {
+                // There's more than one non-empty constructor, but Dagger only supports to expose a
+                // single one
+                throw new RuntimeException(
+                    "The class %s must have a single non-empty constructor".formatted(qName));
+              }
+            }
+
+            List<FieldInfo> fieldInfoInfos =
+                typeElement.getEnclosedElements().stream()
+                    .filter(elt -> elt.getKind() == ElementKind.FIELD)
+                    .filter(elt -> !elt.getModifiers().contains(Modifier.TRANSIENT))
+                    .filter(elt -> !elt.getModifiers().contains(Modifier.STATIC))
+                    .filter(elt -> !elt.getModifiers().contains(Modifier.FINAL))
+                    .filter(
+                        elt ->
+                            elt.getModifiers().contains(Modifier.PUBLIC)
+                                || elt.getAnnotation(Function.class) != null)
+                    .map(
+                        elt -> {
+                          String fieldName = elt.getSimpleName().toString();
+                          TypeMirror tm = elt.asType();
+                          TypeKind tk = tm.getKind();
+                          FieldInfo f =
+                              new FieldInfo(
+                                  fieldName,
+                                  parseSimpleDescription(elt),
+                                  new TypeInfo(tm.toString(), tk.name()));
+                          return f;
+                        })
+                    .toList();
+            List<FunctionInfo> functionInfos =
+                typeElement.getEnclosedElements().stream()
+                    .filter(elt -> elt.getKind() == ElementKind.METHOD)
+                    .filter(elt -> elt.getAnnotation(Function.class) != null)
+                    .map(
+                        elt -> {
+                          Function moduleFunction = elt.getAnnotation(Function.class);
+                          String fName = moduleFunction.value();
+                          String fqName = elt.getSimpleName().toString();
+                          if (fName.isEmpty()) {
+                            fName = fqName;
+                          }
+                          if (!elt.getModifiers().contains(Modifier.PUBLIC)) {
+                            throw new RuntimeException(
+                                "The method %s#%s must be public if annotated with @Function"
+                                    .formatted(qName, fqName));
+                          }
+
+                          List<ParameterInfo> parameterInfos =
+                              parseParameters((ExecutableElement) elt);
+
+                          TypeMirror tm = ((ExecutableElement) elt).getReturnType();
+                          TypeKind tk = tm.getKind();
+                          FunctionInfo functionInfo =
+                              new FunctionInfo(
+                                  fName,
+                                  fqName,
+                                  parseFunctionDescription(elt),
+                                  new TypeInfo(tm.toString(), tk.name()),
+                                  parameterInfos.toArray(new ParameterInfo[parameterInfos.size()]));
+                          return functionInfo;
+                        })
+                    .toList();
+            annotatedObjects.add(
+                new ObjectInfo(
+                    name,
+                    qName,
+                    parseObjectDescription(typeElement),
+                    fieldInfoInfos.toArray(new FieldInfo[fieldInfoInfos.size()]),
+                    functionInfos.toArray(new FunctionInfo[functionInfos.size()]),
+                    constructorInfo));
+          }
         }
       }
     }
