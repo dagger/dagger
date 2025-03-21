@@ -671,9 +671,9 @@ func (llm *LLM) allowed(ctx context.Context) error {
 		return fmt.Errorf("llm sync failed fetching client metadata from context: %w", err)
 	}
 
-	moduleUrl := module.Source.Self.Git.Symbolic
+	moduleURL := module.Source.Self.Git.Symbolic
 	for _, allowedModule := range md.AllowedLLMModules {
-		if allowedModule == "all" || moduleUrl == allowedModule {
+		if allowedModule == "all" || moduleURL == allowedModule {
 			return nil
 		}
 	}
@@ -683,7 +683,7 @@ func (llm *LLM) allowed(ctx context.Context) error {
 		return fmt.Errorf("llm sync failed fetching bk client for llm allow prompting: %w", err)
 	}
 
-	return bk.PromptAllowLLM(ctx, moduleUrl)
+	return bk.PromptAllowLLM(ctx, moduleURL)
 }
 
 func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error) {
