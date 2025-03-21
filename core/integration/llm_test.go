@@ -159,9 +159,9 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// llm-test-module passes a prompt to LLM and sets a random string variable to bust cache
-	directCallModuleRef := "github.com/cwlbraa/dagger-test-modules/llm-dir-module-depender/llm-test-module"
+	directCallModuleRef := "github.com/dagger/dagger-test-modules/llm-dir-module-depender/llm-test-module"
 	// llm-dir-module-depender depends on directCall module via a relative path
-	dependerModuleRef := "github.com/cwlbraa/dagger-test-modules/llm-dir-module-depender"
+	dependerModuleRef := "github.com/dagger/dagger-test-modules/llm-dir-module-depender"
 
 	recording := "llmtest/allow-llm.golden"
 	if golden.FlagUpdate() {
