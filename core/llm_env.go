@@ -83,6 +83,8 @@ func (env *LLMEnv) Set(key string, value dagql.Typed) string {
 
 // Get a value saved at the given key
 func (env *LLMEnv) Get(key string) (dagql.Typed, error) {
+	// strip $foo var prefix
+	key = strings.TrimPrefix(key, "$")
 	// first check for named vars
 	if val, exists := env.vars[key]; exists {
 		return val, nil
