@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -286,6 +287,7 @@ func (svc *Service) startContainer(
 			ExecID:            identity.NewID(),
 			SessionID:         clientMetadata.SessionID,
 			AllowedLLMModules: clientMetadata.AllowedLLMModules,
+			Mutex:             new(sync.Mutex),
 		}
 	}
 

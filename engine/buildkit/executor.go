@@ -109,7 +109,7 @@ type ExecutionMetadata struct {
 	AllowedLLMModules []string
 
 	// Lock in case concurrent writers needed for fields above
-	sync.Mutex `json:"-"`
+	*sync.Mutex `json:"-"`
 }
 
 const executionMetadataKey = "dagger.executionMetadata"
@@ -131,7 +131,7 @@ func ExecutionMetadataFromDescription(desc map[string]string) (*ExecutionMetadat
 		return nil, false, nil
 	}
 
-	md := ExecutionMetadata{}
+	md := ExecutionMetadata{Mutex: &sync.Mutex{}}
 	if err := json.Unmarshal([]byte(bs), &md); err != nil {
 		return nil, false, fmt.Errorf("failed to unmarshal execution metadata: %w", err)
 	}
