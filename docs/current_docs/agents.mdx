@@ -236,7 +236,7 @@ dagger client generate
 Consider the following code from the [toy-programmer](https://github.com/shykes/toy-programmer):
 
 ```go
-result := dag.Llm().
+result := dag.LLM().
 		WithToyWorkspace(dag.ToyWorkspace().Write("assignment.txt", assignment)).
 		WithPrompt("You are an expert go programmer. You have access to a workspace").
 		WithPrompt("Complete the assignment written at assignment.txt").
@@ -254,7 +254,7 @@ Dagger [modules](features/modules.mdx) are collections of Dagger functions. When
 Consider the following code from the [toy-programmer](https://github.com/shykes/toy-programmer):
 
 ```go
-result := dag.Llm().
+result := dag.LLM().
 		WithToyWorkspace(dag.ToyWorkspace().Write("assignment.txt", assignment)).
 		WithPrompt("You are an expert go programmer. You have access to a workspace").
 		WithPrompt("Complete the assignment written at assignment.txt").
@@ -276,7 +276,7 @@ For example workspaces, see [toy-workspace](https://github.com/shykes/toy-progra
 Consider the following code from the [toy-programmer](https://github.com/shykes/toy-programmer):
 
 ```go
-result := dag.Llm().
+result := dag.LLM().
 		WithToyWorkspace(dag.ToyWorkspace().Write("assignment.txt", assignment)).
 		WithPrompt("You are an expert go programmer. You have access to a workspace").
 		WithPrompt("Complete the assignment written at assignment.txt").
