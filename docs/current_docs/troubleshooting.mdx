@@ -54,7 +54,9 @@ You should now be able to re-run your Dagger Function successfully.
 
 ## Dagger restarts with a "CNI setup error"
 
-The Dagger Engine requires the `iptable_nat` Linux kernel module in order to function properly. On some Linux distributions (including Red Hat Enterprise Linux 8.x and 9.x), this module is not loaded by default.
+The Dagger Engine requires the `iptable_nat` Linux kernel module in order to function properly. On some Linux distributions this module is not loaded by default.
+
+Known affected platforms include Red Hat Enterprise Linux (8.x and 9.x) and Podman Desktop on Mac.
 
 You can load this module by running `sudo modprobe iptable_nat`.
 
