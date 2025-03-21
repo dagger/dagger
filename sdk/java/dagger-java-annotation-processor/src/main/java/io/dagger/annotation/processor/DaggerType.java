@@ -91,29 +91,24 @@ public abstract class DaggerType {
   }
 
   public static DaggerType of(String name) {
-    if (name.equals("boolean")) {
-      return of(new TypeInfo(name, TypeKind.BOOLEAN.name()));
-    } else if (name.equals("byte")) {
-      return of(new TypeInfo(name, TypeKind.BYTE.name()));
-    } else if (name.equals("short")) {
-      return of(new TypeInfo(name, TypeKind.SHORT.name()));
-    } else if (name.equals("int")) {
-      return of(new TypeInfo(name, TypeKind.INT.name()));
-    } else if (name.equals("long")) {
-      return of(new TypeInfo(name, TypeKind.LONG.name()));
-    } else if (name.equals("char")) {
-      return of(new TypeInfo(name, TypeKind.CHAR.name()));
-    } else if (name.equals("float")) {
-      return of(new TypeInfo(name, TypeKind.FLOAT.name()));
-    } else if (name.equals("double")) {
-      return of(new TypeInfo(name, TypeKind.DOUBLE.name()));
-    } else if (name.equals("void")) {
-      return of(new TypeInfo(name, TypeKind.VOID.name()));
-    } else if (name.endsWith("[]")) {
-      return of(new TypeInfo(name, TypeKind.ARRAY.name()));
-    } else {
-      return of(new TypeInfo(name, ""));
-    }
+    return switch (name) {
+      case "boolean" -> of(new TypeInfo(name, TypeKind.BOOLEAN.name()));
+      case "byte" -> of(new TypeInfo(name, TypeKind.BYTE.name()));
+      case "short" -> of(new TypeInfo(name, TypeKind.SHORT.name()));
+      case "int" -> of(new TypeInfo(name, TypeKind.INT.name()));
+      case "long" -> of(new TypeInfo(name, TypeKind.LONG.name()));
+      case "char" -> of(new TypeInfo(name, TypeKind.CHAR.name()));
+      case "float" -> of(new TypeInfo(name, TypeKind.FLOAT.name()));
+      case "double" -> of(new TypeInfo(name, TypeKind.DOUBLE.name()));
+      case "void" -> of(new TypeInfo(name, TypeKind.VOID.name()));
+      default -> {
+        if (name.endsWith("[]")) {
+          yield of(new TypeInfo(name, TypeKind.ARRAY.name()));
+        } else {
+          yield of(new TypeInfo(name, ""));
+        }
+      }
+    };
   }
 
   public static class Enum extends DaggerType {
