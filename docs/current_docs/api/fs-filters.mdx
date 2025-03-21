@@ -151,6 +151,9 @@ Ignore([".git", "**/.gitignore"])
 // exclude binaries
 @argument({ ignore: ["bin"] })
 
+// exclude Python dependencies
+@argument({ ignore: ["**/.venv", "**/__pycache__"] })
+
 // exclude Node.js dependencies
 @argument({ ignore: ["**/node_modules"] })
 
@@ -163,8 +166,14 @@ Ignore([".git", "**/.gitignore"])
 // exclude PHPUnit tests and test data
 #[Ignore('tests/', '.phpunit.cache', '.phpunit.result.cache')]
 
-// exclude third party dependencies
-#[Ignore('vendor/', 'node_modules/')]
+// exclude binaries
+#[Ignore('bin')]
+
+// exclude Composer dependencies
+#[Ignore('vendor/')]
+
+// exclude Node.js dependencies
+#[Ignore('**/node_modules')]
 
 // exclude Git metadata
 #[Ignore('.git/', '**/.gitignore')]
