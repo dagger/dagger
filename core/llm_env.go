@@ -84,25 +84,39 @@ func (env *LLMEnv) Set(key string, value dagql.Typed) string {
 
 // Get a value saved at the given key
 func (env *LLMEnv) Get(key string) (dagql.Typed, error) {
+	// first check for named vars
 	if val, exists := env.vars[key]; exists {
 		return val, nil
 	}
+	// object by digest (xxh3:...)
 	if _, hash, ok := strings.Cut(key, "@"); ok {
 		// strip Type@ prefix if present
-		// TODO: figure out the best place to do this
 		key = hash
 	}
 	if val, exists := env.objsByHash[digest.Digest(key)]; exists {
 		return val, nil
 	}
-	var dbg string
-	for k, v := range env.objsByHash {
-		dbg += fmt.Sprintf("hash %s: %s\n", k, v.Type().Name())
+	// check for non-xxh3: version too
+	if val, exists := env.objsByHash[digest.Digest("xxh3:"+key)]; exists {
+		return val, nil
 	}
-	for k, v := range env.vars {
-		dbg += fmt.Sprintf("var %s: %s\n", k, v.Type().Name())
+	helpfulErr := new(strings.Builder)
+	fmt.Fprintf(helpfulErr, "Could not locate object %q.\n\n", key)
+	if len(env.vars) > 0 {
+		fmt.Fprintln(helpfulErr)
+		fmt.Fprintln(helpfulErr, "Here are the defined variables:")
+		for k, v := range env.vars {
+			fmt.Fprintf(helpfulErr, "- %s (%s)\n", k, v.Type().Name())
+		}
 	}
-	return nil, fmt.Errorf("object not found: %s\n\n%s", key, dbg)
+	if len(env.objsByHash) > 0 {
+		fmt.Fprintln(helpfulErr)
+		fmt.Fprintln(helpfulErr, "Here are the available objects, by hash:")
+		for k, v := range env.objsByHash {
+			fmt.Fprintf(helpfulErr, "- %s (%s)\n", k, v.Type().Name())
+		}
+	}
+	return nil, fmt.Errorf(helpfulErr.String())
 }
 
 // Unset a saved value
