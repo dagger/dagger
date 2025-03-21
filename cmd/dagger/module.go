@@ -93,7 +93,11 @@ func getCompatVersion() string {
 
 func init() {
 	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to the module directory. Either local path or a remote git repo")
-	moduleFlags.StringSliceVar(&allowedLLMModules, "allow-llm", nil, "List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session")
+	var defaultAllowLLM []string
+	if allowLLMEnv := os.Getenv("DAGGER_ALLOW_LLM"); allowLLMEnv != "" {
+		defaultAllowLLM = strings.Split(allowLLMEnv, ",")
+	}
+	moduleFlags.StringSliceVar(&allowedLLMModules, "allow-llm", defaultAllowLLM, "List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session")
 
 	for _, fc := range funcCmds {
 		if !fc.DisableModuleLoad {
