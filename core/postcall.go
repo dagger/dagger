@@ -57,7 +57,7 @@ func ResourceTransferPostCall(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source client secret store: %w", err)
 	}
-	srcDag, err := query.DagqlServer(srcClientCtx)
+	srcDag, err := query.Server.Server(srcClientCtx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source client dagql server: %w", err)
 	}
@@ -108,7 +108,7 @@ func ResourceTransferPostCall(
 		if err != nil {
 			return fmt.Errorf("failed to get destination client secret store: %w", err)
 		}
-		destDag, err := query.DagqlServer(ctx)
+		destDag, err := query.Server.Server(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get destination client dagql server: %w", err)
 		}

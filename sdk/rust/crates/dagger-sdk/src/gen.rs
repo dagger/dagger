@@ -8036,11 +8036,6 @@ pub struct QueryLlmOpts<'a> {
     pub model: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct QueryLoadSecretFromNameOpts<'a> {
-    #[builder(setter(into, strip_option), default)]
-    pub accessor: Option<&'a str>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct QueryModuleSourceOpts<'a> {
     /// If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
     #[builder(setter(into, strip_option), default)]
@@ -9020,41 +9015,6 @@ impl Query {
                 Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
-        Secret {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Load a Secret from its Name.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn load_secret_from_name(&self, name: impl Into<String>) -> Secret {
-        let mut query = self.selection.select("loadSecretFromName");
-        query = query.arg("name", name.into());
-        Secret {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Load a Secret from its Name.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn load_secret_from_name_opts<'a>(
-        &self,
-        name: impl Into<String>,
-        opts: QueryLoadSecretFromNameOpts<'a>,
-    ) -> Secret {
-        let mut query = self.selection.select("loadSecretFromName");
-        query = query.arg("name", name.into());
-        if let Some(accessor) = opts.accessor {
-            query = query.arg("accessor", accessor);
-        }
         Secret {
             proc: self.proc.clone(),
             selection: query,
