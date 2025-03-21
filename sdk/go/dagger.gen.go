@@ -8663,8 +8663,8 @@ func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	}
 }
 
-// LlmOpts contains options for Client.Llm
-type LlmOpts struct {
+// LLMOpts contains options for Client.LLM
+type LLMOpts struct {
 	// Model to use
 	Model string
 	// Cap the number of API calls for this LLM
@@ -8672,7 +8672,7 @@ type LlmOpts struct {
 }
 
 // Initialize a Large Language Model (LLM)
-func (r *Client) Llm(opts ...LlmOpts) *LLM {
+func (r *Client) LLM(opts ...LLMOpts) *LLM {
 	q := r.query.Select("llm")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `model` optional argument

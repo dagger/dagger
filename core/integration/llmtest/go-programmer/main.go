@@ -31,7 +31,7 @@ func (m *GoProgrammer) Save(
 func (m *GoProgrammer) llm(
 	assignment string,
 ) *dagger.LLM {
-	return dag.Llm(dagger.LlmOpts{Model: m.Model}).
+	return dag.LLM(dagger.LLMOpts{Model: m.Model}).
 		WithToyWorkspace(dag.ToyWorkspace()).
 		WithPromptVar("assignment", assignment).
 		WithPrompt(
