@@ -17,6 +17,7 @@ import (
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/core"
@@ -160,7 +161,7 @@ func (s *hostSchema) Install() {
 		dagql.Func("__internalSocket", s.internalSocket).
 			Doc(`(Internal-only) Accesses a socket on the host (unix or ip) with the given internal client resource name.`),
 
-		dagql.Func("tunnel", s.tunnel).
+		dagql.FuncWithCacheKey("tunnel", s.tunnel, dagql.CachePerClient).
 			Doc(`Creates a tunnel that forwards traffic from the host to a service.`).
 			ArgDoc("service", `Service to send traffic from the tunnel.`).
 			ArgDoc("ports", `List of frontend/backend port mappings to forward.`,
@@ -205,8 +206,17 @@ type setSecretFileArgs struct {
 	Path string
 }
 
-func (s *hostSchema) setSecretFile(ctx context.Context, host *core.Host, args setSecretFileArgs) (dagql.Instance[*core.Secret], error) {
-	return host.SetSecretFile(ctx, s.srv, args.Name, args.Path)
+func (s *hostSchema) setSecretFile(ctx context.Context, host *core.Host, args setSecretFileArgs) (inst dagql.Instance[*core.Secret], err error) {
+	err = s.srv.Select(ctx, s.srv.Root(), &inst,
+		dagql.Selector{
+			Field: "secret",
+			Args: []dagql.NamedInput{{
+				Name:  "uri",
+				Value: dagql.NewString("file://" + args.Path),
+			}},
+		},
+	)
+	return inst, err
 }
 
 type hostDirectoryArgs struct {
@@ -396,7 +406,12 @@ func (s *hostSchema) tunnel(ctx context.Context, parent *core.Host, args hostTun
 		return nil, errors.New("no ports to forward")
 	}
 
-	return parent.Query.NewTunnelService(ctx, inst, ports), nil
+	return &core.Service{
+		Creator:        trace.SpanContextFromContext(ctx),
+		Query:          parent.Query,
+		TunnelUpstream: &inst,
+		TunnelPorts:    ports,
+	}, nil
 }
 
 type hostServiceArgs struct {
@@ -488,7 +503,11 @@ func (s *hostSchema) internalService(ctx context.Context, parent *core.Host, arg
 		socks = append(socks, sockInst.Self)
 	}
 
-	return parent.Query.NewHostService(ctx, socks), nil
+	return &core.Service{
+		Creator:     trace.SpanContextFromContext(ctx),
+		Query:       parent.Query,
+		HostSockets: socks,
+	}, nil
 }
 
 type hostInternalSocketArgs struct {

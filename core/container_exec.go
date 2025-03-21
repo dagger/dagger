@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
@@ -83,7 +84,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		return nil, err
 	}
 
-	execMD := buildkit.ExecutionMetadata{}
+	execMD := buildkit.ExecutionMetadata{Mutex: new(sync.Mutex)}
 	if opts.NestedExecMetadata != nil {
 		execMD = *opts.NestedExecMetadata
 	}
@@ -194,7 +195,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	}
 
 	for i, secret := range container.Secrets {
-		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.LLBID())}
+		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.ID().Digest().String())}
 
 		var secretDest string
 		switch {
