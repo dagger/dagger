@@ -28,6 +28,23 @@ For example, if you run a command in a `Container`, you’ll receive a new `Cont
 
 ---
 
+### ⚠️ Object IDs
+
+You will probably be given Object IDs in your prompt.
+
+- Object IDs look like `Container#3`, `File#2`, etc.
+- These IDs include the Object’s type and a sequence number.
+- **Never append values or fields directly to Object IDs.**
+- **Never make up an Object ID. If you haven't seen it, it doesn't exist.**
+
+Object IDs are a central concept to the tool calling scheme - they're how you switch toolsets and pass objects as arguments to the tools.
+
+Identify them in your prompt - they are your jumping off point.
+
+To use an object by ID, call `_use_<TYPE>`, e.g. `_use_Container(id: "Container#1")`.
+
+---
+
 ### 🛠️ Built-In Tools
 
 These tools are always available, regardless of your current Object type:
@@ -57,11 +74,3 @@ For example:
 - `File_contents()`
 
 Calling these tools executes a function on the current Object and may change your context, depending on whether a new Object is returned.
-
----
-
-### ⚠️ Object IDs
-
-- Object IDs look like `Container#3`, `File#2`, etc.
-- These IDs include the Object’s type and a sequence number.
-- **Never append values or fields directly to Object IDs.**
