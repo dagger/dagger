@@ -1,0 +1,7 @@
+{
+  "name": "list-kind",
+  "engineVersion": "v0.16.1",
+  "sdk": {
+    "source": "../../sdk/php"
+  }
+}
