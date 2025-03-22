@@ -56,6 +56,7 @@ func (w *Workspace) Evaluate(ctx context.Context) (string, error) {
 	reports := make(chan string, w.Evals)
 	wg := new(sync.WaitGroup)
 	var succeeded int
+	var toolsDesc string
 	for attempt := range w.Evals {
 		wg.Add(1)
 		go func() {
@@ -81,15 +82,30 @@ func (w *Workspace) Evaluate(ctx context.Context) (string, error) {
 				for _, line := range history {
 					fmt.Fprintln(report, line)
 				}
+				tools, err := llm.Tools(ctx)
+				if err != nil {
+					fmt.Fprintln(report, "Failed to get history:", err)
+					return
+				}
+				if len(tools) > len(toolsDesc) {
+					toolsDesc = tools
+				}
 			}
 		}()
 	}
 
 	finalReport := new(strings.Builder)
+	fmt.Fprintln(finalReport, "# All Attempts")
+	fmt.Fprintln(finalReport)
 	for range w.Evals {
 		fmt.Fprintln(finalReport, <-reports)
 	}
-	fmt.Fprintln(finalReport, "## Final Report")
+	fmt.Fprintln(finalReport, "# Tools")
+	fmt.Fprintln(finalReport)
+	fmt.Fprintf(finalReport, toolsDesc)
+	fmt.Fprintln(finalReport)
+
+	fmt.Fprintln(finalReport, "# Final Report")
 	fmt.Fprintln(finalReport)
 	fmt.Fprintf(finalReport, "SUCCESS RATE: %d/%d (%.f%%)\n", succeeded, w.Evals, float64(succeeded)/float64(w.Evals)*100)
 

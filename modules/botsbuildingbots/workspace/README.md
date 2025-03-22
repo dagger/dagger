@@ -32,14 +32,13 @@ For example, if you run a command in a `Container`, you’ll receive a new `Cont
 
 These tools are always available, regardless of your current Object type:
 
-- `_use_<variable>`: Set the current context to the Object stored in `$<variable>`.
-- `_use(id="Foo#123")`: Set the current context to a specific Object.
+- `_use_<TYPE>`: Set an Object of the specified type as the current Object. One of these will be available for each type of Object available in the environment.
 - `_saveAs(name: "foo")`: Save the current Object as a named variable (`$foo`).
 
 ### IMPORTANT: Object Context Management
 
 * The system behaves like a functional state machine. Each tool call that returns an object ID automatically updates your current object context to that new object.
-* Do not use `_use_<variable>` or `_use(id="...")` immediately after a tool call that returns a new object ID, as this is redundant. Only use `_use` when you need to explicitly return to a previously saved object using its ID or variable name.
+* Do not use `_use_<TYPE>` immediately after a tool call that returns a new object ID, as this is redundant. Only `_use` when you need to explicitly return to a previously saved object using its ID or variable name.
 * Think carefully about the flow of object context. Before calling a tool, ensure you are operating on the correct object.
 
 ---

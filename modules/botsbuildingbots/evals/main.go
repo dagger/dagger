@@ -42,8 +42,7 @@ func (m *Evals) BuildMultiLLM() *dagger.LLM {
 	return m.LLM().
 		SetDirectory("repo", dag.Git("https://github.com/vito/booklit").Head().Tree()).
 		SetContainer("ctr", dag.Container().From("golang")).
-		WithPrompt("Mount $repo into $ctr, set it as your workdir, and build ./cmd/booklit").
-		WithPrompt("Disable CGo for maximum compatibility.").
+		WithPrompt("Mount $repo into $ctr, set it as your workdir, and build ./cmd/booklit with CGO_ENABLED=0.").
 		WithPrompt("Return the binary as a File.")
 }
 

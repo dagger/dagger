@@ -33,7 +33,8 @@ type LLMTool struct {
 
 type LLMEnv struct {
 	// History of values. Current selection is last. Remove last N values to rewind last N changes
-	history []dagql.Object
+	history      []dagql.Object
+	functionMask map[string]bool
 	// Saved objects
 	vars map[string]dagql.Object
 	// Saved objects by type + hash
@@ -47,11 +48,12 @@ type LLMEnv struct {
 
 func NewLLMEnv() *LLMEnv {
 	return &LLMEnv{
-		vars:       map[string]dagql.Object{},
-		objsByHash: map[digest.Digest]dagql.Object{},
-		objsByID:   map[string]dagql.Object{},
-		typeCount:  map[string]int{},
-		idByHash:   map[digest.Digest]string{},
+		vars:         map[string]dagql.Object{},
+		objsByHash:   map[digest.Digest]dagql.Object{},
+		objsByID:     map[string]dagql.Object{},
+		typeCount:    map[string]int{},
+		idByHash:     map[digest.Digest]string{},
+		functionMask: map[string]bool{},
 	}
 }
 
@@ -79,8 +81,12 @@ func (env *LLMEnv) Current() dagql.Object {
 	return env.history[len(env.history)-1]
 }
 
-func (env *LLMEnv) Select(obj dagql.Object) {
+func (env *LLMEnv) Select(obj dagql.Object, functions ...string) {
 	env.history = append(env.history, obj)
+	clear(env.functionMask)
+	for _, fn := range functions {
+		env.functionMask[fn] = true
+	}
 }
 
 // Save a value at the given key
@@ -187,7 +193,11 @@ func (env *LLMEnv) tools(srv *dagql.Server, obj dagql.Typed) []LLMTool {
 	}
 	typeDef := env.typedef(srv, obj)
 	var tools []LLMTool
+	masked := len(env.functionMask) > 0
 	for _, field := range typeDef.Fields {
+		if masked && !env.functionMask[field.Name] {
+			continue
+		}
 		if strings.HasPrefix(field.Name, "_") {
 			continue
 		}
@@ -316,7 +326,7 @@ func (env *LLMEnv) call(ctx context.Context,
 		if obj, ok := dagql.UnwrapAs[dagql.Object](val); ok {
 			env.objsByHash[obj.ID().Digest()] = obj
 			env.objsByID[env.llmID(obj)] = obj
-			env.history = append(env.history, obj)
+			env.Select(obj)
 			return env.currentState()
 		} else {
 			return nil, fmt.Errorf("impossible? object didn't return object: %T", val)
@@ -371,7 +381,7 @@ func (env *LLMEnv) callSelect(ctx context.Context, args struct {
 	if err != nil {
 		return nil, err
 	}
-	env.history = append(env.history, obj)
+	env.Select(obj)
 	return env.currentState()
 }
 
@@ -515,47 +525,75 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) []LLMTool {
 				},
 				Call: ToolFunc(env.callSave),
 			},
-			LLMTool{
-				Name:        "_use",
-				Returns:     "Object",
-				Description: "Set the current state to an Object by ID",
-				Schema: map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"id": map[string]any{
-							"type":        "string",
-							"description": "ID of the Object to use",
-						},
-					},
-					"strict":               true,
-					"required":             []string{"id"},
-					"additionalProperties": false,
-				},
-				Call: ToolFunc(env.callSelect),
-			},
+			// LLMTool{
+			// 	Name:        "_use",
+			// 	Returns:     "Object",
+			// 	Description: "Set the current state to an Object by ID",
+			// 	Schema: map[string]any{
+			// 		"type": "object",
+			// 		"properties": map[string]any{
+			// 			"id": map[string]any{
+			// 				"type":        "string",
+			// 				"description": "ID of the Object to use",
+			// 			},
+			// 		},
+			// 		"strict":               true,
+			// 		"required":             []string{"id"},
+			// 		"additionalProperties": false,
+			// 	},
+			// 	Call: ToolFunc(env.callSelect),
+			// },
 		)
 	}
-	for name, val := range env.vars {
+	seenType := map[string]bool{}
+	for _, val := range env.vars {
+		typeName := val.Type().Name()
+		if seenType[typeName] {
+			continue
+		}
+		seenType[typeName] = true
 		valDesc := env.describe(val)
-		toolDesc := fmt.Sprintf("Set the current state to $%s (%s). Available tools:\n", name, valDesc)
+		fnsDesc := "Available functions:\n"
 		for _, tool := range env.tools(srv, val) {
-			toolDesc += fmt.Sprintf("\n- `%s`: %s", tool.Name, tool.Returns)
+			_, name, _ := strings.Cut(tool.Name, "_")
+			fnsDesc += fmt.Sprintf("\n- %s", name)
 		}
 		builtins = append(builtins, LLMTool{
-			Name:        "_use_" + name,
+			Name:        "_use_" + typeName,
 			Returns:     valDesc,
-			Description: toolDesc,
+			Description: fmt.Sprintf("Set the current state to a %s.\n%s", typeName, fnsDesc),
 			Schema: map[string]any{
-				"type":                 "object",
-				"properties":           map[string]any{},
+				"type": "object",
+				"properties": map[string]any{
+					"id": map[string]any{
+						"type":        "string",
+						"format":      typeName + "ID",
+						"pattern":     IDPattern,
+						"description": "ID of the Object to use.",
+					},
+					// "functions": map[string]any{
+					// 	"type": "array",
+					// 	"items": map[string]any{
+					// 		"type": "string",
+					// 	},
+					// 	"description": "List of functions to use. " + fnsDesc,
+					// },
+				},
 				"strict":               true,
-				"required":             []string{},
+				"required":             []string{"id"}, //, "functions"},
 				"additionalProperties": false,
 			},
-			Call: func(ctx context.Context, _ any) (any, error) {
-				env.Select(val)
+			Call: ToolFunc(func(ctx context.Context, args struct {
+				ID string `name:"id"`
+				// Functions []string
+			}) (any, error) {
+				obj, err := env.Get(args.ID)
+				if err != nil {
+					return nil, err
+				}
+				env.Select(obj) //, args.Functions...)
 				return env.currentState()
-			},
+			}),
 		})
 	}
 	// Attach builtin telemetry
