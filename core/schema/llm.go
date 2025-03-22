@@ -43,14 +43,14 @@ func (s llmSchema) Install() {
 			ArgDoc("file", "The file to read the prompt from"),
 		dagql.Func("withQuery", s.withQuery).
 			Doc("Provide the entire Query object to the LLM"),
-		dagql.Func("withPromptVar", s.setString).
+		dagql.Func("withPromptVar", s.withPromptVar).
 			Doc("Add a string variable to the LLM's environment").
 			ArgDoc("name", "The variable name").
 			ArgDoc("value", "The variable value"),
 		dagql.Func("withSystemPrompt", s.withSystemPrompt).
 			Doc("Add a system prompt to the LLM's environment").
 			ArgDoc("prompt", "The system prompt to send"),
-		dagql.Func("setString", s.setString).
+		dagql.Func("setString", s.withPromptVar).
 			Doc("Add a string variable to the LLM's environment").
 			ArgDoc("name", "The variable name").
 			ArgDoc("value", "The variable value"),
@@ -119,7 +119,7 @@ func (s *llmSchema) withPrompt(ctx context.Context, llm *core.LLM, args struct {
 }
 
 func (s *llmSchema) withQuery(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
-	return llm.With(ctx, s.srv, s.srv.Root())
+	return llm.With(s.srv.Root()), nil
 }
 
 func (s *llmSchema) withSystemPrompt(ctx context.Context, llm *core.LLM, args struct {
@@ -128,11 +128,11 @@ func (s *llmSchema) withSystemPrompt(ctx context.Context, llm *core.LLM, args st
 	return llm.WithSystemPrompt(args.Prompt), nil
 }
 
-func (s *llmSchema) setString(ctx context.Context, llm *core.LLM, args struct {
+func (s *llmSchema) withPromptVar(ctx context.Context, llm *core.LLM, args struct {
 	Name  string
-	Value dagql.String
+	Value string
 }) (*core.LLM, error) {
-	return llm.Set(ctx, s.srv, args.Name, args.Value)
+	return llm.WithPromptVar(args.Name, args.Value), nil
 }
 
 func (s *llmSchema) getString(ctx context.Context, llm *core.LLM, args struct {

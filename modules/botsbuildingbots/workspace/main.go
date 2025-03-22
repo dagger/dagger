@@ -37,11 +37,11 @@ func New(
 	evals int,
 ) *Workspace {
 	return &Workspace{
-		Model:  model,
-		Evals:  evals,
-		README: README,
-		// SystemPrompt: INITIAL,
-		SystemPrompt: README,
+		Model:        model,
+		Evals:        evals,
+		README:       README,
+		SystemPrompt: INITIAL,
+		// SystemPrompt: README,
 	}
 }
 

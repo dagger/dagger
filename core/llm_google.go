@@ -206,6 +206,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 
 	var content string
 	var toolCalls []ToolCall
+	var tokenUsage TokenUsage
 	for {
 		res, err := stream.Next()
 		if err != nil {
@@ -224,13 +225,20 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 		// Keep track of the token usage
 		if res.UsageMetadata != nil {
 			if res.UsageMetadata.CandidatesTokenCount > 0 {
-				outputTokens.Record(ctx, int64(res.UsageMetadata.CandidatesTokenCount), metric.WithAttributes(attrs...))
+				count := int64(res.UsageMetadata.CandidatesTokenCount)
+				tokenUsage.OutputTokens += count
+				tokenUsage.TotalTokens += count
+				outputTokens.Record(ctx, count, metric.WithAttributes(attrs...))
 			}
 			if res.UsageMetadata.PromptTokenCount > 0 {
-				inputTokens.Record(ctx, int64(res.UsageMetadata.PromptTokenCount), metric.WithAttributes(attrs...))
+				count := int64(res.UsageMetadata.PromptTokenCount)
+				tokenUsage.InputTokens += count
+				tokenUsage.TotalTokens += count
+				inputTokens.Record(ctx, count, metric.WithAttributes(attrs...))
 			}
 			if res.UsageMetadata.CachedContentTokenCount > 0 {
-				inputTokensCacheReads.Record(ctx, int64(res.UsageMetadata.CachedContentTokenCount), metric.WithAttributes(attrs...))
+				count := int64(res.UsageMetadata.CachedContentTokenCount)
+				inputTokensCacheReads.Record(ctx, count, metric.WithAttributes(attrs...))
 			}
 		}
 
@@ -263,8 +271,9 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 	}
 
 	return &LLMResponse{
-		Content:   content,
-		ToolCalls: toolCalls,
+		Content:    content,
+		ToolCalls:  toolCalls,
+		TokenUsage: tokenUsage,
 	}, nil
 }
 

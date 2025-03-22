@@ -1,16 +1,22 @@
 ### 📘 How the Tool-Calling System Works
 
-You interact with a tool system that mirrors a GraphQL API. At any moment, you're working from the perspective of a single **Object**, such as a `Container`, `Directory`, or `File`.
+You interact with a tool system that mirrors a GraphQL API. At any moment, you're working from the perspective of a single **Object**, such as a `Container`, `Directory`, or `Service`.
 
-Each available tool corresponds to a **field** or **method** on the current Object. Calling one of these tools executes a function on that Object and may return:
+Each available tool corresponds to a **function** on the current Object. Calling one of these tools may return:
 
 - A **scalar value**, such as a string or boolean
+  ```json
+  { "result": 12 }
+  { "result": "I'm a string!" }
+  ```
 - A **new Object**, indicated by a response like:
   ```json
-  { "id": "Container#3" }
+  { "current": "Container#3" }
   ```
 
-If an Object ID is returned, your context has switched to that new Object, and your available tools are now those of the new Object's type. If no ID is returned, your context remains the same.
+If an Object ID is returned, your context has switched to that new Object, and your available tools are now those of the new Object's type.
+
+If no ID is returned, your context remains the same.
 
 ---
 
@@ -27,8 +33,14 @@ For example, if you run a command in a `Container`, you’ll receive a new `Cont
 These tools are always available, regardless of your current Object type:
 
 - `_use_<variable>`: Set the current context to the Object stored in `$<variable>`.
+- `_use(id="Foo#123")`: Set the current context to a specific Object.
 - `_saveAs(name: "foo")`: Save the current Object as a named variable (`$foo`).
-- `_rewind`: Revert to the previous Object (undo the last tool call).
+
+### IMPORTANT: Object Context Management
+
+* The system behaves like a functional state machine. Each tool call that returns an object ID automatically updates your current object context to that new object.
+* Do not use `_use_<variable>` or `_use(id="...")` immediately after a tool call that returns a new object ID, as this is redundant. Only use `_use` when you need to explicitly return to a previously saved object using its ID or variable name.
+* Think carefully about the flow of object context. Before calling a tool, ensure you are operating on the correct object.
 
 ---
 
@@ -53,4 +65,4 @@ Calling these tools executes a function on the current Object and may change you
 
 - Object IDs look like `Container#3`, `File#2`, etc.
 - These IDs include the Object’s type and a sequence number.
-- **Never append values or fields directly to Object IDs.** Use tools to access data.
+- **Never append values or fields directly to Object IDs.**

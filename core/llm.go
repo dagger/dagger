@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	_ "embed"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -27,9 +28,8 @@ func init() {
 	strcase.ConfigureAcronym("LLM", "LLM")
 }
 
-// const defaultSystemPrompt = `You are a functional state machine interacting with a GraphQL API through tools that align with the current state object. Each state change returns a new object, which updates the available set of tools. When a field returns an object type, it becomes the new context, replacing the current toolset. Use tools like '_save' to assign current objects to variables and to pass IDs for operations that require them.`
-
-const defaultSystemPrompt = ``
+//go:embed llm_dagger_prompt.md
+var defaultSystemPrompt string
 
 // An instance of a LLM (large language model), with its state and tool calling environment
 type LLM struct {
@@ -45,7 +45,7 @@ type LLM struct {
 	messages []ModelMessage
 	// History of tool calls and their result
 	calls      map[string]string
-	promptVars []string
+	promptVars map[string]string
 
 	env *LLMEnv
 }
@@ -427,7 +427,7 @@ func (llm *LLM) Clone() *LLM {
 	cp := *llm
 	cp.messages = cloneSlice(cp.messages)
 	cp.calls = cloneMap(cp.calls)
-	cp.promptVars = cloneSlice(cp.promptVars)
+	cp.promptVars = cloneMap(cp.promptVars)
 	cp.env = cp.env.Clone()
 	return &cp
 }
@@ -471,17 +471,12 @@ func (llm *LLM) WithPrompt(
 ) (*LLM, error) {
 	if len(llm.env.vars) > 0 {
 		prompt = os.Expand(prompt, func(key string) string {
-			val, err := llm.env.Get(key)
-			if err != nil {
-				return ""
+			val, ok := llm.promptVars[key]
+			if !ok {
+				// leave unexpanded, perhaps it refers to an object var
+				return fmt.Sprintf("$%s", key)
 			}
-			if _, isObj := dagql.UnwrapAs[dagql.Object](val); isObj {
-				// for objects, just preserve the variable reference
-				// TODO: a bit hacky, trying to work around the auto expansion
-				// and rely solely on variable names
-				return llm.env.describe(val)
-			}
-			return fmt.Sprintf("%s", val)
+			return val
 		})
 	}
 	llm = llm.Clone()
@@ -515,7 +510,7 @@ func (llm *LLM) WithPromptFile(ctx context.Context, file *File, srv *dagql.Serve
 
 func (llm *LLM) WithPromptVar(name, value string) *LLM {
 	llm = llm.Clone()
-	llm.promptVars = append(llm.promptVars, name, value)
+	llm.promptVars[name] = value
 	return llm
 }
 
@@ -750,20 +745,9 @@ func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (string, err
 	return string(result), nil
 }
 
-func (llm *LLM) Set(ctx context.Context, dag *dagql.Server, key string, value dagql.Typed) (*LLM, error) {
-	if id, ok := value.(dagql.IDType); ok {
-		obj, err := dag.Load(ctx, id.ID())
-		if err != nil {
-			return nil, err
-		}
-		value = obj
-	}
+func (llm *LLM) Set(ctx context.Context, key string, value dagql.Object) (*LLM, error) {
 	llm = llm.Clone()
 	llm.env.Set(key, value)
-	// llm.messages = append(llm.messages, ModelMessage{
-	// 	Role:    "user",
-	// 	Content: llm.env.Set(key, value),
-	// })
 	llm.dirty = true
 	return llm, nil
 }
@@ -776,18 +760,11 @@ func (llm *LLM) Get(ctx context.Context, dag *dagql.Server, key string) (dagql.T
 	return llm.env.Get(key)
 }
 
-func (llm *LLM) With(ctx context.Context, dag *dagql.Server, value dagql.Typed) (*LLM, error) {
-	if id, ok := value.(dagql.IDType); ok {
-		obj, err := dag.Load(ctx, id.ID())
-		if err != nil {
-			return nil, err
-		}
-		value = obj
-	}
+func (llm *LLM) With(value dagql.Object) *LLM {
 	llm = llm.Clone()
 	llm.env.Select(value)
 	llm.dirty = true
-	return llm, nil
+	return llm
 }
 
 // A variable in the LLM environment
@@ -854,20 +831,6 @@ func (llm *LLM) CurrentType(ctx context.Context, dag *dagql.Server) (dagql.Nulla
 	return res, nil
 }
 
-// FIXME: deprecated
-func (llm *LLM) WithState(ctx context.Context, objID dagql.IDType, srv *dagql.Server) (*LLM, error) {
-	obj, err := srv.Load(ctx, objID.ID())
-	if err != nil {
-		return nil, err
-	}
-	return llm.Set(ctx, srv, "default", obj)
-}
-
-// FIXME: deprecated
-func (llm *LLM) State(ctx context.Context, dag *dagql.Server) (dagql.Typed, error) {
-	return llm.Get(ctx, dag, "default")
-}
-
 type LLMHook struct {
 	Server *dagql.Server
 }
@@ -917,9 +880,12 @@ func (s LLMHook) ExtendLLMType(targetType dagql.ObjectType) error {
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			llm := self.(dagql.Instance[*LLM]).Self
 			name := args["name"].(dagql.String).String()
-			value := args["value"].(dagql.Typed)
-			return llm.Set(ctx, s.Server, name, value)
-			// id := args["value"].(dagql.IDType)
+			value := args["value"].(dagql.IDType)
+			obj, err := s.Server.Load(ctx, value.ID())
+			if err != nil {
+				return nil, err
+			}
+			return llm.Set(ctx, name, obj)
 		},
 		dagql.CacheSpec{},
 	)
@@ -969,8 +935,12 @@ func (s LLMHook) ExtendLLMType(targetType dagql.ObjectType) error {
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			llm := self.(dagql.Instance[*LLM]).Self
-			value := args["value"].(dagql.Typed)
-			return llm.With(ctx, s.Server, value)
+			value := args["value"].(dagql.IDType)
+			obj, err := s.Server.Load(ctx, value.ID())
+			if err != nil {
+				return nil, err
+			}
+			return llm.With(obj), nil
 		},
 		dagql.CacheSpec{},
 	)
