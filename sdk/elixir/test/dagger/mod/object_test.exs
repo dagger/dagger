@@ -1,46 +1,49 @@
 defmodule Dagger.Mod.ObjectTest do
   use ExUnit.Case, async: true
 
+  alias Dagger.Mod.Object.FunctionDef
+  alias Dagger.Mod.Object.FieldDef
+
   describe "defn/2" do
     test "store function information" do
       assert ObjectMod.__object__(:functions) == [
-               accept_string: [
+               accept_string: %FunctionDef{
                  self: false,
                  args: [
                    name: [{:ignore, nil}, {:default_path, nil}, {:doc, nil}, {:type, :string}]
                  ],
                  return: :string
-               ],
-               accept_string2: [
+               },
+               accept_string2: %FunctionDef{
                  self: false,
                  args: [
                    name: [{:ignore, nil}, {:default_path, nil}, {:doc, nil}, {:type, :string}]
                  ],
                  return: :string
-               ],
-               accept_integer: [
+               },
+               accept_integer: %FunctionDef{
                  self: false,
                  args: [
                    value: [{:ignore, nil}, {:default_path, nil}, {:doc, nil}, {:type, :integer}]
                  ],
                  return: :integer
-               ],
-               accept_float: [
+               },
+               accept_float: %FunctionDef{
                  self: false,
                  args: [
                    value: [{:ignore, nil}, {:default_path, nil}, {:doc, nil}, {:type, :float}]
                  ],
                  return: :float
-               ],
-               accept_boolean: [
+               },
+               accept_boolean: %FunctionDef{
                  self: false,
                  args: [
                    name: [{:ignore, nil}, {:default_path, nil}, {:doc, nil}, {:type, :boolean}]
                  ],
                  return: :string
-               ],
-               empty_args: [self: false, args: [], return: :string],
-               accept_and_return_module: [
+               },
+               empty_args: %FunctionDef{self: false, args: [], return: :string},
+               accept_and_return_module: %FunctionDef{
                  self: false,
                  args: [
                    container: [
@@ -51,8 +54,8 @@ defmodule Dagger.Mod.ObjectTest do
                    ]
                  ],
                  return: Dagger.Container
-               ],
-               accept_list: [
+               },
+               accept_list: %FunctionDef{
                  self: false,
                  args: [
                    alist: [
@@ -63,8 +66,8 @@ defmodule Dagger.Mod.ObjectTest do
                    ]
                  ],
                  return: :string
-               ],
-               accept_list2: [
+               },
+               accept_list2: %FunctionDef{
                  self: false,
                  args: [
                    alist: [
@@ -75,8 +78,8 @@ defmodule Dagger.Mod.ObjectTest do
                    ]
                  ],
                  return: :string
-               ],
-               optional_arg: [
+               },
+               optional_arg: %FunctionDef{
                  self: false,
                  args: [
                    s: [
@@ -87,8 +90,8 @@ defmodule Dagger.Mod.ObjectTest do
                    ]
                  ],
                  return: :string
-               ],
-               type_option: [
+               },
+               type_option: %FunctionDef{
                  self: false,
                  args: [
                    dir: [
@@ -99,8 +102,16 @@ defmodule Dagger.Mod.ObjectTest do
                    ]
                  ],
                  return: :string
-               ],
-               return_void: [self: false, args: [], return: Dagger.Void]
+               },
+               return_void: %FunctionDef{self: false, args: [], return: Dagger.Void},
+               only_self_arg: %FunctionDef{self: true, args: [], return: Dagger.Void},
+               mix_self_and_args: %FunctionDef{
+                 self: true,
+                 args: [
+                   name: [{:ignore, nil}, {:default_path, nil}, {:doc, nil}, {:type, :string}]
+                 ],
+                 return: Dagger.Void
+               }
              ]
     end
 
@@ -191,4 +202,52 @@ defmodule Dagger.Mod.ObjectTest do
     assert is_nil(Dagger.Mod.Object.get_function_doc(DocModule, :no_fun_doc))
     assert is_nil(Dagger.Mod.Object.get_function_doc(DocModule, :hidden_fun_doc))
   end
+
+  describe "field/3" do
+    test "store fields to a module" do
+      assert ObjectField.__object__(:fields) == [
+               name: %FieldDef{type: :string, doc: nil}
+             ]
+
+      assert ObjectFieldOptional.__object__(:fields) == [
+               name: %FieldDef{type: {:optional, :string}, doc: nil}
+             ]
+    end
+
+    test "required fields" do
+      assert struct_keys(%ObjectField{name: "value"}) == [:name]
+    end
+
+    test "optional fields" do
+      assert struct_keys(%ObjectFieldOptional{}) == [:name]
+    end
+
+    test "mixes optional and required fields" do
+      assert struct_keys(%ObjectFieldMixesOptionalAndRequired{key: "value"}) == [:name, :key]
+    end
+  end
+
+  test "mixes object struct and function" do
+    assert ObjectFiedAndFunction.__object__(:functions) == [
+             with_name: %FunctionDef{
+               self: false,
+               args: [
+                 name: [
+                   {:ignore, nil},
+                   {:default_path, nil},
+                   {:doc, nil},
+                   {:type, :string}
+                 ]
+               ],
+               return: ObjectFieldAndFunction
+             },
+             fan_out: %Dagger.Mod.Object.FunctionDef{
+               self: false,
+               args: [name: [ignore: nil, default_path: nil, doc: nil, type: :string]],
+               return: {:list, ObjectFieldAndFunction}
+             }
+           ]
+  end
+
+  defp struct_keys(struct), do: struct |> Map.from_struct() |> Map.keys()
 end
