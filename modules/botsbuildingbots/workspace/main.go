@@ -5,6 +5,7 @@ import (
 	"dagger/workspace/internal/dagger"
 	"dagger/workspace/internal/telemetry"
 	_ "embed"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -61,6 +62,13 @@ func (w *Workspace) Evaluate(ctx context.Context) (string, error) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+
+			ctx, span := Tracer().Start(ctx, fmt.Sprintf("attempt %d", attempt+1),
+				telemetry.Reveal())
+
+			var failed error
+			defer telemetry.End(span, func() error { return failed })
+
 			report := new(strings.Builder)
 			defer func() { reports <- report.String() }()
 			fmt.Fprintf(report, "## Attempt %d\n", attempt+1)
@@ -69,6 +77,7 @@ func (w *Workspace) Evaluate(ctx context.Context) (string, error) {
 			llm, err := w.evaluate(ctx, attempt)
 			if err != nil {
 				fmt.Fprintln(report, "Evaluation errored:", err)
+				failed = err
 			} else {
 				succeeded++
 			}
@@ -113,9 +122,6 @@ func (w *Workspace) Evaluate(ctx context.Context) (string, error) {
 }
 
 func (w *Workspace) evaluate(ctx context.Context, attempt int) (_ *dagger.LLM, rerr error) {
-	ctx, span := Tracer().Start(ctx, fmt.Sprintf("attempt %d", attempt+1),
-		telemetry.Encapsulate())
-	defer telemetry.End(span, func() error { return rerr })
 	llm, err := dag.Evals(attempt + 1).
 		WithModel(w.Model).
 		WithSystemPrompt(w.SystemPrompt).
@@ -132,6 +138,10 @@ func (w *Workspace) evaluate(ctx context.Context, attempt int) (_ *dagger.LLM, r
 		WithExec([]string{"/bin/booklit", "--version"})
 	out, err := ctr.Stdout(ctx)
 	if err != nil {
+		var exit *dagger.ExecError
+		if errors.As(err, &exit) {
+			return llm, fmt.Errorf("command failed (probably built with CGo): %w", err)
+		}
 		return llm, err
 	}
 	out = strings.TrimSpace(out)
