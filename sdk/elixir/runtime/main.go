@@ -237,10 +237,6 @@ func (m *ElixirSdk) baseContainer(ctr *dagger.Container) *dagger.Container {
 		WithExec([]string{"mix", "local.rebar", "--force"})
 }
 
-func mixProjectCaches(prefix string) (depsCache *dagger.CacheVolume, buildCache *dagger.CacheVolume) {
-	return dag.CacheVolume(prefix + "-deps"), dag.CacheVolume(prefix + "-build")
-}
-
 func toElixirApplicationName(name string) string {
 	return strcase.ToSnake(name)
 }
