@@ -701,6 +701,7 @@ func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error
 	}
 	var history []string
 	for _, msg := range llm.messages {
+		content := strings.TrimRight(msg.Content, "\n")
 		switch msg.Role {
 		case "user":
 			var item string
@@ -712,11 +713,11 @@ func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error
 			if msg.ToolErrored {
 				item += "ERROR: "
 			}
-			item += msg.Content
+			item += content
 			history = append(history, item)
 		case "assistant":
-			if len(msg.Content) > 0 {
-				history = append(history, "🤖 💬 "+msg.Content)
+			if len(content) > 0 {
+				history = append(history, "🤖 💬 "+content)
 			}
 			for _, call := range msg.ToolCalls {
 				args, err := json.Marshal(call.Function.Arguments)
@@ -726,6 +727,12 @@ func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error
 				item := fmt.Sprintf("🤖 🛠️ %s %s", call.Function.Name, args)
 				history = append(history, item)
 			}
+		}
+		if msg.TokenUsage.InputTokens > 0 || msg.TokenUsage.OutputTokens > 0 {
+			history = append(history,
+				fmt.Sprintf("🪙 Tokens Used: %d in => %d out",
+					msg.TokenUsage.InputTokens,
+					msg.TokenUsage.OutputTokens))
 		}
 	}
 	return history, nil
