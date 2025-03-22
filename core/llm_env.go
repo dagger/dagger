@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -19,6 +20,8 @@ import (
 type LLMTool struct {
 	// Tool name
 	Name string
+	// Return type (just a hint to the model)
+	Returns string
 	// Tool description
 	Description string
 	// Tool argument schema. Key is argument name. Value is unmarshalled json-schema for the argument.
@@ -33,13 +36,21 @@ type LLMEnv struct {
 	// Saved objects
 	vars map[string]dagql.Typed
 	// Saved objects by type + hash
-	objsByHash map[digest.Digest]dagql.Typed
+	objsByHash map[digest.Digest]dagql.Object
+	objsByID   map[string]dagql.Object
+	// Auto incrementing number per-type
+	typeCount map[string]int
+	// The LLM-friendly ID ("Container#123") for each object
+	idByHash map[digest.Digest]string
 }
 
 func NewLLMEnv() *LLMEnv {
 	return &LLMEnv{
 		vars:       map[string]dagql.Typed{},
-		objsByHash: map[digest.Digest]dagql.Typed{},
+		objsByHash: map[digest.Digest]dagql.Object{},
+		objsByID:   map[string]dagql.Object{},
+		typeCount:  map[string]int{},
+		idByHash:   map[digest.Digest]string{},
 	}
 }
 
@@ -48,6 +59,9 @@ func (env *LLMEnv) Clone() *LLMEnv {
 	cp.history = cloneSlice(cp.history)
 	cp.vars = cloneMap(cp.vars)
 	cp.objsByHash = cloneMap(cp.objsByHash)
+	cp.typeCount = cloneMap(cp.typeCount)
+	cp.idByHash = cloneMap(cp.idByHash)
+	cp.objsByID = cloneMap(cp.objsByID)
 	return &cp
 }
 
@@ -64,7 +78,7 @@ func (env *LLMEnv) Current() dagql.Typed {
 	return env.history[len(env.history)-1]
 }
 
-func (env *LLMEnv) With(val dagql.Typed) {
+func (env *LLMEnv) Select(val dagql.Typed) {
 	env.history = append(env.history, val)
 }
 
@@ -73,7 +87,8 @@ func (env *LLMEnv) Set(key string, value dagql.Typed) string {
 	prev := env.vars[key]
 	env.vars[key] = value
 	if obj, ok := dagql.UnwrapAs[dagql.Object](value); ok {
-		env.objsByHash[obj.ID().Digest()] = value
+		env.objsByHash[obj.ID().Digest()] = obj
+		env.objsByID[env.llmID(obj)] = obj
 	}
 	if prev != nil {
 		return fmt.Sprintf("The variable %q has changed from %s to %s.", key, env.describe(prev), env.describe(value))
@@ -87,6 +102,10 @@ func (env *LLMEnv) Get(key string) (dagql.Typed, error) {
 	key = strings.TrimPrefix(key, "$")
 	// first check for named vars
 	if val, exists := env.vars[key]; exists {
+		return val, nil
+	}
+	// next check for values by ID
+	if val, exists := env.objsByID[key]; exists {
 		return val, nil
 	}
 	// object by digest (xxh3:...)
@@ -141,6 +160,8 @@ func ToolFunc[T any](fn func(context.Context, T) (any, error)) func(context.Cont
 		if err != nil {
 			return nil, err
 		}
+		dbgEnc.Encode("!!!!!!!!!!!!!!!!!!!!!!!!!")
+		dbgEnc.Encode(specs)
 		inputs := map[string]dagql.Input{}
 		for _, spec := range specs {
 			var input dagql.Input
@@ -167,18 +188,22 @@ func (env *LLMEnv) tools(srv *dagql.Server, obj dagql.Typed) []LLMTool {
 	if obj == nil {
 		return nil
 	}
-	typedef := env.typedef(srv, obj)
-	typeName := typedef.Name
+	typeDef := env.typedef(srv, obj)
 	var tools []LLMTool
-	for _, field := range typedef.Fields {
+	for _, field := range typeDef.Fields {
 		if strings.HasPrefix(field.Name, "_") {
 			continue
 		}
 		if strings.HasPrefix(field.Name, "load") && strings.HasSuffix(field.Name, "FromID") {
 			continue
 		}
+		if field.Name == "sync" {
+			// never a reason to call "sync" since we call it automatically
+			continue
+		}
 		tools = append(tools, LLMTool{
-			Name:        typeName + "_" + field.Name, // TODO: try var_field.Name?
+			Name:        typeDef.Name + "_" + field.Name,
+			Returns:     field.Type.String(),
 			Description: field.Description,
 			Schema:      fieldArgsToJSONSchema(field),
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
@@ -292,10 +317,13 @@ func (env *LLMEnv) call(ctx context.Context,
 			return nil, err
 		}
 		if obj, ok := dagql.UnwrapAs[dagql.Object](val); ok {
-			env.objsByHash[obj.ID().Digest()] = val
+			env.objsByHash[obj.ID().Digest()] = obj
+			env.objsByID[env.llmID(obj)] = obj
 		}
 		env.history = append(env.history, val)
-		return env.describe(val), nil
+		return toolStructuredResponse(map[string]any{
+			"id": env.describe(val),
+		})
 	}
 	var val dagql.Typed
 	if err := srv.Select(ctx, target, &val, fieldSel); err != nil {
@@ -316,27 +344,34 @@ func (env *LLMEnv) callObjects(ctx context.Context, _ any) (any, error) {
 	return result, nil
 }
 
-func (env *LLMEnv) callSelectTools(ctx context.Context, args any) (any, error) {
-	name := args.(map[string]any)["name"].(string)
-	value, err := env.Get(name)
+func (env *LLMEnv) callSelect(ctx context.Context, args struct {
+	Object string
+}) (any, error) {
+	value, err := env.Get(args.Object)
 	if err != nil {
 		return nil, err
 	}
 	env.history = append(env.history, value)
-	return fmt.Sprintf("Switched tools to %s.", env.describe(value)), nil
+	return fmt.Sprintf("Selected %s.", env.describe(value)), nil
 }
 
 func (env *LLMEnv) callSave(ctx context.Context, args struct {
 	Name string
 }) (any, error) {
-	return env.Set(args.Name, env.Current()), nil
+	_ = env.Set(args.Name, env.Current())
+	return toolStructuredResponse(map[string]string{
+		"variable": args.Name,
+		"id":       env.describe(env.Current()),
+	})
 }
 
-func (env *LLMEnv) callUndo(ctx context.Context, _ any) (any, error) {
+func (env *LLMEnv) callRewind(ctx context.Context, _ struct{}) (any, error) {
 	if len(env.history) > 0 {
 		env.history = env.history[:len(env.history)-1]
 	}
-	return env.describe(env.Current()), nil
+	return toolStructuredResponse(map[string]any{
+		"id": env.describe(env.Current()),
+	})
 }
 
 func (env *LLMEnv) callCurrent(ctx context.Context, _ any) (any, error) {
@@ -349,15 +384,32 @@ func (env *LLMEnv) callCurrent(ctx context.Context, _ any) (any, error) {
 // describe returns a string representation of a typed object or object ID
 func (env *LLMEnv) describe(val dagql.Typed) string {
 	if val == nil {
-		return fmt.Sprintf("<nil> (%T)", val)
+		return "Void"
 	}
 	if obj, ok := dagql.UnwrapAs[dagql.IDable](val); ok {
-		return obj.ID().Type().ToAST().Name() + "@" + obj.ID().Digest().String()
+		// NOTE: this covers both Objects and ID scalars
+		return env.llmID(obj)
 	}
 	if list, ok := dagql.UnwrapAs[dagql.Enumerable](val); ok {
-		return "[" + val.Type().Name() + "] (length: " + strconv.Itoa(list.Len()) + ")"
+		return val.Type().String() + " (length: " + strconv.Itoa(list.Len()) + ")"
 	}
-	return val.Type().Name()
+	return val.Type().String()
+}
+
+func (env *LLMEnv) llmID(idable dagql.IDable) string {
+	id := idable.ID()
+	if id == nil {
+		return ""
+	}
+	hash := id.Digest()
+	typeName := id.Type().NamedType()
+	llmID, ok := env.idByHash[hash]
+	if !ok {
+		env.typeCount[typeName]++
+		llmID = fmt.Sprintf("%s#%d", typeName, env.typeCount[typeName])
+		env.idByHash[hash] = llmID
+	}
+	return llmID
 }
 
 func (env *LLMEnv) Builtins(srv *dagql.Server) []LLMTool {
@@ -372,19 +424,20 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) []LLMTool {
 		// 	Call: env.callObjects,
 		// },
 		// {
-		// 	Name:        "_selectTools",
-		// 	Description: "Load an object's functions/tools. IMPORTANT: call this any time you seem to be missing tools for the request. This is a cheap option, so there is never a reason to give up without trying it first.",
+		// 	Name:        "_select",
+		// 	Description: "Select an object as the current state",
 		// 	Schema: map[string]any{
 		// 		"type": "object",
 		// 		"properties": map[string]any{
-		// 			"name": map[string]any{
+		// 			"id": map[string]any{
 		// 				"type":        "string",
-		// 				"description": "Variable name or hash of the object to load",
+		// 				"description": "Object ID to select.",
+		// 				"pattern":     IDPattern,
 		// 			},
 		// 		},
-		// 		"required": []string{"name"},
+		// 		"required": []string{"id"},
 		// 	},
-		// 	Call: env.callSelectTools,
+		// 	Call: ToolFunc(env.callSelect),
 		// },
 		// TODO: don't think we need this
 		// {
@@ -410,61 +463,72 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) []LLMTool {
 		// 	},
 		// 	Call: env.callCurrent,
 		// },
-		{
-			Name:        "_scratch",
-			Description: "Clear the current object selection",
-			Schema: map[string]any{
-				"type":                 "object",
-				"properties":           map[string]any{},
-				"strict":               true,
-				"required":             []string{},
-				"additionalProperties": false,
-			},
-			Call: func(ctx context.Context, _ any) (any, error) {
-				env.history = append(env.history, nil)
-				return nil, nil
-			},
-		},
+		// {
+		// 	Name:        "_scratch",
+		// 	Returns:     "Void",
+		// 	Description: "Clear the current object selection",
+		// 	Schema: map[string]any{
+		// 		"type":                 "object",
+		// 		"properties":           map[string]any{},
+		// 		"strict":               true,
+		// 		"required":             []string{},
+		// 		"additionalProperties": false,
+		// 	},
+		// 	Call: func(ctx context.Context, _ any) (any, error) {
+		// 		env.history = append(env.history, nil)
+		// 		return nil, nil
+		// 	},
+		// },
 	}
 	if cur := env.Current(); cur != nil {
-		builtins = append(builtins, LLMTool{
-			Name:        "_save",
-			Description: "Save the current object as a named variable",
-			Schema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"name": map[string]any{
-						"type":        "string",
-						"description": "Variable name to print the type of",
+		curType := env.describe(cur)
+		rewindType := curType
+		if len(env.history) > 1 {
+			rewindType = env.describe(env.history[len(env.history)-2])
+		}
+		builtins = append(builtins,
+			LLMTool{
+				Name:        "_saveAs",
+				Returns:     curType,
+				Description: "Save the current object to a named variable so you can return to it later using a `use_<name>` tool.\nOnly use this if you plan to leave the current object and may want to come back to it.",
+				Schema: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"name": map[string]any{
+							"type":        "string",
+							"description": "Name of the variable to save",
+						},
 					},
+					"strict":               true,
+					"required":             []string{"name"},
+					"additionalProperties": false,
 				},
-				"strict":               true,
-				"required":             []string{"name"},
-				"additionalProperties": false,
+				Call: ToolFunc(env.callSave),
 			},
-			Call: ToolFunc(env.callSave),
-		}, LLMTool{
-			Name:        "_undo",
-			Description: "Roll back the last action",
-			Schema: map[string]any{
-				"type":                 "object",
-				"properties":           map[string]any{},
-				"strict":               true,
-				"required":             []string{},
-				"additionalProperties": false,
-			},
-			Call: ToolFunc(env.callUndo),
-		})
+			LLMTool{
+				Name:        "_rewind",
+				Returns:     rewindType,
+				Description: "Switch back to the previous object you visited. Use this to undo a recent traversal and return to the object that was active before the last tool call.",
+				Schema: map[string]any{
+					"type":                 "object",
+					"properties":           map[string]any{},
+					"strict":               true,
+					"required":             []string{},
+					"additionalProperties": false,
+				},
+				Call: ToolFunc(env.callRewind),
+			})
 	}
 	for name, val := range env.vars {
-		desc := fmt.Sprintf("Use tools for the variable %s (%s):\n", name, env.describe(val))
-		tools := env.tools(srv, val)
-		for _, tool := range tools {
-			desc += fmt.Sprintf("\n- %s", tool.Name)
+		valDesc := env.describe(val)
+		toolDesc := fmt.Sprintf("Set the current state to $%s (%s). Available tools:\n", name, valDesc)
+		for _, tool := range env.tools(srv, val) {
+			toolDesc += fmt.Sprintf("\n- `%s`: %s", tool.Name, tool.Returns)
 		}
 		builtins = append(builtins, LLMTool{
-			Name:        "_select_" + name,
-			Description: desc,
+			Name:        "_use_" + name,
+			Returns:     valDesc,
+			Description: toolDesc,
 			Schema: map[string]any{
 				"type":                 "object",
 				"properties":           map[string]any{},
@@ -473,8 +537,10 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) []LLMTool {
 				"additionalProperties": false,
 			},
 			Call: func(ctx context.Context, _ any) (any, error) {
-				env.With(val)
-				return fmt.Sprintf("Switched tools to %s.", env.describe(val)), nil
+				env.Select(val)
+				return toolStructuredResponse(map[string]any{
+					"id": valDesc,
+				})
 			},
 		})
 	}
@@ -505,6 +571,16 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) []LLMTool {
 		}
 	}
 	return builtins
+}
+
+func toolStructuredResponse(val any) (string, error) {
+	str := new(strings.Builder)
+	enc := json.NewEncoder(str)
+	// enc.SetIndent("", "  ")
+	if err := enc.Encode(val); err != nil {
+		return "", fmt.Errorf("Failed to encode response %T: %w", val, err)
+	}
+	return str.String(), nil
 }
 
 func toolToID(name string, args any) *call.ID {
@@ -565,6 +641,8 @@ func fieldArgsToJSONSchema(field *ast.FieldDefinition) map[string]any {
 	return schema
 }
 
+const IDPattern = `^[A-Z]\w+#\d+$`
+
 func typeToJSONSchema(t *ast.Type) map[string]any {
 	schema := map[string]any{}
 
@@ -592,6 +670,9 @@ func typeToJSONSchema(t *ast.Type) map[string]any {
 		// For custom types, use string format with the type name
 		schema["type"] = "string"
 		schema["format"] = t.NamedType
+		if strings.HasSuffix(t.NamedType, "ID") {
+			schema["pattern"] = IDPattern
+		}
 	}
 
 	return schema

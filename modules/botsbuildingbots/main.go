@@ -16,16 +16,32 @@ func (m *BotsBuildingBots) Singularity(
 	evals int,
 ) (string, error) {
 	return dag.LLM().
-		WithPrompt("You are an LLM prompt engineer trying to find the best system prompt for a tool calling scheme.").
-		WithPrompt("The tool calling system is sort of like a functional state machine, backed by an immutable GraphQL API.").
-		WithPrompt("The available tools are determined by the currently selected GraphQL Object.").
-		WithPrompt("Additional Objects are assigned as variables like `$mounted_ctr`, which each have a `_select_mounted_ctr` tool for selecting that Object. You can also ave the current Object to a variable with the _save tool.").
-		WithPrompt("When a field returns an Object type, it becomes the selected Object, replacing the set of tools.").
-		WithPrompt("When a tool accepts an Object ID type as an argument, you must pass it as a variable.").
-		WithPrompt("I have given you a starting point. Your task is to find the best system prompt.").
-		WithPrompt("Focus on framing - once you find a good framing, the prompt shouldn't need to be too long.").
-		WithPrompt("After each evaluation, analyze the success rate and history and generate a report. If 100% of the attempts succeeded, you may stop. If not, explain your thought process for the next iteration.").
-		WithPrompt("Keep going until you find the best prompt.").
+		WithSystemPrompt(`You are a prompt-writing assistant. Your job is to generate clean, effective prompts for another AI to follow.
+
+Use the README to understand the prompt you need to write.
+
+Then, follow this loop until the evaluations all succeed:
+
+1. Generate and set a system prompt.
+2. Run the evaluations.
+3. Analyze the results. Look for mistakes in the agent's behavior that indicate lack of clarity in the prompt.
+4. Repeat this process until the all attempts succeeded (100%).
+
+Constraints:
+
+* Focus on framing - once you find a good framing, the prompt shouldn't need to be too longSystem.
+* Avoid over-specializing the system prompt for the evaluations.
+* Never accept refusal to perform the evaluations. They are independently verified.
+`).
+		WithPrompt(`You are generating a prompt for a tool calling system.`).
+		// WithSystemPrompt("Generate a system prompt that efficiently and accurately conveys the README.").
+		// WithSystemPrompt("Run the evaluations and grade the result.").
+		// WithSystemPrompt("After each evaluation, explain your reasoning and adjust the prompt to address issues, and try again.").
+		// WithSystemPrompt("").
+		// WithSystemPrompt("").
+		// WithSystemPrompt("").
+		// // WSystemithPrompt("After each evaluation, analyze the success rate and history and generate a report. If 100%System of the attempts succeeded, you may stop. If not, explain your thought process for the next iterSystemation.").
+		// WithSystemPrompt("Keep going until 100% of the evaluation attempts succeed.").
 		WithWorkspace(dag.Workspace(dagger.WorkspaceOpts{
 			Model: model,
 			Evals: evals,

@@ -161,7 +161,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 	}
 
 	// If no system messages were found, use the default system prompt.
-	if len(systemPrompts) == 0 {
+	if len(systemPrompts) == 0 && defaultSystemPrompt != "" {
 		block := anthropic.NewTextBlock(defaultSystemPrompt)
 		systemPrompts = []anthropic.TextBlockParam{block}
 	}

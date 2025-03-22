@@ -14,13 +14,21 @@ type Workspace struct {
 	// +private
 	Model string
 
+	// +private
 	Evals int
 
+	// The authoritative documentation.
+	README string
+
+	// The current system prompt.
 	SystemPrompt string
 }
 
-//go:embed start.md
-var initialPrompt string
+//go:embed README.md
+var README string
+
+//go:embed INITIAL.md
+var INITIAL string
 
 func New(
 	// +default=""
@@ -29,14 +37,16 @@ func New(
 	evals int,
 ) *Workspace {
 	return &Workspace{
-		Model:        model,
-		Evals:        evals,
-		SystemPrompt: initialPrompt,
+		Model:  model,
+		Evals:  evals,
+		README: README,
+		// SystemPrompt: INITIAL,
+		SystemPrompt: README,
 	}
 }
 
 // Set the system prompt for future evaluations.
-func (w *Workspace) ReplaceSystemPrompt(prompt string) *Workspace {
+func (w *Workspace) WithSystemPrompt(prompt string) *Workspace {
 	w.SystemPrompt = prompt
 	return w
 }
@@ -87,7 +97,8 @@ func (w *Workspace) Evaluate(ctx context.Context) (string, error) {
 }
 
 func (w *Workspace) evaluate(ctx context.Context, attempt int) (_ *dagger.LLM, rerr error) {
-	ctx, span := Tracer().Start(ctx, fmt.Sprintf("attempt %d", attempt+1))
+	ctx, span := Tracer().Start(ctx, fmt.Sprintf("attempt %d", attempt+1),
+		telemetry.Encapsulate())
 	defer telemetry.End(span, func() error { return rerr })
 	llm, err := dag.Evals(attempt + 1).
 		WithModel(w.Model).

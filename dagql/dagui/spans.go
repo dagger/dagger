@@ -248,6 +248,7 @@ func sliceOf[T any](val any) []T {
 // NOTE: failed state only propagates to spans that installed the current
 // span's effect - it does _not_ propagate through the parent span.
 func (span *Span) PropagateStatusToParentsAndLinks() {
+	var stopRevealing bool
 	propagate := func(parent *Span, causal, activity bool) bool {
 		var changed bool
 		if span.IsRunningOrEffectsRunning() {
@@ -255,7 +256,11 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 		} else {
 			changed = parent.RunningSpans.Remove(span)
 		}
-		if span.Reveal {
+		if span.Encapsulate {
+			// don't reveal past encapsulating spans
+			stopRevealing = true
+		}
+		if span.Reveal && !stopRevealing {
 			changed = parent.RevealedSpans.Add(span) || changed
 		}
 		if causal && span.IsFailed() {
@@ -279,11 +284,13 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 	}
 
 	for causal := range span.CausalSpans {
+		stopRevealing = false
 		// propagate activity and failure, since causal spans inherit both
 		if propagate(causal, true, true) {
 			span.db.update(causal)
 		}
 
+		stopRevealing = false
 		for parent := range causal.Parents {
 			// don't propagate failure, to respect encapsulation
 			// do propagate activity, since these are indirect parents

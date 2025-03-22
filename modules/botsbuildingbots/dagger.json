@@ -1,6 +1,6 @@
 {
   "name": "bots-building-bots",
-  "engineVersion": "v0.17.1-010101000000-dev-a90013e0189a",
+  "engineVersion": "v0.17.1-010101000000-dev-407e649079f4",
   "sdk": {
     "source": "go"
   },

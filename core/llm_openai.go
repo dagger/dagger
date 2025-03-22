@@ -115,7 +115,7 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 			openAIMessages = append(openAIMessages, openai.SystemMessage(msg.Content))
 		}
 	}
-	if !hasSystemPrompt {
+	if !hasSystemPrompt && defaultSystemPrompt != "" {
 		openAIMessages = append(openAIMessages, openai.SystemMessage(defaultSystemPrompt))
 	}
 

@@ -27,7 +27,9 @@ func init() {
 	strcase.ConfigureAcronym("LLM", "LLM")
 }
 
-const defaultSystemPrompt = `You are a functional state machine interacting with a GraphQL API through tools that align with the current state object. Each state change returns a new object, which updates the available set of tools. When a field returns an object type, it becomes the new context, replacing the current toolset. Use tools like '_save' to assign current objects to variables and to pass IDs for operations that require them.`
+// const defaultSystemPrompt = `You are a functional state machine interacting with a GraphQL API through tools that align with the current state object. Each state change returns a new object, which updates the available set of tools. When a field returns an object type, it becomes the new context, replacing the current toolset. Use tools like '_save' to assign current objects to variables and to pass IDs for operations that require them.`
+
+const defaultSystemPrompt = ``
 
 // An instance of a LLM (large language model), with its state and tool calling environment
 type LLM struct {
@@ -477,7 +479,7 @@ func (llm *LLM) WithPrompt(
 				// for objects, just preserve the variable reference
 				// TODO: a bit hacky, trying to work around the auto expansion
 				// and rely solely on variable names
-				return fmt.Sprintf("$%s", key)
+				return llm.env.describe(val)
 			}
 			return fmt.Sprintf("%s", val)
 		})
@@ -776,7 +778,7 @@ func (llm *LLM) With(ctx context.Context, dag *dagql.Server, value dagql.Typed) 
 		value = obj
 	}
 	llm = llm.Clone()
-	llm.env.With(value)
+	llm.env.Select(value)
 	llm.dirty = true
 	return llm, nil
 }

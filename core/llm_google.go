@@ -184,7 +184,11 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 		}
 	}
 	if len(model.SystemInstruction.Parts) == 0 {
-		model.SystemInstruction.Parts = []genai.Part{genai.Text(defaultSystemPrompt)}
+		if defaultSystemPrompt != "" {
+			model.SystemInstruction.Parts = []genai.Part{genai.Text(defaultSystemPrompt)}
+		} else {
+			model.SystemInstruction = nil
+		}
 	}
 
 	dbgEnc.Encode("---------------------------------------------")
@@ -242,7 +246,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 			switch x := part.(type) {
 			case genai.Text:
 				fmt.Fprint(stdio.Stdout, x)
-				content += string(part.(genai.Text))
+				content += string(x)
 			case genai.FunctionCall:
 				toolCalls = append(toolCalls, ToolCall{
 					ID: x.Name,
