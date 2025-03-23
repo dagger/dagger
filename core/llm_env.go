@@ -577,22 +577,33 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 	// Attach builtin telemetry
 	for i, builtin := range builtins {
 		builtins[i].Call = func(ctx context.Context, args any) (_ any, rerr error) {
-			id, err := env.toolToID(builtin, args)
-			if err != nil {
-				return nil, err
+			attrs := []attribute.KeyValue{
+				attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
 			}
-			callAttr, err := id.Call().Encode()
-			if err != nil {
-				return nil, err
-			}
-			ctx, span := Tracer(ctx).Start(ctx, builtin.Name,
-				trace.WithAttributes(
+			// do an awkward dance to make sure we still show a span even if we fail
+			// to construct parts of it (e.g. due to invalid input)
+			setupErr := func() error {
+				id, err := env.toolToID(builtin, args)
+				if err != nil {
+					return err
+				}
+				callAttr, err := id.Call().Encode()
+				if err != nil {
+					return err
+				}
+				attrs = append(attrs,
 					attribute.String(telemetry.DagDigestAttr, id.Digest().String()),
-					attribute.String(telemetry.DagCallAttr, callAttr),
-					attribute.String(telemetry.UIActorEmojiAttr, "🤖"),
-				),
-				telemetry.Reveal())
+					attribute.String(telemetry.DagCallAttr, callAttr))
+				return nil
+			}()
+			ctx, span := Tracer(ctx).Start(ctx, builtin.Name,
+				telemetry.Reveal(),
+				trace.WithAttributes(attrs...),
+			)
 			defer telemetry.End(span, func() error { return rerr })
+			if setupErr != nil {
+				return nil, setupErr
+			}
 			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 			defer stdio.Close()
 			res, err := builtin.Call(ctx, args)
