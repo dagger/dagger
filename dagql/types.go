@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"reflect"
 	"strconv"
 	"strings"
@@ -209,6 +210,15 @@ func (Int) DecodeInput(val any) (Input, error) {
 		i, err := x.Int64()
 		if err != nil {
 			return nil, err
+		}
+		return NewInt(i), nil
+	case float64:
+		if math.IsInf(x, 0) || math.IsNaN(x) {
+			return nil, fmt.Errorf("cannot create Int from %v", x)
+		}
+		i := int64(x)
+		if float64(i) != x {
+			return nil, fmt.Errorf("cannot create Int from %v", x)
 		}
 		return NewInt(i), nil
 	case string: // default struct tags
