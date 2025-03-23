@@ -129,14 +129,7 @@ func (env *LLMEnv) Get(key string) (dagql.Object, error) {
 		fmt.Fprintln(helpfulErr)
 		fmt.Fprintln(helpfulErr, "Here are the defined variables:")
 		for k, v := range env.vars {
-			fmt.Fprintf(helpfulErr, "- %s (%s)\n", k, v.Type().Name())
-		}
-	}
-	if len(env.objsByHash) > 0 {
-		fmt.Fprintln(helpfulErr)
-		fmt.Fprintln(helpfulErr, "Here are the available objects, by hash:")
-		for k, v := range env.objsByHash {
-			fmt.Fprintf(helpfulErr, "- %s (%s)\n", k, v.Type().Name())
+			fmt.Fprintf(helpfulErr, "  $%s = %s\n", k, env.describe(v))
 		}
 	}
 	return nil, fmt.Errorf(helpfulErr.String())
