@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -599,7 +600,10 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) []LLMTool {
 	// Attach builtin telemetry
 	for i, builtin := range builtins {
 		builtins[i].Call = func(ctx context.Context, args any) (_ any, rerr error) {
-			id := toolToID(builtin.Name, args)
+			id, err := env.toolToID(builtin, args)
+			if err != nil {
+				return nil, err
+			}
 			callAttr, err := id.Call().Encode()
 			if err != nil {
 				return nil, err
@@ -625,16 +629,40 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) []LLMTool {
 	return builtins
 }
 
-func toolToID(name string, args any) *call.ID {
+func (env *LLMEnv) toolToID(tool LLMTool, args any) (*call.ID, error) {
+	name := tool.Name
+	props, ok := tool.Schema["properties"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("malformed tool properties: expected %T, got %T",
+			props,
+			tool.Schema["properties"])
+	}
+	argsMap, ok := args.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("malformed args: expected %T, got %T", argsMap, args)
+	}
 	var callArgs []*call.Argument
-	if argsMap, ok := args.(map[string]any); ok {
-		for k, v := range argsMap {
-			lit, err := call.ToLiteral(v)
-			if err != nil {
-				lit = call.NewLiteralString(fmt.Sprintf("!(%v)(%s)", v, err))
+	for k, v := range argsMap {
+		var lit call.Literal
+		var err error
+		spec, found := props[k].(map[string]any)
+		if found && spec["pattern"] == IDPattern {
+			val, ok := v.(string)
+			if !ok {
+				return nil, fmt.Errorf("expected string for %q, got %T", k, v)
 			}
-			callArgs = append(callArgs, call.NewArgument(k, lit, false))
+			obj, err := env.Get(val)
+			if err != nil {
+				return nil, err
+			}
+			lit = call.NewLiteralID(obj.ID())
+		} else {
+			lit, err = call.ToLiteral(v)
+			if err != nil {
+				return nil, err
+			}
 		}
+		callArgs = append(callArgs, call.NewArgument(k, lit, false))
 	}
 	return call.New().Append(
 		&ast.Type{
@@ -647,7 +675,7 @@ func toolToID(name string, args any) *call.ID {
 		0,    // nth
 		"",   // custom digest
 		callArgs...,
-	)
+	), nil
 }
 
 func fieldArgsToJSONSchema(field *ast.FieldDefinition) map[string]any {
@@ -683,7 +711,7 @@ func fieldArgsToJSONSchema(field *ast.FieldDefinition) map[string]any {
 	return schema
 }
 
-const IDPattern = `^[A-Z]\w+#\d+$`
+var IDPattern = regexp.MustCompile(`^[A-Z]\w+#\d+$`)
 
 func typeToJSONSchema(t *ast.Type) map[string]any {
 	schema := map[string]any{}
