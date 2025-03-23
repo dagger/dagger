@@ -196,6 +196,10 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 	dbgEnc.Encode(genaiHistory)
 
 	// Pop last message from history for SendMessage
+	if len(genaiHistory) == 0 {
+		return nil, fmt.Errorf("no user prompt")
+	}
+
 	userMessage := genaiHistory[len(genaiHistory)-1]
 	genaiHistory = genaiHistory[:len(genaiHistory)-1]
 
