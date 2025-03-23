@@ -3,8 +3,10 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -449,114 +451,84 @@ func (env *LLMEnv) llmID(idable dagql.IDable) string {
 	return llmID
 }
 
-func (env *LLMEnv) Builtins(srv *dagql.Server) []LLMTool {
-	builtins := []LLMTool{
-		// {
-		// 	Name:        "_objects",
-		// 	Description: "List saved objects with their types. IMPORTANT: call this any time you seem to be missing objects for the request. Learn what objects are available, and then learn what tools they provide.",
-		// 	Schema: map[string]any{
-		// 		"type":       "object",
-		// 		"properties": map[string]any{},
-		// 	},
-		// 	Call: env.callObjects,
-		// },
-		// {
-		// 	Name:        "_select",
-		// 	Description: "Select an object as the current state",
-		// 	Schema: map[string]any{
-		// 		"type": "object",
-		// 		"properties": map[string]any{
-		// 			"id": map[string]any{
-		// 				"type":        "string",
-		// 				"description": "Object ID to select.",
-		// 				"pattern":     IDPattern,
-		// 			},
-		// 		},
-		// 		"required": []string{"id"},
-		// 	},
-		// 	Call: ToolFunc(env.callSelect),
-		// },
-		// TODO: don't think we need this
-		// {
-		// 	Name:        "_type",
-		// 	Description: "Print the type of a saved object",
-		// 	Schema: map[string]any{
-		// 		"type": "object",
-		// 		"properties": map[string]any{
-		// 			"name": map[string]any{
-		// 				"type":        "string",
-		// 				"description": "Variable name to print the type of",
-		// 			},
-		// 		},
-		// 	},
-		// 	Call: env.callType,
-		// },
-		// {
-		// 	Name:        "_current",
-		// 	Description: "Print the value of the current object",
-		// 	Schema: map[string]any{
-		// 		"type":       "object",
-		// 		"properties": map[string]any{},
-		// 	},
-		// 	Call: env.callCurrent,
-		// },
-		// {
-		// 	Name:        "_scratch",
-		// 	Returns:     "Void",
-		// 	Description: "Clear the current object selection",
-		// 	Schema: map[string]any{
-		// 		"type":                 "object",
-		// 		"properties":           map[string]any{},
-		// 		"strict":               true,
-		// 		"required":             []string{},
-		// 		"additionalProperties": false,
-		// 	},
-		// 	Call: func(ctx context.Context, _ any) (any, error) {
-		// 		env.history = append(env.history, nil)
-		// 		return nil, nil
-		// 	},
-		// },
+func (env *LLMEnv) Call(ctx context.Context, tools []LLMTool, toolCall ToolCall) (string, bool) {
+	var tool *LLMTool
+	for _, t := range tools {
+		if t.Name == toolCall.Function.Name {
+			tool = &t
+			break
+		}
 	}
-	if cur := env.Current(); cur != nil {
-		builtins = append(builtins,
-			LLMTool{
-				Name:        "_saveAs",
-				Returns:     env.describe(cur),
-				Description: "Save the current object to a named variable so you can return to it later using a `use_<name>` tool.\nOnly use this if you plan to leave the current object and may want to come back to it.",
-				Schema: map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"name": map[string]any{
-							"type":        "string",
-							"description": "Name of the variable to save",
-						},
-					},
-					"strict":               true,
-					"required":             []string{"name"},
-					"additionalProperties": false,
-				},
-				Call: ToolFunc(env.callSave),
-			},
-			// LLMTool{
-			// 	Name:        "_use",
-			// 	Returns:     "Object",
-			// 	Description: "Set the current state to an Object by ID",
-			// 	Schema: map[string]any{
-			// 		"type": "object",
-			// 		"properties": map[string]any{
-			// 			"id": map[string]any{
-			// 				"type":        "string",
-			// 				"description": "ID of the Object to use",
-			// 			},
-			// 		},
-			// 		"strict":               true,
-			// 		"required":             []string{"id"},
-			// 		"additionalProperties": false,
-			// 	},
-			// 	Call: ToolFunc(env.callSelect),
-			// },
-		)
+
+	if tool == nil {
+		errRes := map[string]any{
+			"error": fmt.Sprintf("Tool '%s' is not available.", toolCall.Function.Name),
+		}
+		if typeName, _, ok := strings.Cut(toolCall.Function.Name, "_"); ok {
+			if env.Current() == nil {
+				errRes["hint"] = fmt.Sprintf("You have no current object. Try calling `select_%s` first.", typeName)
+			} else if env.Current().Type().Name() == typeName {
+				errRes["hint"] = fmt.Sprintf("The current object type does not provide this function.", typeName)
+			} else {
+				errRes["hint"] = fmt.Sprintf("Your current object is a %s. Try calling `select_%s` first.", env.Current().Type().Name(), typeName)
+			}
+		}
+		payload, err := json.Marshal(errRes)
+		if err != nil {
+			return fmt.Sprintf("marshal error: %v", err), false
+		}
+		return string(payload), true
 	}
+
+	result, err := tool.Call(ctx, toolCall.Function.Arguments)
+	if err != nil {
+		errResponse := err.Error()
+		// propagate error values to the model
+		var extErr dagql.ExtendedError
+		if errors.As(err, &extErr) {
+			var exts []string
+			for k, v := range extErr.Extensions() {
+				var ext strings.Builder
+				fmt.Fprintf(&ext, "<%s>\n", k)
+
+				switch v := v.(type) {
+				case string:
+					ext.WriteString(v)
+				default:
+					jsonBytes, err := json.Marshal(v)
+					if err != nil {
+						fmt.Fprintf(&ext, "error marshalling value: %s", err.Error())
+					} else {
+						ext.Write(jsonBytes)
+					}
+				}
+
+				fmt.Fprintf(&ext, "\n</%s>", k)
+
+				exts = append(exts, ext.String())
+			}
+			if len(exts) > 0 {
+				sort.Strings(exts)
+				errResponse += "\n\n" + strings.Join(exts, "\n\n")
+			}
+		}
+		return errResponse, true
+	}
+
+	switch v := result.(type) {
+	case string:
+		return v, false
+	default:
+		jsonBytes, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Sprintf("Failed to marshal result: %w", err), true
+		}
+		return string(jsonBytes), false
+	}
+}
+
+func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
+	builtins := []LLMTool{}
 	seenType := map[string]bool{}
 	for _, val := range env.vars {
 		typeName := val.Type().Name()
