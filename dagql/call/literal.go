@@ -56,6 +56,8 @@ func ToLiteral(val any) (Literal, error) {
 			args = append(args, NewArgument(k, lit, false))
 		}
 		return NewLiteralObject(args...), nil
+	case *ID:
+		return NewLiteralID(v), nil
 	default:
 		return nil, fmt.Errorf("unknown literal value type %T", v)
 	}

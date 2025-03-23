@@ -283,7 +283,10 @@ func bbiSchemaToGenaiSchema(bbi map[string]any) *genai.Schema {
 	for key, param := range bbi {
 		switch key {
 		case "description":
-			schema.Description = param.(string)
+			if schema.Description != "" {
+				schema.Description += " "
+			}
+			schema.Description += param.(string)
 		case "properties":
 			schema.Properties = map[string]*genai.Schema{}
 			for propKey, propParam := range param.(map[string]any) {
@@ -294,12 +297,25 @@ func bbiSchemaToGenaiSchema(bbi map[string]any) *genai.Schema {
 		case "type":
 			gtype := bbiTypeToGenaiType(param.(string))
 			schema.Type = gtype
-		// case "format": // ignoring format. Genai is very picky about format values
-		// 	schema.Format = param.(string)
+		case "format":
+			switch param {
+			case "enum", "date-time":
+				// Genai only supports these format values. :(
+				schema.Format = param.(string)
+			case "uri":
+				if pattern, ok := bbi["pattern"].(string); ok {
+					schema.Description = fmt.Sprintf("URI format, %s.", pattern)
+				} else {
+					schema.Description = "URI format."
+				}
+			}
 		case "items":
 			schema.Items = bbiSchemaToGenaiSchema(param.(map[string]any))
 		case "required":
 			schema.Required = bbi["required"].([]string)
+		case "enum":
+			schema.Enum = param.([]string)
+			schema.Format = "enum"
 		}
 	}
 

@@ -434,8 +434,12 @@ func (llm *LLM) Clone() *LLM {
 
 // Generate a human-readable documentation of tools available to the model
 func (llm *LLM) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error) {
+	tools, err := llm.env.Tools(srv)
+	if err != nil {
+		return "", err
+	}
 	var result string
-	for _, tool := range llm.env.Tools(srv) {
+	for _, tool := range tools {
 		schema, err := json.MarshalIndent(tool.Schema, "", "  ")
 		if err != nil {
 			return "", err
@@ -574,7 +578,10 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 		}
 		llm.apiCalls++
 
-		tools := llm.env.Tools(dag)
+		tools, err := llm.env.Tools(dag)
+		if err != nil {
+			return nil, err
+		}
 		res, err := llm.Endpoint.Client.SendQuery(ctx, llm.messages, tools)
 		if err != nil {
 			return nil, err

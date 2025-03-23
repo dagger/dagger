@@ -69,11 +69,6 @@ func (env *LLMEnv) Clone() *LLMEnv {
 	return &cp
 }
 
-// Lookup dagql typedef for a given dagql value
-func (env *LLMEnv) typedef(srv *dagql.Server, val dagql.Typed) *ast.Definition {
-	return srv.Schema().Types[val.Type().Name()]
-}
-
 // Return the current selection
 func (env *LLMEnv) Current() dagql.Object {
 	if len(env.history) == 0 {
@@ -150,8 +145,16 @@ func (env *LLMEnv) Unset(key string) {
 	delete(env.vars, key)
 }
 
-func (env *LLMEnv) Tools(srv *dagql.Server) []LLMTool {
-	return append(env.Builtins(srv), env.tools(srv, env.Current())...)
+func (env *LLMEnv) Tools(srv *dagql.Server) ([]LLMTool, error) {
+	builtins, err := env.Builtins(srv)
+	if err != nil {
+		return nil, err
+	}
+	objTools, err := env.tools(srv, env.Current())
+	if err != nil {
+		return nil, err
+	}
+	return append(builtins, objTools...), nil
 }
 
 // ToolFunc reuses our regular GraphQL args handling sugar for tools.
@@ -188,11 +191,15 @@ func ToolFunc[T any](fn func(context.Context, T) (any, error)) func(context.Cont
 	}
 }
 
-func (env *LLMEnv) tools(srv *dagql.Server, obj dagql.Typed) []LLMTool {
+func (env *LLMEnv) tools(srv *dagql.Server, obj dagql.Typed) ([]LLMTool, error) {
 	if obj == nil {
-		return nil
+		return nil, nil
 	}
-	typeDef := env.typedef(srv, obj)
+	schema := srv.Schema()
+	typeDef, ok := schema.Types[obj.Type().Name()]
+	if !ok {
+		return nil, fmt.Errorf("type %q not found", obj.Type().Name())
+	}
 	var tools []LLMTool
 	masked := len(env.functionMask) > 0
 	for _, field := range typeDef.Fields {
@@ -209,17 +216,21 @@ func (env *LLMEnv) tools(srv *dagql.Server, obj dagql.Typed) []LLMTool {
 			// never a reason to call "sync" since we call it automatically
 			continue
 		}
+		schema, err := fieldArgsToJSONSchema(schema, field)
+		if err != nil {
+			return nil, fmt.Errorf("field %q: %w", field.Name, err)
+		}
 		tools = append(tools, LLMTool{
 			Name:        typeDef.Name + "_" + field.Name,
 			Returns:     field.Type.String(),
 			Description: field.Description,
-			Schema:      fieldArgsToJSONSchema(field),
+			Schema:      schema,
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
 				return env.call(ctx, srv, field, args)
 			},
 		})
 	}
-	return tools
+	return tools, nil
 }
 
 // Low-level function call plumbing
@@ -553,24 +564,25 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) []LLMTool {
 			continue
 		}
 		seenType[typeName] = true
-		valDesc := env.describe(val)
-		fnsDesc := "Available functions:\n"
-		for _, tool := range env.tools(srv, val) {
-			_, name, _ := strings.Cut(tool.Name, "_")
-			fnsDesc += fmt.Sprintf("\n- %s", name)
+		tools, err := env.tools(srv, val)
+		if err != nil {
+			return nil, fmt.Errorf("tools for %q: %w", typeName, err)
+		}
+		fnsDesc := fmt.Sprintf("Provides %d tools for working with a %s:\n", len(tools), typeName)
+		for _, tool := range tools {
+			fnsDesc += fmt.Sprintf("\n- %s", tool.Name)
 		}
 		builtins = append(builtins, LLMTool{
-			Name:        "_use_" + typeName,
-			Returns:     valDesc,
-			Description: fmt.Sprintf("Set the current state to a %s.\n%s", typeName, fnsDesc),
+			Name:        "select_" + typeName,
+			Returns:     typeName,
+			Description: fmt.Sprintf("Set the current state to a %s.\n\n%s", typeName, fnsDesc),
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"id": map[string]any{
 						"type":        "string",
-						"format":      typeName + "ID",
-						"pattern":     IDPattern,
-						"description": "ID of the Object to use.",
+						"pattern":     idPattern(typeName),
+						"description": "ID of the Object to select.",
 					},
 					// "functions": map[string]any{
 					// 	"type": "array",
@@ -626,7 +638,7 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) []LLMTool {
 			return res, nil
 		}
 	}
-	return builtins
+	return builtins, nil
 }
 
 func (env *LLMEnv) toolToID(tool LLMTool, args any) (*call.ID, error) {
@@ -646,21 +658,42 @@ func (env *LLMEnv) toolToID(tool LLMTool, args any) (*call.ID, error) {
 		var lit call.Literal
 		var err error
 		spec, found := props[k].(map[string]any)
-		if found && spec["pattern"] == IDPattern {
+		if !found {
+			return nil, fmt.Errorf("unknown arg: %q", k)
+		}
+		pattern, found := spec["pattern"]
+		if found {
+			// if we have a pattern configured:
+			//   1) validate the arg value as a sanity check, and
+			//   2) if it's an ID pattern, map the value back to the real ID
+
+			patternStr, ok := pattern.(string)
+			if !ok {
+				return nil, fmt.Errorf("expected string regex pattern, got %T", pattern)
+			}
 			val, ok := v.(string)
 			if !ok {
 				return nil, fmt.Errorf("expected string for %q, got %T", k, v)
 			}
+			re, err := regexp.Compile(patternStr)
+			if err != nil {
+				return nil, fmt.Errorf("invalid regex for %q: %w", k, err)
+			}
+			if !re.MatchString(val) {
+				return nil, fmt.Errorf("arg %q does not match pattern %s: %q", k, re.String(), val)
+			}
+
+			// NOTE: assume uri format is for IDs
 			obj, err := env.Get(val)
 			if err != nil {
 				return nil, err
 			}
-			lit = call.NewLiteralID(obj.ID())
-		} else {
-			lit, err = call.ToLiteral(v)
-			if err != nil {
-				return nil, err
-			}
+			// map the value to the real Object ID for better telemetry
+			v = obj.ID()
+		}
+		lit, err = call.ToLiteral(v)
+		if err != nil {
+			return nil, err
 		}
 		callArgs = append(callArgs, call.NewArgument(k, lit, false))
 	}
@@ -678,15 +711,18 @@ func (env *LLMEnv) toolToID(tool LLMTool, args any) (*call.ID, error) {
 	), nil
 }
 
-func fieldArgsToJSONSchema(field *ast.FieldDefinition) map[string]any {
-	schema := map[string]any{
+func fieldArgsToJSONSchema(schema *ast.Schema, field *ast.FieldDefinition) (map[string]any, error) {
+	jsonSchema := map[string]any{
 		"type":       "object",
 		"properties": map[string]any{},
 	}
-	properties := schema["properties"].(map[string]any)
+	properties := jsonSchema["properties"].(map[string]any)
 	required := []string{}
 	for _, arg := range field.Arguments {
-		argSchema := typeToJSONSchema(arg.Type)
+		argSchema, err := typeToJSONSchema(schema, arg.Type)
+		if err != nil {
+			return nil, err
+		}
 
 		// Add description if present
 		if arg.Description != "" {
@@ -706,53 +742,88 @@ func fieldArgsToJSONSchema(field *ast.FieldDefinition) map[string]any {
 		}
 	}
 	if len(required) > 0 {
-		schema["required"] = required
+		jsonSchema["required"] = required
 	}
-	return schema
+	return jsonSchema, nil
 }
 
-var IDPattern = regexp.MustCompile(`^[A-Z]\w+#\d+$`)
-
-func typeToJSONSchema(t *ast.Type) map[string]any {
-	schema := map[string]any{}
+func typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any, error) {
+	jsonSchema := map[string]any{}
 
 	// Handle lists
 	if t.Elem != nil {
-		schema["type"] = "array"
-		schema["items"] = typeToJSONSchema(t.Elem)
-		return schema
+		jsonSchema["type"] = "array"
+		items, err := typeToJSONSchema(schema, t.Elem)
+		if err != nil {
+			return nil, fmt.Errorf("elem type: %w", err)
+		}
+		jsonSchema["items"] = items
+		return jsonSchema, nil
 	}
 
 	// Handle base types
 	switch t.NamedType {
 	case "Int":
-		schema["type"] = "integer"
+		jsonSchema["type"] = "integer"
 	case "Float":
-		schema["type"] = "number"
+		jsonSchema["type"] = "number"
 	case "String":
-		schema["type"] = "string"
+		jsonSchema["type"] = "string"
 	case "Boolean":
-		schema["type"] = "boolean"
-	case "ID":
-		schema["type"] = "string"
-		schema["format"] = "id"
+		jsonSchema["type"] = "boolean"
 	default:
 		// For custom types, use string format with the type name
-		schema["type"] = "string"
-		schema["format"] = t.NamedType
-		if strings.HasSuffix(t.NamedType, "ID") {
-			schema["pattern"] = IDPattern
+		typeDef, found := schema.Types[t.NamedType]
+		if !found {
+			return nil, fmt.Errorf("unknown type (impossible?): %q", t.NamedType)
 		}
+		desc := typeDef.Description
+		switch typeDef.Kind {
+		case ast.InputObject:
+			jsonSchema["type"] = "object"
+			properties := map[string]any{}
+			for _, f := range typeDef.Fields {
+				fieldSpec, err := typeToJSONSchema(schema, f.Type)
+				if err != nil {
+					return nil, fmt.Errorf("field type: %w", err)
+				}
+				properties[f.Name] = fieldSpec
+			}
+			jsonSchema["properties"] = properties
+		case ast.Enum:
+			jsonSchema["type"] = "string"
+			var enum []string
+			for _, val := range typeDef.EnumValues {
+				enum = append(enum, val.Name)
+			}
+			jsonSchema["enum"] = enum
+		case ast.Scalar:
+			if strings.HasSuffix(t.NamedType, "ID") {
+				typeName := strings.TrimSuffix(t.NamedType, "ID")
+				jsonSchema["type"] = "string"
+				jsonSchema["pattern"] = idPattern(typeName)
+				desc = fmt.Sprintf("%s Object ID. %s", typeName, desc)
+			} else {
+				jsonSchema["type"] = "string"
+			}
+		default:
+			return nil, fmt.Errorf("unhandled type: %s (%s)", t, typeDef.Kind)
+		}
+		jsonSchema["description"] = desc
 	}
 
-	return schema
+	return jsonSchema, nil
+}
+
+func idPattern(typeName string) string {
+	return `^` + typeName + `#\d+$`
 }
 
 func (env *LLMEnv) currentState() (string, error) {
 	cur := env.Current()
 	res := map[string]any{
-		// "using" to hint to the model that it doesn't need to _use or _saveAs it
-		"using": env.describe(cur),
+		// "selected" to hint to the model that it doesn't need to _use or _saveAs it
+		"selected": env.describe(cur),
 	}
 	// show when it's already a bound var to avoid unnecessary _saveAs
 	for name, val := range env.vars {
