@@ -1,22 +1,30 @@
 ### 📘 How the Tool-Calling System Works
 
-You interact with a tool system that mirrors a GraphQL API. At any moment, you're working from the perspective of a single **Object**, such as a `Container`, `Directory`, or `Service`.
+You interact with a tool system that mirrors a GraphQL API. At any moment, you're working from the perspective of a single currently selected **Object**, such as a `Container`, `Directory`, or `Service`.
 
-Each available tool corresponds to a **function** on the current Object. Calling one of these tools may return:
+All Objects have IDs, formed by pairing their type with a sequence number, such as `Container#1` for the first `Container` observed.
 
-- A **scalar value**, such as a string or boolean
-  ```json
-  { "result": 12 }
-  { "result": "I'm a string!" }
-  ```
-- A **new Object**, indicated by a response like:
-  ```json
-  { "current": "Container#3" }
-  ```
+You have a dynamic set of tools following this scheme:
 
-If an Object ID is returned, your context has switched to that new Object, and your available tools are now those of the new Object's type.
+* `select_<Type>(id: "<Type>#123")`: select an Object of type `<Type>` by ID
+  * Example: `select_Container(id: "Container#123")`
+  * Example: `select_Directory(id: "Directory#456")`
+* `<Type>_<func>(...)`: call the **function** `<func>` on the currently selected Object, which is of type `<Type>`
+  * Example: `Container_withExec(args: ["cowsay", "hello"])`
+  * Example: `Container_directory(path: "/foo")`
 
-If no ID is returned, your context remains the same.
+When a tool returns a **new Object**, it is automatically selected as your new context, as indicated by the tool response:
+
+```json
+{ "selected": "Container#3" }
+```
+
+When a tool call returns a **scalar value**, it is included in a structured response:
+
+```json
+{ "result": 12 }
+{ "result": "I'm a string!" }
+```
 
 ---
 
@@ -30,32 +38,21 @@ For example, if you run a command in a `Container`, you’ll receive a new `Cont
 
 ### ⚠️ Object IDs
 
-You will probably be given Object IDs in your prompt.
-
-- Object IDs look like `Container#3`, `File#2`, etc.
-- These IDs include the Object’s type and a sequence number.
-- **Never append values or fields directly to Object IDs.**
-- **Never make up an Object ID. If you haven't seen it, it doesn't exist.**
-
 Object IDs are a central concept to the tool calling scheme - they're how you switch toolsets and pass objects as arguments to the tools.
 
 Identify them in your prompt - they are your jumping off point.
 
-To use an object by ID, call `_use_<TYPE>`, e.g. `_use_Container(id: "Container#1")`.
+- **Never append values or fields directly to Object IDs.**
+- **Never make up an Object ID. If you haven't seen it, it doesn't exist.**
+
+To use an object by ID, call `select_<TYPE>`, e.g. `select_Container(id: "Container#1")`.
 
 ---
-
-### 🛠️ Built-In Tools
-
-These tools are always available, regardless of your current Object type:
-
-- `_use_<TYPE>`: Set an Object of the specified type as the current Object. One of these will be available for each type of Object available in the environment.
-- `_saveAs(name: "foo")`: Save the current Object as a named variable (`$foo`).
 
 ### IMPORTANT: Object Context Management
 
 * The system behaves like a functional state machine. Each tool call that returns an object ID automatically updates your current object context to that new object.
-* Do not use `_use_<TYPE>` immediately after a tool call that returns a new object ID, as this is redundant. Only `_use` when you need to explicitly return to a previously saved object using its ID or variable name.
+* Do not use `select_<TYPE>` immediately after a tool call that returns a new object ID, as this is redundant. Only `select` when you need to explicitly return to a previously saved object using its ID or variable name.
 * Think carefully about the flow of object context. Before calling a tool, ensure you are operating on the correct object.
 
 ---

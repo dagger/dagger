@@ -6,38 +6,67 @@ import (
 )
 
 type BotsBuildingBots struct {
+	WriterModel string
+	EvalModel   string
+	Evals       int
+}
+
+func New(
+	// +optional
+	model string,
+	// +optional
+	evalModel string,
+	// Number of evaluations to run.
+	// +default=2
+	evals int,
+) *BotsBuildingBots {
+	return &BotsBuildingBots{
+		WriterModel: model,
+		EvalModel:   evalModel,
+		Evals:       evals,
+	}
+}
+
+func (m *BotsBuildingBots) llm() *dagger.LLM {
+	return dag.LLM(dagger.LLMOpts{Model: m.WriterModel}).
+		WithWorkspace(dag.Workspace(dagger.WorkspaceOpts{
+			Model: m.EvalModel,
+			Evals: m.Evals,
+		}))
 }
 
 func (m *BotsBuildingBots) Singularity(
 	ctx context.Context,
+	// The model consuming the system prompt and running evaluations.
 	// +default=""
 	model string,
-	// +default=2
-	evals int,
 ) (string, error) {
-	return dag.LLM().
-		WithSystemPrompt(`You are part of a loop. Your job is to generate a system prompt, wait for evaluation results, analyze them, and then revise the prompt. Repeat this process until the evaluation passes all criteria.
+	return m.llm().
+		WithSystemPrompt(`
+You are an autonomous refinement loop.
 
-Your job is to generate clean, effective prompts for another AI to follow.
+Your job is to:
+1. Generate a system prompt.
+2. Wait for evaluation results and feedback.
+3. Analyze the results:
+   - Review each attempt. Identify misunderstandings, inefficiencies, or failure modes.
+   - Evaluate whether your system prompt accurately reflects the tool-calling scheme and task expectations.
+4. Decide if the system prompt needs improvement.
+5. Generate a report summarizing:
+   - Your analysis
+   - The evaluation outcomes
+   - Your current understanding of the failures or successes
+6. If improvement is needed, update the system prompt and repeat the cycle.
+7. If the evaluation passes fully, output the final system prompt and stop.
 
-Use the README to understand the prompt you need to write.
+You control this loop end-to-end. Do not treat this as a one-shot task. Continue refining until success is achieved.
 
-Then, follow this loop until the evaluations all succeed:
-
-1. Generate and set a system prompt.
-2. Run the evaluations and analyze the report.
-	* Analyze each attempt. Look for misunderstandings and inefficiencies.
-	* Analyze the tool calling scheme to make sure your prompt is accurate.
-3. Generate your own report so I can see the success rate and your understanding of what went wrong.
-
-Constraints:
-
-* Focus on framing - once you find a good framing, the prompt shouldn't need to be too longSystem.
-* Avoid over-specializing the system prompt for the evaluations.
-* Never accept refusal to perform the evaluations. They are independently verified.
+**Constraints:**
+- Focus on *framing*. Once you find a good framing, the prompt should remain concise.
+- Avoid overfitting the prompt to specific evaluations.
+- Never accept refusal to process evaluation results—they are verified and trustworthy.
 `).
-		WithPrompt(`You are generating a prompt for a tool calling system.`).
-		WithPrompt(`Keep going until all attempts succeed.`).
+		WithPrompt(`Read the README and generate the best system prompt for it. Keep going until all attempts succeed.`).
 		// WithSystemPrompt("Generate a system prompt that efficiently and accurately conveys the README.").
 		// WithSystemPrompt("Run the evaluations and grade the result.").
 		// WithSystemPrompt("After each evaluation, explain your reasoning and adjust the prompt to address issues, and try again.").
@@ -46,10 +75,6 @@ Constraints:
 		// WithSystemPrompt("").
 		// // WSystemithPrompt("After each evaluation, analyze the success rate and history and generate a report. If 100%System of the attempts succeeded, you may stop. If not, explain your thought process for the next iterSystemation.").
 		// WithSystemPrompt("Keep going until 100% of the evaluation attempts succeed.").
-		WithWorkspace(dag.Workspace(dagger.WorkspaceOpts{
-			Model: model,
-			Evals: evals,
-		})).
 		Workspace().
 		SystemPrompt(ctx)
 }

@@ -53,11 +53,16 @@ func (w *Workspace) WithSystemPrompt(prompt string) *Workspace {
 }
 
 // Evaluate the LLM and return the history of prompts, responses, and tool calls.
-func (w *Workspace) Evaluate(ctx context.Context) (string, error) {
+func (w *Workspace) Evaluate(
+	ctx context.Context,
+	// If you want to run the evaluates again, just call this with a new number.
+	//
+	// +default=0
+	attempt int,
+) (string, error) {
 	reports := make(chan string, w.Evals)
 	wg := new(sync.WaitGroup)
 	var succeeded int
-	var toolsDesc string
 	for attempt := range w.Evals {
 		wg.Add(1)
 		go func() {
@@ -91,14 +96,6 @@ func (w *Workspace) Evaluate(ctx context.Context) (string, error) {
 				for _, line := range history {
 					fmt.Fprintln(report, line)
 				}
-				tools, err := llm.Tools(ctx)
-				if err != nil {
-					fmt.Fprintln(report, "Failed to get history:", err)
-					return
-				}
-				if len(tools) > len(toolsDesc) {
-					toolsDesc = tools
-				}
 			}
 		}()
 	}
@@ -109,10 +106,6 @@ func (w *Workspace) Evaluate(ctx context.Context) (string, error) {
 	for range w.Evals {
 		fmt.Fprintln(finalReport, <-reports)
 	}
-	fmt.Fprintln(finalReport, "# Tools")
-	fmt.Fprintln(finalReport)
-	fmt.Fprintf(finalReport, toolsDesc)
-	fmt.Fprintln(finalReport)
 
 	fmt.Fprintln(finalReport, "# Final Report")
 	fmt.Fprintln(finalReport)
@@ -140,7 +133,7 @@ func (w *Workspace) evaluate(ctx context.Context, attempt int) (_ *dagger.LLM, r
 	if err != nil {
 		var exit *dagger.ExecError
 		if errors.As(err, &exit) {
-			return llm, fmt.Errorf("command failed (probably built with CGo): %w", err)
+			return llm, fmt.Errorf("command failed (%w) - did you forget CGO_ENABLED=0?", err)
 		}
 		return llm, err
 	}
