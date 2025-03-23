@@ -593,67 +593,73 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 			break
 		}
 		for _, toolCall := range res.ToolCalls {
-			for _, tool := range tools {
-				if tool.Name == toolCall.Function.Name {
-					result, isError := func() (string, bool) {
-						result, err := tool.Call(ctx, toolCall.Function.Arguments)
-						if err != nil {
-							errResponse := err.Error()
-							// propagate error values to the model
-							var extErr dagql.ExtendedError
-							if errors.As(err, &extErr) {
-								var exts []string
-								for k, v := range extErr.Extensions() {
-									var ext strings.Builder
-									fmt.Fprintf(&ext, "<%s>\n", k)
-
-									switch v := v.(type) {
-									case string:
-										ext.WriteString(v)
-									default:
-										jsonBytes, err := json.Marshal(v)
-										if err != nil {
-											fmt.Fprintf(&ext, "error marshalling value: %s", err.Error())
-										} else {
-											ext.Write(jsonBytes)
-										}
-									}
-
-									fmt.Fprintf(&ext, "\n</%s>", k)
-
-									exts = append(exts, ext.String())
-								}
-								if len(exts) > 0 {
-									sort.Strings(exts)
-									errResponse += "\n\n" + strings.Join(exts, "\n\n")
-								}
-							}
-							return errResponse, true
-						}
-						switch v := result.(type) {
-						case string:
-							// TODO: should we just JSON encode this too? what
-							// is safer and/or better for the model?
-							return v, false
-						default:
-							jsonBytes, err := json.Marshal(v)
-							if err != nil {
-								return fmt.Sprintf("error processing tool result: %s", err.Error()), true
-							}
-							return string(jsonBytes), false
-						}
-					}()
-					func() {
-						llm.calls[toolCall.ID] = result
-						llm.messages = append(llm.messages, ModelMessage{
-							Role:        "user", // Anthropic only allows tool calls in user messages
-							Content:     result,
-							ToolCallID:  toolCall.ID,
-							ToolErrored: isError,
-						})
-					}()
+			var tool *LLMTool
+			for _, t := range tools {
+				if t.Name == toolCall.Function.Name {
+					tool = &t
+					break
 				}
 			}
+			if tool == nil {
+				return nil, fmt.Errorf("attempted to call unknown tool: %q", toolCall.Function.Name)
+			}
+			result, isError := func() (string, bool) {
+				result, err := tool.Call(ctx, toolCall.Function.Arguments)
+				if err != nil {
+					errResponse := err.Error()
+					// propagate error values to the model
+					var extErr dagql.ExtendedError
+					if errors.As(err, &extErr) {
+						var exts []string
+						for k, v := range extErr.Extensions() {
+							var ext strings.Builder
+							fmt.Fprintf(&ext, "<%s>\n", k)
+
+							switch v := v.(type) {
+							case string:
+								ext.WriteString(v)
+							default:
+								jsonBytes, err := json.Marshal(v)
+								if err != nil {
+									fmt.Fprintf(&ext, "error marshalling value: %s", err.Error())
+								} else {
+									ext.Write(jsonBytes)
+								}
+							}
+
+							fmt.Fprintf(&ext, "\n</%s>", k)
+
+							exts = append(exts, ext.String())
+						}
+						if len(exts) > 0 {
+							sort.Strings(exts)
+							errResponse += "\n\n" + strings.Join(exts, "\n\n")
+						}
+					}
+					return errResponse, true
+				}
+				switch v := result.(type) {
+				case string:
+					// TODO: should we just JSON encode this too? what
+					// is safer and/or better for the model?
+					return v, false
+				default:
+					jsonBytes, err := json.Marshal(v)
+					if err != nil {
+						return fmt.Sprintf("error processing tool result: %s", err.Error()), true
+					}
+					return string(jsonBytes), false
+				}
+			}()
+			func() {
+				llm.calls[toolCall.ID] = result
+				llm.messages = append(llm.messages, ModelMessage{
+					Role:        "user", // Anthropic only allows tool calls in user messages
+					Content:     result,
+					ToolCallID:  toolCall.ID,
+					ToolErrored: isError,
+				})
+			}()
 		}
 	}
 	llm.dirty = false
