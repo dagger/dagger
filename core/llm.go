@@ -654,11 +654,6 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 }
 
 func (llm *LLM) allowed(ctx context.Context) error {
-	bk, err := llm.Query.Buildkit(ctx)
-	if err != nil {
-		return err
-	}
-
 	module, err := llm.Query.CurrentModule(ctx)
 	if err != nil {
 		// allow non-module calls
@@ -671,7 +666,24 @@ func (llm *LLM) allowed(ctx context.Context) error {
 		return nil
 	}
 
-	return bk.AllowLLM(ctx, module.Source.Self.Git.CloneRef)
+	md, err := engine.ClientMetadataFromContext(ctx) // not mainclient
+	if err != nil {
+		return fmt.Errorf("llm sync failed fetching client metadata from context: %w", err)
+	}
+
+	moduleURL := module.Source.Self.Git.Symbolic
+	for _, allowedModule := range md.AllowedLLMModules {
+		if allowedModule == "all" || moduleURL == allowedModule {
+			return nil
+		}
+	}
+
+	bk, err := llm.Query.Buildkit(ctx)
+	if err != nil {
+		return fmt.Errorf("llm sync failed fetching bk client for llm allow prompting: %w", err)
+	}
+
+	return bk.PromptAllowLLM(ctx, moduleURL)
 }
 
 func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error) {

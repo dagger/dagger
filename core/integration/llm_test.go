@@ -5,14 +5,17 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/dag"
+	"github.com/creack/pty"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"gotest.tools/v3/golden"
@@ -140,16 +143,215 @@ func (LLMSuite) TestAPILimit(ctx context.Context, t *testctx.T) {
 		}
 		err = os.WriteFile(recording, []byte(out), 0644)
 		require.NoError(t, err)
-	} else {
-		replayData, err := os.ReadFile(recording)
-		require.NoError(t, err)
-		llmFlags := fmt.Sprintf("--max-api-calls=1 --model=\"replay/%s\"", base64.StdEncoding.EncodeToString(replayData))
-
-		_, err = daggerCliBase(t, c).
-			With(ctrFn(llmFlags)).
-			Stdout(ctx)
-		requireErrOut(t, err, "reached API call limit: 1")
 	}
+
+	replayData, err := os.ReadFile(recording)
+	require.NoError(t, err)
+	llmFlags := fmt.Sprintf("--max-api-calls=1 --model=\"replay/%s\"", base64.StdEncoding.EncodeToString(replayData))
+
+	_, err = daggerCliBase(t, c).
+		With(ctrFn(llmFlags)).
+		Stdout(ctx)
+	requireErrOut(t, err, "reached API call limit: 1")
+}
+
+func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// llm-test-module passes a prompt to LLM and sets a random string variable to bust cache
+	directCallModuleRef := "github.com/dagger/dagger-test-modules/llm-dir-module-depender/llm-test-module"
+	// llm-dir-module-depender depends on directCall module via a relative path
+	dependerModuleRef := "github.com/dagger/dagger-test-modules/llm-dir-module-depender"
+
+	recording := "llmtest/allow-llm.golden"
+	if golden.FlagUpdate() {
+		out, err := daggerCliBase(t, c).
+			With(daggerForwardSecrets(c)).
+			// shared recording amongst subtests, they all do basically the same thing
+			With(daggerCall("-m", directCallModuleRef, "--allow-llm=all", "save", "--string-arg", "greet me")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		if dir := filepath.Dir(recording); dir != "." {
+			err := os.MkdirAll(dir, 0755)
+			require.NoError(t, err)
+		}
+		err = os.WriteFile(recording, []byte(out), 0644)
+		require.NoError(t, err)
+	}
+
+	replayData, err := os.ReadFile(recording)
+	require.NoError(t, err)
+	modelFlag := fmt.Sprintf("--model=replay/%s", base64.StdEncoding.EncodeToString(replayData))
+
+	t.Run("allowed calls", func(ctx context.Context, t *testctx.T) {
+		tcs := []struct {
+			name     string
+			module   string
+			allowLLM string
+		}{
+			{
+				name:     "direct allow all",
+				module:   directCallModuleRef,
+				allowLLM: "all",
+			},
+			{
+				name:     "direct allow specific module",
+				module:   directCallModuleRef,
+				allowLLM: directCallModuleRef,
+			},
+			{
+				name:     "depender allow all",
+				module:   dependerModuleRef,
+				allowLLM: "all",
+			},
+			{
+				name:     "depender allow specific module",
+				module:   dependerModuleRef,
+				allowLLM: directCallModuleRef,
+			},
+			// we only test various permutations of remote module LLM use, local modules don't require the flag and that's covered by the toy-programmer case
+		}
+
+		for _, tc := range tcs {
+			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+				args := []string{"--allow-llm", tc.allowLLM, modelFlag, "save", "--string-arg", "greet me"}
+
+				_, err := daggerCliBase(t, c).
+					With(daggerCallAt(tc.module, args...)).
+					Stdout(ctx)
+				require.NoError(t, err)
+			})
+		}
+	})
+
+	t.Run("noninteractive prompt fail", func(ctx context.Context, t *testctx.T) {
+		args := []string{modelFlag, "save", "--string-arg", "greet me"}
+
+		_, err := daggerCliBase(t, c).
+			With(daggerCallAt(directCallModuleRef, args...)).
+			Stdout(ctx)
+		require.Error(t, err)
+	})
+
+	t.Run("environment variable", func(ctx context.Context, t *testctx.T) {
+		_, err := daggerCliBase(t, c).
+			WithEnvVariable("DAGGER_ALLOW_LLM", "all").
+			With(daggerCallAt(dependerModuleRef, modelFlag, "save", "--string-arg", "greet me")).
+			Stdout(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("shell allow all", func(ctx context.Context, t *testctx.T) {
+		_, err := daggerCliBase(t, c).
+			WithExec([]string{"dagger", "-m", dependerModuleRef, "--allow-llm=all"}, dagger.ContainerWithExecOpts{
+				Stdin:                         fmt.Sprintf(`. %s | save "greet me"`, modelFlag),
+				ExperimentalPrivilegedNesting: true,
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("shell interactive module loads", func(ctx context.Context, t *testctx.T) {
+		_, err := daggerCliBase(t, c).
+			WithExec([]string{"dagger", "--allow-llm", directCallModuleRef}, dagger.ContainerWithExecOpts{
+				Stdin:                         fmt.Sprintf(`%s %s | save "greet me"`, dependerModuleRef, modelFlag),
+				ExperimentalPrivilegedNesting: true,
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("prompt calls", func(ctx context.Context, t *testctx.T) {
+		consoleDagger := func(args ...string) (*exec.Cmd, *tuiConsole) {
+			t.Helper()
+			console, err := newTUIConsole(t, 60*time.Second)
+			require.NoError(t, err)
+
+			tty := console.Tty()
+			err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 60}) // for plain, we should make this wider, like 150
+			require.NoError(t, err)
+
+			cmd := hostDaggerCommand(
+				ctx,
+				t,
+				t.TempDir(),
+				args...,
+			)
+			cmd.Stdin = tty
+			cmd.Stdout = tty
+			cmd.Stderr = tty
+
+			return cmd, console
+		}
+
+		tcs := []struct {
+			name     string
+			allowLLM string
+			module   string
+			plain    bool
+		}{
+			{
+				name:     "direct remote module call",
+				allowLLM: "",
+				module:   directCallModuleRef,
+			},
+			// TODO: find a way to test plain tui.
+			// under test, it doesn't acknowledge input, but works fine irl
+			// {
+			// 	name:     "plain tui direct remote module call",
+			// 	allowLLM: "",
+			// 	module:   directCallModuleRef,
+			// 	plain:    true,
+			// },
+			{
+				name:     "allowed unrelated, calling direct",
+				allowLLM: "github.com/dagger/dagger",
+				module:   directCallModuleRef,
+			},
+			{
+				name:     "allowed depender, calling direct",
+				allowLLM: dependerModuleRef,
+				module:   directCallModuleRef,
+			},
+			{
+				// this should prompt for the dependency
+				name:     "allowed depender, calling depender",
+				allowLLM: dependerModuleRef,
+				module:   dependerModuleRef,
+			},
+		}
+
+		for _, tc := range tcs {
+			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+				progressFlag := "--progress=auto"
+				if tc.plain {
+					progressFlag = "--progress=plain"
+				}
+				cmd, console := consoleDagger(
+					progressFlag, "call", "-m", tc.module, "--allow-llm", tc.allowLLM, modelFlag, "save", "--string-arg", "greet me",
+				)
+				defer console.Close()
+
+				err := cmd.Start()
+				require.NoError(t, err)
+
+				_, err = console.ExpectString("attempted to access the LLM API. Allow it?")
+				require.NoError(t, err)
+
+				// only test the  "no" case- the yes case persists history and requires special handling
+				_, err = console.SendLine("n")
+				require.NoError(t, err)
+
+				_, err = console.ExpectString("was denied LLM access")
+				require.NoError(t, err)
+
+				go console.ExpectEOF()
+
+				err = cmd.Wait()
+				require.Error(t, err)
+			})
+		}
+	})
 }
 
 func testGoProgram(ctx context.Context, t *testctx.T, c *dagger.Client, program *dagger.File, re any) {
@@ -169,26 +371,26 @@ func daggerForwardSecrets(dag *dagger.Client) dagger.WithContainerFunc {
 		return ctr.WithMountedSecret(".env", dag.Secret("file:///dagger.env"))
 	}
 
-	// return func(ctr *dagger.Container) *dagger.Container {
-	// 	propagate := func(env string) {
-	// 		if v, ok := os.LookupEnv(env); ok {
-	// 			ctr = ctr.WithSecretVariable(env, dag.SetSecret(env, v))
+	// 	return func(ctr *dagger.Container) *dagger.Container {
+	// 		propagate := func(env string) {
+	// 			if v, ok := os.LookupEnv(env); ok {
+	// 				ctr = ctr.WithSecretVariable(env, dag.SetSecret(env, v))
+	// 			}
 	// 		}
-	// 	}
-	//
-	// 	propagate("ANTHROPIC_API_KEY")
-	// 	propagate("ANTHROPIC_BASE_URL")
-	// 	propagate("ANTHROPIC_MODEL")
-	//
-	// 	propagate("OPENAI_API_KEY")
-	// 	propagate("OPENAI_AZURE_VERSION")
-	// 	propagate("OPENAI_BASE_URL")
-	// 	propagate("OPENAI_MODEL")
-	//
-	// 	propagate("GEMINI_API_KEY")
-	// 	propagate("GEMINI_BASE_URL")
-	// 	propagate("GEMINI_MODEL")
-	//
-	// 	return ctr
-	// }
+
+	// 		propagate("ANTHROPIC_API_KEY")
+	// 		propagate("ANTHROPIC_BASE_URL")
+	// 		propagate("ANTHROPIC_MODEL")
+
+	// 		propagate("OPENAI_API_KEY")
+	// 		propagate("OPENAI_AZURE_VERSION")
+	// 		propagate("OPENAI_BASE_URL")
+	// 		propagate("OPENAI_MODEL")
+
+	// 		propagate("GEMINI_API_KEY")
+	// 		propagate("GEMINI_BASE_URL")
+	// 		propagate("GEMINI_MODEL")
+
+	//		return ctr
+	//	}
 }
