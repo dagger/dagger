@@ -45,11 +45,6 @@ module.exports = {
       id: "examples",
     },
     {
-      type: "doc",
-      label: "Examples",
-      id: "examples",
-    },
-    {
       type: "category",
       label: "Dagger for CI",
       items: [
