@@ -591,7 +591,7 @@ func (fn *ModuleFunction) loadContextualArg(ctx context.Context, dag *dagql.Serv
 	}
 }
 
-func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Server, arg *FunctionArg, value any) (any, error) {	
+func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Server, arg *FunctionArg, value any) (any, error) {
 	if arg.TypeDef.Kind != TypeDefKindObject || arg.TypeDef.AsObject.Value.Name != "Directory" {
 		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern: [%s]", arg.OriginalName, strings.Join(arg.Ignore, ","))
 	}
@@ -614,8 +614,6 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 			filters.Exclude = append(filters.Exclude, ignore)
 		}
 	}
-
-	slog.Error("moduleFunction.applyIgnoreOnDir", "arg", arg.OriginalName, "exclude", filters.Exclude, "include", filters.Include)
 
 	switch value := value.(type) {
 	case DynamicID:
