@@ -12,7 +12,11 @@ import (
 type HelloDagger struct{}
 
 // Publish the application container after building and testing it on-the-fly
-func (m *HelloDagger) Publish(ctx context.Context, source *dagger.Directory) (string, error) {
+func (m *HelloDagger) Publish(
+	ctx context.Context,
+	// +defaultPath="/"
+	source *dagger.Directory,
+) (string, error) {
 	_, err := m.Test(ctx, source)
 	if err != nil {
 		return "", err
@@ -22,7 +26,10 @@ func (m *HelloDagger) Publish(ctx context.Context, source *dagger.Directory) (st
 }
 
 // Build the application container
-func (m *HelloDagger) Build(source *dagger.Directory) *dagger.Container {
+func (m *HelloDagger) Build(
+	// +defaultPath="/"
+	source *dagger.Directory,
+) *dagger.Container {
 	build := m.BuildEnv(source).
 		WithExec([]string{"npm", "run", "build"}).
 		Directory("./dist")
@@ -32,14 +39,21 @@ func (m *HelloDagger) Build(source *dagger.Directory) *dagger.Container {
 }
 
 // Return the result of running unit tests
-func (m *HelloDagger) Test(ctx context.Context, source *dagger.Directory) (string, error) {
+func (m *HelloDagger) Test(
+	ctx context.Context,
+	// +defaultPath="/"
+	source *dagger.Directory,
+) (string, error) {
 	return m.BuildEnv(source).
 		WithExec([]string{"npm", "run", "test:unit", "run"}).
 		Stdout(ctx)
 }
 
 // Build a ready-to-use development environment
-func (m *HelloDagger) BuildEnv(source *dagger.Directory) *dagger.Container {
+func (m *HelloDagger) BuildEnv(
+	// +defaultPath="/"
+	source *dagger.Directory,
+) *dagger.Container {
 	nodeCache := dag.CacheVolume("node")
 	return dag.Container().
 		From("node:21-slim").

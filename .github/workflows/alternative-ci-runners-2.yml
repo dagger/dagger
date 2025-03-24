@@ -16,14 +16,12 @@ jobs:
   docs-lint-on-namespace-remote-engine:
     uses: ./.github/workflows/_dagger_on_namespace_remote_engine.yml
     with:
-      function: docs lint
-      timeout: 20
+      function: check --targets=docs
   docs-lint-on-namespace-local-engine:
     uses: ./.github/workflows/_dagger_on_namespace_local_engine.yml
     with:
-      function: docs lint
+      function: check --targets=docs
       dev: true
-      timeout: 20
 
   test-cli-engine-on-namespace-remote-engine:
     needs: docs-lint-on-namespace-remote-engine

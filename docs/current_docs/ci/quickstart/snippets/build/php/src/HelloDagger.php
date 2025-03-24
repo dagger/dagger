@@ -6,6 +6,7 @@ namespace DaggerModule;
 
 use Dagger\Attribute\DaggerFunction;
 use Dagger\Attribute\DaggerObject;
+use Dagger\Attribute\DefaultPath;
 use Dagger\Attribute\Doc;
 use Dagger\Container;
 use Dagger\Directory;
@@ -17,8 +18,10 @@ class HelloDagger
 {
     #[DaggerFunction]
     #[Doc('Build the application container')]
-    public function build(Directory $source): Container
-    {
+    public function build(
+      #[DefaultPath('/')]
+      Directory $source,
+    ): Container {
         $build = $this
             // get the build environment container
             // by calling another Dagger Function

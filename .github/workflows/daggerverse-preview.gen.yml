@@ -17,7 +17,7 @@ concurrency:
 jobs:
     deploy:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-16-3-4c' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-17-0-4c' || 'ubuntu-24.04' }}
         name: deploy
         steps:
             - name: Checkout
@@ -51,7 +51,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$DAGGER_VERSION sh
               env:
-                DAGGER_VERSION: v0.16.3
+                DAGGER_VERSION: v0.17.0
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine

@@ -9,7 +9,11 @@ import (
 type HelloDagger struct{}
 
 // Return the result of running unit tests
-func (m *HelloDagger) Test(ctx context.Context, source *dagger.Directory) (string, error) {
+func (m *HelloDagger) Test(
+	ctx context.Context,
+	// +defaultPath="/"
+	source *dagger.Directory,
+) (string, error) {
 	// get the build environment container
 	// by calling another Dagger Function
 	return m.BuildEnv(source).

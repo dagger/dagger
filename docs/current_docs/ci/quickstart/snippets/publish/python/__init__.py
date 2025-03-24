@@ -1,13 +1,17 @@
 import random
+from typing import Annotated
 
 import dagger
-from dagger import function, object_type
+from dagger import DefaultPath, function, object_type
 
 
 @object_type
 class HelloDagger:
     @function
-    async def publish(self, source: dagger.Directory) -> str:
+    async def publish(
+        self,
+        source: Annotated[dagger.Directory, DefaultPath("/")],
+    ) -> str:
         """Publish the application container after building and testing it on-the-fly"""
         # call Dagger Function to run unit tests
         await self.test(source)

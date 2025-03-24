@@ -8381,10 +8381,10 @@ postcss@^8.4.21, postcss@^8.4.24, postcss@^8.4.26, postcss@^8.4.33, postcss@^8.4
     picocolors "^1.1.0"
     source-map-js "^1.2.1"
 
-posthog-docusaurus@^2.0.2:
-  version "2.0.2"
-  resolved "https://registry.yarnpkg.com/posthog-docusaurus/-/posthog-docusaurus-2.0.2.tgz#7be99a3068a8f9f18703f7781036a1f2f14b9b62"
-  integrity sha512-RUxVzJqZ214JuEr1msngxXgTYlK+q37Vhhvp4yG07K+UFF12HBU1TrOdl/MEmvHQimsFQNEa68eYasJo2kAsJA==
+posthog-docusaurus@^2.0.4:
+  version "2.0.4"
+  resolved "https://registry.yarnpkg.com/posthog-docusaurus/-/posthog-docusaurus-2.0.4.tgz#26fdd4071b081385b5f2a6a3dfd41bdaf4c8c221"
+  integrity sha512-xnEVCBovSuvQvYXGny03CDTc0yZCl7O3Mz21sJpXmE1Gvs21gM33WzWaA9Cm6WvWGYZtQy8t8/g8OjCkmTWlXA==
 
 pretty-error@^4.0.0:
   version "4.0.0"
@@ -9016,10 +9016,10 @@ sass-loader@^16.0.2:
   dependencies:
     neo-async "^2.6.2"
 
-sass@^1.85.1:
-  version "1.85.1"
-  resolved "https://registry.yarnpkg.com/sass/-/sass-1.85.1.tgz#18ab0bb48110ae99163778f06445b406148ca0d5"
-  integrity sha512-Uk8WpxM5v+0cMR0XjX9KfRIacmSG86RH4DCCZjLU2rFh5tyutt9siAXJ7G+YfxQ99Q6wrRMbMlVl6KqUms71ag==
+sass@^1.86.0:
+  version "1.86.0"
+  resolved "https://registry.yarnpkg.com/sass/-/sass-1.86.0.tgz#f49464fb6237a903a93f4e8760ef6e37a5030114"
+  integrity sha512-zV8vGUld/+mP4KbMLJMX7TyGCuUp7hnkOScgCMsWuHtns8CWBoz+vmEhoGMXsaJrbUP8gj+F1dLvVe79sK8UdA==
   dependencies:
     chokidar "^4.0.0"
     immutable "^5.0.2"
@@ -9690,15 +9690,15 @@ typedoc-plugin-frontmatter@^1.3.0:
   dependencies:
     yaml "^2.7.0"
 
-typedoc-plugin-markdown@^4.5.0:
-  version "4.5.0"
-  resolved "https://registry.yarnpkg.com/typedoc-plugin-markdown/-/typedoc-plugin-markdown-4.5.0.tgz#83a35d4bfd526fece39d3121f32651cac500d3ec"
-  integrity sha512-SZ3Nhkl8WE46W2/9OrjHIkXeSi4ZuceQeGxw2kGHyaaooRHYiiHlOWJx6SM0WKjqRUTfhz9T7wSwm3zwPEZndA==
+typedoc-plugin-markdown@^4.6.0:
+  version "4.6.0"
+  resolved "https://registry.yarnpkg.com/typedoc-plugin-markdown/-/typedoc-plugin-markdown-4.6.0.tgz#02385efd5bccd2954c0223b9d9b26ac9c63ea653"
+  integrity sha512-RG90uC1QqGN9kPBjzEckEf0v9yIYlLoNYKm4OqjwEGFJJGOLUDs5pIEQQDR2tAv1RD7D8GUSakRlcHMTipyaOA==
 
-typedoc@^0.28.0:
-  version "0.28.0"
-  resolved "https://registry.yarnpkg.com/typedoc/-/typedoc-0.28.0.tgz#6df912370be629d6a03612cee64f7f45e1c8fd7c"
-  integrity sha512-UU+xxZXrpnUhEulBYRwY2afoYFC24J2fTFovOs3llj2foGShCoKVQL6cQCfQ+sBAOdiFn2dETpZ9xhah+CL3RQ==
+typedoc@^0.28.1:
+  version "0.28.1"
+  resolved "https://registry.yarnpkg.com/typedoc/-/typedoc-0.28.1.tgz#23526f452f3824ae1f1b7615dccb7d3e4aa90d83"
+  integrity sha512-Mn2VPNMaxoe/hlBiLriG4U55oyAa3Xo+8HbtEwV7F5WEOPXqtxzGuMZhJYHaqFJpajeQ6ZDUC2c990NAtTbdgw==
   dependencies:
     "@gerrit0/mini-shiki" "^3.2.1"
     lunr "^2.3.9"

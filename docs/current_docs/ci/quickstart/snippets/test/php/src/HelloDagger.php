@@ -6,6 +6,7 @@ namespace DaggerModule;
 
 use Dagger\Attribute\DaggerFunction;
 use Dagger\Attribute\DaggerObject;
+use Dagger\Attribute\DefaultPath;
 use Dagger\Attribute\Doc;
 use Dagger\Container;
 use Dagger\Directory;
@@ -17,8 +18,10 @@ class HelloDagger
 {
     #[DaggerFunction]
     #[Doc('Return the result of running unit tests')]
-    public function test(Directory $source): string
-    {
+    public function test(
+      #[DefaultPath('/')]
+      Directory $source,
+    ): string {
         return $this
             // get the build environment container
             // by calling another Dagger Function

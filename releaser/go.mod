@@ -3,7 +3,7 @@ module dagger/releaser
 go 1.23.1
 
 require (
-	github.com/99designs/gqlgen v0.17.66
+	github.com/99designs/gqlgen v0.17.68
 	github.com/Khan/genqlient v0.8.0
 	github.com/go-task/slim-sprig/v3 v3.0.0
 	github.com/vektah/gqlparser/v2 v2.5.23
@@ -21,7 +21,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.34.0
 	go.opentelemetry.io/otel/trace v1.34.0
 	go.opentelemetry.io/proto/otlp v1.3.1
-	golang.org/x/mod v0.23.0
+	golang.org/x/mod v0.24.0
 	golang.org/x/sync v0.12.0
 	google.golang.org/grpc v1.71.0
 )

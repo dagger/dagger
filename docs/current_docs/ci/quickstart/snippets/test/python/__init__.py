@@ -1,11 +1,16 @@
+from typing import Annotated
+
 import dagger
-from dagger import function, object_type
+from dagger import DefaultPath, function, object_type
 
 
 @object_type
 class HelloDagger:
     @function
-    async def test(self, source: dagger.Directory) -> str:
+    async def test(
+        self,
+        source: Annotated[dagger.Directory, DefaultPath("/")],
+    ) -> str:
         """Return the result of running unit tests"""
         return await (
             # get the build environment container

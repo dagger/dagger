@@ -4,6 +4,7 @@ import io.dagger.client.Container;
 import io.dagger.client.DaggerQueryException;
 import io.dagger.client.Directory;
 import io.dagger.client.CacheVolume;
+import io.dagger.module.annotation.DefaultPath;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
@@ -14,7 +15,7 @@ import java.util.concurrent.ExecutionException;
 public class HelloDagger {
   /** Return the result of running unit tests */
   @Function
-  public String test(Directory source)
+  public String test(@DefaultPath("/") Directory source)
       throws InterruptedException, ExecutionException, DaggerQueryException {
         // get the build environment container
         // by calling another Dagger Function

@@ -61,12 +61,12 @@ Call the Dagger Function as below:
 <Tabs groupId="shell">
 <TabItem value="System shell">
 ```shell
-dagger -c 'build .'
+dagger -c build
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
 ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-build .
+build
 ```
 </TabItem>
 </Tabs>
@@ -86,12 +86,12 @@ To see this in action, chain calls to other functions on the returned `Container
 <Tabs groupId="shell">
 <TabItem value="System shell">
 ```shell
-dagger -c 'build . | as-service | up --ports=8080:80'
+dagger -c 'build | as-service | up --ports=8080:80'
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
 ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-build . | as-service | up --ports=8080:80
+build | as-service | up --ports=8080:80
 ```
 </TabItem>
 </Tabs>

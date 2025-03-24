@@ -1,4 +1,3 @@
-export { gql } from "graphql-tag"
 export { GraphQLClient } from "graphql-request"
 
 // Default client bindings

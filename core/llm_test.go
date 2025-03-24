@@ -9,9 +9,9 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-type LlmTestQuery struct{}
+type LLMTestQuery struct{}
 
-func (LlmTestQuery) Type() *ast.Type {
+func (LLMTestQuery) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Query",
 		NonNull:   true,
@@ -30,7 +30,7 @@ func (mockSecret) Type() *ast.Type {
 }
 
 func TestLlmConfig(t *testing.T) {
-	q := LlmTestQuery{}
+	q := LLMTestQuery{}
 
 	srv := dagql.NewServer(q)
 
@@ -48,8 +48,8 @@ func TestLlmConfig(t *testing.T) {
 		"env://GEMINI_MODEL":         "gemini-model",
 	}
 
-	dagql.Fields[LlmTestQuery]{
-		dagql.Func("secret", func(ctx context.Context, self LlmTestQuery, args struct {
+	dagql.Fields[LLMTestQuery]{
+		dagql.Func("secret", func(ctx context.Context, self LLMTestQuery, args struct {
 			URI string
 		}) (mockSecret, error) {
 			if _, ok := vars[args.URI]; !ok {
@@ -81,11 +81,11 @@ func TestLlmConfig(t *testing.T) {
 }
 
 func TestLlmConfigEnvFile(t *testing.T) {
-	q := LlmTestQuery{}
+	q := LLMTestQuery{}
 
 	srv := dagql.NewServer(q)
-	dagql.Fields[LlmTestQuery]{
-		dagql.Func("secret", func(ctx context.Context, self LlmTestQuery, args struct {
+	dagql.Fields[LLMTestQuery]{
+		dagql.Func("secret", func(ctx context.Context, self LLMTestQuery, args struct {
 			URI string
 		}) (mockSecret, error) {
 			return mockSecret{uri: args.URI}, nil
