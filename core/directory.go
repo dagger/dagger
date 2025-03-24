@@ -37,6 +37,11 @@ type Directory struct {
 
 	// Services necessary to provision the directory.
 	Services ServiceBindings
+
+	// The list of excluded paths of that directory.
+	// This is useful for the ignore directive to avoid double exclusion between
+	// CLI call and module call.
+	Excluded []string
 }
 
 func (*Directory) Type() *ast.Type {
@@ -81,6 +86,7 @@ func NewDirectory(query *Query, def *pb.Definition, dir string, platform Platfor
 		Dir:      dir,
 		Platform: platform,
 		Services: services,
+		Excluded: []string{},
 	}
 }
 
@@ -356,7 +362,7 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 		Callback: func(path string, info os.FileInfo) error {
 			// HACK: ideally, we'd have something like MatchesExact, which
 			// would skip the parent behavior that we don't really want here -
-			// oh well, let's just fake it with false
+			// oh well, let's just fake it wi- false
 			//nolint:staticcheck
 			match, err := pm.MatchesUsingParentResult(filepath.Clean(path), false)
 			if err != nil {
@@ -514,6 +520,8 @@ func (dir *Directory) WithDirectory(ctx context.Context, destDir string, src *Di
 		return nil, err
 	}
 
+
+	dir.Excluded = append(dir.Excluded, filter.Exclude...)
 	dir.Services.Merge(src.Services)
 
 	return dir, nil

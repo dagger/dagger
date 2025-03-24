@@ -3752,6 +3752,109 @@ func schemaVersion(ctx context.Context) (string, error) {
 	})
 }
 
+func (ModuleSuite) TestModulePreFilteringDirectory(ctx context.Context, t *testctx.T) {
+	type testCase struct {
+		sdk    string
+		source string
+	}
+
+	t.Run("pre filtering directory on module call", func(ctx context.Context, t *testctx.T) {
+		for _, tc := range []testCase{
+			{
+				sdk: "go",
+				source: `package main
+
+import (
+	"dagger/dep/internal/dagger"
+)
+
+type Dep struct {}
+
+func (t *Dep) Call(
+  //+ignore=["foo.txt", "bar"]
+  dir *dagger.Directory,
+) *dagger.Directory {
+ return dir
+}`,
+			},
+			{
+				sdk: "typescript",
+				source: `import { object, func, Directory, argument } from "@dagger.io/dagger"
+
+@object()
+export class Dep {
+  @func()
+  call(
+    @argument({ ignore: ["foo.txt", "bar"] }) dir: Directory,
+  ): Directory {
+    return dir
+  }
+}`,
+			},
+			{
+				sdk: "python",
+				source: `from typing import Annotated
+
+import dagger
+from dagger import DefaultPath, Ignore, function, object_type
+
+
+@object_type
+class Dep:
+    @function
+    async def call(
+        self,
+        dir: Annotated[dagger.Directory, Ignore(["foo.txt","bar"])],
+    ) -> dagger.Directory:
+        return dir
+`,
+			},
+		} {
+			tc := tc
+
+			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+
+				modGen := goGitBase(t, c).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					// Add inputs
+					WithDirectory("/work/input", c.
+						Directory().
+						WithNewFile("foo.txt", "foo").
+						WithNewFile("bar.txt", "bar").
+						WithDirectory("bar", c.Directory().WithNewFile("baz.txt", "baz"))).
+					// Add dep
+					WithWorkdir("/work/dep").
+					With(daggerExec("init", "--name=dep", "--sdk="+tc.sdk, "--source=.")).
+					With(sdkSource(tc.sdk, tc.source)).
+					// Setup test modules
+					WithWorkdir("/work").
+					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+					With(daggerExec("install", "./dep")).
+					With(sdkSource("go", `package main
+
+import (
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (t *Test) Test(
+  dir *dagger.Directory,
+) *dagger.Directory {
+ return dag.Dep().Call(dir)
+}`,
+					))
+
+				out, err := modGen.With(daggerCall("test", "--dir", "./input", "entries")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "bar.txt\n", out)
+			})
+		}
+	})
+}
+
 func (ModuleSuite) TestContextDirectory(ctx context.Context, t *testctx.T) {
 	type testCase struct {
 		sdk    string
