@@ -600,21 +600,6 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 		return nil, fmt.Errorf("dagql server is nil but required to ignore pattern on directory %q", arg.OriginalName)
 	}
 
-	var filters struct {
-		Include []string
-		Exclude []string
-	}
-
-	// Manually parse include/exclude patterns since withDirectory doesn't support it directly.
-	// NOTE: this is currently broken, see https://discord.com/channels/707636530424053791/1353819090623533170/1353819090623533170
-	for _, ignore := range arg.Ignore {
-		if strings.HasPrefix(ignore, "!") {
-			filters.Include = append(filters.Include, strings.TrimPrefix(ignore, "!"))
-		} else {
-			filters.Exclude = append(filters.Exclude, ignore)
-		}
-	}
-
 	switch value := value.(type) {
 	case DynamicID:
 		var ignoredDir dagql.Instance[*Directory]
@@ -639,8 +624,7 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String("/")},
 					{Name: "directory", Value: dagql.NewID[*Directory](value.ID())},
-					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filters.Include...))},
-					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filters.Exclude...))},
+					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore...))},
 				},
 			},
 		)
@@ -677,8 +661,7 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String(arg.Ignore[0])},
 					{Name: "directory", Value: dagql.NewID[*Directory](value.ID())},
-					{Name: "include", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filters.Include...))},
-					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(filters.Exclude...))},
+					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore...))},
 				},
 			},
 		)
