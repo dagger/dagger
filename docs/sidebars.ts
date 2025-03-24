@@ -21,6 +21,7 @@ module.exports = {
         "features/services",
         "features/secrets",
         "features/visualization",
+        "agents",
       ],
     },
     {
@@ -48,6 +49,7 @@ module.exports = {
             "ci/quickstart/publish",
             "ci/quickstart/simplify",
             "ci/quickstart/conclusion",
+            "ci/adopting",
           ],
         },
         {
@@ -61,42 +63,6 @@ module.exports = {
       type: "doc",
       label: "Examples",
       id: "examples",
-    },
-    {
-      type: "doc",
-      label: "Dagger for AI Agents",
-      id: "agents",
-    },
-    {
-      type: "category",
-      label: "Dagger for CI",
-      items: [
-        {
-          type: "doc",
-          label: "Day 2",
-          id: "ci/adopting",
-        },
-        {
-          type: "category",
-          label: "Integrating with CI",
-          link: {
-            type: "doc",
-            id: "ci/integrations/ci",
-          },
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "ci/integrations/argo-workflows",
-            "ci/integrations/aws-codebuild",
-            "ci/integrations/azure-pipelines",
-            "ci/integrations/circleci",
-            "ci/integrations/github-actions",
-            "ci/integrations/gitlab",
-            "ci/integrations/jenkins",
-            "ci/integrations/tekton",
-          ],
-        },
-      ],
     },
     {
       type: "category",
@@ -212,6 +178,26 @@ module.exports = {
       collapsible: true,
       collapsed: true,
       items: [
+        {
+          type: "category",
+          label: "CI",
+          link: {
+            type: "doc",
+            id: "ci/integrations/ci",
+          },
+          collapsible: true,
+          collapsed: true,
+          items: [
+            "ci/integrations/argo-workflows",
+            "ci/integrations/aws-codebuild",
+            "ci/integrations/azure-pipelines",
+            "ci/integrations/circleci",
+            "ci/integrations/github-actions",
+            "ci/integrations/gitlab",
+            "ci/integrations/jenkins",
+            "ci/integrations/tekton",
+          ],
+        },
         "ci/integrations/github",
         "ci/integrations/google-cloud-run",
         "ci/integrations/kubernetes",
