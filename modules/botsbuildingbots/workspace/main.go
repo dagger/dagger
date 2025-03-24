@@ -53,13 +53,7 @@ func (w *Workspace) WithSystemPrompt(prompt string) *Workspace {
 }
 
 // Evaluate the LLM and return the history of prompts, responses, and tool calls.
-func (w *Workspace) Evaluate(
-	ctx context.Context,
-	// If you want to run the evaluates again, just call this with a new number.
-	//
-	// +default=0
-	attempt int,
-) (string, error) {
+func (w *Workspace) Evaluate(ctx context.Context) (string, error) {
 	reports := make(chan string, w.Evals)
 	wg := new(sync.WaitGroup)
 	var succeeded int
