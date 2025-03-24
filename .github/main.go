@@ -177,20 +177,20 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 		WithJob(runner.Job("scan-engine", "engine scan")).
 		With(splitTests(runner, "testdev-", true, []testSplit{
 			{"cgroupsv2", []string{"TestProvision", "TestTelemetry"}, &dagger.GhaJobOpts{
-				// NOTE: Our CI runners do not support cgroupsv2 as of 2025.03
+				// NOTE: Our CI runners do not support cgroupsv2 as of 2025.03, this MUST remain an Alt* runner
 				// @gerhard @matipan @jedevc have more details
 				Runner: []string{AltGoldRunner()},
 			}},
-			{"modules", []string{"TestModule"}, &dagger.GhaJobOpts{
+			{"module", []string{"TestModule"}, &dagger.GhaJobOpts{
 				Runner: []string{AltGoldRunner()},
 			}},
-			{"module-runtimes", []string{"TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"}, &dagger.GhaJobOpts{
-				Runner: []string{AltPlatinumRunner()},
+			{"core-module-runtimes", []string{"TestGo", "TestPython", "TestTypescript"}, &dagger.GhaJobOpts{
+				Runner: []string{AltGoldRunner()},
+			}},
+			{"community-module-runtimes", []string{"TestElixir", "TestPHP", "TestJava"}, &dagger.GhaJobOpts{
+				Runner: []string{AltGoldRunner()},
 			}},
 			{"container", []string{"TestContainer"}, &dagger.GhaJobOpts{
-				Runner: []string{AltGoldRunner()},
-			}},
-			{"LLM", []string{"TestLLM"}, &dagger.GhaJobOpts{
 				Runner: []string{AltGoldRunner()},
 			}},
 			{"cli-engine", []string{"TestCLI", "TestEngine"}, &dagger.GhaJobOpts{
@@ -199,8 +199,14 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 			{"client-generator", []string{"TestClientGenerator"}, &dagger.GhaJobOpts{
 				Runner: []string{AltGoldRunner()},
 			}},
+			{"config", []string{"TestConfig"}, &dagger.GhaJobOpts{
+				Runner: []string{AltGoldRunner()},
+			}},
+			{"type", []string{"TestType"}, &dagger.GhaJobOpts{
+				Runner: []string{AltGoldRunner()},
+			}},
 			{"everything-else", nil, &dagger.GhaJobOpts{
-				Runner: []string{AltPlatinumRunner()},
+				Runner: []string{AltGoldRunner()},
 			}},
 		}))
 
@@ -220,7 +226,7 @@ func splitTests(runner *dagger.Gha, name string, dev bool, splits []testSplit) d
 	return func(w *dagger.GhaWorkflow) *dagger.GhaWorkflow {
 		var doneTests []string
 		for _, split := range splits {
-			command := "test specific --race=true --parallel=16 "
+			command := "test specific --race=true --parallel=14 "
 			if split.tests != nil {
 				command += fmt.Sprintf("--run='%s'", strings.Join(split.tests, "|"))
 			} else {
