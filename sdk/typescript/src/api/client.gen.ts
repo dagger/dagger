@@ -5132,6 +5132,7 @@ export class InterfaceTypeDef extends BaseClient {
 
 export class LLM extends BaseClient {
   private readonly _id?: LLMID = undefined
+  private readonly _currentType?: string = undefined
   private readonly _getString?: string = undefined
   private readonly _historyJSON?: string = undefined
   private readonly _lastReply?: string = undefined
@@ -5146,6 +5147,7 @@ export class LLM extends BaseClient {
   constructor(
     ctx?: Context,
     _id?: LLMID,
+    _currentType?: string,
     _getString?: string,
     _historyJSON?: string,
     _lastReply?: string,
@@ -5157,6 +5159,7 @@ export class LLM extends BaseClient {
     super(ctx)
 
     this._id = _id
+    this._currentType = _currentType
     this._getString = _getString
     this._historyJSON = _historyJSON
     this._lastReply = _lastReply
@@ -5183,7 +5186,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type CacheVolume
-   * @deprecated use get<TargetType> instead
    */
   cacheVolume = (): CacheVolume => {
     const ctx = this._ctx.select("cacheVolume")
@@ -5192,7 +5194,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type Container
-   * @deprecated use get<TargetType> instead
    */
   container = (): Container => {
     const ctx = this._ctx.select("container")
@@ -5201,7 +5202,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type CurrentModule
-   * @deprecated use get<TargetType> instead
    */
   currentModule = (): CurrentModule => {
     const ctx = this._ctx.select("currentModule")
@@ -5209,8 +5209,22 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * returns the type of the current state
+   */
+  currentType = async (): Promise<string> => {
+    if (this._currentType) {
+      return this._currentType
+    }
+
+    const ctx = this._ctx.select("currentType")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Retrieve a the current value in the LLM environment, of type Directory
-   * @deprecated use get<TargetType> instead
    */
   directory = (): Directory => {
     const ctx = this._ctx.select("directory")
@@ -5219,7 +5233,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type EnumTypeDef
-   * @deprecated use get<TargetType> instead
    */
   enumTypeDef = (): EnumTypeDef => {
     const ctx = this._ctx.select("enumTypeDef")
@@ -5228,7 +5241,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type EnumValueTypeDef
-   * @deprecated use get<TargetType> instead
    */
   enumValueTypeDef = (): EnumValueTypeDef => {
     const ctx = this._ctx.select("enumValueTypeDef")
@@ -5237,7 +5249,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type Error
-   * @deprecated use get<TargetType> instead
    */
   error = (): Error => {
     const ctx = this._ctx.select("error")
@@ -5246,7 +5257,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type ErrorValue
-   * @deprecated use get<TargetType> instead
    */
   errorValue = (): ErrorValue => {
     const ctx = this._ctx.select("errorValue")
@@ -5255,7 +5265,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type FieldTypeDef
-   * @deprecated use get<TargetType> instead
    */
   fieldTypeDef = (): FieldTypeDef => {
     const ctx = this._ctx.select("fieldTypeDef")
@@ -5264,7 +5273,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type File
-   * @deprecated use get<TargetType> instead
    */
   file = (): File => {
     const ctx = this._ctx.select("file")
@@ -5273,7 +5281,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type Function
-   * @deprecated use get<TargetType> instead
    */
   function_ = (): Function_ => {
     const ctx = this._ctx.select("function")
@@ -5282,7 +5289,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type FunctionArg
-   * @deprecated use get<TargetType> instead
    */
   functionArg = (): FunctionArg => {
     const ctx = this._ctx.select("functionArg")
@@ -5291,7 +5297,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type FunctionCall
-   * @deprecated use get<TargetType> instead
    */
   functionCall = (): FunctionCall => {
     const ctx = this._ctx.select("functionCall")
@@ -5300,7 +5305,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type FunctionCallArgValue
-   * @deprecated use get<TargetType> instead
    */
   functionCallArgValue = (): FunctionCallArgValue => {
     const ctx = this._ctx.select("functionCallArgValue")
@@ -5309,7 +5313,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type GeneratedCode
-   * @deprecated use get<TargetType> instead
    */
   generatedCode = (): GeneratedCode => {
     const ctx = this._ctx.select("generatedCode")
@@ -5631,7 +5634,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type GitRef
-   * @deprecated use get<TargetType> instead
    */
   gitRef = (): GitRef => {
     const ctx = this._ctx.select("gitRef")
@@ -5640,7 +5642,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type GitRepository
-   * @deprecated use get<TargetType> instead
    */
   gitRepository = (): GitRepository => {
     const ctx = this._ctx.select("gitRepository")
@@ -5675,7 +5676,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type InputTypeDef
-   * @deprecated use get<TargetType> instead
    */
   inputTypeDef = (): InputTypeDef => {
     const ctx = this._ctx.select("inputTypeDef")
@@ -5684,7 +5684,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type InterfaceTypeDef
-   * @deprecated use get<TargetType> instead
    */
   interfaceTypeDef = (): InterfaceTypeDef => {
     const ctx = this._ctx.select("interfaceTypeDef")
@@ -5693,7 +5692,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type LLM
-   * @deprecated use get<TargetType> instead
    */
   lLM = (): LLM => {
     const ctx = this._ctx.select("lLM")
@@ -5717,7 +5715,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type ListTypeDef
-   * @deprecated use get<TargetType> instead
    */
   listTypeDef = (): ListTypeDef => {
     const ctx = this._ctx.select("listTypeDef")
@@ -5726,7 +5723,6 @@ export class LLM extends BaseClient {
 
   /**
    * synchronize LLM state
-   * @deprecated use sync
    */
   loop = (): LLM => {
     const ctx = this._ctx.select("loop")
@@ -5750,7 +5746,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type Module
-   * @deprecated use get<TargetType> instead
    */
   module_ = (): Module_ => {
     const ctx = this._ctx.select("module")
@@ -5759,7 +5754,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type ModuleConfigClient
-   * @deprecated use get<TargetType> instead
    */
   moduleConfigClient = (): ModuleConfigClient => {
     const ctx = this._ctx.select("moduleConfigClient")
@@ -5768,7 +5762,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type ModuleSource
-   * @deprecated use get<TargetType> instead
    */
   moduleSource = (): ModuleSource => {
     const ctx = this._ctx.select("moduleSource")
@@ -5777,7 +5770,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type ObjectTypeDef
-   * @deprecated use get<TargetType> instead
    */
   objectTypeDef = (): ObjectTypeDef => {
     const ctx = this._ctx.select("objectTypeDef")
@@ -5801,7 +5793,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type ScalarTypeDef
-   * @deprecated use get<TargetType> instead
    */
   scalarTypeDef = (): ScalarTypeDef => {
     const ctx = this._ctx.select("scalarTypeDef")
@@ -5810,7 +5801,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type SDKConfig
-   * @deprecated use get<TargetType> instead
    */
   sdkconfig = (): SDKConfig => {
     const ctx = this._ctx.select("sdkconfig")
@@ -5819,7 +5809,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type Secret
-   * @deprecated use get<TargetType> instead
    */
   secret = (): Secret => {
     const ctx = this._ctx.select("secret")
@@ -5828,7 +5817,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type Service
-   * @deprecated use get<TargetType> instead
    */
   service = (): Service => {
     const ctx = this._ctx.select("service")
@@ -6180,7 +6168,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type Socket
-   * @deprecated use get<TargetType> instead
    */
   socket = (): Socket => {
     const ctx = this._ctx.select("socket")
@@ -6189,7 +6176,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type SourceMap
-   * @deprecated use get<TargetType> instead
    */
   sourceMap = (): SourceMap => {
     const ctx = this._ctx.select("sourceMap")
@@ -6209,7 +6195,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type Terminal
-   * @deprecated use get<TargetType> instead
    */
   terminal = (): Terminal => {
     const ctx = this._ctx.select("terminal")
@@ -6233,7 +6218,6 @@ export class LLM extends BaseClient {
 
   /**
    * Retrieve a the current value in the LLM environment, of type TypeDef
-   * @deprecated use get<TargetType> instead
    */
   typeDef = (): TypeDef => {
     const ctx = this._ctx.select("typeDef")
@@ -6260,7 +6244,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type CacheVolume in the llm environment
    * @param value The CacheVolume value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withCacheVolume = (value: CacheVolume): LLM => {
     const ctx = this._ctx.select("withCacheVolume", { value })
@@ -6270,7 +6253,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type Container in the llm environment
    * @param value The Container value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withContainer = (value: Container): LLM => {
     const ctx = this._ctx.select("withContainer", { value })
@@ -6280,7 +6262,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type CurrentModule in the llm environment
    * @param value The CurrentModule value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withCurrentModule = (value: CurrentModule): LLM => {
     const ctx = this._ctx.select("withCurrentModule", { value })
@@ -6290,7 +6271,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type Directory in the llm environment
    * @param value The Directory value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withDirectory = (value: Directory): LLM => {
     const ctx = this._ctx.select("withDirectory", { value })
@@ -6300,7 +6280,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type EnumTypeDef in the llm environment
    * @param value The EnumTypeDef value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withEnumTypeDef = (value: EnumTypeDef): LLM => {
     const ctx = this._ctx.select("withEnumTypeDef", { value })
@@ -6310,7 +6289,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type EnumValueTypeDef in the llm environment
    * @param value The EnumValueTypeDef value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withEnumValueTypeDef = (value: EnumValueTypeDef): LLM => {
     const ctx = this._ctx.select("withEnumValueTypeDef", { value })
@@ -6320,7 +6298,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type Error in the llm environment
    * @param value The Error value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withError = (value: Error): LLM => {
     const ctx = this._ctx.select("withError", { value })
@@ -6330,7 +6307,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type ErrorValue in the llm environment
    * @param value The ErrorValue value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withErrorValue = (value: ErrorValue): LLM => {
     const ctx = this._ctx.select("withErrorValue", { value })
@@ -6340,7 +6316,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type FieldTypeDef in the llm environment
    * @param value The FieldTypeDef value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withFieldTypeDef = (value: FieldTypeDef): LLM => {
     const ctx = this._ctx.select("withFieldTypeDef", { value })
@@ -6350,7 +6325,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type File in the llm environment
    * @param value The File value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withFile = (value: File): LLM => {
     const ctx = this._ctx.select("withFile", { value })
@@ -6360,7 +6334,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type Function in the llm environment
    * @param value The Function value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withFunction = (value: Function_): LLM => {
     const ctx = this._ctx.select("withFunction", { value })
@@ -6370,7 +6343,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type FunctionArg in the llm environment
    * @param value The FunctionArg value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withFunctionArg = (value: FunctionArg): LLM => {
     const ctx = this._ctx.select("withFunctionArg", { value })
@@ -6380,7 +6352,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type FunctionCall in the llm environment
    * @param value The FunctionCall value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withFunctionCall = (value: FunctionCall): LLM => {
     const ctx = this._ctx.select("withFunctionCall", { value })
@@ -6390,7 +6361,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type FunctionCallArgValue in the llm environment
    * @param value The FunctionCallArgValue value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withFunctionCallArgValue = (value: FunctionCallArgValue): LLM => {
     const ctx = this._ctx.select("withFunctionCallArgValue", { value })
@@ -6400,7 +6370,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type GeneratedCode in the llm environment
    * @param value The GeneratedCode value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withGeneratedCode = (value: GeneratedCode): LLM => {
     const ctx = this._ctx.select("withGeneratedCode", { value })
@@ -6410,7 +6379,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type GitRef in the llm environment
    * @param value The GitRef value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withGitRef = (value: GitRef): LLM => {
     const ctx = this._ctx.select("withGitRef", { value })
@@ -6420,7 +6388,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type GitRepository in the llm environment
    * @param value The GitRepository value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withGitRepository = (value: GitRepository): LLM => {
     const ctx = this._ctx.select("withGitRepository", { value })
@@ -6430,7 +6397,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type InputTypeDef in the llm environment
    * @param value The InputTypeDef value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withInputTypeDef = (value: InputTypeDef): LLM => {
     const ctx = this._ctx.select("withInputTypeDef", { value })
@@ -6440,7 +6406,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type InterfaceTypeDef in the llm environment
    * @param value The InterfaceTypeDef value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withInterfaceTypeDef = (value: InterfaceTypeDef): LLM => {
     const ctx = this._ctx.select("withInterfaceTypeDef", { value })
@@ -6450,7 +6415,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type LLM in the llm environment
    * @param value The LLM value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withLLM = (value: LLM): LLM => {
     const ctx = this._ctx.select("withLLM", { value })
@@ -6460,7 +6424,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type ListTypeDef in the llm environment
    * @param value The ListTypeDef value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withListTypeDef = (value: ListTypeDef): LLM => {
     const ctx = this._ctx.select("withListTypeDef", { value })
@@ -6479,7 +6442,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type Module in the llm environment
    * @param value The Module value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withModule = (value: Module_): LLM => {
     const ctx = this._ctx.select("withModule", { value })
@@ -6489,7 +6451,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type ModuleConfigClient in the llm environment
    * @param value The ModuleConfigClient value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withModuleConfigClient = (value: ModuleConfigClient): LLM => {
     const ctx = this._ctx.select("withModuleConfigClient", { value })
@@ -6499,7 +6460,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type ModuleSource in the llm environment
    * @param value The ModuleSource value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withModuleSource = (value: ModuleSource): LLM => {
     const ctx = this._ctx.select("withModuleSource", { value })
@@ -6509,7 +6469,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type ObjectTypeDef in the llm environment
    * @param value The ObjectTypeDef value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withObjectTypeDef = (value: ObjectTypeDef): LLM => {
     const ctx = this._ctx.select("withObjectTypeDef", { value })
@@ -6545,9 +6504,16 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Provide the entire Query object to the LLM
+   */
+  withQuery = (): LLM => {
+    const ctx = this._ctx.select("withQuery")
+    return new LLM(ctx)
+  }
+
+  /**
    * Set a variable of type SDKConfig in the llm environment
    * @param value The SDKConfig value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withSDKConfig = (value: SDKConfig): LLM => {
     const ctx = this._ctx.select("withSDKConfig", { value })
@@ -6557,7 +6523,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type ScalarTypeDef in the llm environment
    * @param value The ScalarTypeDef value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withScalarTypeDef = (value: ScalarTypeDef): LLM => {
     const ctx = this._ctx.select("withScalarTypeDef", { value })
@@ -6567,7 +6532,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type Secret in the llm environment
    * @param value The Secret value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withSecret = (value: Secret): LLM => {
     const ctx = this._ctx.select("withSecret", { value })
@@ -6577,7 +6541,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type Service in the llm environment
    * @param value The Service value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withService = (value: Service): LLM => {
     const ctx = this._ctx.select("withService", { value })
@@ -6587,7 +6550,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type Socket in the llm environment
    * @param value The Socket value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withSocket = (value: Socket): LLM => {
     const ctx = this._ctx.select("withSocket", { value })
@@ -6597,7 +6559,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type SourceMap in the llm environment
    * @param value The SourceMap value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withSourceMap = (value: SourceMap): LLM => {
     const ctx = this._ctx.select("withSourceMap", { value })
@@ -6607,7 +6568,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type Terminal in the llm environment
    * @param value The Terminal value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withTerminal = (value: Terminal): LLM => {
     const ctx = this._ctx.select("withTerminal", { value })
@@ -6617,7 +6577,6 @@ export class LLM extends BaseClient {
   /**
    * Set a variable of type TypeDef in the llm environment
    * @param value The TypeDef value to assign to the variable
-   * @deprecated use set<TargetType> instead
    */
   withTypeDef = (value: TypeDef): LLM => {
     const ctx = this._ctx.select("withTypeDef", { value })
@@ -7266,7 +7225,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The resolved commit of the git repo this source points to. Only valid for git sources.
+   * The resolved commit of the git repo this source points to.
    */
   commit = async (): Promise<string> => {
     if (this._commit) {
@@ -7385,7 +7344,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket). Only valid for git sources.
+   * The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket).
    */
   htmlRepoURL = async (): Promise<string> => {
     if (this._htmlRepoURL) {
@@ -7569,7 +7528,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The specified version of the git repo this source points to. Only valid for git sources.
+   * The specified version of the git repo this source points to.
    */
   version = async (): Promise<string> => {
     if (this._version) {

@@ -1,4 +1,11 @@
-import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
+import {
+  dag,
+  Container,
+  Directory,
+  object,
+  func,
+  argument,
+} from "@dagger.io/dagger"
 
 @object()
 class HelloDagger {
@@ -6,7 +13,7 @@ class HelloDagger {
    * Build the application container
    */
   @func()
-  build(source: Directory): Container {
+  build(@argument({ defaultPath: "/" }) source: Directory): Container {
     // get the build environment container
     // by calling another Dagger Function
     const build = this.buildEnv(source)

@@ -29,7 +29,7 @@ func daggerShell(script string) dagger.WithContainerFunc {
 
 func daggerShellNoMod(script string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec([]string{"dagger", "-n"}, dagger.ContainerWithExecOpts{
+		return c.WithExec([]string{"dagger", "-M"}, dagger.ContainerWithExecOpts{
 			Stdin:                         script,
 			ExperimentalPrivilegedNesting: true,
 		})
@@ -154,7 +154,7 @@ func (Other) Version() string {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "MODULE")
-		require.Contains(t, out, "Main module")
+		require.Contains(t, out, "Test main object")
 		require.Contains(t, out, "ENTRYPOINT")
 		require.Contains(t, out, "Usage: . [options]")
 	})
@@ -241,7 +241,7 @@ func (Other) Version() string {
 		require.NoError(t, err)
 		require.Contains(t, out, "A git helper")
 		require.Contains(t, out, "ENTRYPOINT")
-		require.NotContains(t, out, "AVAILABLE FUNCTIONS")
+		require.Contains(t, out, "AVAILABLE FUNCTIONS")
 	})
 
 	t.Run("other module function", func(ctx context.Context, t *testctx.T) {
@@ -259,7 +259,7 @@ func (Other) Version() string {
 		require.NoError(t, err)
 		require.Contains(t, out, "A local module")
 		require.NotContains(t, out, "ENTRYPOINT")
-		require.NotContains(t, out, "AVAILABLE FUNCTIONS")
+		require.Contains(t, out, "AVAILABLE FUNCTIONS")
 	})
 
 	t.Run("current module required constructor arg error", func(ctx context.Context, t *testctx.T) {

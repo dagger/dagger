@@ -10,7 +10,6 @@ type MyModule struct {
 }
 
 func New(
-	// +optional
 	// +defaultPath="."
 	source *dagger.Directory,
 ) *MyModule {

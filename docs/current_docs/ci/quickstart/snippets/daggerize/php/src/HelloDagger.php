@@ -6,6 +6,7 @@ namespace DaggerModule;
 
 use Dagger\Attribute\DaggerFunction;
 use Dagger\Attribute\DaggerObject;
+use Dagger\Attribute\DefaultPath;
 use Dagger\Attribute\Doc;
 use Dagger\Container;
 use Dagger\Directory;
@@ -17,8 +18,10 @@ class HelloDagger
 {
     #[DaggerFunction]
     #[Doc('Publish the application container after building and testing it on-the-fly')]
-    public function publish(Directory $source): string
-    {
+    public function publish(
+      #[DefaultPath('/')]
+      Directory $source,
+    ): string {
         $this->test($source);
 
         return $this
@@ -28,8 +31,10 @@ class HelloDagger
 
     #[DaggerFunction]
     #[Doc('Build the application container')]
-    public function build(Directory $source): Container
-    {
+    public function build(
+      #[DefaultPath('/')]
+      Directory $source,
+    ): Container {
         $build = $this
             ->buildEnv($source)
             ->withExec(['npm', 'run', 'build'])
@@ -44,8 +49,10 @@ class HelloDagger
 
     #[DaggerFunction]
     #[Doc('Return the result of running unit tests')]
-    public function test(Directory $source): string
-    {
+    public function test(
+      #[DefaultPath('/')]
+      Directory $source,
+    ): string {
         return $this
             ->buildEnv($source)
             ->withExec(['npm', 'run', 'test:unit', 'run'])
@@ -54,8 +61,10 @@ class HelloDagger
 
     #[DaggerFunction]
     #[Doc('Build a ready-to-use development environment')]
-    public function buildEnv(Directory $source): Container
-    {
+    public function buildEnv(
+      #[DefaultPath('/')]
+      Directory $source,
+    ): Container {
         $nodeCache = dag()
             ->cacheVolume('node');
 

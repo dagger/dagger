@@ -31,7 +31,7 @@ export type Organization = {
 }
 
 @object()
-class Github {
+class MyModule {
   @func()
   daggerOrganization(): Organization {
     const url = "https://github.com/dagger"

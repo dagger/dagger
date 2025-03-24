@@ -11,8 +11,29 @@ Volume caching involves caching specific parts of the filesystem and reusing the
 Here's an example:
 
 <Tabs groupId="language">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+container |
+  from node:21 |
+  with-directory /src https://github.com/dagger/hello-dagger |
+  with-workdir /src |
+  with-mounted-cache /root/.npm node-21 |
+  with-exec npm install
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+container |
+  from node:21 |
+  with-directory /src https://github.com/dagger/hello-dagger |
+  with-workdir /src |
+  with-mounted-cache /root/.npm node-21 |
+  with-exec npm install
+```
+</TabItem>
 <TabItem value="Dagger CLI">
-
 ```shell
 dagger core container \
   from --address=node:21 \
@@ -21,7 +42,6 @@ dagger core container \
   with-mounted-cache --path=/root/.npm --cache=node-21 \
   with-exec --args="npm","install"
 ```
-
 </TabItem>
 <TabItem value="Go">
 

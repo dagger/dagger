@@ -3,6 +3,9 @@ slug: /ai-agents
 description: Learn how to build reproducible AI agents with Dagger using OpenAI, Anthropic, Gemini, Llama, DeepSeek, Qwen, and more.
 ---
 
+import PartialInstallCli from './partials/_install-cli.mdx';
+import { daggerVersion } from './partials/version';
+
 # Build AI agents with Dagger
 
 ## Overview
@@ -53,28 +56,9 @@ For more explanation of agent design patterns, see [FAQ](#faq) below.
 
 ## Initial setup
 
-### 1. Install Dagger with llm support
+### 1. Install Dagger
 
-*Note: the latest version is `0.17.0-llm.10`. It was released on March 17, 2025. If you are running an older build, we recommend upgrading.*
-
-You will need a *development version* of Dagger which adds native support for LLM prompting and tool calling.
-
-Once this feature is merged (current target is 0.17), a development build will no longer be required.
-
-Install the development version of LLM-enabled Dagger:
-
-```console
-curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.17.0-llm.10 BIN_DIR=/usr/local/bin sh
-```
-
-You can adjust `BIN_DIR` to customize where the `dagger` CLI is installed.
-
-Verify that your Dagger installation works:
-
-```console
-$ dagger -c version
-v0.17.0-llm.10
-```
+<PartialInstallCli />
 
 ### 2.Configure LLM endpoints
 
@@ -252,7 +236,7 @@ dagger client generate
 Consider the following code from the [toy-programmer](https://github.com/shykes/toy-programmer):
 
 ```go
-result := dag.Llm().
+result := dag.LLM().
 		WithToyWorkspace(dag.ToyWorkspace().Write("assignment.txt", assignment)).
 		WithPrompt("You are an expert go programmer. You have access to a workspace").
 		WithPrompt("Complete the assignment written at assignment.txt").
@@ -270,7 +254,7 @@ Dagger [modules](features/modules.mdx) are collections of Dagger functions. When
 Consider the following code from the [toy-programmer](https://github.com/shykes/toy-programmer):
 
 ```go
-result := dag.Llm().
+result := dag.LLM().
 		WithToyWorkspace(dag.ToyWorkspace().Write("assignment.txt", assignment)).
 		WithPrompt("You are an expert go programmer. You have access to a workspace").
 		WithPrompt("Complete the assignment written at assignment.txt").
@@ -292,7 +276,7 @@ For example workspaces, see [toy-workspace](https://github.com/shykes/toy-progra
 Consider the following code from the [toy-programmer](https://github.com/shykes/toy-programmer):
 
 ```go
-result := dag.Llm().
+result := dag.LLM().
 		WithToyWorkspace(dag.ToyWorkspace().Write("assignment.txt", assignment)).
 		WithPrompt("You are an expert go programmer. You have access to a workspace").
 		WithPrompt("Complete the assignment written at assignment.txt").

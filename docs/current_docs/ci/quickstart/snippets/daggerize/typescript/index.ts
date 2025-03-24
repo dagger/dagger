@@ -1,4 +1,11 @@
-import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
+import {
+  dag,
+  Container,
+  Directory,
+  object,
+  func,
+  argument,
+} from "@dagger.io/dagger"
 
 @object()
 class HelloDagger {
@@ -6,7 +13,9 @@ class HelloDagger {
    * Publish the application container after building and testing it on-the-fly
    */
   @func()
-  async publish(source: Directory): Promise<string> {
+  async publish(
+    @argument({ defaultPath: "/" }) source: Directory,
+  ): Promise<string> {
     await this.test(source)
     return await this.build(source).publish(
       "ttl.sh/hello-dagger-" + Math.floor(Math.random() * 10000000),
@@ -17,7 +26,7 @@ class HelloDagger {
    * Build the application container
    */
   @func()
-  build(source: Directory): Container {
+  build(@argument({ defaultPath: "/" }) source: Directory): Container {
     const build = this.buildEnv(source)
       .withExec(["npm", "run", "build"])
       .directory("./dist")
@@ -32,7 +41,9 @@ class HelloDagger {
    * Return the result of running unit tests
    */
   @func()
-  async test(source: Directory): Promise<string> {
+  async test(
+    @argument({ defaultPath: "/" }) source: Directory,
+  ): Promise<string> {
     return this.buildEnv(source)
       .withExec(["npm", "run", "test:unit", "run"])
       .stdout()
@@ -42,7 +53,7 @@ class HelloDagger {
    * Build a ready-to-use development environment
    */
   @func()
-  buildEnv(source: Directory): Container {
+  buildEnv(@argument({ defaultPath: "/" }) source: Directory): Container {
     const nodeCache = dag.cacheVolume("node")
     return dag
       .container()

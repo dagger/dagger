@@ -72,6 +72,16 @@ public function greeting(): string
 ```
 
 </TabItem>
+<TabItem value="Java">
+
+```java
+@Function
+public String greeting() throws ExecutionException, DaggerQueryException, InterruptedException {
+    return dag().hello().hello();
+}
+```
+
+</TabItem>
 </Tabs>
 
 Here is a more complex example. It is a Dagger Function that utilizes a module from the Daggerverse to build a Go project, then chains a Dagger API method to open an interactive terminal session in the build directory.
@@ -101,6 +111,10 @@ Next, create a new Dagger Function:
 ```php file=./snippets/dependencies/chaining/php/src/MyModule.php
 ```
 </TabItem>
+<TabItem value="Java">
+```java file=./snippets/dependencies/chaining/java/MyModule.java
+```
+</TabItem>
 </Tabs>
 
 This Dagger Function accepts two arguments - the source directory and a list of build arguments - and does the following:
@@ -111,9 +125,23 @@ This Dagger Function accepts two arguments - the source directory and a list of 
 
 Here is an example call for this Dagger Function:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'example https://github.com/golang/example#master:/hello .'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+example https://github.com/golang/example#master:/hello .
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call example --build-src=https://github.com/golang/example#master:/hello --build-args=.
 ```
+</TabItem>
+</Tabs>
 
 You can also use local modules as dependencies. However, they must be stored in a sub-directory of your module. For example:
 

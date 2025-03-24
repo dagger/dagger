@@ -6,7 +6,7 @@
 
     <groupId>io.dagger</groupId>
     <artifactId>dagger-sdk-parent</artifactId>
-    <version>0.16.3</version>
+    <version>0.17.0</version>
     <packaging>pom</packaging>
 
     <modules>
@@ -289,7 +289,7 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <daggerengine.version>0.16.3</daggerengine.version>
+        <daggerengine.version>0.17.0</daggerengine.version>
         <daggerengine.schema></daggerengine.schema>
 
         <assertj-core.version>3.27.3</assertj-core.version>
@@ -320,7 +320,7 @@
         <mockito-core.version>5.16.1</mockito-core.version>
         <slf4j-api.version>2.0.17</slf4j-api.version>
         <slf4j-simple.version>2.0.17</slf4j-simple.version>
-        <smallrye-graphql.version>2.12.1</smallrye-graphql.version>
+        <smallrye-graphql.version>2.12.2</smallrye-graphql.version>
         <netty-common.version>4.1.119.Final</netty-common.version>
         <netty-handler.version>4.1.119.Final</netty-handler.version>
         <system-stubs-jupiter.version>2.1.7</system-stubs-jupiter.version>

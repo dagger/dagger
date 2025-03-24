@@ -1,11 +1,16 @@
+from typing import Annotated
+
 import dagger
-from dagger import dag, function, object_type
+from dagger import DefaultPath, dag, function, object_type
 
 
 @object_type
 class HelloDagger:
     @function
-    def build_env(self, source: dagger.Directory) -> dagger.Container:
+    def build_env(
+        self,
+        source: Annotated[dagger.Directory, DefaultPath("/")],
+    ) -> dagger.Container:
         """Build a ready-to-use development environment"""
         # create a Dagger cache volume for dependencies
         node_cache = dag.cache_volume("node")

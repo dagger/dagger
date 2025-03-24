@@ -41,6 +41,8 @@ func (s llmSchema) Install() {
 		dagql.Func("withPromptFile", s.withPromptFile).
 			Doc("append the contents of a file to the llm context").
 			ArgDoc("file", "The file to read the prompt from"),
+		dagql.Func("withQuery", s.withQuery).
+			Doc("Provide the entire Query object to the LLM"),
 		dagql.Func("withPromptVar", s.setString).
 			Doc("Add a string variable to the LLM's environment").
 			ArgDoc("name", "The variable name").
@@ -64,12 +66,14 @@ func (s llmSchema) Install() {
 		}).
 			Doc("synchronize LLM state"),
 		dagql.Func("loop", s.loop).
-			Deprecated("use sync").
+			// Deprecated("use sync").
 			Doc("synchronize LLM state"),
 		dagql.Func("tools", s.tools).
 			Doc("print documentation for available tools"),
 		dagql.Func("variables", s.variables).
 			Doc("list variables in the LLM environment"),
+		dagql.Func("currentType", s.currentType).
+			Doc("returns the type of the current state"),
 	}.Install(s.srv)
 	dagql.Fields[*core.LLMVariable]{}.Install(s.srv)
 	hook := core.LLMHook{Server: s.srv}
@@ -107,6 +111,10 @@ func (s *llmSchema) withPrompt(ctx context.Context, llm *core.LLM, args struct {
 	Prompt string
 }) (*core.LLM, error) {
 	return llm.WithPrompt(ctx, args.Prompt, s.srv)
+}
+
+func (s *llmSchema) withQuery(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
+	return llm.With(ctx, s.srv, s.srv.Root())
 }
 
 func (s *llmSchema) setString(ctx context.Context, llm *core.LLM, args struct {
@@ -181,4 +189,8 @@ func (s *llmSchema) tools(ctx context.Context, llm *core.LLM, _ struct{}) (dagql
 
 func (s *llmSchema) variables(ctx context.Context, llm *core.LLM, _ struct{}) ([]*core.LLMVariable, error) {
 	return llm.Variables(ctx, s.srv)
+}
+
+func (s *llmSchema) currentType(ctx context.Context, llm *core.LLM, _ struct{}) (dagql.Nullable[dagql.String], error) {
+	return llm.CurrentType(ctx, s.srv)
 }

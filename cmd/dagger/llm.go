@@ -10,8 +10,10 @@ import (
 	"os"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/querybuilder"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
+	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -94,7 +96,7 @@ func NewLLMSession(ctx context.Context, dag *dagger.Client, llmModel string, she
 }
 
 func (s *LLMSession) reset() {
-	s.llm = s.dag.Llm(dagger.LlmOpts{Model: s.model})
+	s.llm = s.dag.LLM(dagger.LLMOpts{Model: s.model}).WithQuery()
 }
 
 func (s *LLMSession) Fork() *LLMSession {
@@ -161,7 +163,7 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 	s.syncedVars = make(map[string]digest.Digest)
 	maps.Copy(s.syncedVars, oldVars)
 
-	syncedLlmQ := s.dag.QueryBuilder().
+	syncedLLMQ := s.dag.QueryBuilder().
 		Select("loadLLMFromID").
 		Arg("id", s.llm)
 
@@ -200,7 +202,7 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 					return err
 				}
 				typeName := typeDef.Name()
-				syncedLlmQ = syncedLlmQ.
+				syncedLLMQ = syncedLLMQ.
 					Select(fmt.Sprintf("set%s", typeName)).
 					Arg("name", name).
 					Arg("value", id)
@@ -208,7 +210,7 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 			}
 		} else {
 			s.syncedVars[name] = dagql.HashFrom(value.String())
-			syncedLlmQ = syncedLlmQ.
+			syncedLLMQ = syncedLLMQ.
 				Select("setString").
 				Arg("name", name).
 				Arg("value", value.String())
@@ -218,7 +220,7 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 		return nil
 	}
 	var llmID dagger.LLMID
-	if err := syncedLlmQ.Select("id").Bind(&llmID).Execute(ctx); err != nil {
+	if err := syncedLLMQ.Select("id").Bind(&llmID).Execute(ctx); err != nil {
 		return err
 	}
 	s.llm = s.dag.LoadLLMFromID(llmID)
@@ -256,7 +258,10 @@ func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
 
 		dbg.Println("syncing llm => var", name, typeName, hash)
 
-		val, err := s.ShellValue(ctx, name, typeName)
+		val, err := s.ShellValue(ctx, name, typeName, func(q *querybuilder.Selection) *querybuilder.Selection {
+			return q.Select(fmt.Sprintf("get%s", typeName)).
+				Arg("name", name)
+		})
 		if err != nil {
 			return err
 		}
@@ -270,20 +275,46 @@ func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
 		s.syncedVars[name] = digest
 	}
 
+	typeName, err := s.llm.CurrentType(ctx)
+	if err != nil {
+		return err
+	}
+	if typeName == "" || typeName == "Query" {
+		return nil
+	}
+
+	val, err := s.ShellValue(ctx, "_", typeName, func(q *querybuilder.Selection) *querybuilder.Selection {
+		return q.Select(strcase.ToLowerCamel(typeName))
+	})
+	if err != nil {
+		return err
+	}
+	quot, err := syntax.Quote(val, syntax.LangBash)
+	if err != nil {
+		return err
+	}
+	if err := s.shell.Eval(ctx, fmt.Sprintf("%s=%s", "_", quot)); err != nil {
+		return err
+	}
+
 	return nil
 }
 
-func (s *LLMSession) ShellValue(ctx context.Context, name, typeName string) (string, error) {
+func (s *LLMSession) ShellValue(
+	ctx context.Context,
+	name, typeName string,
+	getter func(*querybuilder.Selection) *querybuilder.Selection,
+) (string, error) {
 	switch typeName {
 	case "String":
 		return s.llm.GetString(ctx, name)
 	default:
 		var objID string
-		if err := s.dag.QueryBuilder().
-			Select("loadLLMFromID").
-			Arg("id", s.llm).
-			Select(fmt.Sprintf("get%s", typeName)).
-			Arg("name", name).
+		if err := getter(
+			s.dag.QueryBuilder().
+				Select("loadLLMFromID").
+				Arg("id", s.llm),
+		).
 			Select("id").
 			Bind(&objID).
 			Execute(ctx); err != nil {
@@ -339,7 +370,7 @@ var compact = `Please summarize our conversation so far into a concise context t
    - Next steps or pending questions
 
 Present this summary in a compact form that retains all essential context needed to continue our work effectively, then continue our conversation from this point forward as if we had the complete conversation history.
-	
+
 This will be a note to yourself, not shown to the user, so prioritize your own understanding and don't ask any questions, because they won't be seen by anyone.
 `
 
@@ -350,7 +381,7 @@ func (s *LLMSession) Compact(ctx context.Context) (_ *LLMSession, rerr error) {
 	if err != nil {
 		return s, err
 	}
-	fresh := s.dag.Llm(dagger.LlmOpts{
+	fresh := s.dag.LLM(dagger.LLMOpts{
 		Model: s.model,
 	})
 	compacted, err := fresh.WithPrompt(summary).Sync(ctx)

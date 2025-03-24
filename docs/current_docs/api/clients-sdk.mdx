@@ -256,9 +256,23 @@ Every Dagger Function has access to the `dag` client, which is a pre-initialized
 
 Here is an example call for this Dagger Function:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'get-user'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+get-user
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call get-user
 ```
+</TabItem>
+</Tabs>
 
 Here's what you should see:
 

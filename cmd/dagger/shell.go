@@ -36,7 +36,7 @@ var (
 
 func shellAddFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&shellCode, "command", "c", "", "Execute a dagger shell command")
-	cmd.Flags().BoolVarP(&shellNoLoadModule, "no-mod", "n", false, "Don't load module during shell startup (mutually exclusive with --mod)")
+	cmd.Flags().BoolVarP(&shellNoLoadModule, "no-mod", "M", false, "Don't load module during shell startup (mutually exclusive with --mod)")
 	cmd.Flags().StringVar(&llmModel, "model", "", "LLM model to use (e.g., 'claude-3-5-sonnet', 'gpt-4o')")
 	cmd.MarkFlagsMutuallyExclusive("mod", "no-mod")
 }
@@ -372,7 +372,7 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		defer h.state.debug(ctx)
 	}
 
-	// Run shell command - optionally sync vars back to LLM after running
+	// Run shell command
 	return h.run(ctx, strings.NewReader(line), "")
 }
 

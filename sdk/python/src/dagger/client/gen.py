@@ -5432,30 +5432,13 @@ class LLM(Type):
     def cache_volume(self) -> CacheVolume:
         """Retrieve a the current value in the LLM environment, of type
         CacheVolume
-
-        .. deprecated::
-            use get<TargetType> instead
         """
-        warnings.warn(
-            'Method "cache_volume" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args: list[Arg] = []
         _ctx = self._select("cacheVolume", _args)
         return CacheVolume(_ctx)
 
     def container(self) -> Container:
-        """Retrieve a the current value in the LLM environment, of type Container
-
-        .. deprecated::
-            use get<TargetType> instead
-        """
-        warnings.warn(
-            'Method "container" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
+        """Retrieve a the current value in the LLM environment, of type Container"""
         _args: list[Arg] = []
         _ctx = self._select("container", _args)
         return Container(_ctx)
@@ -5463,30 +5446,34 @@ class LLM(Type):
     def current_module(self) -> CurrentModule:
         """Retrieve a the current value in the LLM environment, of type
         CurrentModule
-
-        .. deprecated::
-            use get<TargetType> instead
         """
-        warnings.warn(
-            'Method "current_module" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args: list[Arg] = []
         _ctx = self._select("currentModule", _args)
         return CurrentModule(_ctx)
 
-    def directory(self) -> Directory:
-        """Retrieve a the current value in the LLM environment, of type Directory
+    async def current_type(self) -> str | None:
+        """returns the type of the current state
 
-        .. deprecated::
-            use get<TargetType> instead
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
-        warnings.warn(
-            'Method "directory" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
+        _args: list[Arg] = []
+        _ctx = self._select("currentType", _args)
+        return await _ctx.execute(str | None)
+
+    def directory(self) -> Directory:
+        """Retrieve a the current value in the LLM environment, of type Directory"""
         _args: list[Arg] = []
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
@@ -5494,15 +5481,7 @@ class LLM(Type):
     def enum_type_def(self) -> EnumTypeDef:
         """Retrieve a the current value in the LLM environment, of type
         EnumTypeDef
-
-        .. deprecated::
-            use get<TargetType> instead
         """
-        warnings.warn(
-            'Method "enum_type_def" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args: list[Arg] = []
         _ctx = self._select("enumTypeDef", _args)
         return EnumTypeDef(_ctx)
@@ -5510,30 +5489,13 @@ class LLM(Type):
     def enum_value_type_def(self) -> EnumValueTypeDef:
         """Retrieve a the current value in the LLM environment, of type
         EnumValueTypeDef
-
-        .. deprecated::
-            use get<TargetType> instead
         """
-        warnings.warn(
-            'Method "enum_value_type_def" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args: list[Arg] = []
         _ctx = self._select("enumValueTypeDef", _args)
         return EnumValueTypeDef(_ctx)
 
     def error(self) -> Error:
-        """Retrieve a the current value in the LLM environment, of type Error
-
-        .. deprecated::
-            use get<TargetType> instead
-        """
-        warnings.warn(
-            'Method "error" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
+        """Retrieve a the current value in the LLM environment, of type Error"""
         _args: list[Arg] = []
         _ctx = self._select("error", _args)
         return Error(_ctx)
@@ -5541,15 +5503,7 @@ class LLM(Type):
     def error_value(self) -> ErrorValue:
         """Retrieve a the current value in the LLM environment, of type
         ErrorValue
-
-        .. deprecated::
-            use get<TargetType> instead
         """
-        warnings.warn(
-            'Method "error_value" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args: list[Arg] = []
         _ctx = self._select("errorValue", _args)
         return ErrorValue(_ctx)
@@ -5557,45 +5511,19 @@ class LLM(Type):
     def field_type_def(self) -> FieldTypeDef:
         """Retrieve a the current value in the LLM environment, of type
         FieldTypeDef
-
-        .. deprecated::
-            use get<TargetType> instead
         """
-        warnings.warn(
-            'Method "field_type_def" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args: list[Arg] = []
         _ctx = self._select("fieldTypeDef", _args)
         return FieldTypeDef(_ctx)
 
     def file(self) -> File:
-        """Retrieve a the current value in the LLM environment, of type File
-
-        .. deprecated::
-            use get<TargetType> instead
-        """
-        warnings.warn(
-            'Method "file" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
+        """Retrieve a the current value in the LLM environment, of type File"""
         _args: list[Arg] = []
         _ctx = self._select("file", _args)
         return File(_ctx)
 
     def function(self) -> Function:
-        """Retrieve a the current value in the LLM environment, of type Function
-
-        .. deprecated::
-            use get<TargetType> instead
-        """
-        warnings.warn(
-            'Method "function" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
+        """Retrieve a the current value in the LLM environment, of type Function"""
         _args: list[Arg] = []
         _ctx = self._select("function", _args)
         return Function(_ctx)
@@ -5603,15 +5531,7 @@ class LLM(Type):
     def function_arg(self) -> FunctionArg:
         """Retrieve a the current value in the LLM environment, of type
         FunctionArg
-
-        .. deprecated::
-            use get<TargetType> instead
         """
-        warnings.warn(
-            'Method "function_arg" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args: list[Arg] = []
         _ctx = self._select("functionArg", _args)
         return FunctionArg(_ctx)
@@ -5619,15 +5539,7 @@ class LLM(Type):
     def function_call(self) -> FunctionCall:
         """Retrieve a the current value in the LLM environment, of type
         FunctionCall
-
-        .. deprecated::
-            use get<TargetType> instead
         """
-        warnings.warn(
-            'Method "function_call" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args: list[Arg] = []
         _ctx = self._select("functionCall", _args)
         return FunctionCall(_ctx)
@@ -5635,15 +5547,7 @@ class LLM(Type):
     def function_call_arg_value(self) -> FunctionCallArgValue:
         """Retrieve a the current value in the LLM environment, of type
         FunctionCallArgValue
-
-        .. deprecated::
-            use get<TargetType> instead
         """
-        warnings.warn(
-            'Method "function_call_arg_value" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args: list[Arg] = []
         _ctx = self._select("functionCallArgValue", _args)
         return FunctionCallArgValue(_ctx)
@@ -5651,15 +5555,7 @@ class LLM(Type):
     def generated_code(self) -> GeneratedCode:
         """Retrieve a the current value in the LLM environment, of type
         GeneratedCode
-
-        .. deprecated::
-            use get<TargetType> instead
         """
-        warnings.warn(
-            'Method "generated_code" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args: list[Arg] = []
         _ctx = self._select("generatedCode", _args)
         return GeneratedCode(_ctx)
@@ -6156,16 +6052,7 @@ class LLM(Type):
         return TypeDef(_ctx)
 
     def git_ref(self) -> GitRef:
-        """Retrieve a the current value in the LLM environment, of type GitRef
-
-        .. deprecated::
-            use get<TargetType> instead
-        """
-        warnings.warn(
-            'Method "git_ref" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
+        """Retrieve a the current value in the LLM environment, of type GitRef"""
         _args: list[Arg] = []
         _ctx = self._select("gitRef", _args)
         return GitRef(_ctx)
@@ -6173,15 +6060,7 @@ class LLM(Type):
     def git_repository(self) -> GitRepository:
         """Retrieve a the current value in the LLM environment, of type
         GitRepository
-
-        .. deprecated::
-            use get<TargetType> instead
         """
-        warnings.warn(
-            'Method "git_repository" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args: list[Arg] = []
         _ctx = self._select("gitRepository", _args)
         return GitRepository(_ctx)
@@ -6255,15 +6134,7 @@ class LLM(Type):
     def input_type_def(self) -> InputTypeDef:
         """Retrieve a the current value in the LLM environment, of type
         InputTypeDef
-
-        .. deprecated::
-            use get<TargetType> instead
         """
-        warnings.warn(
-            'Method "input_type_def" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args: list[Arg] = []
         _ctx = self._select("inputTypeDef", _args)
         return InputTypeDef(_ctx)
@@ -6271,30 +6142,13 @@ class LLM(Type):
     def interface_type_def(self) -> InterfaceTypeDef:
         """Retrieve a the current value in the LLM environment, of type
         InterfaceTypeDef
-
-        .. deprecated::
-            use get<TargetType> instead
         """
-        warnings.warn(
-            'Method "interface_type_def" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args: list[Arg] = []
         _ctx = self._select("interfaceTypeDef", _args)
         return InterfaceTypeDef(_ctx)
 
     def l_lm(self) -> Self:
-        """Retrieve a the current value in the LLM environment, of type LLM
-
-        .. deprecated::
-            use get<TargetType> instead
-        """
-        warnings.warn(
-            'Method "l_lm" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
+        """Retrieve a the current value in the LLM environment, of type LLM"""
         _args: list[Arg] = []
         _ctx = self._select("lLM", _args)
         return LLM(_ctx)
@@ -6323,30 +6177,13 @@ class LLM(Type):
     def list_type_def(self) -> "ListTypeDef":
         """Retrieve a the current value in the LLM environment, of type
         ListTypeDef
-
-        .. deprecated::
-            use get<TargetType> instead
         """
-        warnings.warn(
-            'Method "list_type_def" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args: list[Arg] = []
         _ctx = self._select("listTypeDef", _args)
         return ListTypeDef(_ctx)
 
     def loop(self) -> Self:
-        """synchronize LLM state
-
-        .. deprecated::
-            use sync
-        """
-        warnings.warn(
-            'Method "loop" is deprecated: use sync',
-            DeprecationWarning,
-            stacklevel=4,
-        )
+        """synchronize LLM state"""
         _args: list[Arg] = []
         _ctx = self._select("loop", _args)
         return LLM(_ctx)
@@ -6373,16 +6210,7 @@ class LLM(Type):
         return await _ctx.execute(str)
 
     def module(self) -> "Module":
-        """Retrieve a the current value in the LLM environment, of type Module
-
-        .. deprecated::
-            use get<TargetType> instead
-        """
-        warnings.warn(
-            'Method "module" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
+        """Retrieve a the current value in the LLM environment, of type Module"""
         _args: list[Arg] = []
         _ctx = self._select("module", _args)
         return Module(_ctx)
@@ -6390,15 +6218,7 @@ class LLM(Type):
     def module_config_client(self) -> "ModuleConfigClient":
         """Retrieve a the current value in the LLM environment, of type
         ModuleConfigClient
-
-        .. deprecated::
-            use get<TargetType> instead
         """
-        warnings.warn(
-            'Method "module_config_client" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args: list[Arg] = []
         _ctx = self._select("moduleConfigClient", _args)
         return ModuleConfigClient(_ctx)
@@ -6406,15 +6226,7 @@ class LLM(Type):
     def module_source(self) -> "ModuleSource":
         """Retrieve a the current value in the LLM environment, of type
         ModuleSource
-
-        .. deprecated::
-            use get<TargetType> instead
         """
-        warnings.warn(
-            'Method "module_source" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args: list[Arg] = []
         _ctx = self._select("moduleSource", _args)
         return ModuleSource(_ctx)
@@ -6422,15 +6234,7 @@ class LLM(Type):
     def object_type_def(self) -> "ObjectTypeDef":
         """Retrieve a the current value in the LLM environment, of type
         ObjectTypeDef
-
-        .. deprecated::
-            use get<TargetType> instead
         """
-        warnings.warn(
-            'Method "object_type_def" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args: list[Arg] = []
         _ctx = self._select("objectTypeDef", _args)
         return ObjectTypeDef(_ctx)
@@ -6459,60 +6263,25 @@ class LLM(Type):
     def scalar_type_def(self) -> "ScalarTypeDef":
         """Retrieve a the current value in the LLM environment, of type
         ScalarTypeDef
-
-        .. deprecated::
-            use get<TargetType> instead
         """
-        warnings.warn(
-            'Method "scalar_type_def" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args: list[Arg] = []
         _ctx = self._select("scalarTypeDef", _args)
         return ScalarTypeDef(_ctx)
 
     def sdkconfig(self) -> "SDKConfig":
-        """Retrieve a the current value in the LLM environment, of type SDKConfig
-
-        .. deprecated::
-            use get<TargetType> instead
-        """
-        warnings.warn(
-            'Method "sdkconfig" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
+        """Retrieve a the current value in the LLM environment, of type SDKConfig"""
         _args: list[Arg] = []
         _ctx = self._select("sdkconfig", _args)
         return SDKConfig(_ctx)
 
     def secret(self) -> "Secret":
-        """Retrieve a the current value in the LLM environment, of type Secret
-
-        .. deprecated::
-            use get<TargetType> instead
-        """
-        warnings.warn(
-            'Method "secret" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
+        """Retrieve a the current value in the LLM environment, of type Secret"""
         _args: list[Arg] = []
         _ctx = self._select("secret", _args)
         return Secret(_ctx)
 
     def service(self) -> "Service":
-        """Retrieve a the current value in the LLM environment, of type Service
-
-        .. deprecated::
-            use get<TargetType> instead
-        """
-        warnings.warn(
-            'Method "service" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
+        """Retrieve a the current value in the LLM environment, of type Service"""
         _args: list[Arg] = []
         _ctx = self._select("service", _args)
         return Service(_ctx)
@@ -7104,31 +6873,13 @@ class LLM(Type):
         return LLM(_ctx)
 
     def socket(self) -> "Socket":
-        """Retrieve a the current value in the LLM environment, of type Socket
-
-        .. deprecated::
-            use get<TargetType> instead
-        """
-        warnings.warn(
-            'Method "socket" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
+        """Retrieve a the current value in the LLM environment, of type Socket"""
         _args: list[Arg] = []
         _ctx = self._select("socket", _args)
         return Socket(_ctx)
 
     def source_map(self) -> "SourceMap":
-        """Retrieve a the current value in the LLM environment, of type SourceMap
-
-        .. deprecated::
-            use get<TargetType> instead
-        """
-        warnings.warn(
-            'Method "source_map" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
+        """Retrieve a the current value in the LLM environment, of type SourceMap"""
         _args: list[Arg] = []
         _ctx = self._select("sourceMap", _args)
         return SourceMap(_ctx)
@@ -7153,16 +6904,7 @@ class LLM(Type):
         return self.sync().__await__()
 
     def terminal(self) -> "Terminal":
-        """Retrieve a the current value in the LLM environment, of type Terminal
-
-        .. deprecated::
-            use get<TargetType> instead
-        """
-        warnings.warn(
-            'Method "terminal" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
+        """Retrieve a the current value in the LLM environment, of type Terminal"""
         _args: list[Arg] = []
         _ctx = self._select("terminal", _args)
         return Terminal(_ctx)
@@ -7189,16 +6931,7 @@ class LLM(Type):
         return await _ctx.execute(str)
 
     def type_def(self) -> "TypeDef":
-        """Retrieve a the current value in the LLM environment, of type TypeDef
-
-        .. deprecated::
-            use get<TargetType> instead
-        """
-        warnings.warn(
-            'Method "type_def" is deprecated: use get<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
+        """Retrieve a the current value in the LLM environment, of type TypeDef"""
         _args: list[Arg] = []
         _ctx = self._select("typeDef", _args)
         return TypeDef(_ctx)
@@ -7227,19 +6960,11 @@ class LLM(Type):
     def with_cache_volume(self, value: CacheVolume) -> Self:
         """Set a variable of type CacheVolume in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The CacheVolume value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_cache_volume" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7249,19 +6974,11 @@ class LLM(Type):
     def with_container(self, value: Container) -> Self:
         """Set a variable of type Container in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The Container value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_container" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7271,19 +6988,11 @@ class LLM(Type):
     def with_current_module(self, value: CurrentModule) -> Self:
         """Set a variable of type CurrentModule in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The CurrentModule value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_current_module" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7293,19 +7002,11 @@ class LLM(Type):
     def with_directory(self, value: Directory) -> Self:
         """Set a variable of type Directory in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The Directory value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_directory" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7315,19 +7016,11 @@ class LLM(Type):
     def with_enum_type_def(self, value: EnumTypeDef) -> Self:
         """Set a variable of type EnumTypeDef in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The EnumTypeDef value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_enum_type_def" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7337,19 +7030,11 @@ class LLM(Type):
     def with_enum_value_type_def(self, value: EnumValueTypeDef) -> Self:
         """Set a variable of type EnumValueTypeDef in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The EnumValueTypeDef value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_enum_value_type_def" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7359,19 +7044,11 @@ class LLM(Type):
     def with_error(self, value: Error) -> Self:
         """Set a variable of type Error in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The Error value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_error" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7381,19 +7058,11 @@ class LLM(Type):
     def with_error_value(self, value: ErrorValue) -> Self:
         """Set a variable of type ErrorValue in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The ErrorValue value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_error_value" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7403,19 +7072,11 @@ class LLM(Type):
     def with_field_type_def(self, value: FieldTypeDef) -> Self:
         """Set a variable of type FieldTypeDef in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The FieldTypeDef value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_field_type_def" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7425,19 +7086,11 @@ class LLM(Type):
     def with_file(self, value: File) -> Self:
         """Set a variable of type File in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The File value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_file" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7447,19 +7100,11 @@ class LLM(Type):
     def with_function(self, value: Function) -> Self:
         """Set a variable of type Function in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The Function value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_function" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7469,19 +7114,11 @@ class LLM(Type):
     def with_function_arg(self, value: FunctionArg) -> Self:
         """Set a variable of type FunctionArg in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The FunctionArg value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_function_arg" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7491,19 +7128,11 @@ class LLM(Type):
     def with_function_call(self, value: FunctionCall) -> Self:
         """Set a variable of type FunctionCall in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The FunctionCall value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_function_call" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7513,19 +7142,11 @@ class LLM(Type):
     def with_function_call_arg_value(self, value: FunctionCallArgValue) -> Self:
         """Set a variable of type FunctionCallArgValue in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The FunctionCallArgValue value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_function_call_arg_value" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7535,19 +7156,11 @@ class LLM(Type):
     def with_generated_code(self, value: GeneratedCode) -> Self:
         """Set a variable of type GeneratedCode in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The GeneratedCode value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_generated_code" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7557,19 +7170,11 @@ class LLM(Type):
     def with_git_ref(self, value: GitRef) -> Self:
         """Set a variable of type GitRef in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The GitRef value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_git_ref" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7579,19 +7184,11 @@ class LLM(Type):
     def with_git_repository(self, value: GitRepository) -> Self:
         """Set a variable of type GitRepository in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The GitRepository value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_git_repository" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7601,19 +7198,11 @@ class LLM(Type):
     def with_input_type_def(self, value: InputTypeDef) -> Self:
         """Set a variable of type InputTypeDef in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The InputTypeDef value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_input_type_def" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7623,19 +7212,11 @@ class LLM(Type):
     def with_interface_type_def(self, value: InterfaceTypeDef) -> Self:
         """Set a variable of type InterfaceTypeDef in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The InterfaceTypeDef value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_interface_type_def" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7645,19 +7226,11 @@ class LLM(Type):
     def with_llm(self, value: Self) -> Self:
         """Set a variable of type LLM in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The LLM value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_llm" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7667,19 +7240,11 @@ class LLM(Type):
     def with_list_type_def(self, value: "ListTypeDef") -> Self:
         """Set a variable of type ListTypeDef in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The ListTypeDef value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_list_type_def" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7703,19 +7268,11 @@ class LLM(Type):
     def with_module(self, value: "Module") -> Self:
         """Set a variable of type Module in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The Module value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_module" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7725,19 +7282,11 @@ class LLM(Type):
     def with_module_config_client(self, value: "ModuleConfigClient") -> Self:
         """Set a variable of type ModuleConfigClient in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The ModuleConfigClient value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_module_config_client" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7747,19 +7296,11 @@ class LLM(Type):
     def with_module_source(self, value: "ModuleSource") -> Self:
         """Set a variable of type ModuleSource in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The ModuleSource value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_module_source" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7769,19 +7310,11 @@ class LLM(Type):
     def with_object_type_def(self, value: "ObjectTypeDef") -> Self:
         """Set a variable of type ObjectTypeDef in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The ObjectTypeDef value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_object_type_def" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7833,22 +7366,20 @@ class LLM(Type):
         _ctx = self._select("withPromptVar", _args)
         return LLM(_ctx)
 
+    def with_query(self) -> Self:
+        """Provide the entire Query object to the LLM"""
+        _args: list[Arg] = []
+        _ctx = self._select("withQuery", _args)
+        return LLM(_ctx)
+
     def with_sdk_config(self, value: "SDKConfig") -> Self:
         """Set a variable of type SDKConfig in the llm environment
-
-        .. deprecated::
-            use set<TargetType> instead
 
         Parameters
         ----------
         value:
             The SDKConfig value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_sdk_config" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7858,19 +7389,11 @@ class LLM(Type):
     def with_scalar_type_def(self, value: "ScalarTypeDef") -> Self:
         """Set a variable of type ScalarTypeDef in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The ScalarTypeDef value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_scalar_type_def" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7880,19 +7403,11 @@ class LLM(Type):
     def with_secret(self, value: "Secret") -> Self:
         """Set a variable of type Secret in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The Secret value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_secret" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7902,19 +7417,11 @@ class LLM(Type):
     def with_service(self, value: "Service") -> Self:
         """Set a variable of type Service in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The Service value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_service" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7924,19 +7431,11 @@ class LLM(Type):
     def with_socket(self, value: "Socket") -> Self:
         """Set a variable of type Socket in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The Socket value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_socket" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7946,19 +7445,11 @@ class LLM(Type):
     def with_source_map(self, value: "SourceMap") -> Self:
         """Set a variable of type SourceMap in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The SourceMap value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_source_map" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7968,19 +7459,11 @@ class LLM(Type):
     def with_terminal(self, value: "Terminal") -> Self:
         """Set a variable of type Terminal in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The Terminal value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_terminal" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -7990,19 +7473,11 @@ class LLM(Type):
     def with_type_def(self, value: "TypeDef") -> Self:
         """Set a variable of type TypeDef in the llm environment
 
-        .. deprecated::
-            use set<TargetType> instead
-
         Parameters
         ----------
         value:
             The TypeDef value to assign to the variable
         """
-        warnings.warn(
-            'Method "with_type_def" is deprecated: use set<TargetType> instead',
-            DeprecationWarning,
-            stacklevel=4,
-        )
         _args = [
             Arg("value", value),
         ]
@@ -8625,8 +8100,7 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     async def commit(self) -> str:
-        """The resolved commit of the git repo this source points to. Only valid
-        for git sources.
+        """The resolved commit of the git repo this source points to.
 
         Returns
         -------
@@ -8784,7 +8258,7 @@ class ModuleSource(Type):
 
     async def html_repo_url(self) -> str:
         """The URL to access the web view of the repository (e.g., GitHub,
-        GitLab, Bitbucket). Only valid for git sources.
+        GitLab, Bitbucket).
 
         Returns
         -------
@@ -9073,8 +8547,7 @@ class ModuleSource(Type):
         return self.sync().__await__()
 
     async def version(self) -> str:
-        """The specified version of the git repo this source points to. Only
-        valid for git sources.
+        """The specified version of the git repo this source points to.
 
         Returns
         -------

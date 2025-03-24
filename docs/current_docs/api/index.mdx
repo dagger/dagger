@@ -12,12 +12,34 @@ The Dagger API is an unified interface for composing Dagger pipelines. It provid
 
 To create a pipeline with the Dagger API, you call multiple functions, combining them together in sequence to form a pipeline. Here's an example:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+container |
+  from alpine |
+  file /etc/os-release |
+  contents
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+container |
+  from alpine |
+  file /etc/os-release |
+  contents
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger core container \
   from --address=alpine \
   file --path=/etc/os-release \
   contents
 ```
+</TabItem>
+</Tabs>
 
 This example calls multiple functions from the Dagger API in sequence to create a pipeline that builds an image from an `alpine` container and returns the contents of the `/etc/os-release` file to the caller.
 
@@ -29,12 +51,34 @@ In addition to supporting basic types (string, boolean, integer, array...), the 
 
 Here's an example:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+container |
+  with-directory /src https://github.com/dagger/dagger |
+  directory /src |
+  entries
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+container |
+  with-directory /src https://github.com/dagger/dagger |
+  directory /src |
+  entries
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger core container \
   with-directory --path=/src --directory=https://github.com/dagger/dagger \
   directory --path=/src \
   entries
 ```
+</TabItem>
+</Tabs>
 
 This example creates a scratch container, adds Dagger's GitHub repository to it, and returns the directory contents. In this case, the address of the GitHub repository is passed to the function as a `Directory` argument. The `Directory` loaded in this manner is not merely a string, but it is the actual filesystem state of the target directory, managed by the Dagger Engine and handled in code just like any another variable.
 
@@ -48,6 +92,32 @@ For example, if a Dagger function returns a `Directory`, the caller can continue
 
 Although you may not have realized it, you've already seen function chaining in action. Both the previous examples chain functions together into pipelines. Here is one more example to illustrate the concept:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+container |
+  from golang:latest |
+  with-directory /src https://github.com/dagger/dagger#main |
+  with-workdir /src/cmd/dagger |
+  with-exec -- go build -o dagger . |
+  file ./dagger |
+  export ./dagger.bin
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+container |
+  from golang:latest |
+  with-directory /src https://github.com/dagger/dagger#main |
+  with-workdir /src/cmd/dagger |
+  with-exec -- go build -o dagger . |
+  file ./dagger |
+  export ./dagger.bin
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger core container from --address="golang:latest" \
   with-directory --path="/src" --directory="https://github.com/dagger/dagger#main" \
@@ -56,6 +126,8 @@ dagger core container from --address="golang:latest" \
   file --path="./dagger" \
   export --path="./dagger.bin"
 ```
+</TabItem>
+</Tabs>
 
 This example chains multiple function calls into a pipeline that builds the Dagger CLI from source and exports it to the Dagger host:
 - `from` returns a `golang` container image as a `Container` type
@@ -92,6 +164,24 @@ Functions can be chained with the CLI, or programmatically in a [custom Dagger f
 ```
 
 </TabItem>
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+container |
+  from alpine:latest |
+  with-entrypoint  cat /etc/os-release |
+  publish ttl.sh/my-alpine
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+container |
+  from alpine:latest |
+  with-entrypoint  cat /etc/os-release |
+  publish ttl.sh/my-alpine
+```
+</TabItem>
 <TabItem value="Dagger CLI">
 ```shell
 dagger core container from --address="alpine:latest" \
@@ -109,13 +199,12 @@ Dagger [modules](../features/modules.mdx) are collections of Dagger functions, p
 
 ## Calling the Dagger API
 
-You can call the Dagger API from code using a custom Dagger function created with a type-safe Dagger SDK, or from the command line using the Dagger CLI.
+You can call the Dagger API from code using a custom Dagger function created with a type-safe Dagger SDK, or from the command line using the Dagger CLI or the Dagger Shell.
 
 The different ways to call the Dagger API are:
 
 - From the Dagger CLI
-  - [`dagger core`](./clients-cli.mdx#dagger-api) for core functions
-  - [`dagger call`](./clients-cli.mdx#dagger-functions) for [custom functions](./custom-functions.mdx)
+  - [`dagger`, `dagger core` and `dagger call`](./clients-cli.mdx)
 - From a custom application created with a Dagger SDK
   - [`dagger run`](./clients-sdk.mdx#custom-applications)
 - From a [language-native GraphQL client](./clients-http.mdx#language-native-http-clients)
@@ -124,7 +213,7 @@ The different ways to call the Dagger API are:
   - [`dagger query`](./clients-http.mdx#dagger-cli)
 
 :::note
-The Dagger CLI can call any Dagger function, either from your local filesystem or from a remote Git repository. The Dagger CLI can be used interactively, from a shell script, or from a CI configuration. Apart from the Dagger CLI, no other infrastructure or tooling is required to call Dagger functions.
+The Dagger CLI can call any Dagger function, either from your local filesystem or from a remote Git repository. They can be used interactively, from a shell script, or from a CI configuration. Apart from the Dagger CLI, no other infrastructure or tooling is required to call Dagger functions.
 :::
 
 ## Extending the Dagger API

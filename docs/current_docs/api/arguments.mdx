@@ -12,14 +12,16 @@ When calling a Dagger Function from the CLI, its arguments are exposed as comman
 
 :::important
 Dagger Functions execute in containers and thus do not have default access to your host environment (host files, directories, environment variables, etc.). Access to these host resources can only be granted by explicitly passing them as argument values to the Dagger Function.
-- Files and directories: Dagger Functions can accept arguments of type `File` or `Directory`. Pass files and directories on your host by specifying their path as the value of the argument when using `dagger call`.
-- Environment variables: Pass environment variable values as argument values when invoking a function by just using the standard shell convention of using `$ENV_VAR_NAME` when using `dagger call`.
+- Files and directories: Dagger Functions can accept arguments of type `File` or `Directory`. Pass files and directories on your host by specifying their path as the value of the argument.
+- Environment variables: Pass environment variable values as argument values when invoking a function by just using the standard shell convention of using `$ENV_VAR_NAME.
 - Local network services: Dagger Functions that accept an argument of type `Service` can be passed local network services in the form `tcp://HOST:PORT`.
 :::
 
-## String arguments
+:::note
+When passing values to Dagger Functions within Dagger Shell, required arguments are positional, while flags can be placed anywhere.
+:::
 
-To pass a string argument to a Dagger Function, add the corresponding flag to the `dagger call` command, followed by the string value.
+## String arguments
 
 Here is an example of a Dagger Function that accepts a string argument:
 
@@ -89,9 +91,23 @@ typing information at runtime to correctly report to the API.
 
 Here is an example call for this Dagger Function:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'get-user male'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+get-user male
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call get-user --gender=male
 ```
+</TabItem>
+</Tabs>
 
 The result will look something like this:
 
@@ -103,21 +119,33 @@ The result will look something like this:
 }
 ```
 
-To pass host environment variables as arguments when invoking a Dagger Function, use the standard shell convention of `$ENV_VAR_NAME` when using `dagger call`.
+To pass host environment variables as arguments when invoking a Dagger Function, use the standard shell convention of `$ENV_VAR_NAME`.
 
 Here is an example of passing a host environment variable containing a string value to a Dagger Function:
 
 ```shell
 export GREETING=bonjour
-dagger -m github.com/shykes/daggerverse/hello@v0.3.0 call hello --greeting=$GREETING
 ```
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'github.com/shykes/daggerverse/hello@v0.3.0 | hello --greeting=$GREETING'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+github.com/shykes/daggerverse/hello@v0.3.0 | hello --greeting=$GREETING
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger -m github.com/shykes/daggerverse/hello@v0.3.0 call hello --greeting=$GREETING
+```
+</TabItem>
+</Tabs>
+
 ## Boolean arguments
-
-To pass a Boolean argument to a Dagger Function, simply add the corresponding flag, like so:
-
-- To set the argument to true: `--foo=true`, or simply `--foo`
-- To set the argument to false: `--foo=false`
 
 Here is an example of a Dagger Function that accepts a Boolean argument:
 
@@ -150,9 +178,23 @@ You can either use the primitive `boolean` type or the boxed `java.lang.Boolean`
 
 Here is an example call for this Dagger Function:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'hello true'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+hello true
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call hello --shout=true
 ```
+</TabItem>
+</Tabs>
 
 The result will look like this:
 
@@ -160,9 +202,13 @@ The result will look like this:
 HELLO, WORLD
 ```
 
-## Integer arguments
+:::note
+When passing optional boolean flags:
+- To set the argument to true: `--foo=true` or `--foo`
+- To set the argument to false: `--foo=false`
+:::
 
-To pass an integer argument to a Dagger function, add the corresponding flag to the `dagger call` command, followed by the integer value.
+## Integer arguments
 
 Here is an example of a Dagger function that accepts an integer argument:
 
@@ -196,14 +242,27 @@ You can either use the primitive `int` type or the boxed `java.lang.Integer` typ
 ```java file=./snippets/functions/arguments-return-values-integer/java/src/main/java/io/dagger/modules/mymodule/MyModule.java
 ```
 </TabItem>
-
 </Tabs>
 
 Here is an example call for this Dagger Function:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
 ```shell
-dagger call add-integer --a 1 --b 2
+dagger -c 'add-integer 1 2'
 ```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+add-integer 1 2
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call add-integer --a=1 --b=2
+```
+</TabItem>
+</Tabs>
 
 The result will look like this:
 
@@ -212,8 +271,6 @@ The result will look like this:
 ```
 
 ## Floating-point number arguments
-
-To pass a floating-point number as argument to a Dagger function, add the corresponding flag to the `dagger call` command, followed by the value.
 
 Here is an example of a Dagger function that accepts a floating-point number as argument:
 
@@ -260,9 +317,23 @@ You can either use the primitive `float` type or the boxed `java.lang.Float` typ
 
 Here is an example call for this Dagger Function:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
 ```shell
-dagger call add-float --a 1.4 --b 2.7
+dagger -c 'add-float 1.4 2.7'
 ```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+add-float 1.4 2.7
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call add-float --a=1.4 --b=2.7
+```
+</TabItem>
+</Tabs>
 
 The result will look like this:
 
@@ -272,7 +343,7 @@ The result will look like this:
 
 ## Array arguments
 
-To pass an array argument to a Dagger Function, add the corresponding flag, followed by a comma-separated list of values.
+To pass an array argument to a Dagger Function, use a comma-separated list of values.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -310,9 +381,23 @@ For instance instead of the `String[] names` argument in the example, you can ha
 
 Here is an example call for this Dagger Function:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'hello John,Jane'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+hello John,Jane
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call hello --names=John,Jane
 ```
+</TabItem>
+</Tabs>
 
 The result will look like this:
 
@@ -356,8 +441,25 @@ Here is an example of passing a local directory to this Dagger Function as argum
 ```shell
 mkdir -p mydir/mysubdir
 touch mydir/a mydir/b mydir/c mydir/mysubdir/y mydir/mysubdir/z
+```
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'tree mydir 2'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+tree mydir 2
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
 dagger call tree --src=mydir --depth=2
 ```
+</TabItem>
+</Tabs>
 
 The result will look like this:
 
@@ -375,23 +477,73 @@ The result will look like this:
 
 Here is an example of passing a remote repository (Dagger's open-source repository) over HTTPS as a `Directory` argument:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
 ```shell
-dagger core container \
+dagger <<EOF
+container |
+  from alpine:latest |
+  with-directory /src https://github.com/dagger/dagger |
+  with-exec ls /src |
+  stdout
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+container |
+  from alpine:latest |
+  with-directory /src https://github.com/dagger/dagger |
+  with-exec ls /src |
+  stdout
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger core \
+  container \
   from --address=alpine:latest \
   with-directory --path=/src --directory=https://github.com/dagger/dagger \
   with-exec --args="ls","/src" \
   stdout
 ```
+</TabItem>
+</Tabs>
 
 The same repository can also be accessed using SSH. Note that this requires [SSH authentication to be properly configured](./remote-modules.mdx#ssh-authentication) on your Dagger host. Here is the same example, this time using SSH:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
 ```shell
-dagger core container \
+dagger <<EOF
+container |
+  from alpine:latest |
+  with-directory /src ssh://git@github.com/dagger/dagger |
+  with-exec ls /src |
+  stdout
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+container |
+  from alpine:latest |
+  with-directory /src ssh://git@github.com/dagger/dagger |
+  with-exec ls /src |
+  stdout
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger core \
+  container \
   from --address=alpine:latest \
   with-directory --path=/src --directory=ssh://git@github.com/dagger/dagger \
   with-exec --args="ls","/src" \
   stdout
 ```
+</TabItem>
+</Tabs>
 
 For more information about remote repository access, refer to the documentation on [reference schemes](#reference-schemes-for-remote-repositories) and [authentication methods](./remote-modules.mdx#authentication-methods).
 
@@ -432,15 +584,43 @@ Here's an example of a Dagger Function that accepts a `File` as argument, reads 
 
 Here is an example of passing a local file to this Dagger Function as argument:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'read-file /my/file/path/README.md'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+read-file /my/file/path/README.md
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call read-file --source=/my/file/path/README.md
 ```
+</TabItem>
+</Tabs>
 
 And here is an example of passing a file from a remote Git repository as argument:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'read-file https://github.com/dagger/dagger.git#main:README.md'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+read-file https://github.com/dagger/dagger.git#main:README.md
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call read-file --source=https://github.com/dagger/dagger.git#main:README.md
 ```
+</TabItem>
+</Tabs>
 
 For more information about remote repository access, refer to the documentation on [reference schemes](#reference-schemes-for-remote-repositories) and [authentication methods](./remote-modules.mdx#authentication-methods).
 
@@ -482,9 +662,23 @@ Here is an example of a Dagger Function that accepts a container image reference
 
 Here is an example of passing a container image reference to this Dagger Function as an argument.
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'os-info ubuntu:latest'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+os-info ubuntu:latest
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call os-info --ctr=ubuntu:latest
 ```
+</TabItem>
+</Tabs>
 
 The result will look like this:
 
@@ -494,9 +688,23 @@ Linux buildkitsandbox 6.1.0-22-cloud-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.1.94-
 
 Here is another example of passing a container image reference to a Dagger Function as an argument. The Dagger Function scans the container using Trivy and reports any vulnerabilities found.
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'github.com/jpadams/daggerverse/trivy@v0.3.0 | scan-container index.docker.io/alpine:latest'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+github.com/jpadams/daggerverse/trivy@v0.3.0 | scan-container index.docker.io/alpine:latest
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger -m github.com/jpadams/daggerverse/trivy@v0.3.0 call scan-container --ctr=index.docker.io/alpine:latest
 ```
+</TabItem>
+</Tabs>
 
 ## Secret arguments
 
@@ -545,21 +753,63 @@ When invoking the Dagger Function using the Dagger CLI, secrets can be sourced f
 
 Here is an example call for this Dagger Function, with the secret sourced from a host environment variable named `GITHUB_API_TOKEN` via the `env` provider:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'github-api env://GITHUB_API_TOKEN'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+github-api env://GITHUB_API_TOKEN
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call github-api --token=env://GITHUB_API_TOKEN
 ```
+</TabItem>
+</Tabs>
 
 Secrets can also be passed from a host file using the `file` provider:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'github-api file://./github.txt'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+github-api file://./github.txt
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call github-api --token=file://./github.txt
 ```
+</TabItem>
+</Tabs>
 
 ...or as the result of executing a command on the host using the `cmd` provider:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'github-api cmd://"gh auth token"'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+github-api cmd://"gh auth token"
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call github-api --token=cmd://"gh auth token"
 ```
+</TabItem>
+</Tabs>
 
 ### External secret providers
 
@@ -570,19 +820,53 @@ Secrets can also be sourced from external secret managers. Currently, Dagger sup
 1Password [secret references](https://developer.1password.com/docs/cli/secret-references/), in the format `op://VAULT-NAME/ITEM-NAME/[SECTION-NAME/]FIELD-NAME` are supported. Here is an example:
 
 ```shell
-OP_SERVICE_ACCOUNT_TOKEN="mytoken" dagger call github-api --token=op://infra/github/credential
+export OP_SERVICE_ACCOUNT_TOKEN="mytoken"
 ```
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'github-api op://infra/github/credential'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+github-api op://infra/github/credential
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call github-api --token=op://infra/github/credential
+```
+</TabItem>
+</Tabs>
 
 Vault can be authenticated with either token or AppRole methods. The Vault host can be specified by setting the environment variable `VAULT_ADDR`. For token authentication, set the environment variable `VAULT_TOKEN`. For AppRole authentication, set the environment variables `VAULT_APPROLE_ROLE_ID` and `VAULT_APPROLE_SECRET_ID`. Additional client configuration can be specified by the default environment variables accepted by Vault.
 
 Vault KvV2 secrets are accessed with the scheme `vault://PATH/TO/SECRET.ITEM`. If your KvV2 is not mounted at `/secret`, specify the mount location with the environment variable `VAULT_PATH_PREFIX`. Here is an example:
 
 ```shell
-VAULT_ADDR='https://example.com:8200' VAULT_TOKEN=abcd_1234 dagger call github-api --token=vault://infra/github.credential
-
-```shell
-dagger call github-api --token=vault://credentials.github
+export VAULT_ADDR='https://example.com:8200'
+export VAULT_TOKEN=abcd_1234
 ```
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'github-api vault://infra/github.credential'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+github-api vault://infra/github.credential
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call github-api --token=vault://infra/github.credential
+```
+</TabItem>
+</Tabs>
 
 ## Service arguments
 
@@ -595,14 +879,32 @@ To pass host TCP or UDP network services as arguments when invoking a Dagger Fun
 Assume that you have a PostgresQL database running locally on port 5432, as with:
 
 ```shell
-docker run -d -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres
+docker run --rm -d -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres
 ```
 
 Here is an example of passing this host service as argument to a PostgreSQL client Dagger Function, which drops you to a prompt from where you can execute SQL queries:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/postgres@v0.1.0 call client --db=postgres --user=postgres --password=postgres --server=tcp://localhost:5432
+dagger <<EOF
+github.com/kpenfound/dagger-modules/postgres@v0.1.0 |
+  client tcp://localhost:5432 postgres postgres postgres
+EOF
 ```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+github.com/kpenfound/dagger-modules/postgres@v0.1.0 | client tcp://localhost:5432 postgres postgres postgres
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger -m github.com/kpenfound/dagger-modules/postgres@v0.1.0 call \
+  client --db=postgres --user=postgres --password=postgres --server=tcp://localhost:5432
+```
+</TabItem>
+</Tabs>
 
 ### Unix sockets
 
@@ -612,9 +914,24 @@ To pass host Unix sockets as arguments when invoking a Dagger Function, specify 
 
 For example, assuming you have Docker on your host with the Docker daemon listening on a Unix socket at `/var/run/docker.sock`, you can pass this socket to a Docker client Dagger Function as follows:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
 ```shell
-dagger -m github.com/sipsma/daggerverse/docker-client@v0.0.1 call --sock=/var/run/docker.sock version
+dagger -c 'github.com/sipsma/daggerverse/docker-client@v0.0.1 /var/run/docker.sock | version'
 ```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+github.com/sipsma/daggerverse/docker-client@v0.0.1 /var/run/docker.sock | version
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger -m github.com/sipsma/daggerverse/docker-client@v0.0.1 call \
+  --sock=/var/run/docker.sock version
+```
+</TabItem>
+</Tabs>
 
 ## Optional arguments
 
@@ -662,9 +979,23 @@ When an argument is not set as optional, Dagger will ensure the value is not `nu
 
 Here is an example call for this Dagger Function, with the optional argument:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'hello --name=John'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+hello --name=John
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call hello --name=John
 ```
+</TabItem>
+</Tabs>
 
 The result will look like this:
 
@@ -674,9 +1005,23 @@ Hello, John
 
 Here is an example call for this Dagger Function, without the optional argument:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c hello
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+hello
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call hello
 ```
+</TabItem>
+</Tabs>
 
 The result will look like this:
 
@@ -724,9 +1069,23 @@ then the SDK will automatically add the escaped quotes for you. That way you can
 
 Here is an example call for this Dagger Function, without the required argument:
 
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c hello
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+hello
+```
+</TabItem>
+<TabItem value="Dagger CLI">
 ```shell
 dagger call hello
 ```
+</TabItem>
+</Tabs>
 
 The result will look like this:
 

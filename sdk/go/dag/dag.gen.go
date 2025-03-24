@@ -139,9 +139,9 @@ func HTTP(url string, opts ...dagger.HTTPOpts) *dagger.File {
 }
 
 // Initialize a Large Language Model (LLM)
-func Llm(opts ...dagger.LlmOpts) *dagger.LLM {
+func LLM(opts ...dagger.LLMOpts) *dagger.LLM {
 	client := initClient()
-	return client.Llm(opts...)
+	return client.LLM(opts...)
 }
 
 // Load a CacheVolume from its ID.
