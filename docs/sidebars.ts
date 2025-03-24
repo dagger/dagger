@@ -21,7 +21,11 @@ module.exports = {
         "features/services",
         "features/secrets",
         "features/visualization",
-        "agents",
+        {
+          label: "LLM",
+          type: "doc",
+          id: "agents",
+        },
       ],
     },
     {
