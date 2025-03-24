@@ -29,9 +29,20 @@ module.exports = {
       id: "install",
     },
     {
-      type: "doc",
+      type: "category",
       label: "Dagger for AI Agents",
-      id: "agents",
+      link: {
+        type: "doc",
+        id: "agents",
+      },
+      collapsible: true,
+      collapsed: true,
+      items: ["agents/quickstart"],
+    },
+    {
+      type: "doc",
+      label: "Examples",
+      id: "examples",
     },
     {
       type: "doc",
