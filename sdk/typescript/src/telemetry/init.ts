@@ -1,9 +1,7 @@
-import { getEnvWithoutDefaults } from "@opentelemetry/core"
+import { getBooleanFromEnv } from "@opentelemetry/core"
 import { NodeSDK } from "@opentelemetry/sdk-node"
 
 const SERVICE_NAME = "dagger-typescript-sdk"
-
-const env = getEnvWithoutDefaults()
 
 /*
  * Look for variables prefixed with OTel to see if OpenTelemetry is configured.
@@ -36,7 +34,7 @@ export class DaggerOtelConfigurator {
       return
     }
 
-    if (env.OTEL_SDK_DISABLED) {
+    if (getBooleanFromEnv("OTEL_SDK_DISABLED") ?? true) {
       return
     }
 
