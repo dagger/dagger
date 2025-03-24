@@ -26,7 +26,7 @@ export class CodingAgent {
         `,
       )
       .toyWorkspace()
-      .container();
-    return result;
+      .container()
+    return result
   }
 }
