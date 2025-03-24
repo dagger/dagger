@@ -1,7 +1,7 @@
 const denoConfigPath = "./deno.json"
 const daggerImports = {
   "@dagger.io/dagger": "./sdk/src/index.ts",
-  "@dagger.io/telemetry": "./sdk/src/telemetry/index.ts",
+  "@dagger.io/dagger/telemetry": "./sdk/src/telemetry/index.ts",
 }
 const unstableFlags = [
   "bare-node-builtins",
