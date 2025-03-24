@@ -30,27 +30,11 @@ module.exports = {
     },
     {
       type: "category",
-      label: "Dagger for AI Agents",
-      link: {
-        type: "doc",
-        id: "agents",
-      },
-      collapsible: true,
-      collapsed: true,
-      items: ["agents/quickstart"],
-    },
-    {
-      type: "doc",
-      label: "Examples",
-      id: "examples",
-    },
-    {
-      type: "category",
-      label: "Dagger for CI",
+      label: "Quickstart",
       items: [
         {
           type: "category",
-          label: "Quickstart",
+          label: "Build a CI Pipeline",
           link: {
             type: "doc",
             id: "ci/quickstart/index",
@@ -66,6 +50,27 @@ module.exports = {
             "ci/quickstart/conclusion",
           ],
         },
+        {
+          type: "doc",
+          label: "Build a Coding AI Agent",
+          id: "agents/quickstart",
+        },
+      ],
+    },
+    {
+      type: "doc",
+      label: "Examples",
+      id: "examples",
+    },
+    {
+      type: "doc",
+      label: "Dagger for AI Agents",
+      id: "agents",
+    },
+    {
+      type: "category",
+      label: "Dagger for CI",
+      items: [
         {
           type: "doc",
           label: "Day 2",
