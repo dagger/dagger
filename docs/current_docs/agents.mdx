@@ -122,7 +122,7 @@ On Linux (older distributions):
 ip addr | grep "inet " | grep -v 127.0.0.1
 ```
 
-This step is needed because our LLM type runs inside the engine and needs to reach your local Ollama service. While we're potentially exploring the implementatin of automatic tunneling, for now you'll need to use your machine's actual IP address instead of localhost to allow the containers to communicate with Ollama.
+This step is needed because our LLM type runs inside the engine and needs to reach your local Ollama service. While we're potentially exploring the implementation of automatic tunneling, for now you'll need to use your machine's actual IP address instead of localhost to allow the containers to communicate with Ollama.
 
 5. Configure the following environment variables (replace `YOUR_IP` with the IP address from step 3):
 
@@ -237,7 +237,7 @@ result := dag.LLM().
 		Container()
 ```
 
-This code creates a new LLM, gives it a workspace (described below) with an assignment, and prompts it to complete the assignment. The LLM then runs in a loop, calling tools and iterating on it's work, until it completes the assignment. This loop all happens inside of the LLM object in this code snippet, so the value of `result` is the completed assignment.
+This code creates a new LLM, gives it a workspace (described below) with an assignment, and prompts it to complete the assignment. The LLM then runs in a loop, calling tools and iterating on its work, until it completes the assignment. This loop all happens inside of the LLM object in this code snippet, so the value of `result` is the completed assignment.
 
 ### How do I give the LLM access to tools?
 
@@ -259,7 +259,7 @@ In this code, an instance of the `ToyWorkspace` module is given to the LLM, so t
 
 ### What is this "workspace" object that most of the examples use?
 
-A workspace is a common design pattern that a lot of agents implement. It's simply a Dagger module that provides an object with functions to read and write files, run tests, and generally interact with a Directory or Container. The workspace module is passed to the LLM, and the LLM uses it to complete it's task. The reason this is a popular pattern is because the Directory and Container types have a lot of functions and an LLM can easily get lost or provide inconsistent results. A "workspace", or a Dagger module with limited functions like read/write/test, is an easy way to restrict the tools the LLM has access to, and to provide a consistent interface for the LLM to interact with the environment.
+A workspace is a common design pattern that a lot of agents implement. It's simply a Dagger module that provides an object with functions to read and write files, run tests, and generally interact with a Directory or Container. The workspace module is passed to the LLM, and the LLM uses it to complete its task. The reason this is a popular pattern is because the Directory and Container types have a lot of functions and an LLM can easily get lost or provide inconsistent results. A "workspace", or a Dagger module with limited functions like read/write/test, is an easy way to restrict the tools the LLM has access to, and to provide a consistent interface for the LLM to interact with the environment.
 
 For example workspaces, see [toy-workspace](https://github.com/shykes/toy-programmer/tree/main/toy-workspace) or [kpenfound/dag/workspace](https://github.com/kpenfound/dag/tree/main/workspace)
 
@@ -277,12 +277,12 @@ result := dag.LLM().
 		Container()
 ```
 
-In this example, the work produced by the LLM is contained in the `ToyWorkspace`, so you want to get that work back out after the LLM is done. The work in `ToyWorkspace` is in it's field `Container`. Because you gave the LLM the workspace using `WithToyWorkspace()`, you can get the resulting toy-workspace and the container within it by chaining `.ToyWorkspace().Container()`. Now `result` is the Container with the completed work.
+In this example, the work produced by the LLM is contained in the `ToyWorkspace`, so you want to get that work back out after the LLM is done. The work in `ToyWorkspace` is in its field `Container`. Because you gave the LLM the workspace using `WithToyWorkspace()`, you can get the resulting toy-workspace and the container within it by chaining `.ToyWorkspace().Container()`. Now `result` is the Container with the completed work.
 
 If you're simply interested in the messaging between the assistant and user, you can use `.History()` to get the full conversation or `.LastReply()` to get the final response.
 
 ### My agent isn't behaving properly. How do I debug it?
 
-First, to get more information about the agent's behavior, you can increase the verbosity of the shell or check out the run in Dagger Cloud. This is the best way to see what steps the LLM took, the details of it's thinking between each tool call, and what the tool calls were.
+First, to get more information about the agent's behavior, you can increase the verbosity of the shell or check out the run in Dagger Cloud. This is the best way to see what steps the LLM took, the details of its thinking between each tool call, and what the tool calls were.
 
 Second, once you understand how the agent is behaving, you can try to adjust the prompt to get the desired behavior. This is often a matter of trial and error, and can be a bit of an art.
