@@ -216,7 +216,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 				args := []string{"--allow-llm", tc.allowLLM, modelFlag, "save", "--string-arg", "greet me"}
 
-				_, err = daggerCliBase(t, c).
+				_, err := daggerCliBase(t, c).
 					With(daggerCallAt(tc.module, args...)).
 					Stdout(ctx)
 				require.NoError(t, err)
@@ -227,14 +227,14 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	t.Run("noninteractive prompt fail", func(ctx context.Context, t *testctx.T) {
 		args := []string{modelFlag, "save", "--string-arg", "greet me"}
 
-		_, err = daggerCliBase(t, c).
+		_, err := daggerCliBase(t, c).
 			With(daggerCallAt(directCallModuleRef, args...)).
 			Stdout(ctx)
 		require.Error(t, err)
 	})
 
 	t.Run("environment variable", func(ctx context.Context, t *testctx.T) {
-		_, err = daggerCliBase(t, c).
+		_, err := daggerCliBase(t, c).
 			WithEnvVariable("DAGGER_ALLOW_LLM", "all").
 			With(daggerCallAt(dependerModuleRef, modelFlag, "save", "--string-arg", "greet me")).
 			Stdout(ctx)
@@ -242,7 +242,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("shell allow all", func(ctx context.Context, t *testctx.T) {
-		_, err = daggerCliBase(t, c).
+		_, err := daggerCliBase(t, c).
 			WithExec([]string{"dagger", "-m", dependerModuleRef, "--allow-llm=all"}, dagger.ContainerWithExecOpts{
 				Stdin:                         fmt.Sprintf(`. %s | save "greet me"`, modelFlag),
 				ExperimentalPrivilegedNesting: true,
@@ -252,7 +252,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("shell interactive module loads", func(ctx context.Context, t *testctx.T) {
-		_, err = daggerCliBase(t, c).
+		_, err := daggerCliBase(t, c).
 			WithExec([]string{"dagger", "--allow-llm", directCallModuleRef}, dagger.ContainerWithExecOpts{
 				Stdin:                         fmt.Sprintf(`%s %s | save "greet me"`, dependerModuleRef, modelFlag),
 				ExperimentalPrivilegedNesting: true,
@@ -332,7 +332,7 @@ func (LLMSuite) TestAllowLLM(ctx context.Context, t *testctx.T) {
 				)
 				defer console.Close()
 
-				err = cmd.Start()
+				err := cmd.Start()
 				require.NoError(t, err)
 
 				_, err = console.ExpectString("attempted to access the LLM API. Allow it?")
