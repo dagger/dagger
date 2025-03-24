@@ -69,6 +69,8 @@ const (
 
 	cgroupSampleInterval     = 3 * time.Second
 	finalCgroupSampleTimeout = 3 * time.Second
+
+	defaultHostname = "dagger"
 )
 
 var removeEnvs = map[string]struct{}{
@@ -143,6 +145,9 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 	// ideally, we'd be less aggressive and find a way to CLONE_NEWNET the parent netns, but for now isolation is preferable to unpredictable rule bleeding.
 	if state.procInfo.Meta.SecurityMode == pb.SecurityMode_INSECURE && state.procInfo.Meta.Hostname == "" {
 		state.procInfo.Meta.Hostname = uuid.NewString()
+	}
+	if state.procInfo.Meta.Hostname == "" {
+		state.procInfo.Meta.Hostname = defaultHostname
 	}
 	networkNamespace, err := provider.New(ctx, state.procInfo.Meta.Hostname)
 	if err != nil {
