@@ -303,9 +303,10 @@ Finally:
 
 ```console
 # install the cli to dagger-<version>, and symlink dagger to it
-curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=$ENGINE_VERSION sh
-mv ~/.local/bin/dagger{,-$ENGINE_VERSION}
-ln -s ~/.local/bin/dagger{-$ENGINE_VERSION,}
+export BIN_DIR=$HOME/.local/bin
+curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=$ENGINE_VERSION sh
+mv $BIN_DIR/dagger{,-$ENGINE_VERSION}
+ln -s $BIN_DIR/dagger{-$ENGINE_VERSION,}
 
 dagger version
 dagger core version
