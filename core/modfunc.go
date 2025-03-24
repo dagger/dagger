@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -608,17 +607,6 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 			dagql.Selector{
 				Field: "directory",
 			},
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to apply ignore pattern on directory %q: %w", arg.OriginalName, err)
-		}
-
-		// If the ignore patterns are already excluded, we don't need to do anything.
-		if slices.Equal(ignoredDir.Self.Excluded, arg.Ignore) {
-			return value, nil
-		}
-
-		err = dag.Select(ctx, ignoredDir, &ignoredDir,
 			dagql.Selector{
 				Field: "withDirectory",
 				Args: []dagql.NamedInput{
@@ -645,21 +633,10 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 			dagql.Selector{
 				Field: "directory",
 			},
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to apply ignore pattern on directory %q: %w", arg.OriginalName, err)
-		}
-
-		// If the ignore patterns are already excluded, we don't need to do anything.
-		if slices.Equal(ignoredDir.Self.Excluded, arg.Ignore) {
-			return value, nil
-		}
-
-		err = dag.Select(ctx, ignoredDir, &ignoredDir,
 			dagql.Selector{
 				Field: "withDirectory",
 				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(arg.Ignore[0])},
+					{Name: "path", Value: dagql.String("/")},
 					{Name: "directory", Value: dagql.NewID[*Directory](value.ID())},
 					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore...))},
 				},
