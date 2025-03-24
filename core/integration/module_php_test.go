@@ -199,6 +199,35 @@ func (PHPSuite) TestVoidKind(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (PHPSuite) TestObjectKind(ctx context.Context, t *testctx.T) {
+	t.Run("File", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		module := phpModule(t, c, "object-kind/built-in-to-dagger")
+
+		out, err := module.
+			WithNewFile("/foo", "hello, world!").
+			With(daggerCall(
+				"capitalize-contents", "--arg=/foo", "contents")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "Hello, World!", out)
+	})
+
+	t.Run("Directory", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		module := phpModule(t, c, "object-kind/built-in-to-dagger")
+
+		out, err := module.
+			WithNewFile("/foo/bar", "Hello, World!").
+			With(daggerCall("with-baz", "--arg=/foo", "entries")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "bar\nbaz\n", out)
+	})
+}
+
 func phpModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/php", moduleName))
