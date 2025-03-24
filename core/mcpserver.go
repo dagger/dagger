@@ -129,6 +129,8 @@ func genMcpToolOpts(tool LLMTool) ([]mcp.ToolOption, error) {
 }
 
 func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	s := mcpserver.NewMCPServer("Dagger", "0.0.1")
 
 	var genMcpToolHandler func(LLMTool) mcpserver.ToolHandlerFunc
@@ -210,26 +212,25 @@ func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
 	if err != nil {
 		return fmt.Errorf("open pipe error: %w", err)
 	}
-	defer rwc.Close()
 
-	ctxWithCancel, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	errCh := make(chan error, 1)
+	errCh := make(chan error)
 
 	srv := mcpserver.NewStdioServer(s)
 
 	// MCP library requires standard log package
-	logger := stdlog.New(bklog.G(ctxWithCancel).Writer(), "", 0)
+	logger := stdlog.New(bklog.G(ctx).Writer(), "", 0)
 	srv.SetErrorLogger(logger)
 
 	// Start MCP server in a goroutine
 	go func() {
-		err := srv.Listen(ctxWithCancel, rwc, rwc)
+		defer close(errCh)
+		err := srv.Listen(ctx, rwc, rwc)
 		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
-			errCh <- fmt.Errorf("MCP server error: %w", err)
+			select {
+			case <-ctx.Done():
+			case errCh <- fmt.Errorf("MCP server error: %w", err):
+			}
 		}
-		close(errCh)
 	}()
 
 	select {
