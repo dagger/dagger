@@ -88,6 +88,14 @@ Here's an example of a Dagger Function that excludes everything in a given direc
 ```
 
 </TabItem>
+<TabItem value="PHP">
+
+Here's an example of a Dagger Function that excludes everything in a given directory except PHP source code files:
+
+```php file=./snippets/fs-filters/pre-call/php/src/MyModule.php
+```
+
+</TabItem>
 <TabItem value="Java">
 
 Here's an example of a Dagger Function that excludes everything in a given directory except Java source code files:
@@ -121,8 +129,8 @@ Here are a few examples of useful patterns:
 </TabItem>
 <TabItem value="Python">
 ```python
-# exclude Go tests and test data
-Ignore(["**_test.go", "**/testdata/**"])
+# exclude Pytest tests and test data
+Ignore(["tests/", ".pytest_cache"])
 
 # exclude binaries
 Ignore(["bin"])
@@ -139,8 +147,8 @@ Ignore([".git", "**/.gitignore"])
 </TabItem>
 <TabItem value="TypeScript">
 ```typescript
-// exclude tests and test data
-@argument({ ignore: ["**_test.go", "**/testdata/**"] })
+// exclude Mocha tests
+@argument({ ignore: ["**.spec.ts"] })
 
 // exclude binaries
 @argument({ ignore: ["bin"] })
@@ -155,10 +163,28 @@ Ignore([".git", "**/.gitignore"])
 @argument({ ignore: [".git", "**/.gitignore"] })
 ```
 </TabItem>
+<TabItem value="PHP">
+```php
+// exclude PHPUnit tests and test data
+#[Ignore('tests/', '.phpunit.cache', '.phpunit.result.cache')]
+
+// exclude binaries
+#[Ignore('bin')]
+
+// exclude Composer dependencies
+#[Ignore('vendor/')]
+
+// exclude Node.js dependencies
+#[Ignore('**/node_modules')]
+
+// exclude Git metadata
+#[Ignore('.git/', '**/.gitignore')]
+```
+</TabItem>
 <TabItem value="Java">
 ```java
-// exclude Go tests and test data
-@Ignore({"**_test.go", "**/testdata/**"})
+// exclude Java tests and test data
+@Ignore({"src/test"})
 
 // exclude binaries
 @Ignore({"bin"})
@@ -205,6 +231,14 @@ To implement a post-call filter in your Dagger Function, use the `include` and `
 To implement a post-call filter in your Dagger Function, use the `include` and `exclude` parameters when working with `Directory` objects. Here's an example:
 
 ```typescript file=./snippets/fs-filters/post-call/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="PHP">
+
+To implement a post-call filter in your Dagger Function, use the `include` and `exclude` parameters when working with `Directory` objects. Here's an example:
+
+```php file=./snippets/fs-filters/post-call/php/src/MyModule.php
 ```
 
 </TabItem>
@@ -274,6 +308,21 @@ const dirOpts = { include: ["*.zip"] }
 const dirOpts = { exclude: ["*.git"] }
 ```
 </TabItem>
+<TabItem value="PHP">
+```php
+// exclude all Markdown files
+$dirOpts = ['exclude' => ['*.md*']];
+
+// include only the build output directory
+$dirOpts = ['include' => ['build']];
+
+// include only ZIP files
+$dirOpts = ['include' => ['*.zip']];
+
+// exclude Git metadata
+$dirOpts = ['exclude' => ['*.git']];
+```
+</TabItem>
 <TabItem value="Java">
 ```java
 // exclude all Markdown files
@@ -341,6 +390,17 @@ debug(
 ): Directory {
   return source
 }
+```
+</TabItem>
+<TabItem value="PHP">
+```php
+    #[DaggerFunction]
+    public function debug(
+        #[Ignore('*'/, '!analytics')]
+        Directory $source,
+    ): Directory {
+        return $source;
+    }
 ```
 </TabItem>
 <TabItem value="Java">
