@@ -163,13 +163,14 @@ func (PlatformSuite) TestCacheMounts(ctx context.Context, t *testctx.T) {
 
 	cache := c.CacheVolume("test-platform-cache-mount")
 
-	wait := preventCacheMountPrune(ctx, t, c, cache)
+	saveCacheMount := preventCacheMountPrune(c, t, cache)
 
 	// make sure cache mounts are inherently platform-agnostic
 	cmds := make([]string, 0, len(platformToUname))
 	for platform := range platformToUname {
 		_, err := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From(alpineImage).
+			With(saveCacheMount).
 			WithMountedCache("/cache", cache).
 			WithExec([]string{"sh", "-x", "-c", strings.Join([]string{
 				"mkdir -p /cache/" + randomID + string(platform),
@@ -182,12 +183,11 @@ func (PlatformSuite) TestCacheMounts(ctx context.Context, t *testctx.T) {
 
 	_, err := c.Container().
 		From(alpineImage).
+		With(saveCacheMount).
 		WithMountedCache("/cache", cache).
 		WithExec([]string{"sh", "-x", "-c", strings.Join(cmds, " && ")}).
 		Sync(ctx)
 	require.NoError(t, err)
-
-	require.NoError(t, wait())
 }
 
 func (PlatformSuite) TestInvalid(ctx context.Context, t *testctx.T) {
