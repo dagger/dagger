@@ -1610,11 +1610,12 @@ func (ContainerSuite) TestWithMountedCache(ctx context.Context, t *testctx.T) {
 
 	cache := c.CacheVolume(t.Name())
 
-	wait := preventCacheMountPrune(ctx, t, c, cache)
+	saveCache := preventCacheMountPrune(c, t, cache)
 
 	rand1 := identity.NewID()
 	out1, err := c.Container().
 		From(alpineImage).
+		With(saveCache).
 		WithEnvVariable("RAND", rand1).
 		WithMountedCache("/mnt/cache", cache).
 		WithExec([]string{"sh", "-c", "echo $RAND >> /mnt/cache/sub-file; cat /mnt/cache/sub-file"}).
@@ -1625,14 +1626,13 @@ func (ContainerSuite) TestWithMountedCache(ctx context.Context, t *testctx.T) {
 	rand2 := identity.NewID()
 	out2, err := c.Container().
 		From(alpineImage).
+		With(saveCache).
 		WithEnvVariable("RAND", rand2).
 		WithMountedCache("/mnt/cache", cache).
 		WithExec([]string{"sh", "-c", "echo $RAND >> /mnt/cache/sub-file; cat /mnt/cache/sub-file"}).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, rand1+"\n"+rand2+"\n", out2)
-
-	require.NoError(t, wait())
 }
 
 func (ContainerSuite) TestWithMountedCacheFromDirectory(ctx context.Context, t *testctx.T) {
@@ -1644,11 +1644,12 @@ func (ContainerSuite) TestWithMountedCacheFromDirectory(ctx context.Context, t *
 		WithNewFile("some-dir/sub-file", "initial-content\n").
 		Directory("some-dir")
 
-	wait := preventCacheMountPrune(ctx, t, c, cache, dagger.ContainerWithMountedCacheOpts{Source: srcDir})
+	saveCache := preventCacheMountPrune(c, t, cache, dagger.ContainerWithMountedCacheOpts{Source: srcDir})
 
 	rand1 := identity.NewID()
 	out1, err := c.Container().
 		From(alpineImage).
+		With(saveCache).
 		WithEnvVariable("RAND", rand1).
 		WithMountedCache("/mnt/cache", cache, dagger.ContainerWithMountedCacheOpts{
 			Source: srcDir,
@@ -1661,6 +1662,7 @@ func (ContainerSuite) TestWithMountedCacheFromDirectory(ctx context.Context, t *
 	rand2 := identity.NewID()
 	out2, err := c.Container().
 		From(alpineImage).
+		With(saveCache).
 		WithEnvVariable("RAND", rand2).
 		WithMountedCache("/mnt/cache", cache, dagger.ContainerWithMountedCacheOpts{
 			Source: srcDir,
@@ -1669,8 +1671,6 @@ func (ContainerSuite) TestWithMountedCacheFromDirectory(ctx context.Context, t *
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "initial-content\n"+rand1+"\n"+rand2+"\n", out2)
-
-	require.NoError(t, wait())
 }
 
 func (ContainerSuite) TestWithMountedTemp(ctx context.Context, t *testctx.T) {

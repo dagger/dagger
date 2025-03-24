@@ -17,7 +17,6 @@ import (
 
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
@@ -313,31 +312,21 @@ func limitTicker(interval time.Duration, limit int) <-chan time.Time {
 }
 
 // ensure the cache mount doesn't get pruned in the middle of the test by having a container
-// run throughout with the cache mounted
-func preventCacheMountPrune(ctx context.Context, t *testctx.T, c *dagger.Client, cache *dagger.CacheVolume, opts ...dagger.ContainerWithMountedCacheOpts) func() error {
+// run throughout with the cache mounted as a service dependency
+func preventCacheMountPrune(c *dagger.Client, t *testctx.T, cache *dagger.CacheVolume, opts ...dagger.ContainerWithMountedCacheOpts) dagger.WithContainerFunc {
 	t.Helper()
-	ctx, cancel := context.WithCancelCause(ctx)
-	cancelErr := errors.New("test done")
-	t.Cleanup(func() {
-		cancel(cancelErr)
-	})
-	defer cancel(cancelErr)
-	var eg errgroup.Group
-	eg.Go(func() error {
-		_, err := c.Container().
-			From(alpineImage).
-			WithMountedCache("/cache", cache, opts...).
-			WithExec([]string{"sh", "-c", "sleep 9999"}).
-			Sync(ctx)
-		if errors.Is(err, cancelErr) {
-			return nil
-		}
-		return err
-	})
+	svc, err := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "socat"}).
+		WithMountedCache("/cache", cache, opts...).
+		WithDefaultArgs([]string{"socat", "-v", "tcp-l:2345,fork", "exec:/bin/cat"}).
+		WithExposedPort(2345).
+		AsService().
+		Start(t.Context())
+	require.NoError(t, err)
 
-	return func() error {
-		cancel(cancelErr)
-		return eg.Wait()
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithServiceBinding("cachemountsaver", svc)
 	}
 }
 
