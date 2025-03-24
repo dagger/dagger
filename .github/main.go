@@ -190,6 +190,9 @@ func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
 			{"container", []string{"TestContainer"}, &dagger.GhaJobOpts{
 				Runner: []string{AltGoldRunner()},
 			}},
+			{"LLM", []string{"TestLLM"}, &dagger.GhaJobOpts{
+				Runner: []string{AltGoldRunner()},
+			}},
 			{"cli-engine", []string{"TestCLI", "TestEngine"}, &dagger.GhaJobOpts{
 				Runner: []string{AltGoldRunner()},
 			}},
