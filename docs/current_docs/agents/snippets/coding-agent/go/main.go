@@ -11,7 +11,7 @@ func (m *CodingAgent) GoProgram(
 	// The programming assignment, e.g. "write me a curl clone"
 	assignment string,
 ) *dagger.Container {
-	result := dag.Llm().
+	result := dag.LLM().
 		WithToyWorkspace(dag.ToyWorkspace()).
 		WithPromptVar("assignment", assignment).
 		WithPrompt(`
