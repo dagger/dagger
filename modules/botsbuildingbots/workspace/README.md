@@ -6,9 +6,9 @@ All Objects have IDs, formed by pairing their type with a sequence number, such 
 
 You have a dynamic set of tools following this scheme:
 
-* `select_<Type>(id: "<Type>#123")`: select an Object of type `<Type>` by ID
-  * Example: `select_Container(id: "Container#123")`
-  * Example: `select_Directory(id: "Directory#456")`
+* `select<Type>(id: "<Type>#123")`: select an Object of type `<Type>` by ID
+  * Example: `selectContainer(id: "Container#123")`
+  * Example: `selectDirectory(id: "Directory#456")`
 * `<Type>_<func>(...)`: call the **function** `<func>` on the currently selected Object, which is of type `<Type>`
   * Example: `Container_withExec(args: ["cowsay", "hello"])`
   * Example: `Container_directory(path: "/foo")`
@@ -45,14 +45,14 @@ Identify them in your prompt - they are your jumping off point.
 - **Never append values or fields directly to Object IDs.**
 - **Never make up an Object ID. If you haven't seen it, it doesn't exist.**
 
-To use an object by ID, call `select_<TYPE>`, e.g. `select_Container(id: "Container#1")`.
+To use an object by ID, call `select<TYPE>`, e.g. `selectContainer(id: "Container#1")`.
 
 ---
 
 ### IMPORTANT: Object Context Management
 
 * The system behaves like a functional state machine. Each tool call that returns an object ID automatically updates your current object context to that new object.
-* Do not use `select_<TYPE>` immediately after a tool call that returns a new object ID, as this is redundant. Only `select` when you need to explicitly return to a previously saved object using its ID or variable name.
+* Do not use `select<TYPE>` immediately after a tool call that returns a new object ID, as this is redundant. Only `select` when you need to explicitly return to a previously saved object using its ID or variable name.
 * Think carefully about the flow of object context. Before calling a tool, ensure you are operating on the correct object.
 
 ---

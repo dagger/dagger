@@ -41,8 +41,7 @@ type LLMEnv struct {
 	// Saved objects
 	vars map[string]dagql.Object
 	// Saved objects by type + hash
-	objsByHash map[digest.Digest]dagql.Object
-	objsByID   map[string]dagql.Object
+	objsByID map[string]dagql.Object
 	// Auto incrementing number per-type
 	typeCount map[string]int
 	// The LLM-friendly ID ("Container#123") for each object
@@ -52,7 +51,6 @@ type LLMEnv struct {
 func NewLLMEnv() *LLMEnv {
 	return &LLMEnv{
 		vars:         map[string]dagql.Object{},
-		objsByHash:   map[digest.Digest]dagql.Object{},
 		objsByID:     map[string]dagql.Object{},
 		typeCount:    map[string]int{},
 		idByHash:     map[digest.Digest]string{},
@@ -64,7 +62,6 @@ func (env *LLMEnv) Clone() *LLMEnv {
 	cp := *env
 	cp.history = cloneSlice(cp.history)
 	cp.vars = cloneMap(cp.vars)
-	cp.objsByHash = cloneMap(cp.objsByHash)
 	cp.typeCount = cloneMap(cp.typeCount)
 	cp.idByHash = cloneMap(cp.idByHash)
 	cp.objsByID = cloneMap(cp.objsByID)
@@ -91,7 +88,6 @@ func (env *LLMEnv) Select(obj dagql.Object, functions ...string) {
 func (env *LLMEnv) Set(key string, obj dagql.Object) string {
 	prev := env.vars[key]
 	env.vars[key] = obj
-	env.objsByHash[obj.ID().Digest()] = obj
 	env.objsByID[env.llmID(obj)] = obj
 	if prev != nil {
 		return fmt.Sprintf("The variable %q has changed from %s to %s.", key, env.describe(prev), env.describe(obj))
@@ -109,18 +105,6 @@ func (env *LLMEnv) Get(key string) (dagql.Object, error) {
 	}
 	// next check for values by ID
 	if val, exists := env.objsByID[key]; exists {
-		return val, nil
-	}
-	// object by digest (xxh3:...)
-	if _, hash, ok := strings.Cut(key, "@"); ok {
-		// strip Type@ prefix if present
-		key = hash
-	}
-	if val, exists := env.objsByHash[digest.Digest(key)]; exists {
-		return val, nil
-	}
-	// check for non-xxh3: version too
-	if val, exists := env.objsByHash[digest.Digest("xxh3:"+key)]; exists {
 		return val, nil
 	}
 	helpfulErr := new(strings.Builder)
@@ -145,7 +129,10 @@ func (env *LLMEnv) Tools(srv *dagql.Server) ([]LLMTool, error) {
 	if err != nil {
 		return nil, err
 	}
-	objTools, err := env.tools(srv, env.Current())
+	if env.Current() == nil {
+		return builtins, nil
+	}
+	objTools, err := env.tools(srv, env.Current().Type().Name())
 	if err != nil {
 		return nil, err
 	}
@@ -186,14 +173,11 @@ func ToolFunc[T any](fn func(context.Context, T) (any, error)) func(context.Cont
 	}
 }
 
-func (env *LLMEnv) tools(srv *dagql.Server, obj dagql.Typed) ([]LLMTool, error) {
-	if obj == nil {
-		return nil, nil
-	}
+func (env *LLMEnv) tools(srv *dagql.Server, typeName string) ([]LLMTool, error) {
 	schema := srv.Schema()
-	typeDef, ok := schema.Types[obj.Type().Name()]
+	typeDef, ok := schema.Types[typeName]
 	if !ok {
-		return nil, fmt.Errorf("type %q not found", obj.Type().Name())
+		return nil, fmt.Errorf("type %q not found", typeName)
 	}
 	var tools []LLMTool
 	masked := len(env.functionMask) > 0
@@ -308,8 +292,11 @@ func (env *LLMEnv) call(ctx context.Context,
 		})
 	}
 	validated = true
+	fieldType := field.Type.Type()
 	// 2. MAKE THE CALL
-	if retObjType, ok := srv.ObjectType(field.Type.Type().NamedType); ok {
+	if retObjType, ok := srv.ObjectType(fieldType.NamedType); ok {
+		// Handle object returns.
+		//
 		var val dagql.Typed
 		if sync, ok := retObjType.FieldSpec("sync"); ok {
 			syncSel := dagql.Selector{
@@ -331,35 +318,48 @@ func (env *LLMEnv) call(ctx context.Context,
 			return nil, err
 		}
 		if obj, ok := dagql.UnwrapAs[dagql.Object](val); ok {
-			env.objsByHash[obj.ID().Digest()] = obj
-			env.objsByID[env.llmID(obj)] = obj
 			env.Select(obj)
 			return env.currentState()
 		} else {
 			return nil, fmt.Errorf("impossible? object didn't return object: %T", val)
+		}
+	} else if fieldType.Elem != nil {
+		if _, ok := srv.ObjectType(fieldType.Elem.NamedType); ok {
+			// Handle array object returns.
+			//
+			var objs []dagql.Object
+			if err := srv.Select(ctx, target, &objs, fieldSel); err != nil {
+				return nil, fmt.Errorf("failed to sync: %w", err)
+			}
+			var res []any
+			for _, obj := range objs {
+				res = append(res, env.llmID(obj))
+			}
+			return toolStructuredResponse(map[string]any{
+				"objects": res,
+			})
 		}
 	}
 	var val dagql.Typed
 	if err := srv.Select(ctx, target, &val, fieldSel); err != nil {
 		return nil, fmt.Errorf("failed to sync: %w", err)
 	}
-	switch x := val.(type) {
-	case dagql.IDType:
+	if id, ok := dagql.UnwrapAs[dagql.IDType](val); ok {
 		// avoid dumping full IDs, show the type and hash instead
-		return env.describe(x), nil
-	case dagql.String:
-		bytes := []byte(x.String())
+		return env.describe(id), nil
+	} else if str, ok := dagql.UnwrapAs[dagql.String](val); ok {
+		bytes := []byte(str.String())
 		if !utf8.Valid(bytes) {
 			return toolStructuredResponse(map[string]any{
 				"size":   len(bytes),
 				"digest": digest.FromBytes(bytes),
 			})
 		}
-		origSize := len(x)
+		origSize := len(str)
 		if origSize > maxStr {
-			x = x[:maxStr]
+			str = str[:maxStr]
 			return toolStructuredResponse(map[string]any{
-				"result":         x,
+				"result":         str,
 				"truncated":      true,
 				"truncated_size": maxStr,
 				"original_size":  origSize,
@@ -418,7 +418,7 @@ func (env *LLMEnv) describe(val dagql.Typed) string {
 	if val == nil {
 		return "Void"
 	}
-	if obj, ok := dagql.UnwrapAs[dagql.IDable](val); ok {
+	if obj, ok := dagql.UnwrapAs[dagql.Object](val); ok {
 		// NOTE: this covers both Objects and ID scalars
 		return env.llmID(obj)
 	}
@@ -428,8 +428,8 @@ func (env *LLMEnv) describe(val dagql.Typed) string {
 	return val.Type().String()
 }
 
-func (env *LLMEnv) llmID(idable dagql.IDable) string {
-	id := idable.ID()
+func (env *LLMEnv) llmID(obj dagql.Object) string {
+	id := obj.ID()
 	if id == nil {
 		return ""
 	}
@@ -440,6 +440,7 @@ func (env *LLMEnv) llmID(idable dagql.IDable) string {
 		env.typeCount[typeName]++
 		llmID = fmt.Sprintf("%s#%d", typeName, env.typeCount[typeName])
 		env.idByHash[hash] = llmID
+		env.objsByID[llmID] = obj
 	}
 	return llmID
 }
@@ -459,11 +460,11 @@ func (env *LLMEnv) Call(ctx context.Context, tools []LLMTool, toolCall ToolCall)
 		}
 		if typeName, _, ok := strings.Cut(toolCall.Function.Name, "_"); ok {
 			if env.Current() == nil {
-				errRes["hint"] = fmt.Sprintf("You have no current object. Try calling `select_%s` first.", typeName)
+				errRes["hint"] = fmt.Sprintf("You have no current object. Try calling `select%s` first.", typeName)
 			} else if env.Current().Type().Name() == typeName {
-				errRes["hint"] = fmt.Sprintf("The current object type does not provide this function.", typeName)
+				errRes["hint"] = "The current object type does not provide this function."
 			} else {
-				errRes["hint"] = fmt.Sprintf("Your current object is a %s. Try calling `select_%s` first.", env.Current().Type().Name(), typeName)
+				errRes["hint"] = fmt.Sprintf("Your current object is a %s. Try calling `select%s` first.", env.Current().Type().Name(), typeName)
 			}
 		}
 		payload, err := json.Marshal(errRes)
@@ -514,7 +515,7 @@ func (env *LLMEnv) Call(ctx context.Context, tools []LLMTool, toolCall ToolCall)
 	default:
 		jsonBytes, err := json.Marshal(v)
 		if err != nil {
-			return fmt.Sprintf("Failed to marshal result: %w", err), true
+			return fmt.Sprintf("Failed to marshal result: %s", err), true
 		}
 		return string(jsonBytes), false
 	}
@@ -522,14 +523,8 @@ func (env *LLMEnv) Call(ctx context.Context, tools []LLMTool, toolCall ToolCall)
 
 func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 	builtins := []LLMTool{}
-	seenType := map[string]bool{}
-	for _, val := range env.vars {
-		typeName := val.Type().Name()
-		if seenType[typeName] {
-			continue
-		}
-		seenType[typeName] = true
-		tools, err := env.tools(srv, val)
+	for typeName := range env.typeCount {
+		tools, err := env.tools(srv, typeName)
 		if err != nil {
 			return nil, fmt.Errorf("tools for %q: %w", typeName, err)
 		}
@@ -538,7 +533,7 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 			fnsDesc += fmt.Sprintf("\n- %s", tool.Name)
 		}
 		builtins = append(builtins, LLMTool{
-			Name:        "select_" + typeName,
+			Name:        "select" + typeName,
 			Returns:     typeName,
 			Description: fmt.Sprintf("Set the current state to a %s.\n\n%s", typeName, fnsDesc),
 			Schema: map[string]any{
