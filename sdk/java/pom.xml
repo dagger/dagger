@@ -320,7 +320,7 @@
         <mockito-core.version>5.16.1</mockito-core.version>
         <slf4j-api.version>2.0.17</slf4j-api.version>
         <slf4j-simple.version>2.0.17</slf4j-simple.version>
-        <smallrye-graphql.version>2.12.1</smallrye-graphql.version>
+        <smallrye-graphql.version>2.12.2</smallrye-graphql.version>
         <netty-common.version>4.1.119.Final</netty-common.version>
         <netty-handler.version>4.1.119.Final</netty-handler.version>
         <system-stubs-jupiter.version>2.1.7</system-stubs-jupiter.version>
