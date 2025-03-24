@@ -520,7 +520,6 @@ func (dir *Directory) WithDirectory(ctx context.Context, destDir string, src *Di
 		return nil, err
 	}
 
-
 	dir.Excluded = append(dir.Excluded, filter.Exclude...)
 	dir.Services.Merge(src.Services)
 
