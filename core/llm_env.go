@@ -524,7 +524,7 @@ func (env *LLMEnv) Call(ctx context.Context, tools []LLMTool, toolCall ToolCall)
 
 func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 	builtins := []LLMTool{
-		LLMTool{
+		{
 			Name: "currentSelection",
 			// NOTE: this description is load-bearing! It allows the LLM to know its
 			// current state, without even calling this tool. Without this sort of
