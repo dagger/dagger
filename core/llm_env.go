@@ -263,7 +263,7 @@ func (env *LLMEnv) call(ctx context.Context,
 	if !ok {
 		return nil, fmt.Errorf("tool call: %s: expected arguments to be a map - got %#v", fieldDef.Name, args)
 	}
-	fieldSel, fieldType, err := env.toolCallToSelection(target, fieldDef, argsMap)
+	fieldSel, err := env.toolCallToSelection(target, fieldDef, argsMap)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert call inputs: %w", err)
 	}
@@ -271,20 +271,19 @@ func (env *LLMEnv) call(ctx context.Context,
 
 	// 2. MAKE THE CALL
 	//
-	return env.selectionToToolResult(ctx, srv, target, fieldSel, fieldType)
+	return env.selectionToToolResult(ctx, srv, target, fieldDef, fieldSel)
 }
 
 func (env *LLMEnv) selectionToToolResult(
 	ctx context.Context,
 	srv *dagql.Server,
 	target dagql.Object,
+	fieldDef *ast.FieldDefinition,
 	fieldSel dagql.Selector,
-	fieldType dagql.Typed,
 ) (any, error) {
-	if retObj, isObj := dagql.UnwrapAs[dagql.Object](fieldType); isObj {
+	if retObjType, ok := srv.ObjectType(fieldDef.Type.NamedType); ok {
 		// Handle object returns.
 		//
-		retObjType := retObj.ObjectType()
 		var val dagql.Typed
 		if sync, ok := retObjType.FieldSpec("sync"); ok {
 			syncSel := dagql.Selector{
@@ -311,8 +310,8 @@ func (env *LLMEnv) selectionToToolResult(
 		} else {
 			return nil, fmt.Errorf("impossible? object didn't return object: %T", val)
 		}
-	} else if retEnum, isEnum := dagql.UnwrapAs[dagql.Enumerable](fieldType); isEnum {
-		if _, isObj := dagql.UnwrapAs[dagql.Object](retEnum.Element()); isObj {
+	} else if fieldDef.Type.Elem != nil {
+		if _, isObj := srv.ObjectType(fieldDef.Type.Elem.NamedType); isObj {
 			// Handle array object returns.
 			//
 			var objs []dagql.Object
@@ -366,14 +365,14 @@ func (env *LLMEnv) toolCallToSelection(
 	// The definition of the dagql field to call. Example: Container.withExec
 	fieldDef *ast.FieldDefinition,
 	argsMap map[string]any,
-) (dagql.Selector, dagql.Typed, error) {
+) (dagql.Selector, error) {
 	sel := dagql.Selector{
 		Field: fieldDef.Name,
 	}
 	targetObjType := target.ObjectType()
 	field, ok := targetObjType.FieldSpec(fieldDef.Name, engine.Version)
 	if !ok {
-		return sel, nil, fmt.Errorf("field %q not found in object type %q", fieldDef.Name, targetObjType)
+		return sel, fmt.Errorf("field %q not found in object type %q", fieldDef.Name, targetObjType)
 	}
 	for _, arg := range field.Args {
 		val, ok := argsMap[arg.Name]
@@ -385,31 +384,31 @@ func (env *LLMEnv) toolCallToSelection(
 				idType := strings.TrimSuffix(arg.Type.Type().Name(), "ID")
 				envVal, err := env.Get(idStr, idType)
 				if err != nil {
-					return sel, nil, err
+					return sel, err
 				}
 				if obj, ok := dagql.UnwrapAs[dagql.Object](envVal); ok {
 					enc, err := obj.ID().Encode()
 					if err != nil {
-						return sel, nil, err
+						return sel, err
 					}
 					val = enc
 				} else {
-					return sel, nil, fmt.Errorf("expected object, got %T", val)
+					return sel, fmt.Errorf("expected object, got %T", val)
 				}
 			} else {
-				return sel, nil, fmt.Errorf("expected string, got %T", val)
+				return sel, fmt.Errorf("expected string, got %T", val)
 			}
 		}
 		input, err := arg.Type.Decoder().DecodeInput(val)
 		if err != nil {
-			return sel, nil, fmt.Errorf("decode arg %q (%T): %w", arg.Name, val, err)
+			return sel, fmt.Errorf("decode arg %q (%T): %w", arg.Name, val, err)
 		}
 		sel.Args = append(sel.Args, dagql.NamedInput{
 			Name:  arg.Name,
 			Value: input,
 		})
 	}
-	return sel, field.Type, nil
+	return sel, nil
 }
 
 const maxStr = 80 * 1024
