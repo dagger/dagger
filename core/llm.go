@@ -475,20 +475,18 @@ func (llm *LLM) WithPrompt(
 	prompt string,
 	srv *dagql.Server,
 ) (*LLM, error) {
-	if len(llm.env.vars) > 0 {
-		prompt = os.Expand(prompt, func(key string) string {
-			obj, err := llm.env.Get(key, "")
-			if err == nil {
-				return llm.env.describe(obj)
-			}
-			val, ok := llm.promptVars[key]
-			if !ok {
-				// leave unexpanded, perhaps it refers to an object var
-				return fmt.Sprintf("$%s", key)
-			}
-			return val
-		})
-	}
+	prompt = os.Expand(prompt, func(key string) string {
+		obj, err := llm.env.Get(key, "")
+		if err == nil {
+			return llm.env.describe(obj)
+		}
+		val, ok := llm.promptVars[key]
+		if !ok {
+			// leave unexpanded, perhaps it refers to an object var
+			return fmt.Sprintf("$%s", key)
+		}
+		return val
+	})
 	llm = llm.Clone()
 	func() {
 		ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
