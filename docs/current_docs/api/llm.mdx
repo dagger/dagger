@@ -156,24 +156,3 @@ Here, the `ToyWorkspace` module contains a number of Dagger Functions: `Read()`,
 :::tip
 Dagger's core types, like `Directory` and `Container`, have extensive APIs, and an LLM can easily get lost or provide inconsistent results when working with these objects. To resolve this, we recommend using a Dagger module with limited functionality as a workspace and confining the LLM to that workspace. With this, the LLM has fewer degrees of freedom when interacting with its environment and this, in turn, helps produce more consistent results.
 :::
-
-## Agent loop
-
-Consider the following Dagger Function:
-
-<Tabs groupId="language">
-<TabItem value="Go">
-```go file=../agents/snippets/coding-agent/go/main.go
-```
-</TabItem>
-<TabItem value="Python">
-```python file=../agents/snippets/coding-agent/python/src/coding_agent/main.py
-```
-</TabItem>
-<TabItem value="TypeScript">
-```typescript file=../agents/snippets/coding-agent/typescript/src/index.ts
-```
-</TabItem>
-</Tabs>
-
-This Dagger Function creates a new LLM, gives it a workspace container with an assignment, and prompts it to complete the assignment. The LLM then runs in a loop, calling tools and iterating on its work, until it completes the assignment. This loop all happens inside of the LLM object, so the value of `result` is the workspace container with the completed assignment.
