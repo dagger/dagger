@@ -28,25 +28,7 @@ TODO
 
 ## Supported models
 
-Dagger supports a wide range of popular language models, including those from OpenAI, Anthropic, Google, Microsoft, and Amazon. Dagger can access these models either through their respective cloud-based APIs or locally using tools like Ollama. Dagger uses your system's standard environment variables to route LLM requests.
-
-<Tabs groupId="models">
-<TabItem value="Anthropic">
-- `ANTHROPIC_API_KEY`: required
-- `ANTHROPIC_MODEL`: optional, defaults to `"claude-3-5-sonnet-latest"`. See other [model name strings](https://docs.anthropic.com/en/docs/about-claude/models/all-models)
-</TabItem>
-<TabItem value="OpenAI">
-- `OPENAI_API_KEY`: required
-- `OPENAI_MODEL`: optional, defaults to `"gpt-4o"`. See other [model name strings](https://platform.openai.com/docs/models)
-- Optional:
-  - `OPENAI_BASE_URL`: for alternative OpenAI-compatible endpoints like Azure or local models
-  - `OPENAI_AZURE_VERSION`: for use with [Azure's API to OpenAI](https://learn.microsoft.com/en-us/azure/ai-services/openai/overview). See below.
-</TabItem>
-<TabItem value="Google (Gemini)">
-- `GEMINI_API_KEY`: required
-- `GEMINI_MODEL`: optional, defaults to `"gemini-2.0-flash"`. See other [model name strings](https://ai.google.dev/gemini-api/docs/models/gemini)
-</TabItem>
-</Tabs>
+Dagger supports a wide range of popular language models, including those from OpenAI, Anthropic, Google, Microsoft, and Amazon. Dagger can access these models either through their respective cloud-based APIs or using local providers like Ollama. Dagger uses your system's standard environment variables to route LLM requests.
 
 ## Observability
 

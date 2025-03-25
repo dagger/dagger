@@ -75,13 +75,6 @@ Check the [source code](https://github.com/dagger/dagger/blob/llm/core/llm.go#L2
 - `GEMINI_MODEL`: default `"gemini-2.0-flash"`
 - [more model name strings](https://ai.google.dev/gemini-api/docs/models/gemini)
 
-Dagger will look for these variables in your environment, or in a `.env` file in the current directory (`.env` files in parent directories are not yet supported).
-
-Secrets in the `.env` file can use Dagger Secrets management, for example:
-```
-# key stored in 1Password
-OPENAI_API_KEY="op://Private/OpenAI API Key/password"
-```
 
 #### Using with Ollama
 

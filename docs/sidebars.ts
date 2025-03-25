@@ -221,6 +221,7 @@ module.exports = {
       collapsed: true,
       items: [
         "configuration/engine",
+        "configuration/llm",
         "configuration/custom-runner",
         "configuration/custom-ca",
         "configuration/proxy",
