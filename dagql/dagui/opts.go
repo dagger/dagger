@@ -136,7 +136,7 @@ func ShouldSkipFunction(obj, field string) bool {
 	skip := map[string][]string{
 		"Query": {
 			// for SDKs only
-			"builtinContainer",
+			"_builtinContainer",
 			"generatedCode",
 			"currentFunctionCall",
 			"currentModule",

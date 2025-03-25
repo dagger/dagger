@@ -8424,16 +8424,6 @@ func (r *Client) WithGraphQLQuery(q *querybuilder.Selection) *Client {
 	}
 }
 
-// Retrieves a container builtin to the engine.
-func (r *Client) BuiltinContainer(digest string) *Container {
-	q := r.query.Select("builtinContainer")
-	q = q.Arg("digest", digest)
-
-	return &Container{
-		query: q,
-	}
-}
-
 // CacheVolumeOpts contains options for Client.CacheVolume
 type CacheVolumeOpts struct {
 	Namespace string

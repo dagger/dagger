@@ -14,16 +14,6 @@ namespace Dagger;
 class Client extends Client\AbstractClient
 {
     /**
-     * Retrieves a container builtin to the engine.
-     */
-    public function builtinContainer(string $digest): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('builtinContainer');
-        $innerQueryBuilder->setArgument('digest', $digest);
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Constructs a cache volume for a given cache key.
      */
     public function cacheVolume(string $key, ?string $namespace = ''): CacheVolume

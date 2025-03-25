@@ -7910,15 +7910,6 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Retrieves a container builtin to the engine.
-   * @param digest Digest of the image manifest
-   */
-  builtinContainer = (digest: string): Container => {
-    const ctx = this._ctx.select("builtinContainer", { digest })
-    return new Container(ctx)
-  }
-
-  /**
    * Constructs a cache volume for a given cache key.
    * @param key A string identifier to target this cache volume (e.g., "modules-cache").
    */
