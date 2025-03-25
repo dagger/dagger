@@ -30,7 +30,7 @@ func getTermcast(wdir *dagger.Directory) *dagger.Termcast {
 	return dag.Termcast(dagger.TermcastOpts{
 		Container: dag.Wolfi().
 			Container(dagger.WolfiContainerOpts{Packages: []string{"docker-cli", "curl"}}).
-			WithFile("/bin/dagger", dag.DaggerCli().Binary()).
+			WithFile("/usr/local/bin/dagger", dag.DaggerCli().Binary()).
 			WithWorkdir("/src").
 			WithMountedDirectory(".", wdir).
 			WithEnvVariable("DOCKER_HOST", "tcp://docker:2375").
