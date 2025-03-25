@@ -105,7 +105,13 @@ func (env *LLMEnv) Set(key string, obj dagql.Object) {
 }
 
 // Get a value saved at the given key
-func (env *LLMEnv) Get(key string) (dagql.Object, error) {
+func (env *LLMEnv) Get(key, expectedType string) (dagql.Object, error) {
+	if expectedType != "" {
+		// for maximal LLM compatibility, assume type for numeric ID args
+		if onlyNum, err := strconv.Atoi(key); err == nil {
+			key = fmt.Sprintf("%s#%d", expectedType, onlyNum)
+		}
+	}
 	// strip $foo var prefix
 	key = strings.TrimPrefix(key, "$")
 	// first check for named vars
@@ -274,7 +280,8 @@ func (env *LLMEnv) call(ctx context.Context,
 		}
 		if _, ok := dagql.UnwrapAs[dagql.IDable](arg.Type); ok {
 			if idStr, ok := val.(string); ok {
-				envVal, err := env.Get(idStr)
+				idType := strings.TrimSuffix(arg.Type.Type().Name(), "ID")
+				envVal, err := env.Get(idStr, idType)
 				if err != nil {
 					return nil, err
 				}
@@ -512,9 +519,10 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 				"type": "object",
 				"properties": map[string]any{
 					"id": map[string]any{
-						"type":        "string",
-						"pattern":     idPattern(typeName),
-						"description": "The %s ID select, in \"Type#number\" format.",
+						"type":           "string",
+						"pattern":        idPattern(typeName),
+						"description":    "The %s ID select, in \"Type#number\" format.",
+						jsonSchemaIDAttr: typeName,
 					},
 					// "functions": map[string]any{
 					// 	"type": "array",
@@ -532,11 +540,7 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 				ID string `name:"id"`
 				// Functions []string
 			}) (any, error) {
-				if onlyNum, err := strconv.Atoi(args.ID); err == nil {
-					// normalize on Container#123
-					args.ID = fmt.Sprintf("%s#%d", typeName, onlyNum)
-				}
-				obj, err := env.Get(args.ID)
+				obj, err := env.Get(args.ID, typeName)
 				if err != nil {
 					return nil, err
 				}
@@ -603,11 +607,27 @@ func (env *LLMEnv) toolToID(tool LLMTool, args any) (*call.ID, error) {
 	var callArgs []*call.Argument
 	for k, v := range argsMap {
 		var lit call.Literal
-		var err error
+		var litVal = v
+
 		spec, found := props[k].(map[string]any)
 		if !found {
 			return nil, fmt.Errorf("unknown arg: %q", k)
 		}
+
+		if idType, ok := spec[jsonSchemaIDAttr].(string); ok {
+			str, ok := v.(string)
+			if !ok {
+				return nil, fmt.Errorf("expected string value, got %T", v)
+			}
+			obj, err := env.Get(str, idType)
+			if err != nil {
+				// drop it, maybe it's an invalid value
+			} else {
+				// show the real ID in telemetry
+				litVal = obj.ID()
+			}
+		}
+
 		pattern, found := spec["pattern"]
 		if found {
 			// if we have a pattern configured:
@@ -618,27 +638,20 @@ func (env *LLMEnv) toolToID(tool LLMTool, args any) (*call.ID, error) {
 			if !ok {
 				return nil, fmt.Errorf("expected string regex pattern, got %T", pattern)
 			}
-			val, ok := v.(string)
+			str, ok := v.(string)
 			if !ok {
-				return nil, fmt.Errorf("expected string for %q, got %T", k, v)
+				return nil, fmt.Errorf("expected string value, got %T", v)
 			}
 			re, err := regexp.Compile(patternStr)
 			if err != nil {
 				return nil, fmt.Errorf("invalid regex for %q: %w", k, err)
 			}
-			if !re.MatchString(val) {
-				return nil, fmt.Errorf("arg %q does not match pattern %s: %q", k, re.String(), val)
+			if !re.MatchString(str) {
+				return nil, fmt.Errorf("arg %q does not match pattern %s: %q", k, re.String(), str)
 			}
-
-			// NOTE: assume uri format is for IDs
-			obj, err := env.Get(val)
-			if err != nil {
-				return nil, err
-			}
-			// map the value to the real Object ID for better telemetry
-			v = obj.ID()
 		}
-		lit, err = call.ToLiteral(v)
+
+		lit, err := call.ToLiteral(litVal)
 		if err != nil {
 			return nil, err
 		}
@@ -749,6 +762,7 @@ func typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any, error) {
 				typeName := strings.TrimSuffix(t.NamedType, "ID")
 				jsonSchema["type"] = "string"
 				jsonSchema["pattern"] = idPattern(typeName)
+				jsonSchema[jsonSchemaIDAttr] = typeName
 				desc = fmt.Sprintf("%s ID in \"%s#number\" format. %s", typeName, typeName, desc)
 			} else {
 				jsonSchema["type"] = "string"
@@ -762,8 +776,10 @@ func typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any, error) {
 	return jsonSchema, nil
 }
 
+const jsonSchemaIDAttr = "x-id-type"
+
 func idPattern(typeName string) string {
-	return `^(` + typeName + `#)?\d+$`
+	return `^` + typeName + `#\d+$`
 }
 
 func (env *LLMEnv) currentState() (string, error) {

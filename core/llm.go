@@ -478,7 +478,7 @@ func (llm *LLM) WithPrompt(
 ) (*LLM, error) {
 	if len(llm.env.vars) > 0 {
 		prompt = os.Expand(prompt, func(key string) string {
-			obj, err := llm.env.Get(key)
+			obj, err := llm.env.Get(key, "")
 			if err == nil {
 				return llm.env.describe(obj)
 			}
@@ -742,7 +742,7 @@ func (llm *LLM) Get(ctx context.Context, dag *dagql.Server, key string) (dagql.T
 	if err != nil {
 		return nil, err
 	}
-	return llm.env.Get(key)
+	return llm.env.Get(key, "")
 }
 
 func (llm *LLM) With(value dagql.Object) *LLM {
