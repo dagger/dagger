@@ -58,7 +58,6 @@ module.exports = {
         },
         {
           type: "doc",
-          label: "Build a Coding AI Agent",
           id: "agents/quickstart",
         },
       ],
