@@ -40,8 +40,6 @@ type LLM struct {
 
 	// History of messages
 	messages []ModelMessage
-	// User-specified prompt variables
-	promptVars map[string]string
 
 	env *LLMEnv
 }
@@ -401,7 +399,6 @@ func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int) (*
 		Endpoint:    endpoint,
 		maxAPICalls: maxAPICalls,
 		env:         NewLLMEnv(endpoint),
-		promptVars:  map[string]string{},
 	}, nil
 }
 
@@ -429,7 +426,6 @@ func (*LLM) Type() *ast.Type {
 func (llm *LLM) Clone() *LLM {
 	cp := *llm
 	cp.messages = cloneSlice(cp.messages)
-	cp.promptVars = cloneMap(cp.promptVars)
 	cp.env = cp.env.Clone()
 	return &cp
 }
@@ -476,11 +472,11 @@ func (llm *LLM) WithPrompt(
 	srv *dagql.Server,
 ) (*LLM, error) {
 	prompt = os.Expand(prompt, func(key string) string {
-		obj, err := llm.env.Get(key, "")
+		obj, err := llm.env.GetObject(key, "")
 		if err == nil {
 			return llm.env.describe(obj)
 		}
-		val, ok := llm.promptVars[key]
+		val, ok := llm.env.ReadVariable(key)
 		if !ok {
 			// leave unexpanded, perhaps it refers to an object var
 			return fmt.Sprintf("$%s", key)
@@ -518,7 +514,7 @@ func (llm *LLM) WithPromptFile(ctx context.Context, file *File, srv *dagql.Serve
 
 func (llm *LLM) WithPromptVar(name, value string) *LLM {
 	llm = llm.Clone()
-	llm.promptVars[name] = value
+	llm.env.WriteVariable(name, value)
 	return llm
 }
 
@@ -738,7 +734,7 @@ func (llm *LLM) Get(ctx context.Context, dag *dagql.Server, key string) (dagql.T
 	if err != nil {
 		return nil, err
 	}
-	return llm.env.Get(key, "")
+	return llm.env.GetObject(key, "")
 }
 
 func (llm *LLM) With(value dagql.Object) *LLM {
@@ -772,8 +768,8 @@ func (llm *LLM) Variables(ctx context.Context, dag *dagql.Server) ([]*LLMVariabl
 	if err != nil {
 		return nil, err
 	}
-	vars := make([]*LLMVariable, 0, len(llm.env.vars))
-	for k, v := range llm.env.vars {
+	vars := make([]*LLMVariable, 0, len(llm.env.objsByName))
+	for k, v := range llm.env.objsByName {
 		var hash string
 		if obj, ok := dagql.UnwrapAs[dagql.Object](v); ok {
 			hash = obj.ID().Digest().String()

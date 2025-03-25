@@ -41,10 +41,12 @@ type LLMEnv struct {
 	current dagql.Object
 	// Only show these functions, if non-empty
 	functionMask map[string]bool
-	// Saved objects
-	vars map[string]dagql.Object
-	// Saved objects by type + hash
+	// Saved objects by prompt var name
+	objsByName map[string]dagql.Object
+	// Saved objects by ID (Foo#123)
 	objsByID map[string]dagql.Object
+	// String variables assigned to the environment
+	varsByName map[string]string
 	// Auto incrementing number per-type
 	typeCount map[string]int
 	// The LLM-friendly ID ("Container#123") for each object
@@ -57,8 +59,9 @@ type LLMEnv struct {
 
 func NewLLMEnv(endpoint *LLMEndpoint) *LLMEnv {
 	return &LLMEnv{
-		vars:              map[string]dagql.Object{},
+		objsByName:        map[string]dagql.Object{},
 		objsByID:          map[string]dagql.Object{},
+		varsByName:        map[string]string{},
 		typeCount:         map[string]int{},
 		idByHash:          map[digest.Digest]string{},
 		functionMask:      map[string]bool{},
@@ -79,7 +82,7 @@ func (env *LLMEnv) DefaultSystemPrompt() string {
 
 func (env *LLMEnv) Clone() *LLMEnv {
 	cp := *env
-	cp.vars = cloneMap(cp.vars)
+	cp.objsByName = cloneMap(cp.objsByName)
 	cp.typeCount = cloneMap(cp.typeCount)
 	cp.idByHash = cloneMap(cp.idByHash)
 	cp.objsByID = cloneMap(cp.objsByID)
@@ -101,12 +104,12 @@ func (env *LLMEnv) Select(obj dagql.Object, functions ...string) {
 
 // Save a value at the given key
 func (env *LLMEnv) Set(key string, obj dagql.Object) {
-	env.vars[key] = obj
+	env.objsByName[key] = obj
 	env.intern(obj)
 }
 
-// Get a value saved at the given key
-func (env *LLMEnv) Get(key, expectedType string) (dagql.Object, error) {
+// Get an object saved at a given key
+func (env *LLMEnv) GetObject(key, expectedType string) (dagql.Object, error) {
 	if expectedType != "" {
 		// for maximal LLM compatibility, assume type for numeric ID args
 		if onlyNum, err := strconv.Atoi(key); err == nil {
@@ -116,7 +119,7 @@ func (env *LLMEnv) Get(key, expectedType string) (dagql.Object, error) {
 	// strip $foo var prefix
 	key = strings.TrimPrefix(key, "$")
 	// first check for named vars
-	if val, exists := env.vars[key]; exists {
+	if val, exists := env.objsByName[key]; exists {
 		return val, nil
 	}
 	// next check for values by ID
@@ -125,10 +128,10 @@ func (env *LLMEnv) Get(key, expectedType string) (dagql.Object, error) {
 	}
 	helpfulErr := new(strings.Builder)
 	fmt.Fprintf(helpfulErr, "Could not locate object %q.\n\n", key)
-	if len(env.vars) > 0 {
+	if len(env.objsByName) > 0 {
 		fmt.Fprintln(helpfulErr)
 		fmt.Fprintln(helpfulErr, "Here are the defined variables:")
-		for k, v := range env.vars {
+		for k, v := range env.objsByName {
 			fmt.Fprintf(helpfulErr, "  $%s = %s\n", k, env.describe(v))
 		}
 	}
@@ -137,7 +140,7 @@ func (env *LLMEnv) Get(key, expectedType string) (dagql.Object, error) {
 
 // Unset a saved value
 func (env *LLMEnv) Unset(key string) {
-	delete(env.vars, key)
+	delete(env.objsByName, key)
 }
 
 func (env *LLMEnv) Tools(srv *dagql.Server) ([]LLMTool, error) {
@@ -383,7 +386,7 @@ func (env *LLMEnv) toolCallToSelection(
 		if _, ok := dagql.UnwrapAs[dagql.IDable](arg.Type); ok {
 			if idStr, ok := val.(string); ok {
 				idType := strings.TrimSuffix(arg.Type.Type().Name(), "ID")
-				envVal, err := env.Get(idStr, idType)
+				envVal, err := env.GetObject(idStr, idType)
 				if err != nil {
 					return sel, err
 				}
@@ -481,6 +484,7 @@ func (env *LLMEnv) Call(ctx context.Context, tools []LLMTool, toolCall ToolCall)
 		// propagate error values to the model
 		var extErr dagql.ExtendedError
 		if errors.As(err, &extErr) {
+			// TODO: return a structured error object instead?
 			var exts []string
 			for k, v := range extErr.Extensions() {
 				var ext strings.Builder
@@ -522,10 +526,23 @@ func (env *LLMEnv) Call(ctx context.Context, tools []LLMTool, toolCall ToolCall)
 	}
 }
 
+func (env *LLMEnv) WriteVariable(name, value string) {
+	// sanitize
+	name = strings.TrimPrefix(name, "$")
+	env.varsByName[name] = value
+}
+
+func (env *LLMEnv) ReadVariable(name string) (string, bool) {
+	// sanitize
+	name = strings.TrimPrefix(name, "$")
+	val, found := env.varsByName[name]
+	return val, found
+}
+
 func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 	builtins := []LLMTool{
 		{
-			Name: "currentSelection",
+			Name: "currentSelection", // TODO: double this as "return"?
 			// NOTE: this description is load-bearing! It allows the LLM to know its
 			// current state, without even calling this tool. Without this sort of
 			// hint the model tends to give you instructions instead of acting on its
@@ -543,30 +560,80 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 				return env.currentState(nil)
 			}),
 		},
+		{
+			Name: "readVariable",
+			Description: (func() string {
+				desc := "Read the value of a string variable"
+				var vars []string
+				for name, val := range env.varsByName {
+					// TODO: should we take a shortcut here for small values and just
+					// inline them?
+					vars = append(vars,
+						fmt.Sprintf("  $%s (length: %d, hash: %s)",
+							name, len(val), dagql.HashFrom(val)))
+				}
+				if len(vars) > 0 {
+					desc += "\n\nAvailable variables:\n" + strings.Join(vars, "\n")
+				}
+				return desc
+			})(),
+			Schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"name": map[string]any{
+						"type": "string",
+					},
+				},
+				"strict":               true,
+				"required":             []string{},
+				"additionalProperties": false,
+			},
+			Call: ToolFunc(func(ctx context.Context, args struct {
+				Name string
+			}) (any, error) {
+				// sanitize input
+				args.Name = strings.TrimPrefix(args.Name, "$")
+				return toolStructuredResponse(map[string]any{
+					"result": env.varsByName[args.Name],
+				})
+			}),
+		},
 	}
 	for typeName := range env.typeCount {
 		tools, err := env.tools(srv, typeName)
 		if err != nil {
 			return nil, fmt.Errorf("tools for %q: %w", typeName, err)
 		}
-		toolDesc := fmt.Sprintf("Select a %s by its ID.", typeName)
-		if env.needsToolHint {
-			toolDesc += "\n\nProvides the following tools:\n"
-			for _, tool := range tools {
-				toolDesc += fmt.Sprintf("\n- %s", tool.Name)
-			}
-		}
 		builtins = append(builtins, LLMTool{
-			Name:        "select" + typeName,
-			Returns:     typeName,
-			Description: toolDesc,
+			Name:    "select" + typeName,
+			Returns: typeName,
+			Description: (func() string {
+				desc := fmt.Sprintf("Select a %s by its ID.", typeName)
+				if env.needsToolHint {
+					desc += "\n\nProvides the following tools:\n"
+					for _, tool := range tools {
+						desc += fmt.Sprintf("\n- %s", tool.Name)
+					}
+				}
+				var objVars []string
+				for name, obj := range env.objsByName {
+					if obj.Type().Name() != typeName {
+						continue
+					}
+					objVars = append(objVars, fmt.Sprintf("  $%s = %q", name, env.intern(obj)))
+				}
+				if len(objVars) > 0 {
+					desc += "\n\nPossible selections:\n" + strings.Join(objVars, "\n")
+				}
+				return desc
+			})(),
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"id": map[string]any{
 						"type":           "string",
 						"pattern":        idPattern(typeName),
-						"description":    "The %s ID select, in \"Type#number\" format.",
+						"description":    fmt.Sprintf("The %s ID to select, in \"%s#number\" format.", typeName, typeName),
 						jsonSchemaIDAttr: typeName,
 					},
 					// "functions": map[string]any{
@@ -585,7 +652,7 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 				ID string `name:"id"`
 				// Functions []string
 			}) (any, error) {
-				obj, err := env.Get(args.ID, typeName)
+				obj, err := env.GetObject(args.ID, typeName)
 				if err != nil {
 					return nil, err
 				}
@@ -665,7 +732,7 @@ func (env *LLMEnv) toolToID(tool LLMTool, args any) (*call.ID, error) {
 			if !ok {
 				return nil, fmt.Errorf("expected string value, got %T", v)
 			}
-			obj, err := env.Get(str, idType)
+			obj, err := env.GetObject(str, idType)
 			if err != nil {
 				// drop it, maybe it's an invalid value
 			} else {
@@ -837,10 +904,12 @@ func (env *LLMEnv) currentState(previous dagql.Object) (string, error) {
 	if previous != nil {
 		res["previous"] = env.describe(previous)
 	}
-	// show when it's already a bound var to avoid unnecessary _saveAs
-	for name, val := range env.vars {
-		if cur.ID().Digest() == val.ID().Digest() {
-			res["variable"] = name
+	if cur != nil {
+		// show when it's already a bound var to avoid unnecessary _saveAs
+		for name, val := range env.objsByName {
+			if cur.ID().Digest() == val.ID().Digest() {
+				res["variable"] = name
+			}
 		}
 	}
 	return toolStructuredResponse(res)
