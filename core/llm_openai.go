@@ -81,7 +81,7 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 			if msg.ToolErrored {
 				content = "error: " + content
 			}
-			openAIMessages = append(openAIMessages, openai.ToolMessage(msg.ToolCallID, content))
+			openAIMessages = append(openAIMessages, openai.ToolMessage(content, msg.ToolCallID))
 			continue
 		}
 		var blocks []openai.ChatCompletionContentPartUnionParam
