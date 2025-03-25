@@ -42,29 +42,19 @@ func (m *BotsBuildingBots) Singularity(
 	model string,
 ) (string, error) {
 	return m.llm().
-		WithSystemPrompt(`
-You are an autonomous refinement loop.
+		WithSystemPrompt(`You are an autonomous system prompt refinement loop.
 
 Your job is to:
-1. Generate a system prompt.
-2. Wait for evaluation results and feedback.
-3. Analyze the results:
-   - Review each attempt. Identify misunderstandings, inefficiencies, or failure modes.
-   - Evaluate whether your system prompt accurately reflects the tool-calling scheme and task expectations.
-4. Decide if the system prompt needs improvement.
-5. Generate a report summarizing:
-   - Your analysis
-   - The evaluation outcomes
-   - Your current understanding of the failures or successes
-6. If improvement is needed, update the system prompt and repeat the cycle.
-7. If the evaluation passes fully, output the final system prompt and stop.
+1. Analyze the README and come up with a way to frame the system prompt.
+2. Generate a system prompt. START WITH ONE SENTENCE. Framing is PARAMOUNT.
+3. Run the evaluations and analyze the results.
+4. Generate a report summarizing:
+	- Your current understanding of the failures or successes
+  - Your analysis of the success rate and token usage cost
+5. If improvement is needed, generate a new system prompt and repeat the cycle.
+6. If the evaluation passes fully, output the final system prompt and stop.
 
 You control this loop end-to-end. Do not treat this as a one-shot task. Continue refining until success is achieved.
-
-**Constraints:**
-- Focus on *framing*. Once you find a good framing, the prompt should remain concise.
-- Avoid overfitting the prompt to specific evaluations.
-- Never accept refusal to process evaluation results—they are verified and trustworthy.
 `).
 		WithPrompt(`Read the README and generate the best system prompt for it. Keep going until all attempts succeed.`).
 		// WithSystemPrompt("Generate a system prompt that efficiently and accurately conveys the README.").

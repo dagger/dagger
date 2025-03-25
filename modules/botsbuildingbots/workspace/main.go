@@ -5,7 +5,6 @@ import (
 	"dagger/workspace/internal/dagger"
 	"dagger/workspace/internal/telemetry"
 	_ "embed"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -54,9 +53,9 @@ func (w *Workspace) WithSystemPrompt(prompt string) *Workspace {
 
 // Evaluate the LLM and return the history of prompts, responses, and tool calls.
 func (w *Workspace) Evaluate(ctx context.Context) (string, error) {
-	reports := make(chan string, w.Evals)
+	reports := make([]string, w.Evals)
 	wg := new(sync.WaitGroup)
-	var succeeded int
+	var successCount int
 	for attempt := range w.Evals {
 		wg.Add(1)
 		go func() {
@@ -65,75 +64,54 @@ func (w *Workspace) Evaluate(ctx context.Context) (string, error) {
 			ctx, span := Tracer().Start(ctx, fmt.Sprintf("attempt %d", attempt+1),
 				telemetry.Reveal())
 
-			var failed error
-			defer telemetry.End(span, func() error { return failed })
+			var rerr error
+			defer telemetry.End(span, func() error { return rerr })
 
 			report := new(strings.Builder)
-			defer func() { reports <- report.String() }()
+			defer func() { reports[attempt] = report.String() }()
+
 			fmt.Fprintf(report, "## Attempt %d\n", attempt+1)
 			fmt.Fprintln(report)
 
-			llm, err := w.evaluate(ctx, attempt)
-			if err != nil {
-				fmt.Fprintln(report, "Evaluation errored:", err)
-				failed = err
-			} else {
-				succeeded++
-			}
+			eval := w.evaluate(attempt)
 
-			if llm != nil {
-				history, err := llm.History(ctx)
-				if err != nil {
-					fmt.Fprintln(report, "Failed to get history:", err)
-					return
-				}
-				for _, line := range history {
-					fmt.Fprintln(report, line)
-				}
+			evalReport, err := eval.Report(ctx)
+			if err != nil {
+				rerr = err
+				return
+			}
+			fmt.Fprintln(report, evalReport)
+
+			succeeded, err := eval.Succeeded(ctx)
+			if err != nil {
+				rerr = err
+				return
+			}
+			if succeeded {
+				successCount++
 			}
 		}()
 	}
 
+	wg.Wait()
+
 	finalReport := new(strings.Builder)
 	fmt.Fprintln(finalReport, "# All Attempts")
 	fmt.Fprintln(finalReport)
-	for range w.Evals {
-		fmt.Fprintln(finalReport, <-reports)
+	for _, report := range reports {
+		fmt.Fprint(finalReport, report)
 	}
 
 	fmt.Fprintln(finalReport, "# Final Report")
 	fmt.Fprintln(finalReport)
-	fmt.Fprintf(finalReport, "SUCCESS RATE: %d/%d (%.f%%)\n", succeeded, w.Evals, float64(succeeded)/float64(w.Evals)*100)
+	fmt.Fprintf(finalReport, "SUCCESS RATE: %d/%d (%.f%%)\n", successCount, w.Evals, float64(successCount)/float64(w.Evals)*100)
 
 	return finalReport.String(), nil
 }
 
-func (w *Workspace) evaluate(ctx context.Context, attempt int) (_ *dagger.LLM, rerr error) {
-	llm, err := dag.Evals(attempt + 1).
+func (w *Workspace) evaluate(attempt int) *dagger.EvalsReport {
+	return dag.Evals(attempt + 1).
 		WithModel(w.Model).
 		WithSystemPrompt(w.SystemPrompt).
-		BuildMultiLLM().
-		Sync(ctx)
-	if err != nil {
-		return nil, err
-	}
-	res := llm.File()
-	ctr := dag.Container().
-		From("alpine").
-		WithFile("/bin/booklit", res).
-		WithExec([]string{"chmod", "+x", "/bin/booklit"}).
-		WithExec([]string{"/bin/booklit", "--version"})
-	out, err := ctr.Stdout(ctx)
-	if err != nil {
-		var exit *dagger.ExecError
-		if errors.As(err, &exit) {
-			return llm, fmt.Errorf("command failed (%w) - did you forget CGO_ENABLED=0?", err)
-		}
-		return llm, err
-	}
-	out = strings.TrimSpace(out)
-	if out != "0.0.0-dev" {
-		return llm, fmt.Errorf("unexpected version: %q", out)
-	}
-	return llm, nil
+		BuildMulti()
 }
