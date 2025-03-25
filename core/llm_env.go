@@ -522,7 +522,27 @@ func (env *LLMEnv) Call(ctx context.Context, tools []LLMTool, toolCall ToolCall)
 }
 
 func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
-	builtins := []LLMTool{}
+	builtins := []LLMTool{
+		LLMTool{
+			Name: "currentSelection",
+			// NOTE: this description is load-bearing! It allows the LLM to know its
+			// current state, without even calling this tool. Without this sort of
+			// hint the model tends to give you instructions instead of acting on its
+			// own. That could be addressed with a system prompt, but we don't want to
+			// rely on those.
+			Description: "Your current selection: " + env.describe(env.Current()),
+			Schema: map[string]any{
+				"type":                 "object",
+				"properties":           map[string]any{},
+				"strict":               true,
+				"required":             []string{},
+				"additionalProperties": false,
+			},
+			Call: ToolFunc(func(ctx context.Context, args struct{}) (any, error) {
+				return env.currentState()
+			}),
+		},
+	}
 	for typeName := range env.typeCount {
 		tools, err := env.tools(srv, typeName)
 		if err != nil {
