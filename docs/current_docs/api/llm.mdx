@@ -128,11 +128,11 @@ llm |
 To get the complete message history, use the `LLM.History()` API method.
 :::
 
-## Workspaces and tools
+## Environments and tools
 
 Dagger [modules](../features/modules.mdx) are collections of Dagger Functions. When you give a Dagger module to the `LLM` core type, every Dagger Function is turned into a tool that the LLM can call.
 
-A "workspace" is a common design pattern that many agents implement. It is a Dagger module that provides one or more Dagger Functions, such as reading and writing files, running tests, and generally interacting with a `Directory`, `Container` or other core type. Typically, the workspace module is passed to the LLM, and the LLM uses the Dagger Functions available in it to complete the assigned tasks.
+An "environment" is a common design pattern that many agents implement. It is a Dagger module that provides one or more Dagger Functions, such as reading and writing files, running tests, and generally interacting with a `Directory`, `Container` or other core type. Typically, the environment module is passed to the LLM, and the LLM uses the Dagger Functions available in it to complete the assigned tasks.
 
 Consider the following Dagger Function:
 
@@ -151,8 +151,8 @@ Consider the following Dagger Function:
 </TabItem>
 </Tabs>
 
-Here, the `ToyWorkspace` module contains a number of Dagger Functions: `Read()`, `Write(), and `Build()`. When an instance of this module is attached to the `LLM` core type, the LLM can call any of these Dagger Functions to change the state of the workspace and complete the assigned task.
+Here, the `ToyWorkspace` is the `Environment` module. It contains a number of Dagger Functions: `Read()`, `Write(), and `Build()`. When an instance of this module is attached to the `LLM` core type, the LLM can call any of these Dagger Functions to change the state of the environment and complete the assigned task.
 
 :::tip
-Dagger's core types, like `Directory` and `Container`, have extensive APIs, and an LLM can easily get lost or provide inconsistent results when working with these objects. To resolve this, we recommend using a Dagger module with limited functionality as a workspace and confining the LLM to that workspace. With this, the LLM has fewer degrees of freedom when interacting with its environment and this, in turn, helps produce more consistent results.
+Dagger's core types, like `Directory` and `Container`, have extensive APIs, and an LLM can easily get lost or provide inconsistent results when working with these objects. To resolve this, we recommend using a Dagger module with limited functionality as an environment and confining the LLM to that module. With this, the LLM has fewer degrees of freedom when interacting with its environment and this, in turn, helps produce more consistent results.
 :::
