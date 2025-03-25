@@ -10,11 +10,11 @@
   },
   {
     "role": "assistant",
-    "content": "Hello! How are you today?",
+    "content": "Hello! How are you doing today?",
     "token_usage": {
-      "InputTokens": 10,
-      "OutputTokens": 8,
-      "TotalTokens": 18
+      "InputTokens": 40,
+      "OutputTokens": 10,
+      "TotalTokens": 50
     }
   }
 ]

@@ -13,26 +13,25 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_BecTji7uHvMeRCmBlGCWBAB4",
+        "id": "call_oSr23EVuSCaUkqoplzBg7fSf",
         "function": {
-          "name": "ToyWorkspace_write",
-          "arguments": {
-            "content": "package main\n\nimport \"fmt\"\n\nfunc main() {\n    fmt.Println(\"Hello, World!\")\n}\n"
-          }
+          "name": "ToyWorkspace_read",
+          "arguments": {}
         },
         "type": "function"
       }
     ],
     "token_usage": {
-      "InputTokens": 142,
-      "OutputTokens": 44,
-      "TotalTokens": 186
+      "InputTokens": 208,
+      "OutputTokens": 13,
+      "TotalTokens": 221
     }
   },
   {
     "role": "user",
-    "content": "{\"selected\":\"ToyWorkspace#1\"}",
-    "tool_call_id": "call_BecTji7uHvMeRCmBlGCWBAB4",
+    "content": "failed to sync: select: lstat /app/main.go: no such file or directory",
+    "tool_call_id": "call_oSr23EVuSCaUkqoplzBg7fSf",
+    "tool_errored": true,
     "token_usage": {
       "InputTokens": 0,
       "OutputTokens": 0,
@@ -44,24 +43,26 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "call_syX8XmhxHCnefOX1SmR0S1NZ",
+        "id": "call_E5hmEwUHByStYI15tyfyRuuY",
         "function": {
-          "name": "ToyWorkspace_build",
-          "arguments": {}
+          "name": "ToyWorkspace_write",
+          "arguments": {
+            "content": "package main\n\nimport \"fmt\"\n\nfunc main() {\n    fmt.Println(\"Hello, World!\")\n}\n"
+          }
         },
         "type": "function"
       }
     ],
     "token_usage": {
-      "InputTokens": 251,
-      "OutputTokens": 13,
-      "TotalTokens": 264
+      "InputTokens": 249,
+      "OutputTokens": 44,
+      "TotalTokens": 293
     }
   },
   {
     "role": "user",
-    "content": "{\"result\":null}",
-    "tool_call_id": "call_syX8XmhxHCnefOX1SmR0S1NZ",
+    "content": "{\"previous\":\"ToyWorkspace#1\",\"selected\":\"ToyWorkspace#2\"}",
+    "tool_call_id": "call_E5hmEwUHByStYI15tyfyRuuY",
     "token_usage": {
       "InputTokens": 0,
       "OutputTokens": 0,
@@ -70,11 +71,40 @@
   },
   {
     "role": "assistant",
-    "content": "The \"Hello, World!\" program has been written, and the code builds successfully.",
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_hUu5KOvTdgGiGa2m5KOLNdSX",
+        "function": {
+          "name": "ToyWorkspace_build",
+          "arguments": {}
+        },
+        "type": "function"
+      }
+    ],
     "token_usage": {
-      "InputTokens": 277,
-      "OutputTokens": 19,
-      "TotalTokens": 296
+      "InputTokens": 316,
+      "OutputTokens": 13,
+      "TotalTokens": 329
+    }
+  },
+  {
+    "role": "user",
+    "content": "{\"result\":null}",
+    "tool_call_id": "call_hUu5KOvTdgGiGa2m5KOLNdSX",
+    "token_usage": {
+      "InputTokens": 0,
+      "OutputTokens": 0,
+      "TotalTokens": 0
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "The Go \"Hello, World!\" program has been successfully written and built. The program prints \"Hello, World!\" to the console. If you have any more tasks or need further assistance, feel free to ask!",
+    "token_usage": {
+      "InputTokens": 342,
+      "OutputTokens": 45,
+      "TotalTokens": 387
     }
   }
 ]

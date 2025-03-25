@@ -10,11 +10,42 @@
   },
   {
     "role": "assistant",
-    "content": "The value of the `PATH` environment variable in a system can vary depending on the operating system and the specific configuration. Typically, `PATH` contains a list of directories that the system searches for executable files. Here's an example of what a `PATH` might look like on a Unix-like system:\n\n```plaintext\n/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\n```\n\nOn Windows, it might look something like this:\n\n```plaintext\nC:\\Windows\\system32;C:\\Windows;C:\\Program Files\n```\n\nTo get the current value of `PATH` for your system, you can open a terminal and type `echo $PATH` on Unix-like systems or `echo %PATH%` on Windows.",
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_jEHnV0HSsN45o95RioF8yJk7",
+        "function": {
+          "name": "Container_envVariable",
+          "arguments": {
+            "name": "PATH"
+          }
+        },
+        "type": "function"
+      }
+    ],
     "token_usage": {
-      "InputTokens": 7160,
-      "OutputTokens": 153,
-      "TotalTokens": 7313
+      "InputTokens": 7222,
+      "OutputTokens": 16,
+      "TotalTokens": 7238
+    }
+  },
+  {
+    "role": "user",
+    "content": "{\"result\":\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"}",
+    "tool_call_id": "call_jEHnV0HSsN45o95RioF8yJk7",
+    "token_usage": {
+      "InputTokens": 0,
+      "OutputTokens": 0,
+      "TotalTokens": 0
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "The value of the `PATH` environment variable is `\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"`.",
+    "token_usage": {
+      "InputTokens": 7271,
+      "OutputTokens": 36,
+      "TotalTokens": 7307
     }
   },
   {
@@ -28,11 +59,42 @@
   },
   {
     "role": "assistant",
-    "content": "The value of the `TERM` environment variable specifies the type of terminal to emulate when running applications that use a text-based interface. The exact value can depend on the terminal emulator you're using and the system configuration. Some common values for `TERM` are:\n\n- `xterm`\n- `xterm-256color`\n- `linux`\n- `vt100`\n- `screen`\n\nTo find out the current value of `TERM` on your system, you can open a terminal and type `echo $TERM`.",
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_lKrcL17rKvMNwud9u2rCtKx4",
+        "function": {
+          "name": "Container_envVariable",
+          "arguments": {
+            "name": "TERM"
+          }
+        },
+        "type": "function"
+      }
+    ],
     "token_usage": {
-      "InputTokens": 7326,
-      "OutputTokens": 105,
-      "TotalTokens": 7431
+      "InputTokens": 7320,
+      "OutputTokens": 16,
+      "TotalTokens": 7336
+    }
+  },
+  {
+    "role": "user",
+    "content": "{\"result\":null}",
+    "tool_call_id": "call_lKrcL17rKvMNwud9u2rCtKx4",
+    "token_usage": {
+      "InputTokens": 0,
+      "OutputTokens": 0,
+      "TotalTokens": 0
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "The `TERM` environment variable is not set in the current container environment.",
+    "token_usage": {
+      "InputTokens": 7349,
+      "OutputTokens": 17,
+      "TotalTokens": 7366
     }
   }
 ]
