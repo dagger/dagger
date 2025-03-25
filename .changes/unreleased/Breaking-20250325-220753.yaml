@@ -1,0 +1,6 @@
+kind: Breaking
+body: Any functions that returns []T are now return []*T instead.
+time: 2025-03-25T22:07:53.448282027+07:00
+custom:
+    Author: wingyplus
+    PR: "9575"
