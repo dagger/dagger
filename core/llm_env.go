@@ -580,6 +580,10 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 				ID string `name:"id"`
 				// Functions []string
 			}) (any, error) {
+				if onlyNum, err := strconv.Atoi(args.ID); err == nil {
+					// normalize on Container#123
+					args.ID = fmt.Sprintf("%s#%d", typeName, onlyNum)
+				}
 				obj, err := env.Get(args.ID)
 				if err != nil {
 					return nil, err
@@ -807,7 +811,7 @@ func typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any, error) {
 }
 
 func idPattern(typeName string) string {
-	return `^` + typeName + `#\d+$`
+	return `^(` + typeName + `#)?\d+$`
 }
 
 func (env *LLMEnv) currentState() (string, error) {
