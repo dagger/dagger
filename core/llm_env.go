@@ -36,8 +36,9 @@ type LLMTool struct {
 }
 
 type LLMEnv struct {
-	// History of values. Current selection is last. Remove last N values to rewind last N changes
-	history      []dagql.Object
+	// The currently selected object.
+	current dagql.Object
+	// Only show these functions, if non-empty
 	functionMask map[string]bool
 	// Saved objects
 	vars map[string]dagql.Object
@@ -77,7 +78,6 @@ func (env *LLMEnv) DefaultSystemPrompt() string {
 
 func (env *LLMEnv) Clone() *LLMEnv {
 	cp := *env
-	cp.history = cloneSlice(cp.history)
 	cp.vars = cloneMap(cp.vars)
 	cp.typeCount = cloneMap(cp.typeCount)
 	cp.idByHash = cloneMap(cp.idByHash)
@@ -87,14 +87,11 @@ func (env *LLMEnv) Clone() *LLMEnv {
 
 // Return the current selection
 func (env *LLMEnv) Current() dagql.Object {
-	if len(env.history) == 0 {
-		return nil
-	}
-	return env.history[len(env.history)-1]
+	return env.current
 }
 
 func (env *LLMEnv) Select(obj dagql.Object, functions ...string) {
-	env.history = append(env.history, obj)
+	env.current = obj
 	clear(env.functionMask)
 	for _, fn := range functions {
 		env.functionMask[fn] = true
@@ -102,14 +99,9 @@ func (env *LLMEnv) Select(obj dagql.Object, functions ...string) {
 }
 
 // Save a value at the given key
-func (env *LLMEnv) Set(key string, obj dagql.Object) string {
-	prev := env.vars[key]
+func (env *LLMEnv) Set(key string, obj dagql.Object) {
 	env.vars[key] = obj
-	env.objsByID[env.llmID(obj)] = obj
-	if prev != nil {
-		return fmt.Sprintf("The variable %q has changed from %s to %s.", key, env.describe(prev), env.describe(obj))
-	}
-	return fmt.Sprintf("The variable %q has been set to %s.", key, env.describe(obj))
+	env.intern(obj)
 }
 
 // Get a value saved at the given key
@@ -350,7 +342,7 @@ func (env *LLMEnv) call(ctx context.Context,
 			}
 			var res []any
 			for _, obj := range objs {
-				res = append(res, env.llmID(obj))
+				res = append(res, env.intern(obj))
 			}
 			return toolStructuredResponse(map[string]any{
 				"objects": res,
@@ -390,46 +382,6 @@ func (env *LLMEnv) call(ctx context.Context,
 
 const maxStr = 80 * 1024
 
-func (env *LLMEnv) callObjects(ctx context.Context, _ any) (any, error) {
-	var result string
-	for name, obj := range env.vars {
-		result += "- " + name + " (" + env.describe(obj) + ")\n"
-	}
-	return result, nil
-}
-
-func (env *LLMEnv) callSelect(ctx context.Context, args struct {
-	ID string `name:"id"`
-}) (any, error) {
-	obj, err := env.Get(args.ID)
-	if err != nil {
-		return nil, err
-	}
-	env.Select(obj)
-	return env.currentState()
-}
-
-func (env *LLMEnv) callSave(ctx context.Context, args struct {
-	Name string
-}) (any, error) {
-	_ = env.Set(args.Name, env.Current())
-	return env.currentState()
-}
-
-func (env *LLMEnv) callRewind(ctx context.Context, _ struct{}) (any, error) {
-	if len(env.history) > 0 {
-		env.history = env.history[:len(env.history)-1]
-	}
-	return env.currentState()
-}
-
-func (env *LLMEnv) callCurrent(ctx context.Context, _ any) (any, error) {
-	if len(env.history) == 0 {
-		return "", nil
-	}
-	return env.describe(env.history[len(env.history)-1]), nil
-}
-
 // describe returns a string representation of a typed object or object ID
 func (env *LLMEnv) describe(val dagql.Typed) string {
 	if val == nil {
@@ -437,7 +389,7 @@ func (env *LLMEnv) describe(val dagql.Typed) string {
 	}
 	if obj, ok := dagql.UnwrapAs[dagql.Object](val); ok {
 		// NOTE: this covers both Objects and ID scalars
-		return env.llmID(obj)
+		return env.intern(obj)
 	}
 	if list, ok := dagql.UnwrapAs[dagql.Enumerable](val); ok {
 		return val.Type().String() + " (length: " + strconv.Itoa(list.Len()) + ")"
@@ -445,7 +397,7 @@ func (env *LLMEnv) describe(val dagql.Typed) string {
 	return val.Type().String()
 }
 
-func (env *LLMEnv) llmID(obj dagql.Object) string {
+func (env *LLMEnv) intern(obj dagql.Object) string {
 	id := obj.ID()
 	if id == nil {
 		return ""
