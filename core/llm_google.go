@@ -184,11 +184,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 		}
 	}
 	if len(model.SystemInstruction.Parts) == 0 {
-		if defaultSystemPrompt != "" {
-			model.SystemInstruction.Parts = []genai.Part{genai.Text(defaultSystemPrompt)}
-		} else {
-			model.SystemInstruction = nil
-		}
+		model.SystemInstruction = nil
 	}
 
 	dbgEnc.Encode("---------------------------------------------")

@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	_ "embed"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -27,9 +26,6 @@ import (
 func init() {
 	strcase.ConfigureAcronym("LLM", "LLM")
 }
-
-//go:embed llm_dagger_prompt.md
-var defaultSystemPrompt string
 
 // An instance of a LLM (large language model), with its state and tool calling environment
 type LLM struct {
@@ -398,7 +394,7 @@ func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int) (*
 		Endpoint:    endpoint,
 		maxAPICalls: maxAPICalls,
 		calls:       make(map[string]string),
-		env:         NewLLMEnv(),
+		env:         NewLLMEnv(endpoint),
 	}, nil
 }
 
@@ -553,6 +549,29 @@ func (llm *LLM) LastReply(ctx context.Context, dag *dagql.Server) (string, error
 	return reply, nil
 }
 
+func (llm *LLM) messagesWithSystemPrompt() []ModelMessage {
+	var hasSystemPrompt bool
+	for _, env := range llm.messages {
+		if env.Role == "system" {
+			return llm.messages
+		}
+	}
+
+	messages := llm.messages
+
+	// inject default system prompt if none are found
+	if prompt := llm.env.DefaultSystemPrompt(); prompt != "" && !hasSystemPrompt {
+		return append([]ModelMessage{
+			{
+				Role:    "system",
+				Content: prompt,
+			},
+		}, messages...)
+	}
+
+	return messages
+}
+
 // send the context to the LLM endpoint, process replies and tool calls; continue in a loop
 // Synchronize LLM state:
 // 1. Send context to LLM endpoint
@@ -582,7 +601,8 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 		if err != nil {
 			return nil, err
 		}
-		res, err := llm.Endpoint.Client.SendQuery(ctx, llm.messages, tools)
+
+		res, err := llm.Endpoint.Client.SendQuery(ctx, llm.messagesWithSystemPrompt(), tools)
 		if err != nil {
 			return nil, err
 		}

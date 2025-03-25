@@ -160,12 +160,6 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 		}
 	}
 
-	// If no system messages were found, use the default system prompt.
-	if len(systemPrompts) == 0 && defaultSystemPrompt != "" {
-		block := anthropic.NewTextBlock(defaultSystemPrompt)
-		systemPrompts = []anthropic.TextBlockParam{block}
-	}
-
 	// Convert tools to Anthropic tool format.
 	var toolsConfig []anthropic.ToolUnionUnionParam
 	for _, tool := range tools {

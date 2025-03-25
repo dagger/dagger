@@ -75,7 +75,6 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 	// Convert generic Message to OpenAI specific format
 	var openAIMessages []openai.ChatCompletionMessageParamUnion
 
-	var hasSystemPrompt bool
 	for _, msg := range history {
 		if msg.ToolCallID != "" {
 			content := msg.Content
@@ -111,12 +110,8 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 			}
 			openAIMessages = append(openAIMessages, assistantMsg)
 		case "system":
-			hasSystemPrompt = true
 			openAIMessages = append(openAIMessages, openai.SystemMessage(msg.Content))
 		}
-	}
-	if !hasSystemPrompt && defaultSystemPrompt != "" {
-		openAIMessages = append(openAIMessages, openai.SystemMessage(defaultSystemPrompt))
 	}
 
 	params := openai.ChatCompletionNewParams{
@@ -128,9 +123,6 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 		},
 		// call tools one at a time, or else chaining breaks
 	}
-
-	dbgEnc.Encode("---------------------------------------------")
-	dbgEnc.Encode(params)
 
 	if len(tools) > 0 {
 		// OpenAI is picky about this being set if no tools are specified
@@ -148,6 +140,9 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 		}
 		params.Tools = toolParams
 	}
+
+	dbgEnc.Encode("---------------------------------------------")
+	dbgEnc.Encode(params)
 
 	stream := c.client.Chat.Completions.NewStreaming(ctx, params)
 	if stream.Err() != nil {

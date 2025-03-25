@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -46,16 +47,32 @@ type LLMEnv struct {
 	typeCount map[string]int
 	// The LLM-friendly ID ("Container#123") for each object
 	idByHash map[digest.Digest]string
+	// Whether the LLM needs hints to see what tools it can use
+	needsToolHint bool
+	// Whether the LLM needs instructions on how to use the tool scheme
+	needsSystemPrompt bool
 }
 
-func NewLLMEnv() *LLMEnv {
+func NewLLMEnv(endpoint *LLMEndpoint) *LLMEnv {
 	return &LLMEnv{
-		vars:         map[string]dagql.Object{},
-		objsByID:     map[string]dagql.Object{},
-		typeCount:    map[string]int{},
-		idByHash:     map[digest.Digest]string{},
-		functionMask: map[string]bool{},
+		vars:              map[string]dagql.Object{},
+		objsByID:          map[string]dagql.Object{},
+		typeCount:         map[string]int{},
+		idByHash:          map[digest.Digest]string{},
+		functionMask:      map[string]bool{},
+		needsToolHint:     endpoint.Provider == Google,
+		needsSystemPrompt: endpoint.Provider == Google,
 	}
+}
+
+//go:embed llm_dagger_prompt.md
+var defaultSystemPrompt string
+
+func (env *LLMEnv) DefaultSystemPrompt() string {
+	if env.needsSystemPrompt {
+		return defaultSystemPrompt
+	}
+	return ""
 }
 
 func (env *LLMEnv) Clone() *LLMEnv {
@@ -528,21 +545,24 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 		if err != nil {
 			return nil, fmt.Errorf("tools for %q: %w", typeName, err)
 		}
-		fnsDesc := fmt.Sprintf("Provides %d tools for working with a %s:\n", len(tools), typeName)
-		for _, tool := range tools {
-			fnsDesc += fmt.Sprintf("\n- %s", tool.Name)
+		toolDesc := fmt.Sprintf("Select a %s by its ID.", typeName)
+		if env.needsToolHint {
+			toolDesc += fmt.Sprintf("\n\nProvides the following tools:\n")
+			for _, tool := range tools {
+				toolDesc += fmt.Sprintf("\n- %s", tool.Name)
+			}
 		}
 		builtins = append(builtins, LLMTool{
 			Name:        "select" + typeName,
 			Returns:     typeName,
-			Description: fmt.Sprintf("Set the current state to a %s.\n\n%s", typeName, fnsDesc),
+			Description: toolDesc,
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"id": map[string]any{
 						"type":        "string",
 						"pattern":     idPattern(typeName),
-						"description": "ID of the Object to select.",
+						"description": "The %s ID select, in \"Type#number\" format.",
 					},
 					// "functions": map[string]any{
 					// 	"type": "array",
@@ -773,7 +793,7 @@ func typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any, error) {
 				typeName := strings.TrimSuffix(t.NamedType, "ID")
 				jsonSchema["type"] = "string"
 				jsonSchema["pattern"] = idPattern(typeName)
-				desc = fmt.Sprintf("%s Object ID. %s", typeName, desc)
+				desc = fmt.Sprintf("%s ID in \"%s#number\" format. %s", typeName, typeName, desc)
 			} else {
 				jsonSchema["type"] = "string"
 			}
@@ -793,7 +813,7 @@ func idPattern(typeName string) string {
 func (env *LLMEnv) currentState() (string, error) {
 	cur := env.Current()
 	res := map[string]any{
-		// "selected" to hint to the model that it doesn't need to _use or _saveAs it
+		// "selected" to hint to the model that it doesn't need to select it
 		"selected": env.describe(cur),
 	}
 	// show when it's already a bound var to avoid unnecessary _saveAs
