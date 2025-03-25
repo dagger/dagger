@@ -181,14 +181,6 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 		System:    anthropic.F(systemPrompts),
 	}
 
-	dbgEnc.Encode("---------------------------------------------")
-	dbgEnc.Encode(params)
-	defer func() {
-		if rerr != nil {
-			dbgEnc.Encode(fmt.Sprintf("error: %s %T %+v", rerr.Error(), rerr, rerr))
-		}
-	}()
-
 	// Start a streaming request.
 	stream := c.client.Messages.NewStreaming(ctx, params)
 	defer stream.Close()
@@ -201,8 +193,6 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 	for stream.Next() {
 		event := stream.Current()
 		acc.Accumulate(event)
-
-		dbgEnc.Encode(event)
 
 		// Keep track of the token usage
 		if acc.Usage.OutputTokens > 0 {
