@@ -16,7 +16,7 @@ import (
 )
 
 type OpenAIClient struct {
-	client   *openai.Client
+	client   openai.Client
 	endpoint *LLMEndpoint
 }
 
@@ -86,8 +86,8 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 		var blocks []openai.ChatCompletionContentPartUnionParam
 		switch msg.Role {
 		case "user":
-			blocks = append(blocks, openai.TextPart(msg.Content))
-			openAIMessages = append(openAIMessages, openai.UserMessageParts(blocks...))
+			blocks = append(blocks, openai.TextContentPart(msg.Content))
+			openAIMessages = append(openAIMessages, openai.UserMessage(blocks))
 		case "assistant":
 			assistantMsg := openai.AssistantMessage(msg.Content)
 			calls := make([]openai.ChatCompletionMessageToolCallParam, len(msg.ToolCalls))
@@ -97,16 +97,15 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 					return nil, fmt.Errorf("failed to marshal tool call arguments: %w", err)
 				}
 				calls[i] = openai.ChatCompletionMessageToolCallParam{
-					ID:   openai.String(call.ID),
-					Type: openai.F(openai.ChatCompletionMessageToolCallTypeFunction),
-					Function: openai.F(openai.ChatCompletionMessageToolCallFunctionParam{
-						Name:      openai.String(call.Function.Name),
-						Arguments: openai.String(string(args)),
-					}),
+					ID: call.ID,
+					Function: openai.ChatCompletionMessageToolCallFunctionParam{
+						Name:      call.Function.Name,
+						Arguments: string(args),
+					},
 				}
 			}
 			if len(calls) > 0 {
-				assistantMsg.ToolCalls = openai.F(calls)
+				assistantMsg.OfAssistant.ToolCalls = calls
 			}
 			openAIMessages = append(openAIMessages, assistantMsg)
 		case "system":
@@ -116,30 +115,29 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 
 	params := openai.ChatCompletionNewParams{
 		Seed:     openai.Int(0),
-		Model:    openai.F(c.endpoint.Model),
-		Messages: openai.F(openAIMessages),
-		StreamOptions: openai.F(openai.ChatCompletionStreamOptionsParam{
-			IncludeUsage: openai.F(true),
-		}),
+		Model:    c.endpoint.Model,
+		Messages: openAIMessages,
+		StreamOptions: openai.ChatCompletionStreamOptionsParam{
+			IncludeUsage: openai.Opt(true),
+		},
 		// call tools one at a time, or else chaining breaks
 	}
 
 	if len(tools) > 0 {
 		// OpenAI is picky about this being set if no tools are specified
-		params.ParallelToolCalls = openai.F(false)
+		params.ParallelToolCalls = openai.Opt(false)
 
 		var toolParams []openai.ChatCompletionToolParam
 		for _, tool := range tools {
 			toolParams = append(toolParams, openai.ChatCompletionToolParam{
-				Type: openai.F(openai.ChatCompletionToolTypeFunction),
-				Function: openai.F(openai.FunctionDefinitionParam{
-					Name:        openai.String(tool.Name),
-					Description: openai.String(tool.Description),
-					Parameters:  openai.F(openai.FunctionParameters(tool.Schema)),
-				}),
+				Function: openai.FunctionDefinitionParam{
+					Name:        tool.Name,
+					Description: openai.Opt(tool.Description),
+					Parameters:  openai.FunctionParameters(tool.Schema),
+				},
 			})
 		}
-		params.Tools = openai.F(toolParams)
+		params.Tools = toolParams
 	}
 
 	stream := c.client.Chat.Completions.NewStreaming(ctx, params)
