@@ -4608,6 +4608,8 @@ type GitRef struct {
 	query *querybuilder.Selection
 
 	commit *string
+	diff   *string
+	dirty  *bool
 	id     *GitRefID
 }
 
@@ -4625,6 +4627,44 @@ func (r *GitRef) Commit(ctx context.Context) (string, error) {
 	q := r.query.Select("commit")
 
 	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// GitRefDiffOpts contains options for GitRef.Diff
+type GitRefDiffOpts struct {
+	// The target reference to compare against, defaults to the working directory
+	Target string
+}
+
+// Gets the result of a git diff.
+func (r *GitRef) Diff(ctx context.Context, opts ...GitRefDiffOpts) (string, error) {
+	if r.diff != nil {
+		return *r.diff, nil
+	}
+	q := r.query.Select("diff")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `target` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Target) {
+			q = q.Arg("target", opts[i].Target)
+		}
+	}
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Whether the git ref has uncommited modifications in the current directory.
+func (r *GitRef) Dirty(ctx context.Context) (bool, error) {
+	if r.dirty != nil {
+		return *r.dirty, nil
+	}
+	q := r.query.Select("dirty")
+
+	var response bool
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -4841,6 +4881,15 @@ func (r *GitRepository) WithAuthToken(token *Secret) *GitRepository {
 	q = q.Arg("token", token)
 
 	return &GitRepository{
+		query: q,
+	}
+}
+
+// Returns details for working state.
+func (r *GitRepository) Working() *GitRef {
+	q := r.query.Select("working")
+
+	return &GitRef{
 		query: q,
 	}
 }

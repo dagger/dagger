@@ -19,7 +19,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
 
-	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/sources/gitdns"
@@ -36,6 +35,7 @@ type GitRepositoryBackend interface {
 
 	Head(ctx context.Context) (GitRefBackend, error)
 	Ref(ctx context.Context, ref string) (GitRefBackend, error)
+	Working(ctx context.Context) (GitRefBackend, error)
 
 	Tags(ctx context.Context, patterns []string) ([]string, error)
 }
@@ -68,6 +68,14 @@ func (repo *GitRepository) Head(ctx context.Context) (*GitRef, error) {
 	return &GitRef{repo, ref}, nil
 }
 
+func (repo *GitRepository) Working(ctx context.Context) (*GitRef, error) {
+	ref, err := repo.Backend.Working(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &GitRef{repo, ref}, nil
+}
+
 func (repo *GitRepository) Ref(ctx context.Context, name string) (*GitRef, error) {
 	ref, err := repo.Backend.Ref(ctx, name)
 	if err != nil {
@@ -89,7 +97,10 @@ type GitRefBackend interface {
 	HasPBDefinitions
 
 	Commit(ctx context.Context) (string, error)
-	Tree(ctx context.Context, srv *dagql.Server, discard bool) (*Directory, error)
+	Tree(ctx context.Context, discard bool) (*Directory, error)
+
+	Diff(ctx context.Context, target string) (string, error)
+	Dirty(ctx context.Context) (bool, error)
 }
 
 func (*GitRef) Type() *ast.Type {
@@ -116,8 +127,16 @@ func (ref *GitRef) Commit(ctx context.Context) (string, error) {
 	return ref.Backend.Commit(ctx)
 }
 
-func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool) (*Directory, error) {
-	return ref.Backend.Tree(ctx, srv, ref.Repo.DiscardGitDir || discardGitDir)
+func (ref *GitRef) Tree(ctx context.Context, discardGitDir bool) (*Directory, error) {
+	return ref.Backend.Tree(ctx, ref.Repo.DiscardGitDir || discardGitDir)
+}
+
+func (ref *GitRef) Dirty(ctx context.Context) (bool, error) {
+	return ref.Backend.Dirty(ctx)
+}
+
+func (ref *GitRef) Diff(ctx context.Context, target string) (string, error) {
+	return ref.Backend.Diff(ctx, target)
 }
 
 type RemoteGitRepository struct {
@@ -154,6 +173,11 @@ func (repo *RemoteGitRepository) Ref(ctx context.Context, ref string) (GitRefBac
 		Repo:  repo,
 		Ref:   ref,
 	}, nil
+}
+
+func (repo *RemoteGitRepository) Working(ctx context.Context) (GitRefBackend, error) {
+	// remote repositories don't have working directories
+	return repo.Head(ctx)
 }
 
 func (repo *RemoteGitRepository) Tags(ctx context.Context, patterns []string) ([]string, error) {
@@ -254,7 +278,7 @@ func (ref *RemoteGitRef) PBDefinitions(ctx context.Context) ([]*pb.Definition, e
 	return nil, nil
 }
 
-func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool) (*Directory, error) {
+func (ref *RemoteGitRef) Tree(ctx context.Context, discardGitDir bool) (*Directory, error) {
 	st, err := ref.getState(ctx, discardGitDir)
 	if err != nil {
 		return nil, err
@@ -262,12 +286,39 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	return NewDirectorySt(ctx, ref.Query, st, "/", ref.Repo.Platform, ref.Repo.Services)
 }
 
+func (ref *RemoteGitRef) Diff(ctx context.Context, target string) (string, error) {
+	if target == "" {
+		// remote git refs don't have local changes
+		return "", nil
+	}
+
+	tree, err := ref.Tree(ctx, false)
+	if err != nil {
+		return "", err
+	}
+	var diff string
+	err = tree.mount(ctx, func(src string) error {
+		var err error
+		diff, err = gitCmd(ctx, src, "diff", target+".."+cmp.Or(ref.Ref, "HEAD"))
+		return err
+	})
+	if err != nil {
+		return "", err
+	}
+	return diff, nil
+}
+
+func (ref *RemoteGitRef) Dirty(ctx context.Context) (bool, error) {
+	// remote git refs are always clean
+	return false, nil
+}
+
 func (ref *RemoteGitRef) Commit(ctx context.Context) (string, error) {
 	bk, err := ref.Query.Buildkit(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	st, err := ref.getState(ctx, true)
+	st, err := ref.getState(ctx, false)
 	if err != nil {
 		return "", err
 	}
@@ -357,6 +408,24 @@ func (repo *LocalGitRepository) Ref(ctx context.Context, ref string) (GitRefBack
 	}, nil
 }
 
+func (repo *LocalGitRepository) Working(ctx context.Context) (GitRefBackend, error) {
+	// confirm this is actually a working directory, otherwise just get HEAD
+	_, err := repo.Directory.Directory(ctx, ".git")
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return repo.Head(ctx)
+		}
+		return nil, err
+	}
+
+	return &LocalGitRef{
+		Query:   repo.Query,
+		Repo:    repo,
+		Ref:     "HEAD",
+		Working: true,
+	}, nil
+}
+
 func (repo *LocalGitRepository) Tags(ctx context.Context, patterns []string) ([]string, error) {
 	var tags []string
 	err := repo.mount(ctx, func(src string) error {
@@ -386,8 +455,9 @@ func (repo *LocalGitRepository) mount(ctx context.Context, f func(string) error)
 type LocalGitRef struct {
 	Query *Query
 
-	Repo *LocalGitRepository
-	Ref  string
+	Repo    *LocalGitRepository
+	Ref     string
+	Working bool // if set, the repo should be treated as being a checkout
 }
 
 var _ GitRefBackend = (*LocalGitRef)(nil)
@@ -396,7 +466,7 @@ func (ref *LocalGitRef) PBDefinitions(ctx context.Context) ([]*pb.Definition, er
 	return ref.Repo.PBDefinitions(ctx)
 }
 
-func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool) (_ *Directory, rerr error) {
+func (ref *LocalGitRef) Tree(ctx context.Context, discardGitDir bool) (_ *Directory, rerr error) {
 	op, ok := DagOpFromContext[FSDagOp](ctx)
 	if !ok {
 		return nil, fmt.Errorf("no dagop")
@@ -416,14 +486,20 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 
 	err = op.Mount(ctx, bkref, func(checkout string) error {
 		return ref.Repo.mount(ctx, func(src string) error {
-			if _, err := gitCmd(ctx, checkout, "init"); err != nil {
-				return err
-			}
-			if _, err := gitCmd(ctx, checkout, "fetch", "--depth=1", "file://"+src, ref.Ref); err != nil {
-				return err
-			}
-			if _, err := gitCmd(ctx, checkout, "checkout", "FETCH_HEAD"); err != nil {
-				return err
+			if ref.Working {
+				if err := os.CopyFS(checkout, os.DirFS(src)); err != nil {
+					return err
+				}
+			} else {
+				if _, err := gitCmd(ctx, checkout, "init"); err != nil {
+					return err
+				}
+				if _, err := gitCmd(ctx, checkout, "fetch", "--depth=1", "file://"+src, ref.Ref); err != nil {
+					return err
+				}
+				if _, err := gitCmd(ctx, checkout, "checkout", "FETCH_HEAD"); err != nil {
+					return err
+				}
 			}
 
 			if discardGitDir {
@@ -449,11 +525,71 @@ func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitD
 	return dir, nil
 }
 
+func (ref *LocalGitRef) Diff(ctx context.Context, target string) (string, error) {
+	var rng string
+	if ref.Working {
+		if target == "" {
+			rng = "HEAD"
+		} else {
+			rng = target
+		}
+	} else {
+		if target == "" {
+			return "", nil
+		}
+		rng = target + ".." + ref.Ref
+	}
+
+	var diff string
+	err := ref.Repo.mount(ctx, func(src string) error {
+		var err error
+		diff, err = gitCmd(ctx, src, "diff", rng)
+		return err
+	})
+	if err != nil {
+		return "", err
+	}
+	return diff, nil
+}
+
+func (ref *LocalGitRef) Dirty(ctx context.Context) (bool, error) {
+	if !ref.Working {
+		return false, nil
+	}
+
+	var status string
+	err := ref.Repo.mount(ctx, func(src string) error {
+		var err error
+		status, err = gitCmd(ctx, src, "status", "--porcelain")
+		return err
+	})
+	if err != nil {
+		return false, err
+	}
+	return status != "", nil
+}
+
 func (ref *LocalGitRef) Commit(ctx context.Context) (string, error) {
+	commit, err := ref.resolveCommit(ctx, ref.Ref)
+	if err != nil {
+		return "", err
+	}
+	dirty, err := ref.Dirty(ctx)
+	if err != nil {
+		return "", err
+	}
+	if dirty {
+		// XXX: does this make sense?
+		commit += "-dirty"
+	}
+	return commit, nil
+}
+
+func (ref *LocalGitRef) resolveCommit(ctx context.Context, target string) (string, error) {
 	var commit string
 	err := ref.Repo.mount(ctx, func(src string) error {
 		var err error
-		commit, err = gitCmd(ctx, src, "rev-parse", ref.Ref)
+		commit, err = gitCmd(ctx, src, "rev-parse", target)
 		if err != nil {
 			return err
 		}

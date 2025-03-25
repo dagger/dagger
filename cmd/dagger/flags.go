@@ -803,7 +803,7 @@ func (v *gitRefValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.Mod
 		if ref := gitURL.Fragment.Ref; ref != "" {
 			return repo.Ref(ref), nil
 		}
-		return repo.Head(), nil
+		return repo.Working(), nil
 	}
 
 	// Otherwise it's a local dir path
@@ -817,7 +817,7 @@ func (v *gitRefValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.Mod
 	if ref != "" {
 		return repo.Ref(ref), nil
 	}
-	return repo.Head(), nil
+	return repo.Working(), nil
 }
 
 // AddFlag adds a flag appropriate for the argument type. Should return a
