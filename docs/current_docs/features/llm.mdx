@@ -1,0 +1,55 @@
+---
+slug: /features/llm
+description: "Iterate faster with familiar Bash-like syntax and autocomplete"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# LLM Augmentation
+
+Dagger can be used as a runtime and programming environment for AI agents. Dagger provides an `Llm` core type that enables native integration of any Large Language Models (LLM) in your workflows.
+
+A key feature of Dagger's LLM support is out-of-the-box support for [function calling](https://platform.openai.com/docs/guides/function-calling) using Dagger Functions: an LLM can automatically discover and use any and all available Dagger Functions in your workflow. Other benefits include reproducible execution, end-to-end observability, multi-model support, rapid iteration, and easy integration.
+
+Here's an example of Dagger's LLM support in action:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+TODO
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+TODO
+```
+</TabItem>
+</Tabs>
+
+## Supported models
+
+Dagger supports a wide range of popular language models, including those from OpenAI, Anthropic, Google, Microsoft, and Amazon. Dagger can access these models either through their respective cloud-based APIs or locally using tools like Ollama. Dagger uses your system's standard environment variables to route LLM requests.
+
+<Tabs groupId="models">
+<TabItem value="Anthropic">
+- `ANTHROPIC_API_KEY`: required
+- `ANTHROPIC_MODEL`: optional, defaults to `"claude-3-5-sonnet-latest"`. See other [model name strings](https://docs.anthropic.com/en/docs/about-claude/models/all-models)
+</TabItem>
+<TabItem value="OpenAI">
+- `OPENAI_API_KEY`: required
+- `OPENAI_MODEL`: optional, defaults to `"gpt-4o"`. See other [model name strings](https://platform.openai.com/docs/models)
+- Optional:
+  - `OPENAI_BASE_URL`: for alternative OpenAI-compatible endpoints like Azure or local models
+  - `OPENAI_AZURE_VERSION`: for use with [Azure's API to OpenAI](https://learn.microsoft.com/en-us/azure/ai-services/openai/overview). See below.
+</TabItem>
+<TabItem value="Google (Gemini)">
+- `GEMINI_API_KEY`: required
+- `GEMINI_MODEL`: optional, defaults to `"gemini-2.0-flash"`. See other [model name strings](https://ai.google.dev/gemini-api/docs/models/gemini)
+</TabItem>
+</Tabs>
+
+## Observability
+
+Dagger provides [end-to-end tracing](./visualization.mdx) of prompts, tool calls, and even low-level system operations. All agent state changes are observable in real time.
+
+## Learn more

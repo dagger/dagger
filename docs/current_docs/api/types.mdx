@@ -24,6 +24,7 @@ The following table lists available types and what they represent:
 | `GitRepository` | A Git repository |
 | `GitRef` | A Git reference (tag, branch, or commit) |
 | `Host` | The Dagger host environment |
+| `Llm` | A Large Language Model (LLM) |
 | `Module` | A Dagger module |
 | `Port` | A port exposed by a container |
 | `Secret` | A secret credential like a password, access token or key) |
@@ -97,9 +98,23 @@ Dagger allows you to utilize confidential information ("secrets") such as passwo
 | `name` | Returns the name of the secret |
 | `plaintext` | Returns the plaintext value of the secret |
 
+## LLM
+
+The `Llm` type initializes a Large Language Model (LLM). Some of its important fields are:
+
+| Field | Description |
+|-------|-------------|
+| `model` | Returns the model used by the LLM |
+| `lastReply` | Returns the last reply from the LLM |
+| `history` | Returns the LLM message history |
+| `withPrompt` | Appends a prompt to the LLM context |
+| `withPromptFile` | Appends a prompt file to the LLM context |
+| `withPromptVar` | Adds a string variable to the LLM context |
+| `withModel` | Sets the model used by the LLM |
+
 ## CurrentModule
 
-The `CurrentModule` type provides capabilities to introspect the Dagger Function's module and interface between the current execution environment and the Dagger API.
+The `CurrentModule` type provides capabilities to introspect the Dagger Function's module and interface between the current execution environment and the Dagger API. Some of its important fields are:
 
 | Field | Description |
 |-------|-------------|
