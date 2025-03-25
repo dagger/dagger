@@ -1,0 +1,114 @@
+---
+slug: /api/llm
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# LLM Integration
+
+## Agent loop
+
+Consider the following code:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go
+result := dag.LLM().
+		WithToyWorkspace(dag.ToyWorkspace().Write("assignment.txt", assignment)).
+		WithPrompt("You are an expert Go programmer. You have access to a workspace").
+		WithPrompt("Complete the assignment written at assignment.txt").
+		WithPrompt("Don't stop until the code builds").
+		ToyWorkspace().
+		Container()
+```
+</TabItem>
+<TabItem value="Python">
+TODO
+</TabItem>
+<TabItem value="TypeScript">
+TODO
+</TabItem>
+</Tabs>
+
+This code creates a new LLM, gives it a workspace container with an assignment, and prompts it to complete the assignment. The LLM then runs in a loop, calling tools and iterating on its work, until it completes the assignment. This loop all happens inside of the LLM object, so the value of `result` is the workspace container with the completed assignment.
+
+## Prompts
+
+Use the `LLM.withPrompt()` API method to append prompts to the LLM context:
+
+For longer or more complex prompts, use the `LLM.withPromptFile()` API method to read the prompt from a text file:
+
+Dagger supports the use of variables in prompts. This allows you to interpolate results of other operations in an LLM prompt:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+source=\$(container |
+  from alpine |
+  with-directory /src https://github.com/dagger/dagger |
+  directory /src)
+contents=\$(llm |
+  with-directory \$source |
+  with-prompt "You have a directory with source code." |
+  with-prompt "The directory also has some tools available." |
+  with-prompt "Use the tools in the directory to read the first paragraph of the README.md file in the directory." |
+  with-prompt "Reply with only the selected text." |
+  last-reply)
+llm |
+  with-prompt "Here is some text: \$contents. Translate it to French." |
+  last-reply
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+source=$(container |
+  from alpine |
+  with-directory /src https://github.com/dagger/dagger |
+  directory /src)
+contents=$(llm |
+  with-directory $source |
+  with-prompt "You have a directory with source code." |
+  with-prompt "The directory also has some tools available." |
+  with-prompt "Use the tools in the directory to read the first paragraph of the README.md file in the directory." |
+  with-prompt "Reply with only the selected text." |
+  last-reply)
+llm |
+  with-prompt "Here is some text: $contents. Translate it to French." |
+  last-reply
+```
+</TabItem>
+</Tabs>
+
+
+
+## Responses
+
+Use the `LLM.lastReply()` API method to obtain the last reply from the LLM:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+llm |
+  with-container \$(container | from alpine | with-exec apk add curl) |
+  with-prompt "You have a container with curl installed." |
+  with-prompt "Use curl to browse docs.dagger.io and summarize in one paragraph the types of documentation available" |
+  last-reply
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+llm |
+  with-container $(container | from alpine | with-exec apk add curl) |
+  with-prompt "You have a container with curl installed." |
+  with-prompt "Use curl to browse docs.dagger.io and summarize in one paragraph the types of documentation available" |
+  last-reply
+```
+</TabItem>
+</Tabs>
+
+
+## Function Calls

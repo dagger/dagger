@@ -105,6 +105,7 @@ module.exports = {
             "api/module-dependencies",
             "api/packages",
             "api/services",
+            "api/llm",
             "api/fs-filters",
             "api/documentation",
             "api/error-handling",
