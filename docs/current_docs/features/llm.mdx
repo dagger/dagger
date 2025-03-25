@@ -18,7 +18,7 @@ Here's an example of Dagger's LLM support in action:
 ```shell
 dagger <<EOF
 llm |
-  with-container $(container | from alpine) |
+  with-container \$(container | from alpine) |
   with-prompt "you have an alpine container. install tools to develop with python" |
   container |
   terminal
