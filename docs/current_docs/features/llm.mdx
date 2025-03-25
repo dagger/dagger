@@ -1,0 +1,79 @@
+---
+slug: /features/llm
+description: "Iterate faster with familiar Bash-like syntax and autocomplete"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# LLM Bindings
+
+Dagger can be used as a runtime and programming environment for AI agents. Dagger provides an `LLM` core type that enables native integration of Large Language Models (LLM) in your workflows.
+
+A key feature of Dagger's LLM integration is out-of-the-box support for tool calling using Dagger Functions: an LLM can automatically discover and use any and all available Dagger Functions in your workflow. Other benefits include reproducible execution, end-to-end observability, multi-model support, rapid iteration, and easy integration.
+
+Here's an example of Dagger's LLM bindings in action:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+llm |
+  with-container \$(container | from alpine) |
+  with-prompt "You have an alpine container. Install tools to develop with Python." |
+  container |
+  terminal
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+llm | with-container $(container | from alpine) | with-prompt "You have an alpine container. Install tools to develop with Python." | container | terminal
+```
+</TabItem>
+</Tabs>
+
+![LLM bindings](/img/current_docs/features/llm-api.gif)
+
+## Prompt mode
+
+Dagger Shell also lets you interact with the attached LLM using natural language commands. Each input builds upon previous interactions, creating a prompt chain that lets you execute complex workflows without needing to know the exact syntax of the underlying Dagger API.
+
+"Prompt mode" can be accessed at any time in the Dagger Shell by typing `>`. Here's an example:
+
+![Prompt mode](/img/current_docs/features/llm-natural.gif)
+
+## Agent loop
+
+Consider the following Dagger Function:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=../agents/snippets/coding-agent/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+```python file=../agents/snippets/coding-agent/python/src/coding_agent/main.py
+```
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=../agents/snippets/coding-agent/typescript/src/index.ts
+```
+</TabItem>
+</Tabs>
+
+This Dagger Function creates a new LLM, gives it a workspace container with an assignment, and prompts it to complete the assignment. The LLM then runs in a loop, calling tools and iterating on its work, until it completes the assignment. This loop all happens inside of the LLM object, so the value of `result` is the workspace container with the completed assignment.
+
+## Supported models
+
+Dagger supports a [wide range of popular language models](../configuration/llm.mdx), including those from OpenAI, Anthropic and Google. Dagger can access these models either through their respective cloud-based APIs or using local providers like Ollama. Dagger uses your system's standard environment variables to route LLM requests.
+
+## Observability
+
+Dagger provides [end-to-end tracing](./visualization.mdx) of prompts, tool calls, and even low-level system operations. All agent state changes are observable in real time.
+
+## Learn more
+
+- [Build an AI agent with our quickstart](../agents/quickstart.mdx)
+- [Browse AI agent examples](../examples.mdx#ai-agent-examples)
+- [Learn about the agent loop and how to work with LLM prompts and responses](../api/llm.mdx)
+- [Configure LLM endpoints](../configuration/llm.mdx)

@@ -1,0 +1,158 @@
+---
+slug: /api/llm
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# LLM Integration
+
+Dagger's `LLM` core type includes API methods to attach objects to a Large Language Model (LLM), send prompts, and receive responses.
+
+## Prompts
+
+Use the `LLM.withPrompt()` API method to append prompts to the LLM context:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+llm |
+  with-directory https://github.com/dagger/dagger#main:/docs |
+  with-prompt "You have a directory." |
+  with-prompt "Use the tools in the directory to count the number of Markdown files."
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+llm |
+  with-directory https://github.com/dagger/dagger#main:/docs |
+  with-prompt "You have a directory." |
+  with-prompt "Use the tools in the directory to count the number of Markdown files."
+```
+</TabItem>
+</Tabs>
+
+For longer or more complex prompts, use the `LLM.withPromptFile()` API method to read the prompt from a text file:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+llm |
+  with-directory https://github.com/dagger/dagger#main:/docs |
+  with-prompt-file prompt.txt
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+llm |
+  with-directory https://github.com/dagger/dagger#main:/docs |
+  with-prompt-file $(host | file ./prompt.txt)
+```
+</TabItem>
+</Tabs>
+
+Dagger supports the use of variables in prompts. This allows you to interpolate results of other operations into an LLM prompt:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+source=\$(container |
+  from alpine |
+  with-directory /src https://github.com/dagger/dagger |
+  directory /src)
+contents=\$(llm |
+  with-directory \$source |
+  with-prompt "You have a directory with source code." |
+  with-prompt "The directory also has some tools available." |
+  with-prompt "Use the tools in the directory to read the first paragraph of the README.md file in the directory." |
+  with-prompt "Reply with only the selected text." |
+  last-reply)
+llm |
+  with-prompt "Here is some text: \$contents. Translate it to French." |
+  last-reply
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+source=$(container |
+  from alpine |
+  with-directory /src https://github.com/dagger/dagger |
+  directory /src)
+contents=$(llm |
+  with-directory $source |
+  with-prompt "You have a directory with source code." |
+  with-prompt "The directory also has some tools available." |
+  with-prompt "Use the tools in the directory to read the first paragraph of the README.md file in the directory." |
+  with-prompt "Reply with only the selected text." |
+  last-reply)
+llm |
+  with-prompt "Here is some text: $contents. Translate it to French." |
+  last-reply
+```
+</TabItem>
+</Tabs>
+
+## Responses
+
+Use the `LLM.lastReply()` API method to obtain the last reply from the LLM:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+llm |
+  with-container \$(container | from alpine | with-exec apk add curl) |
+  with-prompt "You have a container with curl installed." |
+  with-prompt "Use curl to browse docs.dagger.io and summarize in one paragraph the types of documentation available" |
+  last-reply
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+llm |
+  with-container $(container | from alpine | with-exec apk add curl) |
+  with-prompt "You have a container with curl installed." |
+  with-prompt "Use curl to browse docs.dagger.io and summarize in one paragraph the types of documentation available" |
+  last-reply
+```
+</TabItem>
+</Tabs>
+
+:::tip
+To get the complete message history, use the `LLM.History()` API method.
+:::
+
+## Workspaces and tools
+
+Dagger [modules](../features/modules.mdx) are collections of Dagger Functions. When you give a Dagger module to the `LLM` core type, every Dagger Function is turned into a tool that the LLM can call.
+
+A "workspace" is a common design pattern that many agents implement. It is a Dagger module that provides one or more Dagger Functions, such as reading and writing files, running tests, and generally interacting with a `Directory`, `Container` or other core type. Typically, the workspace module is passed to the LLM, and the LLM uses the Dagger Functions available in it to complete the assigned tasks.
+
+Consider the following Dagger Function:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=../agents/snippets/coding-agent/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+```python file=../agents/snippets/coding-agent/python/src/coding_agent/main.py
+```
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=../agents/snippets/coding-agent/typescript/src/index.ts
+```
+</TabItem>
+</Tabs>
+
+Here, the `ToyWorkspace` module contains a number of Dagger Functions: `Read()`, `Write(), and `Build()`. When an instance of this module is attached to the `LLM` core type, the LLM can call any of these Dagger Functions to change the state of the workspace and complete the assigned task.
+
+:::tip
+Dagger's core types, like `Directory` and `Container`, have extensive APIs, and an LLM can easily get lost or provide inconsistent results when working with these objects. To resolve this, we recommend using a Dagger module with limited functionality as a workspace and confining the LLM to that workspace. With this, the LLM has fewer degrees of freedom when interacting with its environment and this, in turn, helps produce more consistent results.
+:::

@@ -89,6 +89,12 @@ To resolve this error, you must remove the environment variable, disable Rosetta
     docker rm -fv $(docker ps --filter name="dagger-engine-*" -q) && docker rmi $(docker images -q --filter reference=registry.dagger.io/engine)
     ```
 
+### An agent isn't behaving properly
+
+First, to get more information about the agent's behavior, increase the verbosity of the shell or review the trace in Dagger Cloud. This is the best way to see what steps the LLM took, the details of its thinking between each tool call, and what the tool calls were.
+
+Second, once you understand how the agent is behaving, you can try to adjust the prompt to get the desired behavior. This is often a matter of trial and error, and can be a bit of an art.
+
 ### Other errors
 
 To troubleshoot other Dagger Function errors, try the following techniques.

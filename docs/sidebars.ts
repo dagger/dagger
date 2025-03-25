@@ -16,16 +16,12 @@ module.exports = {
         "features/programmable-pipelines",
         "features/modules",
         "features/shell",
+        "features/llm",
         "features/caching",
         "features/debugging",
         "features/services",
         "features/secrets",
         "features/visualization",
-        {
-          label: "LLM",
-          type: "doc",
-          id: "agents",
-        },
       ],
     },
     {
@@ -81,6 +77,7 @@ module.exports = {
         "api/chaining",
         "api/cache-volumes",
         "api/secrets",
+        "api/llm",
         "api/terminal",
         "api/engine",
         {
@@ -220,6 +217,7 @@ module.exports = {
       collapsed: true,
       items: [
         "configuration/engine",
+        "configuration/llm",
         "configuration/custom-runner",
         "configuration/custom-ca",
         "configuration/proxy",

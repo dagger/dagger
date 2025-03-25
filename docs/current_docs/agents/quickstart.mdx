@@ -14,7 +14,7 @@ The agent will use an LLM of your choosing to solve a coding prompt. The agent w
 
 ## Installation and configuration
 
-Follow the [Dagger AI Agents](/ai-agents#initial-setup) instructions to install and configure Dagger.
+Follow the [LLM endpoint configuration instructions](../configuration/llm.mdx) to configure an LLM for use with Dagger.
 
 ## Create a Dagger module
 
@@ -66,7 +66,7 @@ You should see information about the generated `container-echo` and `grep-dir` f
 
 Before you write the agent's function, this agent has a dependency that needs to be installed. This dependency provides the environment the LLM you use to solve the coding prompt.
 
-For more information about the environment concept, see [what is a workspace](/ai-agents#what-is-this-workspace-object-that-most-of-the-examples-use).
+Learn more about the [environment concept](../api/llm.mdx#workspaces-and-tools).
 
 ```bash
 dagger install github.com/shykes/toy-programmer/toy-workspace
@@ -172,4 +172,4 @@ Run the program. This will look slightly different depending on how the LLM wrot
 
 Congratulations! You've created your first coding agent. You can now use this agent to solve coding prompts using an LLM.
 
-Now that you've grasped the basics of building an agent, look at the [Dagger AI Agent examples](/examples#ai-agent-examples) for more examples and ideas for your next agent.
+Now that you've grasped the basics of building an agent, look at the [Dagger AI Agent examples](../examples.mdx#ai-agent-examples) for more examples and ideas for your next agent.

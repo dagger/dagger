@@ -36,6 +36,12 @@
   to = "/ci/adopting"
   status = 301
 
+[[redirects]]
+  # redirect /ai-agents page to feature page
+  from = "/ai-agents"
+  to = "/features/llm"
+  status = 301
+
 ###### end: specific redirects for ci+agent docs ######
 
 [[redirects]]
