@@ -41,7 +41,8 @@ type LLM struct {
 	// History of messages
 	messages []ModelMessage
 
-	env *LLMEnv
+	// The environment accessible to the LLM, exposed over MCP
+	env *MCP
 }
 
 type LLMEndpoint struct {
@@ -398,7 +399,7 @@ func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int) (*
 		Query:       query,
 		Endpoint:    endpoint,
 		maxAPICalls: maxAPICalls,
-		env:         NewLLMEnv(endpoint),
+		env:         NewMCP(endpoint),
 	}, nil
 }
 
@@ -768,22 +769,14 @@ func (llm *LLM) Variables(ctx context.Context, dag *dagql.Server) ([]*LLMVariabl
 	if err != nil {
 		return nil, err
 	}
-	vars := make([]*LLMVariable, 0, len(llm.env.objsByName))
-	for k, v := range llm.env.objsByName {
-		var hash string
-		if obj, ok := dagql.UnwrapAs[dagql.Object](v); ok {
-			hash = obj.ID().Digest().String()
-		} else {
-			jsonBytes, err := json.Marshal(v)
-			if err != nil {
-				return nil, err
-			}
-			hash = dagql.HashFrom(string(jsonBytes)).String()
-		}
+	// FIXME: if we keep the concept of "variables" separate for "objects", clean this up.
+	// Otherwise, remove it
+	vars := []*LLMVariable{}
+	for _, b := range llm.env.env.Variables() {
 		vars = append(vars, &LLMVariable{
-			Name:     k,
-			TypeName: v.Type().Name(),
-			Hash:     hash,
+			Name:     b.Key,
+			TypeName: b.TypeName(),
+			Hash:     b.Digest().String(),
 		})
 	}
 	// NOTE: order matters! when a client is grabbing these values they'll be
