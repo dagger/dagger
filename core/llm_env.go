@@ -388,7 +388,7 @@ func (env *LLMEnv) call(ctx context.Context,
 	})
 }
 
-const maxStr = 8192
+const maxStr = 80 * 1024
 
 func (env *LLMEnv) callObjects(ctx context.Context, _ any) (any, error) {
 	var result string
