@@ -77,6 +77,7 @@ module.exports = {
         "api/chaining",
         "api/cache-volumes",
         "api/secrets",
+        "api/llm",
         "api/terminal",
         "api/engine",
         {
@@ -100,7 +101,6 @@ module.exports = {
             "api/module-dependencies",
             "api/packages",
             "api/services",
-            "api/llm",
             "api/fs-filters",
             "api/documentation",
             "api/error-handling",
