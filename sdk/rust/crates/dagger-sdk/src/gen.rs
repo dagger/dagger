@@ -923,6 +923,41 @@ impl Llmid {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct LlmTokenUsageId(pub String);
+impl From<&str> for LlmTokenUsageId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for LlmTokenUsageId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<LlmTokenUsageId> for LlmTokenUsage {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<LlmTokenUsageId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<LlmTokenUsageId> for LlmTokenUsageId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<LlmTokenUsageId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<LlmTokenUsageId, DaggerError>(self) })
+    }
+}
+impl LlmTokenUsageId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct LlmVariableId(pub String);
 impl From<&str> for LlmVariableId {
     fn from(value: &str) -> Self {
@@ -6073,6 +6108,16 @@ pub struct Llm {
     pub graphql_client: DynGraphQLClient,
 }
 impl Llm {
+    /// create a branch in the LLM's history
+    pub fn attempt(&self, number: isize) -> Llm {
+        let mut query = self.selection.select("attempt");
+        query = query.arg("number", number);
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieve a the current value in the LLM environment, of type CacheVolume
     pub fn cache_volume(&self) -> CacheVolume {
         let query = self.selection.select("cacheVolume");
@@ -7696,6 +7741,15 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// returns the token usage of the current state
+    pub fn token_usage(&self) -> LlmTokenUsage {
+        let query = self.selection.select("tokenUsage");
+        LlmTokenUsage {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// print documentation for available tools
     pub async fn tools(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("tools");
@@ -8412,6 +8466,20 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Add a system prompt to the LLM's environment
+    ///
+    /// # Arguments
+    ///
+    /// * `prompt` - The system prompt to send
+    pub fn with_system_prompt(&self, prompt: impl Into<String>) -> Llm {
+        let mut query = self.selection.select("withSystemPrompt");
+        query = query.arg("prompt", prompt.into());
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Set a variable of type Terminal in the llm environment
     ///
     /// # Arguments
@@ -8451,6 +8519,31 @@ impl Llm {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+}
+#[derive(Clone)]
+pub struct LlmTokenUsage {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl LlmTokenUsage {
+    /// A unique identifier for this LLMTokenUsage.
+    pub async fn id(&self) -> Result<LlmTokenUsageId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn input_tokens(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("inputTokens");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn output_tokens(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("outputTokens");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn total_tokens(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("totalTokens");
+        query.execute(self.graphql_client.clone()).await
     }
 }
 #[derive(Clone)]
@@ -9967,6 +10060,22 @@ impl Query {
             }),
         );
         Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a LLMTokenUsage from its ID.
+    pub fn load_llm_token_usage_from_id(&self, id: impl IntoID<LlmTokenUsageId>) -> LlmTokenUsage {
+        let mut query = self.selection.select("loadLLMTokenUsageFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        LlmTokenUsage {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

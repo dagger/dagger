@@ -294,6 +294,12 @@ func LoadLLMFromID(id dagger.LLMID) *dagger.LLM {
 	return client.LoadLLMFromID(id)
 }
 
+// Load a LLMTokenUsage from its ID.
+func LoadLLMTokenUsageFromID(id dagger.LLMTokenUsageID) *dagger.LLMTokenUsage {
+	client := initClient()
+	return client.LoadLLMTokenUsageFromID(id)
+}
+
 // Load a LLMVariable from its ID.
 func LoadLLMVariableFromID(id dagger.LLMVariableID) *dagger.LLMVariable {
 	client := initClient()

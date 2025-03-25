@@ -11,6 +11,18 @@ defmodule Dagger.LLM do
 
   @type t() :: %__MODULE__{}
 
+  @doc "create a branch in the LLM's history"
+  @spec attempt(t(), integer()) :: Dagger.LLM.t()
+  def attempt(%__MODULE__{} = llm, number) do
+    query_builder =
+      llm.query_builder |> QB.select("attempt") |> QB.put_arg("number", number)
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
   @doc "Retrieve a the current value in the LLM environment, of type CacheVolume"
   @spec cache_volume(t()) :: Dagger.CacheVolume.t()
   def cache_volume(%__MODULE__{} = llm) do
@@ -1404,6 +1416,18 @@ defmodule Dagger.LLM do
     }
   end
 
+  @doc "returns the token usage of the current state"
+  @spec token_usage(t()) :: Dagger.LLMTokenUsage.t()
+  def token_usage(%__MODULE__{} = llm) do
+    query_builder =
+      llm.query_builder |> QB.select("tokenUsage")
+
+    %Dagger.LLMTokenUsage{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
   @doc "print documentation for available tools"
   @spec tools(t()) :: {:ok, String.t()} | {:error, term()}
   def tools(%__MODULE__{} = llm) do
@@ -1909,6 +1933,18 @@ defmodule Dagger.LLM do
   def with_source_map(%__MODULE__{} = llm, value) do
     query_builder =
       llm.query_builder |> QB.select("withSourceMap") |> QB.put_arg("value", Dagger.ID.id!(value))
+
+    %Dagger.LLM{
+      query_builder: query_builder,
+      client: llm.client
+    }
+  end
+
+  @doc "Add a system prompt to the LLM's environment"
+  @spec with_system_prompt(t(), String.t()) :: Dagger.LLM.t()
+  def with_system_prompt(%__MODULE__{} = llm, prompt) do
+    query_builder =
+      llm.query_builder |> QB.select("withSystemPrompt") |> QB.put_arg("prompt", prompt)
 
     %Dagger.LLM{
       query_builder: query_builder,

@@ -11,6 +11,16 @@ namespace Dagger;
 class LLM extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * create a branch in the LLM's history
+     */
+    public function attempt(int $number): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('attempt');
+        $innerQueryBuilder->setArgument('number', $number);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve a the current value in the LLM environment, of type CacheVolume
      */
     public function cacheVolume(): CacheVolume
@@ -1124,6 +1134,15 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * returns the token usage of the current state
+     */
+    public function tokenUsage(): LLMTokenUsage
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tokenUsage');
+        return new \Dagger\LLMTokenUsage($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * print documentation for available tools
      */
     public function tools(): string
@@ -1517,6 +1536,16 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSourceMap');
         $innerQueryBuilder->setArgument('value', $value);
+        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Add a system prompt to the LLM's environment
+     */
+    public function withSystemPrompt(string $prompt): LLM
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSystemPrompt');
+        $innerQueryBuilder->setArgument('prompt', $prompt);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

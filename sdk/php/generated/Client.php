@@ -453,6 +453,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a LLMTokenUsage from its ID.
+     */
+    public function loadLLMTokenUsageFromID(LLMTokenUsageId|LLMTokenUsage $id): LLMTokenUsage
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadLLMTokenUsageFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\LLMTokenUsage($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a LLMVariable from its ID.
      */
     public function loadLLMVariableFromID(LLMVariableId|LLMVariable $id): LLMVariable

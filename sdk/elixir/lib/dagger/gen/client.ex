@@ -548,6 +548,18 @@ defmodule Dagger.Client do
     }
   end
 
+  @doc "Load a LLMTokenUsage from its ID."
+  @spec load_llm_token_usage_from_id(t(), Dagger.LLMTokenUsageID.t()) :: Dagger.LLMTokenUsage.t()
+  def load_llm_token_usage_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadLLMTokenUsageFromID") |> QB.put_arg("id", id)
+
+    %Dagger.LLMTokenUsage{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
   @doc "Load a LLMVariable from its ID."
   @spec load_llm_variable_from_id(t(), Dagger.LLMVariableID.t()) :: Dagger.LLMVariable.t()
   def load_llm_variable_from_id(%__MODULE__{} = client, id) do

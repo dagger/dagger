@@ -69,6 +69,7 @@
               <li><a href="#query-loadInputTypeDefFromID">loadInputTypeDefFromID</a></li>
               <li><a href="#query-loadInterfaceTypeDefFromID">loadInterfaceTypeDefFromID</a></li>
               <li><a href="#query-loadLLMFromID">loadLLMFromID</a></li>
+              <li><a href="#query-loadLLMTokenUsageFromID">loadLLMTokenUsageFromID</a></li>
               <li><a href="#query-loadLLMVariableFromID">loadLLMVariableFromID</a></li>
               <li><a href="#query-loadLabelFromID">loadLabelFromID</a></li>
               <li><a href="#query-loadListTypeDefFromID">loadListTypeDefFromID</a></li>
@@ -157,6 +158,8 @@
               <li><a href="#definition-JSON">JSON</a></li>
               <li><a href="#definition-LLM">LLM</a></li>
               <li><a href="#definition-LLMID">LLMID</a></li>
+              <li><a href="#definition-LLMTokenUsage">LLMTokenUsage</a></li>
+              <li><a href="#definition-LLMTokenUsageID">LLMTokenUsageID</a></li>
               <li><a href="#definition-LLMVariable">LLMVariable</a></li>
               <li><a href="#definition-LLMVariableID">LLMVariableID</a></li>
               <li><a href="#definition-Label">Label</a></li>
@@ -2353,6 +2356,59 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-LLMID"><code>LLMID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadLLMTokenUsageFromID" class="operation operation-query" data-traverse-target="query-loadLLMTokenUsageFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadLLMTokenUsageFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a LLMTokenUsage from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-LLMTokenUsage"><code>LLMTokenUsage!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-LLMTokenUsageID"><code>LLMTokenUsageID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -7717,6 +7773,22 @@
                       </tr>
                     </thead>
                     <tbody>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-attempt" href="#LLM-attempt"><code>attempt</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> create a branch in the LLM's history </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>number</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="LLM-cacheVolume" href="#LLM-cacheVolume"><code>cacheVolume</code></a> - <span class="property-type"><a href="#definition-CacheVolume"><code>CacheVolume!</code></a></span> </td>
                         <td> Retrieve a the current value in the LLM environment, of type CacheVolume </td>
@@ -9174,6 +9246,10 @@
                         <td> Retrieve a the current value in the LLM environment, of type Terminal </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="LLM-tokenUsage" href="#LLM-tokenUsage"><code>tokenUsage</code></a> - <span class="property-type"><a href="#definition-LLMTokenUsage"><code>LLMTokenUsage!</code></a></span> </td>
+                        <td> returns the token usage of the current state </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="LLM-tools" href="#LLM-tools"><code>tools</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> print documentation for available tools </td>
                       </tr>
@@ -9789,6 +9865,23 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="LLM-withSystemPrompt" href="#LLM-withSystemPrompt"><code>withSystemPrompt</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
+                        <td> Add a system prompt to the LLM's environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>prompt</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The system prompt to send</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="LLM-withTerminal" href="#LLM-withTerminal"><code>withTerminal</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
                         <td> Set a variable of type Terminal in the llm environment </td>
                       </tr>
@@ -9838,6 +9931,62 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>LLMID</code> scalar type represents an identifier for an object of type LLM.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-LLMTokenUsage" class="definition definition-object" data-traverse-target="definition-LLMTokenUsage">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">LLMTokenUsage</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLMTokenUsage-id" href="#LLMTokenUsage-id"><code>id</code></a> - <span class="property-type"><a href="#definition-LLMTokenUsageID"><code>LLMTokenUsageID!</code></a></span> </td>
+                        <td> A unique identifier for this LLMTokenUsage. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLMTokenUsage-inputTokens" href="#LLMTokenUsage-inputTokens"><code>inputTokens</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLMTokenUsage-outputTokens" href="#LLMTokenUsage-outputTokens"><code>outputTokens</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LLMTokenUsage-totalTokens" href="#LLMTokenUsage-totalTokens"><code>totalTokens</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-LLMTokenUsageID" class="definition definition-scalar" data-traverse-target="definition-LLMTokenUsageID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">LLMTokenUsageID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>LLMTokenUsageID</code> scalar type represents an identifier for an object of type LLMTokenUsage.</p>
                 </div>
               </div>
             </div>
