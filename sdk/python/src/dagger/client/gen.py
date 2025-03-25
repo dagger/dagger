@@ -9504,20 +9504,6 @@ class Port(Type):
 class Client(Root):
     """The root of the DAG."""
 
-    def builtin_container(self, digest: str) -> Container:
-        """Retrieves a container builtin to the engine.
-
-        Parameters
-        ----------
-        digest:
-            Digest of the image manifest
-        """
-        _args = [
-            Arg("digest", digest),
-        ]
-        _ctx = self._select("builtinContainer", _args)
-        return Container(_ctx)
-
     def cache_volume(
         self,
         key: str,

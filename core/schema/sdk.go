@@ -501,7 +501,7 @@ func (s *sdkLoader) loadBuiltinSDK(
 	var fullSDKDir dagql.Instance[*core.Directory]
 	if err := s.dag.Select(ctx, s.dag.Root(), &fullSDKDir,
 		dagql.Selector{
-			Field: "builtinContainer",
+			Field: "_builtinContainer",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "digest",
@@ -958,7 +958,7 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], er
 	var baseCtr dagql.Instance[*core.Container]
 	if err := sdk.dag.Select(ctx, sdk.dag.Root(), &baseCtr,
 		dagql.Selector{
-			Field: "builtinContainer",
+			Field: "_builtinContainer",
 			Args: []dagql.NamedInput{
 				{
 					Name:  "digest",

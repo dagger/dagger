@@ -44,12 +44,6 @@ func Close() error {
 	return err
 }
 
-// Retrieves a container builtin to the engine.
-func BuiltinContainer(digest string) *dagger.Container {
-	client := initClient()
-	return client.BuiltinContainer(digest)
-}
-
 // Constructs a cache volume for a given cache key.
 func CacheVolume(key string, opts ...dagger.CacheVolumeOpts) *dagger.CacheVolume {
 	client := initClient()
