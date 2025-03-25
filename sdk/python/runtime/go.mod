@@ -2,7 +2,7 @@ module python-sdk
 
 go 1.23.0
 
-toolchain go1.24.0
+toolchain go1.23.6
 
 require (
 	github.com/distribution/reference v0.6.0
