@@ -14,7 +14,7 @@ import (
 const (
 	pythonSubdir           = "sdk/python"
 	pythonRuntimeSubdir    = "sdk/python/runtime"
-	pythonGeneratedAPIPath = "sdk/python/src/dagger/gen/client.py"
+	pythonGeneratedAPIPath = "sdk/python/src/dagger/client/gen.py"
 )
 
 type PythonSDK struct {

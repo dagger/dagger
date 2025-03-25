@@ -26,9 +26,18 @@ var FileContents = []string{"pyproject.toml", ".python-version"}
 
 // Uv config bits we'd like to consume.
 type UvConfig struct {
+	Sources struct {
+		Dagger UvSource `toml:"dagger-io"`
+	}
+
 	// Index is a list of uv index configurations.
 	// Ssee [uv v0.4.23](https://github.com/astral-sh/uv/releases/tag/0.4.23)
 	Index []UvIndexConfig `toml:"index"`
+}
+
+type UvSource struct {
+	Path     string `toml:"path"`
+	Editable bool   `toml:"editable"`
 }
 
 type UvIndexConfig struct {

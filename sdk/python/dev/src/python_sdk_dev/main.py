@@ -137,7 +137,7 @@ class PythonSdkDev:
         ],
     ) -> dagger.Directory:
         """Generate the client bindings for the core API."""
-        path = "src/dagger/gen/core.py"
+        path = "src/dagger/client/gen.py"
         self.container = self.container.with_file(
             path,
             (

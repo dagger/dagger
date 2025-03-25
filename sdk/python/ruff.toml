@@ -59,7 +59,7 @@ ignore = [
     # False positive on __str__ decorator.
     "PLE0307",
 ]
-"./src/dagger/gen/*" = [
+"./src/dagger/client/gen.py" = [
     # Not much control over field names and docs coming from the API.
     # Note: We could detect built-in shadowing like the reserved
     # keywords but these built-ins aren't being used in the generated
@@ -73,6 +73,8 @@ ignore = [
     # Too many arguments to function call.
     "PLR0913",
 ]
+# Same as above, for dev module
+"src/dagger_gen.py" = ["A", "D", "E501", "SLF001", "PLR0913"]
 # Ignore built-in shadowing in test mocks.
 "./tests/client/test_inputs.py" = ["A", "ERA001"]
 "./tests/*.py" = [
