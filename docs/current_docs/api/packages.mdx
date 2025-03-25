@@ -17,7 +17,7 @@ To add a Go module, add it to your `go.mod` file using `go get`. For example:
 go get github.com/spf13/cobra
 ```
 
-Dagger lets you import [private Go modules](https://go.dev/ref/mod#private-modules) in your Dagger module. To do this, add the URL to the private repository(ies) hosting the module(s) in a `goprivate` key in the module's `dagger.json` file, as shown below:
+Dagger lets you import [private Go modules](https://go.dev/ref/mod#private-modules) in your Dagger module. To do this, add the URL to the private repository(ies) hosting the module(s) in a `config.goprivate` key in the module's `dagger.json` file, as shown below:
 
 ```json
 {
