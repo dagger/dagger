@@ -18,7 +18,7 @@ defmodule Dagger.Mod.DecoderTest do
     end
 
     test "decode optional", %{dag: dag} do
-      assert {:ok, nil} = Decoder.decode(json(nil), {:optional, :string}, dag)
+      assert {:ok, nil} = Decoder.decode(nil, {:optional, :string}, dag)
       assert {:ok, "hello"} = Decoder.decode(json("hello"), {:optional, :string}, dag)
     end
 
