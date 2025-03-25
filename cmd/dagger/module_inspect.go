@@ -153,7 +153,7 @@ type moduleDef struct {
 type clientGeneratorModuleDef struct {
 	Source *dagger.ModuleSource
 
-	Dependencies []dagger.ModuleSource
+	Dependencies []*dagger.ModuleSource
 }
 
 func (m *moduleDef) Short() string {
