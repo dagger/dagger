@@ -3525,7 +3525,7 @@ func (r *Error) Message(ctx context.Context) (string, error) {
 }
 
 // The extensions of the error.
-func (r *Error) Values(ctx context.Context) ([]ErrorValue, error) {
+func (r *Error) Values(ctx context.Context) ([]*ErrorValue, error) {
 	q := r.query.Select("values")
 
 	q = q.Select("id")
@@ -3534,18 +3534,18 @@ func (r *Error) Values(ctx context.Context) ([]ErrorValue, error) {
 		Id ErrorValueID
 	}
 
-	convert := func(fields []values) []ErrorValue {
-		out := []ErrorValue{}
+	convert := func(fields []*values) []*ErrorValue {
+		out := []*ErrorValue{}
 
 		for i := range fields {
-			val := ErrorValue{id: &fields[i].Id}
+			val := &ErrorValue{id: &fields[i].Id}
 			val.query = q.Root().Select("loadErrorValueFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []values
+	var response []*values
 
 	q = q.Bind(&response)
 
@@ -6534,7 +6534,7 @@ func (r *LLM) TypeDef() *TypeDef {
 }
 
 // list variables in the LLM environment
-func (r *LLM) Variables(ctx context.Context) ([]LLMVariable, error) {
+func (r *LLM) Variables(ctx context.Context) ([]*LLMVariable, error) {
 	q := r.query.Select("variables")
 
 	q = q.Select("id")
@@ -6543,18 +6543,18 @@ func (r *LLM) Variables(ctx context.Context) ([]LLMVariable, error) {
 		Id LLMVariableID
 	}
 
-	convert := func(fields []variables) []LLMVariable {
-		out := []LLMVariable{}
+	convert := func(fields []*variables) []*LLMVariable {
+		out := []*LLMVariable{}
 
 		for i := range fields {
-			val := LLMVariable{id: &fields[i].Id}
+			val := &LLMVariable{id: &fields[i].Id}
 			val.query = q.Root().Select("loadLLMVariableFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []variables
+	var response []*variables
 
 	q = q.Bind(&response)
 
@@ -7373,39 +7373,6 @@ func (r *Module) Dependencies(ctx context.Context) ([]*Module, error) {
 	return convert(response), nil
 }
 
-// The dependencies as configured by the module.
-func (r *Module) DependencyConfig(ctx context.Context) ([]*ModuleDependency, error) {
-	q := r.query.Select("dependencyConfig")
-
-	q = q.Select("id")
-
-	type dependencyConfig struct {
-		Id ModuleDependencyID
-	}
-
-	convert := func(fields []*dependencyConfig) []*ModuleDependency {
-		out := []*ModuleDependency{}
-
-		for i := range fields {
-			val := &ModuleDependency{id: &fields[i].Id}
-			val.query = q.Root().Select("loadModuleDependencyFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []*dependencyConfig
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
 // The doc string of the module, if any
 func (r *Module) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
@@ -7859,7 +7826,7 @@ func (r *ModuleSource) Commit(ctx context.Context) (string, error) {
 }
 
 // The clients generated for the module.
-func (r *ModuleSource) ConfigClients(ctx context.Context) ([]ModuleConfigClient, error) {
+func (r *ModuleSource) ConfigClients(ctx context.Context) ([]*ModuleConfigClient, error) {
 	q := r.query.Select("configClients")
 
 	q = q.Select("id")
@@ -7868,18 +7835,18 @@ func (r *ModuleSource) ConfigClients(ctx context.Context) ([]ModuleConfigClient,
 		Id ModuleConfigClientID
 	}
 
-	convert := func(fields []configClients) []ModuleConfigClient {
-		out := []ModuleConfigClient{}
+	convert := func(fields []*configClients) []*ModuleConfigClient {
+		out := []*ModuleConfigClient{}
 
 		for i := range fields {
-			val := ModuleConfigClient{id: &fields[i].Id}
+			val := &ModuleConfigClient{id: &fields[i].Id}
 			val.query = q.Root().Select("loadModuleConfigClientFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []configClients
+	var response []*configClients
 
 	q = q.Bind(&response)
 
@@ -7913,8 +7880,8 @@ func (r *ModuleSource) ContextDirectory() *Directory {
 	}
 }
 
-// The effective module source dependencies from the configuration, and calls to withDependencies and withoutDependencies.
-func (r *ModuleSource) Dependencies(ctx context.Context) ([]*ModuleDependency, error) {
+// The dependencies of the module source.
+func (r *ModuleSource) Dependencies(ctx context.Context) ([]*ModuleSource, error) {
 	q := r.query.Select("dependencies")
 
 	q = q.Select("id")
@@ -7923,12 +7890,12 @@ func (r *ModuleSource) Dependencies(ctx context.Context) ([]*ModuleDependency, e
 		Id ModuleSourceID
 	}
 
-	convert := func(fields []*dependencies) []*ModuleDependency {
-		out := []*ModuleDependency{}
+	convert := func(fields []*dependencies) []*ModuleSource {
+		out := []*ModuleSource{}
 
 		for i := range fields {
-			val := &ModuleDependency{id: &fields[i].Id}
-			val.query = q.Root().Select("loadModuleDependencyFromID").Arg("id", fields[i].Id)
+			val := &ModuleSource{id: &fields[i].Id}
+			val.query = q.Root().Select("loadModuleSourceFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
@@ -8189,38 +8156,6 @@ func (r *ModuleSource) Sync(ctx context.Context) (*ModuleSource, error) {
 
 	var id ModuleSourceID
 	if err := q.Bind(&id).Execute(ctx); err != nil {
-	return &ModuleSourceView{
-		query: q,
-	}
-}
-
-// The named views defined for this module source, which are sets of directory filters that can be applied to directory arguments provided to functions.
-func (r *ModuleSource) Views(ctx context.Context) ([]*ModuleSourceView, error) {
-	q := r.query.Select("views")
-
-	q = q.Select("id")
-
-	type views struct {
-		Id ModuleSourceViewID
-	}
-
-	convert := func(fields []*views) []*ModuleSourceView {
-		out := []*ModuleSourceView{}
-
-		for i := range fields {
-			val := &ModuleSourceView{id: &fields[i].Id}
-			val.query = q.Root().Select("loadModuleSourceViewFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []*views
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
 		return nil, err
 	}
 	return &ModuleSource{
