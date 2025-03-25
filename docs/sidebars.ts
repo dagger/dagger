@@ -21,6 +21,11 @@ module.exports = {
         "features/services",
         "features/secrets",
         "features/visualization",
+        {
+          label: "LLM",
+          type: "doc",
+          id: "agents",
+        },
       ],
     },
     {
@@ -30,27 +35,11 @@ module.exports = {
     },
     {
       type: "category",
-      label: "Dagger for AI Agents",
-      link: {
-        type: "doc",
-        id: "agents",
-      },
-      collapsible: true,
-      collapsed: true,
-      items: ["agents/quickstart"],
-    },
-    {
-      type: "doc",
-      label: "Examples",
-      id: "examples",
-    },
-    {
-      type: "category",
-      label: "Dagger for CI",
+      label: "Quickstart",
       items: [
         {
           type: "category",
-          label: "Quickstart",
+          label: "Build a CI Pipeline",
           link: {
             type: "doc",
             id: "ci/quickstart/index",
@@ -64,34 +53,19 @@ module.exports = {
             "ci/quickstart/publish",
             "ci/quickstart/simplify",
             "ci/quickstart/conclusion",
+            "ci/adopting",
           ],
         },
         {
           type: "doc",
-          label: "Day 2",
-          id: "ci/adopting",
-        },
-        {
-          type: "category",
-          label: "Integrating with CI",
-          link: {
-            type: "doc",
-            id: "ci/integrations/ci",
-          },
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "ci/integrations/argo-workflows",
-            "ci/integrations/aws-codebuild",
-            "ci/integrations/azure-pipelines",
-            "ci/integrations/circleci",
-            "ci/integrations/github-actions",
-            "ci/integrations/gitlab",
-            "ci/integrations/jenkins",
-            "ci/integrations/tekton",
-          ],
+          id: "agents/quickstart",
         },
       ],
+    },
+    {
+      type: "doc",
+      label: "Examples",
+      id: "examples",
     },
     {
       type: "category",
@@ -207,6 +181,26 @@ module.exports = {
       collapsible: true,
       collapsed: true,
       items: [
+        {
+          type: "category",
+          label: "CI",
+          link: {
+            type: "doc",
+            id: "ci/integrations/ci",
+          },
+          collapsible: true,
+          collapsed: true,
+          items: [
+            "ci/integrations/argo-workflows",
+            "ci/integrations/aws-codebuild",
+            "ci/integrations/azure-pipelines",
+            "ci/integrations/circleci",
+            "ci/integrations/github-actions",
+            "ci/integrations/gitlab",
+            "ci/integrations/jenkins",
+            "ci/integrations/tekton",
+          ],
+        },
         "ci/integrations/github",
         "ci/integrations/google-cloud-run",
         "ci/integrations/kubernetes",
