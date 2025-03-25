@@ -64,23 +64,30 @@ type LLMClient interface {
 type LLMResponse struct {
 	Content    string
 	ToolCalls  []ToolCall
-	TokenUsage TokenUsage
+	TokenUsage LLMTokenUsage
 }
 
-type TokenUsage struct {
-	InputTokens  int64
-	OutputTokens int64
-	TotalTokens  int64
+type LLMTokenUsage struct {
+	InputTokens  int64 `field:"true"`
+	OutputTokens int64 `field:"true"`
+	TotalTokens  int64 `field:"true"`
+}
+
+func (*LLMTokenUsage) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LLMTokenUsage",
+		NonNull:   true,
+	}
 }
 
 // ModelMessage represents a generic message in the LLM conversation
 type ModelMessage struct {
-	Role        string     `json:"role"`
-	Content     string     `json:"content"`
-	ToolCalls   []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID  string     `json:"tool_call_id,omitempty"`
-	ToolErrored bool       `json:"tool_errored,omitempty"`
-	TokenUsage  TokenUsage `json:"token_usage,omitempty"`
+	Role        string        `json:"role"`
+	Content     string        `json:"content"`
+	ToolCalls   []ToolCall    `json:"tool_calls,omitempty"`
+	ToolCallID  string        `json:"tool_call_id,omitempty"`
+	ToolErrored bool          `json:"tool_errored,omitempty"`
+	TokenUsage  LLMTokenUsage `json:"token_usage,omitempty"`
 }
 
 type ToolCall struct {
@@ -807,6 +814,20 @@ func (llm *LLM) CurrentType(ctx context.Context, dag *dagql.Server) (dagql.Nulla
 	res.Value = dagql.String(llm.env.Current().Type().Name())
 	res.Valid = true
 	return res, nil
+}
+
+func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsage, error) {
+	llm, err := llm.Sync(ctx, dag)
+	if err != nil {
+		return nil, err
+	}
+	var res LLMTokenUsage
+	for _, msg := range llm.messages {
+		res.InputTokens += msg.TokenUsage.InputTokens
+		res.OutputTokens += msg.TokenUsage.OutputTokens
+		res.TotalTokens += msg.TokenUsage.TotalTokens
+	}
+	return &res, nil
 }
 
 type LLMHook struct {

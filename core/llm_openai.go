@@ -196,7 +196,7 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 	return &LLMResponse{
 		Content:   acc.Choices[0].Message.Content,
 		ToolCalls: toolCalls,
-		TokenUsage: TokenUsage{
+		TokenUsage: LLMTokenUsage{
 			InputTokens:  acc.Usage.PromptTokens,
 			OutputTokens: acc.Usage.CompletionTokens,
 			TotalTokens:  acc.Usage.TotalTokens,

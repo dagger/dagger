@@ -206,7 +206,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 
 	var content string
 	var toolCalls []ToolCall
-	var tokenUsage TokenUsage
+	var tokenUsage LLMTokenUsage
 	for {
 		res, err := stream.Next()
 		if err != nil {

@@ -266,7 +266,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 	return &LLMResponse{
 		Content:   content,
 		ToolCalls: toolCalls,
-		TokenUsage: TokenUsage{
+		TokenUsage: LLMTokenUsage{
 			InputTokens:  acc.Usage.InputTokens,
 			OutputTokens: acc.Usage.OutputTokens,
 			TotalTokens:  acc.Usage.InputTokens + acc.Usage.OutputTokens,

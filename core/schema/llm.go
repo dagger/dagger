@@ -79,8 +79,11 @@ func (s llmSchema) Install() {
 			Doc("list variables in the LLM environment"),
 		dagql.Func("currentType", s.currentType).
 			Doc("returns the type of the current state"),
+		dagql.Func("tokenUsage", s.tokenUsage).
+			Doc("returns the token usage of the current state"),
 	}.Install(s.srv)
 	dagql.Fields[*core.LLMVariable]{}.Install(s.srv)
+	dagql.Fields[*core.LLMTokenUsage]{}.Install(s.srv)
 	hook := core.LLMHook{Server: s.srv}
 	llmObjType, ok := s.srv.ObjectType(new(core.LLM).Type().Name())
 	if !ok {
@@ -211,4 +214,8 @@ func (s *llmSchema) variables(ctx context.Context, llm *core.LLM, _ struct{}) ([
 
 func (s *llmSchema) currentType(ctx context.Context, llm *core.LLM, _ struct{}) (dagql.Nullable[dagql.String], error) {
 	return llm.CurrentType(ctx, s.srv)
+}
+
+func (s *llmSchema) tokenUsage(ctx context.Context, llm *core.LLM, _ struct{}) (*core.LLMTokenUsage, error) {
+	return llm.TokenUsage(ctx, s.srv)
 }
