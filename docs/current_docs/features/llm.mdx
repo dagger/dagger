@@ -16,12 +16,18 @@ Here's an example of Dagger's LLM support in action:
 <Tabs groupId="shell">
 <TabItem value="System shell">
 ```shell
-TODO
+dagger <<EOF
+llm |
+  with-container $(container | from alpine) |
+  with-prompt "you have an alpine container. install tools to develop with python" |
+  container |
+  terminal
+EOF
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
 ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
-TODO
+llm | with-container $(container | from alpine) | with-prompt "you have an alpine container. install tools to develop with python" | container | terminal
 ```
 </TabItem>
 </Tabs>
