@@ -37,10 +37,10 @@ type LLM struct {
 
 	// If true: has un-synced state
 	dirty bool
+
 	// History of messages
 	messages []ModelMessage
-	// History of tool calls and their result
-	calls      map[string]string
+	// User-specified prompt variables
 	promptVars map[string]string
 
 	env *LLMEnv
@@ -400,8 +400,8 @@ func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int) (*
 		Query:       query,
 		Endpoint:    endpoint,
 		maxAPICalls: maxAPICalls,
-		calls:       make(map[string]string),
 		env:         NewLLMEnv(endpoint),
+		promptVars:  map[string]string{},
 	}, nil
 }
 
@@ -429,7 +429,6 @@ func (*LLM) Type() *ast.Type {
 func (llm *LLM) Clone() *LLM {
 	cp := *llm
 	cp.messages = cloneSlice(cp.messages)
-	cp.calls = cloneMap(cp.calls)
 	cp.promptVars = cloneMap(cp.promptVars)
 	cp.env = cp.env.Clone()
 	return &cp
@@ -628,7 +627,6 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 		}
 		for _, toolCall := range res.ToolCalls {
 			content, isError := llm.env.Call(ctx, tools, toolCall)
-			llm.calls[toolCall.ID] = content
 			llm.messages = append(llm.messages, ModelMessage{
 				Role:        "user", // Anthropic only allows tool calls in user messages
 				Content:     content,
