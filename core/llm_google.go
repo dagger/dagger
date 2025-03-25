@@ -98,7 +98,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 		fns = append(fns, fd)
 	}
 	model.Tools = []*genai.Tool{
-		&genai.Tool{
+		{
 			FunctionDeclarations: fns,
 		},
 	}

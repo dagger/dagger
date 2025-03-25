@@ -15,6 +15,7 @@ import (
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
@@ -131,7 +132,7 @@ func (env *LLMEnv) Get(key, expectedType string) (dagql.Object, error) {
 			fmt.Fprintf(helpfulErr, "  $%s = %s\n", k, env.describe(v))
 		}
 	}
-	return nil, fmt.Errorf(helpfulErr.String())
+	return nil, errors.New(helpfulErr.String())
 }
 
 // Unset a saved value
@@ -248,11 +249,9 @@ func (env *LLMEnv) call(ctx context.Context,
 		}
 		return rerr
 	})
+
 	// 1. CONVERT CALL INPUTS (BRAIN -> BODY)
-	argsMap, ok := args.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("tool call: %s: expected arguments to be a map - got %#v", fieldDef.Name, args)
-	}
+	//
 	if env.Current() == nil {
 		return nil, fmt.Errorf("no current context")
 	}
@@ -260,59 +259,32 @@ func (env *LLMEnv) call(ctx context.Context,
 	if !ok {
 		return nil, fmt.Errorf("current context is not an object, got %T", env.Current())
 	}
-	targetObjType, ok := srv.ObjectType(target.Type().Name())
+	argsMap, ok := args.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("dagql object type not found: %s", target.Type().Name())
+		return nil, fmt.Errorf("tool call: %s: expected arguments to be a map - got %#v", fieldDef.Name, args)
 	}
-	// FIXME: we have to hardcode *a* version here, otherwise Container.withExec disappears
-	// It's still kind of hacky
-	field, ok := targetObjType.FieldSpec(fieldDef.Name, "v0.13.2")
-	if !ok {
-		return nil, fmt.Errorf("field %q not found in object type %q", fieldDef.Name, targetObjType)
-	}
-	fieldSel := dagql.Selector{
-		Field: fieldDef.Name,
-	}
-	for _, arg := range field.Args {
-		val, ok := argsMap[arg.Name]
-		if !ok {
-			continue
-		}
-		if _, ok := dagql.UnwrapAs[dagql.IDable](arg.Type); ok {
-			if idStr, ok := val.(string); ok {
-				idType := strings.TrimSuffix(arg.Type.Type().Name(), "ID")
-				envVal, err := env.Get(idStr, idType)
-				if err != nil {
-					return nil, err
-				}
-				if obj, ok := dagql.UnwrapAs[dagql.Object](envVal); ok {
-					enc, err := obj.ID().Encode()
-					if err != nil {
-						return nil, err
-					}
-					val = enc
-				} else {
-					return nil, fmt.Errorf("expected object, got %T", val)
-				}
-			} else {
-				return nil, fmt.Errorf("expected string, got %T", val)
-			}
-		}
-		input, err := arg.Type.Decoder().DecodeInput(val)
-		if err != nil {
-			return nil, fmt.Errorf("decode arg %q (%T): %w", arg.Name, val, err)
-		}
-		fieldSel.Args = append(fieldSel.Args, dagql.NamedInput{
-			Name:  arg.Name,
-			Value: input,
-		})
+	fieldSel, fieldType, err := env.toolCallToSelection(target, fieldDef, argsMap)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert call inputs: %w", err)
 	}
 	validated = true
-	fieldType := field.Type.Type()
+
 	// 2. MAKE THE CALL
-	if retObjType, ok := srv.ObjectType(fieldType.NamedType); ok {
+	//
+	return env.selectionToToolResult(ctx, srv, target, fieldSel, fieldType)
+}
+
+func (env *LLMEnv) selectionToToolResult(
+	ctx context.Context,
+	srv *dagql.Server,
+	target dagql.Object,
+	fieldSel dagql.Selector,
+	fieldType dagql.Typed,
+) (any, error) {
+	if retObj, isObj := dagql.UnwrapAs[dagql.Object](fieldType); isObj {
 		// Handle object returns.
 		//
+		retObjType := retObj.ObjectType()
 		var val dagql.Typed
 		if sync, ok := retObjType.FieldSpec("sync"); ok {
 			syncSel := dagql.Selector{
@@ -339,8 +311,8 @@ func (env *LLMEnv) call(ctx context.Context,
 		} else {
 			return nil, fmt.Errorf("impossible? object didn't return object: %T", val)
 		}
-	} else if fieldType.Elem != nil {
-		if _, ok := srv.ObjectType(fieldType.Elem.NamedType); ok {
+	} else if retEnum, isEnum := dagql.UnwrapAs[dagql.Enumerable](fieldType); isEnum {
+		if _, isObj := dagql.UnwrapAs[dagql.Object](retEnum.Element()); isObj {
 			// Handle array object returns.
 			//
 			var objs []dagql.Object
@@ -356,6 +328,8 @@ func (env *LLMEnv) call(ctx context.Context,
 			})
 		}
 	}
+	// Handle scalar or array-of-scalar returns.
+	//
 	var val dagql.Typed
 	if err := srv.Select(ctx, target, &val, fieldSel); err != nil {
 		return nil, fmt.Errorf("failed to sync: %w", err)
@@ -385,6 +359,57 @@ func (env *LLMEnv) call(ctx context.Context,
 	return toolStructuredResponse(map[string]any{
 		"result": val,
 	})
+}
+
+func (env *LLMEnv) toolCallToSelection(
+	target dagql.Object,
+	// The definition of the dagql field to call. Example: Container.withExec
+	fieldDef *ast.FieldDefinition,
+	argsMap map[string]any,
+) (dagql.Selector, dagql.Typed, error) {
+	sel := dagql.Selector{
+		Field: fieldDef.Name,
+	}
+	targetObjType := target.ObjectType()
+	field, ok := targetObjType.FieldSpec(fieldDef.Name, engine.Version)
+	if !ok {
+		return sel, nil, fmt.Errorf("field %q not found in object type %q", fieldDef.Name, targetObjType)
+	}
+	for _, arg := range field.Args {
+		val, ok := argsMap[arg.Name]
+		if !ok {
+			continue
+		}
+		if _, ok := dagql.UnwrapAs[dagql.IDable](arg.Type); ok {
+			if idStr, ok := val.(string); ok {
+				idType := strings.TrimSuffix(arg.Type.Type().Name(), "ID")
+				envVal, err := env.Get(idStr, idType)
+				if err != nil {
+					return sel, nil, err
+				}
+				if obj, ok := dagql.UnwrapAs[dagql.Object](envVal); ok {
+					enc, err := obj.ID().Encode()
+					if err != nil {
+						return sel, nil, err
+					}
+					val = enc
+				} else {
+					return sel, nil, fmt.Errorf("expected object, got %T", val)
+				}
+			} else {
+				return sel, nil, fmt.Errorf("expected string, got %T", val)
+			}
+		}
+		input, err := arg.Type.Decoder().DecodeInput(val)
+		if err != nil {
+			return sel, nil, fmt.Errorf("decode arg %q (%T): %w", arg.Name, val, err)
+		}
+		sel.Args = append(sel.Args, dagql.NamedInput{
+			Name:  arg.Name,
+			Value: input,
+		})
+	}
+	return sel, field.Type, nil
 }
 
 const maxStr = 80 * 1024
@@ -506,7 +531,7 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 		}
 		toolDesc := fmt.Sprintf("Select a %s by its ID.", typeName)
 		if env.needsToolHint {
-			toolDesc += fmt.Sprintf("\n\nProvides the following tools:\n")
+			toolDesc += "\n\nProvides the following tools:\n"
 			for _, tool := range tools {
 				toolDesc += fmt.Sprintf("\n- %s", tool.Name)
 			}
@@ -533,7 +558,7 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 					// },
 				},
 				"strict":               true,
-				"required":             []string{"id"}, //, "functions"},
+				"required":             []string{"id"}, // , "functions"},
 				"additionalProperties": false,
 			},
 			Call: ToolFunc(func(ctx context.Context, args struct {
@@ -544,7 +569,7 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 				if err != nil {
 					return nil, err
 				}
-				env.Select(obj) //, args.Functions...)
+				env.Select(obj) // , args.Functions...)
 				return env.currentState()
 			}),
 		})
@@ -800,7 +825,7 @@ func (env *LLMEnv) currentState() (string, error) {
 func toolStructuredResponse(val any) (string, error) {
 	pl, err := json.Marshal(val)
 	if err != nil {
-		return "", fmt.Errorf("Failed to encode response %T: %w", val, err)
+		return "", fmt.Errorf("failed to encode response %T: %w", val, err)
 	}
 	return string(pl), nil
 }
