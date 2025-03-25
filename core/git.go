@@ -3,6 +3,7 @@ package core
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"os"
@@ -99,6 +100,8 @@ type GitRefBackend interface {
 	Commit(ctx context.Context) (string, error)
 	Tree(ctx context.Context, discard bool) (*Directory, error)
 
+	// Parent(ctx context.Context) (GitRefBackend, error)
+
 	Diff(ctx context.Context, target string) (string, error)
 	Dirty(ctx context.Context) (bool, error)
 }
@@ -126,6 +129,14 @@ func (ref *GitRef) UseDagOp() bool {
 func (ref *GitRef) Commit(ctx context.Context) (string, error) {
 	return ref.Backend.Commit(ctx)
 }
+
+// func (ref *GitRef) Parent(ctx context.Context) (*GitRef, error) {
+// 	backend, err := ref.Backend.Parent(ctx)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	return &GitRef{Repo: ref.Repo, Backend: backend}, nil
+// }
 
 func (ref *GitRef) Tree(ctx context.Context, discardGitDir bool) (*Directory, error) {
 	return ref.Backend.Tree(ctx, ref.Repo.DiscardGitDir || discardGitDir)
@@ -331,6 +342,35 @@ func (ref *RemoteGitRef) Commit(ctx context.Context) (string, error) {
 	}
 	return p.Sources.Git[0].Commit, nil
 }
+
+// func (ref *RemoteGitRef) Parent(ctx context.Context) (GitRefBackend, error) {
+// 	parentCommit, err := ref.resolveCommit(ctx, ref.Ref+"^")
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	return &RemoteGitRef{
+// 		Query: ref.Query,
+// 		Repo:  ref.Repo,
+// 		Ref:   parentCommit,
+// 	}, nil
+// }
+
+// func (ref *RemoteGitRef) resolveCommit(ctx context.Context, target string) (string, error) {
+// 	tree, err := ref.Tree(ctx, false)
+// 	if err != nil {
+// 		return "", err
+// 	}
+// 	var commit string
+// 	err = tree.mount(ctx, func(src string) error {
+// 		var err error
+// 		commit, err = gitCmd(ctx, src, "rev-parse", target)
+// 		return err
+// 	})
+// 	if err != nil {
+// 		return "", err
+// 	}
+// 	return commit, nil
+// }
 
 func (ref *RemoteGitRef) getState(ctx context.Context, discardGitDir bool) (llb.State, error) {
 	opts := []llb.GitOption{}
@@ -584,6 +624,18 @@ func (ref *LocalGitRef) Commit(ctx context.Context) (string, error) {
 	}
 	return commit, nil
 }
+
+// func (ref *LocalGitRef) Parent(ctx context.Context) (GitRefBackend, error) {
+// 	parentCommit, err := ref.resolveCommit(ctx, ref.Ref+"^")
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	return &LocalGitRef{
+// 		Query: ref.Query,
+// 		Repo:  ref.Repo,
+// 		Ref:   parentCommit,
+// 	}, nil
+// }
 
 func (ref *LocalGitRef) resolveCommit(ctx context.Context, target string) (string, error) {
 	var commit string
