@@ -305,8 +305,9 @@ func (env *LLMEnv) selectionToToolResult(
 			return nil, err
 		}
 		if obj, ok := dagql.UnwrapAs[dagql.Object](val); ok {
+			prev := env.Current()
 			env.Select(obj)
-			return env.currentState()
+			return env.currentState(prev)
 		} else {
 			return nil, fmt.Errorf("impossible? object didn't return object: %T", val)
 		}
@@ -539,7 +540,7 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 				"additionalProperties": false,
 			},
 			Call: ToolFunc(func(ctx context.Context, args struct{}) (any, error) {
-				return env.currentState()
+				return env.currentState(nil)
 			}),
 		},
 	}
@@ -588,8 +589,9 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 				if err != nil {
 					return nil, err
 				}
+				prev := env.Current()
 				env.Select(obj) // , args.Functions...)
-				return env.currentState()
+				return env.currentState(prev)
 			}),
 		})
 	}
@@ -826,11 +828,14 @@ func idPattern(typeName string) string {
 	return `^` + typeName + `#\d+$`
 }
 
-func (env *LLMEnv) currentState() (string, error) {
+func (env *LLMEnv) currentState(previous dagql.Object) (string, error) {
 	cur := env.Current()
 	res := map[string]any{
 		// "selected" to hint to the model that it doesn't need to select it
 		"selected": env.describe(cur),
+	}
+	if previous != nil {
+		res["previous"] = env.describe(previous)
 	}
 	// show when it's already a bound var to avoid unnecessary _saveAs
 	for name, val := range env.vars {
