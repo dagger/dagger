@@ -7,11 +7,13 @@ description: Core concepts for using Dagger for CI and Agents
 
 Dagger is a open platform that provides primitive types to use in shell or API call. Instead of relying on static configuration, you can you the Dagger API to dynamically build software delivery pipelines.
 
+:::note
+These examples are using the shell, you can enter the shell by running `dagger` in your terminal.
+:::
+
 ## Containers
 
 Containers are the basic building blocks of Dagger and expose a wide range of tools to interact with containers. Getting a container is as simple as calling:
-
-> Note: These examples are using the shell, you can enter the shell by running `dagger` in your terminal.
 
 ```shell
 container | from alpine
@@ -22,7 +24,7 @@ container | from alpine
 Container@xxh3:0991463b40bf15ca
 ```
 
-This will return a container based on the image, next lets access a terminal in the container:
+This will return a container based on the alpine image, next lets access a terminal in the container:
 
 ```shell
 container | from alpine | terminal
@@ -36,17 +38,28 @@ container | from alpine | terminal
 dagger / $
 ```
 
-If we wanted to install a package in the container we can do that as well:
+If we wanted to install a package in the container we can do that using `with-exec`:
 
 ```shell
 container | from alpine | with-exec apk add go | terminal
 ```
 
+```shell
+● Attaching terminal:
+    container: Container!
+    .from(address: "docker.io/library/alpine:latest@sha256:a8560b36e8b8210634f77d9f7f9efd7ffa463e380b75e2e74aff4511df3ef88c"): Container!
+    .withExec(args: ["apk", "add", "go"]): Container!
+
+dagger / $ go version
+go version go1.23.7 linux/arm64
+dagger / $
+```
+
 We now have a container with the `go` package installed!
 
-> Note: If you get stuck, you can always run the `.help` command to get a list of available commands. If you need help with a specific command, you can run `.help <command>` to get more information.
-
-Visit the [Container API](/api/container) documentation for more information on what you can do with containers!
+:::tip
+If you get stuck, you can always run the `.help` command to get a list of available commands. If you need help with a specific command, you can run `.help <command>` to get more information.
+:::
 
 ## Directories and Files
 
@@ -104,3 +117,7 @@ This will return the contents of the file as a string.
 ✔ container | from alpine | with-new-file /root/file.txt "my contents" | file /root/file.txt | contents 0.0s
 my contents
 ```
+
+## Learn More
+
+To learn more about the types provided by Dagger, visit the [API types](./api/types) documentation page.
