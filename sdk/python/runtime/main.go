@@ -15,8 +15,8 @@ import (
 const (
 	ModSourceDirPath      = "/src"
 	RuntimeExecutablePath = "/runtime"
-	GenDir                = "sdk"
-	GenPath               = "src/dagger/gen/client.py"
+	SDKGenPath            = "src/dagger/client/gen.py"
+	UserGenPath           = "src/dagger_gen.py"
 	SchemaPath            = "/schema.json"
 	VenvPath              = "/opt/venv"
 	ProjectCfg            = "pyproject.toml"
@@ -141,13 +141,21 @@ func (m *PythonSdk) Codegen(
 	if err != nil {
 		return nil, err
 	}
+
+	ignorePaths := []string{".venv", "**/__pycache__"}
+
+	var genPaths []string
+
+	if d, _ := m.vendorDir(); d != "" {
+		ignorePaths = append(ignorePaths, d)
+		genPaths = []string{d + "/**"}
+	} else {
+		genPaths = []string{UserGenPath}
+	}
+
 	return dag.GeneratedCode(m.Container.Directory(m.ContextDirPath)).
-		WithVCSGeneratedPaths(
-			[]string{GenDir + "/**"},
-		).
-		WithVCSIgnoredPaths(
-			[]string{GenDir, ".venv", "**/__pycache__"},
-		), nil
+		WithVCSGeneratedPaths(genPaths).
+		WithVCSIgnoredPaths(ignorePaths), nil
 }
 
 // Container for executing the Python module runtime
@@ -352,12 +360,28 @@ func (m *PythonSdk) WithSDK(ctx context.Context, introspectionJSON *dagger.File)
 			WithExec(append(codegen, "generate", "-i", SchemaPath, "-o", "/gen.py")).
 			File("/gen.py")
 
-		m.AddFile(GenPath, genFile)
+		genPath := UserGenPath
+
+		// Only generate to user's `src` if library is not a vendored and editable dependency.
+		// This keeps existing modules unchanged, unless the `[tool.uv.sources]` section
+		// for `dagger-io` is removed.
+		if d, editable := m.vendorDir(); d != "" {
+			m.AddDirectory(d, m.SdkSourceDir.WithoutDirectory("dist"))
+
+			if editable {
+				genPath = path.Join(d, SDKGenPath)
+			}
+		}
+
+		m.AddFile(genPath, genFile)
 	}
 
-	m.AddDirectory(GenDir, m.SdkSourceDir.WithoutDirectory("dist"))
-
 	return m
+}
+
+func (m *PythonSdk) vendorDir() (string, bool) {
+	return m.Discovery.Config.Tool.Uv.Sources.Dagger.Path,
+		m.Discovery.Config.Tool.Uv.Sources.Dagger.Editable
 }
 
 // Add the module's source code
@@ -385,12 +409,17 @@ func (m *PythonSdk) WithUpdates() *PythonSdk {
 
 	case d.HasFile(PipCompileLock) && !m.IsInit:
 		// Support requirements.lock (legacy).
-		ctr = ctr.WithExec([]string{
+		args := []string{
 			"uv", "pip", "compile", "-q", "--universal",
 			"-o", PipCompileLock,
-			path.Join(GenDir, ProjectCfg),
 			ProjectCfg,
-		})
+		}
+
+		if d, _ := m.vendorDir(); d != "" {
+			args = append(args, path.Join(d, ProjectCfg))
+		}
+
+		ctr = ctr.WithExec(args)
 	}
 
 	m.Container = ctr
