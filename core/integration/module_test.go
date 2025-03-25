@@ -3765,12 +3765,12 @@ func (ModuleSuite) TestModulePreFilteringDirectory(ctx context.Context, t *testc
 				source: `package main
 
 import (
-	"dagger/dep/internal/dagger"
+	"dagger/test/internal/dagger"
 )
 
-type Dep struct {}
+type Test struct {}
 
-func (t *Dep) Call(
+func (t *Test) Call(
   //+ignore=["foo.txt", "bar"]
   dir *dagger.Directory,
 ) *dagger.Directory {
@@ -3782,7 +3782,7 @@ func (t *Dep) Call(
 				source: `import { object, func, Directory, argument } from "@dagger.io/dagger"
 
 @object()
-export class Dep {
+export class Test {
   @func()
   call(
     @argument({ ignore: ["foo.txt", "bar"] }) dir: Directory,
@@ -3800,7 +3800,7 @@ from dagger import DefaultPath, Ignore, function, object_type
 
 
 @object_type
-class Dep:
+class Test:
     @function
     async def call(
         self,
@@ -3826,24 +3826,24 @@ class Dep:
 						WithDirectory("bar", c.Directory().WithNewFile("baz.txt", "baz"))).
 					// Add dep
 					WithWorkdir("/work/dep").
-					With(daggerExec("init", "--name=dep", "--sdk="+tc.sdk, "--source=.")).
+					With(daggerExec("init", "--name=test", "--sdk="+tc.sdk, "--source=.")).
 					With(sdkSource(tc.sdk, tc.source)).
 					// Setup test modules
 					WithWorkdir("/work").
-					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+					With(daggerExec("init", "--name=test-mod", "--sdk=go", "--source=.")).
 					With(daggerExec("install", "./dep")).
 					With(sdkSource("go", `package main
 
 import (
-	"dagger/test/internal/dagger"
+	"dagger/test-mod/internal/dagger"
 )
 
-type Test struct {}
+type TestMod struct {}
 
-func (t *Test) Test(
+func (t *TestMod) Test(
   dir *dagger.Directory,
 ) *dagger.Directory {
- return dag.Dep().Call(dir)
+ return dag.Test().Call(dir)
 }`,
 					))
 
