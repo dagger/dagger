@@ -66,13 +66,13 @@ You should see information about the generated `container-echo` and `grep-dir` f
 
 Before you write the agent's function, this agent has a dependency that needs to be installed. This dependency provides the environment the LLM you use to solve the coding prompt.
 
-Learn more about the [environment concept](../api/llm.mdx#environments-and-tools).
+Learn more about [agent environments](../api/llm.mdx#environments-and-tools).
 
 ```bash
 dagger install github.com/shykes/toy-programmer/toy-workspace
 ```
 
-Toy-workspace is a Dagger module that provides a simple environment for the agent. It has a Container as its state and functions to read, write, and build the code.
+Toy-workspace is a Dagger module that provides a simple environment for the agent. It has a `Container` as its state and functions to read, write, and build the code.
 
 ## Write your agent fuction
 
@@ -119,10 +119,10 @@ Edit the agent (`src/main/java/io/dagger/modules/codingagent/CodingAgent.java`) 
 
 In this code you created a function called `go-program` that takes in an assignment and returns a Container.
 
-- The instance of toy-workspace is given to the LLM to provide it tools to write and validate code.
+- The instance of `ToyWorkspace` is given to the LLM to provide it tools to write and validate code.
 - The prompt is passed to the LLM to solve.
 - The LLM will use the tools in the environment to write code, validate it, and loop until the code passes validation.
-- You return a container by chaining `llm -> toy-workspace -> container`. This works because you gave the LLM the toy-workspace earlier in the chain.
+- You return a container by chaining `llm -> toy-workspace -> container`. This works because you gave the LLM the `ToyWorkspace` earlier in the chain.
 
 ### Now run your new function in the Dagger shell
 
