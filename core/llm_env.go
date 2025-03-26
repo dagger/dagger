@@ -887,7 +887,7 @@ func typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any, error) {
 const jsonSchemaIDAttr = "x-id-type"
 
 func idPattern(typeName string) string {
-	return `^` + typeName + `#\d+$`
+	return `^(` + typeName + `#\d+|\$?\w+)$`
 }
 
 func (env *LLMEnv) currentState(previous dagql.Object) (string, error) {
