@@ -356,7 +356,7 @@ func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error
 		Callback: func(path string, info os.FileInfo) error {
 			// HACK: ideally, we'd have something like MatchesExact, which
 			// would skip the parent behavior that we don't really want here -
-			// oh well, let's just fake it wi- false
+			// oh well, let's just fake it with false
 			//nolint:staticcheck
 			match, err := pm.MatchesUsingParentResult(filepath.Clean(path), false)
 			if err != nil {
