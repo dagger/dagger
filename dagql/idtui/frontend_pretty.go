@@ -100,7 +100,8 @@ type frontendPretty struct {
 	msgPreFinalRender strings.Builder
 
 	// Add prompt field
-	activePrompt *prompt
+	activeBoolPrompt   *promptBool
+	activeStringPrompt *promptString
 }
 
 func NewPretty() Frontend {
@@ -234,6 +235,8 @@ func (fe *frontendPretty) HandlePrompt(ctx context.Context, prompt string, dest 
 	switch x := dest.(type) {
 	case *bool:
 		return fe.handlePromptBool(ctx, prompt, x)
+	case *string:
+		return fe.handlePromptString(ctx, prompt, x)
 	default:
 		return fmt.Errorf("unsupported prompt destination type: %T", dest)
 	}
@@ -620,9 +623,14 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 		countOut = focusedBg(countOut)
 	}
 
-	if fe.activePrompt != nil {
+	if fe.activeBoolPrompt != nil {
 		fmt.Fprintln(countOut)
-		fmt.Fprint(countOut, fe.viewPrompt(countOut))
+		fmt.Fprint(countOut, fe.viewBoolPrompt(countOut))
+	}
+
+	if fe.activeStringPrompt != nil {
+		fmt.Fprintln(countOut)
+		fmt.Fprint(countOut, fe.viewStringPrompt(countOut))
 	}
 
 	if fe.shell == nil {
@@ -645,8 +653,12 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 	return nil
 }
 
-func (fe *frontendPretty) viewPrompt(out TermOutput) string {
-	message := fe.activePrompt.message.View()
+func (fe *frontendPretty) viewStringPrompt(out TermOutput) string {
+	return fe.activeStringPrompt.message.View()
+}
+
+func (fe *frontendPretty) viewBoolPrompt(out TermOutput) string {
+	message := fe.activeBoolPrompt.message.View()
 	width := lipgloss.Width(message)
 
 	// Render Yes/No buttons
@@ -666,7 +678,7 @@ func (fe *frontendPretty) viewPrompt(out TermOutput) string {
 	for i, style := range noStyles {
 		noStyles[i] = style.Foreground(termenv.ANSIRed)
 	}
-	if fe.activePrompt.yessing {
+	if fe.activeBoolPrompt.yessing {
 		for i, style := range yesStyles {
 			yesStyles[i] = style.Bold().Reverse()
 		}
@@ -913,7 +925,7 @@ func (fe *frontendPretty) View() string {
 		// print nothing; make way for the pristine output in the final render
 		return ""
 	}
-	if fe.shell != nil {
+	if fe.editline != nil {
 		prog := ""
 		if fe.scrollback.Len() > 0 {
 			prog += fe.scrollback.String()
@@ -980,23 +992,21 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		fe.shellCtx = msg.ctx
 		fe.promptFg = termenv.ANSIGreen
 
-		// create the editline
-		fe.editline = editline.New(fe.window.Width, fe.window.Height)
+		fe.initEditline()
+
 		fe.editline.HistoryEncoder = msg.handler
-		fe.editline.HideKeyMap = true
-		fe.editlineFocused = true
 
 		// wire up auto completion
 		fe.editline.AutoComplete = msg.handler.AutoComplete
+
+		// if input ends with a pipe, then it's not complete
+		fe.editline.CheckInputComplete = msg.handler.IsComplete
 
 		// restore history
 		fe.editline.MaxHistorySize = 1000
 		if history, err := history.LoadHistory(historyFile); err == nil {
 			fe.editline.SetHistory(history)
 		}
-
-		// if input ends with a pipe, then it's not complete
-		fe.editline.CheckInputComplete = msg.handler.IsComplete
 
 		// put the bowtie on
 		fe.updatePrompt()
@@ -1062,15 +1072,20 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		return fe, nil
 
 	case editline.InputCompleteMsg:
-		if fe.shell != nil && fe.editlineFocused {
-			value := fe.editline.Value()
-			fe.editline.AddHistoryEntry(value)
-			fe.promptFg = termenv.ANSIYellow
-			fe.updatePrompt()
+		if !fe.editlineFocused {
+			return fe, nil
+		}
+		value := fe.editline.Value()
+		fe.editline.AddHistoryEntry(value)
+		fe.promptFg = termenv.ANSIYellow
+		fe.updatePrompt()
 
-			// reset now that we've accepted input
-			fe.editline.Reset()
-
+		// reset now that we've accepted input
+		fe.editline.Reset()
+		if fe.activeStringPrompt != nil {
+			fe.activeStringPrompt.result <- value
+			// fe.editline = nil
+		} else if fe.shell != nil {
 			ctx, cancel := context.WithCancelCause(fe.shellCtx)
 			fe.shellInterrupt = cancel
 			fe.shellRunning = true
@@ -1101,31 +1116,31 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 
 	case tea.KeyMsg:
 		// Handle prompt input if there's an active prompt
-		if fe.activePrompt != nil {
+		if fe.activeBoolPrompt != nil {
 			switch msg.String() {
 			case "left", "h", "right", "l":
-				fe.activePrompt.yessing = !fe.activePrompt.yessing
+				fe.activeBoolPrompt.yessing = !fe.activeBoolPrompt.yessing
 				return fe, nil
 			case "enter":
-				result := fe.activePrompt.result
-				choice := fe.activePrompt.yessing
-				fe.activePrompt = nil
+				result := fe.activeBoolPrompt.result
+				choice := fe.activeBoolPrompt.yessing
+				fe.activeBoolPrompt = nil
 				return fe, func() tea.Msg {
 					result <- choice
 					close(result)
 					return nil
 				}
 			case "n", "N":
-				result := fe.activePrompt.result
-				fe.activePrompt = nil
+				result := fe.activeBoolPrompt.result
+				fe.activeBoolPrompt = nil
 				return fe, func() tea.Msg {
 					result <- false
 					close(result)
 					return nil
 				}
 			case "y", "Y":
-				result := fe.activePrompt.result
-				fe.activePrompt = nil
+				result := fe.activeBoolPrompt.result
+				fe.activeBoolPrompt = nil
 				return fe, func() tea.Msg {
 					result <- true
 					close(result)
@@ -1136,7 +1151,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		}
 
 		// send all input to editline if it's focused
-		if fe.shell != nil && fe.editlineFocused {
+		if fe.editlineFocused {
 			// update the prompt in all cases since e.g. going through history
 			// can change it
 			defer fe.updatePrompt()
@@ -1166,6 +1181,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				return fe, nil
 			default:
 				if fe.editline.AtStart() {
+					// this will panic
 					cmd := fe.shell.ReactToInput(fe.runCtx, msg)
 					if cmd != nil {
 						return fe, cmd
@@ -1286,8 +1302,13 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		// adjust the outermost layer.
 		return fe, tea.Batch(flushCmd, frame(fe.fps))
 
-	case prompt:
-		fe.activePrompt = &msg
+	case promptBool:
+		fe.activeBoolPrompt = &msg
+		return fe, nil
+
+	case promptString:
+		fe.activeStringPrompt = &msg
+		fe.initEditline()
 		return fe, nil
 
 	default:
@@ -1295,12 +1316,24 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 	}
 }
 
+func (fe *frontendPretty) initEditline() {
+	// create the editline
+	fe.editline = editline.New(fe.window.Width, fe.window.Height)
+	fe.editline.HideKeyMap = true
+	fe.editlineFocused = true
+}
+
 type UpdatePromptMsg struct{}
 
-type prompt struct {
+type promptBool struct {
 	message *Markdown
 	result  chan bool
 	yessing bool
+}
+
+type promptString struct {
+	message *Markdown
+	result  chan string
 }
 
 func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
@@ -1517,8 +1550,11 @@ func (fe *frontendPretty) setWindowSizeLocked(msg tea.WindowSizeMsg) {
 	if fe.editline != nil {
 		fe.editline.SetSize(msg.Width, msg.Height)
 	}
-	if fe.activePrompt != nil {
-		fe.activePrompt.message.Width = msg.Width
+	if fe.activeBoolPrompt != nil {
+		fe.activeBoolPrompt.message.Width = msg.Width
+	}
+	if fe.activeStringPrompt != nil {
+		fe.activeStringPrompt.message.Width = msg.Width
 	}
 }
 
@@ -1892,13 +1928,33 @@ func focusedBg(out TermOutput) TermOutput {
 func (fe *frontendPretty) handlePromptBool(ctx context.Context, message string, dest *bool) error {
 	result := make(chan bool, 1)
 
-	fe.program.Send(tea.Msg(prompt{
+	fe.program.Send(tea.Msg(promptBool{
 		message: &Markdown{
 			Content: message,
 			Width:   min(max(fe.window.Width/2, 50), 80),
 		},
 		result:  result,
 		yessing: *dest,
+	}))
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case val := <-result:
+		*dest = val
+		return nil
+	}
+}
+
+func (fe *frontendPretty) handlePromptString(ctx context.Context, message string, dest *string) error {
+	result := make(chan string, 1)
+
+	fe.program.Send(tea.Msg(promptString{
+		message: &Markdown{
+			Content: message,
+			Width:   min(max(fe.window.Width/2, 50), 80),
+		},
+		result: result,
 	}))
 
 	select {

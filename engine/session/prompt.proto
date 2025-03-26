@@ -4,6 +4,7 @@ option go_package = "session";
 
 service Prompt {
   rpc PromptBool(BoolRequest) returns (BoolResponse);
+  rpc PromptString(StringRequest) returns (StringResponse);
 }
 
 message BoolRequest {
@@ -18,4 +19,16 @@ message BoolRequest {
 message BoolResponse {
     // the response from the user
     bool response = 1;
+}
+
+message StringRequest {
+    // the prompt to display to the user
+    string prompt = 1;
+    // the default value to return if the user doesn't respond
+    string default = 2;
+}
+
+message StringResponse {
+    // the response from the user
+    string response = 1;
 }

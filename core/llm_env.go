@@ -590,6 +590,7 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 			}),
 		})
 	}
+	builtins = append(builtins, env.UserPromptTool(srv))
 	for typeName := range env.typeCount {
 		tools, err := env.tools(srv, typeName)
 		if err != nil {
@@ -641,6 +642,7 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 			}),
 		})
 	}
+
 	// Attach builtin telemetry
 	for i, builtin := range builtins {
 		builtins[i].Call = func(ctx context.Context, args any) (_ any, rerr error) {
@@ -682,6 +684,34 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 		}
 	}
 	return builtins, nil
+}
+
+func (env *LLMEnv) UserPromptTool(dag *dagql.Server) LLMTool {
+	return LLMTool{
+		Name:        "_human_help",
+		Description: "Request help from the human user by interactively asking a clarifying question. Use when struggling.",
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"question": map[string]any{
+					"type":        "string",
+					"description": "Question to present for your human user to answer interactively. Be concise.",
+				},
+			},
+			"required": []string{"question"},
+		},
+		Call: func(ctx context.Context, args any) (any, error) {
+			query, ok := dagql.UnwrapAs[*Query](dag.Root())
+			if !ok {
+				return nil, fmt.Errorf("expected *core.Query, got %T", dag.Root())
+			}
+			bk, err := query.Buildkit(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return bk.PromptHumanHelp(ctx, args.(map[string]any)["question"].(string))
+		},
+	}
 }
 
 func (env *LLMEnv) toolToID(tool LLMTool, args any) (*call.ID, error) {

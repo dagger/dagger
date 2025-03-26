@@ -678,6 +678,22 @@ func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error
 	return fmt.Errorf("module %s was denied LLM access; pass --allow-llm=%s or --allow-llm=all to allow", moduleRepoURL, moduleRepoURL)
 }
 
+func (c *Client) PromptHumanHelp(ctx context.Context, question string) (string, error) {
+	caller, err := c.GetMainClientCaller()
+	if err != nil {
+		return "", fmt.Errorf("failed to get main client caller to to prompt user for human help: %w", err)
+	}
+
+	response, err := session.NewPromptClient(caller.Conn()).PromptString(ctx, &session.StringRequest{
+		Prompt:  question,
+		Default: "The user did not respond.",
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to prompt user for human help: %w", err)
+	}
+	return response.Response, nil
+}
+
 func (c *Client) GetGitConfig(ctx context.Context) ([]*session.GitConfigEntry, error) {
 	md, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
