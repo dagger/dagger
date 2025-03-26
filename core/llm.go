@@ -8,19 +8,21 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/client/secretprovider"
 	"github.com/iancoleman/strcase"
 	"github.com/joho/godotenv"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client/secretprovider"
 )
 
 func init() {
@@ -142,10 +144,11 @@ type LLMRouter struct {
 	AnthropicBaseURL string
 	AnthropicModel   string
 
-	OpenAIAPIKey       string
-	OpenAIAzureVersion string
-	OpenAIBaseURL      string
-	OpenAIModel        string
+	OpenAIAPIKey           string
+	OpenAIAzureVersion     string
+	OpenAIBaseURL          string
+	OpenAIModel            string
+	OpenAIDisableStreaming bool
 
 	GeminiAPIKey  string
 	GeminiBaseURL string
@@ -208,7 +211,7 @@ func (r *LLMRouter) routeOpenAIModel() *LLMEndpoint {
 		Key:      r.OpenAIAPIKey,
 		Provider: OpenAI,
 	}
-	endpoint.Client = newOpenAIClient(endpoint, r.OpenAIAzureVersion)
+	endpoint.Client = newOpenAIClient(endpoint, r.OpenAIAzureVersion, r.OpenAIDisableStreaming)
 
 	return endpoint
 }
@@ -235,7 +238,7 @@ func (r *LLMRouter) routeOtherModel() *LLMEndpoint {
 		Key:      r.OpenAIAPIKey,
 		Provider: Other,
 	}
-	endpoint.Client = newOpenAIClient(endpoint, r.OpenAIAzureVersion)
+	endpoint.Client = newOpenAIClient(endpoint, r.OpenAIAzureVersion, r.OpenAIDisableStreaming)
 
 	return endpoint
 }
@@ -342,6 +345,17 @@ func (r *LLMRouter) LoadConfig(ctx context.Context, getenv func(context.Context,
 	r.OpenAIModel, err = getenv(ctx, "OPENAI_MODEL")
 	if err != nil {
 		return err
+	}
+	var openAIDisableStreaming string
+	openAIDisableStreaming, err = getenv(ctx, "OPENAI_DISABLE_STREAMING")
+	if err != nil {
+		return err
+	}
+	if openAIDisableStreaming != "" {
+		r.OpenAIDisableStreaming, err = strconv.ParseBool(openAIDisableStreaming)
+		if err != nil {
+			return err
+		}
 	}
 
 	r.GeminiAPIKey, err = getenv(ctx, "GEMINI_API_KEY")
