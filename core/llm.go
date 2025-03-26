@@ -27,6 +27,32 @@ func init() {
 	strcase.ConfigureAcronym("LLM", "LLM")
 }
 
+const (
+	modelDefaultAnthropic = anthropic.ModelClaude3_5SonnetLatest
+	modelDefaultGoogle    = "gemini-2.0-flash"
+	modelDefaultOpenAI    = "gpt-4o"
+	modelDefaultMeta      = "llama-3.2"
+	modelDefaultMistral   = "mistral-7b-instruct"
+)
+
+func resolveModelAlias(maybeAlias string) string {
+	switch maybeAlias {
+	case "anthropic", "claude":
+		return modelDefaultAnthropic
+	case "google", "gemini":
+		return modelDefaultGoogle
+	case "openai", "gpt":
+		return modelDefaultOpenAI
+	case "meta", "llama":
+		return modelDefaultMeta
+	case "mistral":
+		return modelDefaultMistral
+	default:
+		// not a recognized alias
+		return maybeAlias
+	}
+}
+
 // An instance of a LLM (large language model), with its state and tool calling environment
 type LLM struct {
 	Query *Query
@@ -231,16 +257,16 @@ func (r *LLMRouter) DefaultModel() string {
 		}
 	}
 	if r.OpenAIAPIKey != "" {
-		return "gpt-4o"
+		return modelDefaultOpenAI
 	}
 	if r.AnthropicAPIKey != "" {
-		return anthropic.ModelClaude3_5SonnetLatest
+		return modelDefaultAnthropic
 	}
 	if r.OpenAIBaseURL != "" {
-		return "llama-3.2"
+		return modelDefaultMeta
 	}
 	if r.GeminiAPIKey != "" {
-		return "gemini-2.0-flash"
+		return modelDefaultGoogle
 	}
 	return ""
 }
@@ -250,6 +276,8 @@ func (r *LLMRouter) DefaultModel() string {
 func (r *LLMRouter) Route(model string) (*LLMEndpoint, error) {
 	if model == "" {
 		model = r.DefaultModel()
+	} else {
+		model = resolveModelAlias(model)
 	}
 	var endpoint *LLMEndpoint
 	var err error
