@@ -51,8 +51,6 @@ type LLMEnv struct {
 	typeCount map[string]int
 	// The LLM-friendly ID ("Container#123") for each object
 	idByHash map[digest.Digest]string
-	// Whether the LLM needs hints to see what tools it can use
-	needsToolHint bool
 	// Whether the LLM needs instructions on how to use the tool scheme
 	needsSystemPrompt bool
 }
@@ -65,7 +63,6 @@ func NewLLMEnv(endpoint *LLMEndpoint) *LLMEnv {
 		typeCount:         map[string]int{},
 		idByHash:          map[digest.Digest]string{},
 		functionMask:      map[string]bool{},
-		needsToolHint:     endpoint.Provider == Google,
 		needsSystemPrompt: endpoint.Provider == Google,
 	}
 }
@@ -609,11 +606,9 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 			Returns: typeName,
 			Description: (func() string {
 				desc := fmt.Sprintf("Select a %s by its ID.", typeName)
-				if env.needsToolHint {
-					desc += "\n\nProvides the following tools:\n"
-					for _, tool := range tools {
-						desc += fmt.Sprintf("\n- %s", tool.Name)
-					}
+				desc += "\n\nProvides the following tools:\n"
+				for _, tool := range tools {
+					desc += fmt.Sprintf("\n- %s", tool.Name)
 				}
 				var objVars []string
 				for name, obj := range env.objsByName {
