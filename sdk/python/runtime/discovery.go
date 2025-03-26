@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path"
 	"python-sdk/internal/dagger"
+	"slices"
 	"strings"
 	"sync"
 
@@ -303,6 +305,42 @@ func (d *Discovery) loadFiles(ctx context.Context, m *PythonSdk) error {
 		}
 	}
 
+	if m.IntrospectionJSON != nil {
+		eg.Go(func() error {
+			content, err := m.IntrospectionJSON.Contents(ctx)
+			if err != nil {
+				return err
+			}
+			var introspection struct {
+				SchemaVersion string `json:"__schemaVersion"`
+			}
+			if err = json.Unmarshal([]byte(content), &introspection); err != nil {
+				return err
+			}
+			d.mu.Lock()
+			m.SchemaVersion = strings.TrimPrefix(introspection.SchemaVersion, "v")
+			d.mu.Unlock()
+			return nil
+		})
+	}
+
+	// When not using the bundled codegen executable we can revert to executing directly
+	eg.Go(func() error {
+		dist, _ := m.SdkSourceDir.Directory("dist").Entries(ctx)
+
+		if slices.Contains(dist, "codegen") {
+			return nil
+		}
+
+		d.mu.Lock()
+		m.CodegenCommand = []string{
+			"uv", "run", "--isolated", "--frozen", "--package", "codegen",
+			"python", "-m", "codegen",
+		}
+		d.mu.Unlock()
+		return nil
+	})
+
 	eg.Go(func() error {
 		// We'll use a glob pattern in fileSet to check for the existence of
 		// python files later. The error is normal when the target directory
@@ -377,6 +415,11 @@ func (d *Discovery) loadConfig(ctx context.Context, m *PythonSdk) error {
 	if d.Config.Project.Name != "" {
 		m.ProjectName = d.Config.Project.Name
 		m.PackageName = NormalizePackageName(m.ProjectName)
+	}
+
+	if m.IsInit {
+		m.Discovery.Config.Tool.Uv.Sources.Dagger.Path = "sdk"
+		m.Discovery.Config.Tool.Uv.Sources.Dagger.Editable = true
 	}
 
 	return nil
