@@ -24,7 +24,7 @@ EOF
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 llm |
   with-directory https://github.com/dagger/dagger#main:/docs |
   with-prompt "You have a directory." |
@@ -46,7 +46,7 @@ EOF
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 llm |
   with-directory https://github.com/dagger/dagger#main:/docs |
   with-prompt-file $(host | file ./prompt.txt)
@@ -78,7 +78,7 @@ EOF
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 source=$(container |
   from alpine |
   with-directory /src https://github.com/dagger/dagger |
@@ -114,7 +114,7 @@ EOF
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 llm |
   with-container $(container | from alpine | with-exec apk add curl) |
   with-prompt "You have a container with curl installed." |

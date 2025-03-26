@@ -225,3 +225,10 @@ pre {
 .DocCardList--no-description .card p {
   display: none;
 }
+
+// adjust style for Dagger Shell tab title
+.language-shell > div:nth-child(1) {
+  background-color: white;
+  color: black;
+  font-style: italic;
+}

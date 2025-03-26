@@ -56,7 +56,7 @@ When working with private Git repositories, ensure that [SSH authentication is p
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     copy-directory ./myapp/
     ```
     </TabItem>
@@ -76,7 +76,7 @@ When working with private Git repositories, ensure that [SSH authentication is p
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     copy-directory github.com/dagger/dagger#main
     ```
     </TabItem>
@@ -96,7 +96,7 @@ When working with private Git repositories, ensure that [SSH authentication is p
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     copy-directory ssh://git@github.com/user/foo#main
     ```
     </TabItem>
@@ -116,7 +116,7 @@ When working with private Git repositories, ensure that [SSH authentication is p
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     copy-directory https://github.com/dagger/dagger#main | directory /src | entries
     ```
     </TabItem>
@@ -180,7 +180,7 @@ When working with private Git repositories, ensure that [SSH authentication is p
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     copy-and-modify-directory ./myapp/
     ```
     </TabItem>
@@ -200,7 +200,7 @@ When working with private Git repositories, ensure that [SSH authentication is p
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     copy-and-modify-directory github.com/dagger/dagger#main
     ```
     </TabItem>
@@ -220,7 +220,7 @@ When working with private Git repositories, ensure that [SSH authentication is p
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     copy-and-modify-directory ssh://git@github.com/user/foo#main
     ```
     </TabItem>
@@ -240,7 +240,7 @@ When working with private Git repositories, ensure that [SSH authentication is p
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     copy-and-modify-directory https://github.com/dagger/dagger#main | directory /src | entries
     ```
     </TabItem>
@@ -300,7 +300,7 @@ When working with private Git repositories, ensure that [SSH authentication is p
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     clone https://github.com/dagger/dagger BRANCH main
     ```
     </TabItem>
@@ -324,7 +324,7 @@ When working with private Git repositories, ensure that [SSH authentication is p
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     clone https://github.com/dagger/dagger TAG v0.12.1 | file /src/CHANGELOG.md | contents
     ```
     </TabItem>
@@ -350,7 +350,7 @@ When working with private Git repositories, ensure that [SSH authentication is p
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     clone https://github.com/dagger/dagger COMMIT 196f232a4d6b2d1d3db5f5e040cf20b6a76a76c5 | terminal
     ```
     </TabItem>
@@ -399,7 +399,7 @@ The following Dagger Function accepts a `File` argument, which could reference e
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     copy-file /home/admin/archives.zip
     ```
     </TabItem>
@@ -419,7 +419,7 @@ The following Dagger Function accepts a `File` argument, which could reference e
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     copy-file /home/admin/archives.zip | directory /src | entries
     ```
     </TabItem>
@@ -442,7 +442,7 @@ The following Dagger Function accepts a `File` argument, which could reference e
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     copy-file https://github.com/dagger/dagger.git#main:README.md
     ```
     </TabItem>
@@ -466,7 +466,7 @@ The following Dagger Function accepts a `File` argument, which could reference e
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     copy-file https://github.com/dagger/dagger.git#main:README.md | file /src/README.md | contents
     ```
     </TabItem>
@@ -524,7 +524,7 @@ This is an example of [post-call filtering](../api/fs-filters.mdx#post-call-filt
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     copy-directory-with-exclusions . --exclude=dagger*
     ```
     </TabItem>
@@ -548,7 +548,7 @@ This is an example of [post-call filtering](../api/fs-filters.mdx#post-call-filt
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     copy-directory-with-exclusions https://github.com/dagger/dagger#main --exclude=*.md | directory /src | entries
     ```
     </TabItem>
@@ -575,7 +575,7 @@ This is an example of [post-call filtering](../api/fs-filters.mdx#post-call-filt
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     copy-directory-with-exclusions ssh://git@github.com/user/foo#main --exclude=*.md | directory /src | entries
     ```
     </TabItem>
@@ -623,7 +623,7 @@ This is an example of [post-call filtering](../api/fs-filters.mdx#post-call-filt
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     read-file-http https://raw.githubusercontent.com/dagger/dagger/refs/heads/main/README.md
     ```
     </TabItem>
@@ -647,7 +647,7 @@ This is an example of [post-call filtering](../api/fs-filters.mdx#post-call-filt
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     read-file-http https://raw.githubusercontent.com/dagger/dagger/refs/heads/main/README.md | file /src/myfile | contents
     ```
     </TabItem>
@@ -697,7 +697,7 @@ Copy the `data.json` host file to the runtime container and process it:
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     copy-file ../data.json
     ```
     </TabItem>
@@ -752,7 +752,7 @@ This is an example of [pre-call filtering](../api/fs-filters.mdx#pre-call-filter
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     copy-directory-with-exclusions ../docs
     ```
     </TabItem>
@@ -772,7 +772,7 @@ This is an example of [pre-call filtering](../api/fs-filters.mdx#pre-call-filter
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     copy-directory-with-exclusions https://github.com/dagger/dagger#main | directory /src | entries
     ```
     </TabItem>
@@ -828,7 +828,7 @@ The following Dagger module uses a constructor to set a module-wide `Directory` 
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     foo
     ```
     </TabItem>
@@ -848,7 +848,7 @@ The following Dagger module uses a constructor to set a module-wide `Directory` 
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     my-module --source $(host | directory /src/myapp) | foo
     ```
     </TabItem>
@@ -903,7 +903,7 @@ Perform a multi-stage build of the source code in the `golang/example/hello` rep
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     build https://github.com/golang/example#master:hello
     ```
     </TabItem>
@@ -956,7 +956,7 @@ Perform a matrix build of the source code in the `golang/example/hello` reposito
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     build https://github.com/golang/example#master:hello | export /tmp/matrix-builds
     ```
     </TabItem>
@@ -1024,7 +1024,7 @@ Build and publish a multi-platform image:
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     build https://github.com/golang/example#master:hello
     ```
     </TabItem>
@@ -1076,7 +1076,7 @@ Build and publish a multi-platform image with cross compliation:
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     build https://github.com/golang/example#master:hello
     ```
     </TabItem>
@@ -1128,7 +1128,7 @@ Build and publish an image from an existing Dockerfile
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     build https://github.com/dockersamples/python-flask-redis
     ```
     </TabItem>
@@ -1175,7 +1175,7 @@ Build an image from the source code in `https://github.com/dockersamples/python-
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     build https://github.com/dockersamples/python-flask-redis https://github.com/vimagick/dockerfiles#master:registry-cli/Dockerfile
     ```
     </TabItem>
@@ -1224,7 +1224,7 @@ Build and publish an image with OCI annotations:
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     build
     ```
     </TabItem>
@@ -1271,7 +1271,7 @@ Build and publish an image with OCI labels:
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     build
     ```
     </TabItem>
@@ -1329,7 +1329,7 @@ Print the date and time, invalidating the cache on each run. However, if the `CA
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     build
     ```
     </TabItem>
@@ -1378,7 +1378,7 @@ The following Dagger Function accepts a GitHub personal access token as a `Secre
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     github-api env://GITHUB_API_TOKEN
     ```
     </TabItem>
@@ -1398,7 +1398,7 @@ The following Dagger Function accepts a GitHub personal access token as a `Secre
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     github-api file://./github.txt
     ```
     </TabItem>
@@ -1418,7 +1418,7 @@ The following Dagger Function accepts a GitHub personal access token as a `Secre
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     github-api cmd://"gh auth token"
     ```
     </TabItem>
@@ -1446,7 +1446,7 @@ The following Dagger Function accepts a GitHub personal access token as a `Secre
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     github-api op://infra/github/credential
     ```
     </TabItem>
@@ -1476,7 +1476,7 @@ The following Dagger Function accepts a GitHub personal access token as a `Secre
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     github-api vault://credentials.github
     ```
     </TabItem>
@@ -1523,7 +1523,7 @@ Use a mounted secret file:
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     github-auth file://$HOME/.config/gh/hosts.yml
     ```
     </TabItem>
@@ -1581,7 +1581,7 @@ Build from a Dockerfile with a mounted secret from the host environment:
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     build . env://GITHUB_API_TOKEN
     ```
     </TabItem>
@@ -1630,7 +1630,7 @@ Send a request from one Dagger Function to a bound HTTP service instantiated by 
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     get
     ```
     </TabItem>
@@ -1677,7 +1677,7 @@ The Dagger Function below creates and returns an HTTP service. This service can 
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     http-service | up
     ```
     </TabItem>
@@ -1703,7 +1703,7 @@ The Dagger Function below creates and returns an HTTP service. This service can 
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     http-service | up --ports 9000:8080
     ```
     </TabItem>
@@ -1760,7 +1760,7 @@ Send a query to the database service listening on host port 3306 and return the 
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     user-list tcp://localhost:3306
     ```
     </TabItem>
@@ -1807,7 +1807,7 @@ Run Drupal's unit tests, instantiating a database service during the process:
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     test
     ```
     </TabItem>
@@ -1854,7 +1854,7 @@ Start and stop a Redis service:
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     redis-service
     ```
     </TabItem>
@@ -1901,7 +1901,7 @@ Start two inter-dependent services:
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     services | up --ports 8080:80
     ```
     </TabItem>
@@ -1950,7 +1950,7 @@ The following Dagger Function publishes a just-in-time container image to a priv
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     publish docker.io user env://PASSWORD
     ```
     </TabItem>
@@ -1970,7 +1970,7 @@ The following Dagger Function publishes a just-in-time container image to a priv
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     publish gchr.io user env://PASSWORD
     ```
     </TabItem>
@@ -2017,7 +2017,7 @@ The following Dagger Function tags a just-in-time container image multiple times
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     publish docker.io user env://PASSWORD
     ```
     </TabItem>
@@ -2037,7 +2037,7 @@ The following Dagger Function tags a just-in-time container image multiple times
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     publish gchr.io user env://PASSWORD
     ```
     </TabItem>
@@ -2084,7 +2084,7 @@ The following Dagger Functions return a just-in-time directory and file. These o
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     get-dir | export /home/admin/export
     ```
     </TabItem>
@@ -2104,7 +2104,7 @@ The following Dagger Functions return a just-in-time directory and file. These o
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     get-file | export /home/admin/myfile
     ```
     </TabItem>
@@ -2151,7 +2151,7 @@ Export the container image returned by the Dagger Function as an OCI tarball to 
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     base | export /home/admin/mycontainer.tgz
     ```
     </TabItem>
@@ -2210,7 +2210,7 @@ Build an application using cached dependencies:
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     build .
     ```
     </TabItem>
@@ -2286,7 +2286,7 @@ The following Dagger Function demonstrates how to set multiple environment varia
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     set-env-var
     ```
     </TabItem>
@@ -2306,7 +2306,7 @@ The following Dagger Function demonstrates how to set multiple environment varia
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     set-env-vars
     ```
     </TabItem>
@@ -2353,7 +2353,7 @@ The following Dagger Function uses a cache volume to persist a Redis service's d
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     set foo 123
     ```
     </TabItem>
@@ -2373,7 +2373,7 @@ The following Dagger Function uses a cache volume to persist a Redis service's d
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     get foo
     ```
     </TabItem>
@@ -2420,7 +2420,7 @@ Execute a Dagger Function which performs different types of tests by executing o
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     my-module $(host | directory .) | run-all-tests
     ```
     </TabItem>
@@ -2470,7 +2470,7 @@ Execute a Dagger Function which creates a container and runs a command in it. If
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     test
     ```
     </TabItem>
@@ -2523,7 +2523,7 @@ Continue executing a Dagger Function even after a command within it fails. The D
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     test | exit-code
     ```
     </TabItem>
@@ -2543,7 +2543,7 @@ Continue executing a Dagger Function even after a command within it fails. The D
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     test | report | contents
     ```
     </TabItem>
@@ -2593,7 +2593,7 @@ Execute a Dagger Function to build a container, and open an interactive terminal
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     container
     ```
     </TabItem>
@@ -2661,7 +2661,7 @@ The container created to mount the directory can be customized using additional 
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     simple-directory
     ```
     </TabItem>
@@ -2681,7 +2681,7 @@ The container created to mount the directory can be customized using additional 
     ```
     </TabItem>
     <TabItem value="Dagger Shell">
-    ```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+    ```shell title="First type 'dagger' for interactive mode."
     advanced-directory
     ```
     </TabItem>
