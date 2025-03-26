@@ -1085,6 +1085,8 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		if fe.activeStringPrompt != nil {
 			fe.activeStringPrompt.result <- value
 			// fe.editline = nil
+			fe.activeStringPrompt = nil
+			fe.editlineFocused = false
 		} else if fe.shell != nil {
 			ctx, cancel := context.WithCancelCause(fe.shellCtx)
 			fe.shellInterrupt = cancel
@@ -1309,6 +1311,13 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 	case promptString:
 		fe.activeStringPrompt = &msg
 		fe.initEditline()
+		// fe.editline.MaxHistorySize = 1000
+		// if history, err := history.LoadHistory(historyFile); err == nil {
+		// 	fe.editline.SetHistory(history)
+		// }
+		// hopefully fix weird prompt display?
+		fe.editline.Update(nil)
+
 		return fe, nil
 
 	default:
