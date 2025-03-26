@@ -618,7 +618,7 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 					objVars = append(objVars, fmt.Sprintf("  $%s = %q", name, env.intern(obj)))
 				}
 				if len(objVars) > 0 {
-					desc += "\n\nPossible selections:\n" + strings.Join(objVars, "\n")
+					desc += "\n\nAvailable bindings:\n" + strings.Join(objVars, "\n")
 				}
 				return desc
 			})(),
