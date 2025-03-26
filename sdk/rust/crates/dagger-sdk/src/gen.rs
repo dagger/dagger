@@ -4087,6 +4087,15 @@ pub struct DirectoryExportOpts {
     pub wipe: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryFilterOpts<'a> {
+    /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+    #[builder(setter(into, strip_option), default)]
+    pub exclude: Option<Vec<&'a str>>,
+    /// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+    #[builder(setter(into, strip_option), default)]
+    pub include: Option<Vec<&'a str>>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryTerminalOpts<'a> {
     /// If set, override the container's default terminal command and invoke these command arguments instead.
     #[builder(setter(into, strip_option), default)]
@@ -4345,6 +4354,38 @@ impl Directory {
         let mut query = self.selection.select("file");
         query = query.arg("path", path.into());
         File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this directory as per exclude/include filters.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn filter(&self) -> Directory {
+        let query = self.selection.select("filter");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this directory as per exclude/include filters.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn filter_opts<'a>(&self, opts: DirectoryFilterOpts<'a>) -> Directory {
+        let mut query = self.selection.select("filter");
+        if let Some(exclude) = opts.exclude {
+            query = query.arg("exclude", exclude);
+        }
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
+        }
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

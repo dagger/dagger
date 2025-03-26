@@ -716,6 +716,18 @@ export type DirectoryExportOpts = {
   wipe?: boolean
 }
 
+export type DirectoryFilterOpts = {
+  /**
+   * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+   */
+  exclude?: string[]
+
+  /**
+   * Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+   */
+  include?: string[]
+}
+
 export type DirectoryTerminalOpts = {
   /**
    * If set, override the container's default terminal command and invoke these command arguments instead.
@@ -2875,6 +2887,16 @@ export class Directory extends BaseClient {
   file = (path: string): File => {
     const ctx = this._ctx.select("file", { path })
     return new File(ctx)
+  }
+
+  /**
+   * Retrieves this directory as per exclude/include filters.
+   * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+   * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+   */
+  filter = (opts?: DirectoryFilterOpts): Directory => {
+    const ctx = this._ctx.select("filter", { ...opts })
+    return new Directory(ctx)
   }
 
   /**

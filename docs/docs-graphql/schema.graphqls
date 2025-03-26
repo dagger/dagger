@@ -1285,6 +1285,19 @@ type Directory {
     path: String!
   ): File!
 
+  """Retrieves this directory as per exclude/include filters."""
+  filter(
+    """
+    Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+    """
+    exclude: [String!] = []
+
+    """
+    Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+    """
+    include: [String!] = []
+  ): Directory!
+
   """Returns a list of files and directories that matche the given pattern."""
   glob(
     """Pattern to match (e.g., "*.md")."""

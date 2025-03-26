@@ -243,6 +243,69 @@ func (DirectorySuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (DirectorySuite) TestDirectoryFilterIncludeExclude(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	dir := c.Directory().
+		WithNewFile("a.txt", "").
+		WithNewFile("b.txt", "").
+		WithNewFile("c.txt.rar", "").
+		WithNewFile("subdir/d.txt", "").
+		WithNewFile("subdir/e.txt", "").
+		WithNewFile("subdir/f.txt.rar", "")
+
+	t.Run("exclude", func(ctx context.Context, t *testctx.T) {
+		entries, err := dir.Filter(dagger.DirectoryFilterOpts{
+			Exclude: []string{"*.rar"},
+		}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"a.txt", "b.txt", "subdir/"}, entries)
+	})
+
+	t.Run("include", func(ctx context.Context, t *testctx.T) {
+		entries, err := dir.Filter(dagger.DirectoryFilterOpts{
+			Include: []string{"*.rar"},
+		}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"c.txt.rar"}, entries)
+	})
+
+	t.Run("exclude overrides include", func(ctx context.Context, t *testctx.T) {
+		entries, err := dir.Filter(dagger.DirectoryFilterOpts{
+			Include: []string{"*.txt"},
+			Exclude: []string{"b.txt"},
+		}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"a.txt"}, entries)
+	})
+
+	t.Run("include does not override exclude", func(ctx context.Context, t *testctx.T) {
+		entries, err := dir.Filter(dagger.DirectoryFilterOpts{
+			Include: []string{"a.txt"},
+			Exclude: []string{"*.txt"},
+		}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{}, entries)
+	})
+
+	t.Run("exclude works on directory", func(ctx context.Context, t *testctx.T) {
+		entries, err := dir.Filter(dagger.DirectoryFilterOpts{
+			Exclude: []string{"subdir"},
+		}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"a.txt", "b.txt", "c.txt.rar"}, entries)
+	})
+
+	t.Run("exclude respects subdir", func(ctx context.Context, t *testctx.T) {
+		subdir := dir.Directory("subdir")
+		entries, err := subdir.Filter(dagger.DirectoryFilterOpts{
+			Exclude: []string{"*.rar"},
+		}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"d.txt", "e.txt"}, entries)
+	})
+}
+
 func (DirectorySuite) TestWithDirectoryIncludeExclude(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

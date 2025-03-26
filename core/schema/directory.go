@@ -80,6 +80,10 @@ func (s *directorySchema) Install() {
 			ArgDoc("directory", `Identifier of the directory to copy.`).
 			ArgDoc("exclude", `Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`).
 			ArgDoc("include", `Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
+		dagql.Func("filter", s.withFilter).
+			Doc(`Retrieves this directory as per exclude/include filters.`).
+			ArgDoc("exclude", `Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`).
+			ArgDoc("include", `Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 		dagql.Func("withNewDirectory", s.withNewDirectory).
 			Doc(`Retrieves this directory plus a new directory created at the given path.`).
 			ArgDoc("path", `Location of the directory created (e.g., "/logs").`).
@@ -178,6 +182,19 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent *core.Direct
 		return nil, err
 	}
 	return parent.WithDirectory(ctx, args.Path, dir.Self, args.CopyFilter, nil)
+}
+
+type WithFilterArgs struct {
+	core.CopyFilter
+}
+
+func (s *directorySchema) withFilter(ctx context.Context, parent *core.Directory, args WithFilterArgs) (*core.Directory, error) {
+	dir, err := s.directory(ctx, parent.Query, struct{}{})
+	if err != nil {
+		return nil, err
+	}
+
+	return dir.WithDirectory(ctx, "/", parent, args.CopyFilter, nil)
 }
 
 type dirWithTimestampsArgs struct {
