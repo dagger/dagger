@@ -599,8 +599,7 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 		return nil, fmt.Errorf("dagql server is nil but required to ignore pattern on directory %q", arg.OriginalName)
 	}
 
-	switch value := value.(type) {
-	case DynamicID:
+	applyIgnore := func(dir dagql.IDable) (JSON, error) {
 		var ignoredDir dagql.Instance[*Directory]
 
 		err := dag.Select(ctx, dag.Root(), &ignoredDir,
@@ -611,7 +610,7 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 				Field: "withDirectory",
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String("/")},
-					{Name: "directory", Value: dagql.NewID[*Directory](value.ID())},
+					{Name: "directory", Value: dagql.NewID[*Directory](dir.ID())},
 					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore...))},
 				},
 			},
@@ -622,36 +621,17 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 
 		dirID, err := ignoredDir.ID().Encode()
 		if err != nil {
-			return nil, fmt.Errorf("failed to encode filtered dir ID: %w", err)
-		}
-
-		return JSON(dirID), nil
-	case dagql.ID[*Directory]:
-		var ignoredDir dagql.Instance[*Directory]
-
-		err := dag.Select(ctx, dag.Root(), &ignoredDir,
-			dagql.Selector{
-				Field: "directory",
-			},
-			dagql.Selector{
-				Field: "withDirectory",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String("/")},
-					{Name: "directory", Value: dagql.NewID[*Directory](value.ID())},
-					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore...))},
-				},
-			},
-		)
-		if err != nil {
 			return nil, fmt.Errorf("failed to apply ignore pattern on directory %q: %w", arg.Name, err)
 		}
 
-		dirID, err := ignoredDir.ID().Encode()
-		if err != nil {
-			return nil, fmt.Errorf("failed to encode filtered dir ID: %w", err)
-		}
-
 		return JSON(dirID), nil
+	}
+
+	switch value := value.(type) {
+	case DynamicID:
+		return applyIgnore(value)
+	case dagql.ID[*Directory]:
+		return applyIgnore(value)
 	default:
 		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern ([%s]) but type is %#v", arg.OriginalName, strings.Join(arg.Ignore, ", "), value)
 	}

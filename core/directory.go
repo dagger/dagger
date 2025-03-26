@@ -37,11 +37,6 @@ type Directory struct {
 
 	// Services necessary to provision the directory.
 	Services ServiceBindings
-
-	// The list of excluded paths of that directory.
-	// This is useful for the ignore directive to avoid double exclusion between
-	// CLI call and module call.
-	Excluded []string
 }
 
 func (*Directory) Type() *ast.Type {
@@ -86,7 +81,6 @@ func NewDirectory(query *Query, def *pb.Definition, dir string, platform Platfor
 		Dir:      dir,
 		Platform: platform,
 		Services: services,
-		Excluded: []string{},
 	}
 }
 
@@ -520,7 +514,6 @@ func (dir *Directory) WithDirectory(ctx context.Context, destDir string, src *Di
 		return nil, err
 	}
 
-	dir.Excluded = append(dir.Excluded, filter.Exclude...)
 	dir.Services.Merge(src.Services)
 
 	return dir, nil
