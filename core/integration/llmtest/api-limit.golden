@@ -1,38 +1,7 @@
 [
   {
     "role": "user",
-    "content": "tell me the value of PATH and TERM in this container using just envVariable",
-    "token_usage": {
-      "InputTokens": 0,
-      "OutputTokens": 0,
-      "TotalTokens": 0
-    }
-  },
-  {
-    "role": "assistant",
-    "content": "I can help you check those environment variables using the `Container_envVariable` function. I'll need to make two separate calls to check each variable.",
-    "tool_calls": [
-      {
-        "id": "toolu_01GNrh7wiTtCcCqUYixutLHu",
-        "function": {
-          "name": "Container_envVariable",
-          "arguments": {
-            "name": "PATH"
-          }
-        },
-        "type": "function"
-      }
-    ],
-    "token_usage": {
-      "InputTokens": 11849,
-      "OutputTokens": 86,
-      "TotalTokens": 11935
-    }
-  },
-  {
-    "role": "user",
-    "content": "\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"",
-    "tool_call_id": "toolu_01GNrh7wiTtCcCqUYixutLHu",
+    "content": "tell me the value of PATH",
     "token_usage": {
       "InputTokens": 0,
       "OutputTokens": 0,
@@ -44,7 +13,56 @@
     "content": "",
     "tool_calls": [
       {
-        "id": "toolu_012NeK2HiscYAVJBFdgrapx6",
+        "id": "call_jEHnV0HSsN45o95RioF8yJk7",
+        "function": {
+          "name": "Container_envVariable",
+          "arguments": {
+            "name": "PATH"
+          }
+        },
+        "type": "function"
+      }
+    ],
+    "token_usage": {
+      "InputTokens": 7222,
+      "OutputTokens": 16,
+      "TotalTokens": 7238
+    }
+  },
+  {
+    "role": "user",
+    "content": "{\"result\":\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"}",
+    "tool_call_id": "call_jEHnV0HSsN45o95RioF8yJk7",
+    "token_usage": {
+      "InputTokens": 0,
+      "OutputTokens": 0,
+      "TotalTokens": 0
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "The value of the `PATH` environment variable is `\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"`.",
+    "token_usage": {
+      "InputTokens": 7271,
+      "OutputTokens": 36,
+      "TotalTokens": 7307
+    }
+  },
+  {
+    "role": "user",
+    "content": "now tell me the value of TERM",
+    "token_usage": {
+      "InputTokens": 0,
+      "OutputTokens": 0,
+      "TotalTokens": 0
+    }
+  },
+  {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_lKrcL17rKvMNwud9u2rCtKx4",
         "function": {
           "name": "Container_envVariable",
           "arguments": {
@@ -55,15 +73,15 @@
       }
     ],
     "token_usage": {
-      "InputTokens": 49,
-      "OutputTokens": 56,
-      "TotalTokens": 105
+      "InputTokens": 7320,
+      "OutputTokens": 16,
+      "TotalTokens": 7336
     }
   },
   {
     "role": "user",
-    "content": "null",
-    "tool_call_id": "toolu_012NeK2HiscYAVJBFdgrapx6",
+    "content": "{\"result\":null}",
+    "tool_call_id": "call_lKrcL17rKvMNwud9u2rCtKx4",
     "token_usage": {
       "InputTokens": 0,
       "OutputTokens": 0,
@@ -72,11 +90,11 @@
   },
   {
     "role": "assistant",
-    "content": "I've checked both variables and found that:\n- PATH is set to \"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"\n- TERM is not set in the container (returned null)",
+    "content": "The `TERM` environment variable is not set in the current container environment.",
     "token_usage": {
-      "InputTokens": 119,
-      "OutputTokens": 61,
-      "TotalTokens": 180
+      "InputTokens": 7349,
+      "OutputTokens": 17,
+      "TotalTokens": 7366
     }
   }
 ]

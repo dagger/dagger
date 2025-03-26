@@ -145,6 +145,11 @@ class LLMID(Scalar):
     type LLM."""
 
 
+class LLMTokenUsageID(Scalar):
+    """The `LLMTokenUsageID` scalar type represents an identifier for an
+    object of type LLMTokenUsage."""
+
+
 class LLMVariableID(Scalar):
     """The `LLMVariableID` scalar type represents an identifier for an
     object of type LLMVariable."""
@@ -5429,6 +5434,14 @@ class InterfaceTypeDef(Type):
 
 @typecheck
 class LLM(Type):
+    def attempt(self, number: int) -> Self:
+        """create a branch in the LLM's history"""
+        _args = [
+            Arg("number", number),
+        ]
+        _ctx = self._select("attempt", _args)
+        return LLM(_ctx)
+
     def cache_volume(self) -> CacheVolume:
         """Retrieve a the current value in the LLM environment, of type
         CacheVolume
@@ -6909,6 +6922,12 @@ class LLM(Type):
         _ctx = self._select("terminal", _args)
         return Terminal(_ctx)
 
+    def token_usage(self) -> "LLMTokenUsage":
+        """returns the token usage of the current state"""
+        _args: list[Arg] = []
+        _ctx = self._select("tokenUsage", _args)
+        return LLMTokenUsage(_ctx)
+
     async def tools(self) -> str:
         """print documentation for available tools
 
@@ -7456,6 +7475,20 @@ class LLM(Type):
         _ctx = self._select("withSourceMap", _args)
         return LLM(_ctx)
 
+    def with_system_prompt(self, prompt: str) -> Self:
+        """Add a system prompt to the LLM's environment
+
+        Parameters
+        ----------
+        prompt:
+            The system prompt to send
+        """
+        _args = [
+            Arg("prompt", prompt),
+        ]
+        _ctx = self._select("withSystemPrompt", _args)
+        return LLM(_ctx)
+
     def with_terminal(self, value: "Terminal") -> Self:
         """Set a variable of type Terminal in the llm environment
 
@@ -7490,6 +7523,90 @@ class LLM(Type):
         This is useful for reusability and readability by not breaking the calling chain.
         """
         return cb(self)
+
+
+@typecheck
+class LLMTokenUsage(Type):
+    async def id(self) -> LLMTokenUsageID:
+        """A unique identifier for this LLMTokenUsage.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        LLMTokenUsageID
+            The `LLMTokenUsageID` scalar type represents an identifier for an
+            object of type LLMTokenUsage.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(LLMTokenUsageID)
+
+    async def input_tokens(self) -> int:
+        """Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("inputTokens", _args)
+        return await _ctx.execute(int)
+
+    async def output_tokens(self) -> int:
+        """Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("outputTokens", _args)
+        return await _ctx.execute(int)
+
+    async def total_tokens(self) -> int:
+        """Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("totalTokens", _args)
+        return await _ctx.execute(int)
 
 
 @typecheck
@@ -9441,6 +9558,14 @@ class Client(Root):
         _ctx = self._select("loadLLMFromID", _args)
         return LLM(_ctx)
 
+    def load_llm_token_usage_from_id(self, id: LLMTokenUsageID) -> LLMTokenUsage:
+        """Load a LLMTokenUsage from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadLLMTokenUsageFromID", _args)
+        return LLMTokenUsage(_ctx)
+
     def load_llm_variable_from_id(self, id: LLMVariableID) -> LLMVariable:
         """Load a LLMVariable from its ID."""
         _args = [
@@ -10729,6 +10854,8 @@ __all__ = [
     "InputTypeDefID",
     "InterfaceTypeDef",
     "InterfaceTypeDefID",
+    "LLMTokenUsage",
+    "LLMTokenUsageID",
     "LLMVariable",
     "LLMVariableID",
     "Label",

@@ -727,7 +727,7 @@ func NodeFuncWithCacheKey[T Typed, A any, R any](
 	cacheFn GetCacheConfigFunc[T, A],
 ) Field[T] {
 	var zeroArgs A
-	inputs, argsErr := inputSpecsForType(zeroArgs, true)
+	inputs, argsErr := InputSpecsForType(zeroArgs, true)
 	if argsErr != nil {
 		var zeroSelf T
 		slog.Error("failed to parse args", "type", zeroSelf.Type(), "field", name, "error", argsErr)
@@ -753,7 +753,7 @@ func NodeFuncWithCacheKey[T Typed, A any, R any](
 				return nil, argsErr
 			}
 			var args A
-			if err := setInputFields(inputs, argVals, &args); err != nil {
+			if err := inputs.Decode(argVals, &args); err != nil {
 				return nil, err
 			}
 			res, err := fn(ctx, self, args)
@@ -772,7 +772,7 @@ func NodeFuncWithCacheKey[T Typed, A any, R any](
 				return nil, argsErr
 			}
 			var args A
-			if err := setInputFields(inputs, argVals, &args); err != nil {
+			if err := inputs.Decode(argVals, &args); err != nil {
 				return nil, err
 			}
 			inst, ok := self.(Instance[T])
@@ -1128,7 +1128,7 @@ type reflectField[T any] struct {
 	Field reflect.StructField
 }
 
-func inputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
+func InputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 	fields, err := reflectFieldsForType(obj, optIn, builtinOrInput)
 	if err != nil {
 		return nil, err
@@ -1279,7 +1279,7 @@ func getField(obj any, optIn bool, fieldName string) (res Typed, found bool, rer
 	return nil, false, nil
 }
 
-func setInputFields(specs InputSpecs, inputs map[string]Input, dest any) error {
+func (specs InputSpecs) Decode(inputs map[string]Input, dest any) error {
 	destT := reflect.TypeOf(dest).Elem()
 	destV := reflect.ValueOf(dest).Elem()
 	if destT == nil {
@@ -1294,7 +1294,7 @@ func setInputFields(specs InputSpecs, inputs map[string]Input, dest any) error {
 		if fieldT.Anonymous {
 			// embedded struct
 			val := reflect.New(fieldT.Type)
-			if err := setInputFields(specs, inputs, val.Interface()); err != nil {
+			if err := specs.Decode(inputs, val.Interface()); err != nil {
 				return err
 			}
 			fieldV.Set(val.Elem())

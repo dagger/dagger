@@ -2197,6 +2197,9 @@ The `ListTypeDefID` scalar type represents an identifier for an object of type L
 scalar ListTypeDefID
 
 type LLM {
+  """create a branch in the LLM's history"""
+  attempt(number: Int!): LLM!
+
   """
   Retrieve a the current value in the LLM environment, of type CacheVolume
   """
@@ -2868,6 +2871,9 @@ type LLM {
   """Retrieve a the current value in the LLM environment, of type Terminal"""
   terminal: Terminal!
 
+  """returns the token usage of the current state"""
+  tokenUsage: LLMTokenUsage!
+
   """print documentation for available tools"""
   tools: String!
 
@@ -3093,6 +3099,12 @@ type LLM {
     value: SourceMapID!
   ): LLM!
 
+  """Add a system prompt to the LLM's environment"""
+  withSystemPrompt(
+    """The system prompt to send"""
+    prompt: String!
+  ): LLM!
+
   """Set a variable of type Terminal in the llm environment"""
   withTerminal(
     """The Terminal value to assign to the variable"""
@@ -3110,6 +3122,19 @@ type LLM {
 The `LLMID` scalar type represents an identifier for an object of type LLM.
 """
 scalar LLMID
+
+type LLMTokenUsage {
+  """A unique identifier for this LLMTokenUsage."""
+  id: LLMTokenUsageID!
+  inputTokens: Int!
+  outputTokens: Int!
+  totalTokens: Int!
+}
+
+"""
+The `LLMTokenUsageID` scalar type represents an identifier for an object of type LLMTokenUsage.
+"""
+scalar LLMTokenUsageID
 
 type LLMVariable {
   hash: String!
@@ -3708,6 +3733,9 @@ type Query {
 
   """Load a LLM from its ID."""
   loadLLMFromID(id: LLMID!): LLM!
+
+  """Load a LLMTokenUsage from its ID."""
+  loadLLMTokenUsageFromID(id: LLMTokenUsageID!): LLMTokenUsage!
 
   """Load a LLMVariable from its ID."""
   loadLLMVariableFromID(id: LLMVariableID!): LLMVariable!

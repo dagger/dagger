@@ -1022,6 +1022,11 @@ export type JSON = string & { __JSON: never }
 export type LLMID = string & { __LLMID: never }
 
 /**
+ * The `LLMTokenUsageID` scalar type represents an identifier for an object of type LLMTokenUsage.
+ */
+export type LLMTokenUsageID = string & { __LLMTokenUsageID: never }
+
+/**
  * The `LLMVariableID` scalar type represents an identifier for an object of type LLMVariable.
  */
 export type LLMVariableID = string & { __LLMVariableID: never }
@@ -5185,6 +5190,16 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * create a branch in the LLM's history
+   */
+  attempt = (number_: number): LLM => {
+    const ctx = this._ctx.select("attempt", {
+      number: number_,
+    })
+    return new LLM(ctx)
+  }
+
+  /**
    * Retrieve a the current value in the LLM environment, of type CacheVolume
    */
   cacheVolume = (): CacheVolume => {
@@ -6202,6 +6217,14 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * returns the token usage of the current state
+   */
+  tokenUsage = (): LLMTokenUsage => {
+    const ctx = this._ctx.select("tokenUsage")
+    return new LLMTokenUsage(ctx)
+  }
+
+  /**
    * print documentation for available tools
    */
   tools = async (): Promise<string> => {
@@ -6566,6 +6589,15 @@ export class LLM extends BaseClient {
   }
 
   /**
+   * Add a system prompt to the LLM's environment
+   * @param prompt The system prompt to send
+   */
+  withSystemPrompt = (prompt: string): LLM => {
+    const ctx = this._ctx.select("withSystemPrompt", { prompt })
+    return new LLM(ctx)
+  }
+
+  /**
    * Set a variable of type Terminal in the llm environment
    * @param value The Terminal value to assign to the variable
    */
@@ -6590,6 +6622,79 @@ export class LLM extends BaseClient {
    */
   with = (arg: (param: LLM) => LLM) => {
     return arg(this)
+  }
+}
+
+export class LLMTokenUsage extends BaseClient {
+  private readonly _id?: LLMTokenUsageID = undefined
+  private readonly _inputTokens?: number = undefined
+  private readonly _outputTokens?: number = undefined
+  private readonly _totalTokens?: number = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: LLMTokenUsageID,
+    _inputTokens?: number,
+    _outputTokens?: number,
+    _totalTokens?: number,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._inputTokens = _inputTokens
+    this._outputTokens = _outputTokens
+    this._totalTokens = _totalTokens
+  }
+
+  /**
+   * A unique identifier for this LLMTokenUsage.
+   */
+  id = async (): Promise<LLMTokenUsageID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<LLMTokenUsageID> = await ctx.execute()
+
+    return response
+  }
+  inputTokens = async (): Promise<number> => {
+    if (this._inputTokens) {
+      return this._inputTokens
+    }
+
+    const ctx = this._ctx.select("inputTokens")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+  outputTokens = async (): Promise<number> => {
+    if (this._outputTokens) {
+      return this._outputTokens
+    }
+
+    const ctx = this._ctx.select("outputTokens")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+  totalTokens = async (): Promise<number> => {
+    if (this._totalTokens) {
+      return this._totalTokens
+    }
+
+    const ctx = this._ctx.select("totalTokens")
+
+    const response: Awaited<number> = await ctx.execute()
+
+    return response
   }
 }
 
@@ -8271,6 +8376,14 @@ export class Client extends BaseClient {
   loadLLMFromID = (id: LLMID): LLM => {
     const ctx = this._ctx.select("loadLLMFromID", { id })
     return new LLM(ctx)
+  }
+
+  /**
+   * Load a LLMTokenUsage from its ID.
+   */
+  loadLLMTokenUsageFromID = (id: LLMTokenUsageID): LLMTokenUsage => {
+    const ctx = this._ctx.select("loadLLMTokenUsageFromID", { id })
+    return new LLMTokenUsage(ctx)
   }
 
   /**

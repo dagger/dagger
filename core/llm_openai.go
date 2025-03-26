@@ -74,13 +74,14 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 
 	// Convert generic Message to OpenAI specific format
 	var openAIMessages []openai.ChatCompletionMessageParamUnion
+
 	for _, msg := range history {
 		if msg.ToolCallID != "" {
 			content := msg.Content
 			if msg.ToolErrored {
 				content = "error: " + content
 			}
-			openAIMessages = append(openAIMessages, openai.ToolMessage(msg.ToolCallID, content))
+			openAIMessages = append(openAIMessages, openai.ToolMessage(content, msg.ToolCallID))
 			continue
 		}
 		var blocks []openai.ChatCompletionContentPartUnionParam
@@ -190,7 +191,7 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 	return &LLMResponse{
 		Content:   acc.Choices[0].Message.Content,
 		ToolCalls: toolCalls,
-		TokenUsage: TokenUsage{
+		TokenUsage: LLMTokenUsage{
 			InputTokens:  acc.Usage.PromptTokens,
 			OutputTokens: acc.Usage.CompletionTokens,
 			TotalTokens:  acc.Usage.TotalTokens,

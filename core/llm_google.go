@@ -18,12 +18,11 @@ import (
 )
 
 type GenaiClient struct {
-	client              *genai.Client
-	endpoint            *LLMEndpoint
-	defaultSystemPrompt string
+	client   *genai.Client
+	endpoint *LLMEndpoint
 }
 
-func newGenaiClient(endpoint *LLMEndpoint, defaultSystemPrompt string) (*GenaiClient, error) {
+func newGenaiClient(endpoint *LLMEndpoint) (*GenaiClient, error) {
 	opts := []option.ClientOption{option.WithAPIKey(endpoint.Key)}
 	if endpoint.Key != "" {
 		opts = append(opts, option.WithAPIKey(endpoint.Key))
@@ -37,9 +36,8 @@ func newGenaiClient(endpoint *LLMEndpoint, defaultSystemPrompt string) (*GenaiCl
 		return nil, err
 	}
 	return &GenaiClient{
-		client:              client,
-		endpoint:            endpoint,
-		defaultSystemPrompt: defaultSystemPrompt,
+		client:   client,
+		endpoint: endpoint,
 	}, err
 }
 
@@ -82,12 +80,11 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 
 	// set system prompt
 	model.SystemInstruction = &genai.Content{
-		Parts: []genai.Part{genai.Text(c.defaultSystemPrompt)},
-		Role:  "system",
+		Role: "system",
 	}
 
 	// convert tools to Genai tool format.
-	var toolsConfig []*genai.Tool
+	fns := []*genai.FunctionDeclaration{}
 	for _, tool := range tools {
 		fd := &genai.FunctionDeclaration{
 			Name:        tool.Name,
@@ -98,13 +95,13 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 		if len(schema.Properties) > 0 {
 			fd.Parameters = schema
 		}
-		toolsConfig = append(toolsConfig, &genai.Tool{
-			FunctionDeclarations: []*genai.FunctionDeclaration{
-				fd,
-			},
-		})
+		fns = append(fns, fd)
 	}
-	model.Tools = toolsConfig
+	model.Tools = []*genai.Tool{
+		{
+			FunctionDeclarations: fns,
+		},
+	}
 
 	// convert history to genai.Content
 	genaiHistory := []*genai.Content{}
@@ -112,21 +109,28 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 		return nil, fmt.Errorf("genai history cannot be empty")
 	}
 
+	model.SystemInstruction = &genai.Content{
+		Parts: []genai.Part{},
+		Role:  "system",
+	}
+
 	for _, msg := range history {
-		// Valid Content.Role values are "user" and "model"
-		var role string
+		var content *genai.Content
 		switch msg.Role {
+		case "system":
+			content = model.SystemInstruction
 		case "user", "function":
-			role = "user"
+			content = &genai.Content{
+				Parts: []genai.Part{},
+				Role:  "user",
+			}
 		case "model", "assistant":
-			role = "model"
+			content = &genai.Content{
+				Parts: []genai.Part{},
+				Role:  "model",
+			}
 		default:
 			return nil, fmt.Errorf("unexpected role %s", msg.Role)
-		}
-
-		content := &genai.Content{
-			Parts: []genai.Part{},
-			Role:  role,
 		}
 
 		// message was a tool call
@@ -156,10 +160,19 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 			})
 		}
 
-		genaiHistory = append(genaiHistory, content)
+		if content.Role != "system" {
+			genaiHistory = append(genaiHistory, content)
+		}
+	}
+	if len(model.SystemInstruction.Parts) == 0 {
+		model.SystemInstruction = nil
 	}
 
 	// Pop last message from history for SendMessage
+	if len(genaiHistory) == 0 {
+		return nil, fmt.Errorf("no user prompt")
+	}
+
 	userMessage := genaiHistory[len(genaiHistory)-1]
 	genaiHistory = genaiHistory[:len(genaiHistory)-1]
 
@@ -170,6 +183,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 
 	var content string
 	var toolCalls []ToolCall
+	var tokenUsage LLMTokenUsage
 	for {
 		res, err := stream.Next()
 		if err != nil {
@@ -186,13 +200,20 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 		// Keep track of the token usage
 		if res.UsageMetadata != nil {
 			if res.UsageMetadata.CandidatesTokenCount > 0 {
-				outputTokens.Record(ctx, int64(res.UsageMetadata.CandidatesTokenCount), metric.WithAttributes(attrs...))
+				count := int64(res.UsageMetadata.CandidatesTokenCount)
+				tokenUsage.OutputTokens += count
+				tokenUsage.TotalTokens += count
+				outputTokens.Record(ctx, count, metric.WithAttributes(attrs...))
 			}
 			if res.UsageMetadata.PromptTokenCount > 0 {
-				inputTokens.Record(ctx, int64(res.UsageMetadata.PromptTokenCount), metric.WithAttributes(attrs...))
+				count := int64(res.UsageMetadata.PromptTokenCount)
+				tokenUsage.InputTokens += count
+				tokenUsage.TotalTokens += count
+				inputTokens.Record(ctx, count, metric.WithAttributes(attrs...))
 			}
 			if res.UsageMetadata.CachedContentTokenCount > 0 {
-				inputTokensCacheReads.Record(ctx, int64(res.UsageMetadata.CachedContentTokenCount), metric.WithAttributes(attrs...))
+				count := int64(res.UsageMetadata.CachedContentTokenCount)
+				inputTokensCacheReads.Record(ctx, count, metric.WithAttributes(attrs...))
 			}
 		}
 
@@ -208,7 +229,7 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 			switch x := part.(type) {
 			case genai.Text:
 				fmt.Fprint(stdio.Stdout, x)
-				content += string(part.(genai.Text))
+				content += string(x)
 			case genai.FunctionCall:
 				toolCalls = append(toolCalls, ToolCall{
 					ID: x.Name,
@@ -225,8 +246,9 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 	}
 
 	return &LLMResponse{
-		Content:   content,
-		ToolCalls: toolCalls,
+		Content:    content,
+		ToolCalls:  toolCalls,
+		TokenUsage: tokenUsage,
 	}, nil
 }
 
@@ -236,7 +258,10 @@ func bbiSchemaToGenaiSchema(bbi map[string]any) *genai.Schema {
 	for key, param := range bbi {
 		switch key {
 		case "description":
-			schema.Description = param.(string)
+			if schema.Description != "" {
+				schema.Description += " "
+			}
+			schema.Description += param.(string)
 		case "properties":
 			schema.Properties = map[string]*genai.Schema{}
 			for propKey, propParam := range param.(map[string]any) {
@@ -247,12 +272,25 @@ func bbiSchemaToGenaiSchema(bbi map[string]any) *genai.Schema {
 		case "type":
 			gtype := bbiTypeToGenaiType(param.(string))
 			schema.Type = gtype
-		// case "format": // ignoring format. Genai is very picky about format values
-		// 	schema.Format = param.(string)
+		case "format":
+			switch param {
+			case "enum", "date-time":
+				// Genai only supports these format values. :(
+				schema.Format = param.(string)
+			case "uri":
+				if pattern, ok := bbi["pattern"].(string); ok {
+					schema.Description = fmt.Sprintf("URI format, %s.", pattern)
+				} else {
+					schema.Description = "URI format."
+				}
+			}
 		case "items":
 			schema.Items = bbiSchemaToGenaiSchema(param.(map[string]any))
 		case "required":
 			schema.Required = bbi["required"].([]string)
+		case "enum":
+			schema.Enum = param.([]string)
+			schema.Format = "enum"
 		}
 	}
 

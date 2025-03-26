@@ -37,11 +37,9 @@ type LLM struct {
 
 	// If true: has un-synced state
 	dirty bool
+
 	// History of messages
 	messages []ModelMessage
-	// History of tool calls and their result
-	calls      map[string]string
-	promptVars []string
 
 	env *LLMEnv
 }
@@ -64,23 +62,30 @@ type LLMClient interface {
 type LLMResponse struct {
 	Content    string
 	ToolCalls  []ToolCall
-	TokenUsage TokenUsage
+	TokenUsage LLMTokenUsage
 }
 
-type TokenUsage struct {
-	InputTokens  int64
-	OutputTokens int64
-	TotalTokens  int64
+type LLMTokenUsage struct {
+	InputTokens  int64 `field:"true"`
+	OutputTokens int64 `field:"true"`
+	TotalTokens  int64 `field:"true"`
+}
+
+func (*LLMTokenUsage) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "LLMTokenUsage",
+		NonNull:   true,
+	}
 }
 
 // ModelMessage represents a generic message in the LLM conversation
 type ModelMessage struct {
-	Role        string     `json:"role"`
-	Content     string     `json:"content"`
-	ToolCalls   []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID  string     `json:"tool_call_id,omitempty"`
-	ToolErrored bool       `json:"tool_errored,omitempty"`
-	TokenUsage  TokenUsage `json:"token_usage,omitempty"`
+	Role        string        `json:"role"`
+	Content     string        `json:"content"`
+	ToolCalls   []ToolCall    `json:"tool_calls,omitempty"`
+	ToolCallID  string        `json:"tool_call_id,omitempty"`
+	ToolErrored bool          `json:"tool_errored,omitempty"`
+	TokenUsage  LLMTokenUsage `json:"token_usage,omitempty"`
 }
 
 type ToolCall struct {
@@ -160,13 +165,12 @@ func (r *LLMRouter) getReplay(model string) (messages []ModelMessage, _ error) {
 }
 
 func (r *LLMRouter) routeAnthropicModel() *LLMEndpoint {
-	defaultSystemPrompt := "You are a helpful AI assistant. You can use tools to accomplish the user's requests"
 	endpoint := &LLMEndpoint{
 		BaseURL:  r.AnthropicBaseURL,
 		Key:      r.AnthropicAPIKey,
 		Provider: Anthropic,
 	}
-	endpoint.Client = newAnthropicClient(endpoint, defaultSystemPrompt)
+	endpoint.Client = newAnthropicClient(endpoint)
 
 	return endpoint
 }
@@ -183,13 +187,12 @@ func (r *LLMRouter) routeOpenAIModel() *LLMEndpoint {
 }
 
 func (r *LLMRouter) routeGoogleModel() (*LLMEndpoint, error) {
-	defaultSystemPrompt := "You are a helpful AI assistant. You can use tools to accomplish the user's requests"
 	endpoint := &LLMEndpoint{
 		BaseURL:  r.GeminiBaseURL,
 		Key:      r.GeminiAPIKey,
 		Provider: Google,
 	}
-	client, err := newGenaiClient(endpoint, defaultSystemPrompt)
+	client, err := newGenaiClient(endpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -395,8 +398,7 @@ func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int) (*
 		Query:       query,
 		Endpoint:    endpoint,
 		maxAPICalls: maxAPICalls,
-		calls:       make(map[string]string),
-		env:         NewLLMEnv(),
+		env:         NewLLMEnv(endpoint),
 	}, nil
 }
 
@@ -424,16 +426,18 @@ func (*LLM) Type() *ast.Type {
 func (llm *LLM) Clone() *LLM {
 	cp := *llm
 	cp.messages = cloneSlice(cp.messages)
-	cp.calls = cloneMap(cp.calls)
-	cp.promptVars = cloneSlice(cp.promptVars)
 	cp.env = cp.env.Clone()
 	return &cp
 }
 
 // Generate a human-readable documentation of tools available to the model
 func (llm *LLM) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error) {
+	tools, err := llm.env.Tools(srv)
+	if err != nil {
+		return "", err
+	}
 	var result string
-	for _, tool := range llm.env.Tools(srv) {
+	for _, tool := range tools {
 		schema, err := json.MarshalIndent(tool.Schema, "", "  ")
 		if err != nil {
 			return "", err
@@ -467,15 +471,18 @@ func (llm *LLM) WithPrompt(
 	prompt string,
 	srv *dagql.Server,
 ) (*LLM, error) {
-	if len(llm.env.vars) > 0 {
-		prompt = os.Expand(prompt, func(key string) string {
-			val, err := llm.env.Get(key)
-			if err != nil {
-				return ""
-			}
-			return fmt.Sprintf("%s", val)
-		})
-	}
+	prompt = os.Expand(prompt, func(key string) string {
+		obj, err := llm.env.GetObject(key, "")
+		if err == nil {
+			return llm.env.describe(obj)
+		}
+		val, ok := llm.env.ReadVariable(key)
+		if !ok {
+			// leave unexpanded, perhaps it refers to an object var
+			return fmt.Sprintf("$%s", key)
+		}
+		return val
+	})
 	llm = llm.Clone()
 	func() {
 		ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
@@ -507,7 +514,7 @@ func (llm *LLM) WithPromptFile(ctx context.Context, file *File, srv *dagql.Serve
 
 func (llm *LLM) WithPromptVar(name, value string) *LLM {
 	llm = llm.Clone()
-	llm.promptVars = append(llm.promptVars, name, value)
+	llm.env.WriteVariable(name, value)
 	return llm
 }
 
@@ -542,6 +549,29 @@ func (llm *LLM) LastReply(ctx context.Context, dag *dagql.Server) (string, error
 	return reply, nil
 }
 
+func (llm *LLM) messagesWithSystemPrompt() []ModelMessage {
+	var hasSystemPrompt bool
+	for _, env := range llm.messages {
+		if env.Role == "system" {
+			return llm.messages
+		}
+	}
+
+	messages := llm.messages
+
+	// inject default system prompt if none are found
+	if prompt := llm.env.DefaultSystemPrompt(); prompt != "" && !hasSystemPrompt {
+		return append([]ModelMessage{
+			{
+				Role:    "system",
+				Content: prompt,
+			},
+		}, messages...)
+	}
+
+	return messages
+}
+
 // send the context to the LLM endpoint, process replies and tool calls; continue in a loop
 // Synchronize LLM state:
 // 1. Send context to LLM endpoint
@@ -567,8 +597,12 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 		}
 		llm.apiCalls++
 
-		tools := llm.env.Tools(dag)
-		res, err := llm.Endpoint.Client.SendQuery(ctx, llm.messages, tools)
+		tools, err := llm.env.Tools(dag)
+		if err != nil {
+			return nil, err
+		}
+
+		res, err := llm.Endpoint.Client.SendQuery(ctx, llm.messagesWithSystemPrompt(), tools)
 		if err != nil {
 			return nil, err
 		}
@@ -586,67 +620,13 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 			break
 		}
 		for _, toolCall := range res.ToolCalls {
-			for _, tool := range tools {
-				if tool.Name == toolCall.Function.Name {
-					result, isError := func() (string, bool) {
-						result, err := tool.Call(ctx, toolCall.Function.Arguments)
-						if err != nil {
-							errResponse := err.Error()
-							// propagate error values to the model
-							var extErr dagql.ExtendedError
-							if errors.As(err, &extErr) {
-								var exts []string
-								for k, v := range extErr.Extensions() {
-									var ext strings.Builder
-									fmt.Fprintf(&ext, "<%s>\n", k)
-
-									switch v := v.(type) {
-									case string:
-										ext.WriteString(v)
-									default:
-										jsonBytes, err := json.Marshal(v)
-										if err != nil {
-											fmt.Fprintf(&ext, "error marshalling value: %s", err.Error())
-										} else {
-											ext.Write(jsonBytes)
-										}
-									}
-
-									fmt.Fprintf(&ext, "\n</%s>", k)
-
-									exts = append(exts, ext.String())
-								}
-								if len(exts) > 0 {
-									sort.Strings(exts)
-									errResponse += "\n\n" + strings.Join(exts, "\n\n")
-								}
-							}
-							return errResponse, true
-						}
-						switch v := result.(type) {
-						case string:
-							// TODO: should we just JSON encode this too? what
-							// is safer and/or better for the model?
-							return v, false
-						default:
-							jsonBytes, err := json.Marshal(v)
-							if err != nil {
-								return fmt.Sprintf("error processing tool result: %s", err.Error()), true
-							}
-							return string(jsonBytes), false
-						}
-					}()
-					func() {
-						llm.calls[toolCall.ID] = result
-						llm.messages = append(llm.messages, ModelMessage{
-							Role:        "user", // Anthropic only allows tool calls in user messages
-							Content:     result,
-							ToolCallID:  toolCall.ID,
-							ToolErrored: isError,
-						})
-					}()
-				}
-			}
+			content, isError := llm.env.Call(ctx, tools, toolCall)
+			llm.messages = append(llm.messages, ModelMessage{
+				Role:        "user", // Anthropic only allows tool calls in user messages
+				Content:     content,
+				ToolCallID:  toolCall.ID,
+				ToolErrored: isError,
+			})
 		}
 	}
 	llm.dirty = false
@@ -693,19 +673,38 @@ func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error
 	}
 	var history []string
 	for _, msg := range llm.messages {
+		content := strings.TrimRight(msg.Content, "\n")
 		switch msg.Role {
 		case "user":
-			history = append(history, "🧑 💬"+msg.Content)
+			var item string
+			if msg.ToolCallID != "" {
+				item += "🛠️ 💬 "
+			} else {
+				item += "🧑 💬 "
+			}
+			if msg.ToolErrored {
+				item += "ERROR: "
+			}
+			item += content
+			history = append(history, item)
 		case "assistant":
-			if len(msg.Content) > 0 {
-				history = append(history, "🤖 💬"+msg.Content)
+			if len(content) > 0 {
+				history = append(history, "🤖 💬 "+content)
 			}
 			for _, call := range msg.ToolCalls {
-				history = append(history, fmt.Sprintf("🤖 💻 %s(%s)", call.Function.Name, call.Function.Arguments))
-				if result, ok := llm.calls[call.ID]; ok {
-					history = append(history, fmt.Sprintf("💻 %s", result))
+				args, err := json.Marshal(call.Function.Arguments)
+				if err != nil {
+					return nil, err
 				}
+				item := fmt.Sprintf("🤖 🛠️ %s %s", call.Function.Name, args)
+				history = append(history, item)
 			}
+		}
+		if msg.TokenUsage.InputTokens > 0 || msg.TokenUsage.OutputTokens > 0 {
+			history = append(history,
+				fmt.Sprintf("🪙 Tokens Used: %d in => %d out",
+					msg.TokenUsage.InputTokens,
+					msg.TokenUsage.OutputTokens))
 		}
 	}
 	return history, nil
@@ -723,19 +722,9 @@ func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (string, err
 	return string(result), nil
 }
 
-func (llm *LLM) Set(ctx context.Context, dag *dagql.Server, key string, value dagql.Typed) (*LLM, error) {
-	if id, ok := value.(dagql.IDType); ok {
-		obj, err := dag.Load(ctx, id.ID())
-		if err != nil {
-			return nil, err
-		}
-		value = obj
-	}
+func (llm *LLM) Set(ctx context.Context, key string, value dagql.Object) (*LLM, error) {
 	llm = llm.Clone()
-	llm.messages = append(llm.messages, ModelMessage{
-		Role:    "user",
-		Content: llm.env.Set(key, value),
-	})
+	llm.env.Set(key, value)
 	llm.dirty = true
 	return llm, nil
 }
@@ -745,21 +734,14 @@ func (llm *LLM) Get(ctx context.Context, dag *dagql.Server, key string) (dagql.T
 	if err != nil {
 		return nil, err
 	}
-	return llm.env.Get(key)
+	return llm.env.GetObject(key, "")
 }
 
-func (llm *LLM) With(ctx context.Context, dag *dagql.Server, value dagql.Typed) (*LLM, error) {
-	if id, ok := value.(dagql.IDType); ok {
-		obj, err := dag.Load(ctx, id.ID())
-		if err != nil {
-			return nil, err
-		}
-		value = obj
-	}
+func (llm *LLM) With(value dagql.Object) *LLM {
 	llm = llm.Clone()
-	llm.env.With(value)
+	llm.env.Select(value)
 	llm.dirty = true
-	return llm, nil
+	return llm
 }
 
 // A variable in the LLM environment
@@ -786,8 +768,8 @@ func (llm *LLM) Variables(ctx context.Context, dag *dagql.Server) ([]*LLMVariabl
 	if err != nil {
 		return nil, err
 	}
-	vars := make([]*LLMVariable, 0, len(llm.env.vars))
-	for k, v := range llm.env.vars {
+	vars := make([]*LLMVariable, 0, len(llm.env.objsByName))
+	for k, v := range llm.env.objsByName {
 		var hash string
 		if obj, ok := dagql.UnwrapAs[dagql.Object](v); ok {
 			hash = obj.ID().Digest().String()
@@ -826,18 +808,18 @@ func (llm *LLM) CurrentType(ctx context.Context, dag *dagql.Server) (dagql.Nulla
 	return res, nil
 }
 
-// FIXME: deprecated
-func (llm *LLM) WithState(ctx context.Context, objID dagql.IDType, srv *dagql.Server) (*LLM, error) {
-	obj, err := srv.Load(ctx, objID.ID())
+func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsage, error) {
+	llm, err := llm.Sync(ctx, dag)
 	if err != nil {
 		return nil, err
 	}
-	return llm.Set(ctx, srv, "default", obj)
-}
-
-// FIXME: deprecated
-func (llm *LLM) State(ctx context.Context, dag *dagql.Server) (dagql.Typed, error) {
-	return llm.Get(ctx, dag, "default")
+	var res LLMTokenUsage
+	for _, msg := range llm.messages {
+		res.InputTokens += msg.TokenUsage.InputTokens
+		res.OutputTokens += msg.TokenUsage.OutputTokens
+		res.TotalTokens += msg.TokenUsage.TotalTokens
+	}
+	return &res, nil
 }
 
 type LLMHook struct {
@@ -889,9 +871,12 @@ func (s LLMHook) ExtendLLMType(targetType dagql.ObjectType) error {
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			llm := self.(dagql.Instance[*LLM]).Self
 			name := args["name"].(dagql.String).String()
-			value := args["value"].(dagql.Typed)
-			return llm.Set(ctx, s.Server, name, value)
-			// id := args["value"].(dagql.IDType)
+			value := args["value"].(dagql.IDType)
+			obj, err := s.Server.Load(ctx, value.ID())
+			if err != nil {
+				return nil, err
+			}
+			return llm.Set(ctx, name, obj)
 		},
 		dagql.CacheSpec{},
 	)
@@ -941,8 +926,12 @@ func (s LLMHook) ExtendLLMType(targetType dagql.ObjectType) error {
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			llm := self.(dagql.Instance[*LLM]).Self
-			value := args["value"].(dagql.Typed)
-			return llm.With(ctx, s.Server, value)
+			value := args["value"].(dagql.IDType)
+			obj, err := s.Server.Load(ctx, value.ID())
+			if err != nil {
+				return nil, err
+			}
+			return llm.With(obj), nil
 		},
 		dagql.CacheSpec{},
 	)

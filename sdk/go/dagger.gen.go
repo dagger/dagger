@@ -179,6 +179,9 @@ type JSON string
 // The `LLMID` scalar type represents an identifier for an object of type LLM.
 type LLMID string
 
+// The `LLMTokenUsageID` scalar type represents an identifier for an object of type LLMTokenUsage.
+type LLMTokenUsageID string
+
 // The `LLMVariableID` scalar type represents an identifier for an object of type LLMVariable.
 type LLMVariableID string
 
@@ -5286,6 +5289,16 @@ func (r *LLM) WithGraphQLQuery(q *querybuilder.Selection) *LLM {
 	}
 }
 
+// create a branch in the LLM's history
+func (r *LLM) Attempt(number int) *LLM {
+	q := r.query.Select("attempt")
+	q = q.Arg("number", number)
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // Retrieve a the current value in the LLM environment, of type CacheVolume
 func (r *LLM) CacheVolume() *CacheVolume {
 	q := r.query.Select("cacheVolume")
@@ -6462,6 +6475,15 @@ func (r *LLM) Terminal() *Terminal {
 	}
 }
 
+// returns the token usage of the current state
+func (r *LLM) TokenUsage() *LLMTokenUsage {
+	q := r.query.Select("tokenUsage")
+
+	return &LLMTokenUsage{
+		query: q,
+	}
+}
+
 // print documentation for available tools
 func (r *LLM) Tools(ctx context.Context) (string, error) {
 	if r.tools != nil {
@@ -6909,6 +6931,16 @@ func (r *LLM) WithSourceMap(value *SourceMap) *LLM {
 	}
 }
 
+// Add a system prompt to the LLM's environment
+func (r *LLM) WithSystemPrompt(prompt string) *LLM {
+	q := r.query.Select("withSystemPrompt")
+	q = q.Arg("prompt", prompt)
+
+	return &LLM{
+		query: q,
+	}
+}
+
 // Set a variable of type Terminal in the llm environment
 func (r *LLM) WithTerminal(value *Terminal) *LLM {
 	assertNotNil("value", value)
@@ -6929,6 +6961,97 @@ func (r *LLM) WithTypeDef(value *TypeDef) *LLM {
 	return &LLM{
 		query: q,
 	}
+}
+
+type LLMTokenUsage struct {
+	query *querybuilder.Selection
+
+	id           *LLMTokenUsageID
+	inputTokens  *int
+	outputTokens *int
+	totalTokens  *int
+}
+
+func (r *LLMTokenUsage) WithGraphQLQuery(q *querybuilder.Selection) *LLMTokenUsage {
+	return &LLMTokenUsage{
+		query: q,
+	}
+}
+
+// A unique identifier for this LLMTokenUsage.
+func (r *LLMTokenUsage) ID(ctx context.Context) (LLMTokenUsageID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response LLMTokenUsageID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *LLMTokenUsage) XXX_GraphQLType() string {
+	return "LLMTokenUsage"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *LLMTokenUsage) XXX_GraphQLIDType() string {
+	return "LLMTokenUsageID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *LLMTokenUsage) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *LLMTokenUsage) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+func (r *LLMTokenUsage) InputTokens(ctx context.Context) (int, error) {
+	if r.inputTokens != nil {
+		return *r.inputTokens, nil
+	}
+	q := r.query.Select("inputTokens")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *LLMTokenUsage) OutputTokens(ctx context.Context) (int, error) {
+	if r.outputTokens != nil {
+		return *r.outputTokens, nil
+	}
+	q := r.query.Select("outputTokens")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *LLMTokenUsage) TotalTokens(ctx context.Context) (int, error) {
+	if r.totalTokens != nil {
+		return *r.totalTokens, nil
+	}
+	q := r.query.Select("totalTokens")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 type LLMVariable struct {
@@ -8936,6 +9059,16 @@ func (r *Client) LoadLLMFromID(id LLMID) *LLM {
 	q = q.Arg("id", id)
 
 	return &LLM{
+		query: q,
+	}
+}
+
+// Load a LLMTokenUsage from its ID.
+func (r *Client) LoadLLMTokenUsageFromID(id LLMTokenUsageID) *LLMTokenUsage {
+	q := r.query.Select("loadLLMTokenUsageFromID")
+	q = q.Arg("id", id)
+
+	return &LLMTokenUsage{
 		query: q,
 	}
 }

@@ -15,12 +15,11 @@ import (
 )
 
 type AnthropicClient struct {
-	client              *anthropic.Client
-	endpoint            *LLMEndpoint
-	defaultSystemPrompt string
+	client   *anthropic.Client
+	endpoint *LLMEndpoint
 }
 
-func newAnthropicClient(endpoint *LLMEndpoint, defaultSystemPrompt string) *AnthropicClient {
+func newAnthropicClient(endpoint *LLMEndpoint) *AnthropicClient {
 	opts := []option.RequestOption{option.WithAPIKey(endpoint.Key)}
 	if endpoint.Key != "" {
 		opts = append(opts, option.WithAPIKey(endpoint.Key))
@@ -30,9 +29,8 @@ func newAnthropicClient(endpoint *LLMEndpoint, defaultSystemPrompt string) *Anth
 	}
 	client := anthropic.NewClient(opts...)
 	return &AnthropicClient{
-		client:              client,
-		endpoint:            endpoint,
-		defaultSystemPrompt: defaultSystemPrompt,
+		client:   client,
+		endpoint: endpoint,
 	}
 }
 
@@ -162,13 +160,6 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 		}
 	}
 
-	// If no system messages were found, use the default system prompt.
-	if len(systemPrompts) == 0 {
-		block := anthropic.NewTextBlock(c.defaultSystemPrompt)
-		// block.CacheControl = ephemeral
-		systemPrompts = []anthropic.TextBlockParam{block}
-	}
-
 	// Convert tools to Anthropic tool format.
 	var toolsConfig []anthropic.ToolUnionUnionParam
 	for _, tool := range tools {
@@ -265,7 +256,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 	return &LLMResponse{
 		Content:   content,
 		ToolCalls: toolCalls,
-		TokenUsage: TokenUsage{
+		TokenUsage: LLMTokenUsage{
 			InputTokens:  acc.Usage.InputTokens,
 			OutputTokens: acc.Usage.OutputTokens,
 			TotalTokens:  acc.Usage.InputTokens + acc.Usage.OutputTokens,
