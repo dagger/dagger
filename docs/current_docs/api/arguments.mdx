@@ -98,7 +98,7 @@ dagger -c 'get-user male'
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 get-user male
 ```
 </TabItem>
@@ -134,7 +134,7 @@ dagger -c 'github.com/shykes/daggerverse/hello@v0.3.0 | hello --greeting=$GREETI
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 github.com/shykes/daggerverse/hello@v0.3.0 | hello --greeting=$GREETING
 ```
 </TabItem>
@@ -185,7 +185,7 @@ dagger -c 'hello true'
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 hello true
 ```
 </TabItem>
@@ -253,7 +253,7 @@ dagger -c 'add-integer 1 2'
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 add-integer 1 2
 ```
 </TabItem>
@@ -324,7 +324,7 @@ dagger -c 'add-float 1.4 2.7'
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 add-float 1.4 2.7
 ```
 </TabItem>
@@ -388,7 +388,7 @@ dagger -c 'hello John,Jane'
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 hello John,Jane
 ```
 </TabItem>
@@ -450,7 +450,7 @@ dagger -c 'tree mydir 2'
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 tree mydir 2
 ```
 </TabItem>
@@ -490,7 +490,7 @@ EOF
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 container |
   from alpine:latest |
   with-directory /src https://github.com/dagger/dagger |
@@ -525,7 +525,7 @@ EOF
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 container |
   from alpine:latest |
   with-directory /src ssh://git@github.com/dagger/dagger |
@@ -591,7 +591,7 @@ dagger -c 'read-file /my/file/path/README.md'
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 read-file /my/file/path/README.md
 ```
 </TabItem>
@@ -611,7 +611,7 @@ dagger -c 'read-file https://github.com/dagger/dagger.git#main:README.md'
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 read-file https://github.com/dagger/dagger.git#main:README.md
 ```
 </TabItem>
@@ -669,7 +669,7 @@ dagger -c 'os-info ubuntu:latest'
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 os-info ubuntu:latest
 ```
 </TabItem>
@@ -695,7 +695,7 @@ dagger -c 'github.com/jpadams/daggerverse/trivy@v0.3.0 | scan-container index.do
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 github.com/jpadams/daggerverse/trivy@v0.3.0 | scan-container index.docker.io/alpine:latest
 ```
 </TabItem>
@@ -760,7 +760,7 @@ dagger -c 'github-api env://GITHUB_API_TOKEN'
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 github-api env://GITHUB_API_TOKEN
 ```
 </TabItem>
@@ -780,7 +780,7 @@ dagger -c 'github-api file://./github.txt'
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 github-api file://./github.txt
 ```
 </TabItem>
@@ -800,7 +800,7 @@ dagger -c 'github-api cmd://"gh auth token"'
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 github-api cmd://"gh auth token"
 ```
 </TabItem>
@@ -830,7 +830,7 @@ dagger -c 'github-api op://infra/github/credential'
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 github-api op://infra/github/credential
 ```
 </TabItem>
@@ -857,7 +857,7 @@ dagger -c 'github-api vault://infra/github.credential'
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 github-api vault://infra/github.credential
 ```
 </TabItem>
@@ -894,7 +894,7 @@ EOF
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 github.com/kpenfound/dagger-modules/postgres@v0.1.0 | client tcp://localhost:5432 postgres postgres postgres
 ```
 </TabItem>
@@ -921,7 +921,7 @@ dagger -c 'github.com/sipsma/daggerverse/docker-client@v0.0.1 /var/run/docker.so
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 github.com/sipsma/daggerverse/docker-client@v0.0.1 /var/run/docker.sock | version
 ```
 </TabItem>
@@ -986,7 +986,7 @@ dagger -c 'hello --name=John'
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 hello --name=John
 ```
 </TabItem>
@@ -1012,7 +1012,7 @@ dagger -c hello
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 hello
 ```
 </TabItem>
@@ -1076,7 +1076,7 @@ dagger -c hello
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 hello
 ```
 </TabItem>

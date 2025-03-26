@@ -26,7 +26,7 @@ EOF
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 container | from alpine | with-exec apk add curl | with-exec -- curl -L https://dagger.io | stdout
 ```
 </TabItem>
@@ -52,7 +52,7 @@ EOF
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 container |
   from cgr.dev/chainguard/wolfi-base |
   with-exec apk add go |
@@ -82,7 +82,7 @@ dagger -c 'container | from alpine | terminal'
 ```
 </TabItem>
 <TabItem value="Standard input">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 echo 'container | from alpine | terminal' | dagger
 ```
 </TabItem>
@@ -93,7 +93,7 @@ dagger script.sh
 ```
 </TabItem>
 <TabItem value="Interactive REPL">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 container | from alpine | terminal
 ```
 </TabItem>
@@ -155,7 +155,7 @@ EOF
 ```
 </TabItem>
 <TabItem value="Dagger Shell">
-```shell title="Type 'dagger' to start Dagger Shell in interactive mode and enter the command below."
+```shell title="First type 'dagger' for interactive mode."
 github.com/dagger/dagger/modules/wolfi@v0.16.2 |
   container |
   with-file /README.md $(host | file ./README.md) |
