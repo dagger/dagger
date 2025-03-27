@@ -24,7 +24,7 @@ var resolvers = map[string]SecretResolver{
 }
 
 func ResolverForID(id string) (SecretResolver, string, error) {
-	scheme, path, ok := strings.Cut(id, "://")
+	scheme, pathWithQuery, ok := strings.Cut(id, "://")
 	if !ok {
 		return nil, "", fmt.Errorf("parse %q: malformed id", id)
 	}
@@ -33,7 +33,7 @@ func ResolverForID(id string) (SecretResolver, string, error) {
 	if !ok {
 		return nil, "", fmt.Errorf("unsupported secret provider: %q", scheme)
 	}
-	return resolver, path, nil
+	return resolver, pathWithQuery, nil
 }
 
 type SecretProvider struct {
