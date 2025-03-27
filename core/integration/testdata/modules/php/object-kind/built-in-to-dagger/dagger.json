@@ -2,7 +2,7 @@
   "name": "built-in-to-dagger",
   "engineVersion": "v0.17.0",
   "sdk": {
-    "source": "php"
+    "source": "../../../sdk/php"
   },
   "source": "."
 }
