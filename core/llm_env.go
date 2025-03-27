@@ -53,6 +53,9 @@ type LLMEnv struct {
 	idByHash map[digest.Digest]string
 	// Whether the LLM needs instructions on how to use the tool scheme
 	needsSystemPrompt bool
+	// The return type that we want from the LLM.
+	wantType string
+	Returned bool
 }
 
 func NewLLMEnv(endpoint *LLMEndpoint) *LLMEnv {
@@ -65,6 +68,10 @@ func NewLLMEnv(endpoint *LLMEndpoint) *LLMEnv {
 		functionMask:      map[string]bool{},
 		needsSystemPrompt: endpoint.Provider == Google,
 	}
+}
+
+func (env *LLMEnv) Want(returnType string) {
+	env.wantType = returnType
 }
 
 //go:embed llm_dagger_prompt.md
@@ -544,6 +551,39 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 				return env.currentState(nil)
 			}),
 		},
+	}
+	if env.wantType != "" {
+		typeName := env.wantType
+		builtins = append(builtins, LLMTool{
+			Name:        "return" + env.wantType,
+			Description: fmt.Sprintf("Return a %s, indicating that your task is complete.", typeName),
+			Schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"id": map[string]any{
+						"type":           "string",
+						"pattern":        idPattern(typeName),
+						"description":    fmt.Sprintf("The %s ID to return, in \"%s#number\" format.", typeName, typeName),
+						jsonSchemaIDAttr: typeName,
+					},
+				},
+				"strict":               true,
+				"required":             []string{"id"},
+				"additionalProperties": false,
+			},
+			Call: ToolFunc(func(ctx context.Context, args struct {
+				ID string `name:"id"`
+			}) (any, error) {
+				env.Returned = true
+				obj, err := env.GetObject(args.ID, typeName)
+				if err != nil {
+					return nil, err
+				}
+				prev := env.Current()
+				env.Select(obj)
+				return env.currentState(prev)
+			}),
+		})
 	}
 	for typeName := range env.typeCount {
 		tools, err := env.tools(srv, typeName)
