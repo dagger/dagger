@@ -559,44 +559,6 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 				return env.currentState(nil)
 			}),
 		},
-		{
-			Name: "readVariable",
-			Description: (func() string {
-				desc := "Read the value of a string variable"
-				var vars []string
-				for name, val := range env.varsByName {
-					// TODO: should we take a shortcut here for small values and just
-					// inline them?
-					vars = append(vars,
-						fmt.Sprintf("  $%s (length: %d, hash: %s)",
-							name, len(val), dagql.HashFrom(val)))
-				}
-				if len(vars) > 0 {
-					desc += "\n\nAvailable variables:\n" + strings.Join(vars, "\n")
-				}
-				return desc
-			})(),
-			Schema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"name": map[string]any{
-						"type": "string",
-					},
-				},
-				"strict":               true,
-				"required":             []string{},
-				"additionalProperties": false,
-			},
-			Call: ToolFunc(func(ctx context.Context, args struct {
-				Name string
-			}) (any, error) {
-				// sanitize input
-				args.Name = strings.TrimPrefix(args.Name, "$")
-				return toolStructuredResponse(map[string]any{
-					"result": env.varsByName[args.Name],
-				})
-			}),
-		},
 	}
 	for typeName := range env.typeCount {
 		tools, err := env.tools(srv, typeName)
