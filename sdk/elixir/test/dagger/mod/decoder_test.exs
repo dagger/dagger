@@ -30,6 +30,18 @@ defmodule Dagger.Mod.DecoderTest do
       assert {:ok, _} = Dagger.Container.sync(container)
     end
 
+    test "decode struct", %{dag: dag} do
+      assert {:ok, %ObjectDecoder{value: "v", object_field: %ObjectField{name: "dag"}}} =
+               Decoder.decode(
+                 json(%{"value" => "v", "object_field" => %{"name" => "dag"}}),
+                 ObjectDecoder,
+                 dag
+               )
+
+      assert {:ok, %ObjectDecodeId{}} =
+               Decoder.decode(json(%{container: container_id(dag)}), ObjectDecodeId, dag)
+    end
+
     test "decode error", %{dag: dag} do
       assert {:error, _} = Decoder.decode(json(1), :string, dag)
     end
