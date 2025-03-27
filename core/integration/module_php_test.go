@@ -206,8 +206,7 @@ func (PHPSuite) TestObjectKind(ctx context.Context, t *testctx.T) {
 
 		out, err := module.
 			WithNewFile("/foo", "hello, world!").
-			With(daggerCall(
-				"capitalize-contents", "--arg=/foo", "contents")).
+			With(daggerCall("capitalize-contents", "--arg=/foo", "contents")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
