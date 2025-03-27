@@ -12,6 +12,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/core/modules"
 )
 
 var ErrUnknownSDKLang = errors.New("unknown sdk language")
@@ -22,12 +23,6 @@ const (
 	SDKLangGo         SDKLang = "go"
 	SDKLangTypeScript SDKLang = "typescript"
 )
-
-type DependencyConfig struct {
-	Name string
-	Pin  string
-	Ref  string
-}
 
 type Config struct {
 	// Lang is the language supported by this codegen infra.
@@ -67,7 +62,7 @@ type Config struct {
 	// The list of all dependencies used by the module.
 	// This is used for client generator to automatically serves the dependencies
 	// on connection.
-	Dependencies []DependencyConfig
+	GitDependencies []modules.ModuleConfigDependency
 }
 
 type Generator interface {

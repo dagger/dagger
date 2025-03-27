@@ -225,10 +225,11 @@ func (t *TypescriptSdk) GenerateClient(
 		"--client-only",
 	}
 
-	type dependencyConfig struct {
-		Name string
-		Pin  string
-		Ref  string
+	// Same data structure as ModuleConfigDependency from core/modules/config.go#L183
+	type gitDependencyConfig struct {
+		Name   string
+		Pin    string
+		Source string
 	}
 
 	dependencies, err := modSource.Dependencies(ctx)
@@ -236,7 +237,7 @@ func (t *TypescriptSdk) GenerateClient(
 		return nil, fmt.Errorf("failed to get module dependencies: %w", err)
 	}
 
-	dependenciesConfig := []dependencyConfig{}
+	dependenciesConfig := []gitDependencyConfig{}
 	// Add remote dependency reference to the codegen arguments.
 	for _, dep := range dependencies {
 		depKind, err := dep.Kind(ctx)
@@ -248,7 +249,7 @@ func (t *TypescriptSdk) GenerateClient(
 			continue
 		}
 
-		depRef, err := dep.AsString(ctx)
+		depSource, err := dep.AsString(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get module dependency ref: %w", err)
 		}
@@ -263,10 +264,10 @@ func (t *TypescriptSdk) GenerateClient(
 			return nil, fmt.Errorf("failed to get module dependency name: %w", err)
 		}
 
-		dependenciesConfig = append(dependenciesConfig, dependencyConfig{
-			Name: depName,
-			Pin:  depPin,
-			Ref:  depRef,
+		dependenciesConfig = append(dependenciesConfig, gitDependencyConfig{
+			Name:   depName,
+			Pin:    depPin,
+			Source: depSource,
 		})
 	}
 
