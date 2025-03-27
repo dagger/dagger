@@ -1002,20 +1002,6 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		// if input ends with a pipe, then it's not complete
 		fe.editline.CheckInputComplete = msg.handler.IsComplete
 
-		// restore history
-		fe.editline.MaxHistorySize = 1000
-		if history, err := history.LoadHistory(historyFile); err == nil {
-			fe.editline.SetHistory(history)
-		}
-
-		// put the bowtie on
-		fe.updatePrompt()
-
-		// HACK: for some reason editline's first paint is broken (only shows
-		// first 2 chars of prompt, doesn't show cursor). Sending it a message
-		// - any message - fixes it.
-		fe.editline.Update(nil)
-
 		return fe, tea.Batch(
 			tea.Printf(`Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`),
 			fe.editline.Focus(),
@@ -1311,12 +1297,6 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 	case promptString:
 		fe.activeStringPrompt = &msg
 		fe.initEditline()
-		// fe.editline.MaxHistorySize = 1000
-		// if history, err := history.LoadHistory(historyFile); err == nil {
-		// 	fe.editline.SetHistory(history)
-		// }
-		// hopefully fix weird prompt display?
-		fe.editline.Update(nil)
 
 		return fe, nil
 
@@ -1330,6 +1310,15 @@ func (fe *frontendPretty) initEditline() {
 	fe.editline = editline.New(fe.window.Width, fe.window.Height)
 	fe.editline.HideKeyMap = true
 	fe.editlineFocused = true
+	// restore history
+	fe.editline.MaxHistorySize = 1000
+	if history, err := history.LoadHistory(historyFile); err == nil {
+		fe.editline.SetHistory(history)
+	}
+	// hopefully fix weird prompt display?
+	fe.editline.Update(nil)
+	// put the bowtie on
+	fe.updatePrompt()
 }
 
 type UpdatePromptMsg struct{}
