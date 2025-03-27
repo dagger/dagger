@@ -2688,6 +2688,30 @@ class Directory(Type):
         _ctx = self._select("file", _args)
         return File(_ctx)
 
+    def filter(
+        self,
+        *,
+        exclude: list[str] | None = None,
+        include: list[str] | None = None,
+    ) -> Self:
+        """Retrieves this directory as per exclude/include filters.
+
+        Parameters
+        ----------
+        exclude:
+            Exclude artifacts that match the given pattern (e.g.,
+            ["node_modules/", ".git*"]).
+        include:
+            Include only artifacts that match the given pattern (e.g.,
+            ["app/", "package.*"]).
+        """
+        _args = [
+            Arg("exclude", () if exclude is None else exclude, ()),
+            Arg("include", () if include is None else include, ()),
+        ]
+        _ctx = self._select("filter", _args)
+        return Directory(_ctx)
+
     async def glob(self, pattern: str) -> list[str]:
         """Returns a list of files and directories that matche the given pattern.
 

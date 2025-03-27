@@ -2395,6 +2395,33 @@ func (r *Directory) File(path string) *File {
 	}
 }
 
+// DirectoryFilterOpts contains options for Directory.Filter
+type DirectoryFilterOpts struct {
+	// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+	Exclude []string
+	// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+	Include []string
+}
+
+// Retrieves this directory as per exclude/include filters.
+func (r *Directory) Filter(opts ...DirectoryFilterOpts) *Directory {
+	q := r.query.Select("filter")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // Returns a list of files and directories that matche the given pattern.
 func (r *Directory) Glob(ctx context.Context, pattern string) ([]string, error) {
 	q := r.query.Select("glob")

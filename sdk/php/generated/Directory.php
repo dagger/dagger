@@ -140,6 +140,21 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieves this directory as per exclude/include filters.
+     */
+    public function filter(?array $exclude = null, ?array $include = null): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('filter');
+        if (null !== $exclude) {
+        $innerQueryBuilder->setArgument('exclude', $exclude);
+        }
+        if (null !== $include) {
+        $innerQueryBuilder->setArgument('include', $include);
+        }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Returns a list of files and directories that matche the given pattern.
      */
     public function glob(string $pattern): array
