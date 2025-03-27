@@ -1271,7 +1271,7 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module) error {
 	depMod, exist := client.deps.LookupDep(mod.Name())
 	if exist {
 		// Error if there's a conflict between dependencies
-		if depMod.GetSource().AsString() != "" && mod.Source.Self.AsString() != depMod.GetSource().AsString() {
+		if isSameModuleReference(depMod.GetSource(), mod.GetSource()) {
 			return fmt.Errorf("module %s already exists with different source %s", mod.Name(), depMod.GetSource().AsString())
 		}
 
@@ -1280,6 +1280,26 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module) error {
 
 	client.deps = client.deps.Append(mod)
 	return nil
+}
+
+// Returns true if the module source a is the same as b or they come from the
+// core module.
+// Returns false if:
+// - AsString() of a and b are different
+// - Pin() of a and b are different
+func isSameModuleReference(a *core.ModuleSource, b *core.ModuleSource) bool {
+	// If one of them is empty, that means they are from code module so they shouldn't
+	// be compared.
+	if a.AsString() == "" || b.AsString() == "" {
+		return false
+	}
+
+	// If they are do not have the same reference nor same pin, they cannot be the same.
+	if a.AsString() != b.AsString() || a.Pin() != b.Pin() {
+		return false
+	}
+
+	return true
 }
 
 // If the current client is coming from a function, return the module that function is from

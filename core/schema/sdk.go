@@ -15,6 +15,7 @@ import (
 	"github.com/opencontainers/go-digest"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -596,21 +597,15 @@ func (sdk *goSDK) GenerateClient(
 		"--client-only",
 	}
 
-	type dependencyConfig struct {
-		Name string
-		Pin  string
-		Ref  string
-	}
-
-	dependencies := []dependencyConfig{}
+	dependencies := []*modules.ModuleConfigDependency{}
 
 	// Send the dependencies reference to the codegen so it can embed their loading.
 	for _, dep := range modSource.Self.Dependencies {
 		if dep.Self.Kind == core.ModuleSourceKindGit {
-			dependencies = append(dependencies, dependencyConfig{
-				Name: dep.Self.ModuleOriginalName,
-				Pin:  dep.Self.Pin(),
-				Ref:  dep.Self.AsString(),
+			dependencies = append(dependencies, &modules.ModuleConfigDependency{
+				Name:   dep.Self.ModuleOriginalName,
+				Pin:    dep.Self.Pin(),
+				Source: dep.Self.AsString(),
 			})
 		}
 	}

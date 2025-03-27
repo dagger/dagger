@@ -13,6 +13,7 @@ import (
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/core/modules"
 )
 
 var (
@@ -113,12 +114,12 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("read dependencies json: %w", err)
 		}
 
-		var dependencies []generator.DependencyConfig
-		if err := json.Unmarshal(dependenciesJSON, &dependencies); err != nil {
+		var gitDependencies []modules.ModuleConfigDependency
+		if err := json.Unmarshal(dependenciesJSON, &gitDependencies); err != nil {
 			return fmt.Errorf("failed to unmarshal dependencies json: %w", err)
 		}
 
-		cfg.Dependencies = dependencies
+		cfg.GitDependencies = gitDependencies
 	}
 
 	return Generate(ctx, cfg)

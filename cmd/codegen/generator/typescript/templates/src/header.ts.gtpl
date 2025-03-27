@@ -15,8 +15,14 @@ import { Context, connect as _connect, connection as _connection, ConnectOpts, C
 
 {{ if IsClientOnly }}
 async function serveModuleDependencies(client: Client): Promise<void> {
-  {{ range $i, $dep := Dependencies -}}
-  await client.moduleSource("{{ $dep.Ref }}", { refPin: "{{ $dep.Pin }}" }).withName("{{ $dep.Name }}").asModule().serve()
+  {{ range $i, $dep := GitDependencies -}}
+  await client.moduleSource(
+    "{{ $dep.Source }}", 
+    { refPin: "{{ $dep.Pin }}" },
+    )
+    .withName("{{ $dep.Name }}")
+    .asModule()
+    .serve()
   {{ end }}
 
   const modSrc = await client.moduleSource(".")
