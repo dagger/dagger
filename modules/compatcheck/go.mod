@@ -2,7 +2,7 @@ module dagger/compatcheck
 
 go 1.23.0
 
-toolchain go1.24.0
+toolchain go1.23.6
 
 require (
 	github.com/josephburnett/jd/v2 v2.0.0-20240818191833-6125a15c637a
