@@ -211,7 +211,7 @@ func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings)
 	detach := func() {
 		detachOnce.Do(func() {
 			go func() {
-				<-time.After(DetachGracePeriod)
+				<-time.After(120 * time.Second)
 				for _, svc := range running {
 					if svc != nil {
 						ss.Detach(ctx, svc)
