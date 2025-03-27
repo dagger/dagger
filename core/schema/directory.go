@@ -80,7 +80,7 @@ func (s *directorySchema) Install() {
 			ArgDoc("directory", `Identifier of the directory to copy.`).
 			ArgDoc("exclude", `Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`).
 			ArgDoc("include", `Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
-		dagql.Func("filter", s.withFilter).
+		dagql.Func("filter", s.filter).
 			Doc(`Retrieves this directory as per exclude/include filters.`).
 			ArgDoc("exclude", `Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`).
 			ArgDoc("include", `Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
@@ -184,11 +184,11 @@ func (s *directorySchema) withDirectory(ctx context.Context, parent *core.Direct
 	return parent.WithDirectory(ctx, args.Path, dir.Self, args.CopyFilter, nil)
 }
 
-type WithFilterArgs struct {
+type FilterArgs struct {
 	core.CopyFilter
 }
 
-func (s *directorySchema) withFilter(ctx context.Context, parent *core.Directory, args WithFilterArgs) (*core.Directory, error) {
+func (s *directorySchema) filter(ctx context.Context, parent *core.Directory, args FilterArgs) (*core.Directory, error) {
 	dir, err := s.directory(ctx, parent.Query, struct{}{})
 	if err != nil {
 		return nil, err
