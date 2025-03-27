@@ -223,7 +223,7 @@ func (c *AnthropicClient) SendQuery(ctx context.Context, history []ModelMessage,
 
 	// Check that we have some accumulated content.
 	if len(acc.Content) == 0 {
-		return nil, fmt.Errorf("no response from model")
+		return nil, fmt.Errorf("no response from model. stop reason: %s", acc.StopReason)
 	}
 
 	// Process the accumulated content into a generic LLMResponse.
