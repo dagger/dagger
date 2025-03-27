@@ -79,10 +79,12 @@ func (env *LLMEnv) DefaultSystemPrompt() string {
 
 func (env *LLMEnv) Clone() *LLMEnv {
 	cp := *env
+	cp.functionMask = cloneMap(cp.functionMask)
 	cp.objsByName = cloneMap(cp.objsByName)
+	cp.objsByID = cloneMap(cp.objsByID)
+	cp.varsByName = cloneMap(cp.varsByName)
 	cp.typeCount = cloneMap(cp.typeCount)
 	cp.idByHash = cloneMap(cp.idByHash)
-	cp.objsByID = cloneMap(cp.objsByID)
 	return &cp
 }
 
