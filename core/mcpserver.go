@@ -128,103 +128,92 @@ func genMcpToolOpts(tool LLMTool) ([]mcp.ToolOption, error) {
 	return toolOpts, nil
 }
 
-func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	s := mcpserver.NewMCPServer("Dagger", "0.0.1")
+type mcpServer struct {
+	*mcpserver.MCPServer
+	dag  *dagql.Server
+	env  *LLMEnv
+	pipe io.ReadWriteCloser
+}
 
-	var genMcpToolHandler func(LLMTool) mcpserver.ToolHandlerFunc
-	genMcpToolHandler = func(tool LLMTool) mcpserver.ToolHandlerFunc {
-		return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			// should never happen
-			if request.Method != "tools/call" {
-				return nil, fmt.Errorf("[dagger] expected MCP request method \"tools/call\" but received %q", request.Method)
-			}
-
-			result, err := tool.Call(ctx, request.Params.Arguments)
-			// TODO: differentiate user module's error from dagger error for better error message
-			if err != nil {
-				return nil, fmt.Errorf("tool %q called with %v resulted in error: %w", tool.Name, request.Params.Arguments, err)
-			}
-			text, ok := result.(string)
-			if !ok {
-				b, err := json.Marshal(result)
-				if err != nil {
-					return nil, fmt.Errorf("[dagger] could not JSON marshal result %+v: %w", result, err)
-				}
-				text = string(b)
-			}
-
-			newTools, err := llm.env.Tools(dag)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get tools: %w", err)
-			}
-			mcpTools := make([]mcpserver.ServerTool, 0, len(newTools))
-			for _, tool := range newTools {
-				// Skipping methods that return ID
-				if strings.HasSuffix(tool.Name, "_id") {
-					continue
-				}
-
-				toolOpts, err := genMcpToolOpts(tool)
-				if err != nil {
-					return nil, err
-				}
-				mcpTools = append(mcpTools, mcpserver.ServerTool{Tool: mcp.NewTool(tool.Name, toolOpts...), Handler: genMcpToolHandler(tool)})
-			}
-			go s.AddTools(mcpTools...)
-
-			return mcp.NewToolResultText(text), nil
+func (s mcpServer) genMcpToolHandler(tool LLMTool) mcpserver.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		// should never happen
+		if request.Method != "tools/call" {
+			return nil, fmt.Errorf("[dagger] expected MCP request method \"tools/call\" but received %q", request.Method)
 		}
-	}
 
-	addTool := func(tool LLMTool) error {
-		mcpToolOpts, err := genMcpToolOpts(tool)
+		result, err := tool.Call(ctx, request.Params.Arguments)
+		// TODO: differentiate user module's error from dagger error for better error message
 		if err != nil {
-			return err
+			return nil, fmt.Errorf("tool %q called with %v resulted in error: %w", tool.Name, request.Params.Arguments, err)
+		}
+		text, ok := result.(string)
+		if !ok {
+			b, err := json.Marshal(result)
+			if err != nil {
+				return nil, fmt.Errorf("[dagger] could not JSON marshal result %+v: %w", result, err)
+			}
+			text = string(b)
 		}
 
-		s.AddTool(
-			mcp.NewTool(tool.Name, mcpToolOpts...),
-			genMcpToolHandler(tool),
-		)
+		if err := s.setTools(); err != nil {
+			return nil, err
+		}
 
-		return nil
+		return mcp.NewToolResultText(text), nil
 	}
+}
 
-	tools, err := llm.env.Tools(dag)
+func (s mcpServer) convertToMcpTools(llmTools []LLMTool) ([]mcpserver.ServerTool, error) {
+	mcpTools := make([]mcpserver.ServerTool, 0, len(llmTools))
+	for _, tool := range llmTools {
+		// Skipping methods that return ID
+		if strings.HasSuffix(tool.Name, "_id") {
+			continue
+		}
+
+		toolOpts, err := genMcpToolOpts(tool)
+		if err != nil {
+			return nil, err
+		}
+		mcpTools = append(mcpTools, mcpserver.ServerTool{Tool: mcp.NewTool(tool.Name, toolOpts...), Handler: s.genMcpToolHandler(tool)})
+	}
+	return mcpTools, nil
+}
+
+func (s mcpServer) setTools() error {
+	tools, err := s.env.Tools(s.dag)
 	if err != nil {
 		return fmt.Errorf("failed to get tools: %w", err)
 	}
-	for _, tool := range tools {
-		if err := addTool(tool); err != nil {
-			return err
-		}
-	}
-
-	// Get buildkit client
-	bk, err := llm.Query.Buildkit(ctx)
+	mcpTools, err := s.convertToMcpTools(tools)
 	if err != nil {
-		return fmt.Errorf("buildkit client error: %w", err)
+		return fmt.Errorf("failed to convert tools to MCP: %w", err)
 	}
+	s.SetTools(mcpTools...)
+	return nil
+}
 
-	rwc, err := bk.OpenPipe(ctx)
-	if err != nil {
-		return fmt.Errorf("open pipe error: %w", err)
+func (s mcpServer) run(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	if err := s.setTools(); err != nil {
+		return err
 	}
 
 	errCh := make(chan error)
 
-	srv := mcpserver.NewStdioServer(s)
+	stdioSrv := mcpserver.NewStdioServer(s.MCPServer)
 
 	// MCP library requires standard log package
 	logger := stdlog.New(bklog.G(ctx).Writer(), "", 0)
-	srv.SetErrorLogger(logger)
+	stdioSrv.SetErrorLogger(logger)
 
 	// Start MCP server in a goroutine
 	go func() {
 		defer close(errCh)
-		err := srv.Listen(ctx, rwc, rwc)
+		err := stdioSrv.Listen(ctx, s.pipe, s.pipe)
 		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
 			select {
 			case <-ctx.Done():
@@ -239,4 +228,26 @@ func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
 	case err := <-errCh:
 		return err
 	}
+}
+
+func (llm *LLM) MCP(ctx context.Context, dag *dagql.Server) error {
+	// Get buildkit client
+	bk, err := llm.Query.Buildkit(ctx)
+	if err != nil {
+		return fmt.Errorf("buildkit client error: %w", err)
+	}
+
+	rwc, err := bk.OpenPipe(ctx)
+	if err != nil {
+		return fmt.Errorf("open pipe error: %w", err)
+	}
+
+	s := mcpServer{
+		mcpserver.NewMCPServer("Dagger", "0.0.1"),
+		dag,
+		llm.env,
+		rwc,
+	}
+
+	return s.run(ctx)
 }
