@@ -394,6 +394,7 @@ func (container *Container) Build(
 	container = container.Clone()
 
 	container.Services.Merge(dockerfileDir.Services)
+	container.Services.Merge(contextDir.Services)
 
 	secretNameToLLBID := make(map[string]string)
 	for _, secret := range secrets {

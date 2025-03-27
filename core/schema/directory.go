@@ -421,17 +421,9 @@ func applyDockerIgnore(ctx context.Context, srv *dagql.Server, parent dagql.Inst
 	// apply the dockerignore exclusions
 	err = srv.Select(ctx, parent, &buildctxDir,
 		dagql.Selector{
-			Field: "withDirectory",
+			Field: "filter",
 			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString("buildctx")},
 				{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(excludes...))},
-				{Name: "directory", Value: dagql.NewID[*core.Directory](parent.ID())},
-			},
-		},
-		dagql.Selector{
-			Field: "directory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString("buildctx")},
 			},
 		},
 	)
