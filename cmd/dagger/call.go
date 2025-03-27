@@ -66,6 +66,9 @@ available functions.
 			if err != nil {
 				return err
 			}
+			if mod.MainObject == nil {
+				return functionListRun(cmd.OutOrStdout(), nil, nil)
+			}
 			o := mod.MainObject.AsFunctionProvider()
 			// Walk the hypothetical function pipeline specified by the args
 			for _, field := range cmd.Flags().Args() {
@@ -92,14 +95,13 @@ available functions.
 				return fmt.Errorf("function %q returns type %q with no further functions available", field, nextType.Kind)
 			}
 
-			return functionListRun(o, cmd.OutOrStdout())
+			fns, skipped := GetSupportedFunctions(o)
+			return functionListRun(cmd.OutOrStdout(), fns, skipped)
 		})
 	},
 }
 
-func functionListRun(o functionProvider, writer io.Writer) error {
-	fns, skipped := GetSupportedFunctions(o)
-
+func functionListRun(writer io.Writer, fns []*modFunction, skipped []string) error {
 	tw := tabwriter.NewWriter(writer, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
 	fmt.Fprintf(tw, "%s\t%s\n",
 		termenv.String("Name").Bold(),
