@@ -119,6 +119,10 @@ func (env *LLMEnv) GetObject(key, expectedType string) (dagql.Object, error) {
 	if val, exists := env.objsByID[key]; exists {
 		return val, nil
 	}
+	// next check for values by name
+	if val, exists := env.objsByName[key]; exists {
+		return val, nil
+	}
 	return nil, fmt.Errorf("unknown object %q", key)
 }
 
