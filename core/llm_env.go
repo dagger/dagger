@@ -101,9 +101,15 @@ func (env *LLMEnv) Current() dagql.Object {
 }
 
 func (env *LLMEnv) Select(obj dagql.Object, functions ...string) {
+	prev := env.current
 	env.current = obj
-	clear(env.functionMask)
+	if prev != nil && prev.Type().Name() != obj.Type().Name() {
+		clear(env.functionMask)
+	}
 	for _, fn := range functions {
+		if _, name, ok := strings.Cut(fn, "_"); ok {
+			fn = name
+		}
 		env.functionMask[fn] = true
 	}
 }
@@ -157,7 +163,7 @@ func (env *LLMEnv) Tools(srv *dagql.Server) ([]LLMTool, error) {
 	if env.Current() == nil {
 		return builtins, nil
 	}
-	objTools, err := env.tools(srv, env.Current().Type().Name())
+	objTools, err := env.tools(srv, env.Current().Type().Name(), false)
 	if err != nil {
 		return nil, err
 	}
@@ -198,16 +204,16 @@ func ToolFunc[T any](fn func(context.Context, T) (any, error)) func(context.Cont
 	}
 }
 
-func (env *LLMEnv) tools(srv *dagql.Server, typeName string) ([]LLMTool, error) {
+func (env *LLMEnv) tools(srv *dagql.Server, typeName string, all bool) ([]LLMTool, error) {
 	schema := srv.Schema()
 	typeDef, ok := schema.Types[typeName]
 	if !ok {
 		return nil, fmt.Errorf("type %q not found", typeName)
 	}
 	var tools []LLMTool
-	masked := len(env.functionMask) > 0
+	masked := !all // len(env.functionMask) > 0
 	for _, field := range typeDef.Fields {
-		if masked && !env.functionMask[field.Name] {
+		if masked && !env.functionMask[field.Name] && !env.functionMask[typeName+"_"+field.Name] {
 			continue
 		}
 		if strings.HasPrefix(field.Name, "_") {
@@ -546,27 +552,9 @@ func (env *LLMEnv) ReadVariable(name string) (string, bool) {
 }
 
 func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
-	builtins := []LLMTool{
-		{
-			Name: "currentSelection", // TODO: double this as "return"?
-			// NOTE: this description is load-bearing! It allows the LLM to know its
-			// current state, without even calling this tool. Without this sort of
-			// hint the model tends to give you instructions instead of acting on its
-			// own. That could be addressed with a system prompt, but we don't want to
-			// rely on those.
-			Description: "Your current selection: " + env.describe(env.Current()),
-			Schema: map[string]any{
-				"type":                 "object",
-				"properties":           map[string]any{},
-				"strict":               true,
-				"required":             []string{},
-				"additionalProperties": false,
-			},
-			Call: ToolFunc(func(ctx context.Context, args struct{}) (any, error) {
-				return env.currentState(nil)
-			}),
-		},
-		{
+	builtins := []LLMTool{}
+	if len(env.varsByName) > 0 {
+		builtins = append(builtins, LLMTool{
 			Name: "readVariable",
 			Description: (func() string {
 				desc := "Read the value of a string variable"
@@ -638,19 +626,56 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 			}),
 		})
 	}
+	if cur := env.Current(); cur != nil {
+		builtins = append(builtins, LLMTool{
+			Name: "_currentState",
+			// NOTE: this description is load-bearing! It allows the LLM to know its
+			// current state, without even calling this tool. Without this sort of
+			// hint the model tends to give you instructions instead of acting on its
+			// own. That could be addressed with a system prompt, but we don't want to
+			// rely on those.
+			Description: (func() string {
+				desc := "You are currently working with the following:\n\n"
+				desc += fmt.Sprintf("SELECTED OBJECT: %s\n\n", env.describe(cur))
+				var fns []string
+				for fn := range env.functionMask {
+					fns = append(fns, "- "+fn)
+				}
+				sort.Strings(fns)
+				if len(fns) == 0 {
+					fns = append(fns, "  NONE")
+				}
+				desc += "SELECTED TOOLS:\n\n"
+				desc += strings.Join(fns, "\n")
+				desc += fmt.Sprintf("\n\nUSE `select%sTools` TO SELECT ADDITIONAL TOOLS.\n", cur.Type().Name())
+				return desc
+			})(),
+			Schema: map[string]any{
+				"type":                 "object",
+				"properties":           map[string]any{},
+				"strict":               true,
+				"required":             []string{},
+				"additionalProperties": false,
+			},
+			Call: ToolFunc(func(ctx context.Context, args struct{}) (any, error) {
+				return env.currentState(nil)
+			}),
+		})
+	}
 	for typeName := range env.typeCount {
-		tools, err := env.tools(srv, typeName)
+		tools, err := env.tools(srv, typeName, true)
 		if err != nil {
 			return nil, fmt.Errorf("tools for %q: %w", typeName, err)
 		}
 		builtins = append(builtins, LLMTool{
-			Name:    "select" + typeName,
+			Name:    "select" + typeName + "Tools",
 			Returns: typeName,
 			Description: (func() string {
-				desc := fmt.Sprintf("Select a %s by its ID.", typeName)
-				desc += "\n\nProvides the following tools:\n"
+				desc := fmt.Sprintf("Select tools for a %s.", typeName)
+				desc += "\n\nAvailable tools:\n"
 				for _, tool := range tools {
-					desc += fmt.Sprintf("\n- %s", tool.Name)
+					_, fn, _ := strings.Cut(tool.Name, "_")
+					desc += fmt.Sprintf("\n- %s", fn)
 				}
 				var objVars []string
 				for name, obj := range env.objsByName {
@@ -660,41 +685,41 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 					objVars = append(objVars, fmt.Sprintf("  $%s = %q", name, env.intern(obj)))
 				}
 				if len(objVars) > 0 {
-					desc += "\n\nAvailable bindings:\n" + strings.Join(objVars, "\n")
+					desc += fmt.Sprintf("\n\nAvailable %s bindings:\n%s", typeName, strings.Join(objVars, "\n"))
 				}
 				return desc
 			})(),
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"id": map[string]any{
+					"object": map[string]any{
 						"type":           "string",
 						"pattern":        idPattern(typeName),
 						"description":    fmt.Sprintf("The %s ID to select, in \"%s#number\" format.", typeName, typeName),
 						jsonSchemaIDAttr: typeName,
 					},
-					// "functions": map[string]any{
-					// 	"type": "array",
-					// 	"items": map[string]any{
-					// 		"type": "string",
-					// 	},
-					// 	"description": "List of functions to use. " + fnsDesc,
-					// },
+					"tools": map[string]any{
+						"type": "array",
+						"items": map[string]any{
+							"type": "string",
+						},
+						"description": "List of tools to make available.",
+					},
 				},
 				"strict":               true,
-				"required":             []string{"id"}, // , "functions"},
+				"required":             []string{"object", "tools"},
 				"additionalProperties": false,
 			},
 			Call: ToolFunc(func(ctx context.Context, args struct {
-				ID string `name:"id"`
-				// Functions []string
+				ObjectID string `name:"object"`
+				Tools    []string
 			}) (any, error) {
-				obj, err := env.GetObject(args.ID, typeName)
+				obj, err := env.GetObject(args.ObjectID, typeName)
 				if err != nil {
 					return nil, err
 				}
 				prev := env.Current()
-				env.Select(obj) // , args.Functions...)
+				env.Select(obj, args.Tools...)
 				return env.currentState(prev)
 			}),
 		})
