@@ -115,26 +115,11 @@ func (env *LLMEnv) GetObject(key, expectedType string) (dagql.Object, error) {
 			key = fmt.Sprintf("%s#%d", expectedType, onlyNum)
 		}
 	}
-	// strip $foo var prefix
-	key = strings.TrimPrefix(key, "$")
-	// first check for named vars
-	if val, exists := env.objsByName[key]; exists {
-		return val, nil
-	}
 	// next check for values by ID
 	if val, exists := env.objsByID[key]; exists {
 		return val, nil
 	}
-	helpfulErr := new(strings.Builder)
-	fmt.Fprintf(helpfulErr, "Could not locate object %q.\n\n", key)
-	if len(env.objsByName) > 0 {
-		fmt.Fprintln(helpfulErr)
-		fmt.Fprintln(helpfulErr, "Here are the defined variables:")
-		for k, v := range env.objsByName {
-			fmt.Fprintf(helpfulErr, "  $%s = %s\n", k, env.describe(v))
-		}
-	}
-	return nil, errors.New(helpfulErr.String())
+	return nil, fmt.Errorf("unknown object %q", key)
 }
 
 // Unset a saved value
@@ -526,14 +511,10 @@ func (env *LLMEnv) Call(ctx context.Context, tools []LLMTool, toolCall ToolCall)
 }
 
 func (env *LLMEnv) WriteVariable(name, value string) {
-	// sanitize
-	name = strings.TrimPrefix(name, "$")
 	env.varsByName[name] = value
 }
 
 func (env *LLMEnv) ReadVariable(name string) (string, bool) {
-	// sanitize
-	name = strings.TrimPrefix(name, "$")
 	val, found := env.varsByName[name]
 	return val, found
 }
@@ -573,16 +554,6 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 				desc += "\n\nProvides the following tools:\n"
 				for _, tool := range tools {
 					desc += fmt.Sprintf("\n- %s", tool.Name)
-				}
-				var objVars []string
-				for name, obj := range env.objsByName {
-					if obj.Type().Name() != typeName {
-						continue
-					}
-					objVars = append(objVars, fmt.Sprintf("  $%s = %q", name, env.intern(obj)))
-				}
-				if len(objVars) > 0 {
-					desc += "\n\nAvailable bindings:\n" + strings.Join(objVars, "\n")
 				}
 				return desc
 			})(),
@@ -851,7 +822,7 @@ func typeToJSONSchema(schema *ast.Schema, t *ast.Type) (map[string]any, error) {
 const jsonSchemaIDAttr = "x-id-type"
 
 func idPattern(typeName string) string {
-	return `^(` + typeName + `#\d+|\$?\w+)$`
+	return `^` + typeName + `#\d+$`
 }
 
 func (env *LLMEnv) currentState(previous dagql.Object) (string, error) {
