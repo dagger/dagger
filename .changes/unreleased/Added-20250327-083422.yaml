@@ -1,9 +1,0 @@
-kind: Added
-body: |
-    New `Directory.filter` API for improved ergonomics
-
-    This was previously possible by doing `Query.directory.withDirectory("", dir)`, but this breaks the chain.
-time: 2025-03-27T08:34:22.687179498Z
-custom:
-    Author: rajatjindal
-    PR: "9976"
