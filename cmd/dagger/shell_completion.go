@@ -257,8 +257,11 @@ func (ctx *CompletionContext) completions(prefix string) []string {
 			results = append(results, cmd.Name())
 		}
 		if md, _ := ctx.Completer.GetModuleDef(nil); md != nil {
-			for _, fn := range md.MainObject.AsFunctionProvider().GetFunctions() {
-				results = append(results, fn.CmdName())
+			// Cannot add functions from a module initialized without an SDK
+			if md.MainObject != nil {
+				for _, fn := range md.MainObject.AsFunctionProvider().GetFunctions() {
+					results = append(results, fn.CmdName())
+				}
 			}
 			for _, dep := range md.Dependencies {
 				results = append(results, dep.Name)
