@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -56,4 +57,16 @@ func NormalizePackageName(n string) string {
 // Dagger object of the module
 func NormalizeObjectName(n string) string {
 	return strcase.ToCamel(n)
+}
+
+// VendorConfig appends to a pyproject.toml the config to vendor the client library
+func VendorConfig(cfg, path string) string {
+	if path == "" {
+		return cfg
+	}
+	return fmt.Sprintf(
+		"%s\n\n[tool.uv.sources]\ndagger-io = { path = %q, editable = true }\n",
+		strings.TrimSpace(cfg),
+		path,
+	)
 }
