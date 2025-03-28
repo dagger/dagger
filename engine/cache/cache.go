@@ -196,7 +196,15 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 	}()
 
 	c.mu.Unlock()
-	return c.wait(ctx, key, res)
+	perCallRes, err := c.wait(ctx, key, res)
+	if err != nil {
+		return nil, err
+	}
+	// ensure that this is never marked as hit cache, even in the case
+	// where fn returned very quickly and was done by the time wait got
+	// called
+	perCallRes.hitCache = false
+	return perCallRes, nil
 }
 
 func (c *cache[K, V]) wait(ctx context.Context, key K, res *result[K, V]) (*perCallResult[K, V], error) {
