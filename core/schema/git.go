@@ -55,6 +55,8 @@ func (s *gitSchema) Install() {
 	dagql.Fields[*core.GitRepository]{
 		dagql.Func("head", s.head).
 			Doc(`Returns details for HEAD.`),
+		dagql.Func("working", s.working).
+			Doc(`Returns details for working state.`),
 		dagql.Func("ref", s.ref).
 			Doc(`Returns details of a ref.`).
 			ArgDoc("name", `Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).`),
@@ -92,6 +94,11 @@ func (s *gitSchema) Install() {
 			ArgDeprecated("sshAuthSocket", "This option should be passed to `git` instead."),
 		dagql.NodeFunc("commit", s.fetchCommit).
 			Doc(`The resolved commit id at this ref.`),
+		dagql.NodeFunc("dirty", s.dirty).
+			Doc(`Whether the git ref has uncommited modifications in the current directory.`),
+		dagql.NodeFunc("diff", s.diff).
+			Doc(`Gets the result of a git diff.`).
+			ArgDoc("target", `The target reference to compare against, defaults to the working directory`),
 	}.Install(s.srv)
 }
 
@@ -333,6 +340,10 @@ func (s *gitSchema) head(ctx context.Context, parent *core.GitRepository, args s
 	return parent.Head(ctx)
 }
 
+func (s *gitSchema) working(ctx context.Context, parent *core.GitRepository, args struct{}) (*core.GitRef, error) {
+	return parent.Working(ctx)
+}
+
 type refArgs struct {
 	Name string
 }
@@ -429,7 +440,7 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef
 		return DagOpDirectory(ctx, s.srv, parent, args, s.tree, nil)
 	}
 
-	dir, err := parent.Self.Tree(ctx, s.srv, args.DiscardGitDir)
+	dir, err := parent.Self.Tree(ctx, args.DiscardGitDir)
 	if err != nil {
 		return inst, err
 	}
@@ -471,7 +482,7 @@ func (s *gitSchema) treeLegacy(ctx context.Context, parent dagql.Instance[*core.
 		}
 		res.Self.Repo = &repo
 	}
-	dir, err := res.Self.Tree(ctx, s.srv, args.DiscardGitDir)
+	dir, err := res.Self.Tree(ctx, args.DiscardGitDir)
 	if err != nil {
 		return inst, err
 	}
@@ -492,4 +503,30 @@ func (s *gitSchema) fetchCommit(ctx context.Context, parent dagql.Instance[*core
 		return "", err
 	}
 	return dagql.NewString(str), nil
+}
+
+func (s *gitSchema) dirty(ctx context.Context, parent dagql.Instance[*core.GitRef], args struct{}) (dagql.Boolean, error) {
+	if parent.Self.UseDagOp() && !core.DagOpInContext[core.RawDagOp](ctx) {
+		return DagOp(ctx, s.srv, parent, args, s.dirty)
+	}
+
+	dirty, err := parent.Self.Dirty(ctx)
+	if err != nil {
+		return false, err
+	}
+	return dagql.NewBoolean(dirty), nil
+}
+
+func (s *gitSchema) diff(ctx context.Context, parent dagql.Instance[*core.GitRef], args struct {
+	Target string `default:""`
+}) (dagql.String, error) {
+	if parent.Self.UseDagOp() && !core.DagOpInContext[core.RawDagOp](ctx) {
+		return DagOp(ctx, s.srv, parent, args, s.diff)
+	}
+
+	diff, err := parent.Self.Diff(ctx, args.Target)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(diff), nil
 }
