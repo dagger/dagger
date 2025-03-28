@@ -14,6 +14,7 @@ import (
 const (
 	ModSourceDirPath      = "/src"
 	RuntimeExecutablePath = "/runtime"
+	GenDir                = "sdk"
 	SDKGenPath            = "src/dagger/client/gen.py"
 	UserGenPath           = "src/dagger_gen.py"
 	SchemaPath            = "/schema.json"
@@ -59,9 +60,8 @@ func New(
 		Discovery: NewDiscovery(UserConfig{
 			UseUv: true,
 		}),
-		SdkSourceDir:   sdkSourceDir.WithoutDirectory("runtime"),
-		Container:      dag.Container(),
-		CodegenCommand: []string{"dist/codegen"},
+		SdkSourceDir: sdkSourceDir.WithoutDirectory("runtime"),
+		Container:    dag.Container(),
 	}, nil
 }
 
@@ -101,12 +101,11 @@ type PythonSdk struct {
 	// The source needed to load and run a module
 	ModSource *dagger.ModuleSource
 
-	// The schema introspection file
-	IntrospectionJSON *dagger.File
-
-	SchemaVersion string
-
-	CodegenCommand []string
+	// The current engine version
+	//
+	// Used to pin the same client library version. If a dev build the SDK
+	// should be vendored.
+	EngineVersion string
 
 	// ContextDir is a copy of the context directory from the module source
 	//
@@ -127,6 +126,8 @@ type PythonSdk struct {
 
 	// Relative path from the context directory to the source directory
 	SubPath string
+
+	VendorPath string
 
 	// True if the module is new and we need to create files from the template
 	//
@@ -150,16 +151,11 @@ func (m *PythonSdk) Codegen(
 	}
 
 	ignorePaths := []string{".venv", "**/__pycache__"}
+	genPaths := []string{UserGenPath}
 
-	var genPaths []string
-
-	if d, _ := m.vendorDir(); d != "" {
-		ignorePaths = append(ignorePaths, d)
-		genPaths = []string{d + "/**"}
-	}
-
-	if m.genPath() == UserGenPath {
-		genPaths = []string{UserGenPath}
+	if m.VendorPath != "" {
+		ignorePaths = append(ignorePaths, m.VendorPath)
+		genPaths = []string{m.VendorPath + "/**"}
 	}
 
 	return dag.GeneratedCode(m.Container.Directory(m.ContextDirPath)).
@@ -184,6 +180,7 @@ func (m *PythonSdk) ModuleRuntime(
 func (m *PythonSdk) Common(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
+	// +optional
 	introspectionJSON *dagger.File,
 ) (*PythonSdk, error) {
 	// The following functions were built to be composable in a granular way,
@@ -194,7 +191,7 @@ func (m *PythonSdk) Common(
 	// to copy the entire function and modify it.
 
 	// NB: In extension modules, Load is chainable.
-	_, err := m.Load(ctx, modSource, introspectionJSON)
+	_, err := m.Load(ctx, modSource)
 	if err != nil {
 		return nil, err
 	}
@@ -203,21 +200,16 @@ func (m *PythonSdk) Common(
 		return nil, err
 	}
 	return m.
-		WithSDK().
+		WithSDK(introspectionJSON).
 		WithTemplate().
 		WithSource().
 		WithUpdates(), nil
 }
 
 // Get all the needed information from the module's metadata and source files
-func (m *PythonSdk) Load(
-	ctx context.Context,
-	modSource *dagger.ModuleSource,
-	introspectionJSON *dagger.File,
-) (*PythonSdk, error) {
+func (m *PythonSdk) Load(ctx context.Context, modSource *dagger.ModuleSource) (*PythonSdk, error) {
 	m.ModSource = modSource
 	m.ContextDir = modSource.ContextDirectory()
-	m.IntrospectionJSON = introspectionJSON
 
 	if err := m.Discovery.Load(ctx, m); err != nil {
 		return nil, fmt.Errorf("runtime module load: %w", err)
@@ -322,23 +314,18 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 	// surprising, which is done during discovery.
 
 	if m.IsInit {
-		tplPyproj := strings.ReplaceAll(tplToml, "main", m.ProjectName)
-
-		if m.SchemaVersion != "" {
-			tplPyproj += `
-[tool.uv.sources]
-dagger-io = { path = "` + m.Discovery.Config.Tool.Uv.Sources.Dagger.Path + `", editable = true }
-
-`
-			tplPyproj += "# Engine: " + m.SchemaVersion + "\n"
-		}
-
 		// On `dagger init --sdk`, one can first set a `pyproject.toml` to
 		// change the base image, but if it's `dagger develop --sdk` the
 		// existence of this file will set d.IsInit = true, thus skipping
 		// this entire branch.
 		if !d.HasFile(ProjectCfg) {
-			m.AddNewFile(ProjectCfg, tplPyproj)
+			projCfg := strings.ReplaceAll(tplToml, "main", m.ProjectName)
+
+			if m.EngineVersion != "" {
+				projCfg = strings.Replace(projCfg, `"dagger-io"`, `"dagger-io ==`+m.EngineVersion+`"`, 1)
+			}
+
+			m.AddNewFile(ProjectCfg, VendorConfig(projCfg, m.VendorPath))
 		}
 		if !d.HasFile("*.py") {
 			m.AddNewFile(
@@ -359,40 +346,25 @@ dagger-io = { path = "` + m.Discovery.Config.Tool.Uv.Sources.Dagger.Path + `", e
 //
 // This includes regenerating the client bindings for the current API schema
 // (codegen).
-func (m *PythonSdk) WithSDK() *PythonSdk {
+func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
+	if m.VendorPath != "" {
+		m.AddDirectory(m.VendorPath, m.SdkSourceDir.WithoutDirectory("dist"))
+	}
+
 	// Allow empty introspection to facilitate debugging the container with a
 	// `dagger call module-runtime terminal` command.
-	if m.IntrospectionJSON != nil {
+	if introspectionJSON != nil {
 		genFile := m.Container.
 			WithMountedCache("/root/.shiv", dag.CacheVolume("shiv")).
 			WithMountedDirectory("", m.SdkSourceDir).
-			WithMountedFile(SchemaPath, m.IntrospectionJSON).
-			WithExec(append(m.CodegenCommand, "generate", "-i", SchemaPath, "-o", "/gen.py")).
+			WithMountedFile(SchemaPath, introspectionJSON).
+			WithExec(append(m.Discovery.CodegenCommand, "generate", "-i", SchemaPath, "-o", "/gen.py")).
 			File("/gen.py")
 
-		m.AddFile(m.genPath(), genFile)
-	}
-
-	if d, _ := m.vendorDir(); d != "" {
-		m.AddDirectory(d, m.SdkSourceDir.WithoutDirectory("dist"))
+		m.AddFile(UserGenPath, genFile)
 	}
 
 	return m
-}
-
-func (m *PythonSdk) vendorDir() (string, bool) {
-	return m.Discovery.Config.Tool.Uv.Sources.Dagger.Path,
-		m.Discovery.Config.Tool.Uv.Sources.Dagger.Editable
-}
-
-func (m *PythonSdk) genPath() string {
-	// Only generate to user's `src` if library is not a vendored and editable dependency.
-	// This keeps existing modules unchanged, unless the `[tool.uv.sources]` section
-	// for `dagger-io` is removed.
-	if d, editable := m.vendorDir(); d != "" && editable {
-		return path.Join(d, SDKGenPath)
-	}
-	return UserGenPath
 }
 
 // Add the module's source code
@@ -426,8 +398,8 @@ func (m *PythonSdk) WithUpdates() *PythonSdk {
 			ProjectCfg,
 		}
 
-		if d, _ := m.vendorDir(); d != "" {
-			args = append(args, path.Join(d, ProjectCfg))
+		if m.VendorPath != "" {
+			args = append(args, path.Join(m.VendorPath, ProjectCfg))
 		}
 
 		ctr = ctr.WithExec(args)
