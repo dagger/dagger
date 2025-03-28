@@ -1,0 +1,232 @@
+---
+slug: /quickstart/basics
+title: "Basics"
+---
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Basics
+
+Welcome to Dagger, a general-purpose composition engine for containerized workflows.
+
+Dagger is a modular, composable platform designed to replace complex systems glued together with artisanal scripts - for example, complex integration testing environments, data processing pipelines, and AI agent workflows. It is open source and works with any compute platform or technology stack, automatically optimizing for speed and cost.
+
+## Creating containers
+
+Dagger works by expressing workflows as combinations of functions from the Dagger API, which exposes a range of tools for working with containers, files, directories, network services, secrets. You call the Dagger API from shell (the Dagger Shell) or code (custom Dagger Functions written in a programming language).
+
+The Dagger Shell is an interactive client for the Dagger API, giving you typed objects, built-in documentation, and access to a cross-language ecosystem of reusable modules. You launch it simply by typing `dagger`. Here's an example of using it to build and return an Alpine container:
+
+```shell
+container |
+  from alpine
+```
+
+[FIXME recording]
+
+## Adding files and directories
+
+Here's another example, this time adding a file to the container:
+
+```shell
+container |
+  from alpine |
+  with-new-file /hi.txt "Hello from Dagger!"
+```
+
+You could instead add a directory, which could be either a directory from the Dagger host's filesystem or a remote Git repository. Here's an example of adding Dagger's own open source GitHub repository to the container:
+
+```shell
+container |
+  from alpine |
+  with-directory https://github.com/dagger/dagger
+```
+
+## Using the interactive terminal
+
+Did it work? To look inside, request an interactive terminal session with the running container:
+
+```shell
+container |
+  from alpine |
+  with-directory https://github.com/dagger/dagger |
+  terminal
+```
+
+This drops you into an interactive terminal running the `bash` shell. You can now directly execute commands in the running container, as shown below:
+
+[FIXME recording]
+
+:::tip INTERACTIVE CONTAINER DEBUGGING
+The `terminal` function is very useful for debugging and experimenting, since it allows you to interact directly with containers and inspect their state, at any stage of your Dagger Function execution.
+:::
+
+## Chaining
+
+What you just did (and have been doing since the start) is chaining one Dagger API function call to another with the pipe (`|`) operator. This is one of Dagger's most powerful features, as it allows you create dynamic workflows in a single command - no context switching between Dockerfile creation, build commands, and registry pushes.
+
+Our documentation has numerous examples of function chaining in action but here's one more: creating an Alpine container, dropping in a text file with a custom message, setting it to display that message when run, and publishing it to a temporary registry - all in a single command!
+
+```shell
+container |
+  from alpine |
+  with-new-file /hi.txt "Hello from Dagger!" |
+  with-entrypoint cat /hi.txt |
+  publish ttl.sh/hello
+```
+
+[FIXME recording]
+
+## Getting help
+
+The Dagger API is extensively documented but if you're unsure how to proceed at any point, simply append `.help` to your in-progress workflow for context-sensitive assistance on what you can do next:
+
+```shell
+container |
+  from alpine |
+  .help
+```
+
+[FIXME recording]
+
+## Writing custom functions
+
+As your workflows become more complex, you'll start wishing you could make them more reusable, repeatable and shareable. To do this, encapsulate your workflows into custom Dagger Functions. These are just regular code, written in a programming language using a type-safe Dagger SDK.
+
+Here's the previous example, rewritten as a Dagger Function:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/functions/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+FIXME
+
+</TabItem>
+<TabItem value="TypeScript">
+
+FIXME
+
+</TabItem>
+<TabItem value="PHP">
+
+FIXME
+
+</TabItem>
+<TabItem value="Java">
+
+FIXME
+
+</TabItem>
+</Tabs>
+
+You call this function from the Dagger Shell, or from your system shell using `dagger call`:
+
+[FIXME recording]
+
+## Using arguments and return values
+
+Dagger Functions are just like regular functions: they accept arguments and return values. In addition to common types (string, boolean, integer, arrays...), the Dagger API also defines powerful core types which Dagger Functions can use, such as `Directory`, `Container`, `Service`, `Secret`, and many more.
+
+Here's a revision of the previous example which splits it into two smaller functions: one to build the container, and one to publish it. The builder function accepts the container image string as an argument and returns a `Container` object. The publisher function accepts a `Container` as argument and returns the image identifier as a string.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/arguments-return-values/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+FIXME
+
+</TabItem>
+<TabItem value="TypeScript">
+
+FIXME
+
+</TabItem>
+<TabItem value="PHP">
+
+FIXME
+
+</TabItem>
+<TabItem value="Java">
+
+FIXME
+
+</TabItem>
+</Tabs>
+
+ADD chaining equivalency
+
+[FIXME recording]
+
+## Speeding things up with caching
+
+One of Dagger's most powerful features is its built-in caching. This is typically most useful when dealing with package managers such as `apt`, `apk`, `npm`, `maven`, `pip` and similar. For these tools to cache properly, they need their own cache data (usually a directory) to be persisted between runs. Here's a Dagger Function that creates a cache volume to store the packages installed by __:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/caching/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+FIXME
+
+</TabItem>
+<TabItem value="TypeScript">
+
+FIXME
+
+</TabItem>
+<TabItem value="PHP">
+
+FIXME
+
+</TabItem>
+<TabItem value="Java">
+
+FIXME
+
+</TabItem>
+</Tabs>
+Notice that when you call this Dagger Function multiple times, the second and subsequent runs are drastically faster than the first, since Dagger automatically reuses the cached packages instead of re-downloading them every time.
+
+[FIXME recording]
+
+## Using the Daggerverse
+
+You can group Dagger Functions into modules and share them with others - your team, your company, or the broader Dagger community. And just as others can use your modules, you too can use modules created and shared by others, to speed up your development and take advantage of best practices. The Daggerverse is a free service run by Dagger, which indexes all publicly available Dagger modules, and lets you easily search and consume them.
+
+[FIXME screenshot]
+
+Here's an example of installing a module from the Daggerverse and using it to scan a container built by another Dagger Function:
+
+[FIXME recording]
+
+## Using Dagger Cloud
+
+Building and running workflows is only part of the problem - you also need a way to inspect and monitor them. Dagger provides two powerful real-time visualization tools: the Dagger terminal UI (TUI), which you've already seen above, and Dagger Cloud, a browser-based interface focused on tracing and debugging Dagger workflows.
+
+Once configured, every time you execute a Dagger workflow, its operational telemetry is automatically sent to Dagger Cloud as a Trace and the workflow output includes a link to visualize the workflow run on Dagger Cloud. Here's an example:
+
+[FIXME screen recording]
+
+:::note
+Dagger Cloud sign-up is optional, and free of charge for a single user. A GitHub or Google account is required for account setup and identity verification.
+:::
+
+
+## Next steps
+
+FIXME
