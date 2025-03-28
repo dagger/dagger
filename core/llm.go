@@ -572,6 +572,14 @@ func (llm *LLM) messagesWithSystemPrompt() []ModelMessage {
 	return messages
 }
 
+type ModelFinishedError struct {
+	Reason string
+}
+
+func (err *ModelFinishedError) Error() string {
+	return fmt.Sprintf("model finished: %s", err.Reason)
+}
+
 // send the context to the LLM endpoint, process replies and tool calls; continue in a loop
 // Synchronize LLM state:
 // 1. Send context to LLM endpoint
@@ -591,6 +599,7 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 		return llm, nil
 	}
 	llm = llm.Clone()
+	llm.dirty = false // cover all the exits, we cloned anyway
 	for {
 		if llm.maxAPICalls > 0 && llm.apiCalls >= llm.maxAPICalls {
 			return nil, fmt.Errorf("reached API call limit: %d", llm.apiCalls)
@@ -604,6 +613,16 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 
 		res, err := llm.Endpoint.Client.SendQuery(ctx, llm.messagesWithSystemPrompt(), tools)
 		if err != nil {
+			var finished *ModelFinishedError
+			if errors.As(err, &finished) {
+				if llm.env.IsDone() {
+					return llm, nil
+				} else if bk, err := llm.Query.Buildkit(ctx); err == nil && bk.Opts.Interactive {
+					// TODO: shell, reassign llm
+				} else {
+					return nil, finished
+				}
+			}
 			return nil, err
 		}
 
@@ -628,11 +647,10 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 				ToolErrored: isError,
 			})
 		}
-		if llm.env.Returned {
+		if llm.env.IsDone() {
 			break
 		}
 	}
-	llm.dirty = false
 	return llm, nil
 }
 

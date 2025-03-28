@@ -178,18 +178,28 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 		return nil, stream.Err()
 	}
 
-	if len(acc.ChatCompletion.Choices) == 0 {
-		return nil, fmt.Errorf("no response from model")
+	if len(acc.Choices) == 0 {
+		return nil, &ModelFinishedError{
+			Reason: "no response from model",
+		}
 	}
 
-	toolCalls, err := convertOpenAIToolCalls(acc.Choices[0].Message.ToolCalls)
+	choice := acc.Choices[0]
+
+	toolCalls, err := convertOpenAIToolCalls(choice.Message.ToolCalls)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert tool calls: %w", err)
 	}
 
+	if choice.Message.Content == "" && len(toolCalls) == 0 {
+		return nil, &ModelFinishedError{
+			Reason: choice.FinishReason,
+		}
+	}
+
 	// Convert OpenAI response to generic LLMResponse
 	return &LLMResponse{
-		Content:   acc.Choices[0].Message.Content,
+		Content:   choice.Message.Content,
 		ToolCalls: toolCalls,
 		TokenUsage: LLMTokenUsage{
 			InputTokens:  acc.Usage.PromptTokens,

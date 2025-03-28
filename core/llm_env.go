@@ -55,7 +55,7 @@ type LLMEnv struct {
 	needsSystemPrompt bool
 	// The return type that we want from the LLM.
 	wantType string
-	Returned bool
+	returned bool
 }
 
 func NewLLMEnv(endpoint *LLMEndpoint) *LLMEnv {
@@ -530,6 +530,11 @@ func (env *LLMEnv) ReadVariable(name string) (string, bool) {
 	return val, found
 }
 
+// TODO: validate, might belong on LLM, wanted to involve 'dirty' initially
+func (env *LLMEnv) IsDone() bool {
+	return env.returned || env.wantType == ""
+}
+
 func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 	builtins := []LLMTool{
 		{
@@ -574,7 +579,7 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 			Call: ToolFunc(func(ctx context.Context, args struct {
 				ID string `name:"id"`
 			}) (any, error) {
-				env.Returned = true
+				env.returned = true
 				obj, err := env.GetObject(args.ID, typeName)
 				if err != nil {
 					return nil, err
