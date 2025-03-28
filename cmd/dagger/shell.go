@@ -492,6 +492,20 @@ func (h *shellCallHandler) ReactToInput(ctx context.Context, msg tea.KeyMsg) tea
 		return func() tea.Msg {
 			return idtui.UpdatePromptMsg{}
 		}
+	case "shift+tab":
+		switch h.mode {
+		case modeShell:
+			h.mode = modePrompt
+			return func() tea.Msg {
+				h.llm(ctx) // initialize LLM
+				return idtui.UpdatePromptMsg{}
+			}
+		case modePrompt:
+			h.mode = modeShell
+			return func() tea.Msg {
+				return idtui.UpdatePromptMsg{}
+			}
+		}
 	}
 	return nil
 }
