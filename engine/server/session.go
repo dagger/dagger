@@ -1271,8 +1271,10 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module) error {
 	depMod, exist := client.deps.LookupDep(mod.Name())
 	if exist {
 		// Error if there's a conflict between dependencies
-		if isSameModuleReference(depMod.GetSource(), mod.GetSource()) {
-			return fmt.Errorf("module %s already exists with different source %s", mod.Name(), depMod.GetSource().AsString())
+		if !isSameModuleReference(depMod.GetSource(), mod.GetSource()) {
+			return fmt.Errorf("module %s (source: %s | pin: %s) already exists with different source %s (pin: %s)",
+				mod.Name(), mod.GetSource().AsString(), mod.GetSource().Pin(), depMod.GetSource().AsString(), depMod.GetSource().Pin(),
+			)
 		}
 
 		return nil
@@ -1291,7 +1293,7 @@ func isSameModuleReference(a *core.ModuleSource, b *core.ModuleSource) bool {
 	// If one of them is empty, that means they are from code module so they shouldn't
 	// be compared.
 	if a.AsString() == "" || b.AsString() == "" {
-		return false
+		return true
 	}
 
 	// If they are do not have the same reference nor same pin, they cannot be the same.
