@@ -43,7 +43,7 @@ func ResourceTransferPostCall(
 		return strings.Compare(a.ID().Digest().String(), b.ID().Digest().String())
 	})
 
-	// TODO: cleanup
+	// ensure that when we load secrets, we are doing so from the source client
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source client metadata: %w", err)
