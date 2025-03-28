@@ -218,11 +218,15 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 		}
 
 		if len(res.Candidates) == 0 {
-			return nil, fmt.Errorf("no response from model")
+			return nil, &ModelFinishedError{
+				Reason: "no response from model",
+			}
 		}
 		candidate := res.Candidates[0]
 		if candidate.Content == nil {
-			return nil, fmt.Errorf("no content?")
+			return nil, &ModelFinishedError{
+				Reason: candidate.FinishReason.String(),
+			}
 		}
 
 		for _, part := range candidate.Content.Parts {

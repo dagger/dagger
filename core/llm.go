@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/anthropics/anthropic-sdk-go"
@@ -35,8 +36,7 @@ type LLM struct {
 	apiCalls    int
 	Endpoint    *LLMEndpoint
 
-	// If true: has un-synced state
-	dirty bool
+	once *sync.Once
 
 	// History of messages
 	messages []ModelMessage
@@ -427,6 +427,7 @@ func (llm *LLM) Clone() *LLM {
 	cp := *llm
 	cp.messages = cloneSlice(cp.messages)
 	cp.env = cp.env.Clone()
+	cp.once = &sync.Once{}
 	return &cp
 }
 
@@ -499,7 +500,6 @@ func (llm *LLM) WithPrompt(
 		Role:    "user",
 		Content: prompt,
 	})
-	llm.dirty = true
 	return llm, nil
 }
 
@@ -525,14 +525,12 @@ func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 		Role:    "system",
 		Content: prompt,
 	})
-	llm.dirty = true
 	return llm
 }
 
 // Return the last message sent by the agent
 func (llm *LLM) LastReply(ctx context.Context, dag *dagql.Server) (string, error) {
-	llm, err := llm.Sync(ctx, dag)
-	if err != nil {
+	if err := llm.Sync(ctx, dag); err != nil {
 		return "", err
 	}
 	var reply string = "(no reply)"
@@ -572,39 +570,105 @@ func (llm *LLM) messagesWithSystemPrompt() []ModelMessage {
 	return messages
 }
 
+type ModelFinishedError struct {
+	Reason string
+}
+
+func (err *ModelFinishedError) Error() string {
+	return fmt.Sprintf("model finished: %s", err.Reason)
+}
+
 // send the context to the LLM endpoint, process replies and tool calls; continue in a loop
 // Synchronize LLM state:
 // 1. Send context to LLM endpoint
 // 2. Process replies and tool calls
 // 3. Continue in a loop until no tool calls, or caps are reached
-func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
+func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) error {
 	if err := llm.allowed(ctx); err != nil {
-		return nil, err
+		return err
 	}
+	var err error
+	llm.once.Do(func() {
+		err = llm.loop(ctx, dag)
+	})
+	return err
+}
 
-	if !llm.dirty {
-		return llm, nil
+func (llm *LLM) Interject(ctx context.Context) error {
+	bk, err := llm.Query.Buildkit(ctx)
+	if err != nil {
+		return err
 	}
+	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
+		attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
+		attribute.String(telemetry.UIMessageAttr, "sent"),
+	))
+	defer span.End()
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+	defer stdio.Close()
+	msg, err := bk.PromptHumanHelp(ctx, "The caller needs a **"+llm.env.WantsType()+"**, but the model needs some help:")
+	if err != nil {
+		return err
+	}
+	fmt.Fprint(stdio.Stdout, msg)
+	llm.messages = append(llm.messages, ModelMessage{
+		Role:    "user",
+		Content: msg,
+	})
+	return nil
+}
+
+// autoInterject keeps the loop going if necessary, by prompting for a new
+// input, adding it to the message history, and returning true
+func (llm *LLM) autoInterject(ctx context.Context) (bool, error) {
+	if llm.env.IsDone() {
+		// we either didn't expect a return value, or got one - done!
+		return false, nil
+	}
+	bk, err := llm.Query.Buildkit(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !bk.Opts.Interactive {
+		return false, nil
+	}
+	if err := llm.Interject(ctx); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 	if len(llm.messages) == 0 {
 		// dirty but no messages, possibly just a state change, nothing to do
 		// until a prompt is given
-		return llm, nil
+		return nil
 	}
-	llm = llm.Clone()
 	for {
 		if llm.maxAPICalls > 0 && llm.apiCalls >= llm.maxAPICalls {
-			return nil, fmt.Errorf("reached API call limit: %d", llm.apiCalls)
+			return fmt.Errorf("reached API call limit: %d", llm.apiCalls)
 		}
 		llm.apiCalls++
 
 		tools, err := llm.env.Tools(dag)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		res, err := llm.Endpoint.Client.SendQuery(ctx, llm.messagesWithSystemPrompt(), tools)
 		if err != nil {
-			return nil, err
+			var finished *ModelFinishedError
+			if errors.As(err, &finished) {
+				if interjected, interjectErr := llm.autoInterject(ctx); interjectErr != nil {
+					// interjecting failed or was interrupted
+					return errors.Join(err, interjectErr)
+				} else if interjected {
+					// interjected - continue
+					continue
+				}
+			}
+			return err
 		}
 
 		// Add the model reply to the history
@@ -617,6 +681,13 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 		// Handle tool calls
 		// calls := res.Choices[0].Message.ToolCalls
 		if len(res.ToolCalls) == 0 {
+			if interjected, interjectErr := llm.autoInterject(ctx); interjectErr != nil {
+				// interjecting failed or was interrupted
+				return interjectErr
+			} else if interjected {
+				// interjected - continue
+				continue
+			}
 			break
 		}
 		for _, toolCall := range res.ToolCalls {
@@ -629,8 +700,7 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 			})
 		}
 	}
-	llm.dirty = false
-	return llm, nil
+	return nil
 }
 
 func (llm *LLM) allowed(ctx context.Context) error {
@@ -667,8 +737,7 @@ func (llm *LLM) allowed(ctx context.Context) error {
 }
 
 func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error) {
-	llm, err := llm.Sync(ctx, dag)
-	if err != nil {
+	if err := llm.Sync(ctx, dag); err != nil {
 		return nil, err
 	}
 	var history []string
@@ -711,8 +780,7 @@ func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error
 }
 
 func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (string, error) {
-	llm, err := llm.Sync(ctx, dag)
-	if err != nil {
+	if err := llm.Sync(ctx, dag); err != nil {
 		return "", err
 	}
 	result, err := json.MarshalIndent(llm.messages, "", "  ")
@@ -725,13 +793,11 @@ func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (string, err
 func (llm *LLM) Set(ctx context.Context, key string, value dagql.Object) (*LLM, error) {
 	llm = llm.Clone()
 	llm.env.Set(key, value)
-	llm.dirty = true
 	return llm, nil
 }
 
 func (llm *LLM) Get(ctx context.Context, dag *dagql.Server, key string) (dagql.Typed, error) {
-	llm, err := llm.Sync(ctx, dag)
-	if err != nil {
+	if err := llm.Sync(ctx, dag); err != nil {
 		return nil, err
 	}
 	return llm.env.GetObject(key, "")
@@ -740,7 +806,6 @@ func (llm *LLM) Get(ctx context.Context, dag *dagql.Server, key string) (dagql.T
 func (llm *LLM) With(value dagql.Object) *LLM {
 	llm = llm.Clone()
 	llm.env.Select(value)
-	llm.dirty = true
 	return llm
 }
 
@@ -764,8 +829,7 @@ func (v *LLMVariable) Type() *ast.Type {
 }
 
 func (llm *LLM) Variables(ctx context.Context, dag *dagql.Server) ([]*LLMVariable, error) {
-	llm, err := llm.Sync(ctx, dag)
-	if err != nil {
+	if err := llm.Sync(ctx, dag); err != nil {
 		return nil, err
 	}
 	vars := make([]*LLMVariable, 0, len(llm.env.objsByName))
@@ -796,8 +860,7 @@ func (llm *LLM) Variables(ctx context.Context, dag *dagql.Server) ([]*LLMVariabl
 
 func (llm *LLM) CurrentType(ctx context.Context, dag *dagql.Server) (dagql.Nullable[dagql.String], error) {
 	var res dagql.Nullable[dagql.String]
-	llm, err := llm.Sync(ctx, dag)
-	if err != nil {
+	if err := llm.Sync(ctx, dag); err != nil {
 		return res, err
 	}
 	if llm.env.Current() == nil {
@@ -809,8 +872,7 @@ func (llm *LLM) CurrentType(ctx context.Context, dag *dagql.Server) (dagql.Nulla
 }
 
 func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsage, error) {
-	llm, err := llm.Sync(ctx, dag)
-	if err != nil {
+	if err := llm.Sync(ctx, dag); err != nil {
 		return nil, err
 	}
 	var res LLMTokenUsage
@@ -945,8 +1007,14 @@ func (s LLMHook) ExtendLLMType(targetType dagql.ObjectType) error {
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			llm := self.(dagql.Instance[*LLM]).Self
-			llm, err := llm.Sync(ctx, s.Server)
-			if err != nil {
+			// TODO: this is a little sneaky. we don't want to Clone() because that'll
+			// cause it to run again for other things. the cleanest form of this seems
+			// something like LLM.wantDirectory() but then an extra call just to get
+			// the directory feels verbose.
+			//
+			// are bindings relevant here?
+			llm.env.Want(typename)
+			if err := llm.Sync(ctx, s.Server); err != nil {
 				return nil, err
 			}
 			val := llm.env.Current()

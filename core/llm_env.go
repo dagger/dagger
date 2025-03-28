@@ -53,6 +53,8 @@ type LLMEnv struct {
 	idByHash map[digest.Digest]string
 	// Whether the LLM needs instructions on how to use the tool scheme
 	needsSystemPrompt bool
+	// The return type that we want from the LLM.
+	wantType string
 }
 
 func NewLLMEnv(endpoint *LLMEndpoint) *LLMEnv {
@@ -65,6 +67,10 @@ func NewLLMEnv(endpoint *LLMEndpoint) *LLMEnv {
 		functionMask:      map[string]bool{},
 		needsSystemPrompt: endpoint.Provider == Google,
 	}
+}
+
+func (env *LLMEnv) Want(returnType string) {
+	env.wantType = returnType
 }
 
 //go:embed llm_dagger_prompt.md
@@ -523,16 +529,37 @@ func (env *LLMEnv) ReadVariable(name string) (string, bool) {
 	return val, found
 }
 
+func (env *LLMEnv) IsDone() bool {
+	return env.wantType == "" ||
+		env.Current() != nil && env.Current().Type().Name() == env.wantType
+}
+
+func (env *LLMEnv) WantsType() string {
+	return env.wantType
+}
+
 func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 	builtins := []LLMTool{
 		{
-			Name: "currentSelection", // TODO: double this as "return"?
+			Name: "currentSelection",
 			// NOTE: this description is load-bearing! It allows the LLM to know its
 			// current state, without even calling this tool. Without this sort of
 			// hint the model tends to give you instructions instead of acting on its
 			// own. That could be addressed with a system prompt, but we don't want to
 			// rely on those.
-			Description: "Your current selection: " + env.describe(env.Current()),
+			Description: (func() string {
+				desc := "Your current selection: " + env.describe(env.Current())
+				if env.wantType != "" {
+					if env.IsDone() {
+						desc += "\n\n"
+						desc += fmt.Sprintf("Your current selection matches the desired return type, `%s`.", env.wantType)
+					} else {
+						desc += "\n\n"
+						desc += fmt.Sprintf("If you have completed your task, select a `%s` to return it to the user.", env.wantType)
+					}
+				}
+				return desc
+			})(),
 			Schema: map[string]any{
 				"type":                 "object",
 				"properties":           map[string]any{},
@@ -596,6 +623,7 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 			}),
 		})
 	}
+
 	// Attach builtin telemetry
 	for i, builtin := range builtins {
 		builtins[i].Call = func(ctx context.Context, args any) (_ any, rerr error) {
