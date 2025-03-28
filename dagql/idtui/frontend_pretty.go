@@ -1002,6 +1002,9 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		// if input ends with a pipe, then it's not complete
 		fe.editline.CheckInputComplete = msg.handler.IsComplete
 
+		// put the bowtie on
+		fe.updatePrompt()
+
 		return fe, tea.Batch(
 			tea.Printf(`Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`),
 			fe.editline.Focus(),
@@ -1317,8 +1320,6 @@ func (fe *frontendPretty) initEditline() {
 	}
 	// hopefully fix weird prompt display?
 	fe.editline.Update(nil)
-	// put the bowtie on
-	fe.updatePrompt()
 }
 
 type UpdatePromptMsg struct{}
