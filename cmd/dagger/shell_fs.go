@@ -261,6 +261,7 @@ func (h *shellCallHandler) maybeLoadModule(ctx context.Context, path string) (*m
 	return def, cfg, err
 }
 
+// this exposes dependency modules to the LLM while loading the primary module
 func (h *shellCallHandler) maybeLoadModuleAndDeps(ctx context.Context, path string) (*moduleDef, *configuredModule, error) {
 	def, cfg, err := h.maybeLoadModule(ctx, path)
 	if err != nil {
@@ -268,13 +269,20 @@ func (h *shellCallHandler) maybeLoadModuleAndDeps(ctx context.Context, path stri
 	}
 
 	if def != nil {
+		depsCtx, depsSpan := Tracer().Start(ctx, "serving dependency modules", telemetry.Encapsulate())
+		var eg errgroup.Group
 		for _, dep := range def.Dependencies {
-			serveCtx, serveSpan := Tracer().Start(ctx, "initializing dependency module")
-			err := dep.Source.AsModule().Serve(serveCtx)
-			telemetry.End(serveSpan, func() error { return err })
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to serve dependency module: %w", err)
-			}
+			eg.Go(func() error {
+				serveCtx, serveSpan := Tracer().Start(depsCtx, fmt.Sprintf("serving dependency module %s", dep.Name))
+				err := dep.Source.AsModule().Serve(serveCtx)
+				telemetry.End(serveSpan, func() error { return err })
+				return err
+			})
+		}
+		err := eg.Wait()
+		telemetry.End(depsSpan, func() error { return err })
+		if err != nil {
+			return nil, nil, err
 		}
 	}
 
