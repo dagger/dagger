@@ -162,7 +162,7 @@ func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args stru
 }
 
 func (s *llmSchema) loop(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
-	return llm.Sync(ctx, s.srv)
+	return llm, llm.Sync(ctx, s.srv)
 }
 
 func (s *llmSchema) attempt(_ context.Context, llm *core.LLM, _ struct {
