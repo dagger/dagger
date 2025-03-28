@@ -12,46 +12,46 @@ Welcome to Dagger, a general-purpose composition engine for containerized workfl
 
 Dagger is a modular, composable platform designed to replace complex systems glued together with artisanal scripts - for example, complex integration testing environments, data processing pipelines, and AI agent workflows. It is open source and works with any compute platform or technology stack, automatically optimizing for speed and cost.
 
-## Creating containers
+## Create containers
 
 Dagger works by expressing workflows as combinations of functions from the Dagger API, which exposes a range of tools for working with containers, files, directories, network services, secrets. You call the Dagger API from shell (Dagger Shell) or code (custom Dagger Functions written in a programming language).
 
 Dagger Shell is an interactive client for the Dagger API, giving you typed objects, built-in documentation, and access to a cross-language ecosystem of reusable modules. You launch it simply by typing `dagger`. Here's an example of using it to build and return an Alpine container:
 
 ```shell
-container |
-  from alpine
+container | from alpine
 ```
 
 [FIXME recording]
 
-## Adding files and directories
+## Add files and directories
 
-Here's another example, this time adding a file to the container:
-
-```shell
-container |
-  from alpine |
-  with-new-file /hi.txt "Hello from Dagger!"
-```
-
-You could instead add a directory, which could be either a directory from the Dagger host's filesystem or a remote Git repository. Here's an example of adding Dagger's own open source GitHub repository to the container:
+Once you've got a container, you can continue using the Dagger API to modify it, by adding files or directories to it. You can use directories from the Dagger host's filesystem or remote Git repositories. Here's an example of adding Dagger's own open source GitHub repository to the container:
 
 ```shell
-container |
-  from alpine |
-  with-directory https://github.com/dagger/dagger
+container | from alpine | with-directory https://github.com/dagger/dagger
 ```
 
-## Using the interactive terminal
+Here's another example, this time creating a new file in the container:
+
+```shell
+container | from alpine | with-new-file /hi.txt "Hello from Dagger!"
+```
+
+:::tip GETTING HELP
+The Dagger API is extensively documented but if you're unsure how to proceed at any point, simply append `.help` to your in-progress workflow for context-sensitive assistance on what you can do next:
+
+```shell
+container | alpine | .help
+```
+:::
+
+## Use the interactive terminal
 
 Did it work? To look inside, request an interactive terminal session with the running container:
 
 ```shell
-container |
-  from alpine |
-  with-directory https://github.com/dagger/dagger |
-  terminal
+container | from alpine | with-new-file /hi.txt "Hello from Dagger!" | terminal
 ```
 
 This drops you into an interactive terminal running the `bash` shell. You can now directly execute commands in the running container, as shown below:
@@ -62,33 +62,19 @@ This drops you into an interactive terminal running the `bash` shell. You can no
 The `terminal` function is very useful for debugging and experimenting, since it allows you to interact directly with containers and inspect their state, at any stage of your Dagger Function execution.
 :::
 
-## Chaining
+## Chain functions
 
 What you just did (and have been doing since the start) is chaining one Dagger API function call to another with the pipe (`|`) operator. This is one of Dagger's most powerful features, as it allows you create dynamic workflows in a single command - no context switching between Dockerfile creation, build commands, and registry pushes.
 
-Our documentation has numerous examples of function chaining in action but here's one more: creating an Alpine container, dropping in a text file with a custom message, setting it to display that message when run, and publishing it to a temporary registry - all in a single command!
+Dagger's documentation has numerous examples of function chaining in action but here's one more: creating an Alpine container, dropping in a text file with a custom message, setting it to display that message when run, and publishing it to a temporary registry - all in a single command!
 
 ```shell
-container |
-  from alpine |
-  with-new-file /hi.txt "Hello from Dagger!" |
-  with-entrypoint cat /hi.txt |
-  publish ttl.sh/hello
+container | from alpine | with-new-file /hi.txt "Hello from Dagger!" |
+  with-entrypoint cat /hi.txt | publish ttl.sh/hello
 ```
 
 [FIXME recording]
 
-## Getting help
-
-The Dagger API is extensively documented but if you're unsure how to proceed at any point, simply append `.help` to your in-progress workflow for context-sensitive assistance on what you can do next:
-
-```shell
-container |
-  from alpine |
-  .help
-```
-
-[FIXME recording]
 
 ## Writing custom functions
 
@@ -99,7 +85,14 @@ Here's the previous example, rewritten as a Dagger Function:
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/functions/go/main.go
+```go
+func (m *Basics) Publish(ctx context.Context) (string, error) {
+	return dag.Container().
+		From("alpine:latest").
+		WithNewFile("/hi.txt", "Hello from Dagger!").
+		WithEntrypoint([]string{"cat", "/hi.txt"}).
+		Publish(ctx, "ttl.sh/hello")
+}
 ```
 
 </TabItem>
@@ -135,31 +128,146 @@ Function chaining works the same way, whether you're writing Dagger Function cod
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/chaining/go/main.go
+```go
+type Basics struct{}
+
+// Returns a base container
+func (m *Basics) Base() *dagger.Container {
+	return dag.Container().From("cgr.dev/chainguard/wolfi-base")
+}
+
+// Builds on top of base container and returns a new container
+func (m *Basics) Build() *dagger.Container {
+	return m.Base().WithExec([]string{"apk", "add", "bash", "git"})
+}
+
+// Builds and publishes a container
+func (m *Basics) BuildAndPublish(ctx context.Context) (string, error) {
+	return m.Build().Publish(ctx, "ttl.sh/bar")
+}
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./snippets/chaining/python/__init__.py
+```python
+@object_type
+class Basics:
+    @function
+    def base(self) -> dagger.Container:
+        """Returns a base container"""
+        return dag.container().from_("cgr.dev/chainguard/wolfi-base")
+
+    @function
+    def build(self) -> dagger.Container:
+        """Builds on top of base container and returns a new container"""
+        return self.base().with_exec(["apk", "add", "bash", "git"])
+
+    @function
+    async def build_and_publish(self) -> str:
+        """Builds and publishes a container"""
+        return await self.build().publish("ttl.sh/bar")
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./snippets/chaining/typescript/index.ts
+```typescript
+@object()
+class Basics {
+  /**
+   * Returns a base container
+   */
+  @func()
+  base(): Container {
+    return dag.container().from("cgr.dev/chainguard/wolfi-base")
+  }
+
+  /**
+   * Builds on top of base container and returns a new container
+   */
+  @func()
+  build(): Container {
+    return this.base().withExec(["apk", "add", "bash", "git"])
+  }
+
+  /**
+   * Builds and publishes a container
+   */
+  @func()
+  async buildAndPublish(): Promise<string> {
+    return await this.build().publish("ttl.sh/bar")
+  }
+}
 ```
 
 </TabItem>
 <TabItem value="PHP">
 
-```php file=./snippets/chaining/php/src/Basics.php
+```php
+#[DaggerObject]
+class Basics
+{
+    #[DaggerFunction]
+    #[Doc('Returns a base container')]
+    public function base(): Container
+    {
+        return dag()
+            ->container()
+            ->from('cgr.dev/chainguard/wolfi-base');
+    }
+
+    #[DaggerFunction]
+    #[Doc('Builds on top of base container and returns a new container')]
+    public function build(): Container
+    {
+        return $this
+            ->base()
+            ->withExec(['apk', 'add', 'bash', 'git']);
+    }
+
+    #[DaggerFunction]
+    #[Doc('Builds and publishes a container')]
+    public function buildAndPublish(): string
+    {
+        return $this
+            ->build()
+            ->publish('ttl.sh/bar');
+    }
+}
 ```
 
 </TabItem>
 <TabItem value="Java">
 
-```java file=./snippets/chaining/java/src/main/java/io/dagger/modules/basics/Basics.java
+```java
+@Object
+public class Basics {
+  /**
+   * Returns a base container
+   */
+  @Function
+  public Container base() {
+    return dag().container().from("cgr.dev/chainguard/wolfi-base");
+  }
+
+  /**
+   * Builds on top of base container and returns a new container
+   */
+  @Function
+  public Container build() {
+    return this.base().withExec(List.of("apk", "add", "bash", "git"));
+  }
+
+  /**
+   * Builds and publishes a container
+   */
+  @Function
+  public String buildAndPublish()
+      throws InterruptedException, ExecutionException, DaggerQueryException {
+    return this.build().publish("ttl.sh/bar");
+  }
+}
 ```
 
 </TabItem>
@@ -191,7 +299,27 @@ Here's a revision of the previous example which splits it into two smaller funct
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/arguments-return-values/go/main.go
+```go
+type Basics struct{}
+
+func (m *Basics) Build(
+	// +default "alpine:latest"
+	image string,
+) *dagger.Container {
+	return dag.Container().
+		From(image).
+		WithNewFile("/hi.txt", "Hello from Dagger!")
+}
+
+func (m *Basics) Publish(
+	ctx context.Context,
+	// +default "alpine:latest"
+	image string,
+) (string, error) {
+	return m.FooBuild(image).
+		WithEntrypoint([]string{"cat", "/hi.txt"}).
+		Publish(ctx, "ttl.sh/hello")
+}
 ```
 
 </TabItem>
@@ -225,12 +353,28 @@ When calling Dagger Functions, all names (functions, arguments, fields, etc.) ar
 
 ## Speeding things up with caching
 
-One of Dagger's most powerful features is its built-in caching. This is typically most useful when dealing with package managers such as `apt`, `apk`, `npm`, `maven`, `pip` and similar. For these tools to cache properly, they need their own cache data (usually a directory) to be persisted between runs. Here's a Dagger Function that creates a cache volume to store the packages installed by __:
+One of Dagger's most powerful features is its ability to cache data across workflow runs. Dagger caches two types of data:
+
+- Layers: Build instructions and the results of some API calls.
+- Volumes: Contents of Dagger filesystem volumes.
+
+Taken together, these two types of caching can significantly reduce execution times. Here's an example: a Dagger Function that creates a cache volume to store the packages installed by `apt`:
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/caching/go/main.go
+```go
+type Basics struct{}
+
+func (m *Basics) Foo(ctx context.Context) (*dagger.Container, error) {
+	aptCache := dag.CacheVolume("apt-cache")
+	return dag.Container().
+		From("debian:latest").
+		WithMountedCache("/var/cache/apt/archives", aptCache).
+		WithExec([]string{"apt-get", "update"}).
+		WithExec([]string{"apt-get", "install", "--yes", "maven", "mariadb-server"}).
+		Sync(ctx)
+}
 ```
 
 </TabItem>
@@ -256,7 +400,7 @@ FIXME
 </TabItem>
 </Tabs>
 
-Notice that when you call this Dagger Function multiple times, the second and subsequent runs are drastically faster than the first, since Dagger automatically reuses the cached packages instead of re-downloading them every time.
+Notice that when you call this Dagger Function multiple times, the second and subsequent runs are drastically faster than the first, since Dagger automatically reuses cached instructions and files from the cache.
 
 [FIXME recording]
 
