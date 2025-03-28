@@ -809,9 +809,16 @@ func (s *containerSchema) build(ctx context.Context, parent *core.Container, arg
 	if err != nil {
 		return nil, err
 	}
+
+	buildctxDir, err := applyDockerIgnore(ctx, s.srv, dir, args.Dockerfile)
+	if err != nil {
+		return nil, err
+	}
+
 	return parent.Build(
 		ctx,
 		dir.Self,
+		buildctxDir.Self,
 		args.Dockerfile,
 		collectInputsSlice(args.BuildArgs),
 		args.Target,

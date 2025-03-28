@@ -382,6 +382,8 @@ const defaultDockerfileName = "Dockerfile"
 
 func (container *Container) Build(
 	ctx context.Context,
+	dockerfileDir *Directory,
+	// contextDir is dockerfileDir with files excluded as per dockerignore file
 	contextDir *Directory,
 	dockerfile string,
 	buildArgs []BuildArg,
@@ -391,6 +393,7 @@ func (container *Container) Build(
 ) (*Container, error) {
 	container = container.Clone()
 
+	container.Services.Merge(dockerfileDir.Services)
 	container.Services.Merge(contextDir.Services)
 
 	secretNameToLLBID := make(map[string]string)
@@ -432,9 +435,9 @@ func (container *Container) Build(
 	}
 
 	if dockerfile != "" {
-		opts["filename"] = path.Join(contextDir.Dir, dockerfile)
+		opts["filename"] = path.Join(dockerfileDir.Dir, dockerfile)
 	} else {
-		opts["filename"] = path.Join(contextDir.Dir, defaultDockerfileName)
+		opts["filename"] = path.Join(dockerfileDir.Dir, defaultDockerfileName)
 	}
 
 	if target != "" {
@@ -447,7 +450,7 @@ func (container *Container) Build(
 
 	inputs := map[string]*pb.Definition{
 		dockerui.DefaultLocalNameContext:    contextDir.LLB,
-		dockerui.DefaultLocalNameDockerfile: contextDir.LLB,
+		dockerui.DefaultLocalNameDockerfile: dockerfileDir.LLB,
 	}
 
 	// FIXME: ew, this is a terrible way to pass this around
