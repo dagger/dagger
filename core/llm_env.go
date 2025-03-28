@@ -535,6 +535,10 @@ func (env *LLMEnv) IsDone() bool {
 	return env.returned || env.wantType == ""
 }
 
+func (env *LLMEnv) WantsType() string {
+	return env.wantType
+}
+
 func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 	builtins := []LLMTool{
 		{
@@ -590,7 +594,7 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 			}),
 		})
 	}
-	builtins = append(builtins, env.UserPromptTool(srv))
+	// builtins = append(builtins, env.UserPromptTool(srv))
 	for typeName := range env.typeCount {
 		tools, err := env.tools(srv, typeName)
 		if err != nil {

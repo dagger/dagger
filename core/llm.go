@@ -594,6 +594,40 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) error {
 	return err
 }
 
+// interject keeps the loop going if necessary, by prompting for a new input,
+// adding it to the message history, and returning true
+func (llm *LLM) interject(ctx context.Context) (bool, error) {
+	if llm.env.IsDone() {
+		// we either didn't expect a return value, or got one - done!
+		return false, nil
+	}
+	bk, err := llm.Query.Buildkit(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !bk.Opts.Interactive {
+		return false, nil
+	}
+	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
+		attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
+		attribute.String(telemetry.UIMessageAttr, "sent"),
+	))
+	defer span.End()
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary,
+		log.String(telemetry.ContentTypeAttr, "text/markdown"))
+	defer stdio.Close()
+	msg, err := bk.PromptHumanHelp(ctx, "The caller needs a **"+llm.env.WantsType()+"**, but the model needs some help:")
+	if err != nil {
+		return false, err
+	}
+	fmt.Fprint(stdio.Stdout, msg)
+	llm.messages = append(llm.messages, ModelMessage{
+		Role:    "user",
+		Content: msg,
+	})
+	return true, nil
+}
+
 func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 	if len(llm.messages) == 0 {
 		// dirty but no messages, possibly just a state change, nothing to do
@@ -615,11 +649,12 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 		if err != nil {
 			var finished *ModelFinishedError
 			if errors.As(err, &finished) {
-				if llm.env.IsDone() {
-					// we either didn't expect a return value, or got one - done!
-					return nil
-				} else if bk, err := llm.Query.Buildkit(ctx); err == nil && bk.Opts.Interactive {
-					// TODO: shell, reassign llm
+				if interjected, interjectErr := llm.interject(ctx); interjectErr != nil {
+					// interjecting failed or was interrupted
+					return errors.Join(err, interjectErr)
+				} else if interjected {
+					// interjected - continue
+					continue
 				}
 			}
 			return err
@@ -635,6 +670,13 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 		// Handle tool calls
 		// calls := res.Choices[0].Message.ToolCalls
 		if len(res.ToolCalls) == 0 {
+			if interjected, interjectErr := llm.interject(ctx); interjectErr != nil {
+				// interjecting failed or was interrupted
+				return interjectErr
+			} else if interjected {
+				// interjected - continue
+				continue
+			}
 			break
 		}
 		for _, toolCall := range res.ToolCalls {
@@ -645,9 +687,6 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 				ToolCallID:  toolCall.ID,
 				ToolErrored: isError,
 			})
-		}
-		if llm.env.IsDone() {
-			break
 		}
 	}
 	return nil
@@ -956,7 +995,13 @@ func (s LLMHook) ExtendLLMType(targetType dagql.ObjectType) error {
 			// DeprecatedReason: "use get<TargetType> instead",
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-			llm := self.(dagql.Instance[*LLM]).Self.Clone()
+			llm := self.(dagql.Instance[*LLM]).Self
+			// TODO: this is a little sneaky. we don't want to Clone() because that'll
+			// cause it to run again for other things. the cleanest form of this seems
+			// something like LLM.wantDirectory() but then an extra call just to get
+			// the directory feels verbose.
+			//
+			// are bindings relevant here?
 			llm.env.Want(typename)
 			if err := llm.Sync(ctx, s.Server); err != nil {
 				return nil, err

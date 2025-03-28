@@ -211,7 +211,7 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 		fe.err = fe.runWithTUI(ctx, run)
 	}
 
-	if fe.editline != nil {
+	if fe.editline != nil && fe.shell != nil {
 		if err := os.MkdirAll(filepath.Dir(historyFile), 0755); err != nil {
 			slog.Error("failed to create history directory", "err", err)
 		}
@@ -556,9 +556,13 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 
 func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 	if fe.editlineFocused {
-		return append([]key.Binding{
+		bnds := []key.Binding{
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "nav mode")),
-		}, fe.shell.KeyBindings()...)
+		}
+		if fe.shell != nil {
+			bnds = append(bnds, fe.shell.KeyBindings()...)
+		}
+		return bnds
 	}
 
 	var quitMsg string
@@ -628,18 +632,18 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 		fmt.Fprint(countOut, fe.viewBoolPrompt(countOut))
 	}
 
-	if fe.activeStringPrompt != nil {
-		fmt.Fprintln(countOut)
-		fmt.Fprint(countOut, fe.viewStringPrompt(countOut))
-	}
-
-	if fe.shell == nil {
+	if fe.editline == nil {
 		fmt.Fprint(countOut, fe.viewKeymap())
 	}
 
 	if logs := fe.logs.Logs[fe.ZoomedSpan]; logs != nil && logs.UsedHeight() > 0 {
 		fmt.Fprintln(below)
 		fe.renderLogs(countOut, r, logs, -1, fe.window.Height/3, progPrefix, false)
+	}
+
+	if fe.activeStringPrompt != nil {
+		fmt.Fprintln(countOut)
+		fmt.Fprint(countOut, fe.viewStringPrompt(countOut))
 	}
 
 	belowOut := strings.TrimRight(below.String(), "\n")
@@ -994,6 +998,11 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 
 		fe.initEditline()
 
+		// restore history
+		fe.editline.MaxHistorySize = 1000
+		if history, err := history.LoadHistory(historyFile); err == nil {
+			fe.editline.SetHistory(history)
+		}
 		fe.editline.HistoryEncoder = msg.handler
 
 		// wire up auto completion
@@ -1073,7 +1082,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		fe.editline.Reset()
 		if fe.activeStringPrompt != nil {
 			fe.activeStringPrompt.result <- value
-			// fe.editline = nil
+			fe.editline = nil
 			fe.activeStringPrompt = nil
 			fe.editlineFocused = false
 		} else if fe.shell != nil {
@@ -1171,7 +1180,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				fe.recalculateViewLocked()
 				return fe, nil
 			default:
-				if fe.editline.AtStart() {
+				if fe.shell != nil && fe.editline.AtStart() {
 					// this will panic
 					cmd := fe.shell.ReactToInput(fe.runCtx, msg)
 					if cmd != nil {
@@ -1313,11 +1322,6 @@ func (fe *frontendPretty) initEditline() {
 	fe.editline = editline.New(fe.window.Width, fe.window.Height)
 	fe.editline.HideKeyMap = true
 	fe.editlineFocused = true
-	// restore history
-	fe.editline.MaxHistorySize = 1000
-	if history, err := history.LoadHistory(historyFile); err == nil {
-		fe.editline.SetHistory(history)
-	}
 	// hopefully fix weird prompt display?
 	fe.editline.Update(nil)
 }
@@ -1445,7 +1449,9 @@ func (fe *frontendPretty) updatePrompt() {
 	if fe.editlineFocused {
 		out = focusedBg(out)
 	}
-	fe.editline.Prompt = fe.shell.Prompt(out, fe.promptFg)
+	if fe.shell != nil {
+		fe.editline.Prompt = fe.shell.Prompt(out, fe.promptFg)
+	}
 	fe.editline.UpdatePrompt()
 }
 
