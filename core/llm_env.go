@@ -55,7 +55,6 @@ type LLMEnv struct {
 	needsSystemPrompt bool
 	// The return type that we want from the LLM.
 	wantType string
-	returned bool
 }
 
 func NewLLMEnv(endpoint *LLMEndpoint) *LLMEnv {
@@ -530,9 +529,9 @@ func (env *LLMEnv) ReadVariable(name string) (string, bool) {
 	return val, found
 }
 
-// TODO: validate, might belong on LLM, wanted to involve 'dirty' initially
 func (env *LLMEnv) IsDone() bool {
-	return env.returned || env.wantType == ""
+	return env.wantType == "" ||
+		env.Current() != nil && env.Current().Type().Name() == env.wantType
 }
 
 func (env *LLMEnv) WantsType() string {
@@ -542,13 +541,25 @@ func (env *LLMEnv) WantsType() string {
 func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 	builtins := []LLMTool{
 		{
-			Name: "currentSelection", // TODO: double this as "return"?
+			Name: "currentSelection",
 			// NOTE: this description is load-bearing! It allows the LLM to know its
 			// current state, without even calling this tool. Without this sort of
 			// hint the model tends to give you instructions instead of acting on its
 			// own. That could be addressed with a system prompt, but we don't want to
 			// rely on those.
-			Description: "Your current selection: " + env.describe(env.Current()),
+			Description: (func() string {
+				desc := "Your current selection: " + env.describe(env.Current())
+				if env.wantType != "" {
+					if env.IsDone() {
+						desc += "\n\n"
+						desc += fmt.Sprintf("Your current selection matches the desired return type, `%s`.", env.wantType)
+					} else {
+						desc += "\n\n"
+						desc += fmt.Sprintf("If you have completed your task, select a `%s` to return it to the user.", env.wantType)
+					}
+				}
+				return desc
+			})(),
 			Schema: map[string]any{
 				"type":                 "object",
 				"properties":           map[string]any{},
@@ -560,39 +571,6 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 				return env.currentState(nil)
 			}),
 		},
-	}
-	if env.wantType != "" {
-		typeName := env.wantType
-		builtins = append(builtins, LLMTool{
-			Name:        "return" + env.wantType,
-			Description: fmt.Sprintf("Return a %s, indicating that your task is complete.", typeName),
-			Schema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"id": map[string]any{
-						"type":           "string",
-						"pattern":        idPattern(typeName),
-						"description":    fmt.Sprintf("The %s ID to return, in \"%s#number\" format.", typeName, typeName),
-						jsonSchemaIDAttr: typeName,
-					},
-				},
-				"strict":               true,
-				"required":             []string{"id"},
-				"additionalProperties": false,
-			},
-			Call: ToolFunc(func(ctx context.Context, args struct {
-				ID string `name:"id"`
-			}) (any, error) {
-				obj, err := env.GetObject(args.ID, typeName)
-				if err != nil {
-					return nil, err
-				}
-				prev := env.Current()
-				env.Select(obj)
-				env.returned = true
-				return env.currentState(prev)
-			}),
-		})
 	}
 	for typeName := range env.typeCount {
 		tools, err := env.tools(srv, typeName)
