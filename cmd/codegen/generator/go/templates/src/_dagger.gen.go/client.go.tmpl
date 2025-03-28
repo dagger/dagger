@@ -245,16 +245,16 @@ func serveModuleDepencencies(ctx context.Context, client *Client) error {
 		}
 	}
 
-		sdkSource, err := modSrc.SDK().Source(ctx)
-		if err != nil {
+	sdkSource, err := modSrc.SDK().Source(ctx)
+	if err != nil {
+		return err
+	}
+
+	if sdkSource != "" {
+		if err := modSrc.AsModule().Serve(ctx); err != nil {
 			return err
 		}
-
-		if sdkSource != "" {
-			if err := modSrc.AsModule().Serve(ctx); err != nil {
-				return err
-			}
-		}
+	}
 
 	return nil
 }
