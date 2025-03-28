@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	vault "github.com/hashicorp/vault/api"
 	auth "github.com/hashicorp/vault/api/auth/approle"
@@ -12,45 +13,68 @@ import (
 
 var (
 	vaultClient *vault.Client
-	vaultCache  = make(map[string]map[string]any)
+	vaultCache  = make(map[string]dataWithTTL)
 )
 
 // HashiCorp Vault provider for SecretProvider
-func vaultProvider(ctx context.Context, key string) ([]byte, error) {
-	// KVv2 mount path. Default "secret"
-	mount := os.Getenv("VAULT_PATH_PREFIX")
-	if mount == "" {
-		mount = "secret"
-	}
-
-	// split key into path and field, e.g. "path/to/secret.field"
-	keyParts := strings.Split(key, ".")
-	if len(keyParts) != 2 {
-		return nil, fmt.Errorf("invalid key format: %s", key)
-	}
-	secretPath := keyParts[0]
-	secretField := keyParts[1]
-
-	// check if client is initialized
-	if vaultClient == nil {
-		err := vaultConfigureClient(ctx)
-		if err != nil {
-			return nil, err
+func getVaultProvider(ttl time.Duration) SecretResolver {
+	return func(ctx context.Context, key string) ([]byte, error) {
+		// KVv2 mount path. Default "secret"
+		mount := os.Getenv("VAULT_PATH_PREFIX")
+		if mount == "" {
+			mount = "secret"
 		}
-	}
 
-	// check if path is in key cache
-	if _, ok := vaultCache[key]; !ok {
-		// read the secret
-		s, err := vaultClient.KVv2(mount).Get(ctx, secretPath)
-		if err != nil {
-			return nil, err
+		// split key into path and field, e.g. "path/to/secret.field"
+		keyParts := strings.Split(key, ".")
+		if len(keyParts) != 2 {
+			return nil, fmt.Errorf("invalid key format: %s", key)
 		}
-		// cache response
-		vaultCache[key] = s.Data
+		secretPath := keyParts[0]
+		secretField := keyParts[1]
+
+		// check if client is initialized
+		if vaultClient == nil {
+			err := vaultConfigureClient(ctx)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		// check if path is in key cache and is not expired
+		if existing, ok := vaultCache[key]; !ok || hasExpired(existing) {
+			// read the secret
+			s, err := vaultClient.KVv2(mount).Get(ctx, secretPath)
+			if err != nil {
+				return nil, fmt.Errorf("inside 3 %w. secret path %s", err, secretPath)
+			}
+			data := dataWithTTL{
+				data: s.Data,
+			}
+
+			if ttl > 0 {
+				data.expiresAt = time.Now().Add(ttl)
+			}
+
+			// cache response
+			vaultCache[key] = data
+		}
+
+		return []byte(vaultCache[key].data[secretField].(string)), nil
+	}
+}
+
+func hasExpired(data dataWithTTL) bool {
+	// if no ttl set, assume no ttl required
+	if data.expiresAt.IsZero() {
+		return false
 	}
 
-	return []byte(vaultCache[key][secretField].(string)), nil
+	if data.expiresAt.After(time.Now()) {
+		return false
+	}
+
+	return true
 }
 
 // Load configuration from environment and create a new vault client
