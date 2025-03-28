@@ -123,6 +123,7 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 			generatedAPIReferencePath,
 			generatedDaggerJSONSchemaPath,
 			generatedEngineJSONSchemaPath,
+			generatedPhpReferencePath,
 		})
 	})
 
@@ -185,7 +186,7 @@ func (d Docs) GenerateCli() *dagger.Directory {
 
 // Generate the PHP SDK API reference documentation
 func (d Docs) GeneratePhp() *dagger.Directory {
-	return dag.PhpSDKDev().Base().
+	dir := dag.PhpSDKDev().Base().
 		WithFile(
 			"/usr/bin/doctum",
 			dag.HTTP("https://doctum.long-term.support/releases/5.5.4/doctum.phar"),
@@ -194,6 +195,7 @@ func (d Docs) GeneratePhp() *dagger.Directory {
 		WithFile("/etc/doctum-config.php", d.DoctumConfig).
 		WithExec([]string{"doctum", "update", "/etc/doctum-config.php", "-v"}).
 		Directory("/src/sdk/php/build")
+	return dag.Directory().WithDirectory(generatedPhpReferencePath, dir)
 }
 
 // Regenerate the API schema
