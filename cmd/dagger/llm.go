@@ -228,53 +228,6 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 }
 
 func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
-	vars, err := s.llm.Variables(ctx)
-	if err != nil {
-		return err
-	}
-
-	for _, v := range vars {
-		name, err := v.Name(ctx)
-		if err != nil {
-			dbg.Println("error getting var name", err)
-			return err
-		}
-		typeName, err := v.TypeName(ctx)
-		if err != nil {
-			dbg.Println("error getting var type name", err)
-			return err
-		}
-		hash, err := v.Hash(ctx)
-		if err != nil {
-			dbg.Println("error getting var hash", err)
-			return err
-		}
-		digest := digest.Digest(hash)
-
-		if s.syncedVars[name] == digest {
-			// already synced
-			continue
-		}
-
-		dbg.Println("syncing llm => var", name, typeName, hash)
-
-		val, err := s.ShellValue(ctx, name, typeName, func(q *querybuilder.Selection) *querybuilder.Selection {
-			return q.Select(fmt.Sprintf("get%s", typeName)).
-				Arg("name", name)
-		})
-		if err != nil {
-			return err
-		}
-		quot, err := syntax.Quote(val, syntax.LangBash)
-		if err != nil {
-			return err
-		}
-		if err := s.shell.Eval(ctx, fmt.Sprintf("%s=%s", name, quot)); err != nil {
-			return err
-		}
-		s.syncedVars[name] = digest
-	}
-
 	typeName, err := s.llm.CurrentType(ctx)
 	if err != nil {
 		return err
@@ -282,7 +235,6 @@ func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
 	if typeName == "" || typeName == "Query" {
 		return nil
 	}
-
 	val, err := s.ShellValue(ctx, "_", typeName, func(q *querybuilder.Selection) *querybuilder.Selection {
 		return q.Select(strcase.ToLowerCamel(typeName))
 	})
@@ -296,7 +248,6 @@ func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
 	if err := s.shell.Eval(ctx, fmt.Sprintf("%s=%s", "_", quot)); err != nil {
 		return err
 	}
-
 	return nil
 }
 
