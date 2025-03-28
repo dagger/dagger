@@ -40,7 +40,6 @@ func (funcs goTemplateFuncs) isDevMode() bool {
 }
 
 func (funcs goTemplateFuncs) gitDependencies() []modules.ModuleConfigDependency {
-	fmt.Printf("%#v\n", funcs.cfg.GitDependencies)
 	return funcs.cfg.GitDependencies
 }
 
