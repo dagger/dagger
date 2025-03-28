@@ -19,7 +19,7 @@ on:
 jobs:
   remote-dagger-engine-nvme:
     if: ${{ github.repository == 'dagger/dagger' }}
-    runs-on: dagger-x1-v0-17-1-16c-nvme-${{ inputs.nvme }}
+    runs-on: dagger-x1-v0-17-2-16c-nvme-${{ inputs.nvme }}
     timeout-minutes: ${{ inputs.timeout }}
     steps:
       - name: Checkout repo
