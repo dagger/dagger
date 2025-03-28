@@ -632,6 +632,11 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 		fmt.Fprint(countOut, fe.viewBoolPrompt(countOut))
 	}
 
+	if fe.activeStringPrompt != nil {
+		fmt.Fprintln(countOut)
+		fmt.Fprint(countOut, fe.viewStringPrompt(countOut))
+	}
+
 	if fe.editline == nil {
 		fmt.Fprint(countOut, fe.viewKeymap())
 	}
@@ -639,11 +644,6 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 	if logs := fe.logs.Logs[fe.ZoomedSpan]; logs != nil && logs.UsedHeight() > 0 {
 		fmt.Fprintln(below)
 		fe.renderLogs(countOut, r, logs, -1, fe.window.Height/3, progPrefix, false)
-	}
-
-	if fe.activeStringPrompt != nil {
-		fmt.Fprintln(countOut)
-		fmt.Fprint(countOut, fe.viewStringPrompt(countOut))
 	}
 
 	belowOut := strings.TrimRight(below.String(), "\n")
@@ -942,7 +942,10 @@ func (fe *frontendPretty) View() string {
 		prog += "\n"
 		if view := strings.TrimSpace(fe.view.String()); view != "" {
 			prog += view
-			prog += "\n\n"
+			prog += "\n"
+			if fe.activeStringPrompt == nil {
+				prog += "\n"
+			}
 		}
 		return prog + fe.editlineView()
 	}
