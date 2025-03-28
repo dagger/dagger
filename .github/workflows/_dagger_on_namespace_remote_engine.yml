@@ -33,7 +33,7 @@ jobs:
     if: ${{ github.repository == 'dagger/dagger' }}
     runs-on:
       - nscloud-ubuntu-${{ inputs.ubuntu }}-amd64-${{ inputs.size }}x32
-      - namespace-experiments:dagger.integration=enabled;dagger.version=${{ inputs.dagger }}
+      - namespace-experiments:dagger.integration=enabled;dagger.version=${{ inputs.dagger }};storage.mode=2
     timeout-minutes: ${{ inputs.timeout }}
     steps:
       - name: Checkout repo
