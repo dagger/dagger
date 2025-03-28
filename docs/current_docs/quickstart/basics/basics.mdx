@@ -14,9 +14,9 @@ Dagger is a modular, composable platform designed to replace complex systems glu
 
 ## Creating containers
 
-Dagger works by expressing workflows as combinations of functions from the Dagger API, which exposes a range of tools for working with containers, files, directories, network services, secrets. You call the Dagger API from shell (the Dagger Shell) or code (custom Dagger Functions written in a programming language).
+Dagger works by expressing workflows as combinations of functions from the Dagger API, which exposes a range of tools for working with containers, files, directories, network services, secrets. You call the Dagger API from shell (Dagger Shell) or code (custom Dagger Functions written in a programming language).
 
-The Dagger Shell is an interactive client for the Dagger API, giving you typed objects, built-in documentation, and access to a cross-language ecosystem of reusable modules. You launch it simply by typing `dagger`. Here's an example of using it to build and return an Alpine container:
+Dagger Shell is an interactive client for the Dagger API, giving you typed objects, built-in documentation, and access to a cross-language ecosystem of reusable modules. You launch it simply by typing `dagger`. Here's an example of using it to build and return an Alpine container:
 
 ```shell
 container |
@@ -125,9 +125,62 @@ FIXME
 </TabItem>
 </Tabs>
 
-You call this function from the Dagger Shell, or from your system shell using `dagger call`:
+You call this function from Dagger Shell, or from your system shell using `dagger call`:
 
 [FIXME recording]
+
+:::tip FUNCTION CHAINING
+Function chaining works the same way, whether you're writing Dagger Function code using a Dagger SDK or using Dagger Shell. The following are equivalent:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/chaining/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/chaining/python/__init__.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/chaining/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="PHP">
+
+```php file=./snippets/chaining/php/src/Basics.php
+```
+
+</TabItem>
+<TabItem value="Java">
+
+```java file=./snippets/chaining/java/src/main/java/io/dagger/modules/basics/Basics.java
+```
+
+</TabItem>
+<TabItem value="System shell">
+```shell
+# all equivalent
+dagger -c 'base | with-exec apk add bash git | publish ttl.sh/bar'
+dagger -c 'build | publish ttl.sh/bar'
+dagger -c build-and-publish
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+# all equivalent
+base | with-exec apk add bash git | publish ttl.sh/bar
+build | publish ttl.sh/bar
+build-and-publish
+```
+</TabItem>
+</Tabs>
+:::
 
 ## Using arguments and return values
 
@@ -164,9 +217,11 @@ FIXME
 </TabItem>
 </Tabs>
 
-ADD chaining equivalency
-
 [FIXME recording]
+
+:::tip FUNCTION NAMES
+When calling Dagger Functions, all names (functions, arguments, fields, etc.) are converted into a shell-friendly "kebab-case" style. This is why a Dagger Function named `FooPublish` in Go, `foo_publish` in Python and `fooPublish` in TypeScript/PHP/Java is called as `foo-publish` in Dagger Shell or on the command-line.
+:::
 
 ## Speeding things up with caching
 
@@ -200,6 +255,7 @@ FIXME
 
 </TabItem>
 </Tabs>
+
 Notice that when you call this Dagger Function multiple times, the second and subsequent runs are drastically faster than the first, since Dagger automatically reuses the cached packages instead of re-downloading them every time.
 
 [FIXME recording]
@@ -222,7 +278,7 @@ Once configured, every time you execute a Dagger workflow, its operational telem
 
 [FIXME screen recording]
 
-:::note
+:::note DAGGER CLOUD
 Dagger Cloud sign-up is optional, and free of charge for a single user. A GitHub or Google account is required for account setup and identity verification.
 :::
 
