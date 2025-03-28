@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"path"
 	"python-sdk/internal/dagger"
@@ -53,6 +52,7 @@ type PyProject struct {
 	Project struct {
 		Name           string
 		RequiresPython string `toml:"requires-python"`
+		Dependencies   []string
 	}
 	Tool struct {
 		Uv     UvConfig
@@ -73,6 +73,9 @@ type Discovery struct {
 	// Files is a map of file names to their contents.
 	Files map[string]string
 
+	// CodegenCommand contains the arguments to the codegen executable.
+	CodegenCommand []string
+
 	// EnableCustomConfig is a flag to enable or disable the discovery of custom
 	// configuration, either from loading pyproject.toml or reacting to the
 	// the presence of certain files like .python-version.
@@ -86,9 +89,10 @@ func NewDiscovery(cfg UserConfig) *Discovery {
 	proj := PyProject{}
 	proj.Tool.Dagger = cfg
 	return &Discovery{
-		Config:  &proj,
-		FileSet: make(map[string]struct{}),
-		Files:   make(map[string]string),
+		Config:         &proj,
+		FileSet:        make(map[string]struct{}),
+		Files:          make(map[string]string),
+		CodegenCommand: []string{"dist/codegen"},
 
 		// Custom config can only be disabled by an extension module.
 		EnableCustomConfig: true,
@@ -238,6 +242,21 @@ func (d *Discovery) loadModInfo(ctx context.Context, m *PythonSdk) error {
 		return nil
 	})
 
+	eg.Go(func() error {
+		version, err := dag.Version(ctx)
+		if err != nil {
+			return fmt.Errorf("get engine version: %w", err)
+		}
+		// if it's a dev build, vendor the library
+		if strings.Contains(version, "-") {
+			return nil
+		}
+		d.mu.Lock()
+		m.EngineVersion = strings.TrimPrefix(version, "v")
+		d.mu.Unlock()
+		return nil
+	})
+
 	// TODO: Provide runtime modules with a boolean to indicate whether the
 	// module is new or not. Could be `dagger init --sdk` or `dagger develop --sdk`.
 	//
@@ -269,6 +288,12 @@ func (d *Discovery) loadModInfo(ctx context.Context, m *PythonSdk) error {
 
 // loadFiles loads the contents of certain module source files.
 func (d *Discovery) loadFiles(ctx context.Context, m *PythonSdk) error {
+	// If there's a dagger.json and no pyproject.toml, it's an init'ed module
+	// adding sources (`dagger develop --sdk`).
+	if !m.IsInit && !d.HasFile("pyproject.toml") {
+		m.IsInit = true
+	}
+
 	// These paths should be in "exclude" in dagger.json.
 	// Let's remove them just in case, to avoid conflicts.
 	for _, exclude := range DirExcludes {
@@ -277,12 +302,6 @@ func (d *Discovery) loadFiles(ctx context.Context, m *PythonSdk) error {
 				path.Join(m.SubPath, exclude),
 			)
 		}
-	}
-
-	// If there's a dagger.json and no pyproject.toml, it's an init'ed module
-	// adding sources (`dagger develop --sdk`).
-	if !m.IsInit && !d.HasFile("pyproject.toml") {
-		m.IsInit = true
 	}
 
 	eg, gctx := errgroup.WithContext(ctx)
@@ -305,25 +324,6 @@ func (d *Discovery) loadFiles(ctx context.Context, m *PythonSdk) error {
 		}
 	}
 
-	if m.IntrospectionJSON != nil {
-		eg.Go(func() error {
-			content, err := m.IntrospectionJSON.Contents(ctx)
-			if err != nil {
-				return err
-			}
-			var introspection struct {
-				SchemaVersion string `json:"__schemaVersion"`
-			}
-			if err = json.Unmarshal([]byte(content), &introspection); err != nil {
-				return err
-			}
-			d.mu.Lock()
-			m.SchemaVersion = strings.TrimPrefix(introspection.SchemaVersion, "v")
-			d.mu.Unlock()
-			return nil
-		})
-	}
-
 	// When not using the bundled codegen executable we can revert to executing directly
 	eg.Go(func() error {
 		dist, _ := m.SdkSourceDir.Directory("dist").Entries(ctx)
@@ -333,7 +333,7 @@ func (d *Discovery) loadFiles(ctx context.Context, m *PythonSdk) error {
 		}
 
 		d.mu.Lock()
-		m.CodegenCommand = []string{
+		d.CodegenCommand = []string{
 			"uv", "run", "--isolated", "--frozen", "--package", "codegen",
 			"python", "-m", "codegen",
 		}
@@ -366,6 +366,11 @@ func (d *Discovery) loadFiles(ctx context.Context, m *PythonSdk) error {
 func (d *Discovery) loadConfig(ctx context.Context, m *PythonSdk) error {
 	contents, ok := d.Files["pyproject.toml"]
 	if !ok {
+		// For now, always vendor when creating a new pyproject.toml file until
+		// we have a released version in PyPI that can use client bindings
+		// outside the library.
+		m.VendorPath = GenDir
+
 		return nil
 	}
 
@@ -417,9 +422,30 @@ func (d *Discovery) loadConfig(ctx context.Context, m *PythonSdk) error {
 		m.PackageName = NormalizePackageName(m.ProjectName)
 	}
 
-	if m.IsInit {
-		m.Discovery.Config.Tool.Uv.Sources.Dagger.Path = "sdk"
-		m.Discovery.Config.Tool.Uv.Sources.Dagger.Editable = true
+	m.VendorPath = d.Config.Tool.Uv.Sources.Dagger.Path
+
+	switch {
+	case m.EngineVersion != "":
+		for _, dep := range d.Config.Project.Dependencies {
+			if strings.HasPrefix(strings.TrimSpace(dep), "dagger-io") {
+				if !strings.HasSuffix(dep, "=="+m.EngineVersion) {
+					m.AddNewFile("pyproject.toml", strings.Replace(
+						contents,
+						fmt.Sprintf("%q", dep),
+						fmt.Sprintf(`"dagger-io ==%s"`, m.EngineVersion),
+						1,
+					))
+				}
+				break
+			}
+		}
+
+	case m.EngineVersion == "" && m.VendorPath == "":
+		// Force vendoring on dev builds even if not already vendoring. This
+		// way users can opt-out when back to a stable build, but also not have
+		// to manually update pyproject.toml in order for it to work.
+		m.VendorPath = GenDir
+		m.AddNewFile("pyproject.toml", VendorConfig(contents, m.VendorPath))
 	}
 
 	return nil
