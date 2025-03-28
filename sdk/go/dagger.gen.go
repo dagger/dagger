@@ -559,7 +559,7 @@ func (r *Container) EnvVariable(ctx context.Context, name string) (string, error
 }
 
 // Retrieves the list of environment variables passed to commands.
-func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
+func (r *Container) EnvVariables(ctx context.Context) ([]*EnvVariable, error) {
 	q := r.query.Select("envVariables")
 
 	q = q.Select("id")
@@ -568,18 +568,18 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 		Id EnvVariableID
 	}
 
-	convert := func(fields []envVariables) []EnvVariable {
-		out := []EnvVariable{}
+	convert := func(fields []*envVariables) []*EnvVariable {
+		out := []*EnvVariable{}
 
 		for i := range fields {
-			val := EnvVariable{id: &fields[i].Id}
+			val := &EnvVariable{id: &fields[i].Id}
 			val.query = q.Root().Select("loadEnvVariableFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []envVariables
+	var response []*envVariables
 
 	q = q.Bind(&response)
 
@@ -688,7 +688,7 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 // Retrieves the list of exposed ports.
 //
 // This includes ports already exposed by the image, even if not explicitly added with dagger.
-func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
+func (r *Container) ExposedPorts(ctx context.Context) ([]*Port, error) {
 	q := r.query.Select("exposedPorts")
 
 	q = q.Select("id")
@@ -697,18 +697,18 @@ func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 		Id PortID
 	}
 
-	convert := func(fields []exposedPorts) []Port {
-		out := []Port{}
+	convert := func(fields []*exposedPorts) []*Port {
+		out := []*Port{}
 
 		for i := range fields {
-			val := Port{id: &fields[i].Id}
+			val := &Port{id: &fields[i].Id}
 			val.query = q.Root().Select("loadPortFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []exposedPorts
+	var response []*exposedPorts
 
 	q = q.Bind(&response)
 
@@ -845,7 +845,7 @@ func (r *Container) Label(ctx context.Context, name string) (string, error) {
 }
 
 // Retrieves the list of labels passed to container.
-func (r *Container) Labels(ctx context.Context) ([]Label, error) {
+func (r *Container) Labels(ctx context.Context) ([]*Label, error) {
 	q := r.query.Select("labels")
 
 	q = q.Select("id")
@@ -854,18 +854,18 @@ func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 		Id LabelID
 	}
 
-	convert := func(fields []labels) []Label {
-		out := []Label{}
+	convert := func(fields []*labels) []*Label {
+		out := []*Label{}
 
 		for i := range fields {
-			val := Label{id: &fields[i].Id}
+			val := &Label{id: &fields[i].Id}
 			val.query = q.Root().Select("loadLabelFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []labels
+	var response []*labels
 
 	q = q.Bind(&response)
 
@@ -3057,7 +3057,7 @@ func (r *EngineCacheEntrySet) DiskSpaceBytes(ctx context.Context) (int, error) {
 }
 
 // The list of individual cache entries in the set
-func (r *EngineCacheEntrySet) Entries(ctx context.Context) ([]EngineCacheEntry, error) {
+func (r *EngineCacheEntrySet) Entries(ctx context.Context) ([]*EngineCacheEntry, error) {
 	q := r.query.Select("entries")
 
 	q = q.Select("id")
@@ -3066,18 +3066,18 @@ func (r *EngineCacheEntrySet) Entries(ctx context.Context) ([]EngineCacheEntry, 
 		Id EngineCacheEntryID
 	}
 
-	convert := func(fields []entries) []EngineCacheEntry {
-		out := []EngineCacheEntry{}
+	convert := func(fields []*entries) []*EngineCacheEntry {
+		out := []*EngineCacheEntry{}
 
 		for i := range fields {
-			val := EngineCacheEntry{id: &fields[i].Id}
+			val := &EngineCacheEntry{id: &fields[i].Id}
 			val.query = q.Root().Select("loadEngineCacheEntryFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []entries
+	var response []*entries
 
 	q = q.Bind(&response)
 
@@ -3247,7 +3247,7 @@ func (r *EnumTypeDef) SourceModuleName(ctx context.Context) (string, error) {
 }
 
 // The values of the enum.
-func (r *EnumTypeDef) Values(ctx context.Context) ([]EnumValueTypeDef, error) {
+func (r *EnumTypeDef) Values(ctx context.Context) ([]*EnumValueTypeDef, error) {
 	q := r.query.Select("values")
 
 	q = q.Select("id")
@@ -3256,18 +3256,18 @@ func (r *EnumTypeDef) Values(ctx context.Context) ([]EnumValueTypeDef, error) {
 		Id EnumValueTypeDefID
 	}
 
-	convert := func(fields []values) []EnumValueTypeDef {
-		out := []EnumValueTypeDef{}
+	convert := func(fields []*values) []*EnumValueTypeDef {
+		out := []*EnumValueTypeDef{}
 
 		for i := range fields {
-			val := EnumValueTypeDef{id: &fields[i].Id}
+			val := &EnumValueTypeDef{id: &fields[i].Id}
 			val.query = q.Root().Select("loadEnumValueTypeDefFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []values
+	var response []*values
 
 	q = q.Bind(&response)
 
@@ -3525,7 +3525,7 @@ func (r *Error) Message(ctx context.Context) (string, error) {
 }
 
 // The extensions of the error.
-func (r *Error) Values(ctx context.Context) ([]ErrorValue, error) {
+func (r *Error) Values(ctx context.Context) ([]*ErrorValue, error) {
 	q := r.query.Select("values")
 
 	q = q.Select("id")
@@ -3534,18 +3534,18 @@ func (r *Error) Values(ctx context.Context) ([]ErrorValue, error) {
 		Id ErrorValueID
 	}
 
-	convert := func(fields []values) []ErrorValue {
-		out := []ErrorValue{}
+	convert := func(fields []*values) []*ErrorValue {
+		out := []*ErrorValue{}
 
 		for i := range fields {
-			val := ErrorValue{id: &fields[i].Id}
+			val := &ErrorValue{id: &fields[i].Id}
 			val.query = q.Root().Select("loadErrorValueFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []values
+	var response []*values
 
 	q = q.Bind(&response)
 
@@ -3965,7 +3965,7 @@ func (r *Function) WithGraphQLQuery(q *querybuilder.Selection) *Function {
 }
 
 // Arguments accepted by the function, if any.
-func (r *Function) Args(ctx context.Context) ([]FunctionArg, error) {
+func (r *Function) Args(ctx context.Context) ([]*FunctionArg, error) {
 	q := r.query.Select("args")
 
 	q = q.Select("id")
@@ -3974,18 +3974,18 @@ func (r *Function) Args(ctx context.Context) ([]FunctionArg, error) {
 		Id FunctionArgID
 	}
 
-	convert := func(fields []args) []FunctionArg {
-		out := []FunctionArg{}
+	convert := func(fields []*args) []*FunctionArg {
+		out := []*FunctionArg{}
 
 		for i := range fields {
-			val := FunctionArg{id: &fields[i].Id}
+			val := &FunctionArg{id: &fields[i].Id}
 			val.query = q.Root().Select("loadFunctionArgFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []args
+	var response []*args
 
 	q = q.Bind(&response)
 
@@ -4348,7 +4348,7 @@ func (r *FunctionCall) MarshalJSON() ([]byte, error) {
 }
 
 // The argument values the function is being invoked with.
-func (r *FunctionCall) InputArgs(ctx context.Context) ([]FunctionCallArgValue, error) {
+func (r *FunctionCall) InputArgs(ctx context.Context) ([]*FunctionCallArgValue, error) {
 	q := r.query.Select("inputArgs")
 
 	q = q.Select("id")
@@ -4357,18 +4357,18 @@ func (r *FunctionCall) InputArgs(ctx context.Context) ([]FunctionCallArgValue, e
 		Id FunctionCallArgValueID
 	}
 
-	convert := func(fields []inputArgs) []FunctionCallArgValue {
-		out := []FunctionCallArgValue{}
+	convert := func(fields []*inputArgs) []*FunctionCallArgValue {
+		out := []*FunctionCallArgValue{}
 
 		for i := range fields {
-			val := FunctionCallArgValue{id: &fields[i].Id}
+			val := &FunctionCallArgValue{id: &fields[i].Id}
 			val.query = q.Root().Select("loadFunctionCallArgValueFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []inputArgs
+	var response []*inputArgs
 
 	q = q.Bind(&response)
 
@@ -5066,7 +5066,7 @@ func (r *InputTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *InputTypeDef
 }
 
 // Static fields defined on this input object, if any.
-func (r *InputTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
+func (r *InputTypeDef) Fields(ctx context.Context) ([]*FieldTypeDef, error) {
 	q := r.query.Select("fields")
 
 	q = q.Select("id")
@@ -5075,18 +5075,18 @@ func (r *InputTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 		Id FieldTypeDefID
 	}
 
-	convert := func(fields []fields) []FieldTypeDef {
-		out := []FieldTypeDef{}
+	convert := func(fields []*fields) []*FieldTypeDef {
+		out := []*FieldTypeDef{}
 
 		for i := range fields {
-			val := FieldTypeDef{id: &fields[i].Id}
+			val := &FieldTypeDef{id: &fields[i].Id}
 			val.query = q.Root().Select("loadFieldTypeDefFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []fields
+	var response []*fields
 
 	q = q.Bind(&response)
 
@@ -5181,7 +5181,7 @@ func (r *InterfaceTypeDef) Description(ctx context.Context) (string, error) {
 }
 
 // Functions defined on this interface, if any.
-func (r *InterfaceTypeDef) Functions(ctx context.Context) ([]Function, error) {
+func (r *InterfaceTypeDef) Functions(ctx context.Context) ([]*Function, error) {
 	q := r.query.Select("functions")
 
 	q = q.Select("id")
@@ -5190,18 +5190,18 @@ func (r *InterfaceTypeDef) Functions(ctx context.Context) ([]Function, error) {
 		Id FunctionID
 	}
 
-	convert := func(fields []functions) []Function {
-		out := []Function{}
+	convert := func(fields []*functions) []*Function {
+		out := []*Function{}
 
 		for i := range fields {
-			val := Function{id: &fields[i].Id}
+			val := &Function{id: &fields[i].Id}
 			val.query = q.Root().Select("loadFunctionFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []functions
+	var response []*functions
 
 	q = q.Bind(&response)
 
@@ -6534,7 +6534,7 @@ func (r *LLM) TypeDef() *TypeDef {
 }
 
 // list variables in the LLM environment
-func (r *LLM) Variables(ctx context.Context) ([]LLMVariable, error) {
+func (r *LLM) Variables(ctx context.Context) ([]*LLMVariable, error) {
 	q := r.query.Select("variables")
 
 	q = q.Select("id")
@@ -6543,18 +6543,18 @@ func (r *LLM) Variables(ctx context.Context) ([]LLMVariable, error) {
 		Id LLMVariableID
 	}
 
-	convert := func(fields []variables) []LLMVariable {
-		out := []LLMVariable{}
+	convert := func(fields []*variables) []*LLMVariable {
+		out := []*LLMVariable{}
 
 		for i := range fields {
-			val := LLMVariable{id: &fields[i].Id}
+			val := &LLMVariable{id: &fields[i].Id}
 			val.query = q.Root().Select("loadLLMVariableFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []variables
+	var response []*variables
 
 	q = q.Bind(&response)
 
@@ -7341,7 +7341,7 @@ func (r *Module) WithGraphQLQuery(q *querybuilder.Selection) *Module {
 }
 
 // The dependencies of the module.
-func (r *Module) Dependencies(ctx context.Context) ([]Module, error) {
+func (r *Module) Dependencies(ctx context.Context) ([]*Module, error) {
 	q := r.query.Select("dependencies")
 
 	q = q.Select("id")
@@ -7350,18 +7350,18 @@ func (r *Module) Dependencies(ctx context.Context) ([]Module, error) {
 		Id ModuleID
 	}
 
-	convert := func(fields []dependencies) []Module {
-		out := []Module{}
+	convert := func(fields []*dependencies) []*Module {
+		out := []*Module{}
 
 		for i := range fields {
-			val := Module{id: &fields[i].Id}
+			val := &Module{id: &fields[i].Id}
 			val.query = q.Root().Select("loadModuleFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []dependencies
+	var response []*dependencies
 
 	q = q.Bind(&response)
 
@@ -7387,7 +7387,7 @@ func (r *Module) Description(ctx context.Context) (string, error) {
 }
 
 // Enumerations served by this module.
-func (r *Module) Enums(ctx context.Context) ([]TypeDef, error) {
+func (r *Module) Enums(ctx context.Context) ([]*TypeDef, error) {
 	q := r.query.Select("enums")
 
 	q = q.Select("id")
@@ -7396,18 +7396,18 @@ func (r *Module) Enums(ctx context.Context) ([]TypeDef, error) {
 		Id TypeDefID
 	}
 
-	convert := func(fields []enums) []TypeDef {
-		out := []TypeDef{}
+	convert := func(fields []*enums) []*TypeDef {
+		out := []*TypeDef{}
 
 		for i := range fields {
-			val := TypeDef{id: &fields[i].Id}
+			val := &TypeDef{id: &fields[i].Id}
 			val.query = q.Root().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []enums
+	var response []*enums
 
 	q = q.Bind(&response)
 
@@ -7469,7 +7469,7 @@ func (r *Module) MarshalJSON() ([]byte, error) {
 }
 
 // Interfaces served by this module.
-func (r *Module) Interfaces(ctx context.Context) ([]TypeDef, error) {
+func (r *Module) Interfaces(ctx context.Context) ([]*TypeDef, error) {
 	q := r.query.Select("interfaces")
 
 	q = q.Select("id")
@@ -7478,18 +7478,18 @@ func (r *Module) Interfaces(ctx context.Context) ([]TypeDef, error) {
 		Id TypeDefID
 	}
 
-	convert := func(fields []interfaces) []TypeDef {
-		out := []TypeDef{}
+	convert := func(fields []*interfaces) []*TypeDef {
+		out := []*TypeDef{}
 
 		for i := range fields {
-			val := TypeDef{id: &fields[i].Id}
+			val := &TypeDef{id: &fields[i].Id}
 			val.query = q.Root().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []interfaces
+	var response []*interfaces
 
 	q = q.Bind(&response)
 
@@ -7515,7 +7515,7 @@ func (r *Module) Name(ctx context.Context) (string, error) {
 }
 
 // Objects served by this module.
-func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
+func (r *Module) Objects(ctx context.Context) ([]*TypeDef, error) {
 	q := r.query.Select("objects")
 
 	q = q.Select("id")
@@ -7524,18 +7524,18 @@ func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
 		Id TypeDefID
 	}
 
-	convert := func(fields []objects) []TypeDef {
-		out := []TypeDef{}
+	convert := func(fields []*objects) []*TypeDef {
+		out := []*TypeDef{}
 
 		for i := range fields {
-			val := TypeDef{id: &fields[i].Id}
+			val := &TypeDef{id: &fields[i].Id}
 			val.query = q.Root().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []objects
+	var response []*objects
 
 	q = q.Bind(&response)
 
@@ -7826,7 +7826,7 @@ func (r *ModuleSource) Commit(ctx context.Context) (string, error) {
 }
 
 // The clients generated for the module.
-func (r *ModuleSource) ConfigClients(ctx context.Context) ([]ModuleConfigClient, error) {
+func (r *ModuleSource) ConfigClients(ctx context.Context) ([]*ModuleConfigClient, error) {
 	q := r.query.Select("configClients")
 
 	q = q.Select("id")
@@ -7835,18 +7835,18 @@ func (r *ModuleSource) ConfigClients(ctx context.Context) ([]ModuleConfigClient,
 		Id ModuleConfigClientID
 	}
 
-	convert := func(fields []configClients) []ModuleConfigClient {
-		out := []ModuleConfigClient{}
+	convert := func(fields []*configClients) []*ModuleConfigClient {
+		out := []*ModuleConfigClient{}
 
 		for i := range fields {
-			val := ModuleConfigClient{id: &fields[i].Id}
+			val := &ModuleConfigClient{id: &fields[i].Id}
 			val.query = q.Root().Select("loadModuleConfigClientFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []configClients
+	var response []*configClients
 
 	q = q.Bind(&response)
 
@@ -7881,7 +7881,7 @@ func (r *ModuleSource) ContextDirectory() *Directory {
 }
 
 // The dependencies of the module source.
-func (r *ModuleSource) Dependencies(ctx context.Context) ([]ModuleSource, error) {
+func (r *ModuleSource) Dependencies(ctx context.Context) ([]*ModuleSource, error) {
 	q := r.query.Select("dependencies")
 
 	q = q.Select("id")
@@ -7890,18 +7890,18 @@ func (r *ModuleSource) Dependencies(ctx context.Context) ([]ModuleSource, error)
 		Id ModuleSourceID
 	}
 
-	convert := func(fields []dependencies) []ModuleSource {
-		out := []ModuleSource{}
+	convert := func(fields []*dependencies) []*ModuleSource {
+		out := []*ModuleSource{}
 
 		for i := range fields {
-			val := ModuleSource{id: &fields[i].Id}
+			val := &ModuleSource{id: &fields[i].Id}
 			val.query = q.Root().Select("loadModuleSourceFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []dependencies
+	var response []*dependencies
 
 	q = q.Bind(&response)
 
@@ -8318,7 +8318,7 @@ func (r *ObjectTypeDef) Description(ctx context.Context) (string, error) {
 }
 
 // Static fields defined on this object, if any.
-func (r *ObjectTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
+func (r *ObjectTypeDef) Fields(ctx context.Context) ([]*FieldTypeDef, error) {
 	q := r.query.Select("fields")
 
 	q = q.Select("id")
@@ -8327,18 +8327,18 @@ func (r *ObjectTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 		Id FieldTypeDefID
 	}
 
-	convert := func(fields []fields) []FieldTypeDef {
-		out := []FieldTypeDef{}
+	convert := func(fields []*fields) []*FieldTypeDef {
+		out := []*FieldTypeDef{}
 
 		for i := range fields {
-			val := FieldTypeDef{id: &fields[i].Id}
+			val := &FieldTypeDef{id: &fields[i].Id}
 			val.query = q.Root().Select("loadFieldTypeDefFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []fields
+	var response []*fields
 
 	q = q.Bind(&response)
 
@@ -8351,7 +8351,7 @@ func (r *ObjectTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 }
 
 // Functions defined on this object, if any.
-func (r *ObjectTypeDef) Functions(ctx context.Context) ([]Function, error) {
+func (r *ObjectTypeDef) Functions(ctx context.Context) ([]*Function, error) {
 	q := r.query.Select("functions")
 
 	q = q.Select("id")
@@ -8360,18 +8360,18 @@ func (r *ObjectTypeDef) Functions(ctx context.Context) ([]Function, error) {
 		Id FunctionID
 	}
 
-	convert := func(fields []functions) []Function {
-		out := []Function{}
+	convert := func(fields []*functions) []*Function {
+		out := []*Function{}
 
 		for i := range fields {
-			val := Function{id: &fields[i].Id}
+			val := &Function{id: &fields[i].Id}
 			val.query = q.Root().Select("loadFunctionFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []functions
+	var response []*functions
 
 	q = q.Bind(&response)
 
@@ -8639,7 +8639,7 @@ func (r *Client) CurrentModule() *CurrentModule {
 }
 
 // The TypeDef representations of the objects currently being served in the session.
-func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
+func (r *Client) CurrentTypeDefs(ctx context.Context) ([]*TypeDef, error) {
 	q := r.query.Select("currentTypeDefs")
 
 	q = q.Select("id")
@@ -8648,18 +8648,18 @@ func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
 		Id TypeDefID
 	}
 
-	convert := func(fields []currentTypeDefs) []TypeDef {
-		out := []TypeDef{}
+	convert := func(fields []*currentTypeDefs) []*TypeDef {
+		out := []*TypeDef{}
 
 		for i := range fields {
-			val := TypeDef{id: &fields[i].Id}
+			val := &TypeDef{id: &fields[i].Id}
 			val.query = q.Root().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []currentTypeDefs
+	var response []*currentTypeDefs
 
 	q = q.Bind(&response)
 
@@ -9756,7 +9756,7 @@ func (r *Service) MarshalJSON() ([]byte, error) {
 }
 
 // Retrieves the list of ports provided by the service.
-func (r *Service) Ports(ctx context.Context) ([]Port, error) {
+func (r *Service) Ports(ctx context.Context) ([]*Port, error) {
 	q := r.query.Select("ports")
 
 	q = q.Select("id")
@@ -9765,18 +9765,18 @@ func (r *Service) Ports(ctx context.Context) ([]Port, error) {
 		Id PortID
 	}
 
-	convert := func(fields []ports) []Port {
-		out := []Port{}
+	convert := func(fields []*ports) []*Port {
+		out := []*Port{}
 
 		for i := range fields {
-			val := Port{id: &fields[i].Id}
+			val := &Port{id: &fields[i].Id}
 			val.query = q.Root().Select("loadPortFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []ports
+	var response []*ports
 
 	q = q.Bind(&response)
 
