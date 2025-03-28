@@ -583,13 +583,13 @@ func (env *LLMEnv) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 			Call: ToolFunc(func(ctx context.Context, args struct {
 				ID string `name:"id"`
 			}) (any, error) {
-				env.returned = true
 				obj, err := env.GetObject(args.ID, typeName)
 				if err != nil {
 					return nil, err
 				}
 				prev := env.Current()
 				env.Select(obj)
+				env.returned = true
 				return env.currentState(prev)
 			}),
 		})

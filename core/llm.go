@@ -594,19 +594,10 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) error {
 	return err
 }
 
-// interject keeps the loop going if necessary, by prompting for a new input,
-// adding it to the message history, and returning true
-func (llm *LLM) interject(ctx context.Context) (bool, error) {
-	if llm.env.IsDone() {
-		// we either didn't expect a return value, or got one - done!
-		return false, nil
-	}
+func (llm *LLM) Interject(ctx context.Context) error {
 	bk, err := llm.Query.Buildkit(ctx)
 	if err != nil {
-		return false, err
-	}
-	if !bk.Opts.Interactive {
-		return false, nil
+		return err
 	}
 	ctx, span := Tracer(ctx).Start(ctx, "LLM prompt", telemetry.Reveal(), trace.WithAttributes(
 		attribute.String(telemetry.UIActorEmojiAttr, "🧑"),
@@ -618,13 +609,33 @@ func (llm *LLM) interject(ctx context.Context) (bool, error) {
 	defer stdio.Close()
 	msg, err := bk.PromptHumanHelp(ctx, "The caller needs a **"+llm.env.WantsType()+"**, but the model needs some help:")
 	if err != nil {
-		return false, err
+		return err
 	}
 	fmt.Fprint(stdio.Stdout, msg)
 	llm.messages = append(llm.messages, ModelMessage{
 		Role:    "user",
 		Content: msg,
 	})
+	return nil
+}
+
+// autoInterject keeps the loop going if necessary, by prompting for a new
+// input, adding it to the message history, and returning true
+func (llm *LLM) autoInterject(ctx context.Context) (bool, error) {
+	if llm.env.IsDone() {
+		// we either didn't expect a return value, or got one - done!
+		return false, nil
+	}
+	bk, err := llm.Query.Buildkit(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !bk.Opts.Interactive {
+		return false, nil
+	}
+	if err := llm.Interject(ctx); err != nil {
+		return false, err
+	}
 	return true, nil
 }
 
@@ -649,7 +660,7 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 		if err != nil {
 			var finished *ModelFinishedError
 			if errors.As(err, &finished) {
-				if interjected, interjectErr := llm.interject(ctx); interjectErr != nil {
+				if interjected, interjectErr := llm.autoInterject(ctx); interjectErr != nil {
 					// interjecting failed or was interrupted
 					return errors.Join(err, interjectErr)
 				} else if interjected {
@@ -670,7 +681,7 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 		// Handle tool calls
 		// calls := res.Choices[0].Message.ToolCalls
 		if len(res.ToolCalls) == 0 {
-			if interjected, interjectErr := llm.interject(ctx); interjectErr != nil {
+			if interjected, interjectErr := llm.autoInterject(ctx); interjectErr != nil {
 				// interjecting failed or was interrupted
 				return interjectErr
 			} else if interjected {
