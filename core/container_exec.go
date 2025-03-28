@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
@@ -84,7 +83,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		return nil, err
 	}
 
-	execMD := buildkit.ExecutionMetadata{Mutex: new(sync.Mutex)}
+	execMD := buildkit.ExecutionMetadata{}
 	if opts.NestedExecMetadata != nil {
 		execMD = *opts.NestedExecMetadata
 	}

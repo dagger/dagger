@@ -221,7 +221,16 @@ func (mod *Module) CacheConfigForCall(
 	// Function calls on a module should be cached based on the module's content hash, not
 	// the module ID digest (which has a per-client cache key in order to deal with
 	// local dir and git repo loading)
-	curIDNoMod := dagql.CurrentID(ctx).WithoutModule()
+	id := dagql.CurrentID(ctx)
+	curIDNoMod := id.Receiver().Append(
+		id.Type().ToAST(),
+		id.Field(),
+		id.View(),
+		nil,
+		int(id.Nth()),
+		"",
+		id.Args()...,
+	)
 	cacheCfg.Digest = dagql.HashFrom(
 		curIDNoMod.Digest().String(),
 		mod.Source.Self.Digest,

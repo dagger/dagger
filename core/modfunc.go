@@ -198,10 +198,11 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts, exe
 		ctxArgs = append(ctxArgs, arg)
 	}
 	ctxArgVals := make([]*FunctionCallArgValue, len(ctxArgs))
+	execMDMu := &sync.Mutex{}
 	eg, ctx := errgroup.WithContext(ctx)
 	for i, arg := range ctxArgs {
 		eg.Go(func() error {
-			ctxVal, err := fn.loadContextualArg(ctx, opts.Server, arg, execMD)
+			ctxVal, err := fn.loadContextualArg(ctx, opts.Server, arg, execMD, execMDMu)
 			if err != nil {
 				return fmt.Errorf("failed to load contextual arg %q: %w", arg.Name, err)
 			}
@@ -250,8 +251,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		CacheByCall:       !opts.SkipCallDigestCacheKey,
 		ParentIDs:         map[digest.Digest]*resource.ID{},
 		AllowedLLMModules: clientMetadata.AllowedLLMModules,
-
-		Mutex: new(sync.Mutex),
 	}
 
 	callInputs, err := fn.setCallInputs(ctx, opts, &execMD)
@@ -531,6 +530,7 @@ func (fn *ModuleFunction) loadContextualArg(
 	dag *dagql.Server,
 	arg *FunctionArg,
 	execMD *buildkit.ExecutionMetadata,
+	execMDMu *sync.Mutex,
 ) (JSON, error) {
 	if arg.TypeDef.Kind != TypeDefKindObject {
 		return nil, fmt.Errorf("contextual argument %q must be a Directory or a File", arg.OriginalName)
@@ -548,9 +548,9 @@ func (fn *ModuleFunction) loadContextualArg(
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", arg.DefaultPath, err)
 		}
-		execMD.Lock()
+		execMDMu.Lock()
 		execMD.ParentIDs[dir.ID().Digest()] = &resource.ID{ID: *dir.ID()}
-		execMD.Unlock()
+		execMDMu.Unlock()
 
 		dirID, err := dir.ID().Encode()
 		if err != nil {
@@ -571,9 +571,9 @@ func (fn *ModuleFunction) loadContextualArg(
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", dirPath, err)
 		}
-		execMD.Lock()
+		execMDMu.Lock()
 		execMD.ParentIDs[dir.ID().Digest()] = &resource.ID{ID: *dir.ID()}
-		execMD.Unlock()
+		execMDMu.Unlock()
 
 		var fileID FileID
 
