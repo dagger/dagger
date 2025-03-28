@@ -141,6 +141,9 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 		params.Tools = toolParams
 	}
 
+	dbgEnc.Encode("---------------------------------------------")
+	dbgEnc.Encode(params)
+
 	stream := c.client.Chat.Completions.NewStreaming(ctx, params)
 	if stream.Err() != nil {
 		// errored establishing connection; bail so stream.Close doesn't panic
@@ -156,6 +159,8 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 	for stream.Next() {
 		res := stream.Current()
 		acc.AddChunk(res)
+
+		dbgEnc.Encode(res)
 
 		// Keep track of the token usage
 		//

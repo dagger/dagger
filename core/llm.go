@@ -628,6 +628,9 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 				ToolErrored: isError,
 			})
 		}
+		if llm.env.Returned {
+			break
+		}
 	}
 	llm.dirty = false
 	return llm, nil
@@ -944,7 +947,9 @@ func (s LLMHook) ExtendLLMType(targetType dagql.ObjectType) error {
 			// DeprecatedReason: "use get<TargetType> instead",
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-			llm := self.(dagql.Instance[*LLM]).Self
+			llm := self.(dagql.Instance[*LLM]).Self.Clone()
+			llm.env.Want(typename)
+			llm.dirty = true
 			llm, err := llm.Sync(ctx, s.Server)
 			if err != nil {
 				return nil, err

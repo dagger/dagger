@@ -2,8 +2,11 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/googleapis/gax-go/v2/apierror"
@@ -39,6 +42,22 @@ func newGenaiClient(endpoint *LLMEndpoint) (*GenaiClient, error) {
 		client:   client,
 		endpoint: endpoint,
 	}, err
+}
+
+var dbgEnc *json.Encoder
+
+func init() {
+	os.Setenv("LLM_LOG", "/tmp/llm_log.json")
+	if fn := os.Getenv("LLM_LOG"); fn != "" {
+		debugFile, err := os.Create(fn)
+		if err != nil {
+			panic(err)
+		}
+		dbgEnc = json.NewEncoder(debugFile)
+	} else {
+		dbgEnc = json.NewEncoder(io.Discard)
+	}
+	dbgEnc.SetIndent("", "  ")
 }
 
 func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
@@ -168,6 +187,10 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 		model.SystemInstruction = nil
 	}
 
+	dbgEnc.Encode("---------------------------------------------")
+	dbgEnc.Encode(model)
+	dbgEnc.Encode(genaiHistory)
+
 	// Pop last message from history for SendMessage
 	if len(genaiHistory) == 0 {
 		return nil, fmt.Errorf("no user prompt")
@@ -196,6 +219,8 @@ func (c *GenaiClient) SendQuery(ctx context.Context, history []ModelMessage, too
 			}
 			return nil, err
 		}
+
+		dbgEnc.Encode(res)
 
 		// Keep track of the token usage
 		if res.UsageMetadata != nil {
