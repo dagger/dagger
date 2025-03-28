@@ -39,8 +39,7 @@ func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (
 	if err != nil {
 		return nil, err
 	}
-	// FIXME: can tidy up once we upgrade to v0.17.0 (which has dagger/dagger#9118)
-	if slices.Contains(entries, ".git/") || slices.Contains(entries, ".git") {
+	if slices.Contains(entries, ".git/") {
 		valid = true
 	}
 

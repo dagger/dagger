@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-October%2031,%202024-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-March%2028,%202025-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -344,30 +344,11 @@ Be sure to use "Rebase and Merge" when merging the PR to `main` to preserve the 
 
 ## 🐙 dagger-for-github ⏱ `2mins`
 
-The action's `README.md` and `action.yml` should be relatively evergreen now, so we don't need to bump with Dagger releases anymore, just if there is a fix to `dagger-for-github`. We'll use `8.0.0` style versions for the action going forward to comply with GitHub immutable actions standards. Should not need separate `v8` tag. Should automatically get `v8`, `v8.0`, `v8.0.0` as well as `8.0.0` resolved by GitHub.
+This step only needs to be run if there are important changes to the
+`dagger-for-github` action since the last release - this step is detached from
+the normal release flow.
 
-- [ ] Take a peek at the action or mention it in the release thread on Discord if there are updates to reflect in the docs. Not tied to the Dagger release itself outside of docs. cc @jpadams @kpenfound @vikram-dagger @jasonmccallister
-
-- [ ] Create/push a new patch tag for fixes/changes to `dagger-for-github`
-
-```console
-# Find the latest released patch https://github.com/dagger/dagger-for-github/releases
-# or via the `gh` CLI. Use that to figure out the NEXT_PATCH_VERSION.
-gh release view --repo dagger/dagger-for-github --json tagName,publishedAt
-
-# Sign the tag, using the date as the comment, e.g. 2024-07-22
-git tag --sign -m $(date '+%Y-%m-%d') <NEXT_PATCH_VERSION>
-git push origin <NEXT_PATCH_VERSION> #shouldn't need to force since new tag
-```
-
-- [ ] Create a new release from the patch tag (auto-fill release notes via the
-      GitHub UI or via the `gh` CLI)
-- [ ] Submit PR to change the version mentioned in Dagger docs. See example [here](https://github.com/dagger/dagger/pull/9705/files)
-
-```console
-# --verify-tag will ensure the last tag creation step was done
-gh release create --generate-notes --verify-tag <NEXT_PATCH_VERSION>
-```
+See `dagger/dagger-for-github`'s [`RELEASING.md`](https://github.com/dagger/dagger-for-github/blob/main/RELEASING.md) for more information.
 
 ## Improve releasing 改善
 
