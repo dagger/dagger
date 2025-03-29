@@ -520,14 +520,13 @@ Taken together, these two types of caching significantly reduce execution times.
 <Tabs groupId="language">
 <TabItem value="Go">
 ```go
-func (m *Basics) Env(ctx context.Context) (*dagger.Container, error) {
+func (m *Basics) Env(ctx context.Context) *dagger.Container {
 	aptCache := dag.CacheVolume("apt-cache")
 	return dag.Container().
 		From("debian:latest").
 		WithMountedCache("/var/cache/apt/archives", aptCache).
 		WithExec([]string{"apt-get", "update"}).
-		WithExec([]string{"apt-get", "install", "--yes", "maven", "mariadb-server"}).
-		Sync(ctx)
+		WithExec([]string{"apt-get", "install", "--yes", "maven", "mariadb-server"})
 }
 ```
 </TabItem>
