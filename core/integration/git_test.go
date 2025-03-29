@@ -298,7 +298,7 @@ func (GitSuite) TestGitTagsSSH(ctx context.Context, t *testctx.T) {
 	t.Run("without SSH auth", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Git(repoURL).Tags(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, "Permission denied (publickey)")
+		requireErrOut(t, err, "SSH URLs are not supported without an SSH socket")
 	})
 }
 
@@ -371,14 +371,14 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 	// })
 
 	t.Run("authentication error", func(ctx context.Context, t *testctx.T) {
-		_, err := c.Git("https://github.com/grouville/daggerverse-private.git").
+		_, err := c.Git("https://bitbucket.org/dagger-modules/private-modules-test.git").
 			Branch("main").
 			Tree().
 			File("README.md").
 			Contents(ctx)
 		require.Error(t, err)
 		requireErrOut(t, err, "git error")
-		requireErrOut(t, err, "Authentication failed for 'https://github.com/grouville/daggerverse-private.git/'")
+		requireErrOut(t, err, "Authentication failed for 'https://bitbucket.org/dagger-modules/private-modules-test.git/'")
 	})
 }
 

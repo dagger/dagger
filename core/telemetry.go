@@ -85,8 +85,6 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 // recordStatus records the status of a call on a span.
 func recordStatus(ctx context.Context, res dagql.Typed, span trace.Span, cached bool, err error, id *call.ID) {
 	if cached {
-		// NOTE: this is never actually called on cache hits, but might be in the
-		// future.
 		span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
 	}
 

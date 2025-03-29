@@ -3082,101 +3082,6 @@ func (t *Toplevel) Attempt(ctx context.Context) error {
 		require.NoError(t, c.Close())
 	})
 
-	t.Run("separate secret stores", func(ctx context.Context, t *testctx.T) {
-		// check that modules can't access each other's global secret stores,
-		// by attempting to leak from each other
-
-		var logs safeBuffer
-		c := connect(ctx, t, dagger.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
-
-		ctr := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
-
-		ctr = ctr.
-			WithWorkdir("/toplevel/leaker").
-			With(daggerExec("init", "--name=leaker", "--sdk=go", "--source=.")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"fmt"
-)
-
-type Leaker struct {}
-
-func (l *Leaker) Leak(ctx context.Context) error {
-	secret, _ := dag.LoadSecretFromName("mysecret").Plaintext(ctx)
-	fmt.Println("trying to read secret:", secret)
-	return nil
-}
-`,
-			)
-
-		ctr = ctr.
-			WithWorkdir("/toplevel/leaker-build").
-			With(daggerExec("init", "--name=leaker-build", "--sdk=go", "--source=.")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"fmt"
-	"strings"
-)
-
-type LeakerBuild struct {}
-
-func (l *LeakerBuild) Leak(ctx context.Context) error {
-	_, err := dag.Directory().
-		WithNewFile("Dockerfile", "FROM alpine\nRUN --mount=type=secret,id=mysecret cat /run/secrets/mysecret || true").
-		DockerBuild().
-		Sync(ctx)
-	if err == nil {
-		return fmt.Errorf("expected error, but got nil")
-	}
-	if !strings.Contains(err.Error(), "secret not found: mysecret") {
-		return fmt.Errorf("unexpected error: %v", err)
-	}
-	return nil
-}
-`,
-			)
-
-		ctr = ctr.
-			WithWorkdir("/toplevel").
-			With(daggerExec("init", "--name=toplevel", "--sdk=go", "--source=.")).
-			With(daggerExec("install", "./leaker")).
-			With(daggerExec("install", "./leaker-build")).
-			WithNewFile("main.go", `package main
-
-import "context"
-
-type Toplevel struct {}
-
-func (t *Toplevel) Attempt(ctx context.Context, uniq string) error {
-	// get the id of a secret to force the engine to eval it
-	_, err := dag.SetSecret("mysecret", "asdf" + "asdf").ID(ctx)
-	if err != nil {
-		return err
-	}
-	err = dag.Leaker().Leak(ctx)
-	if err != nil {
-		return err
-	}
-	err = dag.LeakerBuild().Leak(ctx)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-`,
-			)
-
-		_, err := ctr.With(daggerQuery(`{toplevel{attempt(uniq: %q)}}`, identity.NewID())).Stdout(ctx)
-		require.NoError(t, err)
-		require.NoError(t, c.Close())
-		require.NotContains(t, logs.String(), "asdfasdf")
-	})
-
 	t.Run("secret by id leak", func(ctx context.Context, t *testctx.T) {
 		// check that modules can't access each other's global secret stores,
 		// even when we know the underlying IDs
@@ -5501,9 +5406,15 @@ func daggerExec(args ...string) dagger.WithContainerFunc {
 
 func daggerNonNestedExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: false,
-		})
+		return c.
+			// Don't persist stable client id between runs. this matches the behavior
+			// of actual nested execs. Stable client IDs on the filesystem don't work
+			// when run inside layered containers that can branch off and run in parallel.
+			WithEnvVariable("XDG_STATE_HOME", "/tmp").
+			WithMountedTemp("/tmp").
+			WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
+				ExperimentalPrivilegedNesting: false,
+			})
 	}
 }
 

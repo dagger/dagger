@@ -10,13 +10,15 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/cache"
+	"github.com/opencontainers/go-digest"
 )
 
 func main() {
 	ctx := context.Background()
 
 	root := &core.Query{}
-	dag := dagql.NewServer(root)
+	dag := dagql.NewServer(root, dagql.NewSessionCache(cache.NewCache[digest.Digest, dagql.Typed]()))
 	coreMod := &schema.CoreMod{Dag: dag}
 	if err := coreMod.Install(ctx, dag); err != nil {
 		panic(err)
