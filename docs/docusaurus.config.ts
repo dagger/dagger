@@ -131,7 +131,7 @@ const config: Config = {
       {
         name: "image",
         property: "og:image",
-        content: `${url}/img/daggernaut-carpenter-robots-share.jpg`,
+        content: `${url}/img/current_docs/index/daggernaut-carpenter-robots-share.jpg`,
       },
       {
         name: "author",
@@ -139,7 +139,7 @@ const config: Config = {
       },
       {
         property: "twitter:image",
-        content: `${url}/img/daggernaut-carpenter-robots-share.jpg`,
+        content: `${url}/img/current_docs/index/daggernaut-carpenter-robots-share.jpg`,
       },
     ],
     prism: {
