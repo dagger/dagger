@@ -11,6 +11,7 @@ import (
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/core/modules"
 )
 
 func TypescriptTemplateFuncs(
@@ -67,6 +68,7 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"FormatProtected":           funcs.formatProtected,
 		"IsClientOnly":              funcs.isClientOnly,
 		"IsDevMode":                 funcs.isDevMode,
+		"GitDependencies":           funcs.gitDependencies,
 	}
 }
 
@@ -328,4 +330,8 @@ func (funcs typescriptTemplateFuncs) isClientOnly() bool {
 
 func (funcs typescriptTemplateFuncs) isDevMode() bool {
 	return funcs.cfg.Dev
+}
+
+func (funcs typescriptTemplateFuncs) gitDependencies() []modules.ModuleConfigDependency {
+	return funcs.cfg.GitDependencies
 }

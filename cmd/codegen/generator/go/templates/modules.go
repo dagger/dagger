@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dagger/dagger/core/modules"
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
 	"github.com/iancoleman/strcase"
 	"golang.org/x/tools/go/packages"
@@ -36,6 +37,10 @@ func (funcs goTemplateFuncs) isStandaloneClient() bool {
 
 func (funcs goTemplateFuncs) isDevMode() bool {
 	return funcs.cfg.Dev
+}
+
+func (funcs goTemplateFuncs) gitDependencies() []modules.ModuleConfigDependency {
+	return funcs.cfg.GitDependencies
 }
 
 func (funcs goTemplateFuncs) moduleRelPath(path string) string {

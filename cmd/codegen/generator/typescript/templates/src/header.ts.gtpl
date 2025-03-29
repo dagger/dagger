@@ -14,22 +14,67 @@ import { Context, connect as _connect, connection as _connection, ConnectOpts, C
 {{- end }}
 
 {{ if IsClientOnly }}
+async function serveModuleDependencies(client: Client): Promise<void> {
+  {{ range $i, $dep := GitDependencies -}}
+  await client.moduleSource(
+    "{{ $dep.Source }}", 
+    { refPin: "{{ $dep.Pin }}" },
+    )
+    .withName("{{ $dep.Name }}")
+    .asModule()
+    .serve()
+  {{ end }}
+
+  const modSrc = await client.moduleSource(".")
+  const configExist = await modSrc.configExists()
+  if (!configExist) {
+    return
+  }
+
+  const dependencies = await modSrc.dependencies()
+  await Promise.all(dependencies.map(async (dep) => {
+    const kind = await dep.kind()
+    if (kind === ModuleSourceKind.GitSource) {
+      return
+    }
+
+    await dep.asModule().serve()
+  }))
+
+  const sdkSource = await modSrc.sdk().source()
+  if (sdkSource !== null && sdkSource !== "") {
+    await modSrc.asModule().serve()
+  }
+}
+
 export async function connection(
   fct: () => Promise<void>,
   cfg: ConnectOpts = {},
 ) {
-  cfg.ServeCurrentModule = true
+  const wrapperFunc = async (): Promise<void> => {
+    await serveModuleDependencies(dag)
 
-  return await _connection(fct, cfg)
+    // Call the callback
+    await fct()
+  }
+
+  return await _connection(wrapperFunc, cfg)
 }
 
 export async function connect(
   fct: CallbackFct,
   cfg: ConnectOpts = {},
 ) {
-  cfg.ServeCurrentModule = true
+  // Serve remote dependencies before calling the callback
+  const wrapperFunc = async (client: Client): Promise<void> => {
+    await serveModuleDependencies(client)
 
-  return await _connect(fct, cfg)
+    // Call the callback with the client
+    // This requires to use `any` to pass the type system
+    await fct(client as any)
+  }
+
+  return await _connect(wrapperFunc as unknown as CallbackFct, cfg)
 }
 {{- end }}
 
