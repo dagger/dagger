@@ -14,7 +14,7 @@ Dagger is a modular, composable platform designed to replace complex systems glu
 
 ## Create containers
 
-Dagger works by expressing workflows as combinations of functions from the [Dagger API](../../api/index.mdx), which exposes a range of tools for working with containers, files, directories, network services, secrets. You [call the Dagger API](../../api/calling.mdx) from shell ([Dagger Shell](../../features/shell.mdx)) or code ([custom Dagger Functions](../../api/custom-functions.mdx) written in a programming language).
+Dagger works by expressing workflows as combinations of functions from the [Dagger API](../../api/index.mdx), which exposes a range of tools for working with containers, files, directories, network services, secrets. You [call the Dagger API](../../api/index.mdx#calling-the-dagger-api) from the shell ([Dagger Shell](../../features/shell.mdx)) or from code ([custom Dagger Functions](../../api/custom-functions.mdx) written in a programming language).
 
 [Dagger Shell](../../features/shell.mdx) is an interactive client for the Dagger API, giving you typed objects, built-in documentation, and access to a cross-language ecosystem of reusable modules. You launch it by typing `dagger`. Here's an example of using it to build and return an Alpine container:
 
@@ -24,7 +24,7 @@ container | from alpine
 
 ## Add files and directories
 
-Once you've got a container, you can continue using the Dagger API to modify it, by adding files or directories to it. You can use directories from the Dagger host's filesystem or remote Git repositories. Here's an example of adding Dagger's own open source GitHub repository to the container:
+Once you've got a container, you continue using the Dagger API to modify it, by adding files or directories to it. You can use directories from the Dagger host's filesystem or remote Git repositories. Here's an example of adding Dagger's own open source GitHub repository to the container:
 
 ```shell
 container | from alpine | with-directory https://github.com/dagger/dagger
@@ -54,7 +54,7 @@ Did it work? To look inside, request an interactive terminal session with the ru
 container | from alpine | with-new-file /hi.txt "Hello from Dagger!" | terminal
 ```
 
-This drops you into an interactive terminal running the `bash` shell. You can now directly execute commands in the running container, as shown below:
+This drops you into an interactive terminal running the `bash` shell. You now directly execute commands in the running container, as shown below:
 
 ![Terminal](/img/current_docs/quickstart/basics/terminal.gif)
 
@@ -149,7 +149,7 @@ public String publish()
 </TabItem>
 </Tabs>
 
-When you create a custom Dagger Function and tell Dagger about it (by installing the corresponding module), the Dagger API is [dynamically extended](../../api/internals.mdx#api-extension-with-dagger-functions) to include that new function. You can then call this function from Dagger Shell, or from your system shell using `dagger call`, in exactly the same way as you would call functions from the original Dagger API.
+When you create a custom Dagger Function and tell Dagger about it (by installing the corresponding module), the Dagger API is [dynamically extended](../../api/internals.mdx#api-extension-with-dagger-functions) to include that new function. You then call this function from Dagger Shell, or from your system shell using `dagger call`, in exactly the same way as you would call functions from the original Dagger API.
 
 ![Publish with a Dagger Function](/img/current_docs/quickstart/basics/publish-code.gif)
 
@@ -511,7 +511,7 @@ One of Dagger's most powerful features is its ability to [cache data across work
 - [Layers](../../api/cache-volumes.mdx#layer-caching): Build instructions and the results of some API calls.
 - [Volumes](../../api/cache-volumes.mdx#volume-caching): Contents of Dagger filesystem volumes.
 
-Taken together, these two types of caching can significantly reduce execution times. Here's an example: a Dagger Function that creates a cache volume to store the packages installed by `apt`:
+Taken together, these two types of caching significantly reduce execution times. Here's an example: a Dagger Function that creates a cache volume to store the packages installed by `apt`:
 
 <Tabs groupId="language">
 <TabItem value="Go">
