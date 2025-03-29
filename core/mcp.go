@@ -66,6 +66,13 @@ func (m *MCP) DefaultSystemPrompt() string {
 	return ""
 }
 
+func (m *MCP) WithEnvironment(env *Environment) *MCP {
+	m = m.Clone()
+	m.env = env
+	// We keep the current selection even if underlying environment is swapped out
+	return m
+}
+
 func (m *MCP) Clone() *MCP {
 	cp := *m
 	cp.env = cp.env.Clone()

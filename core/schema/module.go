@@ -521,7 +521,7 @@ func (s *moduleSchema) moduleWithObject(ctx context.Context, mod *core.Module, a
 	if err != nil {
 		return nil, err
 	}
-	return core.LLMHook{Server: s.dag}.ModuleWithObject(ctx, mod, def.Self)
+	return core.EnvironmentHook{Server: s.dag}.ModuleWithObject(ctx, mod, def.Self)
 }
 
 func (s *moduleSchema) moduleWithInterface(ctx context.Context, mod *core.Module, args struct {

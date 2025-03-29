@@ -780,6 +780,17 @@ func (llm *LLM) Get(ctx context.Context, dag *dagql.Server, key string) (dagql.T
 	return llm.env.GetObject(key, "")
 }
 
+func (llm *LLM) WithEnvironment(env *Environment) *LLM {
+	llm = llm.Clone()
+	llm.env.env = env
+	llm.dirty = true
+	return llm
+}
+
+func (llm *LLM) Environment() *Environment {
+	return llm.env.env
+}
+
 func (llm *LLM) With(value dagql.Object) *LLM {
 	llm = llm.Clone()
 	llm.env.Select(value)
@@ -855,185 +866,4 @@ func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsa
 		res.TotalTokens += msg.TokenUsage.TotalTokens
 	}
 	return &res, nil
-}
-
-type LLMHook struct {
-	Server *dagql.Server
-}
-
-// We don't expose these types to modules SDK codegen, but
-// we still want their graphql schemas to be available for
-// internal usage. So we use this list to scrub them from
-// the introspection JSON that module SDKs use for codegen.
-var TypesHiddenFromModuleSDKs = []dagql.Typed{
-	&Host{},
-
-	&Engine{},
-	&EngineCache{},
-	&EngineCacheEntry{},
-	&EngineCacheEntrySet{},
-}
-
-func (s LLMHook) ExtendLLMType(targetType dagql.ObjectType) error {
-	llmType, ok := s.Server.ObjectType(new(LLM).Type().Name())
-	if !ok {
-		return fmt.Errorf("failed to lookup llm type")
-	}
-	idType, ok := targetType.IDType()
-	if !ok {
-		return fmt.Errorf("failed to lookup ID type for %T", targetType)
-	}
-	typename := targetType.TypeName()
-	// Install get<TargetType>()
-	llmType.Extend(
-		dagql.FieldSpec{
-			Name:        "set" + typename,
-			Description: fmt.Sprintf("Set a variable of type %s in the llm environment", typename),
-			Type:        llmType.Typed(),
-			Args: dagql.InputSpecs{
-				{
-					Name:        "name",
-					Description: "The name of the variable",
-					Type:        dagql.NewString(""),
-				},
-				{
-					Name:        "value",
-					Description: fmt.Sprintf("The %s value to assign to the variable", typename),
-					Type:        idType,
-				},
-			},
-		},
-		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-			llm := self.(dagql.Instance[*LLM]).Self
-			name := args["name"].(dagql.String).String()
-			value := args["value"].(dagql.IDType)
-			obj, err := s.Server.Load(ctx, value.ID())
-			if err != nil {
-				return nil, err
-			}
-			return llm.Set(ctx, name, obj)
-		},
-		dagql.CacheSpec{},
-	)
-	// Install get<targetType>()
-	llmType.Extend(
-		dagql.FieldSpec{
-			Name:        "get" + typename,
-			Description: fmt.Sprintf("Retrieve a variable in the llm environment, of type %s", typename),
-			Type:        targetType.Typed(),
-			Args: dagql.InputSpecs{{
-				Name:        "name",
-				Description: "The name of the variable",
-				Type:        dagql.NewString(""),
-			}},
-		},
-		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-			llm := self.(dagql.Instance[*LLM]).Self
-			name := args["name"].(dagql.String).String()
-			val, err := llm.Get(ctx, s.Server, name)
-			if err != nil {
-				return nil, err
-			}
-			if val.Type().Name() != typename {
-				return nil, fmt.Errorf("expected variable of type %s, got %s", typename, val.Type().Name())
-			}
-			return val, nil
-		},
-		dagql.CacheSpec{},
-	)
-
-	// BACKWARDS COMPATIBILITY:
-
-	// Install with<TargetType>()
-	llmType.Extend(
-		dagql.FieldSpec{
-			Name:        "with" + typename,
-			Description: fmt.Sprintf("Set a variable of type %s in the llm environment", typename),
-			Type:        llmType.Typed(),
-			// DeprecatedReason: "use set<TargetType> instead",
-			Args: dagql.InputSpecs{
-				{
-					Name:        "value",
-					Description: fmt.Sprintf("The %s value to assign to the variable", typename),
-					Type:        idType,
-				},
-			},
-		},
-		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-			llm := self.(dagql.Instance[*LLM]).Self
-			value := args["value"].(dagql.IDType)
-			obj, err := s.Server.Load(ctx, value.ID())
-			if err != nil {
-				return nil, err
-			}
-			return llm.With(obj), nil
-		},
-		dagql.CacheSpec{},
-	)
-	// Install <targetType>()
-	llmType.Extend(
-		dagql.FieldSpec{
-			Name:        gqlFieldName(typename),
-			Description: fmt.Sprintf("Retrieve a the current value in the LLM environment, of type %s", typename),
-			Type:        targetType.Typed(),
-			// DeprecatedReason: "use get<TargetType> instead",
-		},
-		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-			llm := self.(dagql.Instance[*LLM]).Self
-			llm, err := llm.Sync(ctx, s.Server)
-			if err != nil {
-				return nil, err
-			}
-			val := llm.env.Current()
-			if val == nil {
-				return nil, fmt.Errorf("no value set for %s", typename)
-			}
-			if val.Type().Name() != typename {
-				return nil, fmt.Errorf("expected variable of type %s, got %s", typename, val.Type().Name())
-			}
-			return val, nil
-		},
-		dagql.CacheSpec{},
-	)
-	return nil
-}
-
-func (s LLMHook) InstallObject(targetType dagql.ObjectType) {
-	typename := targetType.TypeName()
-	if strings.HasPrefix(typename, "_") {
-		return
-	}
-
-	// don't extend LLM for types that we hide from modules, lest the codegen yield a
-	// WithEngine(*Engine) that refers to an unknown *Engine type.
-	//
-	// FIXME: in principle LLM should be able to refer to these types, so this should
-	// probably be moved to codegen somehow, i.e. if a field refers to a type that is
-	// hidden, don't codegen the field.
-	for _, hiddenType := range TypesHiddenFromModuleSDKs {
-		if hiddenType.Type().Name() == typename {
-			return
-		}
-	}
-
-	if err := s.ExtendLLMType(targetType); err != nil {
-		panic(err)
-	}
-}
-
-func (s LLMHook) ModuleWithObject(ctx context.Context, mod *Module, targetTypedef *TypeDef) (*Module, error) {
-	// Install the target type
-	mod, err := mod.WithObject(ctx, targetTypedef)
-	if err != nil {
-		return nil, err
-	}
-	typename := targetTypedef.Type().Name()
-	targetType, ok := s.Server.ObjectType(typename)
-	if !ok {
-		return nil, fmt.Errorf("can't retrieve object type %s", typename)
-	}
-	if err := s.ExtendLLMType(targetType); err != nil {
-		return nil, err
-	}
-	return mod, nil
 }
