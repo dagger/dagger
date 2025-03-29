@@ -1,0 +1,92 @@
+---
+slug: /concepts
+description: Core concepts for using Dagger for CI and Agents
+---
+
+# Concepts
+
+
+## Core Types
+
+Dagger is a open platform that provides primitive types. Instead of relying on static configuration, you can use the Dagger API to dynamically build software delivery pipelines.
+
+### Containers
+
+Containers are one of the basic building blocks of Dagger and expose a wide range of tools to interact with containers. Creating a container is as simple as using the below:
+
+```go
+dag.Container().From("node:21-slim")
+```
+
+This will create a container based on the `node:21-slim` image.
+
+### Directories and Files
+
+Just like the `container` type, the Dagger API also gives you access to `directories` and `files` programatically. You can create directories and files, read and write to them, and even delete them.
+
+Using the example from above, lets put a new file into the container:
+
+```go
+dag.Container().From("node:21-slim").
+	WithNewFile("/root/file.txt", "my contents")
+```
+
+This places a new file in the container at `/root/file.txt` with the contents `my contents`.
+
+We can also add directories and its common to take a directory from the host machine and place it into a container. Lets update the example to mount a directory from the host machine:
+
+```go
+dag.Container().From("node:21-slim").
+		WithNewFile("/root/file.txt", "my contents").
+		WithDirectory("/src", src)
+```
+
+This will place the directory `src` into the container at `/src` and make the contents of the directory available to the container.
+
+:::note
+Any changes to the `src` directory will not be synced back to the host machine.
+:::
+
+If we wanted to break the example into reusabe and chainable functions, we could move the container creation into a module.
+
+## Modules
+
+The previous section focused on the core types, functions, and chaining provided by Dagger. However, you can write modules that group functions and extend the core API of Dagger.
+
+:::note
+Modules are a way to organize your code and make it easier to reuse and share and there are multiple supported SDKs based on your preference.
+:::
+
+Let's combine what we learned in the last section into a single module with multiple functions:
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"math"
+	"math/rand"
+
+	"dagger/hello-dagger/internal/dagger"
+)
+
+type HelloDagger struct{}
+
+func (m *HelloDagger) NewContainer(src *dagger.Directory) *dagger.Container {
+	return dag.Container().From("node:21-slim")
+}
+
+func (m *HelloDagger) AddFile(c *dagger.Container, path string, contents string) *dagger.Container {
+	return c.WithNewFile(path, contents)
+}
+
+func (m *HelloDagger) AddDirectory(c *dagger.Container, src *dagger.Directory, path string) *dagger.Container {
+	return c.WithDirectory(path, src)
+}
+```
+
+
+## Learn More
+
+To learn more about the types provided by Dagger, visit the [API types](./api/types) documentation page.

@@ -26,6 +26,11 @@ module.exports = {
     },
     {
       type: "doc",
+      label: "Core Concepts",
+      id: "concepts",
+    },
+    {
+      type: "doc",
       label: "Installation",
       id: "install",
     },
