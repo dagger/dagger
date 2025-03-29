@@ -32,6 +32,10 @@ func (s llmSchema) Install() {
 			Doc("return the raw llm message history as json"),
 		dagql.Func("lastReply", s.lastReply).
 			Doc("return the last llm reply from the history"),
+		dagql.Func("withEnvironment", s.withEnvironment).
+			Doc("allow the LLM to interact with an environment via MCP"),
+		dagql.Func("environment", s.environment).
+			Doc("return the LLM's current environment"),
 		dagql.Func("withModel", s.withModel).
 			Doc("swap out the llm model").
 			ArgDoc("model", "The model to use"),
@@ -54,13 +58,6 @@ func (s llmSchema) Install() {
 		dagql.Func("withSystemPrompt", s.withSystemPrompt).
 			Doc("Add a system prompt to the LLM's environment").
 			ArgDoc("prompt", "The system prompt to send"),
-		dagql.Func("setString", s.withPromptVar).
-			Doc("Add a string variable to the LLM's environment").
-			ArgDoc("name", "The variable name").
-			ArgDoc("value", "The variable value"),
-		dagql.Func("getString", s.getString).
-			Doc("Get a string variable from the LLM's environment").
-			ArgDoc("name", "The variable name"),
 		dagql.NodeFunc("sync", func(ctx context.Context, self dagql.Instance[*core.LLM], _ struct{}) (dagql.ID[*core.LLM], error) {
 			var zero dagql.ID[*core.LLM]
 			var inst dagql.Instance[*core.LLM]
@@ -88,13 +85,19 @@ func (s llmSchema) Install() {
 	}.Install(s.srv)
 	dagql.Fields[*core.LLMVariable]{}.Install(s.srv)
 	dagql.Fields[*core.LLMTokenUsage]{}.Install(s.srv)
-	hook := core.LLMHook{Server: s.srv}
-	llmObjType, ok := s.srv.ObjectType(new(core.LLM).Type().Name())
-	if !ok {
-		panic("llm type not found after dagql install")
+}
+func (s *llmSchema) withEnvironment(ctx context.Context, llm *core.LLM, args struct {
+	Environment core.EnvironmentID
+}) (*core.LLM, error) {
+	env, err := args.Environment.Load(ctx, s.srv)
+	if err != nil {
+		return nil, err
 	}
-	hook.ExtendLLMType(llmObjType)
-	s.srv.AddInstallHook(hook)
+	return llm.WithEnvironment(env.Self), nil
+}
+
+func (s *llmSchema) environment(ctx context.Context, llm *core.LLM, args struct{}) (*core.Environment, error) {
+	return llm.Environment(), nil
 }
 
 func (s *llmSchema) model(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {
