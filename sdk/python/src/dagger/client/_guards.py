@@ -6,7 +6,7 @@ from beartype import BeartypeConf, BeartypeViolationVerbosity, beartype
 from beartype.door import TypeHint
 from beartype.vale import Is, IsInstance, IsSubclass
 
-from .base import Scalar, Type
+from dagger.client.base import Scalar, Type
 
 IDScalar = Annotated[Scalar, Is[lambda obj: type(obj).__name__.endswith("ID")]]
 
