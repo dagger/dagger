@@ -149,7 +149,7 @@ public String publish()
 </TabItem>
 </Tabs>
 
-When you create a custom Dagger Function and tell Dagger about it (by installing the corresponding module), the Dagger API is [dynamically extended](../../api/internals.mdx#api-extension-with-dagger-functions) to include that new function. You then call this function from Dagger Shell, or from your system shell using `dagger call`, in exactly the same way as you would call functions from the original Dagger API.
+When you create a custom Dagger Function and tell Dagger about it (by installing the corresponding module), the Dagger API is [dynamically extended](../../api/internals.mdx#api-extension-with-dagger-functions) to include that new function. You then call this function from Dagger Shell, or from the command-line using `dagger call`, in exactly the same way as you would call functions from the original Dagger API.
 
 ![Publish with a Dagger Function](/img/current_docs/quickstart/basics/publish-code.gif)
 
@@ -319,6 +319,10 @@ build-and-publish
 </TabItem>
 </Tabs>
 
+:::tip FUNCTION NAMES
+When calling Dagger Functions, all names (functions, arguments, fields, etc.) are converted into a shell-friendly "kebab-case" style. This is why a Dagger Function named `FooBar` in Go, `foo_bar` in Python and `fooBar` in TypeScript/PHP/Java is called as `foo-bar` in Dagger Shell or on the command-line.
+:::
+
 ## Use arguments and return values
 
 Dagger Functions are just like regular functions: they accept [arguments](../../api/arguments.mdx) and [return values](../../api/return-values.mdx). In addition to common types (string, boolean, integer, arrays...), the Dagger API also defines powerful [core types](../../api/types.mdx) which Dagger Functions can use, such as `Directory`, `Container`, `Service`, `Secret`, and many more.
@@ -427,8 +431,8 @@ public String publish2(@Default("alpine:latest") String image)
 </TabItem>
 </Tabs>
 
-:::tip FUNCTION NAMES
-When calling Dagger Functions, all names (functions, arguments, fields, etc.) are converted into a shell-friendly "kebab-case" style. This is why a Dagger Function named `FooBar` in Go, `foo_bar` in Python and `fooBar` in TypeScript/PHP/Java is called as `foo-bar` in Dagger Shell or on the command-line.
+:::tip SANDBOXING
+Dagger Functions are fully "sandboxed" and do not have direct access to the host system. Therefore, host resources such as directories, files, environment variables, network services and so on must be explicitly passed to Dagger Functions as arguments. This "sandboxing" of Dagger Functions improves security, ensures reproducibility, and assists caching.
 :::
 
 ## Install other modules
