@@ -50,7 +50,7 @@ Expected stderr:
 │ │ │ │
 │ │ │ │ ✔ Directory.withoutFile(path: "dagger.gen.go"): Directory! X.Xs
 │ │ │ │
-│ │ │ │ ✔ Host.__internalSocket(accessor: "2f746d702f7373682d39425a54595233456b4f2f6167656e742e32323032b613679a0814d9ec772f95d778c35fc5ff1697c493715653c6c712144292c5ad"): Socket! X.Xs
+│ │ │ │ ✔ Host.unixSocket(path: "/tmp/ssh-X.X BZTYR3EkO/agent.2202"): Socket! X.Xs
 │ │ │ │
 │ │ │ │ $ Container.withMountedFile(
 │ │ │ │ │ │ path: "/schema.json"
@@ -64,7 +64,7 @@ Expected stderr:
 │ │ │ │ ✔ .withEnvVariable(name: "GIT_SSH_COMMAND", value: "ssh -o StrictHostKeyChecking=no "): Container! X.Xs
 │ │ │ │ ✔ .withUnixSocket(
 │ │ │ │ │ │ path: "/tmp/dagger-ssh-sock"
-│ │ │ │ │ │ source: ✔ Host.__internalSocket(accessor: "2f746d702f7373682d39425a54595233456b4f2f6167656e742e32323032b613679a0814d9ec772f95d778c35fc5ff1697c493715653c6c712144292c5ad"): Socket! X.Xs
+│ │ │ │ │ │ source: ✔ Host.unixSocket(path: "/tmp/ssh-X.X BZTYR3EkO/agent.2202"): Socket! X.Xs
 │ │ │ │ │ ): Container! X.Xs
 │ │ │ │ ✔ .withoutDefaultArgs: Container! X.Xs
 │ │ │ │ $ .withExec(args: ["codegen", "--output", "/src", "--module-source-path", "/src", "--module-name", "viztest", "--introspection-json-path", "/schema.json"]): Container! X.Xs CACHED
