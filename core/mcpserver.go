@@ -131,7 +131,7 @@ func genMcpToolOpts(tool LLMTool) ([]mcp.ToolOption, error) {
 type mcpServer struct {
 	*mcpserver.MCPServer
 	dag  *dagql.Server
-	env  *LLMEnv
+	env  *MCP
 	pipe io.ReadWriteCloser
 }
 
