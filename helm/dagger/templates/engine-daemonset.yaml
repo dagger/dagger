@@ -143,6 +143,16 @@ spec:
             {{- with .Values.engine.volumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+      {{- if .Values.engine.hostNetwork }}
+      hostNetwork: {{ .Values.engine.hostNetwork }}
+      {{- end }}
+      {{- if .Values.engine.dnsPolicy }}
+      dnsPolicy: {{ .Values.engine.dnsPolicy }}
+      {{- end }}
+      {{- with .Values.engine.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.engine.terminationGracePeriodSeconds }}
       volumes:
         {{- if .Values.engine.hostPath.dataVolume.enabled }}

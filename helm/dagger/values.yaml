@@ -178,6 +178,43 @@ engine:
   #   persistentVolumeClaim:
   #     claimName: my-pvc
 
+  ## Host networking requested for this pod. 
+  ##   Use the host's network namespace. If this option is set, the ports 
+  ##   that will be used must be specified. Default to false.
+  hostNetwork:
+
+  ## Set DNS policy and config for the pod
+  ##   Possible enum values:
+  ##    - "ClusterFirst" indicates that the pod should use cluster DNS first
+  ##       unless hostNetwork is true, if it is available, then fall back on the
+  ##       default (as determined by kubelet) DNS settings.
+  ##    - "ClusterFirstWithHostNet" indicates that the pod should use cluster DNS
+  ##      first, if it is available, then fall back on the default (as determined by
+  ##      kubelet) DNS settings.
+  ##    - "Default" indicates that the pod should use the default (as determined
+  ##      by kubelet) DNS settings.
+  ##    - "None" indicates that the pod should use empty DNS settings. DNS
+  ##      parameters such as nameservers and search paths should be defined via
+  ##      DNSConfig.
+  dnsPolicy:
+
+  ## Specifies the DNS parameters of a pod. 
+  ##   Parameters specified here will be
+  ##   merged to the generated DNS configuration based on DNSPolicy.
+  ##   PodDNSConfig defines the DNS parameters of a pod in addition to those
+  ##   generated from DNSPolicy.
+  dnsConfig: {}
+    # nameservers:
+    # - 8.8.8.8
+    # - 8.8.4.4
+    # searches:
+    # - ns1.svc.cluster-domain.example
+    # - my.dns.search.suffix
+    # options:
+    # - name: ndots
+    #   value: "2"
+    # - name: edns0
+
 magicache:
   enabled: false
   url: https://api.dagger.cloud/magicache
