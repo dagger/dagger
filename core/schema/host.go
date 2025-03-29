@@ -154,7 +154,7 @@ func (s *hostSchema) Install() {
 			Doc(`Accesses a file on the host.`).
 			ArgDoc("path", `Location of the file to retrieve (e.g., "README.md").`),
 
-		dagql.FuncWithCacheKey("unixSocket", s.socket, dagql.CachePerClient).
+		dagql.FuncWithCacheKey("unixSocket", s.socket, s.socketCacheKey).
 			Doc(`Accesses a Unix socket on the host.`).
 			ArgDoc("path", `Location of the Unix socket (e.g., "/var/run/docker.sock").`),
 
@@ -284,43 +284,41 @@ type hostSocketArgs struct {
 	Path string
 }
 
-func (s *hostSchema) socket(ctx context.Context, host *core.Host, args hostSocketArgs) (inst dagql.Instance[*core.Socket], err error) {
+func (s *hostSchema) socketCacheKey(
+	ctx context.Context,
+	host dagql.Instance[*core.Host],
+	args hostSocketArgs,
+	cacheCfg dagql.CacheConfig,
+) (*dagql.CacheConfig, error) {
+	cc, err := dagql.CachePerClient(ctx, host, args, cacheCfg)
+	if err != nil {
+		return nil, err
+	}
+	accessor, err := core.GetClientResourceAccessor(ctx, host.Self.Query, args.Path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client resource name: %w", err)
+	}
+
+	cc.Digest = dagql.HashFrom(cc.Digest.String(), accessor)
+	return cc, nil
+}
+
+func (s *hostSchema) socket(ctx context.Context, host *core.Host, args hostSocketArgs) (*core.Socket, error) {
 	socketStore, err := host.Query.Sockets(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get socket store: %w", err)
+		return nil, fmt.Errorf("failed to get socket store: %w", err)
 	}
-
-	accessor, err := core.GetClientResourceAccessor(ctx, host.Query, args.Path)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get client resource name: %w", err)
-	}
-
-	if err := s.srv.Select(ctx, s.srv.Root(), &inst,
-		dagql.Selector{
-			Field: "host",
-		},
-		dagql.Selector{
-			Field: "__internalSocket",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "accessor",
-					Value: dagql.NewString(accessor),
-				},
-			},
-		},
-	); err != nil {
-		return inst, fmt.Errorf("failed to select internal socket: %w", err)
-	}
-
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get client metadata: %w", err)
-	}
-	if err := socketStore.AddUnixSocket(inst.Self, clientMetadata.ClientID, args.Path); err != nil {
-		return inst, fmt.Errorf("failed to add unix socket to store: %w", err)
+		return nil, fmt.Errorf("failed to get client metadata: %w", err)
 	}
 
-	return inst, nil
+	sock := &core.Socket{IDDigest: dagql.CurrentID(ctx).Digest()}
+	if err := socketStore.AddUnixSocket(sock, clientMetadata.ClientID, args.Path); err != nil {
+		return nil, fmt.Errorf("failed to add unix socket to store: %w", err)
+	}
+
+	return sock, nil
 }
 
 type hostFileArgs struct {
