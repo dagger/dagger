@@ -1,11 +1,14 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/opencontainers/go-digest"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type Environment struct {
@@ -19,6 +22,13 @@ type Environment struct {
 	typeCount map[string]int
 	// The LLM-friendly ID ("Container#123") for each object
 	idByHash map[digest.Digest]string
+}
+
+func (*Environment) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Environment",
+		NonNull:   true,
+	}
 }
 
 func NewEnvironment() *Environment {
@@ -145,6 +155,13 @@ type Binding struct {
 	env   *Environment // TODO: wire this up
 }
 
+func (*Binding) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Binding",
+		NonNull:   true,
+	}
+}
+
 func (b *Binding) AsObject() (dagql.Object, bool) {
 	obj, ok := dagql.UnwrapAs[dagql.Object](b.Value)
 	return obj, ok
@@ -190,4 +207,129 @@ func (b *Binding) AsString() (string, bool) {
 		return "", false
 	}
 	return s.String(), true
+}
+
+// A Dagql hook for dynamically extending the Environment and Binding types
+// based on available types
+type EnvironmentHook struct {
+	Server *dagql.Server
+}
+
+// We don't expose these types to modules SDK codegen, but
+// we still want their graphql schemas to be available for
+// internal usage. So we use this list to scrub them from
+// the introspection JSON that module SDKs use for codegen.
+var TypesHiddenFromModuleSDKs = []dagql.Typed{
+	&Host{},
+
+	&Engine{},
+	&EngineCache{},
+	&EngineCacheEntry{},
+	&EngineCacheEntrySet{},
+}
+
+func (s EnvironmentHook) ExtendEnvironmentType(targetType dagql.ObjectType) error {
+	envType, ok := s.Server.ObjectType(new(Environment).Type().Name())
+	if !ok {
+		return fmt.Errorf("failed to lookup environment type")
+	}
+	bindingType, ok := s.Server.ObjectType(new(Binding).Type().Name())
+	if !ok {
+		return fmt.Errorf("failed to lookup binding type")
+	}
+	idType, ok := targetType.IDType()
+	if !ok {
+		return fmt.Errorf("failed to lookup ID type for %T", targetType)
+	}
+	typename := targetType.TypeName()
+	// Install get<TargetType>()
+	envType.Extend(
+		dagql.FieldSpec{
+			Name:        "with" + typename + "Binding",
+			Description: fmt.Sprintf("Create or update a binding of type %s in the environment", typename),
+			Type:        envType.Typed(),
+			Args: dagql.InputSpecs{
+				{
+					Name:        "name",
+					Description: "The name of the binding",
+					Type:        dagql.NewString(""),
+				},
+				{
+					Name:        "value",
+					Description: fmt.Sprintf("The %s value to assign to the binding", typename),
+					Type:        idType,
+				},
+			},
+		},
+		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
+			env := self.(dagql.Instance[*Environment]).Self
+			name := args["name"].(dagql.String).String()
+			value := args["value"].(dagql.IDType)
+			obj, err := s.Server.Load(ctx, value.ID())
+			if err != nil {
+				return nil, err
+			}
+			return env.WithBinding(name, obj), nil
+		},
+		dagql.CacheSpec{},
+	)
+
+	// Install Binding.as<TargetType>()
+	bindingType.Extend(
+		dagql.FieldSpec{
+			Name:        "as" + typename,
+			Description: fmt.Sprintf("Retrieve the binding value, as type %s", typename),
+			Type:        targetType.Typed(),
+			Args:        dagql.InputSpecs{},
+		},
+		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
+			binding := self.(dagql.Instance[*Binding]).Self
+			if binding.TypeName() != typename {
+				return nil, fmt.Errorf("binding type mismatch: expected %s, got %s", typename, binding.TypeName())
+			}
+			return binding.Value, nil
+		},
+		dagql.CacheSpec{},
+	)
+	return nil
+}
+
+func (s EnvironmentHook) InstallObject(targetType dagql.ObjectType) {
+	typename := targetType.TypeName()
+	if strings.HasPrefix(typename, "_") {
+		return
+	}
+
+	// don't extend LLM for types that we hide from modules, lest the codegen yield a
+	// WithEngine(*Engine) that refers to an unknown *Engine type.
+	//
+	// FIXME: in principle LLM should be able to refer to these types, so this should
+	// probably be moved to codegen somehow, i.e. if a field refers to a type that is
+	// hidden, don't codegen the field.
+	for _, hiddenType := range TypesHiddenFromModuleSDKs {
+		if hiddenType.Type().Name() == typename {
+			return
+		}
+	}
+
+	if err := s.ExtendEnvironmentType(targetType); err != nil {
+		panic(err)
+	}
+}
+
+func (s EnvironmentHook) ModuleWithObject(ctx context.Context, mod *Module, targetTypedef *TypeDef) (*Module, error) {
+	// Install the target type
+	mod, err := mod.WithObject(ctx, targetTypedef)
+	if err != nil {
+		return nil, err
+	}
+	typename := targetTypedef.Type().Name()
+	targetType, ok := s.Server.ObjectType(typename)
+	if !ok {
+		return nil, fmt.Errorf("can't retrieve object type %s", typename)
+	}
+	if err := s.ExtendEnvironmentType(targetType); err != nil {
+		return nil, err
+	}
+	return mod, nil
 }
