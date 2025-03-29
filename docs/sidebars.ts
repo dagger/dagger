@@ -33,6 +33,7 @@ module.exports = {
       type: "category",
       label: "Quickstart",
       items: [
+        "quickstart/basics/basics",
         {
           type: "category",
           label: "Build a CI Pipeline",
