@@ -795,6 +795,7 @@ func (c *Client) OpenTerminal(
 					Rows: uint32(msg.Resize.Height),
 					Cols: uint32(msg.Resize.Width),
 				}
+			default:
 			}
 		}
 	}()
@@ -820,6 +821,29 @@ func (c *Client) OpenTerminal(
 			return nil
 		}),
 	}, nil
+}
+
+func (c *Client) OpenPipe(
+	ctx context.Context,
+) (io.ReadWriteCloser, error) {
+	caller, err := c.GetMainClientCaller()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get main client caller: %w", err)
+	}
+
+	// grpc service client
+	pipeClient := session.NewPipeClient(caller.Conn())
+	if err != nil {
+		return nil, fmt.Errorf("open terminal error: %w", err)
+	}
+
+	// grpc rpc client
+	pipeIOClient, err := pipeClient.IO(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open pipe: %w", err)
+	}
+	// io.ReadWriter wrapper
+	return &session.PipeIO{GRPC: pipeIOClient}, nil
 }
 
 // like sync.OnceValue but accepts an arg

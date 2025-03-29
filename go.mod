@@ -74,6 +74,7 @@ require (
 	github.com/koron-go/prefixw v1.0.0
 	github.com/lmittmann/tint v1.0.7
 	github.com/mackerelio/go-osstat v0.2.5
+	github.com/mark3labs/mcp-go v0.15.0
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mitchellh/go-spdx v0.1.0
 	github.com/mitchellh/mapstructure v1.5.0
@@ -321,6 +322,7 @@ require (
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yuin/goldmark v1.7.8 // indirect
 	github.com/yuin/goldmark-emoji v1.0.5 // indirect
 	go.opencensus.io v0.24.0 // indirect

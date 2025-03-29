@@ -110,6 +110,8 @@ func init() {
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	configCmd.PersistentFlags().AddFlagSet(moduleFlags)
 
+	mcpCmd.PersistentFlags().AddFlagSet(moduleFlags)
+
 	shellCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	rootCmd.Flags().AddFlagSet(moduleFlags)
 	shellAddFlags(shellCmd)
