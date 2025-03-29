@@ -16,11 +16,12 @@ import (
 )
 
 type OpenAIClient struct {
-	client   openai.Client
-	endpoint *LLMEndpoint
+	client           openai.Client
+	endpoint         *LLMEndpoint
+	disableStreaming bool
 }
 
-func newOpenAIClient(endpoint *LLMEndpoint, azureVersion string) *OpenAIClient {
+func newOpenAIClient(endpoint *LLMEndpoint, azureVersion string, disableStreaming bool) *OpenAIClient {
 	var opts []option.RequestOption
 	opts = append(opts, option.WithHeader("Content-Type", "application/json"))
 	if azureVersion != "" {
@@ -40,7 +41,7 @@ func newOpenAIClient(endpoint *LLMEndpoint, azureVersion string) *OpenAIClient {
 	}
 
 	c := openai.NewClient(opts...)
-	return &OpenAIClient{client: c, endpoint: endpoint}
+	return &OpenAIClient{client: c, endpoint: endpoint, disableStreaming: disableStreaming}
 }
 
 func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, tools []LLMTool) (_ *LLMResponse, rerr error) {
@@ -118,9 +119,6 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 		Seed:     openai.Int(0),
 		Model:    c.endpoint.Model,
 		Messages: openAIMessages,
-		StreamOptions: openai.ChatCompletionStreamOptionsParam{
-			IncludeUsage: openai.Opt(true),
-		},
 		// call tools one at a time, or else chaining breaks
 	}
 
@@ -139,6 +137,50 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 			})
 		}
 		params.Tools = toolParams
+	}
+
+	var chatCompletion *openai.ChatCompletion
+
+	if len(tools) > 0 && c.disableStreaming {
+		chatCompletion, err = c.queryWithoutStreaming(ctx, params, outputTokens, inputTokens, attrs, stdio)
+	} else {
+		chatCompletion, err = c.queryWithStreaming(ctx, params, outputTokens, inputTokens, attrs, stdio)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if len(chatCompletion.Choices) == 0 {
+		return nil, fmt.Errorf("no response from model")
+	}
+
+	toolCalls, err := convertOpenAIToolCalls(chatCompletion.Choices[0].Message.ToolCalls)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert tool calls: %w", err)
+	}
+
+	// Convert OpenAI response to generic LLMResponse
+	return &LLMResponse{
+		Content:   chatCompletion.Choices[0].Message.Content,
+		ToolCalls: toolCalls,
+		TokenUsage: LLMTokenUsage{
+			InputTokens:  chatCompletion.Usage.PromptTokens,
+			OutputTokens: chatCompletion.Usage.CompletionTokens,
+			TotalTokens:  chatCompletion.Usage.TotalTokens,
+		},
+	}, nil
+}
+
+func (c *OpenAIClient) queryWithStreaming(
+	ctx context.Context,
+	params openai.ChatCompletionNewParams,
+	outputTokens metric.Int64Gauge,
+	inputTokens metric.Int64Gauge,
+	attrs []attribute.KeyValue,
+	stdio telemetry.SpanStreams,
+) (*openai.ChatCompletion, error) {
+	params.StreamOptions = openai.ChatCompletionStreamOptionsParam{
+		IncludeUsage: openai.Opt(true),
 	}
 
 	stream := c.client.Chat.Completions.NewStreaming(ctx, params)
@@ -178,25 +220,36 @@ func (c *OpenAIClient) SendQuery(ctx context.Context, history []ModelMessage, to
 		return nil, stream.Err()
 	}
 
-	if len(acc.ChatCompletion.Choices) == 0 {
-		return nil, fmt.Errorf("no response from model")
-	}
+	return &acc.ChatCompletion, nil
+}
 
-	toolCalls, err := convertOpenAIToolCalls(acc.Choices[0].Message.ToolCalls)
+func (c *OpenAIClient) queryWithoutStreaming(
+	ctx context.Context,
+	params openai.ChatCompletionNewParams,
+	outputTokens metric.Int64Gauge,
+	inputTokens metric.Int64Gauge,
+	attrs []attribute.KeyValue,
+	stdio telemetry.SpanStreams,
+) (*openai.ChatCompletion, error) {
+	compl, err := c.client.Chat.Completions.New(ctx, params)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert tool calls: %w", err)
+		return nil, err
 	}
 
-	// Convert OpenAI response to generic LLMResponse
-	return &LLMResponse{
-		Content:   acc.Choices[0].Message.Content,
-		ToolCalls: toolCalls,
-		TokenUsage: LLMTokenUsage{
-			InputTokens:  acc.Usage.PromptTokens,
-			OutputTokens: acc.Usage.CompletionTokens,
-			TotalTokens:  acc.Usage.TotalTokens,
-		},
-	}, nil
+	if compl.Usage.CompletionTokens > 0 {
+		outputTokens.Record(ctx, compl.Usage.CompletionTokens, metric.WithAttributes(attrs...))
+	}
+	if compl.Usage.PromptTokens > 0 {
+		inputTokens.Record(ctx, compl.Usage.PromptTokens, metric.WithAttributes(attrs...))
+	}
+
+	if len(compl.Choices) > 0 {
+		if content := compl.Choices[0].Message.Content; content != "" {
+			fmt.Fprint(stdio.Stdout, content)
+		}
+	}
+
+	return compl, nil
 }
 
 func convertOpenAIToolCalls(calls []openai.ChatCompletionMessageToolCall) ([]ToolCall, error) {
