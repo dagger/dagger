@@ -212,7 +212,8 @@ func (m *MCP) call(ctx context.Context,
 ) (_ any, rerr error) {
 	var validated bool
 	ctx, span := Tracer(ctx).Start(ctx,
-		fmt.Sprintf("🤖💻 %s %v", fieldDef.Name, args),
+		fmt.Sprintf("%s %v", fieldDef.Name, args),
+		telemetry.ActorEmoji("🤖"),
 		telemetry.Passthrough(),
 		telemetry.Reveal())
 	defer telemetry.End(span, func() error {
