@@ -985,7 +985,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		fe.editline.CheckInputComplete = msg.handler.IsComplete
 
 		// put the bowtie on
-		fe.updatePrompt()
+		promptCmd := fe.updatePrompt()
 
 		// HACK: for some reason editline's first paint is broken (only shows
 		// first 2 chars of prompt, doesn't show cursor). Sending it a message
@@ -996,6 +996,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			tea.Printf(`Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`),
 			fe.editline.Focus(),
 			tea.DisableMouse,
+			promptCmd,
 		)
 
 	case flushMsg:
@@ -1052,7 +1053,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			value := fe.editline.Value()
 			fe.editline.AddHistoryEntry(value)
 			fe.promptFg = termenv.ANSIYellow
-			fe.updatePrompt()
+			promptCmd := fe.updatePrompt()
 
 			// reset now that we've accepted input
 			fe.editline.Reset()
@@ -1061,11 +1062,14 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			fe.shellInterrupt = cancel
 			fe.shellRunning = true
 
-			return fe, func() tea.Msg {
-				fe.shellLock.Lock()
-				defer fe.shellLock.Unlock()
-				return shellDoneMsg{fe.shell.Handle(ctx, value)}
-			}
+			return fe, tea.Batch(
+				promptCmd,
+				func() tea.Msg {
+					fe.shellLock.Lock()
+					defer fe.shellLock.Unlock()
+					return shellDoneMsg{fe.shell.Handle(ctx, value)}
+				},
+			)
 		}
 		return fe, nil
 
@@ -1075,191 +1079,27 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		} else {
 			fe.promptFg = termenv.ANSIRed
 		}
-		fe.updatePrompt()
+		promptCmd := fe.updatePrompt()
 		// NOTE: we switch back from the alt screen only when the scrollback is
 		// written
 		fe.shellRunning = false
-		return fe, nil
+		return fe, promptCmd
 
 	case UpdatePromptMsg:
-		fe.updatePrompt()
-		return fe, nil
+		return fe, fe.updatePrompt()
 
 	case tea.KeyMsg:
+		switch {
 		// Handle prompt input if there's an active prompt
-		if fe.activePrompt != nil {
-			switch msg.String() {
-			case "left", "h", "right", "l":
-				fe.activePrompt.yessing = !fe.activePrompt.yessing
-				return fe, nil
-			case "enter":
-				result := fe.activePrompt.result
-				choice := fe.activePrompt.yessing
-				fe.activePrompt = nil
-				return fe, func() tea.Msg {
-					result <- choice
-					close(result)
-					return nil
-				}
-			case "n", "N":
-				result := fe.activePrompt.result
-				fe.activePrompt = nil
-				return fe, func() tea.Msg {
-					result <- false
-					close(result)
-					return nil
-				}
-			case "y", "Y":
-				result := fe.activePrompt.result
-				fe.activePrompt = nil
-				return fe, func() tea.Msg {
-					result <- true
-					close(result)
-					return nil
-				}
-			}
-			return fe, nil
-		}
-
+		case fe.activePrompt != nil:
+			return fe, fe.handleBoolPromptKey(msg)
 		// send all input to editline if it's focused
-		if fe.shell != nil && fe.editlineFocused {
-			// update the prompt in all cases since e.g. going through history
-			// can change it
-			defer fe.updatePrompt()
-			switch msg.String() {
-			case "ctrl+d":
-				if fe.editline.Value() == "" {
-					return fe.quit(ErrShellExited)
-				}
-			case "ctrl+c":
-				if fe.shellInterrupt != nil {
-					fe.shellInterrupt(errors.New("interrupted"))
-				}
-				fe.editline.Reset()
-			case "ctrl+l":
-				return fe.clearScrollback()
-			case "esc":
-				fe.editlineFocused = false
-				fe.editline.Blur()
-				return fe, nil
-			case "alt++", "alt+=":
-				fe.Verbosity++
-				fe.recalculateViewLocked()
-				return fe, nil
-			case "alt+-":
-				fe.Verbosity--
-				fe.recalculateViewLocked()
-				return fe, nil
-			default:
-				if fe.editline.AtStart() {
-					cmd := fe.shell.ReactToInput(fe.runCtx, msg)
-					if cmd != nil {
-						return fe, cmd
-					}
-				}
-			}
-			el, cmd := fe.editline.Update(msg)
-			fe.editline = el.(*editline.Model)
-			return fe, cmd
+		case fe.shell != nil && fe.editlineFocused:
+			return fe, fe.handleEditlineKey(msg)
+		default:
+			return fe, fe.handleNavKey(msg)
 		}
 
-		lastKey := fe.pressedKey
-		fe.pressedKey = msg.String()
-		fe.pressedKeyAt = time.Now()
-		switch msg.String() {
-		case "q", "ctrl+c":
-			return fe.quit(ErrInterrupted)
-		case "ctrl+\\": // SIGQUIT
-			fe.program.ReleaseTerminal()
-			sigquit()
-			return fe, nil
-		case "down", "j":
-			fe.goDown()
-			return fe, nil
-		case "up", "k":
-			fe.goUp()
-			return fe, nil
-		case "left", "h":
-			fe.goOut()
-			return fe, nil
-		case "right", "l":
-			fe.goIn()
-			return fe, nil
-		case "home":
-			fe.goStart()
-			return fe, nil
-		case "end", "G", " ":
-			fe.goEnd()
-			fe.pressedKey = "end"
-			fe.pressedKeyAt = time.Now()
-			return fe, nil
-		case "esc":
-			fe.ZoomedSpan = fe.db.PrimarySpan
-			fe.recalculateViewLocked()
-			return fe, nil
-		case "+", "=":
-			fe.FrontendOpts.Verbosity++
-			fe.recalculateViewLocked()
-			return fe, nil
-		case "-":
-			fe.FrontendOpts.Verbosity--
-			if fe.FrontendOpts.Verbosity < 0 {
-				fe.FrontendOpts.Verbosity = 0
-			}
-			fe.recalculateViewLocked()
-			return fe, nil
-		case "w":
-			if fe.cloudURL == "" {
-				return fe, nil
-			}
-			url := fe.cloudURL
-			if fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan {
-				url += "?span=" + fe.ZoomedSpan.String()
-			}
-			if fe.FocusedSpan.IsValid() && fe.FocusedSpan != fe.db.PrimarySpan {
-				url += "#" + fe.FocusedSpan.String()
-			}
-			return fe, func() tea.Msg {
-				if err := browser.OpenURL(url); err != nil {
-					slog.Warn("failed to open URL",
-						"url", url,
-						"err", err,
-						"output", fe.browserBuf.String())
-				}
-				return nil
-			}
-		case "?":
-			if fe.debugged == fe.FocusedSpan {
-				fe.debugged = dagui.SpanID{}
-			} else {
-				fe.debugged = fe.FocusedSpan
-			}
-			return fe, nil
-		case "enter":
-			fe.ZoomedSpan = fe.FocusedSpan
-			fe.recalculateViewLocked()
-			return fe, nil
-		case "tab", "i":
-			if fe.editline != nil {
-				fe.editlineFocused = true
-				fe.updatePrompt()
-				return fe, fe.editline.Focus()
-			}
-			return fe, nil
-		}
-
-		switch lastKey { //nolint:gocritic
-		case "g":
-			switch msg.String() { //nolint:gocritic
-			case "g":
-				fe.goStart()
-				fe.pressedKey = "home"
-				fe.pressedKeyAt = time.Now()
-				return fe, nil
-			}
-		}
-
-		return fe, nil
 	case tea.WindowSizeMsg:
 		fe.setWindowSizeLocked(msg)
 		return fe, nil
@@ -1279,6 +1119,182 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 	default:
 		return fe, nil
 	}
+}
+
+func (fe *frontendPretty) handleBoolPromptKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "left", "h", "right", "l":
+		fe.activePrompt.yessing = !fe.activePrompt.yessing
+	case "enter":
+		result := fe.activePrompt.result
+		choice := fe.activePrompt.yessing
+		fe.activePrompt = nil
+		return func() tea.Msg {
+			result <- choice
+			close(result)
+			return nil
+		}
+	case "n", "N":
+		result := fe.activePrompt.result
+		fe.activePrompt = nil
+		return func() tea.Msg {
+			result <- false
+			close(result)
+			return nil
+		}
+	case "y", "Y":
+		result := fe.activePrompt.result
+		fe.activePrompt = nil
+		return func() tea.Msg {
+			result <- true
+			close(result)
+			return nil
+		}
+	}
+	return nil
+}
+
+func (fe *frontendPretty) handleEditlineKey(msg tea.KeyMsg) (cmd tea.Cmd) {
+	defer func() {
+		// update the prompt in all cases since e.g. going through history
+		// can change it
+		cmd = tea.Sequence(cmd, fe.updatePrompt())
+	}()
+	switch msg.String() {
+	case "ctrl+d":
+		if fe.editline.Value() == "" {
+			return fe.quit(ErrShellExited)
+		}
+	case "ctrl+c":
+		if fe.shellInterrupt != nil {
+			fe.shellInterrupt(errors.New("interrupted"))
+		}
+		fe.editline.Reset()
+	case "ctrl+l":
+		return fe.clearScrollback()
+	case "esc":
+		fe.editlineFocused = false
+		fe.editline.Blur()
+		return nil
+	case "alt++", "alt+=":
+		fe.Verbosity++
+		fe.recalculateViewLocked()
+		return nil
+	case "alt+-":
+		fe.Verbosity--
+		fe.recalculateViewLocked()
+		return nil
+	default:
+		if fe.editline.AtStart() {
+			cmd := fe.shell.ReactToInput(fe.runCtx, msg)
+			if cmd != nil {
+				return cmd
+			}
+		}
+	}
+	el, cmd := fe.editline.Update(msg)
+	fe.editline = el.(*editline.Model)
+	return cmd
+}
+
+func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
+	lastKey := fe.pressedKey
+	fe.pressedKey = msg.String()
+	fe.pressedKeyAt = time.Now()
+	switch msg.String() {
+	case "q", "ctrl+c":
+		return fe.quit(ErrInterrupted)
+	case "ctrl+\\": // SIGQUIT
+		fe.program.ReleaseTerminal()
+		sigquit()
+		return nil
+	case "down", "j":
+		fe.goDown()
+		return nil
+	case "up", "k":
+		fe.goUp()
+		return nil
+	case "left", "h":
+		fe.goOut()
+		return nil
+	case "right", "l":
+		fe.goIn()
+		return nil
+	case "home":
+		fe.goStart()
+		return nil
+	case "end", "G", " ":
+		fe.goEnd()
+		fe.pressedKey = "end"
+		fe.pressedKeyAt = time.Now()
+		return nil
+	case "esc":
+		fe.ZoomedSpan = fe.db.PrimarySpan
+		fe.recalculateViewLocked()
+		return nil
+	case "+", "=":
+		fe.FrontendOpts.Verbosity++
+		fe.recalculateViewLocked()
+		return nil
+	case "-":
+		fe.FrontendOpts.Verbosity--
+		if fe.FrontendOpts.Verbosity < 0 {
+			fe.FrontendOpts.Verbosity = 0
+		}
+		fe.recalculateViewLocked()
+		return nil
+	case "w":
+		if fe.cloudURL == "" {
+			return nil
+		}
+		url := fe.cloudURL
+		if fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan {
+			url += "?span=" + fe.ZoomedSpan.String()
+		}
+		if fe.FocusedSpan.IsValid() && fe.FocusedSpan != fe.db.PrimarySpan {
+			url += "#" + fe.FocusedSpan.String()
+		}
+		return func() tea.Msg {
+			if err := browser.OpenURL(url); err != nil {
+				slog.Warn("failed to open URL",
+					"url", url,
+					"err", err,
+					"output", fe.browserBuf.String())
+			}
+			return nil
+		}
+	case "?":
+		if fe.debugged == fe.FocusedSpan {
+			fe.debugged = dagui.SpanID{}
+		} else {
+			fe.debugged = fe.FocusedSpan
+		}
+		return nil
+	case "enter":
+		fe.ZoomedSpan = fe.FocusedSpan
+		fe.recalculateViewLocked()
+		return nil
+	case "tab", "i":
+		if fe.editline != nil {
+			fe.editlineFocused = true
+			fe.updatePrompt()
+			return fe.editline.Focus()
+		}
+		return nil
+	}
+
+	switch lastKey { //nolint:gocritic
+	case "g":
+		switch msg.String() { //nolint:gocritic
+		case "g":
+			fe.goStart()
+			fe.pressedKey = "home"
+			fe.pressedKeyAt = time.Now()
+			return nil
+		}
+	}
+
+	return nil
 }
 
 type UpdatePromptMsg struct{}
@@ -1382,10 +1398,10 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 	return fe, tea.Printf("%s", msg)
 }
 
-func (fe *frontendPretty) clearScrollback() (*frontendPretty, tea.Cmd) {
+func (fe *frontendPretty) clearScrollback() tea.Cmd {
 	scrollback := strings.TrimSuffix(fe.scrollback.String(), "\n")
 	fe.scrollback.Reset()
-	return fe, tea.Sequence(
+	return tea.Sequence(
 		tea.Printf("%s", scrollback),
 		func() tea.Msg {
 			time.Sleep(100 * time.Millisecond)
@@ -1394,33 +1410,35 @@ func (fe *frontendPretty) clearScrollback() (*frontendPretty, tea.Cmd) {
 	)
 }
 
-func (fe *frontendPretty) updatePrompt() {
-	fe.editline.Prompt = fe.shell.Prompt(fe.viewOut, fe.promptFg)
+func (fe *frontendPretty) updatePrompt() tea.Cmd {
+	prompt, cmd := fe.shell.Prompt(fe.runCtx, fe.viewOut, fe.promptFg)
+	fe.editline.Prompt = prompt
 	fe.editline.UpdatePrompt()
+	return cmd
 }
 
-func (fe *frontendPretty) quit(interruptErr error) (*frontendPretty, tea.Cmd) {
+func (fe *frontendPretty) quit(interruptErr error) tea.Cmd {
 	if fe.CustomExit != nil {
 		fe.CustomExit()
-		return fe, nil
+		return nil
 	}
 
 	if fe.done && fe.eof {
 		fe.quitting = true
 		// must have configured NoExit, and now they want
 		// to exit manually
-		return fe, tea.Quit
+		return tea.Quit
 	}
 	if fe.interrupted {
 		slog.Warn("exiting immediately")
 		fe.quitting = true
-		return fe, tea.Quit
+		return tea.Quit
 	} else {
 		slog.Warn("canceling... (press again to exit immediately)")
 	}
 	fe.interrupted = true
 	fe.interrupt(interruptErr)
-	return fe, nil // tea.Quit is deferred until we receive doneMsg
+	return nil // tea.Quit is deferred until we receive doneMsg
 }
 
 func (fe *frontendPretty) goStart() {
