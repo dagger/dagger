@@ -36,6 +36,11 @@ func Internal() trace.SpanStartOption {
 	return trace.WithAttributes(attribute.Bool(UIInternalAttr, true))
 }
 
+// ActorEmoji sets an emoji representing the actor of the span.
+func ActorEmoji(emoji string) trace.SpanStartOption {
+	return trace.WithAttributes(attribute.String(UIActorEmojiAttr, emoji))
+}
+
 // Passthrough can be applied to a span to cause the UI to skip over it and
 // show its children instead.
 func Passthrough() trace.SpanStartOption {

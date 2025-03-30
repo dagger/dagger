@@ -1532,6 +1532,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 	if fe.flushed[row.Span.ID] && fe.editlineFocused {
 		return false
 	}
+	focused := row.Span.ID == fe.FocusedSpan && !fe.editlineFocused
 	if fe.shell != nil {
 		if row.IsLastChild() {
 			defer func() {
@@ -1582,7 +1583,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 		// span name relates to the message in all cases; is it the
 		// subject? or author? better to be explicit with attributes.
 		r.indent(out, row.Depth)
-		r.renderStatus(out, span, row.Span.ID == fe.FocusedSpan && !fe.editlineFocused)
+		r.renderStatus(out, span, focused, row.Chained)
 		if fe.renderStepLogs(out, r, row, prefix, highlight) {
 			r.indent(out, row.Depth)
 			fmt.Fprint(out, out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack))
@@ -1693,7 +1694,7 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, span *dagui.Sp
 			return err
 		}
 	} else if span != nil {
-		if err := r.renderSpan(out, span, span.Name, prefix, depth, isFocused); err != nil {
+		if err := r.renderSpan(out, span, span.Name, prefix, depth, isFocused, chained); err != nil {
 			return err
 		}
 	}

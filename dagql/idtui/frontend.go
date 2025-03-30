@@ -215,7 +215,7 @@ func (r *renderer) renderCall(
 	}
 
 	if span != nil {
-		r.renderStatus(out, span, focused)
+		r.renderStatus(out, span, focused, chained)
 	}
 
 	if call.ReceiverDigest != "" {
@@ -306,14 +306,14 @@ func (r *renderer) renderSpan(
 	name string,
 	prefix string,
 	depth int,
-	focused bool,
+	focused, chained bool,
 ) error {
 	fmt.Fprint(out, prefix)
 	r.indent(out, depth)
 
 	var contentType string
 	if span != nil {
-		r.renderStatus(out, span, focused)
+		r.renderStatus(out, span, focused, chained)
 		contentType = span.ContentType
 	}
 
@@ -379,7 +379,7 @@ func (r *renderer) renderLiteral(out TermOutput, lit *callpbv1.Literal) {
 	}
 }
 
-func (r *renderer) renderStatus(out TermOutput, span *dagui.Span, focused bool) {
+func (r *renderer) renderStatus(out TermOutput, span *dagui.Span, focused, chained bool) {
 	var symbol string
 	var color termenv.Color
 	switch {
@@ -403,8 +403,14 @@ func (r *renderer) renderStatus(out TermOutput, span *dagui.Span, focused bool) 
 		color = termenv.ANSIGreen
 	}
 
-	if span.ActorEmoji != "" {
-		symbol = span.ActorEmoji
+	emoji := span.ActorEmoji
+	if chained && span.Message == "" {
+		// don't show an emoji for chained tool calls, too redundant
+		emoji = ""
+	}
+
+	if emoji != "" {
+		symbol = emoji
 	}
 
 	style := out.String(symbol).Foreground(color)
@@ -413,7 +419,7 @@ func (r *renderer) renderStatus(out TermOutput, span *dagui.Span, focused bool) 
 	}
 	symbol = style.String()
 
-	if span.ActorEmoji != "" {
+	if emoji != "" {
 		fmt.Fprint(out, "\b") // emojis take up two columns, so make room
 	}
 
