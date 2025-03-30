@@ -296,50 +296,6 @@ func (h *shellCallHandler) llmBuiltins() []*ShellCommand {
 				return nil
 			},
 		},
-		{
-			Use:         ".llm",
-			Description: "Update or access the LLM state",
-			GroupID:     "llm",
-			Args:        NoArgs,
-			State:       AnyState,
-			Run: func(ctx context.Context, _ *ShellCommand, _ []string, st *ShellState) error {
-				s, err := h.llm(ctx)
-				if err != nil {
-					return err
-				}
-				res, err := h.StateResult(ctx, st)
-				if err != nil {
-					return err
-				}
-				if res != nil {
-					if !res.IsObject() {
-						return fmt.Errorf("invalid value: %q (type: %v)", res.Value, res.typeDef)
-					}
-					id := res.Value.(string)
-					newLLM, err := s.WithState(ctx, res.typeDef.Name(), id)
-					if err != nil {
-						return err
-					}
-					h.llmSession = newLLM
-				}
-				llmID, err := h.llmSession.llm.ID(ctx)
-				if err != nil {
-					return err
-				}
-				return h.Save(ctx, ShellState{
-					Calls: []FunctionCall{
-						{
-							Object: "Query",
-							Name:   "loadLLMFromID",
-							Arguments: map[string]any{
-								"id": llmID,
-							},
-							ReturnObject: "LLM",
-						},
-					},
-				})
-			},
-		},
 	}
 }
 
@@ -487,16 +443,16 @@ Writes any specified operands, separated by single blank (' ') characters and fo
 			Use: ".wait",
 			Description: `Wait for background processes to complete
 
-The return status is 0 if all specified processes exit successfully. 
-If any process exits with a nonzero status, wait returns that status. 
+The return status is 0 if all specified processes exit successfully.
+If any process exits with a nonzero status, wait returns that status.
 `,
 		},
 		&ShellCommand{
 			Use: ".cd [path | url]",
-			Description: `Change the current working directory 
+			Description: `Change the current working directory
 
 Absolute and relative paths are resolved in relation to the same context directory.
-Using a git URL changes the context. Only the initial context can target local 
+Using a git URL changes the context. Only the initial context can target local
 modules in different contexts.
 
 If the target path is in a different module within the same context, it will be
