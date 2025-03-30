@@ -105,7 +105,7 @@ type ShellHandler interface {
 	IsComplete(entireInput [][]rune, line int, col int) bool
 
 	// Prompt generates the shell prompt string
-	Prompt(out TermOutput, fg termenv.Color) string
+	Prompt(ctx context.Context, out TermOutput, fg termenv.Color) (string, tea.Cmd)
 
 	// Keys returns the keys that will be displayed when the input is focused
 	KeyBindings() []key.Binding

@@ -376,10 +376,12 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	return h.run(ctx, strings.NewReader(line), "")
 }
 
-func (h *shellCallHandler) Prompt(out idtui.TermOutput, fg termenv.Color) string {
+func (h *shellCallHandler) Prompt(ctx context.Context, out idtui.TermOutput, fg termenv.Color) (string, tea.Cmd) {
 	sb := new(strings.Builder)
 
 	sb.WriteString(termenv.CSI + termenv.ResetSeq + "m") // clear background
+
+	var init tea.Cmd
 
 	// Use LLM prompt if LLM session is active and in prompt mode
 	switch h.mode {
@@ -403,12 +405,16 @@ func (h *shellCallHandler) Prompt(out idtui.TermOutput, fg termenv.Color) string
 		} else {
 			sb.WriteString(out.String("loading...").Bold().Foreground(termenv.ANSIYellow).String())
 			sb.WriteString(out.String(" ").String())
+			init = func() tea.Msg {
+				h.llm(ctx) // initialize LLM
+				return idtui.UpdatePromptMsg{}
+			}
 		}
 		sb.WriteString(out.String(idtui.LLMPrompt).Bold().Foreground(fg).String())
 		sb.WriteString(out.String(out.String(" ").String()).String())
 	}
 
-	return sb.String()
+	return sb.String(), init
 }
 
 func (*shellCallHandler) Print(ctx context.Context, args ...any) error {
