@@ -351,7 +351,7 @@ func (fe *frontendPretty) renderErrorLogs(out TermOutput, r *renderer) bool {
 		if logs != nil && logs.UsedHeight() > 0 {
 			fmt.Fprintln(out)
 			fe.renderStep(out, r, tree.Span, tree.Chained, 0, "")
-			fe.renderLogs(out, r, logs, -1, logs.UsedHeight(), "", false)
+			fe.renderLogs(out, r, logs, -1, logs.UsedHeight(), "")
 			fe.renderStepError(out, r, tree.Span, 0, "")
 		}
 		return dagui.WalkContinue
@@ -603,10 +603,6 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 
 	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
 
-	if fe.hlProgress() {
-		out = focusedBg(out)
-	}
-
 	var progPrefix string
 	if fe.rowsView != nil && fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
 		fe.renderStep(out, r, fe.rowsView.Zoomed, false, 0, "")
@@ -616,9 +612,6 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 
 	below := new(strings.Builder)
 	var countOut TermOutput = NewOutput(below, termenv.WithProfile(fe.profile))
-	if fe.hlProgress() {
-		countOut = focusedBg(countOut)
-	}
 
 	if fe.activePrompt != nil {
 		fmt.Fprintln(countOut)
@@ -631,7 +624,7 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 
 	if logs := fe.logs.Logs[fe.ZoomedSpan]; logs != nil && logs.UsedHeight() > 0 {
 		fmt.Fprintln(below)
-		fe.renderLogs(countOut, r, logs, -1, fe.window.Height/3, progPrefix, false)
+		fe.renderLogs(countOut, r, logs, -1, fe.window.Height/3, progPrefix)
 	}
 
 	belowOut := strings.TrimRight(below.String(), "\n")
@@ -737,19 +730,12 @@ func (fe *frontendPretty) recalculateViewLocked() {
 
 func (fe *frontendPretty) renderedRowLines(r *renderer, row *dagui.TraceRow, prefix string) []string {
 	buf := new(strings.Builder)
-	var out TermOutput = NewOutput(buf, termenv.WithProfile(fe.profile))
-	if fe.hlProgress() {
-		out = focusedBg(out)
-	}
-	fe.renderRow(out, r, row, prefix, fe.hlProgress())
+	out := NewOutput(buf, termenv.WithProfile(fe.profile))
+	fe.renderRow(out, r, row, prefix, false)
 	if buf.String() == "" {
 		return nil
 	}
 	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
-}
-
-func (fe *frontendPretty) hlProgress() bool {
-	return fe.shell != nil && !fe.editlineFocused
 }
 
 func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, full bool, height int, prefix string) (rendered bool) {
@@ -761,7 +747,7 @@ func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, full bool,
 
 	if full {
 		for _, row := range rows.Order {
-			if fe.renderRow(out, r, row, "", fe.hlProgress()) {
+			if fe.renderRow(out, r, row, "", false) {
 				rendered = true
 			}
 		}
@@ -1409,11 +1395,7 @@ func (fe *frontendPretty) clearScrollback() (*frontendPretty, tea.Cmd) {
 }
 
 func (fe *frontendPretty) updatePrompt() {
-	var out TermOutput = fe.viewOut
-	if fe.editlineFocused {
-		out = focusedBg(out)
-	}
-	fe.editline.Prompt = fe.shell.Prompt(out, fe.promptFg)
+	fe.editline.Prompt = fe.shell.Prompt(fe.viewOut, fe.promptFg)
 	fe.editline.UpdatePrompt()
 }
 
@@ -1542,7 +1524,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 					if fe.Verbosity < dagui.ExpandCompletedVerbosity {
 						logDepth = -1
 					}
-					fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix, highlight)
+					fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix)
 				}
 				fe.renderStepError(out, r, root.Span, 0, prefix)
 			}()
@@ -1554,7 +1536,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 				fmt.Fprintln(out, out.String(prefix))
 			}
 			fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
-			fe.renderDebug(out, row.Span, prefix+Block25+" ")
+			fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
 			return true
 		}
 	}
@@ -1584,7 +1566,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 		// subject? or author? better to be explicit with attributes.
 		r.indent(out, row.Depth)
 		r.renderStatus(out, span, focused, row.Chained)
-		if fe.renderStepLogs(out, r, row, prefix, highlight) {
+		if fe.renderStepLogs(out, r, row, prefix, focused) {
 			r.indent(out, row.Depth)
 			fmt.Fprint(out, out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack))
 		} else {
@@ -1604,12 +1586,12 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 		}
 	}
 	fe.renderStepError(out, r, row.Span, row.Depth, prefix)
-	fe.renderDebug(out, row.Span, prefix+Block25+" ")
+	fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
 	return true
 }
 
-func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix string) {
-	if span.ID != fe.debugged {
+func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix string, force bool) {
+	if span.ID != fe.debugged && !force {
 		return
 	}
 	vt := NewVterm(fe.profile)
@@ -1647,7 +1629,6 @@ func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui
 			row.Depth,
 			fe.window.Height/3,
 			prefix,
-			highlight,
 		)
 	}
 	return false
@@ -1703,7 +1684,7 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, span *dagui.Sp
 	return nil
 }
 
-func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, logs *Vterm, depth int, height int, prefix string, highlight bool) bool {
+func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, logs *Vterm, depth int, height int, prefix string) bool {
 	pipe := out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack)
 	if depth == -1 {
 		// clear prefix when zoomed
@@ -1716,11 +1697,6 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, logs *Vterm, d
 		fmt.Fprint(indentOut, pipe)
 		fmt.Fprint(indentOut, out.String(" "))
 		logs.SetPrefix(buf.String())
-	}
-	if highlight {
-		logs.SetBackground(highlightBg)
-	} else {
-		logs.SetBackground(nil)
 	}
 	if height <= 0 {
 		logs.SetHeight(logs.UsedHeight())
@@ -1861,33 +1837,6 @@ func (ts *wrapCommand) Run() error {
 type TermOutput interface {
 	io.Writer
 	String(...string) termenv.Style
-}
-
-// BackgroundWriter wraps a termenv.Output to maintain background color
-type BackgroundWriter struct {
-	TermOutput
-	bgColor termenv.Color
-	lineEnd string
-}
-
-func NewBackgroundOutput(out TermOutput, bgColor termenv.Color) *BackgroundWriter {
-	return &BackgroundWriter{
-		TermOutput: out,
-		bgColor:    bgColor,
-		lineEnd:    termenv.CSI + bgColor.Sequence(true) + "m" + termenv.CSI + termenv.EraseLineRightSeq + "\n",
-	}
-}
-
-func (bg *BackgroundWriter) String(s ...string) termenv.Style {
-	return bg.TermOutput.String(s...).Background(bg.bgColor)
-}
-
-func (bg *BackgroundWriter) Write(p []byte) (n int, err error) {
-	return bg.TermOutput.Write(bytes.ReplaceAll(p, []byte("\n"), []byte(bg.lineEnd)))
-}
-
-func focusedBg(out TermOutput) TermOutput {
-	return NewBackgroundOutput(out, highlightBg)
 }
 
 func (fe *frontendPretty) handlePromptBool(ctx context.Context, message string, dest *bool) error {
