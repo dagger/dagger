@@ -334,6 +334,10 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	)
 	defer telemetry.End(span, func() error { return rerr })
 
+	// redirect stdio to the current span
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	defer stdio.Close() // ensure we send EOF this regardless so TUI can flush
+
 	// Empty input
 	if line == "" {
 		return nil
@@ -352,10 +356,6 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 		h.llmSession = newLLM
 		return nil
 	}
-
-	// redirect stdio to the current span
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	defer stdio.Close()
 
 	stdoutW := newTerminalWriter(stdio.Stdout.Write)
 	// handle shell state
