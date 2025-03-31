@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -70,7 +69,7 @@ type LLM struct {
 	messages []ModelMessage
 
 	// The environment accessible to the LLM, exposed over MCP
-	env *MCP
+	mcp *MCP
 }
 
 type LLMEndpoint struct {
@@ -441,7 +440,7 @@ func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int) (*
 		Query:       query,
 		Endpoint:    endpoint,
 		maxAPICalls: maxAPICalls,
-		env:         NewMCP(endpoint),
+		mcp:         NewMCP(endpoint),
 	}, nil
 }
 
@@ -469,13 +468,13 @@ func (*LLM) Type() *ast.Type {
 func (llm *LLM) Clone() *LLM {
 	cp := *llm
 	cp.messages = cloneSlice(cp.messages)
-	cp.env = cp.env.Clone()
+	cp.mcp = cp.mcp.Clone()
 	return &cp
 }
 
 // Generate a human-readable documentation of tools available to the model
 func (llm *LLM) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error) {
-	tools, err := llm.env.Tools(srv)
+	tools, err := llm.mcp.Tools(srv)
 	if err != nil {
 		return "", err
 	}
@@ -515,16 +514,11 @@ func (llm *LLM) WithPrompt(
 	srv *dagql.Server,
 ) (*LLM, error) {
 	prompt = os.Expand(prompt, func(key string) string {
-		obj, err := llm.env.GetObject(key, "")
-		if err == nil {
-			return llm.env.describe(obj)
+		if binding, found := llm.mcp.env.Binding(key); found {
+			return binding.String()
 		}
-		val, ok := llm.env.ReadVariable(key)
-		if !ok {
-			// leave unexpanded, perhaps it refers to an object var
-			return fmt.Sprintf("$%s", key)
-		}
-		return val
+		// leave unexpanded, perhaps it refers to an object var
+		return fmt.Sprintf("$%s", key)
 	})
 	llm = llm.Clone()
 	func() {
@@ -553,12 +547,6 @@ func (llm *LLM) WithPromptFile(ctx context.Context, file *File, srv *dagql.Serve
 		return nil, err
 	}
 	return llm.WithPrompt(ctx, string(contents), srv)
-}
-
-func (llm *LLM) WithPromptVar(name, value string) *LLM {
-	llm = llm.Clone()
-	llm.env.WriteVariable(name, value)
-	return llm
 }
 
 // Append a system prompt message to the history
@@ -603,7 +591,7 @@ func (llm *LLM) messagesWithSystemPrompt() []ModelMessage {
 	messages := llm.messages
 
 	// inject default system prompt if none are found
-	if prompt := llm.env.DefaultSystemPrompt(); prompt != "" && !hasSystemPrompt {
+	if prompt := llm.mcp.DefaultSystemPrompt(); prompt != "" && !hasSystemPrompt {
 		return append([]ModelMessage{
 			{
 				Role:    "system",
@@ -640,7 +628,7 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 		}
 		llm.apiCalls++
 
-		tools, err := llm.env.Tools(dag)
+		tools, err := llm.mcp.Tools(dag)
 		if err != nil {
 			return nil, err
 		}
@@ -663,7 +651,7 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 			break
 		}
 		for _, toolCall := range res.ToolCalls {
-			content, isError := llm.env.Call(ctx, tools, toolCall)
+			content, isError := llm.mcp.Call(ctx, tools, toolCall)
 			llm.messages = append(llm.messages, ModelMessage{
 				Role:        "user", // Anthropic only allows tool calls in user messages
 				Content:     content,
@@ -767,7 +755,7 @@ func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (string, err
 
 func (llm *LLM) Set(ctx context.Context, key string, value dagql.Object) (*LLM, error) {
 	llm = llm.Clone()
-	llm.env.Set(key, value)
+	llm.mcp.env = llm.mcp.env.WithBinding(key, value)
 	llm.dirty = true
 	return llm, nil
 }
@@ -777,23 +765,23 @@ func (llm *LLM) Get(ctx context.Context, dag *dagql.Server, key string) (dagql.T
 	if err != nil {
 		return nil, err
 	}
-	return llm.env.GetObject(key, "")
+	return llm.mcp.GetObject(key, "")
 }
 
 func (llm *LLM) WithEnvironment(env *Environment) *LLM {
 	llm = llm.Clone()
-	llm.env.env = env
+	llm.mcp.env = env
 	llm.dirty = true
 	return llm
 }
 
 func (llm *LLM) Environment() *Environment {
-	return llm.env.env
+	return llm.mcp.env
 }
 
 func (llm *LLM) With(value dagql.Object) *LLM {
 	llm = llm.Clone()
-	llm.env.Select(value)
+	llm.mcp.Select(value)
 	llm.dirty = true
 	return llm
 }
@@ -817,39 +805,16 @@ func (v *LLMVariable) Type() *ast.Type {
 	}
 }
 
-func (llm *LLM) Variables(ctx context.Context, dag *dagql.Server) ([]*LLMVariable, error) {
-	llm, err := llm.Sync(ctx, dag)
-	if err != nil {
-		return nil, err
-	}
-	// FIXME: if we keep the concept of "variables" separate for "objects", clean this up.
-	// Otherwise, remove it
-	vars := []*LLMVariable{}
-	for _, b := range llm.env.env.Variables() {
-		vars = append(vars, &LLMVariable{
-			Name:     b.Key,
-			TypeName: b.TypeName(),
-			Hash:     b.Digest().String(),
-		})
-	}
-	// NOTE: order matters! when a client is grabbing these values they'll be
-	// "calling back" using IDs that embed index positions
-	sort.Slice(vars, func(i, j int) bool {
-		return vars[i].Name < vars[j].Name
-	})
-	return vars, nil
-}
-
 func (llm *LLM) CurrentType(ctx context.Context, dag *dagql.Server) (dagql.Nullable[dagql.String], error) {
 	var res dagql.Nullable[dagql.String]
 	llm, err := llm.Sync(ctx, dag)
 	if err != nil {
 		return res, err
 	}
-	if llm.env.Current() == nil {
+	if llm.mcp.Current() == nil {
 		return res, nil
 	}
-	res.Value = dagql.String(llm.env.Current().Type().Name())
+	res.Value = dagql.String(llm.mcp.Current().Type().Name())
 	res.Valid = true
 	return res, nil
 }

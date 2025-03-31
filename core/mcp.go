@@ -94,11 +94,6 @@ func (m *MCP) Select(obj dagql.Object, functions ...string) {
 	}
 }
 
-// Save a value at the given key
-func (m *MCP) Set(key string, obj dagql.Object) {
-	m.env = m.env.WithBinding(key, obj)
-}
-
 // Get an object saved at a given key
 func (m *MCP) GetObject(key, expectedType string) (dagql.Object, error) {
 	if expectedType != "" {
@@ -116,10 +111,6 @@ func (m *MCP) GetObject(key, expectedType string) (dagql.Object, error) {
 	return nil, fmt.Errorf("unknown object %q", key)
 }
 
-// Unset a saved value
-func (m *MCP) Unset(key string) {
-	m.env = m.env.WithoutBinding(key)
-}
 
 func (m *MCP) Tools(srv *dagql.Server) ([]LLMTool, error) {
 	builtins, err := m.Builtins(srv)
@@ -490,18 +481,6 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall ToolCall) (str
 		}
 		return string(jsonBytes), false
 	}
-}
-
-func (m *MCP) WriteVariable(name, value string) {
-	m.env = m.env.WithVariable(name, value)
-}
-
-func (m *MCP) ReadVariable(name string) (string, bool) {
-	v, found := m.env.Variable(name)
-	if found {
-		return v.AsString()
-	}
-	return "", false
 }
 
 func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {

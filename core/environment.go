@@ -16,8 +16,6 @@ type Environment struct {
 	objsByName map[string]*Binding
 	// Saved objects by ID (Foo#123)
 	objsByID map[string]*Binding
-	// String variables assigned to the environment
-	varsByName map[string]*Binding
 	// Auto incrementing number per-type
 	typeCount map[string]int
 	// The LLM-friendly ID ("Container#123") for each object
@@ -35,7 +33,6 @@ func NewEnvironment() *Environment {
 	return &Environment{
 		objsByName: map[string]*Binding{},
 		objsByID:   map[string]*Binding{},
-		varsByName: map[string]*Binding{},
 		typeCount:  map[string]int{},
 		idByHash:   map[digest.Digest]string{},
 	}
@@ -45,17 +42,17 @@ func (env *Environment) Clone() *Environment {
 	cp := *env
 	cp.objsByName = cloneMap(cp.objsByName)
 	cp.objsByID = cloneMap(cp.objsByID)
-	cp.varsByName = cloneMap(cp.varsByName)
 	cp.typeCount = cloneMap(cp.typeCount)
 	cp.idByHash = cloneMap(cp.idByHash)
 	return &cp
 }
 
 // Add a binding to the environment
-func (env *Environment) WithBinding(key string, obj dagql.Object) *Environment {
+func (env *Environment) WithBinding(key string, val dagql.Typed) *Environment {
 	env = env.Clone()
-	env.objsByName[key] = &Binding{Key: key, Value: obj}
-	env.Ingest(obj)
+	binding := &Binding{Key: key, Value: val, env: env}
+	_ = binding.ID() // If val is an object, force its ingestion
+	env.objsByName[key] = binding
 	return env
 }
 
@@ -77,31 +74,6 @@ func (env *Environment) BindingsOfType(typename string) []*Binding {
 		if v.TypeName() == typename {
 			res = append(res, v)
 		}
-	}
-	return res
-}
-
-// Add a string variable to the environment
-// TODO: merge into bindings
-func (env *Environment) WithVariable(name, value string) *Environment {
-	env = env.Clone()
-	env.varsByName[name] = &Binding{Key: name, Value: dagql.NewString(value), env: env}
-	return env
-}
-
-// Retrieve a string variable
-// TODO: merge into bindings
-func (env *Environment) Variable(name string) (*Binding, bool) {
-	b, found := env.varsByName[name]
-	return b, found
-}
-
-// List all variables
-// TODO: merge into bindings
-func (env *Environment) Variables() []*Binding {
-	res := make([]*Binding, 0, len(env.varsByName))
-	for _, v := range env.varsByName {
-		res = append(res, v)
 	}
 	return res
 }
@@ -162,12 +134,29 @@ func (*Binding) Type() *ast.Type {
 	}
 }
 
+// Return a string representation of the binding value
+func (b *Binding) String() string {
+	if b.Value == nil {
+		return "null"
+	}
+	if s, isString := b.AsString(); isString {
+		return s
+	}
+	if _, isObj := b.AsObject(); isObj {
+		return b.ID()
+	}
+	if list, isList := b.AsList(); isList {
+		return fmt.Sprintf("%s (length: %d)", b.TypeName(), list.Len())
+	}
+	return fmt.Sprintf("%q", b.Value)
+}
+
 func (b *Binding) AsObject() (dagql.Object, bool) {
 	obj, ok := dagql.UnwrapAs[dagql.Object](b.Value)
 	return obj, ok
 }
 
-func (b *Binding) AsEnumerable() (dagql.Enumerable, bool) {
+func (b *Binding) AsList() (dagql.Enumerable, bool) {
 	enum, ok := dagql.UnwrapAs[dagql.Enumerable](b.Value)
 	return enum, ok
 }
