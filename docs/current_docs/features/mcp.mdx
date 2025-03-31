@@ -19,6 +19,11 @@ MCP support in Dagger can be broken into three categories:
 
 A key feature of Dagger's LLM integration is out-of-the-box support for MCP using Dagger Functions: an LLM can automatically discover and use any available Dagger Functions in your Module.
 
+TODO: Insert diagram
+
+
+### LLM Bindings
+
 Here's an example of Dagger's LLM bindings in action:
 
 <Tabs groupId="shell">
@@ -45,15 +50,8 @@ EOF
 
 ![LLM bindings](/img/current_docs/features/llm-api.gif)
 
-## Exposing MCP outside of Dagger
 
-TODO: Document experimental feature.
-
-## Connecting to External MCP Server from Dagger
-
-Support for connecting to external MCP servers from Dagger is coming soon.
-
-## Agent loop
+### Agent loop
 
 Consider the following Dagger Function:
 
@@ -73,6 +71,17 @@ Consider the following Dagger Function:
 </Tabs>
 
 This Dagger Function creates a new LLM, gives it a workspace container with an assignment, and prompts it to complete the assignment. The LLM then runs in a loop, calling tools and iterating on its work, until it completes the assignment. This loop all happens inside of the LLM object, so the value of `result` is the workspace container with the completed assignment.
+
+
+## Exposing MCP outside of Dagger
+
+TODO: Document experimental feature.
+
+TODO: Insert diagram
+
+## Connecting to External MCP Server from Dagger
+
+Support for connecting to external MCP servers from Dagger is coming soon.
 
 ## Learn more
 
