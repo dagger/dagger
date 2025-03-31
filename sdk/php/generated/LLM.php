@@ -415,16 +415,6 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieve a variable in the llm environment, of type PhpSdk
-     */
-    public function getPhpSdk(string $name): PhpSdk
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('getPhpSdk');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\PhpSdk($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Retrieve a variable in the llm environment, of type SDKConfig
      */
     public function getSDKConfig(string $name): SDKConfig
@@ -656,15 +646,6 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('objectTypeDef');
         return new \Dagger\ObjectTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieve a the current value in the LLM environment, of type PhpSdk
-     */
-    public function phpSdk(): PhpSdk
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('phpSdk');
-        return new \Dagger\PhpSdk($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -982,17 +963,6 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     public function setObjectTypeDef(string $name, ObjectTypeDefId|ObjectTypeDef $value): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('setObjectTypeDef');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('value', $value);
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Set a variable of type PhpSdk in the llm environment
-     */
-    public function setPhpSdk(string $name, PhpSdkId|PhpSdk $value): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('setPhpSdk');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('value', $value);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -1425,16 +1395,6 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     public function withObjectTypeDef(ObjectTypeDefId|ObjectTypeDef $value): LLM
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withObjectTypeDef');
-        $innerQueryBuilder->setArgument('value', $value);
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Set a variable of type PhpSdk in the llm environment
-     */
-    public function withPhpSdk(PhpSdkId|PhpSdk $value): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPhpSdk');
         $innerQueryBuilder->setArgument('value', $value);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

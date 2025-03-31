@@ -22,10 +22,4 @@ export interface ConnectOpts {
      ```
      */
   LogOutput?: Writable
-
-  /**
-   * Serve the current module in the context directory if available.
-   * @defaultValue false
-   */
-  ServeCurrentModule?: boolean
 }
