@@ -126,7 +126,7 @@ func TestLlmConfigDisableStreaming(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			q := LLMTestQuery{}
 
-			srv := dagql.NewServer(q)
+			srv := dagql.NewServer(q, dagql.NewSessionCache(cache.NewCache[digest.Digest, dagql.Typed]()))
 			dagql.Fields[LLMTestQuery]{
 				dagql.Func("secret", func(ctx context.Context, self LLMTestQuery, args struct {
 					URI string
