@@ -97,9 +97,9 @@ func Engine() *dagger.Engine {
 }
 
 // Initialize a new environment
-func Environment() *dagger.Environment {
+func Env() *dagger.Env {
 	client := initClient()
-	return client.Environment()
+	return client.Env()
 }
 
 // Create a new error.
@@ -210,16 +210,16 @@ func LoadEnumValueTypeDefFromID(id dagger.EnumValueTypeDefID) *dagger.EnumValueT
 	return client.LoadEnumValueTypeDefFromID(id)
 }
 
+// Load a Env from its ID.
+func LoadEnvFromID(id dagger.EnvID) *dagger.Env {
+	client := initClient()
+	return client.LoadEnvFromID(id)
+}
+
 // Load a EnvVariable from its ID.
 func LoadEnvVariableFromID(id dagger.EnvVariableID) *dagger.EnvVariable {
 	client := initClient()
 	return client.LoadEnvVariableFromID(id)
-}
-
-// Load a Environment from its ID.
-func LoadEnvironmentFromID(id dagger.EnvironmentID) *dagger.Environment {
-	client := initClient()
-	return client.LoadEnvironmentFromID(id)
 }
 
 // Load a Error from its ID.
