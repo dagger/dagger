@@ -70,7 +70,7 @@ Consider the following Dagger Function:
 </TabItem>
 </Tabs>
 
-This Dagger Function creates a new LLM, gives it a workspace container with an assignment, and prompts it to complete the assignment. The LLM then runs in a loop, calling tools and iterating on its work, until it completes the assignment. This loop all happens inside of the LLM object, so the value of `result` is the workspace container with the completed assignment.
+This Dagger Function creates a new LLM, gives it an environment (a container with various tools) with an assignment, and prompts it to complete the assignment. The LLM then runs in a loop, calling tools and iterating on its work, until it completes the assignment. This loop all happens inside of the LLM object, so the value of `result` is the environment with the completed assignment.
 
 
 ## Exposing MCP outside of Dagger
