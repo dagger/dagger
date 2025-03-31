@@ -46,9 +46,19 @@ func New() *Recorder {
 
 func (r *Recorder) RenderAll() *dagger.Directory {
 	return dag.Directory().
+		WithDirectory("", r.RenderFeatures()).
+		WithDirectory("", r.RenderQuickstart())
+}
+
+func (r *Recorder) RenderFeatures() *dagger.Directory {
+	return dag.Directory().
 		WithDirectory("", r.Render("features/shell-curl.tape")).
 		WithDirectory("", r.Render("features/shell-build.tape")).
 		WithDirectory("", r.Render("features/shell-help.tape"))
+}
+
+func (r *Recorder) RenderQuickstart() *dagger.Directory {
+	return dag.Directory()
 }
 
 func (r *Recorder) Render(tape string) *dagger.Directory {
