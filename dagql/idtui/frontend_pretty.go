@@ -731,7 +731,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 func (fe *frontendPretty) renderedRowLines(r *renderer, row *dagui.TraceRow, prefix string) []string {
 	buf := new(strings.Builder)
 	out := NewOutput(buf, termenv.WithProfile(fe.profile))
-	fe.renderRow(out, r, row, prefix, false)
+	fe.renderRow(out, r, row, prefix)
 	if buf.String() == "" {
 		return nil
 	}
@@ -747,7 +747,7 @@ func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, full bool,
 
 	if full {
 		for _, row := range rows.Order {
-			if fe.renderRow(out, r, row, "", false) {
+			if fe.renderRow(out, r, row, "") {
 				rendered = true
 			}
 		}
@@ -1339,7 +1339,7 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 			// quickly.
 			fmt.Fprintln(out)
 		}
-		fe.renderRow(out, r, row, "", false)
+		fe.renderRow(out, r, row, "")
 		fe.flushed[row.Span.ID] = true
 		anyFlushed = true
 	}
@@ -1528,7 +1528,7 @@ func (fe *frontendPretty) renderLocked() {
 }
 
 //nolint:gocyclo
-func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, highlight bool) bool {
+func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) bool {
 	if fe.flushed[row.Span.ID] && fe.editlineFocused {
 		return false
 	}
