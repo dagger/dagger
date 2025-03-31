@@ -44,14 +44,14 @@ func New() *Recorder {
 	}
 }
 
-func (r *Recorder) Render() *dagger.Directory {
+func (r *Recorder) RenderAll() *dagger.Directory {
 	return dag.Directory().
-		WithDirectory("", r.render("features/shell-curl.tape")).
-		WithDirectory("", r.render("features/shell-build.tape")).
-		WithDirectory("", r.render("features/shell-help.tape"))
+		WithDirectory("", r.Render("features/shell-curl.tape")).
+		WithDirectory("", r.Render("features/shell-build.tape")).
+		WithDirectory("", r.Render("features/shell-help.tape"))
 }
 
-func (r *Recorder) render(tape string) *dagger.Directory {
+func (r *Recorder) Render(tape string) *dagger.Directory {
 	return r.vhsInclude([]string{
 		"config.tape", "shell.tape",
 		tape,
