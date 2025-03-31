@@ -805,8 +805,8 @@ func (v *LLMVariable) Type() *ast.Type {
 	}
 }
 
-func (llm *LLM) CurrentType(ctx context.Context, dag *dagql.Server) (dagql.Nullable[dagql.String], error) {
-	var res dagql.Nullable[dagql.String]
+func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) (dagql.Nullable[*Binding], error) {
+	var res dagql.Nullable[*Binding]
 	llm, err := llm.Sync(ctx, dag)
 	if err != nil {
 		return res, err
@@ -814,7 +814,11 @@ func (llm *LLM) CurrentType(ctx context.Context, dag *dagql.Server) (dagql.Nulla
 	if llm.mcp.Current() == nil {
 		return res, nil
 	}
-	res.Value = dagql.String(llm.mcp.Current().Type().Name())
+	res.Value = &Binding{
+		Key:   name,
+		Value: llm.mcp.Current(),
+		env:   llm.mcp.env,
+	}
 	res.Valid = true
 	return res, nil
 }

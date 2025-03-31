@@ -71,7 +71,7 @@ func (s llmSchema) Install() {
 			Doc("create a branch in the LLM's history"),
 		dagql.Func("tools", s.tools).
 			Doc("print documentation for available tools"),
-		dagql.Func("currentType", s.currentType).
+		dagql.Func("bindResult", s.bindResult).
 			Doc("returns the type of the current state"),
 		dagql.Func("tokenUsage", s.tokenUsage).
 			Doc("returns the token usage of the current state"),
@@ -187,8 +187,10 @@ func (s *llmSchema) tools(ctx context.Context, llm *core.LLM, _ struct{}) (dagql
 	return dagql.NewString(doc), err
 }
 
-func (s *llmSchema) currentType(ctx context.Context, llm *core.LLM, _ struct{}) (dagql.Nullable[dagql.String], error) {
-	return llm.CurrentType(ctx, s.srv)
+func (s *llmSchema) bindResult(ctx context.Context, llm *core.LLM, args struct {
+	Name string
+}) (dagql.Nullable[*core.Binding], error) {
+	return llm.BindResult(ctx, s.srv, args.Name)
 }
 
 func (s *llmSchema) tokenUsage(ctx context.Context, llm *core.LLM, _ struct{}) (*core.LLMTokenUsage, error) {
