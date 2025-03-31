@@ -15,7 +15,7 @@ func (m *CodingAgent) GoProgram(
 	environment := dag.Env().
 		WithToyWorkspaceInput("before", workspace, "these are the tools to complete the task").
 		WithStringInput("assignment", assignment, "this is the assignment, complete it").
-		WantToyWorkspaceOutput("after")
+		WithToyWorkspaceOutput("after")
 
 	return dag.LLM().
 		WithEnv(environment).
