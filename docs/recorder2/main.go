@@ -2,7 +2,6 @@ package main
 
 import (
 	"dagger/recorder/internal/dagger"
-	"strings"
 )
 
 type Recorder struct {
@@ -54,54 +53,18 @@ func New(
 	}
 }
 
-func (r *Recorder) RenderAll() *dagger.Directory {
+func (r *Recorder) Render() *dagger.Directory {
 	return dag.Directory().
 		WithDirectory("", r.RenderFeatures()).
 		WithDirectory("", r.RenderQuickstart())
 }
 
 func (r *Recorder) RenderFeatures() *dagger.Directory {
-	return dag.Directory().
-		WithDirectory("", r.Render("features/build.tape")).
-		WithDirectory("", r.Render("features/build-publish.tape")).
-		WithDirectory("", r.Render("features/build-export.tape")).
-		WithDirectory("", r.Render("features/shell-curl.tape")).
-		WithDirectory("", r.Render("features/shell-build.tape")).
-		WithDirectory("", r.Render("features/shell-help.tape")).
-		WithDirectory("", r.Render("features/tui.tape"))
+	return r.Features().All()
 }
 
 func (r *Recorder) RenderQuickstart() *dagger.Directory {
 	return dag.Directory()
-}
-
-func (r *Recorder) Render(tape string) *dagger.Directory {
-	switch true {
-	case tape == "features/build.tape",
-		tape == "features/build-publish.tape":
-		source := dag.CurrentModule().Source().
-			Directory("tapes").
-			Filter(includeWithDefaults(tape)).
-			WithDirectory("", r.Source.Directory("docs/current_docs/features/snippets/programmable-pipelines-1/go"))
-
-		return r.Vhs.WithSource(source).Render(tape)
-
-	case tape == "features/build-export.tape":
-		source := dag.CurrentModule().Source().
-			Directory("tapes").
-			Filter(includeWithDefaults(tape)).
-			WithDirectory("", r.Source.Directory("docs/current_docs/features/snippets/programmable-pipelines-2/go"))
-
-		return r.Vhs.WithSource(source).Render(tape)
-
-	// TODO: add secrets
-
-	case strings.HasPrefix(tape, "features/shell-"):
-		return r.filteredVhs(includeWithShell(tape)).Render(tape)
-
-	default:
-		return r.filteredVhs(includeWithDefaults(tape)).Render(tape)
-	}
 }
 
 func include(tapes ...string) dagger.DirectoryFilterOpts {
