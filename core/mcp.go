@@ -559,7 +559,9 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 				return m.currentState(nil)
 			}),
 		},
-		m.returnBuiltin(),
+	}
+	if len(m.env.outputsByName) > 0 {
+		builtins = append(builtins, m.returnBuiltin())
 	}
 	for _, typeName := range m.env.Types() {
 		tools, err := m.tools(srv, typeName)
