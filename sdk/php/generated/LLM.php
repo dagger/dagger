@@ -129,15 +129,6 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * list variables in the LLM environment
-     */
-    public function variables(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('variables');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'variables');
-    }
-
-    /**
      * allow the LLM to interact with an environment via MCP
      */
     public function withEnvironment(EnvironmentId|Environment $environment): LLM
@@ -174,17 +165,6 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPromptFile');
         $innerQueryBuilder->setArgument('file', $file);
-        return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Add a string variable to the LLM's environment
-     */
-    public function withPromptVar(string $name, string $value): LLM
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withPromptVar');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('value', $value);
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

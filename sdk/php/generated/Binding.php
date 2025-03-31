@@ -209,15 +209,6 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieve the binding value, as type LLMVariable
-     */
-    public function asLLMVariable(): LLMVariable
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asLLMVariable');
-        return new \Dagger\LLMVariable($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Retrieve the binding value, as type ListTypeDef
      */
     public function asListTypeDef(): ListTypeDef

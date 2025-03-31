@@ -89,9 +89,6 @@ type Binding {
   """Retrieve the binding value, as type LLMTokenUsage"""
   asLLMTokenUsage: LLMTokenUsage!
 
-  """Retrieve the binding value, as type LLMVariable"""
-  asLLMVariable: LLMVariable!
-
   """Retrieve the binding value, as type Module"""
   asModule: Module!
 
@@ -1934,15 +1931,6 @@ type Environment {
     value: LLMTokenUsageID!
   ): Environment!
 
-  """Create or update a binding of type LLMVariable in the environment"""
-  withLLMVariableBinding(
-    """The name of the binding"""
-    name: String!
-
-    """The LLMVariable value to assign to the binding"""
-    value: LLMVariableID!
-  ): Environment!
-
   """Create or update a binding of type Module in the environment"""
   withModuleBinding(
     """The name of the binding"""
@@ -2033,6 +2021,15 @@ type Environment {
 
     """The SourceMap value to assign to the binding"""
     value: SourceMapID!
+  ): Environment!
+
+  """Create or update a binding of type string in the environment"""
+  withStringBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The string value to assign to the binding"""
+    value: String!
   ): Environment!
 
   """Create or update a binding of type Terminal in the environment"""
@@ -2720,9 +2717,6 @@ type LLM {
   """print documentation for available tools"""
   tools: String!
 
-  """list variables in the LLM environment"""
-  variables: [LLMVariable!]!
-
   """allow the LLM to interact with an environment via MCP"""
   withEnvironment(environment: EnvironmentID!): LLM!
 
@@ -2742,15 +2736,6 @@ type LLM {
   withPromptFile(
     """The file to read the prompt from"""
     file: FileID!
-  ): LLM!
-
-  """Add a string variable to the LLM's environment"""
-  withPromptVar(
-    """The variable name"""
-    name: String!
-
-    """The variable value"""
-    value: String!
   ): LLM!
 
   """Provide the entire Query object to the LLM"""
@@ -2780,20 +2765,6 @@ type LLMTokenUsage {
 The `LLMTokenUsageID` scalar type represents an identifier for an object of type LLMTokenUsage.
 """
 scalar LLMTokenUsageID
-
-type LLMVariable {
-  hash: String!
-
-  """A unique identifier for this LLMVariable."""
-  id: LLMVariableID!
-  name: String!
-  typeName: String!
-}
-
-"""
-The `LLMVariableID` scalar type represents an identifier for an object of type LLMVariable.
-"""
-scalar LLMVariableID
 
 """A Dagger module."""
 type Module {
@@ -3390,9 +3361,6 @@ type Query {
 
   """Load a LLMTokenUsage from its ID."""
   loadLLMTokenUsageFromID(id: LLMTokenUsageID!): LLMTokenUsage!
-
-  """Load a LLMVariable from its ID."""
-  loadLLMVariableFromID(id: LLMVariableID!): LLMVariable!
 
   """Load a ModuleConfigClient from its ID."""
   loadModuleConfigClientFromID(id: ModuleConfigClientID!): ModuleConfigClient!

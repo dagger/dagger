@@ -188,9 +188,6 @@ type LLMID string
 // The `LLMTokenUsageID` scalar type represents an identifier for an object of type LLMTokenUsage.
 type LLMTokenUsageID string
 
-// The `LLMVariableID` scalar type represents an identifier for an object of type LLMVariable.
-type LLMVariableID string
-
 // The `LabelID` scalar type represents an identifier for an object of type Label.
 type LabelID string
 
@@ -485,15 +482,6 @@ func (r *Binding) AsLLMTokenUsage() *LLMTokenUsage {
 	q := r.query.Select("asLLMTokenUsage")
 
 	return &LLMTokenUsage{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type LLMVariable
-func (r *Binding) AsLLMVariable() *LLMVariable {
-	q := r.query.Select("asLLMVariable")
-
-	return &LLMVariable{
 		query: q,
 	}
 }
@@ -4241,18 +4229,6 @@ func (r *Environment) WithLLMTokenUsageBinding(name string, value *LLMTokenUsage
 	}
 }
 
-// Create or update a binding of type LLMVariable in the environment
-func (r *Environment) WithLLMVariableBinding(name string, value *LLMVariable) *Environment {
-	assertNotNil("value", value)
-	q := r.query.Select("withLLMVariableBinding")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &Environment{
-		query: q,
-	}
-}
-
 // Create or update a binding of type ListTypeDef in the environment
 func (r *Environment) WithListTypeDefBinding(name string, value *ListTypeDef) *Environment {
 	assertNotNil("value", value)
@@ -4377,6 +4353,17 @@ func (r *Environment) WithSocketBinding(name string, value *Socket) *Environment
 func (r *Environment) WithSourceMapBinding(name string, value *SourceMap) *Environment {
 	assertNotNil("value", value)
 	q := r.query.Select("withSourceMapBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type string in the environment
+func (r *Environment) WithStringBinding(name string, value string) *Environment {
+	q := r.query.Select("withStringBinding")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
 
@@ -6452,39 +6439,6 @@ func (r *LLM) Tools(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// list variables in the LLM environment
-func (r *LLM) Variables(ctx context.Context) ([]LLMVariable, error) {
-	q := r.query.Select("variables")
-
-	q = q.Select("id")
-
-	type variables struct {
-		Id LLMVariableID
-	}
-
-	convert := func(fields []variables) []LLMVariable {
-		out := []LLMVariable{}
-
-		for i := range fields {
-			val := LLMVariable{id: &fields[i].Id}
-			val.query = q.Root().Select("loadLLMVariableFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []variables
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
 // allow the LLM to interact with an environment via MCP
 func (r *LLM) WithEnvironment(environment *Environment) *LLM {
 	assertNotNil("environment", environment)
@@ -6521,17 +6475,6 @@ func (r *LLM) WithPromptFile(file *File) *LLM {
 	assertNotNil("file", file)
 	q := r.query.Select("withPromptFile")
 	q = q.Arg("file", file)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Add a string variable to the LLM's environment
-func (r *LLM) WithPromptVar(name string, value string) *LLM {
-	q := r.query.Select("withPromptVar")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
 
 	return &LLM{
 		query: q,
@@ -6643,97 +6586,6 @@ func (r *LLMTokenUsage) TotalTokens(ctx context.Context) (int, error) {
 	q := r.query.Select("totalTokens")
 
 	var response int
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-type LLMVariable struct {
-	query *querybuilder.Selection
-
-	hash     *string
-	id       *LLMVariableID
-	name     *string
-	typeName *string
-}
-
-func (r *LLMVariable) WithGraphQLQuery(q *querybuilder.Selection) *LLMVariable {
-	return &LLMVariable{
-		query: q,
-	}
-}
-
-func (r *LLMVariable) Hash(ctx context.Context) (string, error) {
-	if r.hash != nil {
-		return *r.hash, nil
-	}
-	q := r.query.Select("hash")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// A unique identifier for this LLMVariable.
-func (r *LLMVariable) ID(ctx context.Context) (LLMVariableID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response LLMVariableID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *LLMVariable) XXX_GraphQLType() string {
-	return "LLMVariable"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *LLMVariable) XXX_GraphQLIDType() string {
-	return "LLMVariableID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *LLMVariable) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *LLMVariable) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-func (r *LLMVariable) Name(ctx context.Context) (string, error) {
-	if r.name != nil {
-		return *r.name, nil
-	}
-	q := r.query.Select("name")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *LLMVariable) TypeName(ctx context.Context) (string, error) {
-	if r.typeName != nil {
-		return *r.typeName, nil
-	}
-	q := r.query.Select("typeName")
-
-	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8692,16 +8544,6 @@ func (r *Client) LoadLLMTokenUsageFromID(id LLMTokenUsageID) *LLMTokenUsage {
 	q = q.Arg("id", id)
 
 	return &LLMTokenUsage{
-		query: q,
-	}
-}
-
-// Load a LLMVariable from its ID.
-func (r *Client) LoadLLMVariableFromID(id LLMVariableID) *LLMVariable {
-	q := r.query.Select("loadLLMVariableFromID")
-	q = q.Arg("id", id)
-
-	return &LLMVariable{
 		query: q,
 	}
 }

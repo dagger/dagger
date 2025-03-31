@@ -396,22 +396,6 @@ defmodule Dagger.Environment do
     }
   end
 
-  @doc "Create or update a binding of type LLMVariable in the environment"
-  @spec with_llm_variable_binding(t(), String.t(), Dagger.LLMVariable.t()) ::
-          Dagger.Environment.t()
-  def with_llm_variable_binding(%__MODULE__{} = environment, name, value) do
-    query_builder =
-      environment.query_builder
-      |> QB.select("withLLMVariableBinding")
-      |> QB.put_arg("name", name)
-      |> QB.put_arg("value", Dagger.ID.id!(value))
-
-    %Dagger.Environment{
-      query_builder: query_builder,
-      client: environment.client
-    }
-  end
-
   @doc "Create or update a binding of type ListTypeDef in the environment"
   @spec with_list_type_def_binding(t(), String.t(), Dagger.ListTypeDef.t()) ::
           Dagger.Environment.t()
@@ -575,6 +559,21 @@ defmodule Dagger.Environment do
       |> QB.select("withSourceMapBinding")
       |> QB.put_arg("name", name)
       |> QB.put_arg("value", Dagger.ID.id!(value))
+
+    %Dagger.Environment{
+      query_builder: query_builder,
+      client: environment.client
+    }
+  end
+
+  @doc "Create or update a binding of type string in the environment"
+  @spec with_string_binding(t(), String.t(), String.t()) :: Dagger.Environment.t()
+  def with_string_binding(%__MODULE__{} = environment, name, value) do
+    query_builder =
+      environment.query_builder
+      |> QB.select("withStringBinding")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", value)
 
     %Dagger.Environment{
       query_builder: query_builder,

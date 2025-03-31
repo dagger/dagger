@@ -73,7 +73,6 @@
               <li><a href="#query-loadInterfaceTypeDefFromID">loadInterfaceTypeDefFromID</a></li>
               <li><a href="#query-loadLLMFromID">loadLLMFromID</a></li>
               <li><a href="#query-loadLLMTokenUsageFromID">loadLLMTokenUsageFromID</a></li>
-              <li><a href="#query-loadLLMVariableFromID">loadLLMVariableFromID</a></li>
               <li><a href="#query-loadLabelFromID">loadLabelFromID</a></li>
               <li><a href="#query-loadListTypeDefFromID">loadListTypeDefFromID</a></li>
               <li><a href="#query-loadModuleConfigClientFromID">loadModuleConfigClientFromID</a></li>
@@ -167,8 +166,6 @@
               <li><a href="#definition-LLMID">LLMID</a></li>
               <li><a href="#definition-LLMTokenUsage">LLMTokenUsage</a></li>
               <li><a href="#definition-LLMTokenUsageID">LLMTokenUsageID</a></li>
-              <li><a href="#definition-LLMVariable">LLMVariable</a></li>
-              <li><a href="#definition-LLMVariableID">LLMVariableID</a></li>
               <li><a href="#definition-Label">Label</a></li>
               <li><a href="#definition-LabelID">LabelID</a></li>
               <li><a href="#definition-ListTypeDef">ListTypeDef</a></li>
@@ -2572,59 +2569,6 @@
               </div>
             </div>
           </section>
-          <section id="query-loadLLMVariableFromID" class="operation operation-query" data-traverse-target="query-loadLLMVariableFromID">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>loadLLMVariableFromID</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Load a LLMVariable from its ID.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-LLMVariable"><code>LLMVariable!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-LLMVariableID"><code>LLMVariableID!</code></a></span>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
           <section id="query-loadLabelFromID" class="operation operation-query" data-traverse-target="query-loadLabelFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -3942,10 +3886,6 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asLLMTokenUsage" href="#Binding-asLLMTokenUsage"><code>asLLMTokenUsage</code></a> - <span class="property-type"><a href="#definition-LLMTokenUsage"><code>LLMTokenUsage!</code></a></span> </td>
                         <td> Retrieve the binding value, as type LLMTokenUsage </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asLLMVariable" href="#Binding-asLLMVariable"><code>asLLMVariable</code></a> - <span class="property-type"><a href="#definition-LLMVariable"><code>LLMVariable!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type LLMVariable </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asModule" href="#Binding-asModule"><code>asModule</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
@@ -7201,27 +7141,6 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Environment-withLLMVariableBinding" href="#Environment-withLLMVariableBinding"><code>withLLMVariableBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
-                        <td> Create or update a binding of type LLMVariable in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-LLMVariableID"><code>LLMVariableID!</code></a></span></h6>
-                                <p>The LLMVariable value to assign to the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Environment-withModuleBinding" href="#Environment-withModuleBinding"><code>withModuleBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
                         <td> Create or update a binding of type Module in the environment </td>
                       </tr>
@@ -7426,6 +7345,27 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID!</code></a></span></h6>
                                 <p>The SourceMap value to assign to the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Environment-withStringBinding" href="#Environment-withStringBinding"><code>withStringBinding</code></a> - <span class="property-type"><a href="#definition-Environment"><code>Environment!</code></a></span> </td>
+                        <td> Create or update a binding of type string in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The string value to assign to the binding</p>
                               </div>
                             </div>
                           </div>
@@ -9018,10 +8958,6 @@
                         <td data-property-name=""><a class="property-name" id="LLM-tools" href="#LLM-tools"><code>tools</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> print documentation for available tools </td>
                       </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LLM-variables" href="#LLM-variables"><code>variables</code></a> - <span class="property-type"><a href="#definition-LLMVariable"><code>[LLMVariable!]!</code></a></span> </td>
-                        <td> list variables in the LLM environment </td>
-                      </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="LLM-withEnvironment" href="#LLM-withEnvironment"><code>withEnvironment</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
                         <td> allow the LLM to interact with an environment via MCP </td>
@@ -9084,27 +9020,6 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>file</code></span> - <span class="property-type"><a href="#definition-FileID"><code>FileID!</code></a></span></h6>
                                 <p>The file to read the prompt from</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="LLM-withPromptVar" href="#LLM-withPromptVar"><code>withPromptVar</code></a> - <span class="property-type"><a href="#definition-LLM"><code>LLM!</code></a></span> </td>
-                        <td> Add a string variable to the LLM's environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The variable name</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The variable value</p>
                               </div>
                             </div>
                           </div>
@@ -9203,62 +9118,6 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>LLMTokenUsageID</code> scalar type represents an identifier for an object of type LLMTokenUsage.</p>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-LLMVariable" class="definition definition-object" data-traverse-target="definition-LLMVariable">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">LLMVariable</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-properties doc-copy-section">
-                  <h5>Fields</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Field Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LLMVariable-hash" href="#LLMVariable-hash"><code>hash</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LLMVariable-id" href="#LLMVariable-id"><code>id</code></a> - <span class="property-type"><a href="#definition-LLMVariableID"><code>LLMVariableID!</code></a></span> </td>
-                        <td> A unique identifier for this LLMVariable. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LLMVariable-name" href="#LLMVariable-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="LLMVariable-typeName" href="#LLMVariable-typeName"><code>typeName</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-LLMVariableID" class="definition definition-scalar" data-traverse-target="definition-LLMVariableID">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">LLMVariableID</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The <code>LLMVariableID</code> scalar type represents an identifier for an object of type LLMVariable.</p>
                 </div>
               </div>
             </div>

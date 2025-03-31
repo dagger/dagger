@@ -1049,11 +1049,6 @@ export type LLMID = string & { __LLMID: never }
 export type LLMTokenUsageID = string & { __LLMTokenUsageID: never }
 
 /**
- * The `LLMVariableID` scalar type represents an identifier for an object of type LLMVariable.
- */
-export type LLMVariableID = string & { __LLMVariableID: never }
-
-/**
  * The `LabelID` scalar type represents an identifier for an object of type Label.
  */
 export type LabelID = string & { __LabelID: never }
@@ -1663,14 +1658,6 @@ export class Binding extends BaseClient {
   asLLMTokenUsage = (): LLMTokenUsage => {
     const ctx = this._ctx.select("asLLMTokenUsage")
     return new LLMTokenUsage(ctx)
-  }
-
-  /**
-   * Retrieve the binding value, as type LLMVariable
-   */
-  asLLMVariable = (): LLMVariable => {
-    const ctx = this._ctx.select("asLLMVariable")
-    return new LLMVariable(ctx)
   }
 
   /**
@@ -4403,16 +4390,6 @@ export class Environment extends BaseClient {
   }
 
   /**
-   * Create or update a binding of type LLMVariable in the environment
-   * @param name The name of the binding
-   * @param value The LLMVariable value to assign to the binding
-   */
-  withLLMVariableBinding = (name: string, value: LLMVariable): Environment => {
-    const ctx = this._ctx.select("withLLMVariableBinding", { name, value })
-    return new Environment(ctx)
-  }
-
-  /**
    * Create or update a binding of type ListTypeDef in the environment
    * @param name The name of the binding
    * @param value The ListTypeDef value to assign to the binding
@@ -4534,6 +4511,16 @@ export class Environment extends BaseClient {
    */
   withSourceMapBinding = (name: string, value: SourceMap): Environment => {
     const ctx = this._ctx.select("withSourceMapBinding", { name, value })
+    return new Environment(ctx)
+  }
+
+  /**
+   * Create or update a binding of type string in the environment
+   * @param name The name of the binding
+   * @param value The string value to assign to the binding
+   */
+  withStringBinding = (name: string, value: string): Environment => {
+    const ctx = this._ctx.select("withStringBinding", { name, value })
     return new Environment(ctx)
   }
 
@@ -6206,23 +6193,6 @@ export class LLM extends BaseClient {
   }
 
   /**
-   * list variables in the LLM environment
-   */
-  variables = async (): Promise<LLMVariable[]> => {
-    type variables = {
-      id: LLMVariableID
-    }
-
-    const ctx = this._ctx.select("variables").select("id")
-
-    const response: Awaited<variables[]> = await ctx.execute()
-
-    return response.map((r) =>
-      new Client(ctx.copy()).loadLLMVariableFromID(r.id),
-    )
-  }
-
-  /**
    * allow the LLM to interact with an environment via MCP
    */
   withEnvironment = (environment: Environment): LLM => {
@@ -6254,16 +6224,6 @@ export class LLM extends BaseClient {
    */
   withPromptFile = (file: File): LLM => {
     const ctx = this._ctx.select("withPromptFile", { file })
-    return new LLM(ctx)
-  }
-
-  /**
-   * Add a string variable to the LLM's environment
-   * @param name The variable name
-   * @param value The variable value
-   */
-  withPromptVar = (name: string, value: string): LLM => {
-    const ctx = this._ctx.select("withPromptVar", { name, value })
     return new LLM(ctx)
   }
 
@@ -6362,79 +6322,6 @@ export class LLMTokenUsage extends BaseClient {
     const ctx = this._ctx.select("totalTokens")
 
     const response: Awaited<number> = await ctx.execute()
-
-    return response
-  }
-}
-
-export class LLMVariable extends BaseClient {
-  private readonly _id?: LLMVariableID = undefined
-  private readonly _hash?: string = undefined
-  private readonly _name?: string = undefined
-  private readonly _typeName?: string = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(
-    ctx?: Context,
-    _id?: LLMVariableID,
-    _hash?: string,
-    _name?: string,
-    _typeName?: string,
-  ) {
-    super(ctx)
-
-    this._id = _id
-    this._hash = _hash
-    this._name = _name
-    this._typeName = _typeName
-  }
-
-  /**
-   * A unique identifier for this LLMVariable.
-   */
-  id = async (): Promise<LLMVariableID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const ctx = this._ctx.select("id")
-
-    const response: Awaited<LLMVariableID> = await ctx.execute()
-
-    return response
-  }
-  hash = async (): Promise<string> => {
-    if (this._hash) {
-      return this._hash
-    }
-
-    const ctx = this._ctx.select("hash")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-  name = async (): Promise<string> => {
-    if (this._name) {
-      return this._name
-    }
-
-    const ctx = this._ctx.select("name")
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
-  }
-  typeName = async (): Promise<string> => {
-    if (this._typeName) {
-      return this._typeName
-    }
-
-    const ctx = this._ctx.select("typeName")
-
-    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -8077,14 +7964,6 @@ export class Client extends BaseClient {
   loadLLMTokenUsageFromID = (id: LLMTokenUsageID): LLMTokenUsage => {
     const ctx = this._ctx.select("loadLLMTokenUsageFromID", { id })
     return new LLMTokenUsage(ctx)
-  }
-
-  /**
-   * Load a LLMVariable from its ID.
-   */
-  loadLLMVariableFromID = (id: LLMVariableID): LLMVariable => {
-    const ctx = this._ctx.select("loadLLMVariableFromID", { id })
-    return new LLMVariable(ctx)
   }
 
   /**

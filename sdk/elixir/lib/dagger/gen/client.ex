@@ -596,18 +596,6 @@ defmodule Dagger.Client do
     }
   end
 
-  @doc "Load a LLMVariable from its ID."
-  @spec load_llm_variable_from_id(t(), Dagger.LLMVariableID.t()) :: Dagger.LLMVariable.t()
-  def load_llm_variable_from_id(%__MODULE__{} = client, id) do
-    query_builder =
-      client.query_builder |> QB.select("loadLLMVariableFromID") |> QB.put_arg("id", id)
-
-    %Dagger.LLMVariable{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
   @doc "Load a Label from its ID."
   @spec load_label_from_id(t(), Dagger.LabelID.t()) :: Dagger.Label.t()
   def load_label_from_id(%__MODULE__{} = client, id) do

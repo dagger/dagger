@@ -492,16 +492,6 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Load a LLMVariable from its ID.
-     */
-    public function loadLLMVariableFromID(LLMVariableId|LLMVariable $id): LLMVariable
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadLLMVariableFromID');
-        $innerQueryBuilder->setArgument('id', $id);
-        return new \Dagger\LLMVariable($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Load a Label from its ID.
      */
     public function loadLabelFromID(LabelId|Label $id): Label

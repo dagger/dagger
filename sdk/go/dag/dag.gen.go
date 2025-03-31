@@ -318,12 +318,6 @@ func LoadLLMTokenUsageFromID(id dagger.LLMTokenUsageID) *dagger.LLMTokenUsage {
 	return client.LoadLLMTokenUsageFromID(id)
 }
 
-// Load a LLMVariable from its ID.
-func LoadLLMVariableFromID(id dagger.LLMVariableID) *dagger.LLMVariable {
-	client := initClient()
-	return client.LoadLLMVariableFromID(id)
-}
-
 // Load a Label from its ID.
 func LoadLabelFromID(id dagger.LabelID) *dagger.Label {
 	client := initClient()

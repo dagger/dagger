@@ -283,17 +283,6 @@ class Environment extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Create or update a binding of type LLMVariable in the environment
-     */
-    public function withLLMVariableBinding(string $name, LLMVariableId|LLMVariable $value): Environment
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withLLMVariableBinding');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('value', $value);
-        return new \Dagger\Environment($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Create or update a binding of type ListTypeDef in the environment
      */
     public function withListTypeDefBinding(string $name, ListTypeDefId|ListTypeDef $value): Environment
@@ -422,6 +411,17 @@ class Environment extends Client\AbstractObject implements Client\IdAble
     public function withSourceMapBinding(string $name, SourceMapId|SourceMap $value): Environment
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSourceMapBinding');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        return new \Dagger\Environment($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Create or update a binding of type string in the environment
+     */
+    public function withStringBinding(string $name, string $value): Environment
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withStringBinding');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('value', $value);
         return new \Dagger\Environment($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));

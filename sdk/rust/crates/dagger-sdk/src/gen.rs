@@ -1026,41 +1026,6 @@ impl LlmTokenUsageId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct LlmVariableId(pub String);
-impl From<&str> for LlmVariableId {
-    fn from(value: &str) -> Self {
-        Self(value.to_string())
-    }
-}
-impl From<String> for LlmVariableId {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-impl IntoID<LlmVariableId> for LlmVariable {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<
-        Box<dyn core::future::Future<Output = Result<LlmVariableId, DaggerError>> + Send>,
-    > {
-        Box::pin(async move { self.id().await })
-    }
-}
-impl IntoID<LlmVariableId> for LlmVariableId {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<
-        Box<dyn core::future::Future<Output = Result<LlmVariableId, DaggerError>> + Send>,
-    > {
-        Box::pin(async move { Ok::<LlmVariableId, DaggerError>(self) })
-    }
-}
-impl LlmVariableId {
-    fn quote(&self) -> String {
-        format!("\"{}\"", self.0.clone())
-    }
-}
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct LabelId(pub String);
 impl From<&str> for LabelId {
     fn from(value: &str) -> Self {
@@ -1819,15 +1784,6 @@ impl Binding {
     pub fn as_llm_token_usage(&self) -> LlmTokenUsage {
         let query = self.selection.select("asLLMTokenUsage");
         LlmTokenUsage {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve the binding value, as type LLMVariable
-    pub fn as_llm_variable(&self) -> LlmVariable {
-        let query = self.selection.select("asLLMVariable");
-        LlmVariable {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -6077,32 +6033,6 @@ impl Environment {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Create or update a binding of type LLMVariable in the environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the binding
-    /// * `value` - The LLMVariable value to assign to the binding
-    pub fn with_llm_variable_binding(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<LlmVariableId>,
-    ) -> Environment {
-        let mut query = self.selection.select("withLLMVariableBinding");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Environment {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Create or update a binding of type ListTypeDef in the environment
     ///
     /// # Arguments
@@ -6383,6 +6313,26 @@ impl Environment {
                 Box::pin(async move { value.into_id().await.unwrap().quote() })
             }),
         );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type string in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The string value to assign to the binding
+    pub fn with_string_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Environment {
+        let mut query = self.selection.select("withStringBinding");
+        query = query.arg("name", name.into());
+        query = query.arg("value", value.into());
         Environment {
             proc: self.proc.clone(),
             selection: query,
@@ -7619,15 +7569,6 @@ impl Llm {
         let query = self.selection.select("tools");
         query.execute(self.graphql_client.clone()).await
     }
-    /// list variables in the LLM environment
-    pub fn variables(&self) -> Vec<LlmVariable> {
-        let query = self.selection.select("variables");
-        vec![LlmVariable {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }]
-    }
     /// allow the LLM to interact with an environment via MCP
     pub fn with_environment(&self, environment: impl IntoID<EnvironmentId>) -> Llm {
         let mut query = self.selection.select("withEnvironment");
@@ -7692,22 +7633,6 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Add a string variable to the LLM's environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The variable name
-    /// * `value` - The variable value
-    pub fn with_prompt_var(&self, name: impl Into<String>, value: impl Into<String>) -> Llm {
-        let mut query = self.selection.select("withPromptVar");
-        query = query.arg("name", name.into());
-        query = query.arg("value", value.into());
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Provide the entire Query object to the LLM
     pub fn with_query(&self) -> Llm {
         let query = self.selection.select("withQuery");
@@ -7754,31 +7679,6 @@ impl LlmTokenUsage {
     }
     pub async fn total_tokens(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("totalTokens");
-        query.execute(self.graphql_client.clone()).await
-    }
-}
-#[derive(Clone)]
-pub struct LlmVariable {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl LlmVariable {
-    pub async fn hash(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("hash");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this LLMVariable.
-    pub async fn id(&self) -> Result<LlmVariableId, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    pub async fn name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("name");
-        query.execute(self.graphql_client.clone()).await
-    }
-    pub async fn type_name(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("typeName");
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -9328,22 +9228,6 @@ impl Query {
             }),
         );
         LlmTokenUsage {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Load a LLMVariable from its ID.
-    pub fn load_llm_variable_from_id(&self, id: impl IntoID<LlmVariableId>) -> LlmVariable {
-        let mut query = self.selection.select("loadLLMVariableFromID");
-        query = query.arg_lazy(
-            "id",
-            Box::new(move || {
-                let id = id.clone();
-                Box::pin(async move { id.into_id().await.unwrap().quote() })
-            }),
-        );
-        LlmVariable {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

@@ -149,26 +149,6 @@ defmodule Dagger.LLM do
     Client.execute(llm.client, query_builder)
   end
 
-  @doc "list variables in the LLM environment"
-  @spec variables(t()) :: {:ok, [Dagger.LLMVariable.t()]} | {:error, term()}
-  def variables(%__MODULE__{} = llm) do
-    query_builder =
-      llm.query_builder |> QB.select("variables") |> QB.select("id")
-
-    with {:ok, items} <- Client.execute(llm.client, query_builder) do
-      {:ok,
-       for %{"id" => id} <- items do
-         %Dagger.LLMVariable{
-           query_builder:
-             QB.query()
-             |> QB.select("loadLLMVariableFromID")
-             |> QB.put_arg("id", id),
-           client: llm.client
-         }
-       end}
-    end
-  end
-
   @doc "allow the LLM to interact with an environment via MCP"
   @spec with_environment(t(), Dagger.Environment.t()) :: Dagger.LLM.t()
   def with_environment(%__MODULE__{} = llm, environment) do
@@ -212,21 +192,6 @@ defmodule Dagger.LLM do
   def with_prompt_file(%__MODULE__{} = llm, file) do
     query_builder =
       llm.query_builder |> QB.select("withPromptFile") |> QB.put_arg("file", Dagger.ID.id!(file))
-
-    %Dagger.LLM{
-      query_builder: query_builder,
-      client: llm.client
-    }
-  end
-
-  @doc "Add a string variable to the LLM's environment"
-  @spec with_prompt_var(t(), String.t(), String.t()) :: Dagger.LLM.t()
-  def with_prompt_var(%__MODULE__{} = llm, name, value) do
-    query_builder =
-      llm.query_builder
-      |> QB.select("withPromptVar")
-      |> QB.put_arg("name", name)
-      |> QB.put_arg("value", value)
 
     %Dagger.LLM{
       query_builder: query_builder,

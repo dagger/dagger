@@ -160,11 +160,6 @@ class LLMTokenUsageID(Scalar):
     object of type LLMTokenUsage."""
 
 
-class LLMVariableID(Scalar):
-    """The `LLMVariableID` scalar type represents an identifier for an
-    object of type LLMVariable."""
-
-
 class LabelID(Scalar):
     """The `LabelID` scalar type represents an identifier for an object of
     type Label."""
@@ -539,12 +534,6 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asLLMTokenUsage", _args)
         return LLMTokenUsage(_ctx)
-
-    def as_llm_variable(self) -> "LLMVariable":
-        """Retrieve the binding value, as type LLMVariable"""
-        _args: list[Arg] = []
-        _ctx = self._select("asLLMVariable", _args)
-        return LLMVariable(_ctx)
 
     def as_list_type_def(self) -> "ListTypeDef":
         """Retrieve the binding value, as type ListTypeDef"""
@@ -4478,23 +4467,6 @@ class Environment(Type):
         _ctx = self._select("withLLMTokenUsageBinding", _args)
         return Environment(_ctx)
 
-    def with_llm_variable_binding(self, name: str, value: "LLMVariable") -> Self:
-        """Create or update a binding of type LLMVariable in the environment
-
-        Parameters
-        ----------
-        name:
-            The name of the binding
-        value:
-            The LLMVariable value to assign to the binding
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-        ]
-        _ctx = self._select("withLLMVariableBinding", _args)
-        return Environment(_ctx)
-
     def with_list_type_def_binding(self, name: str, value: "ListTypeDef") -> Self:
         """Create or update a binding of type ListTypeDef in the environment
 
@@ -4685,6 +4657,23 @@ class Environment(Type):
             Arg("value", value),
         ]
         _ctx = self._select("withSourceMapBinding", _args)
+        return Environment(_ctx)
+
+    def with_string_binding(self, name: str, value: str) -> Self:
+        """Create or update a binding of type string in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The string value to assign to the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+        ]
+        _ctx = self._select("withStringBinding", _args)
         return Environment(_ctx)
 
     def with_terminal_binding(self, name: str, value: "Terminal") -> Self:
@@ -6679,27 +6668,6 @@ class LLM(Type):
         _ctx = self._select("tools", _args)
         return await _ctx.execute(str)
 
-    async def variables(self) -> list["LLMVariable"]:
-        """list variables in the LLM environment"""
-        _args: list[Arg] = []
-        _ctx = self._select("variables", _args)
-        _ctx = LLMVariable(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: LLMVariableID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            LLMVariable(
-                Client.from_context(_ctx)._select(
-                    "loadLLMVariableFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
-
     def with_environment(self, environment: Environment) -> Self:
         """allow the LLM to interact with an environment via MCP"""
         _args = [
@@ -6748,23 +6716,6 @@ class LLM(Type):
             Arg("file", file),
         ]
         _ctx = self._select("withPromptFile", _args)
-        return LLM(_ctx)
-
-    def with_prompt_var(self, name: str, value: str) -> Self:
-        """Add a string variable to the LLM's environment
-
-        Parameters
-        ----------
-        name:
-            The variable name
-        value:
-            The variable value
-        """
-        _args = [
-            Arg("name", name),
-            Arg("value", value),
-        ]
-        _ctx = self._select("withPromptVar", _args)
         return LLM(_ctx)
 
     def with_query(self) -> Self:
@@ -6877,90 +6828,6 @@ class LLMTokenUsage(Type):
         _args: list[Arg] = []
         _ctx = self._select("totalTokens", _args)
         return await _ctx.execute(int)
-
-
-@typecheck
-class LLMVariable(Type):
-    async def hash(self) -> str:
-        """Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("hash", _args)
-        return await _ctx.execute(str)
-
-    async def id(self) -> LLMVariableID:
-        """A unique identifier for this LLMVariable.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        LLMVariableID
-            The `LLMVariableID` scalar type represents an identifier for an
-            object of type LLMVariable.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(LLMVariableID)
-
-    async def name(self) -> str:
-        """Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("name", _args)
-        return await _ctx.execute(str)
-
-    async def type_name(self) -> str:
-        """Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("typeName", _args)
-        return await _ctx.execute(str)
 
 
 @typecheck
@@ -8858,14 +8725,6 @@ class Client(Root):
         _ctx = self._select("loadLLMTokenUsageFromID", _args)
         return LLMTokenUsage(_ctx)
 
-    def load_llm_variable_from_id(self, id: LLMVariableID) -> LLMVariable:
-        """Load a LLMVariable from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadLLMVariableFromID", _args)
-        return LLMVariable(_ctx)
-
     def load_label_from_id(self, id: LabelID) -> Label:
         """Load a Label from its ID."""
         _args = [
@@ -10152,8 +10011,6 @@ __all__ = [
     "InterfaceTypeDefID",
     "LLMTokenUsage",
     "LLMTokenUsageID",
-    "LLMVariable",
-    "LLMVariableID",
     "Label",
     "LabelID",
     "ListTypeDef",

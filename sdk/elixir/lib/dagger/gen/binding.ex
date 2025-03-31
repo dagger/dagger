@@ -275,18 +275,6 @@ defmodule Dagger.Binding do
     }
   end
 
-  @doc "Retrieve the binding value, as type LLMVariable"
-  @spec as_llm_variable(t()) :: Dagger.LLMVariable.t()
-  def as_llm_variable(%__MODULE__{} = binding) do
-    query_builder =
-      binding.query_builder |> QB.select("asLLMVariable")
-
-    %Dagger.LLMVariable{
-      query_builder: query_builder,
-      client: binding.client
-    }
-  end
-
   @doc "Retrieve the binding value, as type ListTypeDef"
   @spec as_list_type_def(t()) :: Dagger.ListTypeDef.t()
   def as_list_type_def(%__MODULE__{} = binding) do
