@@ -205,22 +205,6 @@ func (m *MCP) tools(srv *dagql.Server, typeName string) ([]LLMTool, error) {
 			},
 		})
 	}
-	for _, binding := range m.env.Bindings() {
-		tools = append(tools, LLMTool{
-			Name:        binding.Key,
-			Returns:     binding.TypeName(),
-			Description: fmt.Sprintf("Retrieve the user input '%s' of type '%s'", binding.Key, binding.TypeName()),
-			Schema:      nil,
-			Call: func(ctx context.Context, args any) (_ any, rerr error) {
-				if obj, isObj := binding.AsObject(); isObj {
-					prev := m.Current()
-					m.Select(obj)
-					return m.currentState(prev)
-				}
-				return binding.Value, nil
-			},
-		})
-	}
 	return tools, nil
 }
 
@@ -634,6 +618,10 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 			}),
 		})
 	}
+
+	// register getters for all the env vars
+	builtins = append(builtins, m.envGetters()...)
+
 	// Attach builtin telemetry
 	for i, builtin := range builtins {
 		builtins[i].Call = func(ctx context.Context, args any) (_ any, rerr error) {
@@ -675,6 +663,33 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 		}
 	}
 	return builtins, nil
+}
+
+func (m *MCP) envGetters() []LLMTool {
+	var tools []LLMTool
+	for _, binding := range m.env.Bindings() {
+		tools = append(tools, LLMTool{
+			Name:        binding.Key,
+			Returns:     binding.TypeName(),
+			Description: fmt.Sprintf("Retrieve the user input '%s' of type '%s'", binding.Key, binding.TypeName()),
+			Schema: map[string]any{
+				"type":                 "object",
+				"properties":           map[string]any{},
+				"strict":               true,
+				"required":             []string{"id"}, // , "functions"},
+				"additionalProperties": false,
+			},
+			Call: func(ctx context.Context, args any) (_ any, rerr error) {
+				if obj, isObj := binding.AsObject(); isObj {
+					prev := m.Current()
+					m.Select(obj)
+					return m.currentState(prev)
+				}
+				return binding.Value, nil
+			},
+		})
+	}
+	return tools
 }
 
 func (m *MCP) toolToID(tool LLMTool, args any) (*call.ID, error) {
