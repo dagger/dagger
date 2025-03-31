@@ -27,7 +27,7 @@ container | from alpine
 Once you've got a container, you continue using the Dagger API to modify it, by adding files or directories to it. You can use directories from the Dagger host's filesystem or remote Git repositories. Here's an example of adding Dagger's own open source GitHub repository to the container:
 
 ```shell
-container | from alpine | with-directory https://github.com/dagger/dagger
+container | from alpine | with-directory /src https://github.com/dagger/dagger
 ```
 
 Here's another example, this time creating a new file in the container:
