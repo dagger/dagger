@@ -367,7 +367,7 @@ func (h *shellCallHandler) Handle(ctx context.Context, line string) (rerr error)
 	// when last used. We should only have orphans at this point if
 	// there's a variable that gets reset with a different value and
 	// that should hardly cause memory issues.
-	defer h.state.Prune()
+	defer h.state.Prune(ctx)
 	if h.debug {
 		defer h.state.debug(ctx)
 	}

@@ -644,7 +644,7 @@ func (h *shellCallHandler) parseFlagValue(ctx context.Context, value string, arg
 	}
 
 	// Otherwise it may be an object that we want to bypass (for its ID)
-	st, err := h.state.Extract(GetStateKey(value))
+	st, err := h.state.Extract(ctx, GetStateKey(value))
 	if err != nil {
 		return nil, false, err
 	}
@@ -868,4 +868,16 @@ func (h *shellCallHandler) loadedModules(yield func(*moduleDef) bool) {
 		}
 		return true
 	})
+}
+
+// HandlerCtx returns interp.HandlerContext value stored in ctx, or nil if
+// it doesn't have one.
+func HandlerCtx(ctx context.Context) (ret *interp.HandlerContext) {
+	defer func() {
+		if err := recover(); err != nil {
+			ret = nil
+		}
+	}()
+	hc := interp.HandlerCtx(ctx)
+	return &hc
 }

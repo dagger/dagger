@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fixed an issue when reusing a variable with a pipeline, in the same run
+time: 2025-03-31T12:50:02.16152Z
+custom:
+    Author: helderco
+    PR: "10018"
