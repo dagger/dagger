@@ -543,8 +543,11 @@ Each parameter corresponds to a named result with a specific purpose. Do not cal
 }
 
 func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
-	builtins := []LLMTool{
-		{
+	builtins := []LLMTool{}
+
+	// Only include currentSelection tool if the environment is not empty
+	if !m.env.IsEmpty() {
+		builtins = append(builtins, LLMTool{
 			Name: "currentSelection", // TODO: double this as "return"?
 			// NOTE: this description is load-bearing! It allows the LLM to know its
 			// current state, without even calling this tool. Without this sort of
@@ -562,11 +565,13 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 			Call: ToolFunc(func(ctx context.Context, args struct{}) (any, error) {
 				return m.currentState(nil)
 			}),
-		},
+		})
 	}
+
 	if len(m.env.outputsByName) > 0 {
 		builtins = append(builtins, m.returnBuiltin())
 	}
+
 	for _, typeName := range m.env.Types() {
 		tools, err := m.tools(srv, typeName)
 		if err != nil {

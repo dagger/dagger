@@ -128,6 +128,10 @@ func (env *Env) Types() []string {
 	return types
 }
 
+func (env *Env) IsEmpty() bool {
+	return len(env.objsByName) == 0
+}
+
 type Binding struct {
 	Key         string
 	Value       dagql.Typed
