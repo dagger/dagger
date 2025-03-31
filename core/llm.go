@@ -514,7 +514,7 @@ func (llm *LLM) WithPrompt(
 	srv *dagql.Server,
 ) (*LLM, error) {
 	prompt = os.Expand(prompt, func(key string) string {
-		if binding, found := llm.mcp.env.Binding(key); found {
+		if binding, found := llm.mcp.env.Input(key); found {
 			return binding.String()
 		}
 		// leave unexpanded, perhaps it refers to an object var
@@ -755,7 +755,7 @@ func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (string, err
 
 func (llm *LLM) Set(ctx context.Context, key string, value dagql.Object) (*LLM, error) {
 	llm = llm.Clone()
-	llm.mcp.env = llm.mcp.env.WithBinding(key, value)
+	llm.mcp.env = llm.mcp.env.WithInput(key, value)
 	llm.dirty = true
 	return llm, nil
 }

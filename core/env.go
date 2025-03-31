@@ -55,8 +55,8 @@ func (env *Env) Clone() *Env {
 	return &cp
 }
 
-// Add a binding to the environment
-func (env *Env) WithBinding(key string, val dagql.Typed) *Env {
+// Add an input (read-only) binding to the environment
+func (env *Env) WithInput(key string, val dagql.Typed) *Env {
 	env = env.Clone()
 	binding := &Binding{Key: key, Value: val, env: env}
 	_ = binding.ID() // If val is an object, force its ingestion
@@ -74,9 +74,8 @@ func (env *Env) WithOutput(key string, type_ dagql.ObjectType, description strin
 	return env
 }
 
-// List all object bindings in the environment
-// TODO: expand from "object bindings" to "all bindings"
-func (env *Env) Bindings() []*Binding {
+// List all inputs in the environment
+func (env *Env) Inputs() []*Binding {
 	res := make([]*Binding, 0, len(env.objsByName))
 	for _, v := range env.objsByName {
 		res = append(res, v)
@@ -84,19 +83,8 @@ func (env *Env) Bindings() []*Binding {
 	return res
 }
 
-// Return all object bindings of the given type
-// TODO: expand beyond object types
-func (env *Env) BindingsOfType(typename string) []*Binding {
-	res := make([]*Binding, 0, len(env.objsByName))
-	for _, v := range env.objsByName {
-		if v.TypeName() == typename {
-			res = append(res, v)
-		}
-	}
-	return res
-}
-
-func (env *Env) Binding(key string) (*Binding, bool) {
+// Lookup an input binding
+func (env *Env) Input(key string) (*Binding, bool) {
 	// next check for values by ID
 	if val, exists := env.objsByID[key]; exists {
 		return val, true
@@ -108,7 +96,8 @@ func (env *Env) Binding(key string) (*Binding, bool) {
 	return nil, false
 }
 
-func (env *Env) WithoutBinding(key string) *Env {
+// Remove an input
+func (env *Env) WithoutInput(key string) *Env {
 	env = env.Clone()
 	delete(env.objsByName, key)
 	return env
@@ -299,7 +288,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 			if err != nil {
 				return nil, err
 			}
-			return env.WithBinding(name, obj), nil
+			return env.WithInput(name, obj), nil
 		},
 		dagql.CacheSpec{},
 	)

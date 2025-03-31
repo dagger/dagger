@@ -20,20 +20,20 @@ func (s environmentSchema) Install() {
 			Doc(`Initialize a new environment`),
 	}.Install(s.srv)
 	dagql.Fields[*core.Env]{
-		dagql.Func("bindings", s.bindings).
-			Doc("return all bindings in the environment"),
-		dagql.Func("binding", s.binding).
-			Doc("retrieve a binding by name"),
+		dagql.Func("inputs", s.inputs).
+			Doc("return all input values for the environment"),
+		dagql.Func("input", s.binding).
+			Doc("retrieve an input value by name"),
 		dagql.Func("withStringInput", s.withStringInput).
 			ArgDoc("name", "The name of the binding").
 			ArgDoc("value", "The string value to assign to the binding").
-			Doc("Create or update a binding of type string in the environment"),
+			Doc("Create or update an input value of type string"),
 	}.Install(s.srv)
 	dagql.Fields[*core.Binding]{
 		dagql.Func("name", s.bindingName).
 			Doc("The binding name"),
 		dagql.Func("typeName", s.bindingTypeName).
-			Doc("The binding type name"),
+			Doc("The binding type"),
 		dagql.Func("digest", s.bindingDigest).
 			Doc("The digest of the binding value"),
 	}.Install(s.srv)
@@ -49,14 +49,14 @@ func (s environmentSchema) Install() {
 func (s environmentSchema) environment(ctx context.Context, parent *core.Query, args struct{}) (*core.Env, error) {
 	return core.NewEnv(), nil
 }
-func (s environmentSchema) bindings(ctx context.Context, env *core.Env, args struct{}) ([]*core.Binding, error) {
-	return env.Bindings(), nil
+func (s environmentSchema) inputs(ctx context.Context, env *core.Env, args struct{}) ([]*core.Binding, error) {
+	return env.Inputs(), nil
 }
 
 func (s environmentSchema) binding(ctx context.Context, env *core.Env, args struct {
 	Name string
 }) (*core.Binding, error) {
-	b, found := env.Binding(args.Name)
+	b, found := env.Input(args.Name)
 	if found {
 		return b, nil
 	}
@@ -67,7 +67,7 @@ func (s environmentSchema) withStringInput(ctx context.Context, env *core.Env, a
 	Name  string
 	Value string
 }) (*core.Env, error) {
-	return env.WithBinding(args.Name, dagql.NewString(args.Value)), nil
+	return env.WithInput(args.Name, dagql.NewString(args.Value)), nil
 }
 
 func (s environmentSchema) bindingName(ctx context.Context, b *core.Binding, args struct{}) (string, error) {

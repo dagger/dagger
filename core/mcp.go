@@ -102,7 +102,7 @@ func (m *MCP) GetObject(key, expectedType string) (dagql.Object, error) {
 			key = fmt.Sprintf("%s#%d", expectedType, onlyNum)
 		}
 	}
-	if b, exists := m.env.Binding(key); exists {
+	if b, exists := m.env.Input(key); exists {
 		if obj, ok := b.AsObject(); ok {
 			return obj, nil
 		}
@@ -169,7 +169,7 @@ func (m *MCP) tools(srv *dagql.Server, typeName string) ([]LLMTool, error) {
 	var tools []LLMTool
 	masked := len(m.functionMask) > 0
 	for _, field := range typeDef.Fields {
-		if _, found := m.env.Binding(field.Name); found {
+		if _, found := m.env.Input(field.Name); found {
 			// If field conflicts with user input, user input wins
 			continue
 		}
@@ -667,11 +667,11 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 
 func (m *MCP) envGetters() []LLMTool {
 	var tools []LLMTool
-	for _, binding := range m.env.Bindings() {
+	for _, input := range m.env.Inputs() {
 		tools = append(tools, LLMTool{
-			Name:        binding.Key,
-			Returns:     binding.TypeName(),
-			Description: fmt.Sprintf("Retrieve the user input '%s' of type '%s'", binding.Key, binding.TypeName()),
+			Name:        input.Key,
+			Returns:     input.TypeName(),
+			Description: fmt.Sprintf("Retrieve the user input '%s' of type '%s'", input.Key, input.TypeName()),
 			Schema: map[string]any{
 				"type":                 "object",
 				"properties":           map[string]any{},
@@ -680,12 +680,12 @@ func (m *MCP) envGetters() []LLMTool {
 				"additionalProperties": false,
 			},
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
-				if obj, isObj := binding.AsObject(); isObj {
+				if obj, isObj := input.AsObject(); isObj {
 					prev := m.Current()
 					m.Select(obj)
 					return m.currentState(prev)
 				}
-				return binding.Value, nil
+				return input.Value, nil
 			},
 		})
 	}
@@ -890,14 +890,6 @@ func (m *MCP) currentState(previous dagql.Object) (string, error) {
 	}
 	if previous != nil {
 		res["previous"] = m.describe(previous)
-	}
-	if cur != nil {
-		// show when it's already a bound var to avoid unnecessary _saveAs
-		for name, b := range m.env.Bindings() {
-			if cur.ID().Digest() == b.Digest() {
-				res["variable"] = name
-			}
-		}
 	}
 	return toolStructuredResponse(res)
 }
