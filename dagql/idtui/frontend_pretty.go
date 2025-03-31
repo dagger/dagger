@@ -1152,6 +1152,11 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				fe.editline.Reset()
 			case "ctrl+l":
 				return fe.clearScrollback()
+			case "shift+tab":
+				cmd := fe.shell.ReactToInput(fe.runCtx, msg)
+				if cmd != nil {
+					return fe, cmd
+				}
 			case "esc":
 				fe.editlineFocused = false
 				fe.editline.Blur()
