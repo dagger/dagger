@@ -185,6 +185,11 @@ func (m *MCP) tools(srv *dagql.Server, typeName string) ([]LLMTool, error) {
 			// never a reason to call "sync" since we call it automatically
 			continue
 		}
+		if field.Directives.ForName(trivialFieldDirectiveName) != nil {
+			// skip trivial fields on objects, only expose "real" functions
+			// with implementations
+			continue
+		}
 		schema, err := fieldArgsToJSONSchema(schema, field)
 		if err != nil {
 			return nil, fmt.Errorf("field %q: %w", field.Name, err)

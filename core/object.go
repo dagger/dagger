@@ -15,6 +15,10 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
+// indicates an ast field is a "trivial resolver"
+// ref: https://graphql.org/learn/execution/#trivial-resolvers
+const trivialFieldDirectiveName = "trivialResolveField"
+
 type ModuleObjectType struct {
 	typeDef *ObjectTypeDef
 	mod     *Module
@@ -399,6 +403,9 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 		Type:        field.TypeDef.ToTyped(),
 		Module:      mod.IDModule(),
 	}
+	spec.Directives = append(spec.Directives, &ast.Directive{
+		Name: trivialFieldDirectiveName,
+	})
 	if field.SourceMap != nil {
 		spec.Directives = append(spec.Directives, field.SourceMap.TypeDirective())
 	}
