@@ -234,6 +234,7 @@ func (HostSuite) TestSetSecretFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t, dagger.WithWorkdir(dir))
 
 	t.Run("non utf8 binary data is properly set as secret", func(ctx context.Context, t *testctx.T) {
+		//nolint:staticcheck // SA1019 deprecated
 		secret := c.Host().SetSecretFile("mysecret", filepath.Join(dir, "some-file"))
 
 		output, err := c.Container().From(alpineImage).
