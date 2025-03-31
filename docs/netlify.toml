@@ -17,11 +17,10 @@
 
 
 ###### start: specific redirects for ci+agent docs ######
-
 [[redirects]]
-  # redirect /quickstart pages to CI-specific ones
-  from = "/quickstart/*"
-  to = "/ci/quickstart/:splat"
+  # redirect /ai-agents/quickstart page
+  from = "/ai-agents/quickstart"
+  to = "/quickstart/agent"
   status = 301
 
 [[redirects]]
@@ -65,7 +64,7 @@
 [[redirects]]
   # redirect old quickstart index page
   from = "/648215/quickstart"
-  to = "/quickstart"
+  to = "/quickstart/basics"
   status = 301
 
 [[redirects]]
