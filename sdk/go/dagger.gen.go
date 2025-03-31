@@ -5724,6 +5724,8 @@ func (r *Host) Service(ports []PortForward, opts ...HostServiceOpts) *Service {
 // Sets a secret given a user-defined name and the file path on the host, and returns the secret.
 //
 // The file is limited to a size of 512000 bytes.
+//
+// Deprecated: setSecretFile is superceded by secret(uri: "file://<path>")
 func (r *Host) SetSecretFile(name string, path string) *Secret {
 	q := r.query.Select("setSecretFile")
 	q = q.Arg("name", name)

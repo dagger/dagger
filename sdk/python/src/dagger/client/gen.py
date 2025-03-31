@@ -6100,6 +6100,9 @@ class Host(Type):
 
         The file is limited to a size of 512000 bytes.
 
+        .. deprecated::
+            setSecretFile is superceded by secret(uri: "file://<path>")
+
         Parameters
         ----------
         name:
@@ -6107,6 +6110,11 @@ class Host(Type):
         path:
             Location of the file to set as a secret.
         """
+        warnings.warn(
+            'Method "set_secret_file" is deprecated: setSecretFile is superceded by secret(uri: "file://<path>")',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("name", name),
             Arg("path", path),
