@@ -235,6 +235,29 @@ var TypesHiddenFromModuleSDKs = []dagql.Typed{
 	&EngineCacheEntrySet{},
 }
 
+var TypesHiddenFromEnvExtensions = []dagql.Typed{
+	&CurrentModule{},
+	&EnumTypeDef{},
+	&EnumValueTypeDef{},
+	&Env{},
+	&Error{},
+	&ErrorValue{},
+	&FieldTypeDef{},
+	&FunctionArg{},
+	&FunctionCallArgValue{},
+	&FunctionCall{},
+	&Function{},
+	&GeneratedCode{},
+	&InputTypeDef{},
+	&InterfaceTypeDef{},
+	&ListTypeDef{},
+	&LLMTokenUsage{},
+	&ObjectTypeDef{},
+	&ScalarTypeDef{},
+	&SourceMap{},
+	&TypeDef{},
+}
+
 func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 	envType, ok := s.Server.ObjectType(new(Env).Type().Name())
 	if !ok {
@@ -341,6 +364,12 @@ func (s EnvHook) InstallObject(targetType dagql.ObjectType) {
 	// probably be moved to codegen somehow, i.e. if a field refers to a type that is
 	// hidden, don't codegen the field.
 	for _, hiddenType := range TypesHiddenFromModuleSDKs {
+		if hiddenType.Type().Name() == typename {
+			return
+		}
+	}
+	// skip hardcoded core types that aren't useful as input/output env extensions
+	for _, hiddenType := range TypesHiddenFromEnvExtensions {
 		if hiddenType.Type().Name() == typename {
 			return
 		}
