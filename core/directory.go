@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	bkcache "github.com/moby/buildkit/cache"
@@ -235,7 +236,7 @@ func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, svcs *Servi
 			}, nil
 		}
 
-		return nil, fmt.Errorf("%s: no such file or directory", src)
+		return nil, fmt.Errorf("%s: %w", src, syscall.ENOENT)
 	}
 
 	return ref.StatFile(ctx, bkgw.StatRequest{

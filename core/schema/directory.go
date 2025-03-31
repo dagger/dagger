@@ -3,8 +3,10 @@ package schema
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
 	"strings"
 
@@ -374,7 +376,7 @@ type dirDockerBuildArgs struct {
 func getDockerIgnoreFileContent(ctx context.Context, parent dagql.Instance[*core.Directory], filename string) ([]byte, error) {
 	file, err := parent.Self.File(ctx, filename)
 	if err != nil {
-		if strings.Contains(err.Error(), "no such file or directory") {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 
