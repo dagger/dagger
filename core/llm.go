@@ -753,21 +753,6 @@ func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (string, err
 	return string(result), nil
 }
 
-func (llm *LLM) Set(ctx context.Context, key string, value dagql.Object) (*LLM, error) {
-	llm = llm.Clone()
-	llm.mcp.env = llm.mcp.env.WithInput(key, value)
-	llm.dirty = true
-	return llm, nil
-}
-
-func (llm *LLM) Get(ctx context.Context, dag *dagql.Server, key string) (dagql.Typed, error) {
-	llm, err := llm.Sync(ctx, dag)
-	if err != nil {
-		return nil, err
-	}
-	return llm.mcp.GetObject(key, "")
-}
-
 func (llm *LLM) WithEnv(env *Env) *LLM {
 	llm = llm.Clone()
 	llm.mcp.env = env
