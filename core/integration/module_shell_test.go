@@ -616,6 +616,20 @@ func (ShellSuite) TestStateCommand(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (ShellSuite) TestStateInVarUsage(ctx context.Context, t *testctx.T) {
+	script := `
+dir=$(directory | with-new-file foo bar)
+$dir | name
+$dir | entries
+`
+	c := connect(ctx, t)
+	out, err := daggerCliBase(t, c).With(daggerShellNoMod(script)).Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Contains(t, out, "/")
+	require.Contains(t, out, "foo")
+}
+
 func (ShellSuite) TestArgsSpread(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen := daggerCliBase(t, c)
