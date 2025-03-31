@@ -2,10 +2,12 @@ package core
 
 import (
 	"context"
+	"errors"
+	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
-	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/testutil"
@@ -52,8 +54,11 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 	})
 
 	t.Run("args", func(ctx context.Context, t *testctx.T) {
-		callMod := func(c *dagger.Client, i *int, s *string) (string, error) {
+		callMod := func(c *dagger.Client, b bool, i *int, s *string) (string, error) {
 			args := []string{"fn"}
+			if b {
+				args = append([]string{"--b"}, args...)
+			}
 			if i != nil {
 				args = append(args, "--i", strconv.Itoa(*i))
 			}
@@ -69,7 +74,16 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 		"time"
 	)
 
-	type Test struct {}
+	type Test struct {
+		ArbitraryBool bool
+	}
+
+	func New(
+		// +optional
+		b bool,
+	) Test {
+		return Test{ArbitraryBool: b}
+	}
 
 	func (*Test) Fn(
 		// +optional
@@ -88,6 +102,8 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 
 		for _, tc := range []struct {
 			name           string
+			b1             bool
+			b2             bool
 			i1             *int
 			i2             *int
 			s1             *string
@@ -99,12 +115,26 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 				expectCacheHit: true,
 			},
 			{
+				name:           "unset but diff parent",
+				b2:             true,
+				expectCacheHit: false,
+			},
+			{
 				name:           "same",
 				i1:             ptr(1),
 				i2:             ptr(1),
 				s1:             ptr("foo"),
 				s2:             ptr("foo"),
 				expectCacheHit: true,
+			},
+			{
+				name:           "same but diff parent",
+				b1:             true,
+				i1:             ptr(1),
+				i2:             ptr(1),
+				s1:             ptr("foo"),
+				s2:             ptr("foo"),
+				expectCacheHit: false,
 			},
 			{
 				name:           "all different",
@@ -125,11 +155,11 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 		} {
 			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 				c1 := connect(ctx, t)
-				out1, err := callMod(c1, tc.i1, tc.s1)
+				out1, err := callMod(c1, tc.b1, tc.i1, tc.s1)
 				require.NoError(t, err)
 
 				c2 := connect(ctx, t)
-				out2, err := callMod(c2, tc.i2, tc.s2)
+				out2, err := callMod(c2, tc.b2, tc.i2, tc.s2)
 				require.NoError(t, err)
 
 				if tc.expectCacheHit {
@@ -345,8 +375,6 @@ func (ModuleSuite) TestCrossSessionServices(ctx context.Context, t *testctx.T) {
 		require.NotEqual(t, out1, out2)
 
 		require.NoError(t, c1.Close())
-		// TODO: not sure if we can do much better than this...
-		time.Sleep(5 * time.Second)
 
 		c3 := connect(ctx, t)
 		rand3 := identity.NewID()
@@ -497,8 +525,110 @@ func (SecretSuite) TestCrossSessionGitAuthLeak(ctx context.Context, t *testctx.T
 	})
 }
 
-// TODO: more tests:
-// * equivalent for sockets
+func (ModuleSuite) TestCrossSessionSockets(ctx context.Context, t *testctx.T) {
+	tmp := t.TempDir()
+	sock := filepath.Join(tmp, "test.sock")
+
+	l, err := net.Listen("unix", sock)
+	require.NoError(t, err)
+
+	defer l.Close()
+
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				if !errors.Is(err, net.ErrClosed) {
+					t.Logf("accept: %s", err)
+					panic(err)
+				}
+				return
+			}
+
+			n, err := io.Copy(c, c)
+			if err != nil {
+				t.Logf("hello: %s", err)
+				panic(err)
+			}
+
+			t.Logf("copied %d bytes", n)
+
+			err = c.Close()
+			if err != nil {
+				t.Logf("close: %s", err)
+				panic(err)
+			}
+		}
+	}()
+
+	modTmpdir := filepath.Join(tmp, "mod")
+	err = os.MkdirAll(modTmpdir, 0755)
+	require.NoError(t, err)
+
+	initModCmd := hostDaggerCommand(ctx, t, modTmpdir, "init", "--source=.", "--name=test", "--sdk=go")
+	initModOutput, err := initModCmd.CombinedOutput()
+	require.NoError(t, err, string(initModOutput))
+
+	err = os.WriteFile(filepath.Join(modTmpdir, "main.go"), []byte(`package main
+import (
+	"context"
+	"strconv"
+	"time"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (*Test) Fn(ctx context.Context, sock *dagger.Socket, msg string) (string, error) {
+		return dag.Container().
+			From("alpine:3.20").
+			WithExec([]string{"apk", "add", "netcat-openbsd"}).
+			WithEnvVariable("BUSTA", strconv.Itoa(int(time.Now().UnixNano()))).
+			WithUnixSocket("/foo.sock", sock).
+			WithExec([]string{"sh", "-c", "echo -n "+msg+" | nc -N -U /foo.sock"}).
+			Stdout(ctx)
+}
+`), 0644)
+	require.NoError(t, err)
+
+	c1 := connect(ctx, t)
+	err = c1.ModuleSource(modTmpdir).AsModule().Serve(ctx)
+	require.NoError(t, err)
+	sockID1, err := c1.Host().UnixSocket(sock).ID(ctx)
+	require.NoError(t, err)
+	res1, err := testutil.QueryWithClient[struct {
+		Test struct {
+			Fn string
+		}
+	}](c1, t, `{test{fn(sock: "`+string(sockID1)+`", msg: "blah")}}`, nil)
+	require.NoError(t, err)
+	require.Equal(t, "blah", res1.Test.Fn)
+
+	c2 := connect(ctx, t)
+	err = c2.ModuleSource(modTmpdir).AsModule().Serve(ctx)
+	require.NoError(t, err)
+	sockID2, err := c2.Host().UnixSocket(sock).ID(ctx)
+	require.NoError(t, err)
+	res2, err := testutil.QueryWithClient[struct {
+		Test struct {
+			Fn string
+		}
+	}](c2, t, `{test{fn(sock: "`+string(sockID2)+`", msg: "blah")}}`, nil)
+	require.NoError(t, err)
+	require.Equal(t, "blah", res2.Test.Fn)
+
+	require.NoError(t, c1.Close())
+
+	res2b, err := testutil.QueryWithClient[struct {
+		Test struct {
+			Fn string
+		}
+	}](c2, t, `{test{fn(sock: "`+string(sockID2)+`", msg: "omg")}}`, nil)
+	require.NoError(t, err)
+	require.Equal(t, "omg", res2b.Test.Fn)
+}
+
 func (ModuleSuite) TestCrossSessionSecrets(ctx context.Context, t *testctx.T) {
 	// verify that if a function call does SetSecret and is cached, the secret is
 	// successfully transferred to clients even if they are in a different session
