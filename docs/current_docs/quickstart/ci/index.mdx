@@ -20,7 +20,7 @@ Before beginning, ensure that:
 - you have [Git](https://git-scm.com/downloads) and a container runtime installed on your system and running. This can be [Docker](https://docs.docker.com/engine/install/), but you can also use Podman, nerdctl, or other Docker-like systems.
 - you have a GitHub account (optional, only if configuring Dagger Cloud)
 
-### Get the example application
+## Get the example application
 
 The example application is a skeleton Vue framework application that returns a "Hello from Dagger!" welcome page. Clone its repository and set it as the current working directory:
 
@@ -29,7 +29,7 @@ git clone https://github.com/dagger/hello-dagger
 cd hello-dagger
 ```
 
-### Visualize in Dagger Cloud (optional)
+## Visualize in Dagger Cloud (optional)
 
 :::important
 This step is optional and will create a Dagger Cloud individual plan account. The individual plan is free of charge for a single user. You will require a GitHub account for account setup and identity verification. If you prefer not to sign up for Dagger Cloud, you can skip this section.
@@ -55,7 +55,7 @@ Once you confirm your authentication code, your Dagger CLI will be authenticated
 
 After successfully creating your organization, all future Dagger workflows can be inspected in Dagger Cloud.
 
-### Initialize a Dagger module
+## Initialize a Dagger module
 
 Bootstrap a new Dagger module in Go, Python, TypeScript, PHP, or Java by running `dagger init` in the application's root directory.
 
@@ -111,7 +111,7 @@ You should see information about two auto-generated Dagger Functions: `container
 By default, the Dagger module name is automatically generated from the name of the directory in which `dagger init` runs. In this case, the default name of the cloned application directory is `hello-dagger`, so the module name is `HelloDagger`. If you cloned the application into a different directory, add the `--name=hello-dagger` flag to `dagger init` to correctly set the Dagger module name.
 :::
 
-### Construct a pipeline
+## Construct a pipeline
 
 Replace the generated Dagger module files as described below.
 
@@ -165,7 +165,7 @@ In this Dagger module, each Dagger Function performs a different operation:
 - The `build` Dagger Function performs a multi-stage build and returns a final container image with the production-ready application and an NGINX Web server to host and serve it.
 - The `build-env` Dagger Function creates a container with the build environment for the application.
 
-### Run the pipeline
+## Run the pipeline
 
 Dagger Shell is the fastest way to interact with the Dagger API, allowing access to both core types and custom Dagger Functions using a familiar Bash-like syntax.
 
@@ -217,7 +217,7 @@ This command builds the container image and then drops you into an interactive t
 
 ![Build env with terminal](/img/current_docs/quickstart/ci/buildenv-terminal.gif)
 
-### Run a container as a local service
+## Run a container as a local service
 
 The `build` Dagger Function returns a `Container` type representing the built container image. Another interesting built-in function to explore here is the `as-service` function, which can be used to [start a container as a local service](../../features/services.mdx) and have any exposed ports forwarded to the host machine. This is similar to Docker Compose, except that you're using code instead of YAML to manage your services.
 
