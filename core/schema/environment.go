@@ -28,8 +28,8 @@ func (s environmentSchema) Install() {
 	dagql.Fields[*core.Binding]{
 		dagql.Func("name", s.bindingName).
 			Doc("The binding name"),
-		dagql.Func("type", s.bindingType).
-			Doc("The binding type"),
+		dagql.Func("typeName", s.bindingTypeName).
+			Doc("The binding type name"),
 		dagql.Func("digest", s.bindingDigest).
 			Doc("The digest of the binding value"),
 	}.Install(s.srv)
@@ -56,13 +56,14 @@ func (s environmentSchema) binding(ctx context.Context, env *core.Environment, a
 	if found {
 		return b, nil
 	}
-	return nil, fmt.Errorf("binding not found: %s")
+	return nil, fmt.Errorf("binding not found: %s", args.Name)
 }
+
 func (s environmentSchema) bindingName(ctx context.Context, b *core.Binding, args struct{}) (string, error) {
 	return b.Key, nil
 }
 
-func (s environmentSchema) bindingType(ctx context.Context, b *core.Binding, args struct{}) (string, error) {
+func (s environmentSchema) bindingTypeName(ctx context.Context, b *core.Binding, args struct{}) (string, error) {
 	return b.TypeName(), nil
 }
 
