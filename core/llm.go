@@ -768,14 +768,14 @@ func (llm *LLM) Get(ctx context.Context, dag *dagql.Server, key string) (dagql.T
 	return llm.mcp.GetObject(key, "")
 }
 
-func (llm *LLM) WithEnvironment(env *Environment) *LLM {
+func (llm *LLM) WithEnv(env *Env) *LLM {
 	llm = llm.Clone()
 	llm.mcp.env = env
 	llm.dirty = true
 	return llm
 }
 
-func (llm *LLM) Environment() *Environment {
+func (llm *LLM) Env() *Env {
 	return llm.mcp.env
 }
 

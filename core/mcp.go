@@ -39,7 +39,7 @@ type LLMTool struct {
 // Internal implementation of the MCP standard,
 // for exposing a Dagger environment to a LLM via tool calling.
 type MCP struct {
-	env *Environment
+	env *Env
 	// The currently selected object.
 	current dagql.Object
 	// Whether the LLM needs instructions on how to use the tool scheme
@@ -50,7 +50,7 @@ type MCP struct {
 
 func NewMCP(endpoint *LLMEndpoint) *MCP {
 	return &MCP{
-		env:               NewEnvironment(),
+		env:               NewEnv(),
 		functionMask:      map[string]bool{},
 		needsSystemPrompt: endpoint.Provider == Google,
 	}
@@ -66,7 +66,7 @@ func (m *MCP) DefaultSystemPrompt() string {
 	return ""
 }
 
-func (m *MCP) WithEnvironment(env *Environment) *MCP {
+func (m *MCP) WithEnvironment(env *Env) *MCP {
 	m = m.Clone()
 	m.env = env
 	// We keep the current selection even if underlying environment is swapped out

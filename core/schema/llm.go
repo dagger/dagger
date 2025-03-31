@@ -31,9 +31,9 @@ func (s llmSchema) Install() {
 			Doc("return the raw llm message history as json"),
 		dagql.Func("lastReply", s.lastReply).
 			Doc("return the last llm reply from the history"),
-		dagql.Func("withEnvironment", s.withEnvironment).
+		dagql.Func("withEnv", s.withEnv).
 			Doc("allow the LLM to interact with an environment via MCP"),
-		dagql.Func("environment", s.environment).
+		dagql.Func("env", s.env).
 			Doc("return the LLM's current environment"),
 		dagql.Func("withModel", s.withModel).
 			Doc("swap out the llm model").
@@ -78,18 +78,18 @@ func (s llmSchema) Install() {
 	}.Install(s.srv)
 	dagql.Fields[*core.LLMTokenUsage]{}.Install(s.srv)
 }
-func (s *llmSchema) withEnvironment(ctx context.Context, llm *core.LLM, args struct {
-	Environment core.EnvironmentID
+func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {
+	Env core.EnvID
 }) (*core.LLM, error) {
-	env, err := args.Environment.Load(ctx, s.srv)
+	env, err := args.Env.Load(ctx, s.srv)
 	if err != nil {
 		return nil, err
 	}
-	return llm.WithEnvironment(env.Self), nil
+	return llm.WithEnv(env.Self), nil
 }
 
-func (s *llmSchema) environment(ctx context.Context, llm *core.LLM, args struct{}) (*core.Environment, error) {
-	return llm.Environment(), nil
+func (s *llmSchema) env(ctx context.Context, llm *core.LLM, args struct{}) (*core.Env, error) {
+	return llm.Env(), nil
 }
 
 func (s *llmSchema) model(ctx context.Context, llm *core.LLM, args struct{}) (string, error) {

@@ -11,7 +11,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-type Environment struct {
+type Env struct {
 	// Saved objects by prompt var name
 	objsByName map[string]*Binding
 	// Desired outputs of the environment by var name
@@ -29,15 +29,15 @@ type EnvOutput struct {
 	Description string
 }
 
-func (*Environment) Type() *ast.Type {
+func (*Env) Type() *ast.Type {
 	return &ast.Type{
-		NamedType: "Environment",
+		NamedType: "Env",
 		NonNull:   true,
 	}
 }
 
-func NewEnvironment() *Environment {
-	return &Environment{
+func NewEnv() *Env {
+	return &Env{
 		objsByName:    map[string]*Binding{},
 		outputsByName: map[string]EnvOutput{},
 		objsByID:      map[string]*Binding{},
@@ -46,7 +46,7 @@ func NewEnvironment() *Environment {
 	}
 }
 
-func (env *Environment) Clone() *Environment {
+func (env *Env) Clone() *Env {
 	cp := *env
 	cp.objsByName = cloneMap(cp.objsByName)
 	cp.objsByID = cloneMap(cp.objsByID)
@@ -56,7 +56,7 @@ func (env *Environment) Clone() *Environment {
 }
 
 // Add a binding to the environment
-func (env *Environment) WithBinding(key string, val dagql.Typed) *Environment {
+func (env *Env) WithBinding(key string, val dagql.Typed) *Env {
 	env = env.Clone()
 	binding := &Binding{Key: key, Value: val, env: env}
 	_ = binding.ID() // If val is an object, force its ingestion
@@ -65,7 +65,7 @@ func (env *Environment) WithBinding(key string, val dagql.Typed) *Environment {
 }
 
 // Register the desire for a binding in the environment
-func (env *Environment) WithOutput(key string, type_ dagql.ObjectType, description string) *Environment {
+func (env *Env) WithOutput(key string, type_ dagql.ObjectType, description string) *Env {
 	env = env.Clone()
 	env.outputsByName[key] = EnvOutput{
 		Type:        type_,
@@ -76,7 +76,7 @@ func (env *Environment) WithOutput(key string, type_ dagql.ObjectType, descripti
 
 // List all object bindings in the environment
 // TODO: expand from "object bindings" to "all bindings"
-func (env *Environment) Bindings() []*Binding {
+func (env *Env) Bindings() []*Binding {
 	res := make([]*Binding, 0, len(env.objsByName))
 	for _, v := range env.objsByName {
 		res = append(res, v)
@@ -86,7 +86,7 @@ func (env *Environment) Bindings() []*Binding {
 
 // Return all object bindings of the given type
 // TODO: expand beyond object types
-func (env *Environment) BindingsOfType(typename string) []*Binding {
+func (env *Env) BindingsOfType(typename string) []*Binding {
 	res := make([]*Binding, 0, len(env.objsByName))
 	for _, v := range env.objsByName {
 		if v.TypeName() == typename {
@@ -96,7 +96,7 @@ func (env *Environment) BindingsOfType(typename string) []*Binding {
 	return res
 }
 
-func (env *Environment) Binding(key string) (*Binding, bool) {
+func (env *Env) Binding(key string) (*Binding, bool) {
 	// next check for values by ID
 	if val, exists := env.objsByID[key]; exists {
 		return val, true
@@ -108,13 +108,13 @@ func (env *Environment) Binding(key string) (*Binding, bool) {
 	return nil, false
 }
 
-func (env *Environment) WithoutBinding(key string) *Environment {
+func (env *Env) WithoutBinding(key string) *Env {
 	env = env.Clone()
 	delete(env.objsByName, key)
 	return env
 }
 
-func (env *Environment) Ingest(obj dagql.Object) string {
+func (env *Env) Ingest(obj dagql.Object) string {
 	id := obj.ID()
 	if id == nil {
 		return ""
@@ -131,7 +131,7 @@ func (env *Environment) Ingest(obj dagql.Object) string {
 	return llmID
 }
 
-func (env *Environment) Types() []string {
+func (env *Env) Types() []string {
 	types := make([]string, 0, len(env.typeCount))
 	for typ := range env.typeCount {
 		types = append(types, typ)
@@ -142,7 +142,7 @@ func (env *Environment) Types() []string {
 type Binding struct {
 	Key   string
 	Value dagql.Typed
-	env   *Environment // TODO: wire this up
+	env   *Env // TODO: wire this up
 }
 
 func (*Binding) Type() *ast.Type {
@@ -218,7 +218,7 @@ func (b *Binding) AsString() (string, bool) {
 
 // A Dagql hook for dynamically extending the Environment and Binding types
 // based on available types
-type EnvironmentHook struct {
+type EnvHook struct {
 	Server *dagql.Server
 }
 
@@ -235,8 +235,8 @@ var TypesHiddenFromModuleSDKs = []dagql.Typed{
 	&EngineCacheEntrySet{},
 }
 
-func (s EnvironmentHook) ExtendEnvironmentType(targetType dagql.ObjectType) error {
-	envType, ok := s.Server.ObjectType(new(Environment).Type().Name())
+func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
+	envType, ok := s.Server.ObjectType(new(Env).Type().Name())
 	if !ok {
 		return fmt.Errorf("failed to lookup environment type")
 	}
@@ -269,7 +269,7 @@ func (s EnvironmentHook) ExtendEnvironmentType(targetType dagql.ObjectType) erro
 			},
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-			env := self.(dagql.Instance[*Environment]).Self
+			env := self.(dagql.Instance[*Env]).Self
 			name := args["name"].(dagql.String).String()
 			value := args["value"].(dagql.IDType)
 			obj, err := s.Server.Load(ctx, value.ID())
@@ -300,7 +300,7 @@ func (s EnvironmentHook) ExtendEnvironmentType(targetType dagql.ObjectType) erro
 			},
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-			env := self.(dagql.Instance[*Environment]).Self
+			env := self.(dagql.Instance[*Env]).Self
 			name := args["name"].(dagql.String).String()
 			desc := args["description"].(dagql.String).String()
 			return env.WithOutput(name, targetType, desc), nil
@@ -328,7 +328,7 @@ func (s EnvironmentHook) ExtendEnvironmentType(targetType dagql.ObjectType) erro
 	return nil
 }
 
-func (s EnvironmentHook) InstallObject(targetType dagql.ObjectType) {
+func (s EnvHook) InstallObject(targetType dagql.ObjectType) {
 	typename := targetType.TypeName()
 	if strings.HasPrefix(typename, "_") {
 		return
@@ -346,12 +346,12 @@ func (s EnvironmentHook) InstallObject(targetType dagql.ObjectType) {
 		}
 	}
 
-	if err := s.ExtendEnvironmentType(targetType); err != nil {
+	if err := s.ExtendEnvType(targetType); err != nil {
 		panic(err)
 	}
 }
 
-func (s EnvironmentHook) ModuleWithObject(ctx context.Context, mod *Module, targetTypedef *TypeDef) (*Module, error) {
+func (s EnvHook) ModuleWithObject(ctx context.Context, mod *Module, targetTypedef *TypeDef) (*Module, error) {
 	// Install the target type
 	mod, err := mod.WithObject(ctx, targetTypedef)
 	if err != nil {
@@ -362,7 +362,7 @@ func (s EnvironmentHook) ModuleWithObject(ctx context.Context, mod *Module, targ
 	if !ok {
 		return nil, fmt.Errorf("can't retrieve object type %s", typename)
 	}
-	if err := s.ExtendEnvironmentType(targetType); err != nil {
+	if err := s.ExtendEnvType(targetType); err != nil {
 		return nil, err
 	}
 	return mod, nil

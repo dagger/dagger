@@ -38,4 +38,4 @@ type SocketID = dagql.ID[*Socket]
 
 type LLMID = dagql.ID[*LLM]
 
-type EnvironmentID = dagql.ID[*Environment]
+type EnvID = dagql.ID[*Env]

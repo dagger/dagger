@@ -16,10 +16,10 @@ var _ SchemaResolvers = &environmentSchema{}
 
 func (s environmentSchema) Install() {
 	dagql.Fields[*core.Query]{
-		dagql.Func("environment", s.environment).
+		dagql.Func("env", s.environment).
 			Doc(`Initialize a new environment`),
 	}.Install(s.srv)
-	dagql.Fields[*core.Environment]{
+	dagql.Fields[*core.Env]{
 		dagql.Func("bindings", s.bindings).
 			Doc("return all bindings in the environment"),
 		dagql.Func("binding", s.binding).
@@ -37,23 +37,23 @@ func (s environmentSchema) Install() {
 		dagql.Func("digest", s.bindingDigest).
 			Doc("The digest of the binding value"),
 	}.Install(s.srv)
-	hook := core.EnvironmentHook{Server: s.srv}
-	envObjType, ok := s.srv.ObjectType(new(core.Environment).Type().Name())
+	hook := core.EnvHook{Server: s.srv}
+	envObjType, ok := s.srv.ObjectType(new(core.Env).Type().Name())
 	if !ok {
 		panic("environment type not found after dagql install")
 	}
-	hook.ExtendEnvironmentType(envObjType)
+	hook.ExtendEnvType(envObjType)
 	s.srv.AddInstallHook(hook)
 }
 
-func (s environmentSchema) environment(ctx context.Context, parent *core.Query, args struct{}) (*core.Environment, error) {
-	return core.NewEnvironment(), nil
+func (s environmentSchema) environment(ctx context.Context, parent *core.Query, args struct{}) (*core.Env, error) {
+	return core.NewEnv(), nil
 }
-func (s environmentSchema) bindings(ctx context.Context, env *core.Environment, args struct{}) ([]*core.Binding, error) {
+func (s environmentSchema) bindings(ctx context.Context, env *core.Env, args struct{}) ([]*core.Binding, error) {
 	return env.Bindings(), nil
 }
 
-func (s environmentSchema) binding(ctx context.Context, env *core.Environment, args struct {
+func (s environmentSchema) binding(ctx context.Context, env *core.Env, args struct {
 	Name string
 }) (*core.Binding, error) {
 	b, found := env.Binding(args.Name)
@@ -63,10 +63,10 @@ func (s environmentSchema) binding(ctx context.Context, env *core.Environment, a
 	return nil, fmt.Errorf("binding not found: %s", args.Name)
 }
 
-func (s environmentSchema) withStringBinding(ctx context.Context, env *core.Environment, args struct {
+func (s environmentSchema) withStringBinding(ctx context.Context, env *core.Env, args struct {
 	Name  string
 	Value string
-}) (*core.Environment, error) {
+}) (*core.Env, error) {
 	return env.WithBinding(args.Name, dagql.NewString(args.Value)), nil
 }
 
