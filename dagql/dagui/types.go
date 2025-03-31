@@ -90,6 +90,7 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	return view
 }
 
+//nolint:gocyclo
 func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceTree)) {
 	var lastTree *TraceTree
 	seen := make(map[SpanID]bool)
@@ -143,13 +144,21 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 			Span:   span,
 			Parent: parent,
 		}
-		if base := span.Base(); base != nil && lastTree != nil {
-			tree.Chained = base.Digest == lastTree.Span.CallDigest ||
-				base.Digest == lastTree.Span.Output
-			lastTree.Final = !tree.Chained
-		}
-		if lastTree != nil && lastTree.Span.Call() != nil && tree.Span.Call() == nil {
-			lastTree.Final = true
+		if lastTree != nil {
+			if base := span.Base(); base != nil {
+				tree.Chained = base.Digest == lastTree.Span.CallDigest ||
+					base.Digest == lastTree.Span.Output
+				lastTree.Final = !tree.Chained
+			}
+			if lastTree.Span.ActorEmoji != "" &&
+				// we're the same actor
+				lastTree.Span.ActorEmoji == span.ActorEmoji {
+				tree.Chained = true
+				lastTree.Final = !tree.Chained
+			}
+			if lastTree.Span.Call() != nil && span.Call() == nil {
+				lastTree.Final = true
+			}
 		}
 		if span.IsRunningOrEffectsRunning() {
 			tree.setRunning()
@@ -171,6 +180,9 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceT
 						// HACK: it's hacky to mutate the span snapshot directly here, the intent
 						// is for ShouldShow to pick it up.
 						child.Reveal = true
+						if child.ActorEmoji == "" && revealed.ActorEmoji != "" {
+							child.ActorEmoji = revealed.ActorEmoji
+						}
 						walk(child, tree)
 					}
 				} else {

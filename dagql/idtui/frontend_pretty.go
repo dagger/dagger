@@ -351,7 +351,7 @@ func (fe *frontendPretty) renderErrorLogs(out TermOutput, r *renderer) bool {
 		if logs != nil && logs.UsedHeight() > 0 {
 			fmt.Fprintln(out)
 			fe.renderStep(out, r, tree.Span, tree.Chained, 0, "")
-			fe.renderLogs(out, r, logs, -1, logs.UsedHeight(), "", false)
+			fe.renderLogs(out, r, logs, -1, logs.UsedHeight(), "")
 			fe.renderStepError(out, r, tree.Span, 0, "")
 		}
 		return dagui.WalkContinue
@@ -603,10 +603,6 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 
 	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
 
-	if fe.hlProgress() {
-		out = focusedBg(out)
-	}
-
 	var progPrefix string
 	if fe.rowsView != nil && fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
 		fe.renderStep(out, r, fe.rowsView.Zoomed, false, 0, "")
@@ -616,9 +612,6 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 
 	below := new(strings.Builder)
 	var countOut TermOutput = NewOutput(below, termenv.WithProfile(fe.profile))
-	if fe.hlProgress() {
-		countOut = focusedBg(countOut)
-	}
 
 	if fe.activePrompt != nil {
 		fmt.Fprintln(countOut)
@@ -631,7 +624,7 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 
 	if logs := fe.logs.Logs[fe.ZoomedSpan]; logs != nil && logs.UsedHeight() > 0 {
 		fmt.Fprintln(below)
-		fe.renderLogs(countOut, r, logs, -1, fe.window.Height/3, progPrefix, false)
+		fe.renderLogs(countOut, r, logs, -1, fe.window.Height/3, progPrefix)
 	}
 
 	belowOut := strings.TrimRight(below.String(), "\n")
@@ -737,19 +730,12 @@ func (fe *frontendPretty) recalculateViewLocked() {
 
 func (fe *frontendPretty) renderedRowLines(r *renderer, row *dagui.TraceRow, prefix string) []string {
 	buf := new(strings.Builder)
-	var out TermOutput = NewOutput(buf, termenv.WithProfile(fe.profile))
-	if fe.hlProgress() {
-		out = focusedBg(out)
-	}
-	fe.renderRow(out, r, row, prefix, fe.hlProgress())
+	out := NewOutput(buf, termenv.WithProfile(fe.profile))
+	fe.renderRow(out, r, row, prefix, false)
 	if buf.String() == "" {
 		return nil
 	}
 	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
-}
-
-func (fe *frontendPretty) hlProgress() bool {
-	return fe.shell != nil && !fe.editlineFocused
 }
 
 func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, full bool, height int, prefix string) (rendered bool) {
@@ -761,7 +747,7 @@ func (fe *frontendPretty) renderProgress(out TermOutput, r *renderer, full bool,
 
 	if full {
 		for _, row := range rows.Order {
-			if fe.renderRow(out, r, row, "", fe.hlProgress()) {
+			if fe.renderRow(out, r, row, "", false) {
 				rendered = true
 			}
 		}
@@ -999,7 +985,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		fe.editline.CheckInputComplete = msg.handler.IsComplete
 
 		// put the bowtie on
-		fe.updatePrompt()
+		promptCmd := fe.updatePrompt()
 
 		// HACK: for some reason editline's first paint is broken (only shows
 		// first 2 chars of prompt, doesn't show cursor). Sending it a message
@@ -1010,6 +996,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			tea.Printf(`Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`),
 			fe.editline.Focus(),
 			tea.DisableMouse,
+			promptCmd,
 		)
 
 	case flushMsg:
@@ -1066,7 +1053,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			value := fe.editline.Value()
 			fe.editline.AddHistoryEntry(value)
 			fe.promptFg = termenv.ANSIYellow
-			fe.updatePrompt()
+			promptCmd := fe.updatePrompt()
 
 			// reset now that we've accepted input
 			fe.editline.Reset()
@@ -1075,11 +1062,14 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			fe.shellInterrupt = cancel
 			fe.shellRunning = true
 
-			return fe, func() tea.Msg {
-				fe.shellLock.Lock()
-				defer fe.shellLock.Unlock()
-				return shellDoneMsg{fe.shell.Handle(ctx, value)}
-			}
+			return fe, tea.Batch(
+				promptCmd,
+				func() tea.Msg {
+					fe.shellLock.Lock()
+					defer fe.shellLock.Unlock()
+					return shellDoneMsg{fe.shell.Handle(ctx, value)}
+				},
+			)
 		}
 		return fe, nil
 
@@ -1089,191 +1079,27 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		} else {
 			fe.promptFg = termenv.ANSIRed
 		}
-		fe.updatePrompt()
+		promptCmd := fe.updatePrompt()
 		// NOTE: we switch back from the alt screen only when the scrollback is
 		// written
 		fe.shellRunning = false
-		return fe, nil
+		return fe, promptCmd
 
 	case UpdatePromptMsg:
-		fe.updatePrompt()
-		return fe, nil
+		return fe, fe.updatePrompt()
 
 	case tea.KeyMsg:
+		switch {
 		// Handle prompt input if there's an active prompt
-		if fe.activePrompt != nil {
-			switch msg.String() {
-			case "left", "h", "right", "l":
-				fe.activePrompt.yessing = !fe.activePrompt.yessing
-				return fe, nil
-			case "enter":
-				result := fe.activePrompt.result
-				choice := fe.activePrompt.yessing
-				fe.activePrompt = nil
-				return fe, func() tea.Msg {
-					result <- choice
-					close(result)
-					return nil
-				}
-			case "n", "N":
-				result := fe.activePrompt.result
-				fe.activePrompt = nil
-				return fe, func() tea.Msg {
-					result <- false
-					close(result)
-					return nil
-				}
-			case "y", "Y":
-				result := fe.activePrompt.result
-				fe.activePrompt = nil
-				return fe, func() tea.Msg {
-					result <- true
-					close(result)
-					return nil
-				}
-			}
-			return fe, nil
-		}
-
+		case fe.activePrompt != nil:
+			return fe, fe.handleBoolPromptKey(msg)
 		// send all input to editline if it's focused
-		if fe.shell != nil && fe.editlineFocused {
-			// update the prompt in all cases since e.g. going through history
-			// can change it
-			defer fe.updatePrompt()
-			switch msg.String() {
-			case "ctrl+d":
-				if fe.editline.Value() == "" {
-					return fe.quit(ErrShellExited)
-				}
-			case "ctrl+c":
-				if fe.shellInterrupt != nil {
-					fe.shellInterrupt(errors.New("interrupted"))
-				}
-				fe.editline.Reset()
-			case "ctrl+l":
-				return fe.clearScrollback()
-			case "esc":
-				fe.editlineFocused = false
-				fe.editline.Blur()
-				return fe, nil
-			case "alt++", "alt+=":
-				fe.Verbosity++
-				fe.recalculateViewLocked()
-				return fe, nil
-			case "alt+-":
-				fe.Verbosity--
-				fe.recalculateViewLocked()
-				return fe, nil
-			default:
-				if fe.editline.AtStart() {
-					cmd := fe.shell.ReactToInput(fe.runCtx, msg)
-					if cmd != nil {
-						return fe, cmd
-					}
-				}
-			}
-			el, cmd := fe.editline.Update(msg)
-			fe.editline = el.(*editline.Model)
-			return fe, cmd
+		case fe.shell != nil && fe.editlineFocused:
+			return fe, fe.handleEditlineKey(msg)
+		default:
+			return fe, fe.handleNavKey(msg)
 		}
 
-		lastKey := fe.pressedKey
-		fe.pressedKey = msg.String()
-		fe.pressedKeyAt = time.Now()
-		switch msg.String() {
-		case "q", "ctrl+c":
-			return fe.quit(ErrInterrupted)
-		case "ctrl+\\": // SIGQUIT
-			fe.program.ReleaseTerminal()
-			sigquit()
-			return fe, nil
-		case "down", "j":
-			fe.goDown()
-			return fe, nil
-		case "up", "k":
-			fe.goUp()
-			return fe, nil
-		case "left", "h":
-			fe.goOut()
-			return fe, nil
-		case "right", "l":
-			fe.goIn()
-			return fe, nil
-		case "home":
-			fe.goStart()
-			return fe, nil
-		case "end", "G", " ":
-			fe.goEnd()
-			fe.pressedKey = "end"
-			fe.pressedKeyAt = time.Now()
-			return fe, nil
-		case "esc":
-			fe.ZoomedSpan = fe.db.PrimarySpan
-			fe.recalculateViewLocked()
-			return fe, nil
-		case "+", "=":
-			fe.FrontendOpts.Verbosity++
-			fe.recalculateViewLocked()
-			return fe, nil
-		case "-":
-			fe.FrontendOpts.Verbosity--
-			if fe.FrontendOpts.Verbosity < 0 {
-				fe.FrontendOpts.Verbosity = 0
-			}
-			fe.recalculateViewLocked()
-			return fe, nil
-		case "w":
-			if fe.cloudURL == "" {
-				return fe, nil
-			}
-			url := fe.cloudURL
-			if fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan {
-				url += "?span=" + fe.ZoomedSpan.String()
-			}
-			if fe.FocusedSpan.IsValid() && fe.FocusedSpan != fe.db.PrimarySpan {
-				url += "#" + fe.FocusedSpan.String()
-			}
-			return fe, func() tea.Msg {
-				if err := browser.OpenURL(url); err != nil {
-					slog.Warn("failed to open URL",
-						"url", url,
-						"err", err,
-						"output", fe.browserBuf.String())
-				}
-				return nil
-			}
-		case "?":
-			if fe.debugged == fe.FocusedSpan {
-				fe.debugged = dagui.SpanID{}
-			} else {
-				fe.debugged = fe.FocusedSpan
-			}
-			return fe, nil
-		case "enter":
-			fe.ZoomedSpan = fe.FocusedSpan
-			fe.recalculateViewLocked()
-			return fe, nil
-		case "tab", "i":
-			if fe.editline != nil {
-				fe.editlineFocused = true
-				fe.updatePrompt()
-				return fe, fe.editline.Focus()
-			}
-			return fe, nil
-		}
-
-		switch lastKey { //nolint:gocritic
-		case "g":
-			switch msg.String() { //nolint:gocritic
-			case "g":
-				fe.goStart()
-				fe.pressedKey = "home"
-				fe.pressedKeyAt = time.Now()
-				return fe, nil
-			}
-		}
-
-		return fe, nil
 	case tea.WindowSizeMsg:
 		fe.setWindowSizeLocked(msg)
 		return fe, nil
@@ -1293,6 +1119,182 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 	default:
 		return fe, nil
 	}
+}
+
+func (fe *frontendPretty) handleBoolPromptKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "left", "h", "right", "l":
+		fe.activePrompt.yessing = !fe.activePrompt.yessing
+	case "enter":
+		result := fe.activePrompt.result
+		choice := fe.activePrompt.yessing
+		fe.activePrompt = nil
+		return func() tea.Msg {
+			result <- choice
+			close(result)
+			return nil
+		}
+	case "n", "N":
+		result := fe.activePrompt.result
+		fe.activePrompt = nil
+		return func() tea.Msg {
+			result <- false
+			close(result)
+			return nil
+		}
+	case "y", "Y":
+		result := fe.activePrompt.result
+		fe.activePrompt = nil
+		return func() tea.Msg {
+			result <- true
+			close(result)
+			return nil
+		}
+	}
+	return nil
+}
+
+func (fe *frontendPretty) handleEditlineKey(msg tea.KeyMsg) (cmd tea.Cmd) {
+	defer func() {
+		// update the prompt in all cases since e.g. going through history
+		// can change it
+		cmd = tea.Sequence(cmd, fe.updatePrompt())
+	}()
+	switch msg.String() {
+	case "ctrl+d":
+		if fe.editline.Value() == "" {
+			return fe.quit(ErrShellExited)
+		}
+	case "ctrl+c":
+		if fe.shellInterrupt != nil {
+			fe.shellInterrupt(errors.New("interrupted"))
+		}
+		fe.editline.Reset()
+	case "ctrl+l":
+		return fe.clearScrollback()
+	case "esc":
+		fe.editlineFocused = false
+		fe.editline.Blur()
+		return nil
+	case "alt++", "alt+=":
+		fe.Verbosity++
+		fe.recalculateViewLocked()
+		return nil
+	case "alt+-":
+		fe.Verbosity--
+		fe.recalculateViewLocked()
+		return nil
+	default:
+		if fe.editline.AtStart() {
+			cmd := fe.shell.ReactToInput(fe.runCtx, msg)
+			if cmd != nil {
+				return cmd
+			}
+		}
+	}
+	el, cmd := fe.editline.Update(msg)
+	fe.editline = el.(*editline.Model)
+	return cmd
+}
+
+func (fe *frontendPretty) handleNavKey(msg tea.KeyMsg) tea.Cmd {
+	lastKey := fe.pressedKey
+	fe.pressedKey = msg.String()
+	fe.pressedKeyAt = time.Now()
+	switch msg.String() {
+	case "q", "ctrl+c":
+		return fe.quit(ErrInterrupted)
+	case "ctrl+\\": // SIGQUIT
+		fe.program.ReleaseTerminal()
+		sigquit()
+		return nil
+	case "down", "j":
+		fe.goDown()
+		return nil
+	case "up", "k":
+		fe.goUp()
+		return nil
+	case "left", "h":
+		fe.goOut()
+		return nil
+	case "right", "l":
+		fe.goIn()
+		return nil
+	case "home":
+		fe.goStart()
+		return nil
+	case "end", "G", " ":
+		fe.goEnd()
+		fe.pressedKey = "end"
+		fe.pressedKeyAt = time.Now()
+		return nil
+	case "esc":
+		fe.ZoomedSpan = fe.db.PrimarySpan
+		fe.recalculateViewLocked()
+		return nil
+	case "+", "=":
+		fe.FrontendOpts.Verbosity++
+		fe.recalculateViewLocked()
+		return nil
+	case "-":
+		fe.FrontendOpts.Verbosity--
+		if fe.FrontendOpts.Verbosity < 0 {
+			fe.FrontendOpts.Verbosity = 0
+		}
+		fe.recalculateViewLocked()
+		return nil
+	case "w":
+		if fe.cloudURL == "" {
+			return nil
+		}
+		url := fe.cloudURL
+		if fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan {
+			url += "?span=" + fe.ZoomedSpan.String()
+		}
+		if fe.FocusedSpan.IsValid() && fe.FocusedSpan != fe.db.PrimarySpan {
+			url += "#" + fe.FocusedSpan.String()
+		}
+		return func() tea.Msg {
+			if err := browser.OpenURL(url); err != nil {
+				slog.Warn("failed to open URL",
+					"url", url,
+					"err", err,
+					"output", fe.browserBuf.String())
+			}
+			return nil
+		}
+	case "?":
+		if fe.debugged == fe.FocusedSpan {
+			fe.debugged = dagui.SpanID{}
+		} else {
+			fe.debugged = fe.FocusedSpan
+		}
+		return nil
+	case "enter":
+		fe.ZoomedSpan = fe.FocusedSpan
+		fe.recalculateViewLocked()
+		return nil
+	case "tab", "i":
+		if fe.editline != nil {
+			fe.editlineFocused = true
+			fe.updatePrompt()
+			return fe.editline.Focus()
+		}
+		return nil
+	}
+
+	switch lastKey { //nolint:gocritic
+	case "g":
+		switch msg.String() { //nolint:gocritic
+		case "g":
+			fe.goStart()
+			fe.pressedKey = "home"
+			fe.pressedKeyAt = time.Now()
+			return nil
+		}
+	}
+
+	return nil
 }
 
 type UpdatePromptMsg struct{}
@@ -1396,10 +1398,10 @@ func (fe *frontendPretty) flushScrollback() (*frontendPretty, tea.Cmd) {
 	return fe, tea.Printf("%s", msg)
 }
 
-func (fe *frontendPretty) clearScrollback() (*frontendPretty, tea.Cmd) {
+func (fe *frontendPretty) clearScrollback() tea.Cmd {
 	scrollback := strings.TrimSuffix(fe.scrollback.String(), "\n")
 	fe.scrollback.Reset()
-	return fe, tea.Sequence(
+	return tea.Sequence(
 		tea.Printf("%s", scrollback),
 		func() tea.Msg {
 			time.Sleep(100 * time.Millisecond)
@@ -1408,37 +1410,35 @@ func (fe *frontendPretty) clearScrollback() (*frontendPretty, tea.Cmd) {
 	)
 }
 
-func (fe *frontendPretty) updatePrompt() {
-	var out TermOutput = fe.viewOut
-	if fe.editlineFocused {
-		out = focusedBg(out)
-	}
-	fe.editline.Prompt = fe.shell.Prompt(out, fe.promptFg)
+func (fe *frontendPretty) updatePrompt() tea.Cmd {
+	prompt, cmd := fe.shell.Prompt(fe.runCtx, fe.viewOut, fe.promptFg)
+	fe.editline.Prompt = prompt
 	fe.editline.UpdatePrompt()
+	return cmd
 }
 
-func (fe *frontendPretty) quit(interruptErr error) (*frontendPretty, tea.Cmd) {
+func (fe *frontendPretty) quit(interruptErr error) tea.Cmd {
 	if fe.CustomExit != nil {
 		fe.CustomExit()
-		return fe, nil
+		return nil
 	}
 
 	if fe.done && fe.eof {
 		fe.quitting = true
 		// must have configured NoExit, and now they want
 		// to exit manually
-		return fe, tea.Quit
+		return tea.Quit
 	}
 	if fe.interrupted {
 		slog.Warn("exiting immediately")
 		fe.quitting = true
-		return fe, tea.Quit
+		return tea.Quit
 	} else {
 		slog.Warn("canceling... (press again to exit immediately)")
 	}
 	fe.interrupted = true
 	fe.interrupt(interruptErr)
-	return fe, nil // tea.Quit is deferred until we receive doneMsg
+	return nil // tea.Quit is deferred until we receive doneMsg
 }
 
 func (fe *frontendPretty) goStart() {
@@ -1532,6 +1532,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 	if fe.flushed[row.Span.ID] && fe.editlineFocused {
 		return false
 	}
+	focused := row.Span.ID == fe.FocusedSpan && !fe.editlineFocused
 	if fe.shell != nil {
 		if row.IsLastChild() {
 			defer func() {
@@ -1541,7 +1542,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 					if fe.Verbosity < dagui.ExpandCompletedVerbosity {
 						logDepth = -1
 					}
-					fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix, highlight)
+					fe.renderLogs(out, r, logs, logDepth, logs.UsedHeight(), prefix)
 				}
 				fe.renderStepError(out, r, root.Span, 0, prefix)
 			}()
@@ -1553,7 +1554,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 				fmt.Fprintln(out, out.String(prefix))
 			}
 			fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
-			fe.renderDebug(out, row.Span, prefix+Block25+" ")
+			fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
 			return true
 		}
 	}
@@ -1582,8 +1583,8 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 		// span name relates to the message in all cases; is it the
 		// subject? or author? better to be explicit with attributes.
 		r.indent(out, row.Depth)
-		r.renderStatus(out, span, row.Span.ID == fe.FocusedSpan && !fe.editlineFocused)
-		if fe.renderStepLogs(out, r, row, prefix, highlight) {
+		r.renderStatus(out, span, focused, row.Chained)
+		if fe.renderStepLogs(out, r, row, prefix) {
 			r.indent(out, row.Depth)
 			fmt.Fprint(out, out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack))
 		} else {
@@ -1599,16 +1600,16 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 			row.Span.IsFailedOrCausedFailure() ||
 			row.Span.IsCanceled() ||
 			fe.Verbosity >= dagui.ExpandCompletedVerbosity {
-			fe.renderStepLogs(out, r, row, prefix, highlight)
+			fe.renderStepLogs(out, r, row, prefix)
 		}
 	}
 	fe.renderStepError(out, r, row.Span, row.Depth, prefix)
-	fe.renderDebug(out, row.Span, prefix+Block25+" ")
+	fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
 	return true
 }
 
-func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix string) {
-	if span.ID != fe.debugged {
+func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix string, force bool) {
+	if span.ID != fe.debugged && !force {
 		return
 	}
 	vt := NewVterm(fe.profile)
@@ -1639,14 +1640,13 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 	fmt.Fprint(out, prefix+vt.View())
 }
 
-func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, highlight bool) bool {
+func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) bool {
 	if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
 		return fe.renderLogs(out, r,
 			logs,
 			row.Depth,
 			fe.window.Height/3,
 			prefix,
-			highlight,
 		)
 	}
 	return false
@@ -1693,7 +1693,7 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, span *dagui.Sp
 			return err
 		}
 	} else if span != nil {
-		if err := r.renderSpan(out, span, span.Name, prefix, depth, isFocused); err != nil {
+		if err := r.renderSpan(out, span, span.Name, prefix, depth, isFocused, chained); err != nil {
 			return err
 		}
 	}
@@ -1702,7 +1702,7 @@ func (fe *frontendPretty) renderStep(out TermOutput, r *renderer, span *dagui.Sp
 	return nil
 }
 
-func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, logs *Vterm, depth int, height int, prefix string, highlight bool) bool {
+func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, logs *Vterm, depth int, height int, prefix string) bool {
 	pipe := out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack)
 	if depth == -1 {
 		// clear prefix when zoomed
@@ -1715,11 +1715,6 @@ func (fe *frontendPretty) renderLogs(out TermOutput, r *renderer, logs *Vterm, d
 		fmt.Fprint(indentOut, pipe)
 		fmt.Fprint(indentOut, out.String(" "))
 		logs.SetPrefix(buf.String())
-	}
-	if highlight {
-		logs.SetBackground(highlightBg)
-	} else {
-		logs.SetBackground(nil)
 	}
 	if height <= 0 {
 		logs.SetHeight(logs.UsedHeight())
@@ -1860,33 +1855,6 @@ func (ts *wrapCommand) Run() error {
 type TermOutput interface {
 	io.Writer
 	String(...string) termenv.Style
-}
-
-// BackgroundWriter wraps a termenv.Output to maintain background color
-type BackgroundWriter struct {
-	TermOutput
-	bgColor termenv.Color
-	lineEnd string
-}
-
-func NewBackgroundOutput(out TermOutput, bgColor termenv.Color) *BackgroundWriter {
-	return &BackgroundWriter{
-		TermOutput: out,
-		bgColor:    bgColor,
-		lineEnd:    termenv.CSI + bgColor.Sequence(true) + "m" + termenv.CSI + termenv.EraseLineRightSeq + "\n",
-	}
-}
-
-func (bg *BackgroundWriter) String(s ...string) termenv.Style {
-	return bg.TermOutput.String(s...).Background(bg.bgColor)
-}
-
-func (bg *BackgroundWriter) Write(p []byte) (n int, err error) {
-	return bg.TermOutput.Write(bytes.ReplaceAll(p, []byte("\n"), []byte(bg.lineEnd)))
-}
-
-func focusedBg(out TermOutput) TermOutput {
-	return NewBackgroundOutput(out, highlightBg)
 }
 
 func (fe *frontendPretty) handlePromptBool(ctx context.Context, message string, dest *bool) error {

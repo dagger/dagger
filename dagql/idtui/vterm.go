@@ -23,8 +23,7 @@ type Vterm struct {
 
 	Prefix string
 
-	Background termenv.Color
-	Profile    termenv.Profile
+	Profile termenv.Profile
 
 	vt *midterm.Terminal
 
@@ -133,16 +132,6 @@ func (term *Vterm) SetPrefix(prefix string) {
 	term.needsRedraw = true
 }
 
-func (term *Vterm) SetBackground(background termenv.Color) {
-	term.mu.Lock()
-	defer term.mu.Unlock()
-	if background == term.Background {
-		return
-	}
-	term.Background = background
-	term.needsRedraw = true
-}
-
 func (term *Vterm) Init() tea.Cmd {
 	return nil
 }
@@ -206,26 +195,9 @@ func (term *Vterm) redraw() {
 
 	// First render any Markdown content
 	if term.markdownBuf.Len() > 0 {
-		st := MarkdownStyle
-		// HACK: we want "0" or "255", but termenv.Color doesn't have a
-		// String() method, only Sequence(bool) which prints the ANSI
-		// formatting sequence.
-		if term.Background != nil {
-			switch x := term.Background.(type) {
-			case termenv.ANSIColor, termenv.ANSI256Color:
-				// annoyingly, there's no clean conversion from termenv.Color
-				// back to the value that lipgloss wants, because ANSI 0
-				// translates to "#000000" and we want "0"
-				bg := fmt.Sprintf("%d", x)
-				st.Document.BackgroundColor = &bg
-			default:
-				bg := fmt.Sprint(term.Background)
-				st.Document.BackgroundColor = &bg
-			}
-		}
 		renderer, _ := glamour.NewTermRenderer(
 			glamour.WithWordWrap(term.Width-lipgloss.Width(term.Prefix)),
-			glamour.WithStyles(st),
+			glamour.WithStyles(MarkdownStyle),
 		)
 
 		rendered, err := renderer.Render(term.markdownBuf.String())
@@ -316,11 +288,7 @@ func (term *Vterm) Render(w io.Writer, offset, height int) {
 		return
 	}
 
-	var vt TermOutput = NewOutput(w, termenv.WithProfile(term.Profile))
-	if term.Background != nil {
-		vt = NewBackgroundOutput(vt, term.Background)
-	}
-
+	vt := NewOutput(w, termenv.WithProfile(term.Profile))
 	w = vt
 
 	var lines int
@@ -333,7 +301,7 @@ func (term *Vterm) Render(w io.Writer, offset, height int) {
 		}
 
 		fmt.Fprint(w, vt.String(term.Prefix))
-		term.vt.RenderLineFgBg(w, row, nil, term.Background)
+		term.vt.RenderLineFgBg(w, row, nil, nil)
 		fmt.Fprintln(w)
 		lines++
 

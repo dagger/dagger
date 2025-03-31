@@ -10,7 +10,6 @@ import (
 	"os"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/querybuilder"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/iancoleman/strcase"
@@ -157,11 +156,23 @@ func init() {
 	}
 }
 
+const agentVar = "agent"
+
 func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 	// TODO: overlay? bad scaling characteristics. maybe overkill anyway
 	oldVars := s.syncedVars
 	s.syncedVars = make(map[string]digest.Digest)
 	maps.Copy(s.syncedVars, oldVars)
+
+	if value, ok := s.shell.runner.Vars[agentVar]; ok {
+		if key := GetStateKey(value.String()); key != "" {
+			st, err := s.shell.state.Load(key)
+			if err != nil {
+				return err
+			}
+			s.llm = s.llm.WithGraphQLQuery(st.QueryBuilder(s.dag))
+		}
+	}
 
 	syncedLLMQ := s.dag.QueryBuilder().
 		Select("loadLLMFromID").
@@ -169,6 +180,10 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 
 	var changed bool
 	for name, value := range s.shell.runner.Vars {
+		if name == agentVar {
+			// handled separately
+			continue
+		}
 		if s.skipEnv[name] {
 			continue
 		}
@@ -228,53 +243,9 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 }
 
 func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
-	vars, err := s.llm.Variables(ctx)
-	if err != nil {
+	if err := s.assignShell(ctx, "agent", s.llm); err != nil {
 		return err
 	}
-
-	for _, v := range vars {
-		name, err := v.Name(ctx)
-		if err != nil {
-			dbg.Println("error getting var name", err)
-			return err
-		}
-		typeName, err := v.TypeName(ctx)
-		if err != nil {
-			dbg.Println("error getting var type name", err)
-			return err
-		}
-		hash, err := v.Hash(ctx)
-		if err != nil {
-			dbg.Println("error getting var hash", err)
-			return err
-		}
-		digest := digest.Digest(hash)
-
-		if s.syncedVars[name] == digest {
-			// already synced
-			continue
-		}
-
-		dbg.Println("syncing llm => var", name, typeName, hash)
-
-		val, err := s.ShellValue(ctx, name, typeName, func(q *querybuilder.Selection) *querybuilder.Selection {
-			return q.Select(fmt.Sprintf("get%s", typeName)).
-				Arg("name", name)
-		})
-		if err != nil {
-			return err
-		}
-		quot, err := syntax.Quote(val, syntax.LangBash)
-		if err != nil {
-			return err
-		}
-		if err := s.shell.Eval(ctx, fmt.Sprintf("%s=%s", name, quot)); err != nil {
-			return err
-		}
-		s.syncedVars[name] = digest
-	}
-
 	typeName, err := s.llm.CurrentType(ctx)
 	if err != nil {
 		return err
@@ -282,10 +253,40 @@ func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
 	if typeName == "" || typeName == "Query" {
 		return nil
 	}
+	var objID string
+	if err :=
+		s.dag.QueryBuilder().
+			Select("loadLLMFromID").
+			Arg("id", s.llm).
+			Select(strcase.ToLowerCamel(typeName)).
+			Select("id").
+			Bind(&objID).
+			Execute(ctx); err != nil {
+		return err
+	}
+	return s.assignShell(ctx, "_", &dynamicObject{objID, typeName})
+}
 
-	val, err := s.ShellValue(ctx, "_", typeName, func(q *querybuilder.Selection) *querybuilder.Selection {
-		return q.Select(strcase.ToLowerCamel(typeName))
-	})
+type dagqlObject interface {
+	XXX_GraphQLType() string
+	XXX_GraphQLID(context.Context) (string, error)
+}
+
+type dynamicObject struct {
+	id       string
+	typeName string
+}
+
+func (do *dynamicObject) XXX_GraphQLType() string { //nolint:stylecheck
+	return do.typeName
+}
+
+func (do *dynamicObject) XXX_GraphQLID(ctx context.Context) (string, error) { //nolint:stylecheck
+	return do.id, nil
+}
+
+func (s *LLMSession) assignShell(ctx context.Context, name string, idable dagqlObject) error {
+	val, err := s.toShell(ctx, idable)
 	if err != nil {
 		return err
 	}
@@ -293,49 +294,32 @@ func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := s.shell.Eval(ctx, fmt.Sprintf("%s=%s", "_", quot)); err != nil {
+	if err := s.shell.Eval(ctx, fmt.Sprintf("%s=%s", name, quot)); err != nil {
 		return err
 	}
-
 	return nil
 }
 
-func (s *LLMSession) ShellValue(
-	ctx context.Context,
-	name, typeName string,
-	getter func(*querybuilder.Selection) *querybuilder.Selection,
-) (string, error) {
-	switch typeName {
-	case "String":
-		return s.llm.GetString(ctx, name)
-	default:
-		var objID string
-		if err := getter(
-			s.dag.QueryBuilder().
-				Select("loadLLMFromID").
-				Arg("id", s.llm),
-		).
-			Select("id").
-			Bind(&objID).
-			Execute(ctx); err != nil {
-			return "", err
-		}
-		dbg.Println("syncing object", name)
-		st := ShellState{
-			Calls: []FunctionCall{
-				{
-					Object: "Query",
-					Name:   "load" + typeName + "FromID",
-					Arguments: map[string]any{
-						"id": objID,
-					},
-					ReturnObject: typeName,
-				},
-			},
-		}
-		key := s.shell.state.Store(st)
-		return newStateToken(key), nil
+func (s *LLMSession) toShell(ctx context.Context, idable dagqlObject) (string, error) {
+	typeName := idable.XXX_GraphQLType()
+	objID, err := idable.XXX_GraphQLID(ctx)
+	if err != nil {
+		return "", err
 	}
+	st := ShellState{
+		Calls: []FunctionCall{
+			{
+				Object: "Query",
+				Name:   "load" + typeName + "FromID",
+				Arguments: map[string]any{
+					"id": objID,
+				},
+				ReturnObject: typeName,
+			},
+		},
+	}
+	key := s.shell.state.Store(st)
+	return newStateToken(key), nil
 }
 
 func (s *LLMSession) Clear() *LLMSession {
