@@ -134,6 +134,8 @@ Dagger [modules](../features/modules.mdx) are collections of Dagger Functions. W
 
 Environments configure a number of inputs and outputs for the LLM. For example, an environment might provide a `Directory`, a `Container`, and a `string` variable. The LLM can use the scalars and the functions of these objects to complete the assigned task.
 
+The documentation for the Objects are provided to the LLM, so make sure to provide helpful documentation in your Dagger Functions. The LLM should be able to figure out how to use the tools on its own. If you provide too much help, it will be redundant with the function descriptions.
+
 Consider the following Dagger Function:
 
 <Tabs groupId="language">
