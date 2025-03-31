@@ -55,16 +55,8 @@ func New(
 
 func (r *Recorder) Render() *dagger.Directory {
 	return dag.Directory().
-		WithDirectory("", r.RenderFeatures()).
-		WithDirectory("", r.RenderQuickstart())
-}
-
-func (r *Recorder) RenderFeatures() *dagger.Directory {
-	return r.Features().All()
-}
-
-func (r *Recorder) RenderQuickstart() *dagger.Directory {
-	return dag.Directory()
+		WithDirectory("", r.Features().All()).
+		WithDirectory("", r.Quickstart().All())
 }
 
 func include(tapes ...string) dagger.DirectoryFilterOpts {
