@@ -64,10 +64,11 @@ func (s environmentSchema) binding(ctx context.Context, env *core.Env, args stru
 }
 
 func (s environmentSchema) withStringInput(ctx context.Context, env *core.Env, args struct {
-	Name  string
-	Value string
+	Name        string
+	Value       string
+	Description string
 }) (*core.Env, error) {
-	return env.WithInput(args.Name, dagql.NewString(args.Value)), nil
+	return env.WithInput(args.Name, dagql.NewString(args.Value), args.Description), nil
 }
 
 func (s environmentSchema) bindingName(ctx context.Context, b *core.Binding, args struct{}) (string, error) {

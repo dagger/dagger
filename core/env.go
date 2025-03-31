@@ -56,9 +56,9 @@ func (env *Env) Clone() *Env {
 }
 
 // Add an input (read-only) binding to the environment
-func (env *Env) WithInput(key string, val dagql.Typed) *Env {
+func (env *Env) WithInput(key string, val dagql.Typed, description string) *Env {
 	env = env.Clone()
-	binding := &Binding{Key: key, Value: val, env: env}
+	binding := &Binding{Key: key, Value: val, Description: description, env: env}
 	_ = binding.ID() // If val is an object, force its ingestion
 	env.objsByName[key] = binding
 	return env
@@ -129,9 +129,10 @@ func (env *Env) Types() []string {
 }
 
 type Binding struct {
-	Key   string
-	Value dagql.Typed
-	env   *Env // TODO: wire this up
+	Key         string
+	Value       dagql.Typed
+	Description string
+	env         *Env // TODO: wire this up
 }
 
 func (*Binding) Type() *ast.Type {
@@ -278,17 +279,23 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType) error {
 					Description: fmt.Sprintf("The %s value to assign to the binding", typeName),
 					Type:        idType,
 				},
+				{
+					Name:        "description",
+					Description: "The purpose of the input",
+					Type:        dagql.NewString(""),
+				},
 			},
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
 			env := self.(dagql.Instance[*Env]).Self
 			name := args["name"].(dagql.String).String()
 			value := args["value"].(dagql.IDType)
+			description := args["description"].(dagql.String).String()
 			obj, err := s.Server.Load(ctx, value.ID())
 			if err != nil {
 				return nil, err
 			}
-			return env.WithInput(name, obj), nil
+			return env.WithInput(name, obj, description), nil
 		},
 		dagql.CacheSpec{},
 	)

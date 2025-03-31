@@ -219,6 +219,7 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 				syncedEnvQ = syncedEnvQ.
 					Select(fmt.Sprintf("with%sInput", typeName)).
 					Arg("name", name).
+					Arg("description", ""). // TODO
 					Arg("value", id)
 				s.syncedVars[name] = digest
 			}
@@ -227,6 +228,7 @@ func (s *LLMSession) syncVarsToLLM(ctx context.Context) error {
 			syncedEnvQ = syncedEnvQ.
 				Select("withStringInput").
 				Arg("name", name).
+				Arg("description", ""). // TODO
 				Arg("value", value.String())
 		}
 	}
