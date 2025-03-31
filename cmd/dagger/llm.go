@@ -245,7 +245,8 @@ func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
 	if err := s.assignShell(ctx, "agent", s.llm); err != nil {
 		return err
 	}
-	typeName, err := s.llm.CurrentType(ctx)
+	bnd := s.llm.BindResult("_")
+	typeName, err := bnd.TypeName(ctx)
 	if err != nil {
 		return err
 	}
@@ -255,9 +256,9 @@ func (s *LLMSession) syncVarsFromLLM(ctx context.Context) error {
 	var objID string
 	if err :=
 		s.dag.QueryBuilder().
-			Select("loadLLMFromID").
-			Arg("id", s.llm).
-			Select(strcase.ToLowerCamel(typeName)).
+			Select("loadBindingFromID").
+			Arg("id", bnd).
+			Select("as" + typeName).
 			Select("id").
 			Bind(&objID).
 			Execute(ctx); err != nil {

@@ -6014,7 +6014,6 @@ func (r *InterfaceTypeDef) SourceModuleName(ctx context.Context) (string, error)
 type LLM struct {
 	query *querybuilder.Selection
 
-	currentType *string
 	historyJSON *string
 	id          *LLMID
 	lastReply   *string
@@ -6049,16 +6048,13 @@ func (r *LLM) Attempt(number int) *LLM {
 }
 
 // returns the type of the current state
-func (r *LLM) CurrentType(ctx context.Context) (string, error) {
-	if r.currentType != nil {
-		return *r.currentType, nil
+func (r *LLM) BindResult(name string) *Binding {
+	q := r.query.Select("bindResult")
+	q = q.Arg("name", name)
+
+	return &Binding{
+		query: q,
 	}
-	q := r.query.Select("currentType")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 // return the LLM's current environment
