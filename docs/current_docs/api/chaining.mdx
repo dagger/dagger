@@ -189,7 +189,9 @@ dagger -m github.com/dagger/dagger/modules/wolfi@v0.16.2 call \
 
 ## Export directories, files and containers
 
-Just-in-time artifacts such as containers, directories and files can be exported to the host filesystem from the Dagger Function that produced them. The destination path on the host is specified using the `--path` argument.
+When a host directory or file is copied or mounted to a container's filesystem, modifications made to it in the container do not automatically transfer back to the host. Data flows only one way between Dagger operations, because they are connected in a DAG. To transfer modifications back to the local host, you must explicitly export the directory or file back to the host filesystem.
+
+Just-in-time artifacts such as containers, directories and files can be exported to the host filesystem from the Dagger Function that produced them using the `export` function. The destination path on the host is specified using the `--path` argument.
 
 Here is an example of exporting the build directory returned by a Go builder Dagger Function to the `./my-build` directory on the host:
 
