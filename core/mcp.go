@@ -676,7 +676,7 @@ func (m *MCP) envGetters() []LLMTool {
 				"type":                 "object",
 				"properties":           map[string]any{},
 				"strict":               true,
-				"required":             []string{"id"}, // , "functions"},
+				"required":             []string{},
 				"additionalProperties": false,
 			},
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
