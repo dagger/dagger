@@ -156,6 +156,7 @@ Consider the following Dagger Function:
 <TabItem value="Java">
 ```java file=../agents/snippets/coding-agent/java/src/main/java/io/dagger/modules/codingagent/CodingAgent.java
 ```
+</TabItem>
 </Tabs>
 
 Here, the `ToyWorkspace` is given as an input to the `Env`. It contains a number of Dagger Functions: `Read()`, `Write()`, and `Build()`. When this environment is attached to an `LLM`, the LLM can call any of these Dagger Functions to change the state of the `ToyWorkspace` and complete the assigned task.
