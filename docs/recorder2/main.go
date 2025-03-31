@@ -6,7 +6,7 @@ import (
 
 type Recorder struct {
 	// +private
-	Vhs *dagger.VhsWithSource
+	Vhs *dagger.Vhs
 }
 
 func New() *Recorder {
@@ -40,13 +40,32 @@ func New() *Recorder {
 
 				// Initialize Dagger engine
 				WithExec([]string{"dagger", "--command", ".help"}),
-		}).WithSource(dag.CurrentModule().Source().Directory("tapes")), // TODO: improve caching by mounting source for each render separately with only the necessary files
+		}),
 	}
 }
 
 func (r *Recorder) Render() *dagger.Directory {
 	return dag.Directory().
-		WithDirectory("", r.Vhs.Render("features/shell-curl.tape")).
-		WithDirectory("", r.Vhs.Render("features/shell-build.tape")).
-		WithDirectory("", r.Vhs.Render("features/shell-help.tape"))
+		WithDirectory("", r.render("features/shell-curl.tape")).
+		WithDirectory("", r.render("features/shell-build.tape")).
+		WithDirectory("", r.render("features/shell-help.tape"))
+}
+
+func (r *Recorder) render(tape string) *dagger.Directory {
+	return r.vhsInclude([]string{
+		"config.tape", "shell.tape",
+		tape,
+	}).Render(tape)
+}
+
+func (r *Recorder) vhsInclude(include []string) *dagger.VhsWithSource {
+	return r.filteredVhs(dagger.DirectoryFilterOpts{Include: include})
+}
+
+func (r *Recorder) filteredVhs(filter dagger.DirectoryFilterOpts) *dagger.VhsWithSource {
+	source := dag.CurrentModule().Source().
+		Directory("tapes").
+		Filter(filter)
+
+	return r.Vhs.WithSource(source)
 }
