@@ -127,10 +127,11 @@ func init() {
 }
 
 var rootCmd = &cobra.Command{
-	Use:                   "dagger [options] [file...]",
+	Use:                   "dagger [options] [subcommand | file...]",
 	Short:                 "A tool to run composable workflows in containers",
 	SilenceErrors:         true, // handled in func main() instead
 	DisableFlagsInUseLine: true,
+	Args:                  cobra.ArbitraryArgs,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// if we got this far, CLI parsing worked just fine; no
 		// need to show usage for runtime errors
@@ -192,9 +193,37 @@ var rootCmd = &cobra.Command{
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 && !isFile(args[0]) {
+			return fmt.Errorf("unknown command or file %q for %q%s", args[0], cmd.CommandPath(), findSuggestions(cmd, args[0]))
+		}
 		cmd.SetArgs(append([]string{"shell"}, args...))
 		return cmd.Execute()
 	},
+}
+
+func isFile(name string) bool {
+	info, err := os.Stat(name)
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
+}
+
+func findSuggestions(c *cobra.Command, arg string) string {
+	if c.DisableSuggestions {
+		return ""
+	}
+	if c.SuggestionsMinimumDistance <= 0 {
+		c.SuggestionsMinimumDistance = 2
+	}
+	var sb strings.Builder
+	if suggestions := c.SuggestionsFor(arg); len(suggestions) > 0 {
+		sb.WriteString("\n\nDid you mean this?\n")
+		for _, s := range suggestions {
+			_, _ = fmt.Fprintf(&sb, "\t%v\n", s)
+		}
+	}
+	return sb.String()
 }
 
 func checkForUpdates(ctx context.Context, w io.Writer) {

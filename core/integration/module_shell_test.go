@@ -36,6 +36,73 @@ func daggerShellNoMod(script string) dagger.WithContainerFunc {
 	}
 }
 
+func (ShellSuite) TestScriptMode(ctx context.Context, t *testctx.T) {
+	t.Run("root script argument", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			WithNewFile("script.sh", ".echo foobar").
+			WithExec([]string{"dagger", "script.sh"}, dagger.ContainerWithExecOpts{
+				ExperimentalPrivilegedNesting: true,
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foobar\n", out)
+	})
+
+	t.Run("shell script argument", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			WithNewFile("script.sh", ".echo foobar").
+			WithExec([]string{"dagger", "shell", "script.sh"}, dagger.ContainerWithExecOpts{
+				ExperimentalPrivilegedNesting: true,
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foobar\n", out)
+	})
+
+	t.Run("shell script shebang", func(ctx context.Context, t *testctx.T) {
+		script := fmt.Sprintf("#!%s shell\n\n.echo foobar", testCLIBinPath)
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			WithNewFile("script.sh", script, dagger.ContainerWithNewFileOpts{
+				Permissions: 0750,
+			}).
+			WithExec([]string{"./script.sh"}, dagger.ContainerWithExecOpts{
+				ExperimentalPrivilegedNesting: true,
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foobar\n", out)
+	})
+
+	t.Run("root script shebang", func(ctx context.Context, t *testctx.T) {
+		script := fmt.Sprintf("#!%s\n\n.echo foobar", testCLIBinPath)
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			WithNewFile("script.sh", script, dagger.ContainerWithNewFileOpts{
+				Permissions: 0750,
+			}).
+			WithExec([]string{"./script.sh"}, dagger.ContainerWithExecOpts{
+				ExperimentalPrivilegedNesting: true,
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foobar\n", out)
+	})
+
+	t.Run("root error", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		_, err := daggerCliBase(t, c).
+			WithExec([]string{"dagger", "qery"}, dagger.ContainerWithExecOpts{
+				ExperimentalPrivilegedNesting: true,
+			}).
+			Sync(ctx)
+		requireErrOut(t, err, `unknown command or file "qery" for "dagger"`)
+		requireErrOut(t, err, "Did you mean this?\n\tquery")
+	})
+}
+
 func (ShellSuite) TestDefaultToModule(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
