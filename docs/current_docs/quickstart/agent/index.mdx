@@ -1,0 +1,255 @@
+---
+slug: /quickstart/agent
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Build an AI Agent
+
+This quickstart will guide you through creating and running your first AI agent with Dagger.
+
+The agent will use an LLM of your choosing to solve a programming assignment. The agent will have access to tools to write code and validate it.
+
+## Requirements
+
+This quickstart will take you approximately 10 minutes to complete. You should be familiar with programming in Go, Python,  TypeScript, PHP, or Java.
+
+Before beginning, ensure that:
+- you have [installed the Dagger CLI](../../install.mdx).
+- you know [the basics of Dagger](../basics/index.mdx).
+- you have a container runtime installed and running. This can be [Docker](https://docs.docker.com/engine/install/), but you can also use Podman, nerdctl, or other Docker-like systems.
+- you have a GitHub account (optional, only if configuring Dagger Cloud)
+
+## Configure the LLM endpoint
+
+Follow the [LLM endpoint configuration instructions](../../configuration/llm.mdx) to configure an LLM for use with Dagger.
+
+### Configure Dagger Cloud (optional)
+
+:::important
+This step is optional and will create a Dagger Cloud individual plan account. The individual plan is free of charge for a single user. You will require a GitHub account for account setup and identity verification. If you prefer not to sign up for Dagger Cloud, you can skip this section.
+:::
+
+Dagger Cloud is an online visualization tool for Dagger workflows. It provides a web interface to visualize each step of your workflow, drill down to detailed logs, understand how long operations took to run, and whether operations were cached.
+
+Create a new Dagger Cloud account by running `dagger login`:
+
+```shell
+dagger login
+```
+
+The Dagger CLI will invite you to authenticate your device by displaying a link containing a unique key. Click the link in your browser, and verify that you see the same key in the Dagger Cloud Web interface.
+
+```shell
+$ dagger login
+Browser opened to: https://auth.dagger.cloud/activate?user_code=FCNP-SRLM
+Confirmation code: FCNP-SRLM
+```
+
+Once you confirm your authentication code, your Dagger CLI will be authenticated and you will get redirected to your newly created Dagger Cloud organization.
+
+After successfully creating your organization, all future Dagger workflows can be inspected in Dagger Cloud.
+
+## Initialize a Dagger module
+
+In an empty directory, create a new Dagger module. This module will host your agent functions.
+
+You can write your module in Go, Python, Typescript, PHP, or Java. Choose the SDK you are most comfortable with and run the command below to generate a new Dagger module:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```shell
+dagger init --sdk=go --name=coding-agent
+```
+</TabItem>
+<TabItem value="Python">
+```shell
+dagger init --sdk=python --name=coding-agent
+```
+</TabItem>
+<TabItem value="Typescript">
+```shell
+dagger init --sdk=typescript --name=coding-agent
+```
+</TabItem>
+<TabItem value="PHP">
+```shell
+dagger init --sdk=php --name=coding-agent
+```
+</TabItem>
+<TabItem value="Java">
+```shell
+dagger init --sdk=java --name=coding-agent
+```
+</TabItem>
+</Tabs>
+
+This will generate various files that make up the Dagger module, including some boilerplate Dagger Functions as examples.
+
+To see the generated Dagger Functions, run:
+
+```shell
+dagger functions
+```
+
+You should see information about two auto-generated Dagger Functions: `container-echo` and `grep-dir`.
+
+## Install the agent environment module
+
+An agent needs an environment in which to operate. The agent uses this environment to solve the assignment given to it. This environment is a Dagger module, which you can either create yourself or use from elsewhere.
+
+This quickstart uses a pre-created Dagger module, which must be installed as a dependency:
+
+```shell
+dagger install github.com/shykes/toy-programmer/toy-workspace
+```
+
+Here, `toy-workspace` is a Dagger module that provides a simple environment for the agent. It has a `Container` object and functions to read, write, and build the code produced by the agent.
+
+:::tip
+Learn more about [agent environments](../../api/llm.mdx#environments-and-tools).
+:::
+
+## Create the agent
+
+Replace the generated Dagger module files as described below.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+Edit the agent (`.dagger/main.go`) and replace the generated code with this code:
+
+```go file=./snippets/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+Edit the agent (`.dagger/src/coding_agent/main.py`) and replace the generated code with this code:
+
+```python file=./snippets/python/src/coding_agent/main.py
+```
+
+</TabItem>
+<TabItem value="Typescript">
+
+Edit the agent (`.dagger/src/index.ts`) and replace the generated code with this code:
+
+```typescript file=./snippets/typescript/src/index.ts
+```
+
+</TabItem>
+<TabItem value="PHP">
+
+Edit the agent (`.dagger/src/CodingAgent.php`) and replace the generated code with this code:
+
+```php file=./snippets/php/src/CodingAgent.php
+```
+
+</TabItem>
+<TabItem value="Java">
+
+Edit the agent (`.dagger/src/main/java/io/dagger/modules/codingagent/CodingAgent.java`) and replace the generated code with this code:
+
+```java file=./snippets/java/src/main/java/io/dagger/modules/codingagent/CodingAgent.java
+```
+
+</TabItem>
+</Tabs>
+
+This code creates a Dagger Function called `go-program` that takes an assignment as input and returns a `Container` with the result of the assignment.
+
+- The `ToyWorkspace` module is given to the LLM as an environment. It contains various Dagger Functions to write and validate code.
+- A pre-defined prompt is also given to the LLM as input. The assigment is interpolated into the prompt.
+- The LLM will use the Dagger Functions in the `ToyWorkspace` module as tools to write code, validate it, and loop until the code passes validation.
+- Once complete, the `ToyWorkspace` is returned by the LLM with the solution. The container with the LLM's solution can then be obtained by chaining calls to `llm -> toy-workspace -> container`.
+
+## Run the agent
+
+Dagger Shell is the fastest way to interact with the Dagger API, allowing access to both core types and custom Dagger Functions using a familiar Bash-like syntax. Type `dagger` to launch Dagger Shell in interactive mode.
+
+Check the help text for the new Dagger Function:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c '.help go-program'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+.help go-program
+```
+</TabItem>
+</Tabs>
+
+This should show how to use the `go-program` function.
+
+Make sure your LLM provider has been properly configured:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'llm | model'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+llm | model
+```
+</TabItem>
+</Tabs>
+
+This should show the model you've configured to use with your provider.
+
+Call the Dagger Function with an assignment:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'go-program "write a curl clone"'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+go-program "write a curl clone"
+```
+</TabItem>
+</Tabs>
+
+You'll see the agent receive the prompt, write code, validate it, and return a `Container` with the result.
+
+If you signed up for Dagger Cloud, the output of the previous command would have also included a link to visualize the workflow run on Dagger Cloud. Click the link in your browser to see a complete breakdown of the steps performed by the agent.
+
+If the agent fails to write code that passes validation, try adding more helpful guidance to the prompt.
+
+Once the agent has successfully returned a `Container`, open an interactive terminal in the container so that you can inspect its work and run the generated code:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'go-program "write a curl clone" | terminal'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+go-program "write a curl clone" | terminal
+```
+</TabItem>
+</Tabs>
+
+Run the program and confirm that it works. This will look slightly different depending on how the LLM wrote the code:
+
+```shell
+> ls
+# should see a main.go and a go.mod, maybe other files
+> go run main.go https://dagger.io
+```
+
+## Next steps
+
+Congratulations! You've created your first AI coding agent. You can now use this agent to solve coding prompts using an LLM.
+
+Now that you've grasped the basics of building an agent, look at the [AI Agent examples](../../examples.mdx#ai-agent-examples) for more examples and ideas for your next agent.
+
+In the meantime, we encourage you to [join our awesome community on Discord](https://discord.gg/dagger-io) to introduce yourself and ask questions. And [starring our GitHub repository](https://github.com/dagger/dagger) is always appreciated!

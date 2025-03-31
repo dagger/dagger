@@ -34,30 +34,9 @@ module.exports = {
       type: "category",
       label: "Quickstart",
       items: [
-        "quickstart/basics/basics",
-        {
-          type: "category",
-          label: "Build a CI Pipeline",
-          link: {
-            type: "doc",
-            id: "ci/quickstart/index",
-          },
-          items: [
-            "ci/quickstart/cli",
-            "ci/quickstart/daggerize",
-            "ci/quickstart/env",
-            "ci/quickstart/test",
-            "ci/quickstart/build",
-            "ci/quickstart/publish",
-            "ci/quickstart/simplify",
-            "ci/quickstart/conclusion",
-            "ci/adopting",
-          ],
-        },
-        {
-          type: "doc",
-          id: "agents/quickstart",
-        },
+        "quickstart/basics/index",
+        "quickstart/ci/index",
+        "quickstart/agent/index",
       ],
     },
     {
