@@ -167,6 +167,35 @@ github.com/dagger/dagger/modules/wolfi@v0.16.2 |
 
 ![Dagger Shell host path](/img/current_docs/features/shell-host-path.gif)
 
+## Variables
+
+Dagger Shell lets you save chained function calls in variables and reuse them as needed:
+
+Here's an example:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger <<EOF
+repo=\$(git https://github.com/dagger/hello-dagger | head | tree)
+env=\$(container | from node:23 | with-directory /app \$repo | with-workdir /app)
+build=\$(\$env | with-exec npm install | with-exec npm run build | directory ./dist)
+container | from nginx | with-directory /usr/share/nginx/html \$build | terminal --cmd=/bin/bash
+EOF
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+repo=$(git https://github.com/dagger/hello-dagger | head | tree)
+env=$(container | from node:23 | with-directory /app $repo | with-workdir /app)
+build=$($env | with-exec npm install | with-exec npm run build | directory ./dist)
+container | from nginx | with-directory /usr/share/nginx/html $build | terminal --cmd=/bin/bash
+```
+</TabItem>
+</Tabs>
+
+![Dagger Shell variables](/img/current_docs/features/shell-variables.gif)
+
 ## Differences from Bash
 
 While inspired by Bash, Dagger Shell introduces key differences:
