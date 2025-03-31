@@ -169,6 +169,10 @@ func (m *MCP) tools(srv *dagql.Server, typeName string) ([]LLMTool, error) {
 	var tools []LLMTool
 	masked := len(m.functionMask) > 0
 	for _, field := range typeDef.Fields {
+		if _, found := m.env.Binding(field.Name); found {
+			// If field conflicts with user input, user input wins
+			continue
+		}
 		if masked && !m.functionMask[field.Name] {
 			continue
 		}
@@ -198,6 +202,22 @@ func (m *MCP) tools(srv *dagql.Server, typeName string) ([]LLMTool, error) {
 			Schema:      schema,
 			Call: func(ctx context.Context, args any) (_ any, rerr error) {
 				return m.call(ctx, srv, field, args)
+			},
+		})
+	}
+	for _, binding := range m.env.Bindings() {
+		tools = append(tools, LLMTool{
+			Name:        binding.Key,
+			Returns:     binding.TypeName(),
+			Description: fmt.Sprintf("Retrieve the user input '%s' of type '%s'", binding.Key, binding.TypeName()),
+			Schema:      nil,
+			Call: func(ctx context.Context, args any) (_ any, rerr error) {
+				if obj, isObj := binding.AsObject(); isObj {
+					prev := m.Current()
+					m.Select(obj)
+					return m.currentState(prev)
+				}
+				return binding.Value, nil
 			},
 		})
 	}
@@ -559,9 +579,7 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 				return m.currentState(nil)
 			}),
 		},
-	}
-	if len(m.env.outputsByName) > 0 {
-		builtins = append(builtins, m.returnBuiltin())
+		m.returnBuiltin(),
 	}
 	for _, typeName := range m.env.Types() {
 		tools, err := m.tools(srv, typeName)
