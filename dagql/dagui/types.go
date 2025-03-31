@@ -90,6 +90,7 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	return view
 }
 
+//nolint:gocyclo
 func (db *DB) WalkSpans(opts FrontendOpts, spans iter.Seq[*Span], f func(*TraceTree)) {
 	var lastTree *TraceTree
 	seen := make(map[SpanID]bool)

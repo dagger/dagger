@@ -1584,7 +1584,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 		// subject? or author? better to be explicit with attributes.
 		r.indent(out, row.Depth)
 		r.renderStatus(out, span, focused, row.Chained)
-		if fe.renderStepLogs(out, r, row, prefix, focused) {
+		if fe.renderStepLogs(out, r, row, prefix) {
 			r.indent(out, row.Depth)
 			fmt.Fprint(out, out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack))
 		} else {
@@ -1600,7 +1600,7 @@ func (fe *frontendPretty) renderRow(out TermOutput, r *renderer, row *dagui.Trac
 			row.Span.IsFailedOrCausedFailure() ||
 			row.Span.IsCanceled() ||
 			fe.Verbosity >= dagui.ExpandCompletedVerbosity {
-			fe.renderStepLogs(out, r, row, prefix, highlight)
+			fe.renderStepLogs(out, r, row, prefix)
 		}
 	}
 	fe.renderStepError(out, r, row.Span, row.Depth, prefix)
@@ -1640,7 +1640,7 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 	fmt.Fprint(out, prefix+vt.View())
 }
 
-func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, highlight bool) bool {
+func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) bool {
 	if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
 		return fe.renderLogs(out, r,
 			logs,

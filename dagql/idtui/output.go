@@ -66,8 +66,3 @@ func HasDarkBackground() bool {
 	})
 	return lipgloss.HasDarkBackground()
 }
-
-var highlightBg = AdaptiveColor{
-	Light: termenv.ANSI256Color(255),
-	Dark:  termenv.ANSI256Color(0),
-}
