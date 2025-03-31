@@ -14,12 +14,19 @@ import (
 type Environment struct {
 	// Saved objects by prompt var name
 	objsByName map[string]*Binding
+	// Desired outputs of the environment by var name
+	outputsByName map[string]EnvOutput
 	// Saved objects by ID (Foo#123)
 	objsByID map[string]*Binding
 	// Auto incrementing number per-type
 	typeCount map[string]int
 	// The LLM-friendly ID ("Container#123") for each object
 	idByHash map[digest.Digest]string
+}
+
+type EnvOutput struct {
+	Type        dagql.ObjectType
+	Description string
 }
 
 func (*Environment) Type() *ast.Type {
@@ -31,10 +38,11 @@ func (*Environment) Type() *ast.Type {
 
 func NewEnvironment() *Environment {
 	return &Environment{
-		objsByName: map[string]*Binding{},
-		objsByID:   map[string]*Binding{},
-		typeCount:  map[string]int{},
-		idByHash:   map[digest.Digest]string{},
+		objsByName:    map[string]*Binding{},
+		outputsByName: map[string]EnvOutput{},
+		objsByID:      map[string]*Binding{},
+		typeCount:     map[string]int{},
+		idByHash:      map[digest.Digest]string{},
 	}
 }
 
@@ -53,6 +61,16 @@ func (env *Environment) WithBinding(key string, val dagql.Typed) *Environment {
 	binding := &Binding{Key: key, Value: val, env: env}
 	_ = binding.ID() // If val is an object, force its ingestion
 	env.objsByName[key] = binding
+	return env
+}
+
+// Register the desire for a binding in the environment
+func (env *Environment) WithOutput(key string, type_ dagql.ObjectType, description string) *Environment {
+	env = env.Clone()
+	env.outputsByName[key] = EnvOutput{
+		Type:        type_,
+		Description: description,
+	}
 	return env
 }
 
@@ -230,12 +248,12 @@ func (s EnvironmentHook) ExtendEnvironmentType(targetType dagql.ObjectType) erro
 	if !ok {
 		return fmt.Errorf("failed to lookup ID type for %T", targetType)
 	}
-	typename := targetType.TypeName()
+	typeName := targetType.TypeName()
 	// Install get<TargetType>()
 	envType.Extend(
 		dagql.FieldSpec{
-			Name:        "with" + typename + "Binding",
-			Description: fmt.Sprintf("Create or update a binding of type %s in the environment", typename),
+			Name:        "with" + typeName + "Input",
+			Description: fmt.Sprintf("Create or update a binding of type %s in the environment", typeName),
 			Type:        envType.Typed(),
 			Args: dagql.InputSpecs{
 				{
@@ -245,7 +263,7 @@ func (s EnvironmentHook) ExtendEnvironmentType(targetType dagql.ObjectType) erro
 				},
 				{
 					Name:        "value",
-					Description: fmt.Sprintf("The %s value to assign to the binding", typename),
+					Description: fmt.Sprintf("The %s value to assign to the binding", typeName),
 					Type:        idType,
 				},
 			},
@@ -263,20 +281,47 @@ func (s EnvironmentHook) ExtendEnvironmentType(targetType dagql.ObjectType) erro
 		dagql.CacheSpec{},
 	)
 
+	envType.Extend(
+		dagql.FieldSpec{
+			Name:        "with" + typeName + "Output",
+			Description: fmt.Sprintf("Declare a desired %s output to be assigned in the environment", typeName),
+			Type:        envType.Typed(),
+			Args: dagql.InputSpecs{
+				{
+					Name:        "name",
+					Description: "The name of the binding",
+					Type:        dagql.NewString(""),
+				},
+				{
+					Name:        "description",
+					Description: "A description of the desired value of the binding",
+					Type:        dagql.NewString(""),
+				},
+			},
+		},
+		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
+			env := self.(dagql.Instance[*Environment]).Self
+			name := args["name"].(dagql.String).String()
+			desc := args["description"].(dagql.String).String()
+			return env.WithOutput(name, targetType, desc), nil
+		},
+		dagql.CacheSpec{},
+	)
+
 	// Install Binding.as<TargetType>()
 	bindingType.Extend(
 		dagql.FieldSpec{
-			Name:        "as" + typename,
-			Description: fmt.Sprintf("Retrieve the binding value, as type %s", typename),
+			Name:        "as" + typeName,
+			Description: fmt.Sprintf("Retrieve the binding value, as type %s", typeName),
 			Type:        targetType.Typed(),
 			Args:        dagql.InputSpecs{},
 		},
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
-			binding := self.(dagql.Instance[*Binding]).Self
-			if binding.TypeName() != typename {
-				return nil, fmt.Errorf("binding type mismatch: expected %s, got %s", typename, binding.TypeName())
+			val := self.(dagql.Instance[*Binding]).Self.Value
+			if val.Type().Name() != typeName {
+				return nil, fmt.Errorf("binding type mismatch: expected %s, got %s", typeName, val.Type().Name())
 			}
-			return binding.Value, nil
+			return val, nil
 		},
 		dagql.CacheSpec{},
 	)

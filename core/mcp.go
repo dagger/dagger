@@ -111,7 +111,6 @@ func (m *MCP) GetObject(key, expectedType string) (dagql.Object, error) {
 	return nil, fmt.Errorf("unknown object %q", key)
 }
 
-
 func (m *MCP) Tools(srv *dagql.Server) ([]LLMTool, error) {
 	builtins, err := m.Builtins(srv)
 	if err != nil {
@@ -483,6 +482,62 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall ToolCall) (str
 	}
 }
 
+func (m *MCP) returnBuiltin() LLMTool {
+	props := map[string]any{}
+	required := []string{}
+	for name, b := range m.env.outputsByName {
+		typeName := b.Type.TypeName()
+		required = append(required, name)
+		props[name] = map[string]any{
+			"type":           "string",
+			"pattern":        idPattern(typeName),
+			"description":    fmt.Sprintf("%s ID in \"%s#number\" format. %s", typeName, typeName, b.Description),
+			jsonSchemaIDAttr: typeName,
+		}
+	}
+	return LLMTool{
+		Name: "return",
+		Description: `Call this tool when you have gathered all required values and are ready to return them to the user.
+
+Each parameter corresponds to a named result with a specific purpose. Do not call this tool until all values are ready.`,
+		Schema: map[string]any{
+			"type":                 "object",
+			"properties":           props,
+			"strict":               true,
+			"required":             required,
+			"additionalProperties": false,
+		},
+		Call: func(ctx context.Context, args any) (any, error) {
+			vals, ok := args.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("invalid arguments: %T", args)
+			}
+			for name := range m.env.outputsByName {
+				arg, ok := vals[name]
+				if !ok {
+					return nil, fmt.Errorf("required argument %s not provided", name)
+				}
+				argStr, ok := arg.(string)
+				if !ok {
+					return nil, fmt.Errorf("invalid type for argument %s: %T", name, arg)
+				}
+				bnd, ok := m.env.objsByID[argStr]
+				if !ok {
+					return nil, fmt.Errorf("object not found for argument %s: %s", name, argStr)
+				}
+				obj := bnd.Value
+				// TODO: is it appropriate to just mutate directly here?
+				m.env.objsByName[name] = &Binding{
+					Key:   name,
+					Value: obj,
+					env:   m.env,
+				}
+			}
+			return "ok", nil
+		},
+	}
+}
+
 func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 	builtins := []LLMTool{
 		{
@@ -504,6 +559,7 @@ func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
 				return m.currentState(nil)
 			}),
 		},
+		m.returnBuiltin(),
 	}
 	for _, typeName := range m.env.Types() {
 		tools, err := m.tools(srv, typeName)
