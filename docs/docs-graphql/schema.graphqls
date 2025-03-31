@@ -19,6 +19,133 @@ directive @meta on FIELD_DEFINITION
 """Indicates the source information for where a given field is defined."""
 directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
 
+type Binding {
+  """Retrieve the binding value, as type CacheVolume"""
+  asCacheVolume: CacheVolume!
+
+  """Retrieve the binding value, as type Container"""
+  asContainer: Container!
+
+  """Retrieve the binding value, as type CurrentModule"""
+  asCurrentModule: CurrentModule!
+
+  """Retrieve the binding value, as type Directory"""
+  asDirectory: Directory!
+
+  """Retrieve the binding value, as type EnumTypeDef"""
+  asEnumTypeDef: EnumTypeDef!
+
+  """Retrieve the binding value, as type EnumValueTypeDef"""
+  asEnumValueTypeDef: EnumValueTypeDef!
+
+  """Retrieve the binding value, as type Environment"""
+  asEnvironment: Environment!
+
+  """Retrieve the binding value, as type Error"""
+  asError: Error!
+
+  """Retrieve the binding value, as type ErrorValue"""
+  asErrorValue: ErrorValue!
+
+  """Retrieve the binding value, as type FieldTypeDef"""
+  asFieldTypeDef: FieldTypeDef!
+
+  """Retrieve the binding value, as type File"""
+  asFile: File!
+
+  """Retrieve the binding value, as type Function"""
+  asFunction: Function!
+
+  """Retrieve the binding value, as type FunctionArg"""
+  asFunctionArg: FunctionArg!
+
+  """Retrieve the binding value, as type FunctionCall"""
+  asFunctionCall: FunctionCall!
+
+  """Retrieve the binding value, as type FunctionCallArgValue"""
+  asFunctionCallArgValue: FunctionCallArgValue!
+
+  """Retrieve the binding value, as type GeneratedCode"""
+  asGeneratedCode: GeneratedCode!
+
+  """Retrieve the binding value, as type GitRef"""
+  asGitRef: GitRef!
+
+  """Retrieve the binding value, as type GitRepository"""
+  asGitRepository: GitRepository!
+
+  """Retrieve the binding value, as type InputTypeDef"""
+  asInputTypeDef: InputTypeDef!
+
+  """Retrieve the binding value, as type InterfaceTypeDef"""
+  asInterfaceTypeDef: InterfaceTypeDef!
+
+  """Retrieve the binding value, as type ListTypeDef"""
+  asListTypeDef: ListTypeDef!
+
+  """Retrieve the binding value, as type LLM"""
+  asLLM: LLM!
+
+  """Retrieve the binding value, as type LLMTokenUsage"""
+  asLLMTokenUsage: LLMTokenUsage!
+
+  """Retrieve the binding value, as type LLMVariable"""
+  asLLMVariable: LLMVariable!
+
+  """Retrieve the binding value, as type Module"""
+  asModule: Module!
+
+  """Retrieve the binding value, as type ModuleConfigClient"""
+  asModuleConfigClient: ModuleConfigClient!
+
+  """Retrieve the binding value, as type ModuleSource"""
+  asModuleSource: ModuleSource!
+
+  """Retrieve the binding value, as type ObjectTypeDef"""
+  asObjectTypeDef: ObjectTypeDef!
+
+  """Retrieve the binding value, as type ScalarTypeDef"""
+  asScalarTypeDef: ScalarTypeDef!
+
+  """Retrieve the binding value, as type SDKConfig"""
+  asSDKConfig: SDKConfig
+
+  """Retrieve the binding value, as type Secret"""
+  asSecret: Secret!
+
+  """Retrieve the binding value, as type Service"""
+  asService: Service!
+
+  """Retrieve the binding value, as type Socket"""
+  asSocket: Socket!
+
+  """Retrieve the binding value, as type SourceMap"""
+  asSourceMap: SourceMap!
+
+  """Retrieve the binding value, as type Terminal"""
+  asTerminal: Terminal!
+
+  """Retrieve the binding value, as type TypeDef"""
+  asTypeDef: TypeDef!
+
+  """The digest of the binding value"""
+  digest: String!
+
+  """A unique identifier for this Binding."""
+  id: BindingID!
+
+  """The binding name"""
+  name: String!
+
+  """The binding type name"""
+  typeName: String!
+}
+
+"""
+The `BindingID` scalar type represents an identifier for an object of type Binding.
+"""
+scalar BindingID
+
 """Key value object that represents a build argument."""
 input BuildArg {
   """The build argument name."""
@@ -1588,6 +1715,350 @@ The `EnumValueTypeDefID` scalar type represents an identifier for an object of t
 """
 scalar EnumValueTypeDefID
 
+type Environment {
+  """retrieve a binding by name"""
+  binding(name: String!): Binding!
+
+  """return all bindings in the environment"""
+  bindings: [Binding!]!
+
+  """A unique identifier for this Environment."""
+  id: EnvironmentID!
+
+  """Create or update a binding of type CacheVolume in the environment"""
+  withCacheVolumeBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The CacheVolume value to assign to the binding"""
+    value: CacheVolumeID!
+  ): Environment!
+
+  """Create or update a binding of type Container in the environment"""
+  withContainerBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The Container value to assign to the binding"""
+    value: ContainerID!
+  ): Environment!
+
+  """Create or update a binding of type CurrentModule in the environment"""
+  withCurrentModuleBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The CurrentModule value to assign to the binding"""
+    value: CurrentModuleID!
+  ): Environment!
+
+  """Create or update a binding of type Directory in the environment"""
+  withDirectoryBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The Directory value to assign to the binding"""
+    value: DirectoryID!
+  ): Environment!
+
+  """Create or update a binding of type EnumTypeDef in the environment"""
+  withEnumTypeDefBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The EnumTypeDef value to assign to the binding"""
+    value: EnumTypeDefID!
+  ): Environment!
+
+  """Create or update a binding of type EnumValueTypeDef in the environment"""
+  withEnumValueTypeDefBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The EnumValueTypeDef value to assign to the binding"""
+    value: EnumValueTypeDefID!
+  ): Environment!
+
+  """Create or update a binding of type Environment in the environment"""
+  withEnvironmentBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The Environment value to assign to the binding"""
+    value: EnvironmentID!
+  ): Environment!
+
+  """Create or update a binding of type Error in the environment"""
+  withErrorBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The Error value to assign to the binding"""
+    value: ErrorID!
+  ): Environment!
+
+  """Create or update a binding of type ErrorValue in the environment"""
+  withErrorValueBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The ErrorValue value to assign to the binding"""
+    value: ErrorValueID!
+  ): Environment!
+
+  """Create or update a binding of type FieldTypeDef in the environment"""
+  withFieldTypeDefBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The FieldTypeDef value to assign to the binding"""
+    value: FieldTypeDefID!
+  ): Environment!
+
+  """Create or update a binding of type File in the environment"""
+  withFileBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The File value to assign to the binding"""
+    value: FileID!
+  ): Environment!
+
+  """Create or update a binding of type FunctionArg in the environment"""
+  withFunctionArgBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The FunctionArg value to assign to the binding"""
+    value: FunctionArgID!
+  ): Environment!
+
+  """Create or update a binding of type Function in the environment"""
+  withFunctionBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The Function value to assign to the binding"""
+    value: FunctionID!
+  ): Environment!
+
+  """
+  Create or update a binding of type FunctionCallArgValue in the environment
+  """
+  withFunctionCallArgValueBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The FunctionCallArgValue value to assign to the binding"""
+    value: FunctionCallArgValueID!
+  ): Environment!
+
+  """Create or update a binding of type FunctionCall in the environment"""
+  withFunctionCallBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The FunctionCall value to assign to the binding"""
+    value: FunctionCallID!
+  ): Environment!
+
+  """Create or update a binding of type GeneratedCode in the environment"""
+  withGeneratedCodeBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The GeneratedCode value to assign to the binding"""
+    value: GeneratedCodeID!
+  ): Environment!
+
+  """Create or update a binding of type GitRef in the environment"""
+  withGitRefBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The GitRef value to assign to the binding"""
+    value: GitRefID!
+  ): Environment!
+
+  """Create or update a binding of type GitRepository in the environment"""
+  withGitRepositoryBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The GitRepository value to assign to the binding"""
+    value: GitRepositoryID!
+  ): Environment!
+
+  """Create or update a binding of type InputTypeDef in the environment"""
+  withInputTypeDefBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The InputTypeDef value to assign to the binding"""
+    value: InputTypeDefID!
+  ): Environment!
+
+  """Create or update a binding of type InterfaceTypeDef in the environment"""
+  withInterfaceTypeDefBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The InterfaceTypeDef value to assign to the binding"""
+    value: InterfaceTypeDefID!
+  ): Environment!
+
+  """Create or update a binding of type ListTypeDef in the environment"""
+  withListTypeDefBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The ListTypeDef value to assign to the binding"""
+    value: ListTypeDefID!
+  ): Environment!
+
+  """Create or update a binding of type LLM in the environment"""
+  withLLMBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The LLM value to assign to the binding"""
+    value: LLMID!
+  ): Environment!
+
+  """Create or update a binding of type LLMTokenUsage in the environment"""
+  withLLMTokenUsageBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The LLMTokenUsage value to assign to the binding"""
+    value: LLMTokenUsageID!
+  ): Environment!
+
+  """Create or update a binding of type LLMVariable in the environment"""
+  withLLMVariableBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The LLMVariable value to assign to the binding"""
+    value: LLMVariableID!
+  ): Environment!
+
+  """Create or update a binding of type Module in the environment"""
+  withModuleBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The Module value to assign to the binding"""
+    value: ModuleID!
+  ): Environment!
+
+  """
+  Create or update a binding of type ModuleConfigClient in the environment
+  """
+  withModuleConfigClientBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The ModuleConfigClient value to assign to the binding"""
+    value: ModuleConfigClientID!
+  ): Environment!
+
+  """Create or update a binding of type ModuleSource in the environment"""
+  withModuleSourceBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The ModuleSource value to assign to the binding"""
+    value: ModuleSourceID!
+  ): Environment!
+
+  """Create or update a binding of type ObjectTypeDef in the environment"""
+  withObjectTypeDefBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The ObjectTypeDef value to assign to the binding"""
+    value: ObjectTypeDefID!
+  ): Environment!
+
+  """Create or update a binding of type ScalarTypeDef in the environment"""
+  withScalarTypeDefBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The ScalarTypeDef value to assign to the binding"""
+    value: ScalarTypeDefID!
+  ): Environment!
+
+  """Create or update a binding of type SDKConfig in the environment"""
+  withSDKConfigBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The SDKConfig value to assign to the binding"""
+    value: SDKConfigID!
+  ): Environment!
+
+  """Create or update a binding of type Secret in the environment"""
+  withSecretBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The Secret value to assign to the binding"""
+    value: SecretID!
+  ): Environment!
+
+  """Create or update a binding of type Service in the environment"""
+  withServiceBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The Service value to assign to the binding"""
+    value: ServiceID!
+  ): Environment!
+
+  """Create or update a binding of type Socket in the environment"""
+  withSocketBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The Socket value to assign to the binding"""
+    value: SocketID!
+  ): Environment!
+
+  """Create or update a binding of type SourceMap in the environment"""
+  withSourceMapBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The SourceMap value to assign to the binding"""
+    value: SourceMapID!
+  ): Environment!
+
+  """Create or update a binding of type Terminal in the environment"""
+  withTerminalBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The Terminal value to assign to the binding"""
+    value: TerminalID!
+  ): Environment!
+
+  """Create or update a binding of type TypeDef in the environment"""
+  withTypeDefBinding(
+    """The name of the binding"""
+    name: String!
+
+    """The TypeDef value to assign to the binding"""
+    value: TypeDefID!
+  ): Environment!
+}
+
+"""
+The `EnvironmentID` scalar type represents an identifier for an object of type Environment.
+"""
+scalar EnvironmentID
+
 """An environment variable name and value."""
 type EnvVariable {
   """A unique identifier for this EnvVariable."""
@@ -2213,287 +2684,11 @@ type LLM {
   """create a branch in the LLM's history"""
   attempt(number: Int!): LLM!
 
-  """
-  Retrieve a the current value in the LLM environment, of type CacheVolume
-  """
-  cacheVolume: CacheVolume!
-
-  """Retrieve a the current value in the LLM environment, of type Container"""
-  container: Container!
-
-  """
-  Retrieve a the current value in the LLM environment, of type CurrentModule
-  """
-  currentModule: CurrentModule!
-
   """returns the type of the current state"""
   currentType: String
 
-  """Retrieve a the current value in the LLM environment, of type Directory"""
-  directory: Directory!
-
-  """
-  Retrieve a the current value in the LLM environment, of type EnumTypeDef
-  """
-  enumTypeDef: EnumTypeDef!
-
-  """
-  Retrieve a the current value in the LLM environment, of type EnumValueTypeDef
-  """
-  enumValueTypeDef: EnumValueTypeDef!
-
-  """Retrieve a the current value in the LLM environment, of type Error"""
-  error: Error!
-
-  """
-  Retrieve a the current value in the LLM environment, of type ErrorValue
-  """
-  errorValue: ErrorValue!
-
-  """
-  Retrieve a the current value in the LLM environment, of type FieldTypeDef
-  """
-  fieldTypeDef: FieldTypeDef!
-
-  """Retrieve a the current value in the LLM environment, of type File"""
-  file: File!
-
-  """Retrieve a the current value in the LLM environment, of type Function"""
-  function: Function!
-
-  """
-  Retrieve a the current value in the LLM environment, of type FunctionArg
-  """
-  functionArg: FunctionArg!
-
-  """
-  Retrieve a the current value in the LLM environment, of type FunctionCall
-  """
-  functionCall: FunctionCall!
-
-  """
-  Retrieve a the current value in the LLM environment, of type FunctionCallArgValue
-  """
-  functionCallArgValue: FunctionCallArgValue!
-
-  """
-  Retrieve a the current value in the LLM environment, of type GeneratedCode
-  """
-  generatedCode: GeneratedCode!
-
-  """Retrieve a variable in the llm environment, of type CacheVolume"""
-  getCacheVolume(
-    """The name of the variable"""
-    name: String!
-  ): CacheVolume!
-
-  """Retrieve a variable in the llm environment, of type Container"""
-  getContainer(
-    """The name of the variable"""
-    name: String!
-  ): Container!
-
-  """Retrieve a variable in the llm environment, of type CurrentModule"""
-  getCurrentModule(
-    """The name of the variable"""
-    name: String!
-  ): CurrentModule!
-
-  """Retrieve a variable in the llm environment, of type Directory"""
-  getDirectory(
-    """The name of the variable"""
-    name: String!
-  ): Directory!
-
-  """Retrieve a variable in the llm environment, of type EnumTypeDef"""
-  getEnumTypeDef(
-    """The name of the variable"""
-    name: String!
-  ): EnumTypeDef!
-
-  """Retrieve a variable in the llm environment, of type EnumValueTypeDef"""
-  getEnumValueTypeDef(
-    """The name of the variable"""
-    name: String!
-  ): EnumValueTypeDef!
-
-  """Retrieve a variable in the llm environment, of type Error"""
-  getError(
-    """The name of the variable"""
-    name: String!
-  ): Error!
-
-  """Retrieve a variable in the llm environment, of type ErrorValue"""
-  getErrorValue(
-    """The name of the variable"""
-    name: String!
-  ): ErrorValue!
-
-  """Retrieve a variable in the llm environment, of type FieldTypeDef"""
-  getFieldTypeDef(
-    """The name of the variable"""
-    name: String!
-  ): FieldTypeDef!
-
-  """Retrieve a variable in the llm environment, of type File"""
-  getFile(
-    """The name of the variable"""
-    name: String!
-  ): File!
-
-  """Retrieve a variable in the llm environment, of type Function"""
-  getFunction(
-    """The name of the variable"""
-    name: String!
-  ): Function!
-
-  """Retrieve a variable in the llm environment, of type FunctionArg"""
-  getFunctionArg(
-    """The name of the variable"""
-    name: String!
-  ): FunctionArg!
-
-  """Retrieve a variable in the llm environment, of type FunctionCall"""
-  getFunctionCall(
-    """The name of the variable"""
-    name: String!
-  ): FunctionCall!
-
-  """
-  Retrieve a variable in the llm environment, of type FunctionCallArgValue
-  """
-  getFunctionCallArgValue(
-    """The name of the variable"""
-    name: String!
-  ): FunctionCallArgValue!
-
-  """Retrieve a variable in the llm environment, of type GeneratedCode"""
-  getGeneratedCode(
-    """The name of the variable"""
-    name: String!
-  ): GeneratedCode!
-
-  """Retrieve a variable in the llm environment, of type GitRef"""
-  getGitRef(
-    """The name of the variable"""
-    name: String!
-  ): GitRef!
-
-  """Retrieve a variable in the llm environment, of type GitRepository"""
-  getGitRepository(
-    """The name of the variable"""
-    name: String!
-  ): GitRepository!
-
-  """Retrieve a variable in the llm environment, of type InputTypeDef"""
-  getInputTypeDef(
-    """The name of the variable"""
-    name: String!
-  ): InputTypeDef!
-
-  """Retrieve a variable in the llm environment, of type InterfaceTypeDef"""
-  getInterfaceTypeDef(
-    """The name of the variable"""
-    name: String!
-  ): InterfaceTypeDef!
-
-  """Retrieve a variable in the llm environment, of type ListTypeDef"""
-  getListTypeDef(
-    """The name of the variable"""
-    name: String!
-  ): ListTypeDef!
-
-  """Retrieve a variable in the llm environment, of type LLM"""
-  getLLM(
-    """The name of the variable"""
-    name: String!
-  ): LLM!
-
-  """Retrieve a variable in the llm environment, of type Module"""
-  getModule(
-    """The name of the variable"""
-    name: String!
-  ): Module!
-
-  """Retrieve a variable in the llm environment, of type ModuleConfigClient"""
-  getModuleConfigClient(
-    """The name of the variable"""
-    name: String!
-  ): ModuleConfigClient!
-
-  """Retrieve a variable in the llm environment, of type ModuleSource"""
-  getModuleSource(
-    """The name of the variable"""
-    name: String!
-  ): ModuleSource!
-
-  """Retrieve a variable in the llm environment, of type ObjectTypeDef"""
-  getObjectTypeDef(
-    """The name of the variable"""
-    name: String!
-  ): ObjectTypeDef!
-
-  """Retrieve a variable in the llm environment, of type ScalarTypeDef"""
-  getScalarTypeDef(
-    """The name of the variable"""
-    name: String!
-  ): ScalarTypeDef!
-
-  """Retrieve a variable in the llm environment, of type SDKConfig"""
-  getSDKConfig(
-    """The name of the variable"""
-    name: String!
-  ): SDKConfig
-
-  """Retrieve a variable in the llm environment, of type Secret"""
-  getSecret(
-    """The name of the variable"""
-    name: String!
-  ): Secret!
-
-  """Retrieve a variable in the llm environment, of type Service"""
-  getService(
-    """The name of the variable"""
-    name: String!
-  ): Service!
-
-  """Retrieve a variable in the llm environment, of type Socket"""
-  getSocket(
-    """The name of the variable"""
-    name: String!
-  ): Socket!
-
-  """Retrieve a variable in the llm environment, of type SourceMap"""
-  getSourceMap(
-    """The name of the variable"""
-    name: String!
-  ): SourceMap!
-
-  """Get a string variable from the LLM's environment"""
-  getString(
-    """The variable name"""
-    name: String!
-  ): String!
-
-  """Retrieve a variable in the llm environment, of type Terminal"""
-  getTerminal(
-    """The name of the variable"""
-    name: String!
-  ): Terminal!
-
-  """Retrieve a variable in the llm environment, of type TypeDef"""
-  getTypeDef(
-    """The name of the variable"""
-    name: String!
-  ): TypeDef!
-
-  """Retrieve a the current value in the LLM environment, of type GitRef"""
-  gitRef: GitRef!
-
-  """
-  Retrieve a the current value in the LLM environment, of type GitRepository
-  """
-  gitRepository: GitRepository!
+  """return the LLM's current environment"""
+  environment: Environment!
 
   """return the llm message history"""
   history: [String!]!
@@ -2504,26 +2699,8 @@ type LLM {
   """A unique identifier for this LLM."""
   id: LLMID!
 
-  """
-  Retrieve a the current value in the LLM environment, of type InputTypeDef
-  """
-  inputTypeDef: InputTypeDef!
-
-  """
-  Retrieve a the current value in the LLM environment, of type InterfaceTypeDef
-  """
-  interfaceTypeDef: InterfaceTypeDef!
-
   """return the last llm reply from the history"""
   lastReply: String!
-
-  """
-  Retrieve a the current value in the LLM environment, of type ListTypeDef
-  """
-  listTypeDef: ListTypeDef!
-
-  """Retrieve a the current value in the LLM environment, of type LLM"""
-  lLM: LLM!
 
   """synchronize LLM state"""
   loop: LLM!
@@ -2531,358 +2708,11 @@ type LLM {
   """return the model used by the llm"""
   model: String!
 
-  """Retrieve a the current value in the LLM environment, of type Module"""
-  module: Module!
-
-  """
-  Retrieve a the current value in the LLM environment, of type ModuleConfigClient
-  """
-  moduleConfigClient: ModuleConfigClient!
-
-  """
-  Retrieve a the current value in the LLM environment, of type ModuleSource
-  """
-  moduleSource: ModuleSource!
-
-  """
-  Retrieve a the current value in the LLM environment, of type ObjectTypeDef
-  """
-  objectTypeDef: ObjectTypeDef!
-
   """return the provider used by the llm"""
   provider: String!
 
-  """
-  Retrieve a the current value in the LLM environment, of type ScalarTypeDef
-  """
-  scalarTypeDef: ScalarTypeDef!
-
-  """Retrieve a the current value in the LLM environment, of type SDKConfig"""
-  sdkconfig: SDKConfig
-
-  """Retrieve a the current value in the LLM environment, of type Secret"""
-  secret: Secret!
-
-  """Retrieve a the current value in the LLM environment, of type Service"""
-  service: Service!
-
-  """Set a variable of type CacheVolume in the llm environment"""
-  setCacheVolume(
-    """The name of the variable"""
-    name: String!
-
-    """The CacheVolume value to assign to the variable"""
-    value: CacheVolumeID!
-  ): LLM!
-
-  """Set a variable of type Container in the llm environment"""
-  setContainer(
-    """The name of the variable"""
-    name: String!
-
-    """The Container value to assign to the variable"""
-    value: ContainerID!
-  ): LLM!
-
-  """Set a variable of type CurrentModule in the llm environment"""
-  setCurrentModule(
-    """The name of the variable"""
-    name: String!
-
-    """The CurrentModule value to assign to the variable"""
-    value: CurrentModuleID!
-  ): LLM!
-
-  """Set a variable of type Directory in the llm environment"""
-  setDirectory(
-    """The name of the variable"""
-    name: String!
-
-    """The Directory value to assign to the variable"""
-    value: DirectoryID!
-  ): LLM!
-
-  """Set a variable of type EnumTypeDef in the llm environment"""
-  setEnumTypeDef(
-    """The name of the variable"""
-    name: String!
-
-    """The EnumTypeDef value to assign to the variable"""
-    value: EnumTypeDefID!
-  ): LLM!
-
-  """Set a variable of type EnumValueTypeDef in the llm environment"""
-  setEnumValueTypeDef(
-    """The name of the variable"""
-    name: String!
-
-    """The EnumValueTypeDef value to assign to the variable"""
-    value: EnumValueTypeDefID!
-  ): LLM!
-
-  """Set a variable of type Error in the llm environment"""
-  setError(
-    """The name of the variable"""
-    name: String!
-
-    """The Error value to assign to the variable"""
-    value: ErrorID!
-  ): LLM!
-
-  """Set a variable of type ErrorValue in the llm environment"""
-  setErrorValue(
-    """The name of the variable"""
-    name: String!
-
-    """The ErrorValue value to assign to the variable"""
-    value: ErrorValueID!
-  ): LLM!
-
-  """Set a variable of type FieldTypeDef in the llm environment"""
-  setFieldTypeDef(
-    """The name of the variable"""
-    name: String!
-
-    """The FieldTypeDef value to assign to the variable"""
-    value: FieldTypeDefID!
-  ): LLM!
-
-  """Set a variable of type File in the llm environment"""
-  setFile(
-    """The name of the variable"""
-    name: String!
-
-    """The File value to assign to the variable"""
-    value: FileID!
-  ): LLM!
-
-  """Set a variable of type Function in the llm environment"""
-  setFunction(
-    """The name of the variable"""
-    name: String!
-
-    """The Function value to assign to the variable"""
-    value: FunctionID!
-  ): LLM!
-
-  """Set a variable of type FunctionArg in the llm environment"""
-  setFunctionArg(
-    """The name of the variable"""
-    name: String!
-
-    """The FunctionArg value to assign to the variable"""
-    value: FunctionArgID!
-  ): LLM!
-
-  """Set a variable of type FunctionCall in the llm environment"""
-  setFunctionCall(
-    """The name of the variable"""
-    name: String!
-
-    """The FunctionCall value to assign to the variable"""
-    value: FunctionCallID!
-  ): LLM!
-
-  """Set a variable of type FunctionCallArgValue in the llm environment"""
-  setFunctionCallArgValue(
-    """The name of the variable"""
-    name: String!
-
-    """The FunctionCallArgValue value to assign to the variable"""
-    value: FunctionCallArgValueID!
-  ): LLM!
-
-  """Set a variable of type GeneratedCode in the llm environment"""
-  setGeneratedCode(
-    """The name of the variable"""
-    name: String!
-
-    """The GeneratedCode value to assign to the variable"""
-    value: GeneratedCodeID!
-  ): LLM!
-
-  """Set a variable of type GitRef in the llm environment"""
-  setGitRef(
-    """The name of the variable"""
-    name: String!
-
-    """The GitRef value to assign to the variable"""
-    value: GitRefID!
-  ): LLM!
-
-  """Set a variable of type GitRepository in the llm environment"""
-  setGitRepository(
-    """The name of the variable"""
-    name: String!
-
-    """The GitRepository value to assign to the variable"""
-    value: GitRepositoryID!
-  ): LLM!
-
-  """Set a variable of type InputTypeDef in the llm environment"""
-  setInputTypeDef(
-    """The name of the variable"""
-    name: String!
-
-    """The InputTypeDef value to assign to the variable"""
-    value: InputTypeDefID!
-  ): LLM!
-
-  """Set a variable of type InterfaceTypeDef in the llm environment"""
-  setInterfaceTypeDef(
-    """The name of the variable"""
-    name: String!
-
-    """The InterfaceTypeDef value to assign to the variable"""
-    value: InterfaceTypeDefID!
-  ): LLM!
-
-  """Set a variable of type ListTypeDef in the llm environment"""
-  setListTypeDef(
-    """The name of the variable"""
-    name: String!
-
-    """The ListTypeDef value to assign to the variable"""
-    value: ListTypeDefID!
-  ): LLM!
-
-  """Set a variable of type LLM in the llm environment"""
-  setLLM(
-    """The name of the variable"""
-    name: String!
-
-    """The LLM value to assign to the variable"""
-    value: LLMID!
-  ): LLM!
-
-  """Set a variable of type Module in the llm environment"""
-  setModule(
-    """The name of the variable"""
-    name: String!
-
-    """The Module value to assign to the variable"""
-    value: ModuleID!
-  ): LLM!
-
-  """Set a variable of type ModuleConfigClient in the llm environment"""
-  setModuleConfigClient(
-    """The name of the variable"""
-    name: String!
-
-    """The ModuleConfigClient value to assign to the variable"""
-    value: ModuleConfigClientID!
-  ): LLM!
-
-  """Set a variable of type ModuleSource in the llm environment"""
-  setModuleSource(
-    """The name of the variable"""
-    name: String!
-
-    """The ModuleSource value to assign to the variable"""
-    value: ModuleSourceID!
-  ): LLM!
-
-  """Set a variable of type ObjectTypeDef in the llm environment"""
-  setObjectTypeDef(
-    """The name of the variable"""
-    name: String!
-
-    """The ObjectTypeDef value to assign to the variable"""
-    value: ObjectTypeDefID!
-  ): LLM!
-
-  """Set a variable of type ScalarTypeDef in the llm environment"""
-  setScalarTypeDef(
-    """The name of the variable"""
-    name: String!
-
-    """The ScalarTypeDef value to assign to the variable"""
-    value: ScalarTypeDefID!
-  ): LLM!
-
-  """Set a variable of type SDKConfig in the llm environment"""
-  setSDKConfig(
-    """The name of the variable"""
-    name: String!
-
-    """The SDKConfig value to assign to the variable"""
-    value: SDKConfigID!
-  ): LLM!
-
-  """Set a variable of type Secret in the llm environment"""
-  setSecret(
-    """The name of the variable"""
-    name: String!
-
-    """The Secret value to assign to the variable"""
-    value: SecretID!
-  ): LLM!
-
-  """Set a variable of type Service in the llm environment"""
-  setService(
-    """The name of the variable"""
-    name: String!
-
-    """The Service value to assign to the variable"""
-    value: ServiceID!
-  ): LLM!
-
-  """Set a variable of type Socket in the llm environment"""
-  setSocket(
-    """The name of the variable"""
-    name: String!
-
-    """The Socket value to assign to the variable"""
-    value: SocketID!
-  ): LLM!
-
-  """Set a variable of type SourceMap in the llm environment"""
-  setSourceMap(
-    """The name of the variable"""
-    name: String!
-
-    """The SourceMap value to assign to the variable"""
-    value: SourceMapID!
-  ): LLM!
-
-  """Add a string variable to the LLM's environment"""
-  setString(
-    """The variable name"""
-    name: String!
-
-    """The variable value"""
-    value: String!
-  ): LLM!
-
-  """Set a variable of type Terminal in the llm environment"""
-  setTerminal(
-    """The name of the variable"""
-    name: String!
-
-    """The Terminal value to assign to the variable"""
-    value: TerminalID!
-  ): LLM!
-
-  """Set a variable of type TypeDef in the llm environment"""
-  setTypeDef(
-    """The name of the variable"""
-    name: String!
-
-    """The TypeDef value to assign to the variable"""
-    value: TypeDefID!
-  ): LLM!
-
-  """Retrieve a the current value in the LLM environment, of type Socket"""
-  socket: Socket!
-
-  """Retrieve a the current value in the LLM environment, of type SourceMap"""
-  sourceMap: SourceMap!
-
   """synchronize LLM state"""
   sync: LLMID!
-
-  """Retrieve a the current value in the LLM environment, of type Terminal"""
-  terminal: Terminal!
 
   """returns the token usage of the current state"""
   tokenUsage: LLMTokenUsage!
@@ -2890,166 +2720,16 @@ type LLM {
   """print documentation for available tools"""
   tools: String!
 
-  """Retrieve a the current value in the LLM environment, of type TypeDef"""
-  typeDef: TypeDef!
-
   """list variables in the LLM environment"""
   variables: [LLMVariable!]!
 
-  """Set a variable of type CacheVolume in the llm environment"""
-  withCacheVolume(
-    """The CacheVolume value to assign to the variable"""
-    value: CacheVolumeID!
-  ): LLM!
-
-  """Set a variable of type Container in the llm environment"""
-  withContainer(
-    """The Container value to assign to the variable"""
-    value: ContainerID!
-  ): LLM!
-
-  """Set a variable of type CurrentModule in the llm environment"""
-  withCurrentModule(
-    """The CurrentModule value to assign to the variable"""
-    value: CurrentModuleID!
-  ): LLM!
-
-  """Set a variable of type Directory in the llm environment"""
-  withDirectory(
-    """The Directory value to assign to the variable"""
-    value: DirectoryID!
-  ): LLM!
-
-  """Set a variable of type EnumTypeDef in the llm environment"""
-  withEnumTypeDef(
-    """The EnumTypeDef value to assign to the variable"""
-    value: EnumTypeDefID!
-  ): LLM!
-
-  """Set a variable of type EnumValueTypeDef in the llm environment"""
-  withEnumValueTypeDef(
-    """The EnumValueTypeDef value to assign to the variable"""
-    value: EnumValueTypeDefID!
-  ): LLM!
-
-  """Set a variable of type Error in the llm environment"""
-  withError(
-    """The Error value to assign to the variable"""
-    value: ErrorID!
-  ): LLM!
-
-  """Set a variable of type ErrorValue in the llm environment"""
-  withErrorValue(
-    """The ErrorValue value to assign to the variable"""
-    value: ErrorValueID!
-  ): LLM!
-
-  """Set a variable of type FieldTypeDef in the llm environment"""
-  withFieldTypeDef(
-    """The FieldTypeDef value to assign to the variable"""
-    value: FieldTypeDefID!
-  ): LLM!
-
-  """Set a variable of type File in the llm environment"""
-  withFile(
-    """The File value to assign to the variable"""
-    value: FileID!
-  ): LLM!
-
-  """Set a variable of type Function in the llm environment"""
-  withFunction(
-    """The Function value to assign to the variable"""
-    value: FunctionID!
-  ): LLM!
-
-  """Set a variable of type FunctionArg in the llm environment"""
-  withFunctionArg(
-    """The FunctionArg value to assign to the variable"""
-    value: FunctionArgID!
-  ): LLM!
-
-  """Set a variable of type FunctionCall in the llm environment"""
-  withFunctionCall(
-    """The FunctionCall value to assign to the variable"""
-    value: FunctionCallID!
-  ): LLM!
-
-  """Set a variable of type FunctionCallArgValue in the llm environment"""
-  withFunctionCallArgValue(
-    """The FunctionCallArgValue value to assign to the variable"""
-    value: FunctionCallArgValueID!
-  ): LLM!
-
-  """Set a variable of type GeneratedCode in the llm environment"""
-  withGeneratedCode(
-    """The GeneratedCode value to assign to the variable"""
-    value: GeneratedCodeID!
-  ): LLM!
-
-  """Set a variable of type GitRef in the llm environment"""
-  withGitRef(
-    """The GitRef value to assign to the variable"""
-    value: GitRefID!
-  ): LLM!
-
-  """Set a variable of type GitRepository in the llm environment"""
-  withGitRepository(
-    """The GitRepository value to assign to the variable"""
-    value: GitRepositoryID!
-  ): LLM!
-
-  """Set a variable of type InputTypeDef in the llm environment"""
-  withInputTypeDef(
-    """The InputTypeDef value to assign to the variable"""
-    value: InputTypeDefID!
-  ): LLM!
-
-  """Set a variable of type InterfaceTypeDef in the llm environment"""
-  withInterfaceTypeDef(
-    """The InterfaceTypeDef value to assign to the variable"""
-    value: InterfaceTypeDefID!
-  ): LLM!
-
-  """Set a variable of type ListTypeDef in the llm environment"""
-  withListTypeDef(
-    """The ListTypeDef value to assign to the variable"""
-    value: ListTypeDefID!
-  ): LLM!
-
-  """Set a variable of type LLM in the llm environment"""
-  withLLM(
-    """The LLM value to assign to the variable"""
-    value: LLMID!
-  ): LLM!
+  """allow the LLM to interact with an environment via MCP"""
+  withEnvironment(environment: EnvironmentID!): LLM!
 
   """swap out the llm model"""
   withModel(
     """The model to use"""
     model: String!
-  ): LLM!
-
-  """Set a variable of type Module in the llm environment"""
-  withModule(
-    """The Module value to assign to the variable"""
-    value: ModuleID!
-  ): LLM!
-
-  """Set a variable of type ModuleConfigClient in the llm environment"""
-  withModuleConfigClient(
-    """The ModuleConfigClient value to assign to the variable"""
-    value: ModuleConfigClientID!
-  ): LLM!
-
-  """Set a variable of type ModuleSource in the llm environment"""
-  withModuleSource(
-    """The ModuleSource value to assign to the variable"""
-    value: ModuleSourceID!
-  ): LLM!
-
-  """Set a variable of type ObjectTypeDef in the llm environment"""
-  withObjectTypeDef(
-    """The ObjectTypeDef value to assign to the variable"""
-    value: ObjectTypeDefID!
   ): LLM!
 
   """append a prompt to the llm context"""
@@ -3076,58 +2756,10 @@ type LLM {
   """Provide the entire Query object to the LLM"""
   withQuery: LLM!
 
-  """Set a variable of type ScalarTypeDef in the llm environment"""
-  withScalarTypeDef(
-    """The ScalarTypeDef value to assign to the variable"""
-    value: ScalarTypeDefID!
-  ): LLM!
-
-  """Set a variable of type SDKConfig in the llm environment"""
-  withSDKConfig(
-    """The SDKConfig value to assign to the variable"""
-    value: SDKConfigID!
-  ): LLM!
-
-  """Set a variable of type Secret in the llm environment"""
-  withSecret(
-    """The Secret value to assign to the variable"""
-    value: SecretID!
-  ): LLM!
-
-  """Set a variable of type Service in the llm environment"""
-  withService(
-    """The Service value to assign to the variable"""
-    value: ServiceID!
-  ): LLM!
-
-  """Set a variable of type Socket in the llm environment"""
-  withSocket(
-    """The Socket value to assign to the variable"""
-    value: SocketID!
-  ): LLM!
-
-  """Set a variable of type SourceMap in the llm environment"""
-  withSourceMap(
-    """The SourceMap value to assign to the variable"""
-    value: SourceMapID!
-  ): LLM!
-
   """Add a system prompt to the LLM's environment"""
   withSystemPrompt(
     """The system prompt to send"""
     prompt: String!
-  ): LLM!
-
-  """Set a variable of type Terminal in the llm environment"""
-  withTerminal(
-    """The Terminal value to assign to the variable"""
-    value: TerminalID!
-  ): LLM!
-
-  """Set a variable of type TypeDef in the llm environment"""
-  withTypeDef(
-    """The TypeDef value to assign to the variable"""
-    value: TypeDefID!
   ): LLM!
 }
 
@@ -3596,6 +3228,9 @@ type Query {
   """The Dagger engine container configuration and state"""
   engine: Engine!
 
+  """Initialize a new environment"""
+  environment: Environment!
+
   """Create a new error."""
   error(
     """A brief description of the error."""
@@ -3663,6 +3298,9 @@ type Query {
     model: String
   ): LLM!
 
+  """Load a Binding from its ID."""
+  loadBindingFromID(id: BindingID!): Binding!
+
   """Load a CacheVolume from its ID."""
   loadCacheVolumeFromID(id: CacheVolumeID!): CacheVolume!
 
@@ -3692,6 +3330,9 @@ type Query {
 
   """Load a EnumValueTypeDef from its ID."""
   loadEnumValueTypeDefFromID(id: EnumValueTypeDefID!): EnumValueTypeDef!
+
+  """Load a Environment from its ID."""
+  loadEnvironmentFromID(id: EnvironmentID!): Environment!
 
   """Load a EnvVariable from its ID."""
   loadEnvVariableFromID(id: EnvVariableID!): EnvVariable!

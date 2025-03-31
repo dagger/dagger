@@ -10,6 +10,39 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct BindingId(pub String);
+impl From<&str> for BindingId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for BindingId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<BindingId> for Binding {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<BindingId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<BindingId> for BindingId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<BindingId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<BindingId, DaggerError>(self) })
+    }
+}
+impl BindingId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct CacheVolumeId(pub String);
 impl From<&str> for CacheVolumeId {
     fn from(value: &str) -> Self {
@@ -388,6 +421,41 @@ impl IntoID<EnvVariableId> for EnvVariableId {
     }
 }
 impl EnvVariableId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct EnvironmentId(pub String);
+impl From<&str> for EnvironmentId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for EnvironmentId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<EnvironmentId> for Environment {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<EnvironmentId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<EnvironmentId> for EnvironmentId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<EnvironmentId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<EnvironmentId, DaggerError>(self) })
+    }
+}
+impl EnvironmentId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
     }
@@ -1550,6 +1618,358 @@ pub struct PortForward {
     pub backend: isize,
     pub frontend: isize,
     pub protocol: NetworkProtocol,
+}
+#[derive(Clone)]
+pub struct Binding {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl Binding {
+    /// Retrieve the binding value, as type CacheVolume
+    pub fn as_cache_volume(&self) -> CacheVolume {
+        let query = self.selection.select("asCacheVolume");
+        CacheVolume {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type Container
+    pub fn as_container(&self) -> Container {
+        let query = self.selection.select("asContainer");
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type CurrentModule
+    pub fn as_current_module(&self) -> CurrentModule {
+        let query = self.selection.select("asCurrentModule");
+        CurrentModule {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type Directory
+    pub fn as_directory(&self) -> Directory {
+        let query = self.selection.select("asDirectory");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type EnumTypeDef
+    pub fn as_enum_type_def(&self) -> EnumTypeDef {
+        let query = self.selection.select("asEnumTypeDef");
+        EnumTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type EnumValueTypeDef
+    pub fn as_enum_value_type_def(&self) -> EnumValueTypeDef {
+        let query = self.selection.select("asEnumValueTypeDef");
+        EnumValueTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type Environment
+    pub fn as_environment(&self) -> Environment {
+        let query = self.selection.select("asEnvironment");
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type Error
+    pub fn as_error(&self) -> Error {
+        let query = self.selection.select("asError");
+        Error {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type ErrorValue
+    pub fn as_error_value(&self) -> ErrorValue {
+        let query = self.selection.select("asErrorValue");
+        ErrorValue {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type FieldTypeDef
+    pub fn as_field_type_def(&self) -> FieldTypeDef {
+        let query = self.selection.select("asFieldTypeDef");
+        FieldTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type File
+    pub fn as_file(&self) -> File {
+        let query = self.selection.select("asFile");
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type Function
+    pub fn as_function(&self) -> Function {
+        let query = self.selection.select("asFunction");
+        Function {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type FunctionArg
+    pub fn as_function_arg(&self) -> FunctionArg {
+        let query = self.selection.select("asFunctionArg");
+        FunctionArg {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type FunctionCall
+    pub fn as_function_call(&self) -> FunctionCall {
+        let query = self.selection.select("asFunctionCall");
+        FunctionCall {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type FunctionCallArgValue
+    pub fn as_function_call_arg_value(&self) -> FunctionCallArgValue {
+        let query = self.selection.select("asFunctionCallArgValue");
+        FunctionCallArgValue {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type GeneratedCode
+    pub fn as_generated_code(&self) -> GeneratedCode {
+        let query = self.selection.select("asGeneratedCode");
+        GeneratedCode {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type GitRef
+    pub fn as_git_ref(&self) -> GitRef {
+        let query = self.selection.select("asGitRef");
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type GitRepository
+    pub fn as_git_repository(&self) -> GitRepository {
+        let query = self.selection.select("asGitRepository");
+        GitRepository {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type InputTypeDef
+    pub fn as_input_type_def(&self) -> InputTypeDef {
+        let query = self.selection.select("asInputTypeDef");
+        InputTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type InterfaceTypeDef
+    pub fn as_interface_type_def(&self) -> InterfaceTypeDef {
+        let query = self.selection.select("asInterfaceTypeDef");
+        InterfaceTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type LLM
+    pub fn as_llm(&self) -> Llm {
+        let query = self.selection.select("asLLM");
+        Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type LLMTokenUsage
+    pub fn as_llm_token_usage(&self) -> LlmTokenUsage {
+        let query = self.selection.select("asLLMTokenUsage");
+        LlmTokenUsage {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type LLMVariable
+    pub fn as_llm_variable(&self) -> LlmVariable {
+        let query = self.selection.select("asLLMVariable");
+        LlmVariable {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type ListTypeDef
+    pub fn as_list_type_def(&self) -> ListTypeDef {
+        let query = self.selection.select("asListTypeDef");
+        ListTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type Module
+    pub fn as_module(&self) -> Module {
+        let query = self.selection.select("asModule");
+        Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type ModuleConfigClient
+    pub fn as_module_config_client(&self) -> ModuleConfigClient {
+        let query = self.selection.select("asModuleConfigClient");
+        ModuleConfigClient {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type ModuleSource
+    pub fn as_module_source(&self) -> ModuleSource {
+        let query = self.selection.select("asModuleSource");
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type ObjectTypeDef
+    pub fn as_object_type_def(&self) -> ObjectTypeDef {
+        let query = self.selection.select("asObjectTypeDef");
+        ObjectTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type SDKConfig
+    pub fn as_sdk_config(&self) -> SdkConfig {
+        let query = self.selection.select("asSDKConfig");
+        SdkConfig {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type ScalarTypeDef
+    pub fn as_scalar_type_def(&self) -> ScalarTypeDef {
+        let query = self.selection.select("asScalarTypeDef");
+        ScalarTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type Secret
+    pub fn as_secret(&self) -> Secret {
+        let query = self.selection.select("asSecret");
+        Secret {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type Service
+    pub fn as_service(&self) -> Service {
+        let query = self.selection.select("asService");
+        Service {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type Socket
+    pub fn as_socket(&self) -> Socket {
+        let query = self.selection.select("asSocket");
+        Socket {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type SourceMap
+    pub fn as_source_map(&self) -> SourceMap {
+        let query = self.selection.select("asSourceMap");
+        SourceMap {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type Terminal
+    pub fn as_terminal(&self) -> Terminal {
+        let query = self.selection.select("asTerminal");
+        Terminal {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type TypeDef
+    pub fn as_type_def(&self) -> TypeDef {
+        let query = self.selection.select("asTypeDef");
+        TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The digest of the binding value
+    pub async fn digest(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("digest");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this Binding.
+    pub async fn id(&self) -> Result<BindingId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The binding name
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The binding type name
+    pub async fn type_name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("typeName");
+        query.execute(self.graphql_client.clone()).await
+    }
 }
 #[derive(Clone)]
 pub struct CacheVolume {
@@ -5055,6 +5475,974 @@ impl EnvVariable {
     }
 }
 #[derive(Clone)]
+pub struct Environment {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl Environment {
+    /// retrieve a binding by name
+    pub fn binding(&self, name: impl Into<String>) -> Binding {
+        let mut query = self.selection.select("binding");
+        query = query.arg("name", name.into());
+        Binding {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// return all bindings in the environment
+    pub fn bindings(&self) -> Vec<Binding> {
+        let query = self.selection.select("bindings");
+        vec![Binding {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
+    }
+    /// A unique identifier for this Environment.
+    pub async fn id(&self) -> Result<EnvironmentId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Create or update a binding of type CacheVolume in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The CacheVolume value to assign to the binding
+    pub fn with_cache_volume_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<CacheVolumeId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withCacheVolumeBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type Container in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The Container value to assign to the binding
+    pub fn with_container_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<ContainerId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withContainerBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type CurrentModule in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The CurrentModule value to assign to the binding
+    pub fn with_current_module_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<CurrentModuleId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withCurrentModuleBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type Directory in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The Directory value to assign to the binding
+    pub fn with_directory_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<DirectoryId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withDirectoryBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type EnumTypeDef in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The EnumTypeDef value to assign to the binding
+    pub fn with_enum_type_def_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<EnumTypeDefId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withEnumTypeDefBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type EnumValueTypeDef in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The EnumValueTypeDef value to assign to the binding
+    pub fn with_enum_value_type_def_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<EnumValueTypeDefId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withEnumValueTypeDefBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type Environment in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The Environment value to assign to the binding
+    pub fn with_environment_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<EnvironmentId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withEnvironmentBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type Error in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The Error value to assign to the binding
+    pub fn with_error_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<ErrorId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withErrorBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type ErrorValue in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The ErrorValue value to assign to the binding
+    pub fn with_error_value_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<ErrorValueId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withErrorValueBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type FieldTypeDef in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The FieldTypeDef value to assign to the binding
+    pub fn with_field_type_def_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<FieldTypeDefId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withFieldTypeDefBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type File in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The File value to assign to the binding
+    pub fn with_file_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<FileId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withFileBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type FunctionArg in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The FunctionArg value to assign to the binding
+    pub fn with_function_arg_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<FunctionArgId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withFunctionArgBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type Function in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The Function value to assign to the binding
+    pub fn with_function_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<FunctionId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withFunctionBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type FunctionCallArgValue in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The FunctionCallArgValue value to assign to the binding
+    pub fn with_function_call_arg_value_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<FunctionCallArgValueId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withFunctionCallArgValueBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type FunctionCall in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The FunctionCall value to assign to the binding
+    pub fn with_function_call_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<FunctionCallId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withFunctionCallBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type GeneratedCode in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The GeneratedCode value to assign to the binding
+    pub fn with_generated_code_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<GeneratedCodeId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withGeneratedCodeBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type GitRef in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The GitRef value to assign to the binding
+    pub fn with_git_ref_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<GitRefId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withGitRefBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type GitRepository in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The GitRepository value to assign to the binding
+    pub fn with_git_repository_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<GitRepositoryId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withGitRepositoryBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type InputTypeDef in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The InputTypeDef value to assign to the binding
+    pub fn with_input_type_def_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<InputTypeDefId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withInputTypeDefBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type InterfaceTypeDef in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The InterfaceTypeDef value to assign to the binding
+    pub fn with_interface_type_def_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<InterfaceTypeDefId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withInterfaceTypeDefBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type LLM in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The LLM value to assign to the binding
+    pub fn with_llm_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<Llmid>,
+    ) -> Environment {
+        let mut query = self.selection.select("withLLMBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type LLMTokenUsage in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The LLMTokenUsage value to assign to the binding
+    pub fn with_llm_token_usage_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<LlmTokenUsageId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withLLMTokenUsageBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type LLMVariable in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The LLMVariable value to assign to the binding
+    pub fn with_llm_variable_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<LlmVariableId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withLLMVariableBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type ListTypeDef in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The ListTypeDef value to assign to the binding
+    pub fn with_list_type_def_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<ListTypeDefId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withListTypeDefBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type Module in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The Module value to assign to the binding
+    pub fn with_module_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<ModuleId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withModuleBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type ModuleConfigClient in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The ModuleConfigClient value to assign to the binding
+    pub fn with_module_config_client_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<ModuleConfigClientId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withModuleConfigClientBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type ModuleSource in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The ModuleSource value to assign to the binding
+    pub fn with_module_source_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<ModuleSourceId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withModuleSourceBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type ObjectTypeDef in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The ObjectTypeDef value to assign to the binding
+    pub fn with_object_type_def_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<ObjectTypeDefId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withObjectTypeDefBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type SDKConfig in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The SDKConfig value to assign to the binding
+    pub fn with_sdk_config_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<SdkConfigId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withSDKConfigBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type ScalarTypeDef in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The ScalarTypeDef value to assign to the binding
+    pub fn with_scalar_type_def_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<ScalarTypeDefId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withScalarTypeDefBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type Secret in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The Secret value to assign to the binding
+    pub fn with_secret_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<SecretId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withSecretBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type Service in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The Service value to assign to the binding
+    pub fn with_service_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<ServiceId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withServiceBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type Socket in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The Socket value to assign to the binding
+    pub fn with_socket_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<SocketId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withSocketBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type SourceMap in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The SourceMap value to assign to the binding
+    pub fn with_source_map_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<SourceMapId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withSourceMapBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type Terminal in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The Terminal value to assign to the binding
+    pub fn with_terminal_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<TerminalId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withTerminalBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Create or update a binding of type TypeDef in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The TypeDef value to assign to the binding
+    pub fn with_type_def_binding(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<TypeDefId>,
+    ) -> Environment {
+        let mut query = self.selection.select("withTypeDefBinding");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+#[derive(Clone)]
 pub struct Error {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -6159,631 +7547,15 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Retrieve a the current value in the LLM environment, of type CacheVolume
-    pub fn cache_volume(&self) -> CacheVolume {
-        let query = self.selection.select("cacheVolume");
-        CacheVolume {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type Container
-    pub fn container(&self) -> Container {
-        let query = self.selection.select("container");
-        Container {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type CurrentModule
-    pub fn current_module(&self) -> CurrentModule {
-        let query = self.selection.select("currentModule");
-        CurrentModule {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// returns the type of the current state
     pub async fn current_type(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("currentType");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Retrieve a the current value in the LLM environment, of type Directory
-    pub fn directory(&self) -> Directory {
-        let query = self.selection.select("directory");
-        Directory {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type EnumTypeDef
-    pub fn enum_type_def(&self) -> EnumTypeDef {
-        let query = self.selection.select("enumTypeDef");
-        EnumTypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type EnumValueTypeDef
-    pub fn enum_value_type_def(&self) -> EnumValueTypeDef {
-        let query = self.selection.select("enumValueTypeDef");
-        EnumValueTypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type Error
-    pub fn error(&self) -> Error {
-        let query = self.selection.select("error");
-        Error {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type ErrorValue
-    pub fn error_value(&self) -> ErrorValue {
-        let query = self.selection.select("errorValue");
-        ErrorValue {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type FieldTypeDef
-    pub fn field_type_def(&self) -> FieldTypeDef {
-        let query = self.selection.select("fieldTypeDef");
-        FieldTypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type File
-    pub fn file(&self) -> File {
-        let query = self.selection.select("file");
-        File {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type Function
-    pub fn function(&self) -> Function {
-        let query = self.selection.select("function");
-        Function {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type FunctionArg
-    pub fn function_arg(&self) -> FunctionArg {
-        let query = self.selection.select("functionArg");
-        FunctionArg {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type FunctionCall
-    pub fn function_call(&self) -> FunctionCall {
-        let query = self.selection.select("functionCall");
-        FunctionCall {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type FunctionCallArgValue
-    pub fn function_call_arg_value(&self) -> FunctionCallArgValue {
-        let query = self.selection.select("functionCallArgValue");
-        FunctionCallArgValue {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type GeneratedCode
-    pub fn generated_code(&self) -> GeneratedCode {
-        let query = self.selection.select("generatedCode");
-        GeneratedCode {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type CacheVolume
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_cache_volume(&self, name: impl Into<String>) -> CacheVolume {
-        let mut query = self.selection.select("getCacheVolume");
-        query = query.arg("name", name.into());
-        CacheVolume {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type Container
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_container(&self, name: impl Into<String>) -> Container {
-        let mut query = self.selection.select("getContainer");
-        query = query.arg("name", name.into());
-        Container {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type CurrentModule
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_current_module(&self, name: impl Into<String>) -> CurrentModule {
-        let mut query = self.selection.select("getCurrentModule");
-        query = query.arg("name", name.into());
-        CurrentModule {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type Directory
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_directory(&self, name: impl Into<String>) -> Directory {
-        let mut query = self.selection.select("getDirectory");
-        query = query.arg("name", name.into());
-        Directory {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type EnumTypeDef
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_enum_type_def(&self, name: impl Into<String>) -> EnumTypeDef {
-        let mut query = self.selection.select("getEnumTypeDef");
-        query = query.arg("name", name.into());
-        EnumTypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type EnumValueTypeDef
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_enum_value_type_def(&self, name: impl Into<String>) -> EnumValueTypeDef {
-        let mut query = self.selection.select("getEnumValueTypeDef");
-        query = query.arg("name", name.into());
-        EnumValueTypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type Error
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_error(&self, name: impl Into<String>) -> Error {
-        let mut query = self.selection.select("getError");
-        query = query.arg("name", name.into());
-        Error {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type ErrorValue
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_error_value(&self, name: impl Into<String>) -> ErrorValue {
-        let mut query = self.selection.select("getErrorValue");
-        query = query.arg("name", name.into());
-        ErrorValue {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type FieldTypeDef
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_field_type_def(&self, name: impl Into<String>) -> FieldTypeDef {
-        let mut query = self.selection.select("getFieldTypeDef");
-        query = query.arg("name", name.into());
-        FieldTypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type File
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_file(&self, name: impl Into<String>) -> File {
-        let mut query = self.selection.select("getFile");
-        query = query.arg("name", name.into());
-        File {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type Function
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_function(&self, name: impl Into<String>) -> Function {
-        let mut query = self.selection.select("getFunction");
-        query = query.arg("name", name.into());
-        Function {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type FunctionArg
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_function_arg(&self, name: impl Into<String>) -> FunctionArg {
-        let mut query = self.selection.select("getFunctionArg");
-        query = query.arg("name", name.into());
-        FunctionArg {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type FunctionCall
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_function_call(&self, name: impl Into<String>) -> FunctionCall {
-        let mut query = self.selection.select("getFunctionCall");
-        query = query.arg("name", name.into());
-        FunctionCall {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type FunctionCallArgValue
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_function_call_arg_value(&self, name: impl Into<String>) -> FunctionCallArgValue {
-        let mut query = self.selection.select("getFunctionCallArgValue");
-        query = query.arg("name", name.into());
-        FunctionCallArgValue {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type GeneratedCode
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_generated_code(&self, name: impl Into<String>) -> GeneratedCode {
-        let mut query = self.selection.select("getGeneratedCode");
-        query = query.arg("name", name.into());
-        GeneratedCode {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type GitRef
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_git_ref(&self, name: impl Into<String>) -> GitRef {
-        let mut query = self.selection.select("getGitRef");
-        query = query.arg("name", name.into());
-        GitRef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type GitRepository
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_git_repository(&self, name: impl Into<String>) -> GitRepository {
-        let mut query = self.selection.select("getGitRepository");
-        query = query.arg("name", name.into());
-        GitRepository {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type InputTypeDef
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_input_type_def(&self, name: impl Into<String>) -> InputTypeDef {
-        let mut query = self.selection.select("getInputTypeDef");
-        query = query.arg("name", name.into());
-        InputTypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type InterfaceTypeDef
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_interface_type_def(&self, name: impl Into<String>) -> InterfaceTypeDef {
-        let mut query = self.selection.select("getInterfaceTypeDef");
-        query = query.arg("name", name.into());
-        InterfaceTypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type LLM
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_llm(&self, name: impl Into<String>) -> Llm {
-        let mut query = self.selection.select("getLLM");
-        query = query.arg("name", name.into());
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type ListTypeDef
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_list_type_def(&self, name: impl Into<String>) -> ListTypeDef {
-        let mut query = self.selection.select("getListTypeDef");
-        query = query.arg("name", name.into());
-        ListTypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type Module
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_module(&self, name: impl Into<String>) -> Module {
-        let mut query = self.selection.select("getModule");
-        query = query.arg("name", name.into());
-        Module {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type ModuleConfigClient
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_module_config_client(&self, name: impl Into<String>) -> ModuleConfigClient {
-        let mut query = self.selection.select("getModuleConfigClient");
-        query = query.arg("name", name.into());
-        ModuleConfigClient {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type ModuleSource
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_module_source(&self, name: impl Into<String>) -> ModuleSource {
-        let mut query = self.selection.select("getModuleSource");
-        query = query.arg("name", name.into());
-        ModuleSource {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type ObjectTypeDef
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_object_type_def(&self, name: impl Into<String>) -> ObjectTypeDef {
-        let mut query = self.selection.select("getObjectTypeDef");
-        query = query.arg("name", name.into());
-        ObjectTypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type SDKConfig
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_sdk_config(&self, name: impl Into<String>) -> SdkConfig {
-        let mut query = self.selection.select("getSDKConfig");
-        query = query.arg("name", name.into());
-        SdkConfig {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type ScalarTypeDef
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_scalar_type_def(&self, name: impl Into<String>) -> ScalarTypeDef {
-        let mut query = self.selection.select("getScalarTypeDef");
-        query = query.arg("name", name.into());
-        ScalarTypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type Secret
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_secret(&self, name: impl Into<String>) -> Secret {
-        let mut query = self.selection.select("getSecret");
-        query = query.arg("name", name.into());
-        Secret {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type Service
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_service(&self, name: impl Into<String>) -> Service {
-        let mut query = self.selection.select("getService");
-        query = query.arg("name", name.into());
-        Service {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type Socket
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_socket(&self, name: impl Into<String>) -> Socket {
-        let mut query = self.selection.select("getSocket");
-        query = query.arg("name", name.into());
-        Socket {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type SourceMap
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_source_map(&self, name: impl Into<String>) -> SourceMap {
-        let mut query = self.selection.select("getSourceMap");
-        query = query.arg("name", name.into());
-        SourceMap {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Get a string variable from the LLM's environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The variable name
-    pub async fn get_string(&self, name: impl Into<String>) -> Result<String, DaggerError> {
-        let mut query = self.selection.select("getString");
-        query = query.arg("name", name.into());
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Retrieve a variable in the llm environment, of type Terminal
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_terminal(&self, name: impl Into<String>) -> Terminal {
-        let mut query = self.selection.select("getTerminal");
-        query = query.arg("name", name.into());
-        Terminal {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a variable in the llm environment, of type TypeDef
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    pub fn get_type_def(&self, name: impl Into<String>) -> TypeDef {
-        let mut query = self.selection.select("getTypeDef");
-        query = query.arg("name", name.into());
-        TypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type GitRef
-    pub fn git_ref(&self) -> GitRef {
-        let query = self.selection.select("gitRef");
-        GitRef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type GitRepository
-    pub fn git_repository(&self) -> GitRepository {
-        let query = self.selection.select("gitRepository");
-        GitRepository {
+    /// return the LLM's current environment
+    pub fn environment(&self) -> Environment {
+        let query = self.selection.select("environment");
+        Environment {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -6804,46 +7576,10 @@ impl Llm {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Retrieve a the current value in the LLM environment, of type InputTypeDef
-    pub fn input_type_def(&self) -> InputTypeDef {
-        let query = self.selection.select("inputTypeDef");
-        InputTypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type InterfaceTypeDef
-    pub fn interface_type_def(&self) -> InterfaceTypeDef {
-        let query = self.selection.select("interfaceTypeDef");
-        InterfaceTypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type LLM
-    pub fn l_lm(&self) -> Llm {
-        let query = self.selection.select("lLM");
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// return the last llm reply from the history
     pub async fn last_reply(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("lastReply");
         query.execute(self.graphql_client.clone()).await
-    }
-    /// Retrieve a the current value in the LLM environment, of type ListTypeDef
-    pub fn list_type_def(&self) -> ListTypeDef {
-        let query = self.selection.select("listTypeDef");
-        ListTypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
     }
     /// synchronize LLM state
     pub fn r#loop(&self) -> Llm {
@@ -6859,928 +7595,15 @@ impl Llm {
         let query = self.selection.select("model");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Retrieve a the current value in the LLM environment, of type Module
-    pub fn module(&self) -> Module {
-        let query = self.selection.select("module");
-        Module {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type ModuleConfigClient
-    pub fn module_config_client(&self) -> ModuleConfigClient {
-        let query = self.selection.select("moduleConfigClient");
-        ModuleConfigClient {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type ModuleSource
-    pub fn module_source(&self) -> ModuleSource {
-        let query = self.selection.select("moduleSource");
-        ModuleSource {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type ObjectTypeDef
-    pub fn object_type_def(&self) -> ObjectTypeDef {
-        let query = self.selection.select("objectTypeDef");
-        ObjectTypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// return the provider used by the llm
     pub async fn provider(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("provider");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Retrieve a the current value in the LLM environment, of type ScalarTypeDef
-    pub fn scalar_type_def(&self) -> ScalarTypeDef {
-        let query = self.selection.select("scalarTypeDef");
-        ScalarTypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type SDKConfig
-    pub fn sdkconfig(&self) -> SdkConfig {
-        let query = self.selection.select("sdkconfig");
-        SdkConfig {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type Secret
-    pub fn secret(&self) -> Secret {
-        let query = self.selection.select("secret");
-        Secret {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type Service
-    pub fn service(&self) -> Service {
-        let query = self.selection.select("service");
-        Service {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type CacheVolume in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The CacheVolume value to assign to the variable
-    pub fn set_cache_volume(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<CacheVolumeId>,
-    ) -> Llm {
-        let mut query = self.selection.select("setCacheVolume");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type Container in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The Container value to assign to the variable
-    pub fn set_container(&self, name: impl Into<String>, value: impl IntoID<ContainerId>) -> Llm {
-        let mut query = self.selection.select("setContainer");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type CurrentModule in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The CurrentModule value to assign to the variable
-    pub fn set_current_module(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<CurrentModuleId>,
-    ) -> Llm {
-        let mut query = self.selection.select("setCurrentModule");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type Directory in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The Directory value to assign to the variable
-    pub fn set_directory(&self, name: impl Into<String>, value: impl IntoID<DirectoryId>) -> Llm {
-        let mut query = self.selection.select("setDirectory");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type EnumTypeDef in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The EnumTypeDef value to assign to the variable
-    pub fn set_enum_type_def(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<EnumTypeDefId>,
-    ) -> Llm {
-        let mut query = self.selection.select("setEnumTypeDef");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type EnumValueTypeDef in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The EnumValueTypeDef value to assign to the variable
-    pub fn set_enum_value_type_def(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<EnumValueTypeDefId>,
-    ) -> Llm {
-        let mut query = self.selection.select("setEnumValueTypeDef");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type Error in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The Error value to assign to the variable
-    pub fn set_error(&self, name: impl Into<String>, value: impl IntoID<ErrorId>) -> Llm {
-        let mut query = self.selection.select("setError");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type ErrorValue in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The ErrorValue value to assign to the variable
-    pub fn set_error_value(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<ErrorValueId>,
-    ) -> Llm {
-        let mut query = self.selection.select("setErrorValue");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type FieldTypeDef in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The FieldTypeDef value to assign to the variable
-    pub fn set_field_type_def(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<FieldTypeDefId>,
-    ) -> Llm {
-        let mut query = self.selection.select("setFieldTypeDef");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type File in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The File value to assign to the variable
-    pub fn set_file(&self, name: impl Into<String>, value: impl IntoID<FileId>) -> Llm {
-        let mut query = self.selection.select("setFile");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type Function in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The Function value to assign to the variable
-    pub fn set_function(&self, name: impl Into<String>, value: impl IntoID<FunctionId>) -> Llm {
-        let mut query = self.selection.select("setFunction");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type FunctionArg in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The FunctionArg value to assign to the variable
-    pub fn set_function_arg(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<FunctionArgId>,
-    ) -> Llm {
-        let mut query = self.selection.select("setFunctionArg");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type FunctionCall in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The FunctionCall value to assign to the variable
-    pub fn set_function_call(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<FunctionCallId>,
-    ) -> Llm {
-        let mut query = self.selection.select("setFunctionCall");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type FunctionCallArgValue in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The FunctionCallArgValue value to assign to the variable
-    pub fn set_function_call_arg_value(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<FunctionCallArgValueId>,
-    ) -> Llm {
-        let mut query = self.selection.select("setFunctionCallArgValue");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type GeneratedCode in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The GeneratedCode value to assign to the variable
-    pub fn set_generated_code(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<GeneratedCodeId>,
-    ) -> Llm {
-        let mut query = self.selection.select("setGeneratedCode");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type GitRef in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The GitRef value to assign to the variable
-    pub fn set_git_ref(&self, name: impl Into<String>, value: impl IntoID<GitRefId>) -> Llm {
-        let mut query = self.selection.select("setGitRef");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type GitRepository in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The GitRepository value to assign to the variable
-    pub fn set_git_repository(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<GitRepositoryId>,
-    ) -> Llm {
-        let mut query = self.selection.select("setGitRepository");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type InputTypeDef in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The InputTypeDef value to assign to the variable
-    pub fn set_input_type_def(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<InputTypeDefId>,
-    ) -> Llm {
-        let mut query = self.selection.select("setInputTypeDef");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type InterfaceTypeDef in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The InterfaceTypeDef value to assign to the variable
-    pub fn set_interface_type_def(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<InterfaceTypeDefId>,
-    ) -> Llm {
-        let mut query = self.selection.select("setInterfaceTypeDef");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type LLM in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The LLM value to assign to the variable
-    pub fn set_llm(&self, name: impl Into<String>, value: impl IntoID<Llmid>) -> Llm {
-        let mut query = self.selection.select("setLLM");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type ListTypeDef in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The ListTypeDef value to assign to the variable
-    pub fn set_list_type_def(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<ListTypeDefId>,
-    ) -> Llm {
-        let mut query = self.selection.select("setListTypeDef");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type Module in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The Module value to assign to the variable
-    pub fn set_module(&self, name: impl Into<String>, value: impl IntoID<ModuleId>) -> Llm {
-        let mut query = self.selection.select("setModule");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type ModuleConfigClient in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The ModuleConfigClient value to assign to the variable
-    pub fn set_module_config_client(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<ModuleConfigClientId>,
-    ) -> Llm {
-        let mut query = self.selection.select("setModuleConfigClient");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type ModuleSource in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The ModuleSource value to assign to the variable
-    pub fn set_module_source(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<ModuleSourceId>,
-    ) -> Llm {
-        let mut query = self.selection.select("setModuleSource");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type ObjectTypeDef in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The ObjectTypeDef value to assign to the variable
-    pub fn set_object_type_def(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<ObjectTypeDefId>,
-    ) -> Llm {
-        let mut query = self.selection.select("setObjectTypeDef");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type SDKConfig in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The SDKConfig value to assign to the variable
-    pub fn set_sdk_config(&self, name: impl Into<String>, value: impl IntoID<SdkConfigId>) -> Llm {
-        let mut query = self.selection.select("setSDKConfig");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type ScalarTypeDef in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The ScalarTypeDef value to assign to the variable
-    pub fn set_scalar_type_def(
-        &self,
-        name: impl Into<String>,
-        value: impl IntoID<ScalarTypeDefId>,
-    ) -> Llm {
-        let mut query = self.selection.select("setScalarTypeDef");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type Secret in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The Secret value to assign to the variable
-    pub fn set_secret(&self, name: impl Into<String>, value: impl IntoID<SecretId>) -> Llm {
-        let mut query = self.selection.select("setSecret");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type Service in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The Service value to assign to the variable
-    pub fn set_service(&self, name: impl Into<String>, value: impl IntoID<ServiceId>) -> Llm {
-        let mut query = self.selection.select("setService");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type Socket in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The Socket value to assign to the variable
-    pub fn set_socket(&self, name: impl Into<String>, value: impl IntoID<SocketId>) -> Llm {
-        let mut query = self.selection.select("setSocket");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type SourceMap in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The SourceMap value to assign to the variable
-    pub fn set_source_map(&self, name: impl Into<String>, value: impl IntoID<SourceMapId>) -> Llm {
-        let mut query = self.selection.select("setSourceMap");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Add a string variable to the LLM's environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The variable name
-    /// * `value` - The variable value
-    pub fn set_string(&self, name: impl Into<String>, value: impl Into<String>) -> Llm {
-        let mut query = self.selection.select("setString");
-        query = query.arg("name", name.into());
-        query = query.arg("value", value.into());
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type Terminal in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The Terminal value to assign to the variable
-    pub fn set_terminal(&self, name: impl Into<String>, value: impl IntoID<TerminalId>) -> Llm {
-        let mut query = self.selection.select("setTerminal");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type TypeDef in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of the variable
-    /// * `value` - The TypeDef value to assign to the variable
-    pub fn set_type_def(&self, name: impl Into<String>, value: impl IntoID<TypeDefId>) -> Llm {
-        let mut query = self.selection.select("setTypeDef");
-        query = query.arg("name", name.into());
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type Socket
-    pub fn socket(&self) -> Socket {
-        let query = self.selection.select("socket");
-        Socket {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Retrieve a the current value in the LLM environment, of type SourceMap
-    pub fn source_map(&self) -> SourceMap {
-        let query = self.selection.select("sourceMap");
-        SourceMap {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// synchronize LLM state
     pub async fn sync(&self) -> Result<Llmid, DaggerError> {
         let query = self.selection.select("sync");
         query.execute(self.graphql_client.clone()).await
-    }
-    /// Retrieve a the current value in the LLM environment, of type Terminal
-    pub fn terminal(&self) -> Terminal {
-        let query = self.selection.select("terminal");
-        Terminal {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
     }
     /// returns the token usage of the current state
     pub fn token_usage(&self) -> LlmTokenUsage {
@@ -7796,15 +7619,6 @@ impl Llm {
         let query = self.selection.select("tools");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Retrieve a the current value in the LLM environment, of type TypeDef
-    pub fn type_def(&self) -> TypeDef {
-        let query = self.selection.select("typeDef");
-        TypeDef {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// list variables in the LLM environment
     pub fn variables(&self) -> Vec<LlmVariable> {
         let query = self.selection.select("variables");
@@ -7814,418 +7628,14 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }]
     }
-    /// Set a variable of type CacheVolume in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The CacheVolume value to assign to the variable
-    pub fn with_cache_volume(&self, value: impl IntoID<CacheVolumeId>) -> Llm {
-        let mut query = self.selection.select("withCacheVolume");
+    /// allow the LLM to interact with an environment via MCP
+    pub fn with_environment(&self, environment: impl IntoID<EnvironmentId>) -> Llm {
+        let mut query = self.selection.select("withEnvironment");
         query = query.arg_lazy(
-            "value",
+            "environment",
             Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type Container in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The Container value to assign to the variable
-    pub fn with_container(&self, value: impl IntoID<ContainerId>) -> Llm {
-        let mut query = self.selection.select("withContainer");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type CurrentModule in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The CurrentModule value to assign to the variable
-    pub fn with_current_module(&self, value: impl IntoID<CurrentModuleId>) -> Llm {
-        let mut query = self.selection.select("withCurrentModule");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type Directory in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The Directory value to assign to the variable
-    pub fn with_directory(&self, value: impl IntoID<DirectoryId>) -> Llm {
-        let mut query = self.selection.select("withDirectory");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type EnumTypeDef in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The EnumTypeDef value to assign to the variable
-    pub fn with_enum_type_def(&self, value: impl IntoID<EnumTypeDefId>) -> Llm {
-        let mut query = self.selection.select("withEnumTypeDef");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type EnumValueTypeDef in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The EnumValueTypeDef value to assign to the variable
-    pub fn with_enum_value_type_def(&self, value: impl IntoID<EnumValueTypeDefId>) -> Llm {
-        let mut query = self.selection.select("withEnumValueTypeDef");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type Error in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The Error value to assign to the variable
-    pub fn with_error(&self, value: impl IntoID<ErrorId>) -> Llm {
-        let mut query = self.selection.select("withError");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type ErrorValue in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The ErrorValue value to assign to the variable
-    pub fn with_error_value(&self, value: impl IntoID<ErrorValueId>) -> Llm {
-        let mut query = self.selection.select("withErrorValue");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type FieldTypeDef in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The FieldTypeDef value to assign to the variable
-    pub fn with_field_type_def(&self, value: impl IntoID<FieldTypeDefId>) -> Llm {
-        let mut query = self.selection.select("withFieldTypeDef");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type File in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The File value to assign to the variable
-    pub fn with_file(&self, value: impl IntoID<FileId>) -> Llm {
-        let mut query = self.selection.select("withFile");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type Function in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The Function value to assign to the variable
-    pub fn with_function(&self, value: impl IntoID<FunctionId>) -> Llm {
-        let mut query = self.selection.select("withFunction");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type FunctionArg in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The FunctionArg value to assign to the variable
-    pub fn with_function_arg(&self, value: impl IntoID<FunctionArgId>) -> Llm {
-        let mut query = self.selection.select("withFunctionArg");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type FunctionCall in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The FunctionCall value to assign to the variable
-    pub fn with_function_call(&self, value: impl IntoID<FunctionCallId>) -> Llm {
-        let mut query = self.selection.select("withFunctionCall");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type FunctionCallArgValue in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The FunctionCallArgValue value to assign to the variable
-    pub fn with_function_call_arg_value(&self, value: impl IntoID<FunctionCallArgValueId>) -> Llm {
-        let mut query = self.selection.select("withFunctionCallArgValue");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type GeneratedCode in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The GeneratedCode value to assign to the variable
-    pub fn with_generated_code(&self, value: impl IntoID<GeneratedCodeId>) -> Llm {
-        let mut query = self.selection.select("withGeneratedCode");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type GitRef in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The GitRef value to assign to the variable
-    pub fn with_git_ref(&self, value: impl IntoID<GitRefId>) -> Llm {
-        let mut query = self.selection.select("withGitRef");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type GitRepository in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The GitRepository value to assign to the variable
-    pub fn with_git_repository(&self, value: impl IntoID<GitRepositoryId>) -> Llm {
-        let mut query = self.selection.select("withGitRepository");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type InputTypeDef in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The InputTypeDef value to assign to the variable
-    pub fn with_input_type_def(&self, value: impl IntoID<InputTypeDefId>) -> Llm {
-        let mut query = self.selection.select("withInputTypeDef");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type InterfaceTypeDef in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The InterfaceTypeDef value to assign to the variable
-    pub fn with_interface_type_def(&self, value: impl IntoID<InterfaceTypeDefId>) -> Llm {
-        let mut query = self.selection.select("withInterfaceTypeDef");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type LLM in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The LLM value to assign to the variable
-    pub fn with_llm(&self, value: impl IntoID<Llmid>) -> Llm {
-        let mut query = self.selection.select("withLLM");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type ListTypeDef in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The ListTypeDef value to assign to the variable
-    pub fn with_list_type_def(&self, value: impl IntoID<ListTypeDefId>) -> Llm {
-        let mut query = self.selection.select("withListTypeDef");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
+                let environment = environment.clone();
+                Box::pin(async move { environment.into_id().await.unwrap().quote() })
             }),
         );
         Llm {
@@ -8242,86 +7652,6 @@ impl Llm {
     pub fn with_model(&self, model: impl Into<String>) -> Llm {
         let mut query = self.selection.select("withModel");
         query = query.arg("model", model.into());
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type Module in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The Module value to assign to the variable
-    pub fn with_module(&self, value: impl IntoID<ModuleId>) -> Llm {
-        let mut query = self.selection.select("withModule");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type ModuleConfigClient in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The ModuleConfigClient value to assign to the variable
-    pub fn with_module_config_client(&self, value: impl IntoID<ModuleConfigClientId>) -> Llm {
-        let mut query = self.selection.select("withModuleConfigClient");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type ModuleSource in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The ModuleSource value to assign to the variable
-    pub fn with_module_source(&self, value: impl IntoID<ModuleSourceId>) -> Llm {
-        let mut query = self.selection.select("withModuleSource");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type ObjectTypeDef in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The ObjectTypeDef value to assign to the variable
-    pub fn with_object_type_def(&self, value: impl IntoID<ObjectTypeDefId>) -> Llm {
-        let mut query = self.selection.select("withObjectTypeDef");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
         Llm {
             proc: self.proc.clone(),
             selection: query,
@@ -8387,126 +7717,6 @@ impl Llm {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Set a variable of type SDKConfig in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The SDKConfig value to assign to the variable
-    pub fn with_sdk_config(&self, value: impl IntoID<SdkConfigId>) -> Llm {
-        let mut query = self.selection.select("withSDKConfig");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type ScalarTypeDef in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The ScalarTypeDef value to assign to the variable
-    pub fn with_scalar_type_def(&self, value: impl IntoID<ScalarTypeDefId>) -> Llm {
-        let mut query = self.selection.select("withScalarTypeDef");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type Secret in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The Secret value to assign to the variable
-    pub fn with_secret(&self, value: impl IntoID<SecretId>) -> Llm {
-        let mut query = self.selection.select("withSecret");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type Service in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The Service value to assign to the variable
-    pub fn with_service(&self, value: impl IntoID<ServiceId>) -> Llm {
-        let mut query = self.selection.select("withService");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type Socket in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The Socket value to assign to the variable
-    pub fn with_socket(&self, value: impl IntoID<SocketId>) -> Llm {
-        let mut query = self.selection.select("withSocket");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type SourceMap in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The SourceMap value to assign to the variable
-    pub fn with_source_map(&self, value: impl IntoID<SourceMapId>) -> Llm {
-        let mut query = self.selection.select("withSourceMap");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Add a system prompt to the LLM's environment
     ///
     /// # Arguments
@@ -8515,46 +7725,6 @@ impl Llm {
     pub fn with_system_prompt(&self, prompt: impl Into<String>) -> Llm {
         let mut query = self.selection.select("withSystemPrompt");
         query = query.arg("prompt", prompt.into());
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type Terminal in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The Terminal value to assign to the variable
-    pub fn with_terminal(&self, value: impl IntoID<TerminalId>) -> Llm {
-        let mut query = self.selection.select("withTerminal");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
-        Llm {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Set a variable of type TypeDef in the llm environment
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - The TypeDef value to assign to the variable
-    pub fn with_type_def(&self, value: impl IntoID<TypeDefId>) -> Llm {
-        let mut query = self.selection.select("withTypeDef");
-        query = query.arg_lazy(
-            "value",
-            Box::new(move || {
-                let value = value.clone();
-                Box::pin(async move { value.into_id().await.unwrap().quote() })
-            }),
-        );
         Llm {
             proc: self.proc.clone(),
             selection: query,
@@ -9495,6 +8665,15 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Initialize a new environment
+    pub fn environment(&self) -> Environment {
+        let query = self.selection.select("environment");
+        Environment {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create a new error.
     ///
     /// # Arguments
@@ -9670,6 +8849,22 @@ impl Query {
             query = query.arg("maxAPICalls", max_api_calls);
         }
         Llm {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a Binding from its ID.
+    pub fn load_binding_from_id(&self, id: impl IntoID<BindingId>) -> Binding {
+        let mut query = self.selection.select("loadBindingFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        Binding {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -9855,6 +9050,22 @@ impl Query {
             }),
         );
         EnvVariable {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a Environment from its ID.
+    pub fn load_environment_from_id(&self, id: impl IntoID<EnvironmentId>) -> Environment {
+        let mut query = self.selection.select("loadEnvironmentFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        Environment {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

@@ -1,0 +1,2490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="robots" content="index, follow, all" />
+    <title>Dagger\Environment | API</title>
+
+            <link rel="stylesheet" type="text/css" href="../css/bootstrap.min.css">
+        <link rel="stylesheet" type="text/css" href="../css/bootstrap-theme.min.css">
+        <link rel="stylesheet" type="text/css" href="../css/doctum.css">
+        <link rel="stylesheet" type="text/css" href="../fonts/doctum-font.css">
+        <script src="../js/jquery-3.5.1.slim.min.js"></script>
+        <script async defer src="../doctum.js"></script>
+        <script async defer src="../js/bootstrap.min.js"></script>
+        <script async defer src="../js/autocomplete.min.js"></script>
+        <meta name="MobileOptimized" content="width">
+        <meta name="HandheldFriendly" content="true">
+        <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+
+    </head>
+
+    <body id="class" data-name="class:Dagger_Environment" data-root-path="../" data-search-index-url="../doctum-search.json">
+            <div id="content">
+        <div id="left-column">
+                <div id="control-panel">
+                <div class="search-bar hidden" id="search-progress-bar-container">
+            <div class="progress">
+                <div class="progress-bar" role="progressbar" id="search-progress-bar"
+                    aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%"></div>
+            </div>
+        </div>
+        <form id="search-form" action="../search.html">
+            <span class="icon icon-search"></span>
+            <input name="search"
+                   id="doctum-search-auto-complete"
+                   class="typeahead form-control"
+                   type="search"
+                   placeholder="Search"
+                   spellcheck="false"
+                   autocorrect="off"
+                   autocomplete="off"
+                   autocapitalize="off">
+            <div class="auto-complete-results" id="auto-complete-results"></div>
+        </form>
+    </div>
+
+                <div id="api-tree"></div>
+
+        </div>
+        <div id="right-column">
+                <nav id="site-nav" class="navbar navbar-default" role="navigation">
+        <div class="container-fluid">
+            <div class="navbar-header">
+                <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#navbar-elements">
+                    <span class="sr-only">Toggle navigation</span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                </button>
+                <a class="navbar-brand" href="../index.html">API</a>
+            </div>
+            <div class="collapse navbar-collapse" id="navbar-elements">
+                <ul class="nav navbar-nav">
+                    <li><a href="../classes.html">Classes</a></li>
+                    <li><a href="../namespaces.html">Namespaces</a></li>
+                    <li><a href="../interfaces.html">Interfaces</a></li>
+                    <li><a href="../traits.html">Traits</a></li>
+                    <li><a href="../doc-index.html">Index</a></li>
+                    <li><a href="../search.html">Search</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+                        <div class="namespace-breadcrumbs">
+            <ol class="breadcrumb">
+                <li><span class="label label-default">class</span></li>
+                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>Environment</li>
+            </ol>
+        </div>
+                <div id="page-content">
+    <div class="page-header">
+        <h1>Environment    
+            </h1>
+    </div>
+
+    
+    <p>        class
+    <strong>Environment</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
+</p>
+
+        
+    
+        
+
+            
+        
+    
+            <h2>Properties</h2>
+
+            <table class="table table-condensed">
+                    <tr>
+                <td class="type" id="property_lastQuery">
+                                                                                
+                                                                                
+                                    </td>
+                <td>$lastQuery</td>
+                <td class="last"></td>
+                <td><small>from&nbsp;<a href="../Dagger/Client/AbstractObject.html#property_lastQuery">
+<abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a></small></td>
+            </tr>
+            </table>
+
+    
+            <h2>Methods</h2>
+
+            <div class="container-fluid underlined">
+                    <div class="row">
+                <div class="col-md-2 type">
+                    
+                </div>
+                <div class="col-md-8">
+                    <a href="#method___construct">__construct</a>(<a href="../Dagger/Client/AbstractClient.html"><abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a> $client, <abbr title="Dagger\GraphQl\QueryBuilderChain">QueryBuilderChain</abbr> $queryBuilderChain)
+        
+                                            <p class="no-description">No description</p>
+                                    </div>
+                <div class="col-md-2"><small>from&nbsp;<a href="../Dagger/Client/AbstractObject.html#method___construct">
+<abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a></small></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <abbr title="Dagger\Client\null|array|string|int|float|bool">null|array|string|int|float|bool</abbr>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_queryLeaf">queryLeaf</a>(<abbr title="GraphQL\QueryBuilder\QueryBuilder">QueryBuilder</abbr> $leafQueryBuilder, string $leafKey)
+        
+                                            <p class="no-description">No description</p>
+                                    </div>
+                <div class="col-md-2"><small>from&nbsp;<a href="../Dagger/Client/AbstractObject.html#method_queryLeaf">
+<abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a></small></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_binding">binding</a>(string $name)
+        
+                                            <p><p>retrieve a binding by name</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    array
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_bindings">bindings</a>()
+        
+                                            <p><p>return all bindings in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_id">id</a>()
+        
+                                            <p><p>A unique identifier for this Environment.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withCacheVolumeBinding">withCacheVolumeBinding</a>(string $name, <abbr title="Dagger\CacheVolumeId|Dagger\CacheVolume">CacheVolume</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type CacheVolume in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withContainerBinding">withContainerBinding</a>(string $name, <abbr title="Dagger\ContainerId|Dagger\Container">Container</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type Container in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withCurrentModuleBinding">withCurrentModuleBinding</a>(string $name, <abbr title="Dagger\CurrentModuleId|Dagger\CurrentModule">CurrentModule</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type CurrentModule in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withDirectoryBinding">withDirectoryBinding</a>(string $name, <abbr title="Dagger\DirectoryId|Dagger\Directory">Directory</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type Directory in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withEnumTypeDefBinding">withEnumTypeDefBinding</a>(string $name, <abbr title="Dagger\EnumTypeDefId|Dagger\EnumTypeDef">EnumTypeDef</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type EnumTypeDef in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withEnumValueTypeDefBinding">withEnumValueTypeDefBinding</a>(string $name, <abbr title="Dagger\EnumValueTypeDefId|Dagger\EnumValueTypeDef">EnumValueTypeDef</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type EnumValueTypeDef in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withEnvironmentBinding">withEnvironmentBinding</a>(string $name, <abbr title="Dagger\EnvironmentId|Dagger\Environment">Environment</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type Environment in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withErrorBinding">withErrorBinding</a>(string $name, <abbr title="Dagger\ErrorId|Dagger\Error">Error</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type Error in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withErrorValueBinding">withErrorValueBinding</a>(string $name, <abbr title="Dagger\ErrorValueId|Dagger\ErrorValue">ErrorValue</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type ErrorValue in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withFieldTypeDefBinding">withFieldTypeDefBinding</a>(string $name, <abbr title="Dagger\FieldTypeDefId|Dagger\FieldTypeDef">FieldTypeDef</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type FieldTypeDef in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withFileBinding">withFileBinding</a>(string $name, <abbr title="Dagger\FileId|Dagger\File">File</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type File in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withFunctionArgBinding">withFunctionArgBinding</a>(string $name, <abbr title="Dagger\FunctionArgId|Dagger\FunctionArg">FunctionArg</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type FunctionArg in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withFunctionBinding">withFunctionBinding</a>(string $name, <abbr title="Dagger\FunctionId|Dagger\Function_">Function_</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type Function in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withFunctionCallArgValueBinding">withFunctionCallArgValueBinding</a>(string $name, <abbr title="Dagger\FunctionCallArgValueId|Dagger\FunctionCallArgValue">FunctionCallArgValue</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type FunctionCallArgValue in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withFunctionCallBinding">withFunctionCallBinding</a>(string $name, <abbr title="Dagger\FunctionCallId|Dagger\FunctionCall">FunctionCall</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type FunctionCall in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withGeneratedCodeBinding">withGeneratedCodeBinding</a>(string $name, <abbr title="Dagger\GeneratedCodeId|Dagger\GeneratedCode">GeneratedCode</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type GeneratedCode in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withGitRefBinding">withGitRefBinding</a>(string $name, <abbr title="Dagger\GitRefId|Dagger\GitRef">GitRef</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type GitRef in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withGitRepositoryBinding">withGitRepositoryBinding</a>(string $name, <abbr title="Dagger\GitRepositoryId|Dagger\GitRepository">GitRepository</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type GitRepository in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withInputTypeDefBinding">withInputTypeDefBinding</a>(string $name, <abbr title="Dagger\InputTypeDefId|Dagger\InputTypeDef">InputTypeDef</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type InputTypeDef in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withInterfaceTypeDefBinding">withInterfaceTypeDefBinding</a>(string $name, <abbr title="Dagger\InterfaceTypeDefId|Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type InterfaceTypeDef in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withLLMBinding">withLLMBinding</a>(string $name, <abbr title="Dagger\LLMId|Dagger\LLM">LLM</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type LLM in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withLLMTokenUsageBinding">withLLMTokenUsageBinding</a>(string $name, <abbr title="Dagger\LLMTokenUsageId|Dagger\LLMTokenUsage">LLMTokenUsage</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type LLMTokenUsage in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withLLMVariableBinding">withLLMVariableBinding</a>(string $name, <abbr title="Dagger\LLMVariableId|Dagger\LLMVariable">LLMVariable</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type LLMVariable in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withListTypeDefBinding">withListTypeDefBinding</a>(string $name, <abbr title="Dagger\ListTypeDefId|Dagger\ListTypeDef">ListTypeDef</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type ListTypeDef in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withModuleBinding">withModuleBinding</a>(string $name, <abbr title="Dagger\ModuleId|Dagger\Module">Module</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type Module in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withModuleConfigClientBinding">withModuleConfigClientBinding</a>(string $name, <abbr title="Dagger\ModuleConfigClientId|Dagger\ModuleConfigClient">ModuleConfigClient</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type ModuleConfigClient in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withModuleSourceBinding">withModuleSourceBinding</a>(string $name, <abbr title="Dagger\ModuleSourceId|Dagger\ModuleSource">ModuleSource</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type ModuleSource in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withObjectTypeDefBinding">withObjectTypeDefBinding</a>(string $name, <abbr title="Dagger\ObjectTypeDefId|Dagger\ObjectTypeDef">ObjectTypeDef</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type ObjectTypeDef in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withPhpSdkBinding">withPhpSdkBinding</a>(string $name, <abbr title="Dagger\PhpSdkId|Dagger\PhpSdk">PhpSdk</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type PhpSdk in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withSDKConfigBinding">withSDKConfigBinding</a>(string $name, <abbr title="Dagger\SDKConfigId|Dagger\SDKConfig">SDKConfig</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type SDKConfig in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withScalarTypeDefBinding">withScalarTypeDefBinding</a>(string $name, <abbr title="Dagger\ScalarTypeDefId|Dagger\ScalarTypeDef">ScalarTypeDef</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type ScalarTypeDef in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withSecretBinding">withSecretBinding</a>(string $name, <abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type Secret in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withServiceBinding">withServiceBinding</a>(string $name, <abbr title="Dagger\ServiceId|Dagger\Service">Service</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type Service in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withSocketBinding">withSocketBinding</a>(string $name, <abbr title="Dagger\SocketId|Dagger\Socket">Socket</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type Socket in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withSourceMapBinding">withSourceMapBinding</a>(string $name, <abbr title="Dagger\SourceMapId|Dagger\SourceMap">SourceMap</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type SourceMap in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withTerminalBinding">withTerminalBinding</a>(string $name, <abbr title="Dagger\TerminalId|Dagger\Terminal">Terminal</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type Terminal in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withTypeDefBinding">withTypeDefBinding</a>(string $name, <abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $value)
+        
+                                            <p><p>Create or update a binding of type TypeDef in the environment</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+            </div>
+
+
+        <h2>Details</h2>
+
+            <div id="method-details">
+                    <div class="method-item">
+                    <h3 id="method___construct">
+        <div class="location">in <a href="../Dagger/Client/AbstractObject.html#method___construct">
+<abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a> at line 13</div>
+        <code>                    
+    <strong>__construct</strong>(<a href="../Dagger/Client/AbstractClient.html"><abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a> $client, <abbr title="Dagger\GraphQl\QueryBuilderChain">QueryBuilderChain</abbr> $queryBuilderChain)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p class="no-description">No description</p>
+                    
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><a href="../Dagger/Client/AbstractClient.html"><abbr title="Dagger\Client\AbstractClient">AbstractClient</abbr></a></td>
+                <td>$client</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\GraphQl\QueryBuilderChain">QueryBuilderChain</abbr></td>
+                <td>$queryBuilderChain</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_queryLeaf">
+        <div class="location">in <a href="../Dagger/Client/AbstractObject.html#method_queryLeaf">
+<abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a> at line 19</div>
+        <code>            protected        <abbr title="Dagger\Client\null|array|string|int|float|bool">null|array|string|int|float|bool</abbr>
+    <strong>queryLeaf</strong>(<abbr title="GraphQL\QueryBuilder\QueryBuilder">QueryBuilder</abbr> $leafQueryBuilder, string $leafKey)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p class="no-description">No description</p>
+                    
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="GraphQL\QueryBuilder\QueryBuilder">QueryBuilder</abbr></td>
+                <td>$leafQueryBuilder</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string</td>
+                <td>$leafKey</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><abbr title="Dagger\Client\null|array|string|int|float|bool">null|array|string|int|float|bool</abbr></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_binding">
+        <div class="location">at line 16</div>
+        <code>                    <a href="../Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a>
+    <strong>binding</strong>(string $name)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>retrieve a binding by name</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_bindings">
+        <div class="location">at line 26</div>
+        <code>                    array
+    <strong>bindings</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>return all bindings in the environment</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>array</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_id">
+        <div class="location">at line 35</div>
+        <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
+    <strong>id</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>A unique identifier for this Environment.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withCacheVolumeBinding">
+        <div class="location">at line 44</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withCacheVolumeBinding</strong>(string $name, <abbr title="Dagger\CacheVolumeId|Dagger\CacheVolume">CacheVolume</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type CacheVolume in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\CacheVolumeId|Dagger\CacheVolume">CacheVolume</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withContainerBinding">
+        <div class="location">at line 55</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withContainerBinding</strong>(string $name, <abbr title="Dagger\ContainerId|Dagger\Container">Container</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type Container in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\ContainerId|Dagger\Container">Container</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withCurrentModuleBinding">
+        <div class="location">at line 66</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withCurrentModuleBinding</strong>(string $name, <abbr title="Dagger\CurrentModuleId|Dagger\CurrentModule">CurrentModule</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type CurrentModule in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\CurrentModuleId|Dagger\CurrentModule">CurrentModule</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withDirectoryBinding">
+        <div class="location">at line 77</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withDirectoryBinding</strong>(string $name, <abbr title="Dagger\DirectoryId|Dagger\Directory">Directory</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type Directory in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\DirectoryId|Dagger\Directory">Directory</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withEnumTypeDefBinding">
+        <div class="location">at line 88</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withEnumTypeDefBinding</strong>(string $name, <abbr title="Dagger\EnumTypeDefId|Dagger\EnumTypeDef">EnumTypeDef</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type EnumTypeDef in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\EnumTypeDefId|Dagger\EnumTypeDef">EnumTypeDef</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withEnumValueTypeDefBinding">
+        <div class="location">at line 99</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withEnumValueTypeDefBinding</strong>(string $name, <abbr title="Dagger\EnumValueTypeDefId|Dagger\EnumValueTypeDef">EnumValueTypeDef</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type EnumValueTypeDef in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\EnumValueTypeDefId|Dagger\EnumValueTypeDef">EnumValueTypeDef</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withEnvironmentBinding">
+        <div class="location">at line 110</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withEnvironmentBinding</strong>(string $name, <abbr title="Dagger\EnvironmentId|Dagger\Environment">Environment</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type Environment in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\EnvironmentId|Dagger\Environment">Environment</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withErrorBinding">
+        <div class="location">at line 121</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withErrorBinding</strong>(string $name, <abbr title="Dagger\ErrorId|Dagger\Error">Error</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type Error in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\ErrorId|Dagger\Error">Error</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withErrorValueBinding">
+        <div class="location">at line 132</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withErrorValueBinding</strong>(string $name, <abbr title="Dagger\ErrorValueId|Dagger\ErrorValue">ErrorValue</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type ErrorValue in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\ErrorValueId|Dagger\ErrorValue">ErrorValue</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withFieldTypeDefBinding">
+        <div class="location">at line 143</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withFieldTypeDefBinding</strong>(string $name, <abbr title="Dagger\FieldTypeDefId|Dagger\FieldTypeDef">FieldTypeDef</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type FieldTypeDef in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\FieldTypeDefId|Dagger\FieldTypeDef">FieldTypeDef</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withFileBinding">
+        <div class="location">at line 154</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withFileBinding</strong>(string $name, <abbr title="Dagger\FileId|Dagger\File">File</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type File in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\FileId|Dagger\File">File</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withFunctionArgBinding">
+        <div class="location">at line 165</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withFunctionArgBinding</strong>(string $name, <abbr title="Dagger\FunctionArgId|Dagger\FunctionArg">FunctionArg</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type FunctionArg in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\FunctionArgId|Dagger\FunctionArg">FunctionArg</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withFunctionBinding">
+        <div class="location">at line 176</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withFunctionBinding</strong>(string $name, <abbr title="Dagger\FunctionId|Dagger\Function_">Function_</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type Function in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\FunctionId|Dagger\Function_">Function_</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withFunctionCallArgValueBinding">
+        <div class="location">at line 187</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withFunctionCallArgValueBinding</strong>(string $name, <abbr title="Dagger\FunctionCallArgValueId|Dagger\FunctionCallArgValue">FunctionCallArgValue</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type FunctionCallArgValue in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\FunctionCallArgValueId|Dagger\FunctionCallArgValue">FunctionCallArgValue</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withFunctionCallBinding">
+        <div class="location">at line 200</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withFunctionCallBinding</strong>(string $name, <abbr title="Dagger\FunctionCallId|Dagger\FunctionCall">FunctionCall</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type FunctionCall in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\FunctionCallId|Dagger\FunctionCall">FunctionCall</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withGeneratedCodeBinding">
+        <div class="location">at line 211</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withGeneratedCodeBinding</strong>(string $name, <abbr title="Dagger\GeneratedCodeId|Dagger\GeneratedCode">GeneratedCode</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type GeneratedCode in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\GeneratedCodeId|Dagger\GeneratedCode">GeneratedCode</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withGitRefBinding">
+        <div class="location">at line 222</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withGitRefBinding</strong>(string $name, <abbr title="Dagger\GitRefId|Dagger\GitRef">GitRef</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type GitRef in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\GitRefId|Dagger\GitRef">GitRef</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withGitRepositoryBinding">
+        <div class="location">at line 233</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withGitRepositoryBinding</strong>(string $name, <abbr title="Dagger\GitRepositoryId|Dagger\GitRepository">GitRepository</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type GitRepository in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\GitRepositoryId|Dagger\GitRepository">GitRepository</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withInputTypeDefBinding">
+        <div class="location">at line 244</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withInputTypeDefBinding</strong>(string $name, <abbr title="Dagger\InputTypeDefId|Dagger\InputTypeDef">InputTypeDef</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type InputTypeDef in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\InputTypeDefId|Dagger\InputTypeDef">InputTypeDef</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withInterfaceTypeDefBinding">
+        <div class="location">at line 255</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withInterfaceTypeDefBinding</strong>(string $name, <abbr title="Dagger\InterfaceTypeDefId|Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type InterfaceTypeDef in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\InterfaceTypeDefId|Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withLLMBinding">
+        <div class="location">at line 266</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withLLMBinding</strong>(string $name, <abbr title="Dagger\LLMId|Dagger\LLM">LLM</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type LLM in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\LLMId|Dagger\LLM">LLM</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withLLMTokenUsageBinding">
+        <div class="location">at line 277</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withLLMTokenUsageBinding</strong>(string $name, <abbr title="Dagger\LLMTokenUsageId|Dagger\LLMTokenUsage">LLMTokenUsage</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type LLMTokenUsage in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\LLMTokenUsageId|Dagger\LLMTokenUsage">LLMTokenUsage</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withLLMVariableBinding">
+        <div class="location">at line 288</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withLLMVariableBinding</strong>(string $name, <abbr title="Dagger\LLMVariableId|Dagger\LLMVariable">LLMVariable</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type LLMVariable in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\LLMVariableId|Dagger\LLMVariable">LLMVariable</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withListTypeDefBinding">
+        <div class="location">at line 299</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withListTypeDefBinding</strong>(string $name, <abbr title="Dagger\ListTypeDefId|Dagger\ListTypeDef">ListTypeDef</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type ListTypeDef in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\ListTypeDefId|Dagger\ListTypeDef">ListTypeDef</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withModuleBinding">
+        <div class="location">at line 310</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withModuleBinding</strong>(string $name, <abbr title="Dagger\ModuleId|Dagger\Module">Module</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type Module in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\ModuleId|Dagger\Module">Module</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withModuleConfigClientBinding">
+        <div class="location">at line 321</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withModuleConfigClientBinding</strong>(string $name, <abbr title="Dagger\ModuleConfigClientId|Dagger\ModuleConfigClient">ModuleConfigClient</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type ModuleConfigClient in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\ModuleConfigClientId|Dagger\ModuleConfigClient">ModuleConfigClient</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withModuleSourceBinding">
+        <div class="location">at line 334</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withModuleSourceBinding</strong>(string $name, <abbr title="Dagger\ModuleSourceId|Dagger\ModuleSource">ModuleSource</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type ModuleSource in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\ModuleSourceId|Dagger\ModuleSource">ModuleSource</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withObjectTypeDefBinding">
+        <div class="location">at line 345</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withObjectTypeDefBinding</strong>(string $name, <abbr title="Dagger\ObjectTypeDefId|Dagger\ObjectTypeDef">ObjectTypeDef</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type ObjectTypeDef in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\ObjectTypeDefId|Dagger\ObjectTypeDef">ObjectTypeDef</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withPhpSdkBinding">
+        <div class="location">at line 356</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withPhpSdkBinding</strong>(string $name, <abbr title="Dagger\PhpSdkId|Dagger\PhpSdk">PhpSdk</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type PhpSdk in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\PhpSdkId|Dagger\PhpSdk">PhpSdk</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withSDKConfigBinding">
+        <div class="location">at line 367</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withSDKConfigBinding</strong>(string $name, <abbr title="Dagger\SDKConfigId|Dagger\SDKConfig">SDKConfig</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type SDKConfig in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\SDKConfigId|Dagger\SDKConfig">SDKConfig</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withScalarTypeDefBinding">
+        <div class="location">at line 378</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withScalarTypeDefBinding</strong>(string $name, <abbr title="Dagger\ScalarTypeDefId|Dagger\ScalarTypeDef">ScalarTypeDef</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type ScalarTypeDef in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\ScalarTypeDefId|Dagger\ScalarTypeDef">ScalarTypeDef</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withSecretBinding">
+        <div class="location">at line 389</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withSecretBinding</strong>(string $name, <abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type Secret in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\SecretId|Dagger\Secret">Secret</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withServiceBinding">
+        <div class="location">at line 400</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withServiceBinding</strong>(string $name, <abbr title="Dagger\ServiceId|Dagger\Service">Service</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type Service in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\ServiceId|Dagger\Service">Service</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withSocketBinding">
+        <div class="location">at line 411</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withSocketBinding</strong>(string $name, <abbr title="Dagger\SocketId|Dagger\Socket">Socket</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type Socket in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\SocketId|Dagger\Socket">Socket</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withSourceMapBinding">
+        <div class="location">at line 422</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withSourceMapBinding</strong>(string $name, <abbr title="Dagger\SourceMapId|Dagger\SourceMap">SourceMap</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type SourceMap in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\SourceMapId|Dagger\SourceMap">SourceMap</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withTerminalBinding">
+        <div class="location">at line 433</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withTerminalBinding</strong>(string $name, <abbr title="Dagger\TerminalId|Dagger\Terminal">Terminal</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type Terminal in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\TerminalId|Dagger\Terminal">Terminal</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withTypeDefBinding">
+        <div class="location">at line 444</div>
+        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+    <strong>withTypeDefBinding</strong>(string $name, <abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Create or update a binding of type TypeDef in the environment</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+            </div>
+
+    
+</div><div id="footer">
+        Generated by <a href="https://github.com/code-lts/doctum">Doctum, a API Documentation generator and fork of Sami</a>.</div></div>
+    </div>
+    </body>
+
+</html>

@@ -97,6 +97,15 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Initialize a new environment
+     */
+    public function environment(): Environment
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('environment');
+        return new \Dagger\Environment($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Create a new error.
      */
     public function error(string $message): Error
@@ -189,6 +198,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder->setArgument('maxAPICalls', $maxAPICalls);
         }
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Binding from its ID.
+     */
+    public function loadBindingFromID(BindingId|Binding $id): Binding
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadBindingFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Binding($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -299,6 +318,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEnvVariableFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\EnvVariable($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Environment from its ID.
+     */
+    public function loadEnvironmentFromID(EnvironmentId|Environment $id): Environment
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEnvironmentFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Environment($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

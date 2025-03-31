@@ -96,6 +96,12 @@ func Engine() *dagger.Engine {
 	return client.Engine()
 }
 
+// Initialize a new environment
+func Environment() *dagger.Environment {
+	client := initClient()
+	return client.Environment()
+}
+
 // Create a new error.
 func Error(message string) *dagger.Error {
 	client := initClient()
@@ -136,6 +142,12 @@ func HTTP(url string, opts ...dagger.HTTPOpts) *dagger.File {
 func LLM(opts ...dagger.LLMOpts) *dagger.LLM {
 	client := initClient()
 	return client.LLM(opts...)
+}
+
+// Load a Binding from its ID.
+func LoadBindingFromID(id dagger.BindingID) *dagger.Binding {
+	client := initClient()
+	return client.LoadBindingFromID(id)
 }
 
 // Load a CacheVolume from its ID.
@@ -202,6 +214,12 @@ func LoadEnumValueTypeDefFromID(id dagger.EnumValueTypeDefID) *dagger.EnumValueT
 func LoadEnvVariableFromID(id dagger.EnvVariableID) *dagger.EnvVariable {
 	client := initClient()
 	return client.LoadEnvVariableFromID(id)
+}
+
+// Load a Environment from its ID.
+func LoadEnvironmentFromID(id dagger.EnvironmentID) *dagger.Environment {
+	client := initClient()
+	return client.LoadEnvironmentFromID(id)
 }
 
 // Load a Error from its ID.

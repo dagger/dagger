@@ -98,6 +98,9 @@ func (e *ExecError) Unwrap() error {
 	return e.original
 }
 
+// The `BindingID` scalar type represents an identifier for an object of type Binding.
+type BindingID string
+
 // The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
 type CacheVolumeID string
 
@@ -130,6 +133,9 @@ type EnumValueTypeDefID string
 
 // The `EnvVariableID` scalar type represents an identifier for an object of type EnvVariable.
 type EnvVariableID string
+
+// The `EnvironmentID` scalar type represents an identifier for an object of type Environment.
+type EnvironmentID string
 
 // The `ErrorID` scalar type represents an identifier for an object of type Error.
 type ErrorID string
@@ -268,6 +274,424 @@ type PortForward struct {
 
 	// Transport layer protocol to use for traffic.
 	Protocol NetworkProtocol `json:"protocol,omitempty"`
+}
+
+type Binding struct {
+	query *querybuilder.Selection
+
+	digest   *string
+	id       *BindingID
+	name     *string
+	typeName *string
+}
+
+func (r *Binding) WithGraphQLQuery(q *querybuilder.Selection) *Binding {
+	return &Binding{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type CacheVolume
+func (r *Binding) AsCacheVolume() *CacheVolume {
+	q := r.query.Select("asCacheVolume")
+
+	return &CacheVolume{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Container
+func (r *Binding) AsContainer() *Container {
+	q := r.query.Select("asContainer")
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type CurrentModule
+func (r *Binding) AsCurrentModule() *CurrentModule {
+	q := r.query.Select("asCurrentModule")
+
+	return &CurrentModule{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Directory
+func (r *Binding) AsDirectory() *Directory {
+	q := r.query.Select("asDirectory")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type EnumTypeDef
+func (r *Binding) AsEnumTypeDef() *EnumTypeDef {
+	q := r.query.Select("asEnumTypeDef")
+
+	return &EnumTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type EnumValueTypeDef
+func (r *Binding) AsEnumValueTypeDef() *EnumValueTypeDef {
+	q := r.query.Select("asEnumValueTypeDef")
+
+	return &EnumValueTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Environment
+func (r *Binding) AsEnvironment() *Environment {
+	q := r.query.Select("asEnvironment")
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Error
+func (r *Binding) AsError() *Error {
+	q := r.query.Select("asError")
+
+	return &Error{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type ErrorValue
+func (r *Binding) AsErrorValue() *ErrorValue {
+	q := r.query.Select("asErrorValue")
+
+	return &ErrorValue{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type FieldTypeDef
+func (r *Binding) AsFieldTypeDef() *FieldTypeDef {
+	q := r.query.Select("asFieldTypeDef")
+
+	return &FieldTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type File
+func (r *Binding) AsFile() *File {
+	q := r.query.Select("asFile")
+
+	return &File{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Function
+func (r *Binding) AsFunction() *Function {
+	q := r.query.Select("asFunction")
+
+	return &Function{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type FunctionArg
+func (r *Binding) AsFunctionArg() *FunctionArg {
+	q := r.query.Select("asFunctionArg")
+
+	return &FunctionArg{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type FunctionCall
+func (r *Binding) AsFunctionCall() *FunctionCall {
+	q := r.query.Select("asFunctionCall")
+
+	return &FunctionCall{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type FunctionCallArgValue
+func (r *Binding) AsFunctionCallArgValue() *FunctionCallArgValue {
+	q := r.query.Select("asFunctionCallArgValue")
+
+	return &FunctionCallArgValue{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type GeneratedCode
+func (r *Binding) AsGeneratedCode() *GeneratedCode {
+	q := r.query.Select("asGeneratedCode")
+
+	return &GeneratedCode{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type GitRef
+func (r *Binding) AsGitRef() *GitRef {
+	q := r.query.Select("asGitRef")
+
+	return &GitRef{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type GitRepository
+func (r *Binding) AsGitRepository() *GitRepository {
+	q := r.query.Select("asGitRepository")
+
+	return &GitRepository{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type InputTypeDef
+func (r *Binding) AsInputTypeDef() *InputTypeDef {
+	q := r.query.Select("asInputTypeDef")
+
+	return &InputTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type InterfaceTypeDef
+func (r *Binding) AsInterfaceTypeDef() *InterfaceTypeDef {
+	q := r.query.Select("asInterfaceTypeDef")
+
+	return &InterfaceTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type LLM
+func (r *Binding) AsLLM() *LLM {
+	q := r.query.Select("asLLM")
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type LLMTokenUsage
+func (r *Binding) AsLLMTokenUsage() *LLMTokenUsage {
+	q := r.query.Select("asLLMTokenUsage")
+
+	return &LLMTokenUsage{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type LLMVariable
+func (r *Binding) AsLLMVariable() *LLMVariable {
+	q := r.query.Select("asLLMVariable")
+
+	return &LLMVariable{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type ListTypeDef
+func (r *Binding) AsListTypeDef() *ListTypeDef {
+	q := r.query.Select("asListTypeDef")
+
+	return &ListTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Module
+func (r *Binding) AsModule() *Module {
+	q := r.query.Select("asModule")
+
+	return &Module{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type ModuleConfigClient
+func (r *Binding) AsModuleConfigClient() *ModuleConfigClient {
+	q := r.query.Select("asModuleConfigClient")
+
+	return &ModuleConfigClient{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type ModuleSource
+func (r *Binding) AsModuleSource() *ModuleSource {
+	q := r.query.Select("asModuleSource")
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type ObjectTypeDef
+func (r *Binding) AsObjectTypeDef() *ObjectTypeDef {
+	q := r.query.Select("asObjectTypeDef")
+
+	return &ObjectTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type SDKConfig
+func (r *Binding) AsSDKConfig() *SDKConfig {
+	q := r.query.Select("asSDKConfig")
+
+	return &SDKConfig{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type ScalarTypeDef
+func (r *Binding) AsScalarTypeDef() *ScalarTypeDef {
+	q := r.query.Select("asScalarTypeDef")
+
+	return &ScalarTypeDef{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Secret
+func (r *Binding) AsSecret() *Secret {
+	q := r.query.Select("asSecret")
+
+	return &Secret{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Service
+func (r *Binding) AsService() *Service {
+	q := r.query.Select("asService")
+
+	return &Service{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Socket
+func (r *Binding) AsSocket() *Socket {
+	q := r.query.Select("asSocket")
+
+	return &Socket{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type SourceMap
+func (r *Binding) AsSourceMap() *SourceMap {
+	q := r.query.Select("asSourceMap")
+
+	return &SourceMap{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type Terminal
+func (r *Binding) AsTerminal() *Terminal {
+	q := r.query.Select("asTerminal")
+
+	return &Terminal{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type TypeDef
+func (r *Binding) AsTypeDef() *TypeDef {
+	q := r.query.Select("asTypeDef")
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// The digest of the binding value
+func (r *Binding) Digest(ctx context.Context) (string, error) {
+	if r.digest != nil {
+		return *r.digest, nil
+	}
+	q := r.query.Select("digest")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this Binding.
+func (r *Binding) ID(ctx context.Context) (BindingID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response BindingID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Binding) XXX_GraphQLType() string {
+	return "Binding"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Binding) XXX_GraphQLIDType() string {
+	return "BindingID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Binding) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Binding) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The binding name
+func (r *Binding) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The binding type name
+func (r *Binding) TypeName(ctx context.Context) (string, error) {
+	if r.typeName != nil {
+		return *r.typeName, nil
+	}
+	q := r.query.Select("typeName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A directory whose contents persist across runs.
@@ -3450,6 +3874,541 @@ func (r *EnvVariable) Value(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+type Environment struct {
+	query *querybuilder.Selection
+
+	id *EnvironmentID
+}
+type WithEnvironmentFunc func(r *Environment) *Environment
+
+// With calls the provided function with current Environment.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Environment) With(f WithEnvironmentFunc) *Environment {
+	return f(r)
+}
+
+func (r *Environment) WithGraphQLQuery(q *querybuilder.Selection) *Environment {
+	return &Environment{
+		query: q,
+	}
+}
+
+// retrieve a binding by name
+func (r *Environment) Binding(name string) *Binding {
+	q := r.query.Select("binding")
+	q = q.Arg("name", name)
+
+	return &Binding{
+		query: q,
+	}
+}
+
+// return all bindings in the environment
+func (r *Environment) Bindings(ctx context.Context) ([]Binding, error) {
+	q := r.query.Select("bindings")
+
+	q = q.Select("id")
+
+	type bindings struct {
+		Id BindingID
+	}
+
+	convert := func(fields []bindings) []Binding {
+		out := []Binding{}
+
+		for i := range fields {
+			val := Binding{id: &fields[i].Id}
+			val.query = q.Root().Select("loadBindingFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []bindings
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A unique identifier for this Environment.
+func (r *Environment) ID(ctx context.Context) (EnvironmentID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response EnvironmentID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Environment) XXX_GraphQLType() string {
+	return "Environment"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Environment) XXX_GraphQLIDType() string {
+	return "EnvironmentID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Environment) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Environment) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Create or update a binding of type CacheVolume in the environment
+func (r *Environment) WithCacheVolumeBinding(name string, value *CacheVolume) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withCacheVolumeBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Container in the environment
+func (r *Environment) WithContainerBinding(name string, value *Container) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withContainerBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type CurrentModule in the environment
+func (r *Environment) WithCurrentModuleBinding(name string, value *CurrentModule) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withCurrentModuleBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Directory in the environment
+func (r *Environment) WithDirectoryBinding(name string, value *Directory) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withDirectoryBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type EnumTypeDef in the environment
+func (r *Environment) WithEnumTypeDefBinding(name string, value *EnumTypeDef) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withEnumTypeDefBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type EnumValueTypeDef in the environment
+func (r *Environment) WithEnumValueTypeDefBinding(name string, value *EnumValueTypeDef) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withEnumValueTypeDefBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Environment in the environment
+func (r *Environment) WithEnvironmentBinding(name string, value *Environment) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withEnvironmentBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Error in the environment
+func (r *Environment) WithErrorBinding(name string, value *Error) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withErrorBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type ErrorValue in the environment
+func (r *Environment) WithErrorValueBinding(name string, value *ErrorValue) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withErrorValueBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type FieldTypeDef in the environment
+func (r *Environment) WithFieldTypeDefBinding(name string, value *FieldTypeDef) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withFieldTypeDefBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type File in the environment
+func (r *Environment) WithFileBinding(name string, value *File) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withFileBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type FunctionArg in the environment
+func (r *Environment) WithFunctionArgBinding(name string, value *FunctionArg) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withFunctionArgBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Function in the environment
+func (r *Environment) WithFunctionBinding(name string, value *Function) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withFunctionBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type FunctionCallArgValue in the environment
+func (r *Environment) WithFunctionCallArgValueBinding(name string, value *FunctionCallArgValue) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withFunctionCallArgValueBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type FunctionCall in the environment
+func (r *Environment) WithFunctionCallBinding(name string, value *FunctionCall) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withFunctionCallBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type GeneratedCode in the environment
+func (r *Environment) WithGeneratedCodeBinding(name string, value *GeneratedCode) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withGeneratedCodeBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type GitRef in the environment
+func (r *Environment) WithGitRefBinding(name string, value *GitRef) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withGitRefBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type GitRepository in the environment
+func (r *Environment) WithGitRepositoryBinding(name string, value *GitRepository) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withGitRepositoryBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type InputTypeDef in the environment
+func (r *Environment) WithInputTypeDefBinding(name string, value *InputTypeDef) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withInputTypeDefBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type InterfaceTypeDef in the environment
+func (r *Environment) WithInterfaceTypeDefBinding(name string, value *InterfaceTypeDef) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withInterfaceTypeDefBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type LLM in the environment
+func (r *Environment) WithLLMBinding(name string, value *LLM) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withLLMBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type LLMTokenUsage in the environment
+func (r *Environment) WithLLMTokenUsageBinding(name string, value *LLMTokenUsage) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withLLMTokenUsageBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type LLMVariable in the environment
+func (r *Environment) WithLLMVariableBinding(name string, value *LLMVariable) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withLLMVariableBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type ListTypeDef in the environment
+func (r *Environment) WithListTypeDefBinding(name string, value *ListTypeDef) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withListTypeDefBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Module in the environment
+func (r *Environment) WithModuleBinding(name string, value *Module) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withModuleBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type ModuleConfigClient in the environment
+func (r *Environment) WithModuleConfigClientBinding(name string, value *ModuleConfigClient) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withModuleConfigClientBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type ModuleSource in the environment
+func (r *Environment) WithModuleSourceBinding(name string, value *ModuleSource) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withModuleSourceBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type ObjectTypeDef in the environment
+func (r *Environment) WithObjectTypeDefBinding(name string, value *ObjectTypeDef) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withObjectTypeDefBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type SDKConfig in the environment
+func (r *Environment) WithSDKConfigBinding(name string, value *SDKConfig) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withSDKConfigBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type ScalarTypeDef in the environment
+func (r *Environment) WithScalarTypeDefBinding(name string, value *ScalarTypeDef) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withScalarTypeDefBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Secret in the environment
+func (r *Environment) WithSecretBinding(name string, value *Secret) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withSecretBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Service in the environment
+func (r *Environment) WithServiceBinding(name string, value *Service) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withServiceBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Socket in the environment
+func (r *Environment) WithSocketBinding(name string, value *Socket) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withSocketBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type SourceMap in the environment
+func (r *Environment) WithSourceMapBinding(name string, value *SourceMap) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withSourceMapBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type Terminal in the environment
+func (r *Environment) WithTerminalBinding(name string, value *Terminal) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withTerminalBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
+// Create or update a binding of type TypeDef in the environment
+func (r *Environment) WithTypeDefBinding(name string, value *TypeDef) *Environment {
+	assertNotNil("value", value)
+	q := r.query.Select("withTypeDefBinding")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Environment{
+		query: q,
+	}
+}
+
 type Error struct {
 	query *querybuilder.Selection
 
@@ -5292,7 +6251,6 @@ type LLM struct {
 	query *querybuilder.Selection
 
 	currentType *string
-	getString   *string
 	historyJSON *string
 	id          *LLMID
 	lastReply   *string
@@ -5326,33 +6284,6 @@ func (r *LLM) Attempt(number int) *LLM {
 	}
 }
 
-// Retrieve a the current value in the LLM environment, of type CacheVolume
-func (r *LLM) CacheVolume() *CacheVolume {
-	q := r.query.Select("cacheVolume")
-
-	return &CacheVolume{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type Container
-func (r *LLM) Container() *Container {
-	q := r.query.Select("container")
-
-	return &Container{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type CurrentModule
-func (r *LLM) CurrentModule() *CurrentModule {
-	q := r.query.Select("currentModule")
-
-	return &CurrentModule{
-		query: q,
-	}
-}
-
 // returns the type of the current state
 func (r *LLM) CurrentType(ctx context.Context) (string, error) {
 	if r.currentType != nil {
@@ -5366,472 +6297,11 @@ func (r *LLM) CurrentType(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Retrieve a the current value in the LLM environment, of type Directory
-func (r *LLM) Directory() *Directory {
-	q := r.query.Select("directory")
-
-	return &Directory{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type EnumTypeDef
-func (r *LLM) EnumTypeDef() *EnumTypeDef {
-	q := r.query.Select("enumTypeDef")
-
-	return &EnumTypeDef{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type EnumValueTypeDef
-func (r *LLM) EnumValueTypeDef() *EnumValueTypeDef {
-	q := r.query.Select("enumValueTypeDef")
-
-	return &EnumValueTypeDef{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type Error
-func (r *LLM) Error() *Error {
-	q := r.query.Select("error")
-
-	return &Error{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type ErrorValue
-func (r *LLM) ErrorValue() *ErrorValue {
-	q := r.query.Select("errorValue")
-
-	return &ErrorValue{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type FieldTypeDef
-func (r *LLM) FieldTypeDef() *FieldTypeDef {
-	q := r.query.Select("fieldTypeDef")
-
-	return &FieldTypeDef{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type File
-func (r *LLM) File() *File {
-	q := r.query.Select("file")
-
-	return &File{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type Function
-func (r *LLM) Function() *Function {
-	q := r.query.Select("function")
-
-	return &Function{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type FunctionArg
-func (r *LLM) FunctionArg() *FunctionArg {
-	q := r.query.Select("functionArg")
-
-	return &FunctionArg{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type FunctionCall
-func (r *LLM) FunctionCall() *FunctionCall {
-	q := r.query.Select("functionCall")
-
-	return &FunctionCall{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type FunctionCallArgValue
-func (r *LLM) FunctionCallArgValue() *FunctionCallArgValue {
-	q := r.query.Select("functionCallArgValue")
-
-	return &FunctionCallArgValue{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type GeneratedCode
-func (r *LLM) GeneratedCode() *GeneratedCode {
-	q := r.query.Select("generatedCode")
-
-	return &GeneratedCode{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type CacheVolume
-func (r *LLM) GetCacheVolume(name string) *CacheVolume {
-	q := r.query.Select("getCacheVolume")
-	q = q.Arg("name", name)
-
-	return &CacheVolume{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type Container
-func (r *LLM) GetContainer(name string) *Container {
-	q := r.query.Select("getContainer")
-	q = q.Arg("name", name)
-
-	return &Container{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type CurrentModule
-func (r *LLM) GetCurrentModule(name string) *CurrentModule {
-	q := r.query.Select("getCurrentModule")
-	q = q.Arg("name", name)
-
-	return &CurrentModule{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type Directory
-func (r *LLM) GetDirectory(name string) *Directory {
-	q := r.query.Select("getDirectory")
-	q = q.Arg("name", name)
-
-	return &Directory{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type EnumTypeDef
-func (r *LLM) GetEnumTypeDef(name string) *EnumTypeDef {
-	q := r.query.Select("getEnumTypeDef")
-	q = q.Arg("name", name)
-
-	return &EnumTypeDef{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type EnumValueTypeDef
-func (r *LLM) GetEnumValueTypeDef(name string) *EnumValueTypeDef {
-	q := r.query.Select("getEnumValueTypeDef")
-	q = q.Arg("name", name)
-
-	return &EnumValueTypeDef{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type Error
-func (r *LLM) GetError(name string) *Error {
-	q := r.query.Select("getError")
-	q = q.Arg("name", name)
-
-	return &Error{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type ErrorValue
-func (r *LLM) GetErrorValue(name string) *ErrorValue {
-	q := r.query.Select("getErrorValue")
-	q = q.Arg("name", name)
-
-	return &ErrorValue{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type FieldTypeDef
-func (r *LLM) GetFieldTypeDef(name string) *FieldTypeDef {
-	q := r.query.Select("getFieldTypeDef")
-	q = q.Arg("name", name)
-
-	return &FieldTypeDef{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type File
-func (r *LLM) GetFile(name string) *File {
-	q := r.query.Select("getFile")
-	q = q.Arg("name", name)
-
-	return &File{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type Function
-func (r *LLM) GetFunction(name string) *Function {
-	q := r.query.Select("getFunction")
-	q = q.Arg("name", name)
-
-	return &Function{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type FunctionArg
-func (r *LLM) GetFunctionArg(name string) *FunctionArg {
-	q := r.query.Select("getFunctionArg")
-	q = q.Arg("name", name)
-
-	return &FunctionArg{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type FunctionCall
-func (r *LLM) GetFunctionCall(name string) *FunctionCall {
-	q := r.query.Select("getFunctionCall")
-	q = q.Arg("name", name)
-
-	return &FunctionCall{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type FunctionCallArgValue
-func (r *LLM) GetFunctionCallArgValue(name string) *FunctionCallArgValue {
-	q := r.query.Select("getFunctionCallArgValue")
-	q = q.Arg("name", name)
-
-	return &FunctionCallArgValue{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type GeneratedCode
-func (r *LLM) GetGeneratedCode(name string) *GeneratedCode {
-	q := r.query.Select("getGeneratedCode")
-	q = q.Arg("name", name)
-
-	return &GeneratedCode{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type GitRef
-func (r *LLM) GetGitRef(name string) *GitRef {
-	q := r.query.Select("getGitRef")
-	q = q.Arg("name", name)
-
-	return &GitRef{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type GitRepository
-func (r *LLM) GetGitRepository(name string) *GitRepository {
-	q := r.query.Select("getGitRepository")
-	q = q.Arg("name", name)
-
-	return &GitRepository{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type InputTypeDef
-func (r *LLM) GetInputTypeDef(name string) *InputTypeDef {
-	q := r.query.Select("getInputTypeDef")
-	q = q.Arg("name", name)
-
-	return &InputTypeDef{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type InterfaceTypeDef
-func (r *LLM) GetInterfaceTypeDef(name string) *InterfaceTypeDef {
-	q := r.query.Select("getInterfaceTypeDef")
-	q = q.Arg("name", name)
-
-	return &InterfaceTypeDef{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type LLM
-func (r *LLM) GetLLM(name string) *LLM {
-	q := r.query.Select("getLLM")
-	q = q.Arg("name", name)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type ListTypeDef
-func (r *LLM) GetListTypeDef(name string) *ListTypeDef {
-	q := r.query.Select("getListTypeDef")
-	q = q.Arg("name", name)
-
-	return &ListTypeDef{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type Module
-func (r *LLM) GetModule(name string) *Module {
-	q := r.query.Select("getModule")
-	q = q.Arg("name", name)
-
-	return &Module{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type ModuleConfigClient
-func (r *LLM) GetModuleConfigClient(name string) *ModuleConfigClient {
-	q := r.query.Select("getModuleConfigClient")
-	q = q.Arg("name", name)
-
-	return &ModuleConfigClient{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type ModuleSource
-func (r *LLM) GetModuleSource(name string) *ModuleSource {
-	q := r.query.Select("getModuleSource")
-	q = q.Arg("name", name)
-
-	return &ModuleSource{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type ObjectTypeDef
-func (r *LLM) GetObjectTypeDef(name string) *ObjectTypeDef {
-	q := r.query.Select("getObjectTypeDef")
-	q = q.Arg("name", name)
-
-	return &ObjectTypeDef{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type SDKConfig
-func (r *LLM) GetSDKConfig(name string) *SDKConfig {
-	q := r.query.Select("getSDKConfig")
-	q = q.Arg("name", name)
-
-	return &SDKConfig{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type ScalarTypeDef
-func (r *LLM) GetScalarTypeDef(name string) *ScalarTypeDef {
-	q := r.query.Select("getScalarTypeDef")
-	q = q.Arg("name", name)
-
-	return &ScalarTypeDef{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type Secret
-func (r *LLM) GetSecret(name string) *Secret {
-	q := r.query.Select("getSecret")
-	q = q.Arg("name", name)
-
-	return &Secret{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type Service
-func (r *LLM) GetService(name string) *Service {
-	q := r.query.Select("getService")
-	q = q.Arg("name", name)
-
-	return &Service{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type Socket
-func (r *LLM) GetSocket(name string) *Socket {
-	q := r.query.Select("getSocket")
-	q = q.Arg("name", name)
-
-	return &Socket{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type SourceMap
-func (r *LLM) GetSourceMap(name string) *SourceMap {
-	q := r.query.Select("getSourceMap")
-	q = q.Arg("name", name)
-
-	return &SourceMap{
-		query: q,
-	}
-}
-
-// Get a string variable from the LLM's environment
-func (r *LLM) GetString(ctx context.Context, name string) (string, error) {
-	if r.getString != nil {
-		return *r.getString, nil
-	}
-	q := r.query.Select("getString")
-	q = q.Arg("name", name)
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Retrieve a variable in the llm environment, of type Terminal
-func (r *LLM) GetTerminal(name string) *Terminal {
-	q := r.query.Select("getTerminal")
-	q = q.Arg("name", name)
-
-	return &Terminal{
-		query: q,
-	}
-}
-
-// Retrieve a variable in the llm environment, of type TypeDef
-func (r *LLM) GetTypeDef(name string) *TypeDef {
-	q := r.query.Select("getTypeDef")
-	q = q.Arg("name", name)
-
-	return &TypeDef{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type GitRef
-func (r *LLM) GitRef() *GitRef {
-	q := r.query.Select("gitRef")
-
-	return &GitRef{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type GitRepository
-func (r *LLM) GitRepository() *GitRepository {
-	q := r.query.Select("gitRepository")
-
-	return &GitRepository{
+// return the LLM's current environment
+func (r *LLM) Environment() *Environment {
+	q := r.query.Select("environment")
+
+	return &Environment{
 		query: q,
 	}
 }
@@ -5899,33 +6369,6 @@ func (r *LLM) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Retrieve a the current value in the LLM environment, of type InputTypeDef
-func (r *LLM) InputTypeDef() *InputTypeDef {
-	q := r.query.Select("inputTypeDef")
-
-	return &InputTypeDef{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type InterfaceTypeDef
-func (r *LLM) InterfaceTypeDef() *InterfaceTypeDef {
-	q := r.query.Select("interfaceTypeDef")
-
-	return &InterfaceTypeDef{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type LLM
-func (r *LLM) LLM() *LLM {
-	q := r.query.Select("lLM")
-
-	return &LLM{
-		query: q,
-	}
-}
-
 // return the last llm reply from the history
 func (r *LLM) LastReply(ctx context.Context) (string, error) {
 	if r.lastReply != nil {
@@ -5937,15 +6380,6 @@ func (r *LLM) LastReply(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
-}
-
-// Retrieve a the current value in the LLM environment, of type ListTypeDef
-func (r *LLM) ListTypeDef() *ListTypeDef {
-	q := r.query.Select("listTypeDef")
-
-	return &ListTypeDef{
-		query: q,
-	}
 }
 
 // synchronize LLM state
@@ -5970,42 +6404,6 @@ func (r *LLM) Model(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Retrieve a the current value in the LLM environment, of type Module
-func (r *LLM) Module() *Module {
-	q := r.query.Select("module")
-
-	return &Module{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type ModuleConfigClient
-func (r *LLM) ModuleConfigClient() *ModuleConfigClient {
-	q := r.query.Select("moduleConfigClient")
-
-	return &ModuleConfigClient{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type ModuleSource
-func (r *LLM) ModuleSource() *ModuleSource {
-	q := r.query.Select("moduleSource")
-
-	return &ModuleSource{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type ObjectTypeDef
-func (r *LLM) ObjectTypeDef() *ObjectTypeDef {
-	q := r.query.Select("objectTypeDef")
-
-	return &ObjectTypeDef{
-		query: q,
-	}
-}
-
 // return the provider used by the llm
 func (r *LLM) Provider(ctx context.Context) (string, error) {
 	if r.provider != nil {
@@ -6019,467 +6417,6 @@ func (r *LLM) Provider(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Retrieve a the current value in the LLM environment, of type ScalarTypeDef
-func (r *LLM) ScalarTypeDef() *ScalarTypeDef {
-	q := r.query.Select("scalarTypeDef")
-
-	return &ScalarTypeDef{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type SDKConfig
-func (r *LLM) Sdkconfig() *SDKConfig {
-	q := r.query.Select("sdkconfig")
-
-	return &SDKConfig{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type Secret
-func (r *LLM) Secret() *Secret {
-	q := r.query.Select("secret")
-
-	return &Secret{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type Service
-func (r *LLM) Service() *Service {
-	q := r.query.Select("service")
-
-	return &Service{
-		query: q,
-	}
-}
-
-// Set a variable of type CacheVolume in the llm environment
-func (r *LLM) SetCacheVolume(name string, value *CacheVolume) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setCacheVolume")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type Container in the llm environment
-func (r *LLM) SetContainer(name string, value *Container) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setContainer")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type CurrentModule in the llm environment
-func (r *LLM) SetCurrentModule(name string, value *CurrentModule) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setCurrentModule")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type Directory in the llm environment
-func (r *LLM) SetDirectory(name string, value *Directory) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setDirectory")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type EnumTypeDef in the llm environment
-func (r *LLM) SetEnumTypeDef(name string, value *EnumTypeDef) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setEnumTypeDef")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type EnumValueTypeDef in the llm environment
-func (r *LLM) SetEnumValueTypeDef(name string, value *EnumValueTypeDef) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setEnumValueTypeDef")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type Error in the llm environment
-func (r *LLM) SetError(name string, value *Error) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setError")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type ErrorValue in the llm environment
-func (r *LLM) SetErrorValue(name string, value *ErrorValue) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setErrorValue")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type FieldTypeDef in the llm environment
-func (r *LLM) SetFieldTypeDef(name string, value *FieldTypeDef) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setFieldTypeDef")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type File in the llm environment
-func (r *LLM) SetFile(name string, value *File) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setFile")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type Function in the llm environment
-func (r *LLM) SetFunction(name string, value *Function) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setFunction")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type FunctionArg in the llm environment
-func (r *LLM) SetFunctionArg(name string, value *FunctionArg) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setFunctionArg")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type FunctionCall in the llm environment
-func (r *LLM) SetFunctionCall(name string, value *FunctionCall) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setFunctionCall")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type FunctionCallArgValue in the llm environment
-func (r *LLM) SetFunctionCallArgValue(name string, value *FunctionCallArgValue) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setFunctionCallArgValue")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type GeneratedCode in the llm environment
-func (r *LLM) SetGeneratedCode(name string, value *GeneratedCode) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setGeneratedCode")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type GitRef in the llm environment
-func (r *LLM) SetGitRef(name string, value *GitRef) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setGitRef")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type GitRepository in the llm environment
-func (r *LLM) SetGitRepository(name string, value *GitRepository) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setGitRepository")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type InputTypeDef in the llm environment
-func (r *LLM) SetInputTypeDef(name string, value *InputTypeDef) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setInputTypeDef")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type InterfaceTypeDef in the llm environment
-func (r *LLM) SetInterfaceTypeDef(name string, value *InterfaceTypeDef) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setInterfaceTypeDef")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type LLM in the llm environment
-func (r *LLM) SetLLM(name string, value *LLM) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setLLM")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type ListTypeDef in the llm environment
-func (r *LLM) SetListTypeDef(name string, value *ListTypeDef) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setListTypeDef")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type Module in the llm environment
-func (r *LLM) SetModule(name string, value *Module) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setModule")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type ModuleConfigClient in the llm environment
-func (r *LLM) SetModuleConfigClient(name string, value *ModuleConfigClient) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setModuleConfigClient")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type ModuleSource in the llm environment
-func (r *LLM) SetModuleSource(name string, value *ModuleSource) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setModuleSource")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type ObjectTypeDef in the llm environment
-func (r *LLM) SetObjectTypeDef(name string, value *ObjectTypeDef) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setObjectTypeDef")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type SDKConfig in the llm environment
-func (r *LLM) SetSDKConfig(name string, value *SDKConfig) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setSDKConfig")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type ScalarTypeDef in the llm environment
-func (r *LLM) SetScalarTypeDef(name string, value *ScalarTypeDef) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setScalarTypeDef")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type Secret in the llm environment
-func (r *LLM) SetSecret(name string, value *Secret) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setSecret")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type Service in the llm environment
-func (r *LLM) SetService(name string, value *Service) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setService")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type Socket in the llm environment
-func (r *LLM) SetSocket(name string, value *Socket) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setSocket")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type SourceMap in the llm environment
-func (r *LLM) SetSourceMap(name string, value *SourceMap) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setSourceMap")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Add a string variable to the LLM's environment
-func (r *LLM) SetString(name string, value string) *LLM {
-	q := r.query.Select("setString")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type Terminal in the llm environment
-func (r *LLM) SetTerminal(name string, value *Terminal) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setTerminal")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type TypeDef in the llm environment
-func (r *LLM) SetTypeDef(name string, value *TypeDef) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("setTypeDef")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type Socket
-func (r *LLM) Socket() *Socket {
-	q := r.query.Select("socket")
-
-	return &Socket{
-		query: q,
-	}
-}
-
-// Retrieve a the current value in the LLM environment, of type SourceMap
-func (r *LLM) SourceMap() *SourceMap {
-	q := r.query.Select("sourceMap")
-
-	return &SourceMap{
-		query: q,
-	}
-}
-
 // synchronize LLM state
 func (r *LLM) Sync(ctx context.Context) (*LLM, error) {
 	q := r.query.Select("sync")
@@ -6491,15 +6428,6 @@ func (r *LLM) Sync(ctx context.Context) (*LLM, error) {
 	return &LLM{
 		query: q.Root().Select("loadLLMFromID").Arg("id", id),
 	}, nil
-}
-
-// Retrieve a the current value in the LLM environment, of type Terminal
-func (r *LLM) Terminal() *Terminal {
-	q := r.query.Select("terminal")
-
-	return &Terminal{
-		query: q,
-	}
 }
 
 // returns the token usage of the current state
@@ -6522,15 +6450,6 @@ func (r *LLM) Tools(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
-}
-
-// Retrieve a the current value in the LLM environment, of type TypeDef
-func (r *LLM) TypeDef() *TypeDef {
-	q := r.query.Select("typeDef")
-
-	return &TypeDef{
-		query: q,
-	}
 }
 
 // list variables in the LLM environment
@@ -6566,231 +6485,11 @@ func (r *LLM) Variables(ctx context.Context) ([]LLMVariable, error) {
 	return convert(response), nil
 }
 
-// Set a variable of type CacheVolume in the llm environment
-func (r *LLM) WithCacheVolume(value *CacheVolume) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withCacheVolume")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type Container in the llm environment
-func (r *LLM) WithContainer(value *Container) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withContainer")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type CurrentModule in the llm environment
-func (r *LLM) WithCurrentModule(value *CurrentModule) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withCurrentModule")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type Directory in the llm environment
-func (r *LLM) WithDirectory(value *Directory) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withDirectory")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type EnumTypeDef in the llm environment
-func (r *LLM) WithEnumTypeDef(value *EnumTypeDef) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withEnumTypeDef")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type EnumValueTypeDef in the llm environment
-func (r *LLM) WithEnumValueTypeDef(value *EnumValueTypeDef) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withEnumValueTypeDef")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type Error in the llm environment
-func (r *LLM) WithError(value *Error) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withError")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type ErrorValue in the llm environment
-func (r *LLM) WithErrorValue(value *ErrorValue) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withErrorValue")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type FieldTypeDef in the llm environment
-func (r *LLM) WithFieldTypeDef(value *FieldTypeDef) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withFieldTypeDef")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type File in the llm environment
-func (r *LLM) WithFile(value *File) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withFile")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type Function in the llm environment
-func (r *LLM) WithFunction(value *Function) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withFunction")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type FunctionArg in the llm environment
-func (r *LLM) WithFunctionArg(value *FunctionArg) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withFunctionArg")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type FunctionCall in the llm environment
-func (r *LLM) WithFunctionCall(value *FunctionCall) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withFunctionCall")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type FunctionCallArgValue in the llm environment
-func (r *LLM) WithFunctionCallArgValue(value *FunctionCallArgValue) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withFunctionCallArgValue")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type GeneratedCode in the llm environment
-func (r *LLM) WithGeneratedCode(value *GeneratedCode) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withGeneratedCode")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type GitRef in the llm environment
-func (r *LLM) WithGitRef(value *GitRef) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withGitRef")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type GitRepository in the llm environment
-func (r *LLM) WithGitRepository(value *GitRepository) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withGitRepository")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type InputTypeDef in the llm environment
-func (r *LLM) WithInputTypeDef(value *InputTypeDef) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withInputTypeDef")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type InterfaceTypeDef in the llm environment
-func (r *LLM) WithInterfaceTypeDef(value *InterfaceTypeDef) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withInterfaceTypeDef")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type LLM in the llm environment
-func (r *LLM) WithLLM(value *LLM) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withLLM")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type ListTypeDef in the llm environment
-func (r *LLM) WithListTypeDef(value *ListTypeDef) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withListTypeDef")
-	q = q.Arg("value", value)
+// allow the LLM to interact with an environment via MCP
+func (r *LLM) WithEnvironment(environment *Environment) *LLM {
+	assertNotNil("environment", environment)
+	q := r.query.Select("withEnvironment")
+	q = q.Arg("environment", environment)
 
 	return &LLM{
 		query: q,
@@ -6801,50 +6500,6 @@ func (r *LLM) WithListTypeDef(value *ListTypeDef) *LLM {
 func (r *LLM) WithModel(model string) *LLM {
 	q := r.query.Select("withModel")
 	q = q.Arg("model", model)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type Module in the llm environment
-func (r *LLM) WithModule(value *Module) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withModule")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type ModuleConfigClient in the llm environment
-func (r *LLM) WithModuleConfigClient(value *ModuleConfigClient) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withModuleConfigClient")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type ModuleSource in the llm environment
-func (r *LLM) WithModuleSource(value *ModuleSource) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withModuleSource")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type ObjectTypeDef in the llm environment
-func (r *LLM) WithObjectTypeDef(value *ObjectTypeDef) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withObjectTypeDef")
-	q = q.Arg("value", value)
 
 	return &LLM{
 		query: q,
@@ -6892,98 +6547,10 @@ func (r *LLM) WithQuery() *LLM {
 	}
 }
 
-// Set a variable of type SDKConfig in the llm environment
-func (r *LLM) WithSDKConfig(value *SDKConfig) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withSDKConfig")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type ScalarTypeDef in the llm environment
-func (r *LLM) WithScalarTypeDef(value *ScalarTypeDef) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withScalarTypeDef")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type Secret in the llm environment
-func (r *LLM) WithSecret(value *Secret) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withSecret")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type Service in the llm environment
-func (r *LLM) WithService(value *Service) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withService")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type Socket in the llm environment
-func (r *LLM) WithSocket(value *Socket) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withSocket")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type SourceMap in the llm environment
-func (r *LLM) WithSourceMap(value *SourceMap) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withSourceMap")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
 // Add a system prompt to the LLM's environment
 func (r *LLM) WithSystemPrompt(prompt string) *LLM {
 	q := r.query.Select("withSystemPrompt")
 	q = q.Arg("prompt", prompt)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type Terminal in the llm environment
-func (r *LLM) WithTerminal(value *Terminal) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withTerminal")
-	q = q.Arg("value", value)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Set a variable of type TypeDef in the llm environment
-func (r *LLM) WithTypeDef(value *TypeDef) *LLM {
-	assertNotNil("value", value)
-	q := r.query.Select("withTypeDef")
-	q = q.Arg("value", value)
 
 	return &LLM{
 		query: q,
@@ -8699,6 +8266,15 @@ func (r *Client) Engine() *Engine {
 	}
 }
 
+// Initialize a new environment
+func (r *Client) Environment() *Environment {
+	q := r.query.Select("environment")
+
+	return &Environment{
+		query: q,
+	}
+}
+
 // Create a new error.
 func (r *Client) Error(message string) *Error {
 	q := r.query.Select("error")
@@ -8830,6 +8406,16 @@ func (r *Client) LLM(opts ...LLMOpts) *LLM {
 	}
 }
 
+// Load a Binding from its ID.
+func (r *Client) LoadBindingFromID(id BindingID) *Binding {
+	q := r.query.Select("loadBindingFromID")
+	q = q.Arg("id", id)
+
+	return &Binding{
+		query: q,
+	}
+}
+
 // Load a CacheVolume from its ID.
 func (r *Client) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
 	q := r.query.Select("loadCacheVolumeFromID")
@@ -8936,6 +8522,16 @@ func (r *Client) LoadEnvVariableFromID(id EnvVariableID) *EnvVariable {
 	q = q.Arg("id", id)
 
 	return &EnvVariable{
+		query: q,
+	}
+}
+
+// Load a Environment from its ID.
+func (r *Client) LoadEnvironmentFromID(id EnvironmentID) *Environment {
+	q := r.query.Select("loadEnvironmentFromID")
+	q = q.Arg("id", id)
+
+	return &Environment{
 		query: q,
 	}
 }

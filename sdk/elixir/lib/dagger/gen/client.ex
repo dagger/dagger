@@ -123,6 +123,18 @@ defmodule Dagger.Client do
     }
   end
 
+  @doc "Initialize a new environment"
+  @spec environment(t()) :: Dagger.Environment.t()
+  def environment(%__MODULE__{} = client) do
+    query_builder =
+      client.query_builder |> QB.select("environment")
+
+    %Dagger.Environment{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
   @doc "Create a new error."
   @spec error(t(), String.t()) :: Dagger.Error.t()
   def error(%__MODULE__{} = client, message) do
@@ -226,6 +238,18 @@ defmodule Dagger.Client do
       |> QB.maybe_put_arg("maxAPICalls", optional_args[:max_api_calls])
 
     %Dagger.LLM{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc "Load a Binding from its ID."
+  @spec load_binding_from_id(t(), Dagger.BindingID.t()) :: Dagger.Binding.t()
+  def load_binding_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadBindingFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Binding{
       query_builder: query_builder,
       client: client.client
     }
@@ -361,6 +385,18 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadEnvVariableFromID") |> QB.put_arg("id", id)
 
     %Dagger.EnvVariable{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc "Load a Environment from its ID."
+  @spec load_environment_from_id(t(), Dagger.EnvironmentID.t()) :: Dagger.Environment.t()
+  def load_environment_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadEnvironmentFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Environment{
       query_builder: query_builder,
       client: client.client
     }
