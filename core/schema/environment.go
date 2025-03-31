@@ -24,6 +24,10 @@ func (s environmentSchema) Install() {
 			Doc("return all bindings in the environment"),
 		dagql.Func("binding", s.binding).
 			Doc("retrieve a binding by name"),
+		dagql.Func("withStringBinding", s.withStringBinding).
+			ArgDoc("name", "The name of the binding").
+			ArgDoc("value", "The string value to assign to the binding").
+			Doc("Create or update a binding of type string in the environment"),
 	}.Install(s.srv)
 	dagql.Fields[*core.Binding]{
 		dagql.Func("name", s.bindingName).
@@ -57,6 +61,13 @@ func (s environmentSchema) binding(ctx context.Context, env *core.Environment, a
 		return b, nil
 	}
 	return nil, fmt.Errorf("binding not found: %s", args.Name)
+}
+
+func (s environmentSchema) withStringBinding(ctx context.Context, env *core.Environment, args struct {
+	Name  string
+	Value string
+}) (*core.Environment, error) {
+	return env.WithBinding(args.Name, dagql.NewString(args.Value)), nil
 }
 
 func (s environmentSchema) bindingName(ctx context.Context, b *core.Binding, args struct{}) (string, error) {
