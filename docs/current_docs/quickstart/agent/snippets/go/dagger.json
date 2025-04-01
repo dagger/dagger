@@ -1,6 +1,6 @@
 {
   "name": "coding-agent",
-  "engineVersion": "v0.17.0",
+  "engineVersion": "v0.18.0",
   "sdk": {
     "source": "go"
   },
