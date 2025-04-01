@@ -211,9 +211,7 @@ func (s *llmSchema) withMCP(ctx context.Context, llm *core.LLM, args struct {
 	if err != nil {
 		return llm, err
 	}
-	llm, err = llm.WithMCP(ctx, inst.Self, s.srv)
-	if err != nil {
-		return llm, err
-	}
-	return llm, nil
+
+	// i suspect inst.ID shouldn't actually wire through here? this is tied up in core.Services prolly
+	return llm.WithMCP(ctx, inst.Self, inst.ID()), nil
 }

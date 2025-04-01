@@ -8,7 +8,6 @@ import (
 	"net"
 	"sync"
 
-	"github.com/mark3labs/mcp-go/client"
 	bkcache "github.com/moby/buildkit/cache"
 	bkcacheconfig "github.com/moby/buildkit/cache/config"
 	"github.com/moby/buildkit/cache/remotecache"
@@ -861,10 +860,6 @@ func (c *Client) OpenPipe(
 	}
 	// io.ReadWriter wrapper
 	return &session.PipeIO{GRPC: pipeIOClient}, nil
-}
-
-func (c *Client) MCPClient(ctx context.Context) (client.MCPClient, error) {
-	return nil, nil
 }
 
 // like sync.OnceValue but accepts an arg

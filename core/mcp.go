@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"sort"
 	"strconv"
@@ -16,11 +17,14 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
-	"github.com/mark3labs/mcp-go/client"
+	mcpc "github.com/metoro-io/mcp-golang"
+	"github.com/metoro-io/mcp-golang/transport/stdio"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/errgroup"
 )
 
 // A frontend for LLM tool calling
@@ -116,12 +120,12 @@ func (m *MCP) GetObject(key, expectedType string) (dagql.Object, error) {
 	return nil, fmt.Errorf("unknown object %q", key)
 }
 
-func (m *MCP) Tools(srv *dagql.Server) ([]LLMTool, error) {
+func (m *MCP) Tools(ctx context.Context, srv *dagql.Server) ([]LLMTool, error) {
 	builtins, err := m.Builtins(srv)
 	if err != nil {
 		return nil, err
 	}
-	mcpTools, err := m.MCPServerTools(srv)
+	mcpTools, err := m.MCPServerTools(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -137,10 +141,10 @@ func (m *MCP) Tools(srv *dagql.Server) ([]LLMTool, error) {
 	return append(tools, objTools...), nil
 }
 
-func (m *MCP) MCPServerTools(srv *dagql.Server) ([]LLMTool, error) {
+func (m *MCP) MCPServerTools(ctx context.Context) ([]LLMTool, error) {
 	var tools []LLMTool
 	for _, mcpServer := range m.mcpServers {
-		serverTools, err := mcpServer.Tools()
+		serverTools, err := mcpServer.Tools(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -573,19 +577,79 @@ Each parameter corresponds to a named result with a specific purpose. Do not cal
 }
 
 type MCPClient struct {
-	client.MCPClient
-	ctr *Container
+	*mcpc.Client
+	mcpSvcID  *call.ID
+	container *Container
 }
 
-func NewMCPClient(ctr *Container, srv *dagql.Server) (*MCPClient, error) {
+func (ms *MCPClient) Tools(ctx context.Context) ([]LLMTool, error) {
+	if ms.Client == nil {
+		ms.StartClient(ctx)
+	}
 
-	return &MCPClient{
-		ctr: ctr,
-	}, nil
-}
-
-func (ms *MCPClient) Tools() ([]LLMTool, error) {
 	return []LLMTool{}, nil
+}
+
+func (ms *MCPClient) StartClient(ctx context.Context) error {
+	svc, err := ms.container.AsService(ctx, ContainerAsServiceArgs{})
+	if err != nil {
+		return err
+	}
+
+	svcStdin, clientStdin := io.Pipe()
+	clientStdout, svcStdout := io.Pipe()
+
+	// irl this probably needs to wire through core/services.go
+	eg, egctx := errgroup.WithContext(ctx)
+	runningSvc, err := svc.Start(
+		ctx,
+		ms.mcpSvcID,
+		false,
+		func(stdin io.Writer, _ bkgw.ContainerProcess) {
+			eg.Go(func() error {
+				defer clientStdin.Close()
+				_, err := io.Copy(stdin, svcStdin)
+				if err != nil {
+					if errors.Is(err, io.ErrClosedPipe) {
+						return nil
+					}
+					return fmt.Errorf("error forwarding terminal stdin to container: %w", err)
+				}
+				return nil
+			})
+		},
+		func(stdout io.Reader) {
+			eg.Go(func() error {
+				defer clientStdout.Close()
+				_, err := io.Copy(svcStdout, stdout)
+				if err != nil {
+					if errors.Is(err, io.ErrClosedPipe) {
+						return nil
+					}
+					return fmt.Errorf("error forwarding container stdout to terminal: %w", err)
+				}
+				return nil
+			})
+		},
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to start MCP service: %w", err)
+	}
+
+	client := mcpc.NewClient(stdio.NewStdioServerTransportWithIO(clientStdout, clientStdin))
+	_, err = client.Initialize(egctx)
+	if err != nil {
+		return fmt.Errorf("failed initializing MCP client: %w", err)
+	}
+	ms.Client = client
+
+	eg.Go(func() error {
+		return runningSvc.Wait(egctx)
+	})
+
+	// concurrency model is completely wrong here... this can't block.
+	return eg.Wait()
 }
 
 func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {

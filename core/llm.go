@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/secretprovider"
 )
@@ -476,7 +477,7 @@ func (llm *LLM) Clone() *LLM {
 
 // Generate a human-readable documentation of tools available to the model
 func (llm *LLM) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error) {
-	tools, err := llm.mcp.Tools(srv)
+	tools, err := llm.mcp.Tools(ctx, srv)
 	if err != nil {
 		return "", err
 	}
@@ -560,20 +561,11 @@ func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 	return llm
 }
 
-// Append a system prompt message to the history
-func (llm *LLM) WithMCP(ctx context.Context, ctr *Container, srv *dagql.Server) (*LLM, error) {
+// Add a stdio MCP service to the llm's tool set
+func (llm *LLM) WithMCP(ctx context.Context, ctr *Container, mcpSvcId *call.ID) *LLM {
 	llm = llm.Clone()
-	bk, err := llm.Query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	mcpServer, err := bk.MCPClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to instantiate MCP Client", err)
-	}
-
-	llm.mcp.mcpServers = append(llm.mcp.mcpServers, MCPClient{mcpServer, ctr})
-	return llm, nil
+	llm.mcp.mcpServers = append(llm.mcp.mcpServers, MCPClient{container: ctr})
+	return llm
 }
 
 // Return the last message sent by the agent
@@ -717,7 +709,7 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 		}
 		llm.apiCalls++
 
-		tools, err := llm.mcp.Tools(dag)
+		tools, err := llm.mcp.Tools(ctx, dag)
 		if err != nil {
 			return err
 		}
