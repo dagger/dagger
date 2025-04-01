@@ -21,6 +21,10 @@ import (
 	"gotest.tools/v3/golden"
 )
 
+/* NOTE: To update golden test examples, run e.g.:
+dagger call test update --pkg=./core/integration --run="TestLLM" --env-file=file://$PWD/.env -o .
+*/
+
 type LLMSuite struct{}
 
 func TestLLM(t *testing.T) {
@@ -126,7 +130,7 @@ func (LLMSuite) TestAPILimit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	ctrFn := func(llmFlags string) dagger.WithContainerFunc {
-		return daggerShell(fmt.Sprintf(`llm %s | with-container alpine | with-prompt "tell me the value of PATH" | loop | with-prompt "now tell me the value of TERM" | historyJSON`, llmFlags))
+		return daggerShell(fmt.Sprintf(`llm %s | with-env $(.core | env | with-container-input "alpine" alpine "an alpine linux container") | with-prompt "tell me the value of PATH" | loop | with-prompt "now tell me the value of TERM" | historyJSON`, llmFlags))
 	}
 
 	recording := "llmtest/api-limit.golden"
