@@ -1,6 +1,9 @@
 package main
 
-import "dagger/recorder/internal/dagger"
+import (
+	"context"
+	"dagger/recorder/internal/dagger"
+)
 
 // Render feature recordings.
 func (r *Recorder) Features() *Features {
@@ -14,16 +17,22 @@ type Features struct {
 	Recorder *Recorder
 }
 
-func (f *Features) All() *dagger.Directory {
-	// TODO: add secrets
+func (f *Features) All(ctx context.Context, githubToken *dagger.Secret) (*dagger.Directory, error) {
+	secretsFile, err := f.SecretsFile(ctx, githubToken)
+	if err != nil {
+		return nil, err
+	}
+
 	return dag.Directory().
 		WithDirectory("", f.Build()).
 		WithDirectory("", f.BuildPublish()).
 		WithDirectory("", f.BuildExport()).
+		WithDirectory("", f.SecretsEnv(githubToken)).
+		WithDirectory("", secretsFile).
 		WithDirectory("", f.ShellCurl()).
 		WithDirectory("", f.ShellBuild()).
 		WithDirectory("", f.ShellHelp()).
-		WithDirectory("", f.Tui())
+		WithDirectory("", f.Tui()), nil
 }
 
 func (f *Features) Build() *dagger.Directory {
@@ -51,6 +60,34 @@ func (f *Features) BuildExport() *dagger.Directory {
 		WithDirectory("", f.Recorder.Source.Directory("docs/current_docs/features/snippets/programmable-pipelines-2/go"))
 
 	return f.Recorder.Vhs.WithSource(source).Render(tape)
+}
+
+func (f *Features) SecretsEnv(githubToken *dagger.Secret) *dagger.Directory {
+	const tape = "features/secrets-env.tape"
+
+	source := dag.CurrentModule().Source().
+		Directory("tapes").
+		Filter(includeWithDefaults(tape)).
+		WithDirectory("", f.Recorder.Source.Directory("docs/current_docs/features/snippets/secrets/go"))
+
+	return f.Recorder.Vhs.WithSource(source).WithSecretVariable("TOKEN", githubToken).Render(tape)
+}
+
+func (f *Features) SecretsFile(ctx context.Context, githubToken *dagger.Secret) (*dagger.Directory, error) {
+	const tape = "features/secrets-file.tape"
+
+	token, err := githubToken.Plaintext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	source := dag.CurrentModule().Source().
+		Directory("tapes").
+		Filter(includeWithDefaults(tape)).
+		WithDirectory("", f.Recorder.Source.Directory("docs/current_docs/features/snippets/secrets/go")).
+		WithNewFile("token", token)
+
+	return f.Recorder.Vhs.WithSource(source).Render(tape), nil
 }
 
 func (f *Features) ShellCurl() *dagger.Directory {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"dagger/recorder/internal/dagger"
 )
 
@@ -53,10 +54,15 @@ func New(
 	}
 }
 
-func (r *Recorder) Render() *dagger.Directory {
+func (r *Recorder) Render(ctx context.Context, githubToken *dagger.Secret) (*dagger.Directory, error) {
+	features, err := r.Features().All(ctx, githubToken)
+	if err != nil {
+		return nil, err
+	}
+
 	return dag.Directory().
-		WithDirectory("", r.Features().All()).
-		WithDirectory("", r.Quickstart().All())
+		WithDirectory("", features).
+		WithDirectory("", r.Quickstart().All()), nil
 }
 
 func include(tapes ...string) dagger.DirectoryFilterOpts {
