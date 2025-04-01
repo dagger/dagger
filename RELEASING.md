@@ -242,8 +242,8 @@ find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php sdk/rust helm/dagger 
 
 ```console
 find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php sdk/rust helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie merge \;
-git add **/.changes
-git add **/CHANGELOG.md
+find . -name .changes -type d -exec git add {} \;
+find . -name CHANGELOG.md -type f -exec git add {} \;
 git commit -s -m "chore: add release notes for $ENGINE_VERSION"
 ```
 
