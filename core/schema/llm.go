@@ -89,8 +89,7 @@ func (s *llmSchema) withEnv(ctx context.Context, llm *core.LLM, args struct {
 }
 
 func (s *llmSchema) env(ctx context.Context, llm *core.LLM, args struct{}) (*core.Env, error) {
-	llm, err := llm.Sync(ctx, s.srv)
-	if err != nil {
+	if err := llm.Sync(ctx, s.srv); err != nil {
 		return nil, err
 	}
 	return llm.Env(), nil
@@ -145,7 +144,7 @@ func (s *llmSchema) withPromptFile(ctx context.Context, llm *core.LLM, args stru
 }
 
 func (s *llmSchema) loop(ctx context.Context, llm *core.LLM, args struct{}) (*core.LLM, error) {
-	return llm.Sync(ctx, s.srv)
+	return llm, llm.Sync(ctx, s.srv)
 }
 
 func (s *llmSchema) attempt(_ context.Context, llm *core.LLM, _ struct {

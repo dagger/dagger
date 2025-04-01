@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/anthropics/anthropic-sdk-go"
@@ -62,8 +63,7 @@ type LLM struct {
 	apiCalls    int
 	Endpoint    *LLMEndpoint
 
-	// If true: has un-synced state
-	dirty bool
+	once *sync.Once
 
 	// History of messages
 	messages []ModelMessage
@@ -469,6 +469,7 @@ func (llm *LLM) Clone() *LLM {
 	cp := *llm
 	cp.messages = cloneSlice(cp.messages)
 	cp.mcp = cp.mcp.Clone()
+	cp.once = &sync.Once{}
 	return &cp
 }
 
@@ -536,7 +537,6 @@ func (llm *LLM) WithPrompt(
 		Role:    "user",
 		Content: prompt,
 	})
-	llm.dirty = true
 	return llm, nil
 }
 
@@ -556,14 +556,12 @@ func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 		Role:    "system",
 		Content: prompt,
 	})
-	llm.dirty = true
 	return llm
 }
 
 // Return the last message sent by the agent
 func (llm *LLM) LastReply(ctx context.Context, dag *dagql.Server) (string, error) {
-	llm, err := llm.Sync(ctx, dag)
-	if err != nil {
+	if err := llm.Sync(ctx, dag); err != nil {
 		return "", err
 	}
 	var reply string = "(no reply)"
@@ -608,34 +606,37 @@ func (llm *LLM) messagesWithSystemPrompt() []ModelMessage {
 // 1. Send context to LLM endpoint
 // 2. Process replies and tool calls
 // 3. Continue in a loop until no tool calls, or caps are reached
-func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
+func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) error {
 	if err := llm.allowed(ctx); err != nil {
-		return nil, err
+		return err
 	}
+	var err error
+	llm.once.Do(func() {
+		err = llm.loop(ctx, dag)
+	})
+	return err
+}
 
-	if !llm.dirty {
-		return llm, nil
-	}
+func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 	if len(llm.messages) == 0 {
 		// dirty but no messages, possibly just a state change, nothing to do
 		// until a prompt is given
-		return llm, nil
+		return nil
 	}
-	llm = llm.Clone()
 	for {
 		if llm.maxAPICalls > 0 && llm.apiCalls >= llm.maxAPICalls {
-			return nil, fmt.Errorf("reached API call limit: %d", llm.apiCalls)
+			return fmt.Errorf("reached API call limit: %d", llm.apiCalls)
 		}
 		llm.apiCalls++
 
 		tools, err := llm.mcp.Tools(dag)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		res, err := llm.Endpoint.Client.SendQuery(ctx, llm.messagesWithSystemPrompt(), tools)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		// Add the model reply to the history
@@ -660,8 +661,7 @@ func (llm *LLM) Sync(ctx context.Context, dag *dagql.Server) (*LLM, error) {
 			})
 		}
 	}
-	llm.dirty = false
-	return llm, nil
+	return nil
 }
 
 func (llm *LLM) allowed(ctx context.Context) error {
@@ -698,8 +698,7 @@ func (llm *LLM) allowed(ctx context.Context) error {
 }
 
 func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error) {
-	llm, err := llm.Sync(ctx, dag)
-	if err != nil {
+	if err := llm.Sync(ctx, dag); err != nil {
 		return nil, err
 	}
 	var history []string
@@ -742,8 +741,7 @@ func (llm *LLM) History(ctx context.Context, dag *dagql.Server) ([]string, error
 }
 
 func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (string, error) {
-	llm, err := llm.Sync(ctx, dag)
-	if err != nil {
+	if err := llm.Sync(ctx, dag); err != nil {
 		return "", err
 	}
 	result, err := json.MarshalIndent(llm.messages, "", "  ")
@@ -756,7 +754,6 @@ func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (string, err
 func (llm *LLM) WithEnv(env *Env) *LLM {
 	llm = llm.Clone()
 	llm.mcp.env = env
-	llm.dirty = true
 	return llm
 }
 
@@ -767,7 +764,6 @@ func (llm *LLM) Env() *Env {
 func (llm *LLM) With(value dagql.Object) *LLM {
 	llm = llm.Clone()
 	llm.mcp.Select(value)
-	llm.dirty = true
 	return llm
 }
 
@@ -792,8 +788,7 @@ func (v *LLMVariable) Type() *ast.Type {
 
 func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) (dagql.Nullable[*Binding], error) {
 	var res dagql.Nullable[*Binding]
-	llm, err := llm.Sync(ctx, dag)
-	if err != nil {
+	if err := llm.Sync(ctx, dag); err != nil {
 		return res, err
 	}
 	if llm.mcp.Current() == nil {
@@ -809,8 +804,7 @@ func (llm *LLM) BindResult(ctx context.Context, dag *dagql.Server, name string) 
 }
 
 func (llm *LLM) TokenUsage(ctx context.Context, dag *dagql.Server) (*LLMTokenUsage, error) {
-	llm, err := llm.Sync(ctx, dag)
-	if err != nil {
+	if err := llm.Sync(ctx, dag); err != nil {
 		return nil, err
 	}
 	var res LLMTokenUsage
