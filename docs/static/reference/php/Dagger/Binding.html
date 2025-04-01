@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="robots" content="index, follow, all" />
-    <title>Dagger\LLM | API</title>
+    <title>Dagger\Binding | API</title>
 
             <link rel="stylesheet" type="text/css" href="../css/bootstrap.min.css">
         <link rel="stylesheet" type="text/css" href="../css/bootstrap-theme.min.css">
@@ -19,7 +19,7 @@
 
     </head>
 
-    <body id="class" data-name="class:Dagger_LLM" data-root-path="../" data-search-index-url="../doctum-search.json">
+    <body id="class" data-name="class:Dagger_Binding" data-root-path="../" data-search-index-url="../doctum-search.json">
             <div id="content">
         <div id="left-column">
                 <div id="control-panel">
@@ -75,18 +75,18 @@
                         <div class="namespace-breadcrumbs">
             <ol class="breadcrumb">
                 <li><span class="label label-default">class</span></li>
-                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>LLM</li>
+                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>Binding</li>
             </ol>
         </div>
                 <div id="page-content">
     <div class="page-header">
-        <h1>LLM    
+        <h1>Binding    
             </h1>
     </div>
 
     
     <p>        class
-    <strong>LLM</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
+    <strong>Binding</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
 </p>
 
         
@@ -141,22 +141,32 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
+                    <a href="../Dagger/CacheVolume.html"><abbr title="Dagger\CacheVolume">CacheVolume</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_attempt">attempt</a>(int $number)
+                    <a href="#method_asCacheVolume">asCacheVolume</a>()
         
-                                            <p><p>create a branch in the LLM's history</p></p>                </div>
+                                            <p><p>Retrieve the binding value, as type CacheVolume</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a>
+                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_bindResult">bindResult</a>(string $name)
+                    <a href="#method_asContainer">asContainer</a>()
         
-                                            <p><p>returns the type of the current state</p></p>                </div>
+                                            <p><p>Retrieve the binding value, as type Container</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_asDirectory">asDirectory</a>()
+        
+                                            <p><p>Retrieve the binding value, as type Directory</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -164,19 +174,119 @@
                     <a href="../Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_env">env</a>()
+                    <a href="#method_asEnv">asEnv</a>()
         
-                                            <p><p>return the LLM's current environment</p></p>                </div>
+                                            <p><p>Retrieve the binding value, as type Env</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    array
+                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_history">history</a>()
+                    <a href="#method_asFile">asFile</a>()
         
-                                            <p><p>return the llm message history</p></p>                </div>
+                                            <p><p>Retrieve the binding value, as type File</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_asGitRef">asGitRef</a>()
+        
+                                            <p><p>Retrieve the binding value, as type GitRef</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_asGitRepository">asGitRepository</a>()
+        
+                                            <p><p>Retrieve the binding value, as type GitRepository</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_asLLM">asLLM</a>()
+        
+                                            <p><p>Retrieve the binding value, as type LLM</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_asModule">asModule</a>()
+        
+                                            <p><p>Retrieve the binding value, as type Module</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleConfigClient.html"><abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_asModuleConfigClient">asModuleConfigClient</a>()
+        
+                                            <p><p>Retrieve the binding value, as type ModuleConfigClient</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_asModuleSource">asModuleSource</a>()
+        
+                                            <p><p>Retrieve the binding value, as type ModuleSource</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/PhpSdk.html"><abbr title="Dagger\PhpSdk">PhpSdk</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_asPhpSdk">asPhpSdk</a>()
+        
+                                            <p><p>Retrieve the binding value, as type PhpSdk</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_asSecret">asSecret</a>()
+        
+                                            <p><p>Retrieve the binding value, as type Secret</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_asService">asService</a>()
+        
+                                            <p><p>Retrieve the binding value, as type Service</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Socket.html"><abbr title="Dagger\Socket">Socket</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_asSocket">asSocket</a>()
+        
+                                            <p><p>Retrieve the binding value, as type Socket</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -184,9 +294,9 @@
                     string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_historyJSON">historyJSON</a>()
+                    <a href="#method_digest">digest</a>()
         
-                                            <p><p>return the raw llm message history as json</p></p>                </div>
+                                            <p><p>The digest of the binding value</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -196,7 +306,7 @@
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
         
-                                            <p><p>A unique identifier for this LLM.</p></p>                </div>
+                                            <p><p>A unique identifier for this Binding.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -204,19 +314,9 @@
                     string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_lastReply">lastReply</a>()
+                    <a href="#method_name">name</a>()
         
-                                            <p><p>return the last llm reply from the history</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_loop">loop</a>()
-        
-                                            <p><p>synchronize LLM state</p></p>                </div>
+                                            <p><p>The binding name</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -224,109 +324,9 @@
                     string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_model">model</a>()
+                    <a href="#method_typeName">typeName</a>()
         
-                                            <p><p>return the model used by the llm</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_provider">provider</a>()
-        
-                                            <p><p>return the provider used by the llm</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/LLMId.html"><abbr title="Dagger\LLMId">LLMId</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_sync">sync</a>()
-        
-                                            <p><p>synchronize LLM state</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_tokenUsage">tokenUsage</a>()
-        
-                                            <p><p>returns the token usage of the current state</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_tools">tools</a>()
-        
-                                            <p><p>print documentation for available tools</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withEnv">withEnv</a>(<abbr title="Dagger\EnvId|Dagger\Env">Env</abbr> $env)
-        
-                                            <p><p>allow the LLM to interact with an environment via MCP</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withModel">withModel</a>(string $model)
-        
-                                            <p><p>swap out the llm model</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withPrompt">withPrompt</a>(string $prompt)
-        
-                                            <p><p>append a prompt to the llm context</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withPromptFile">withPromptFile</a>(<abbr title="Dagger\FileId|Dagger\File">File</abbr> $file)
-        
-                                            <p><p>append the contents of a file to the llm context</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withQuery">withQuery</a>()
-        
-                                            <p><p>Provide the entire Query object to the LLM</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withSystemPrompt">withSystemPrompt</a>(string $prompt)
-        
-                                            <p><p>Add a system prompt to the LLM's environment</p></p>                </div>
+                                            <p><p>The binding type</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -425,10 +425,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_attempt">
+                    <h3 id="method_asCacheVolume">
         <div class="location">at line 16</div>
-        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-    <strong>attempt</strong>(int $number)
+        <code>                    <a href="../Dagger/CacheVolume.html"><abbr title="Dagger\CacheVolume">CacheVolume</abbr></a>
+    <strong>asCacheVolume</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -436,25 +436,15 @@
             
 
         <div class="method-description">
-                            <p><p>create a branch in the LLM's history</p></p>                        
+                            <p><p>Retrieve the binding value, as type CacheVolume</p></p>                        
         </div>
         <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>int</td>
-                <td>$number</td>
-                <td></td>
-            </tr>
-            </table>
-
             
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
+            <td><a href="../Dagger/CacheVolume.html"><abbr title="Dagger\CacheVolume">CacheVolume</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -467,10 +457,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_bindResult">
-        <div class="location">at line 26</div>
-        <code>                    <a href="../Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a>
-    <strong>bindResult</strong>(string $name)
+                    <h3 id="method_asContainer">
+        <div class="location">at line 25</div>
+        <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
+    <strong>asContainer</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -478,25 +468,15 @@
             
 
         <div class="method-description">
-                            <p><p>returns the type of the current state</p></p>                        
+                            <p><p>Retrieve the binding value, as type Container</p></p>                        
         </div>
         <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$name</td>
-                <td></td>
-            </tr>
-            </table>
-
             
                             <h4>Return Value</h4>
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></td>
+            <td><a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -509,10 +489,42 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_env">
-        <div class="location">at line 36</div>
+                    <h3 id="method_asDirectory">
+        <div class="location">at line 34</div>
+        <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
+    <strong>asDirectory</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Retrieve the binding value, as type Directory</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_asEnv">
+        <div class="location">at line 43</div>
         <code>                    <a href="../Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a>
-    <strong>env</strong>()
+    <strong>asEnv</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -520,7 +532,7 @@
             
 
         <div class="method-description">
-                            <p><p>return the LLM's current environment</p></p>                        
+                            <p><p>Retrieve the binding value, as type Env</p></p>                        
         </div>
         <div class="tags">
             
@@ -541,10 +553,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_history">
-        <div class="location">at line 45</div>
-        <code>                    array
-    <strong>history</strong>()
+                    <h3 id="method_asFile">
+        <div class="location">at line 52</div>
+        <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
+    <strong>asFile</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -552,7 +564,7 @@
             
 
         <div class="method-description">
-                            <p><p>return the llm message history</p></p>                        
+                            <p><p>Retrieve the binding value, as type File</p></p>                        
         </div>
         <div class="tags">
             
@@ -560,7 +572,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td>array</td>
+            <td><a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -573,10 +585,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_historyJSON">
-        <div class="location">at line 54</div>
-        <code>                    string
-    <strong>historyJSON</strong>()
+                    <h3 id="method_asGitRef">
+        <div class="location">at line 61</div>
+        <code>                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
+    <strong>asGitRef</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -584,7 +596,327 @@
             
 
         <div class="method-description">
-                            <p><p>return the raw llm message history as json</p></p>                        
+                            <p><p>Retrieve the binding value, as type GitRef</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_asGitRepository">
+        <div class="location">at line 70</div>
+        <code>                    <a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a>
+    <strong>asGitRepository</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Retrieve the binding value, as type GitRepository</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_asLLM">
+        <div class="location">at line 79</div>
+        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
+    <strong>asLLM</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Retrieve the binding value, as type LLM</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_asModule">
+        <div class="location">at line 88</div>
+        <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
+    <strong>asModule</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Retrieve the binding value, as type Module</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_asModuleConfigClient">
+        <div class="location">at line 97</div>
+        <code>                    <a href="../Dagger/ModuleConfigClient.html"><abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a>
+    <strong>asModuleConfigClient</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Retrieve the binding value, as type ModuleConfigClient</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleConfigClient.html"><abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_asModuleSource">
+        <div class="location">at line 106</div>
+        <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
+    <strong>asModuleSource</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Retrieve the binding value, as type ModuleSource</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_asPhpSdk">
+        <div class="location">at line 115</div>
+        <code>                    <a href="../Dagger/PhpSdk.html"><abbr title="Dagger\PhpSdk">PhpSdk</abbr></a>
+    <strong>asPhpSdk</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Retrieve the binding value, as type PhpSdk</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/PhpSdk.html"><abbr title="Dagger\PhpSdk">PhpSdk</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_asSecret">
+        <div class="location">at line 124</div>
+        <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
+    <strong>asSecret</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Retrieve the binding value, as type Secret</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_asService">
+        <div class="location">at line 133</div>
+        <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
+    <strong>asService</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Retrieve the binding value, as type Service</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_asSocket">
+        <div class="location">at line 142</div>
+        <code>                    <a href="../Dagger/Socket.html"><abbr title="Dagger\Socket">Socket</abbr></a>
+    <strong>asSocket</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Retrieve the binding value, as type Socket</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Socket.html"><abbr title="Dagger\Socket">Socket</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_digest">
+        <div class="location">at line 151</div>
+        <code>                    string
+    <strong>digest</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The digest of the binding value</p></p>                        
         </div>
         <div class="tags">
             
@@ -606,7 +938,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 63</div>
+        <div class="location">at line 160</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
     <strong>id</strong>()
         </code>
@@ -616,7 +948,7 @@
             
 
         <div class="method-description">
-                            <p><p>A unique identifier for this LLM.</p></p>                        
+                            <p><p>A unique identifier for this Binding.</p></p>                        
         </div>
         <div class="tags">
             
@@ -637,10 +969,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_lastReply">
-        <div class="location">at line 72</div>
+                    <h3 id="method_name">
+        <div class="location">at line 169</div>
         <code>                    string
-    <strong>lastReply</strong>()
+    <strong>name</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -648,7 +980,7 @@
             
 
         <div class="method-description">
-                            <p><p>return the last llm reply from the history</p></p>                        
+                            <p><p>The binding name</p></p>                        
         </div>
         <div class="tags">
             
@@ -669,42 +1001,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_loop">
-        <div class="location">at line 81</div>
-        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-    <strong>loop</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>synchronize LLM state</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_model">
-        <div class="location">at line 90</div>
+                    <h3 id="method_typeName">
+        <div class="location">at line 178</div>
         <code>                    string
-    <strong>model</strong>()
+    <strong>typeName</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -712,7 +1012,7 @@
             
 
         <div class="method-description">
-                            <p><p>return the model used by the llm</p></p>                        
+                            <p><p>The binding type</p></p>                        
         </div>
         <div class="tags">
             
@@ -721,376 +1021,6 @@
                     <table class="table table-condensed">
         <tr>
             <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_provider">
-        <div class="location">at line 99</div>
-        <code>                    string
-    <strong>provider</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>return the provider used by the llm</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_sync">
-        <div class="location">at line 108</div>
-        <code>                    <a href="../Dagger/LLMId.html"><abbr title="Dagger\LLMId">LLMId</abbr></a>
-    <strong>sync</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>synchronize LLM state</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/LLMId.html"><abbr title="Dagger\LLMId">LLMId</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_tokenUsage">
-        <div class="location">at line 117</div>
-        <code>                    <a href="../Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a>
-    <strong>tokenUsage</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>returns the token usage of the current state</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/LLMTokenUsage.html"><abbr title="Dagger\LLMTokenUsage">LLMTokenUsage</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_tools">
-        <div class="location">at line 126</div>
-        <code>                    string
-    <strong>tools</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>print documentation for available tools</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_withEnv">
-        <div class="location">at line 135</div>
-        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-    <strong>withEnv</strong>(<abbr title="Dagger\EnvId|Dagger\Env">Env</abbr> $env)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>allow the LLM to interact with an environment via MCP</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td><abbr title="Dagger\EnvId|Dagger\Env">Env</abbr></td>
-                <td>$env</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_withModel">
-        <div class="location">at line 145</div>
-        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-    <strong>withModel</strong>(string $model)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>swap out the llm model</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$model</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_withPrompt">
-        <div class="location">at line 155</div>
-        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-    <strong>withPrompt</strong>(string $prompt)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>append a prompt to the llm context</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$prompt</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_withPromptFile">
-        <div class="location">at line 165</div>
-        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-    <strong>withPromptFile</strong>(<abbr title="Dagger\FileId|Dagger\File">File</abbr> $file)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>append the contents of a file to the llm context</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td><abbr title="Dagger\FileId|Dagger\File">File</abbr></td>
-                <td>$file</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_withQuery">
-        <div class="location">at line 175</div>
-        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-    <strong>withQuery</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Provide the entire Query object to the LLM</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_withSystemPrompt">
-        <div class="location">at line 184</div>
-        <code>                    <a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a>
-    <strong>withSystemPrompt</strong>(string $prompt)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Add a system prompt to the LLM's environment</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$prompt</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></td>
             <td></td>
         </tr>
     </table>

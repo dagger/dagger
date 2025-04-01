@@ -97,6 +97,15 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Initialize a new environment
+     */
+    public function env(): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('env');
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Create a new error.
      */
     public function error(string $message): Error
@@ -189,6 +198,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder->setArgument('maxAPICalls', $maxAPICalls);
         }
         return new \Dagger\LLM($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Binding from its ID.
+     */
+    public function loadBindingFromID(BindingId|Binding $id): Binding
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadBindingFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Binding($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -289,6 +308,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEnumValueTypeDefFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\EnumValueTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Env from its ID.
+     */
+    public function loadEnvFromID(EnvId|Env $id): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEnvFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -460,16 +489,6 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadLLMTokenUsageFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\LLMTokenUsage($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Load a LLMVariable from its ID.
-     */
-    public function loadLLMVariableFromID(LLMVariableId|LLMVariable $id): LLMVariable
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadLLMVariableFromID');
-        $innerQueryBuilder->setArgument('id', $id);
-        return new \Dagger\LLMVariable($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

@@ -35,7 +35,7 @@ func (m *CoreMod) View() (string, bool) {
 func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 	for _, schema := range []SchemaResolvers{
 		&querySchema{dag},
-		&llmSchema{dag}, // install llm middleware first
+		&environmentSchema{dag}, // install environment middleware first
 		&directorySchema{dag},
 		&fileSchema{dag},
 		&gitSchema{dag},
@@ -51,6 +51,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 		&moduleSchema{dag},
 		&errorSchema{dag},
 		&engineSchema{dag},
+		&llmSchema{dag},
 	} {
 		schema.Install()
 	}

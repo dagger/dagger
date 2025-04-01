@@ -10,10 +10,70 @@
   },
   {
     "role": "assistant",
+    "content": "I'll help you check the PATH environment variable in an Alpine Linux container. I'll create an Alpine container and run the `echo $PATH` command to display the PATH value.",
+    "tool_calls": [
+      {
+        "id": "toolu_014ZHiMSHD7Z5PriRKkcNTnz",
+        "function": {
+          "name": "alpine",
+          "arguments": null
+        },
+        "type": "function"
+      },
+      {
+        "id": "toolu_016vP4yHUek4aJ2RPWLgiCHx",
+        "function": {
+          "name": "selectContainer",
+          "arguments": {
+            "id": "Container#0"
+          }
+        },
+        "type": "function"
+      }
+    ],
+    "token_usage": {
+      "InputTokens": 1095,
+      "OutputTokens": 126,
+      "TotalTokens": 1221
+    }
+  },
+  {
+    "role": "user",
+    "content": "{\"selected\":\"Container#1\"}",
+    "tool_call_id": "toolu_014ZHiMSHD7Z5PriRKkcNTnz",
+    "token_usage": {
+      "InputTokens": 0,
+      "OutputTokens": 0,
+      "TotalTokens": 0
+    }
+  },
+  {
+    "role": "user",
+    "content": "unknown object \"Container#0\"",
+    "tool_call_id": "toolu_016vP4yHUek4aJ2RPWLgiCHx",
+    "tool_errored": true,
+    "token_usage": {
+      "InputTokens": 0,
+      "OutputTokens": 0,
+      "TotalTokens": 0
+    }
+  },
+  {
+    "role": "assistant",
     "content": "",
     "tool_calls": [
       {
-        "id": "call_jEHnV0HSsN45o95RioF8yJk7",
+        "id": "toolu_014kVMtRHPzLPgFimm91uU3g",
+        "function": {
+          "name": "selectContainer",
+          "arguments": {
+            "id": "Container#1"
+          }
+        },
+        "type": "function"
+      },
+      {
+        "id": "toolu_013WShtSPdeQU57NTu3bkqGn",
         "function": {
           "name": "Container_envVariable",
           "arguments": {
@@ -24,15 +84,25 @@
       }
     ],
     "token_usage": {
-      "InputTokens": 7222,
-      "OutputTokens": 16,
-      "TotalTokens": 7238
+      "InputTokens": 13203,
+      "OutputTokens": 92,
+      "TotalTokens": 13295
+    }
+  },
+  {
+    "role": "user",
+    "content": "{\"previous\":\"Container#1\",\"selected\":\"Container#1\"}",
+    "tool_call_id": "toolu_014kVMtRHPzLPgFimm91uU3g",
+    "token_usage": {
+      "InputTokens": 0,
+      "OutputTokens": 0,
+      "TotalTokens": 0
     }
   },
   {
     "role": "user",
     "content": "{\"result\":\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"}",
-    "tool_call_id": "call_jEHnV0HSsN45o95RioF8yJk7",
+    "tool_call_id": "toolu_013WShtSPdeQU57NTu3bkqGn",
     "token_usage": {
       "InputTokens": 0,
       "OutputTokens": 0,
@@ -41,11 +111,11 @@
   },
   {
     "role": "assistant",
-    "content": "The value of the `PATH` environment variable is `\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"`.",
+    "content": "The PATH environment variable in the Alpine Linux container is:\n/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     "token_usage": {
-      "InputTokens": 7271,
-      "OutputTokens": 36,
-      "TotalTokens": 7307
+      "InputTokens": 116,
+      "OutputTokens": 43,
+      "TotalTokens": 159
     }
   },
   {
@@ -59,10 +129,10 @@
   },
   {
     "role": "assistant",
-    "content": "",
+    "content": "I'll check the TERM environment variable in the current Alpine container.",
     "tool_calls": [
       {
-        "id": "call_lKrcL17rKvMNwud9u2rCtKx4",
+        "id": "toolu_01P86eQdzWBWzHScu1gtq7ex",
         "function": {
           "name": "Container_envVariable",
           "arguments": {
@@ -73,15 +143,15 @@
       }
     ],
     "token_usage": {
-      "InputTokens": 7320,
-      "OutputTokens": 16,
-      "TotalTokens": 7336
+      "InputTokens": 170,
+      "OutputTokens": 70,
+      "TotalTokens": 240
     }
   },
   {
     "role": "user",
     "content": "{\"result\":null}",
-    "tool_call_id": "call_lKrcL17rKvMNwud9u2rCtKx4",
+    "tool_call_id": "toolu_01P86eQdzWBWzHScu1gtq7ex",
     "token_usage": {
       "InputTokens": 0,
       "OutputTokens": 0,
@@ -90,11 +160,11 @@
   },
   {
     "role": "assistant",
-    "content": "The `TERM` environment variable is not set in the current container environment.",
+    "content": "The TERM environment variable is not set in the Alpine container. This is normal for a fresh container as it doesn't have any terminal-related environment variables set by default unless specifically configured.",
     "token_usage": {
-      "InputTokens": 7349,
-      "OutputTokens": 17,
-      "TotalTokens": 7366
+      "InputTokens": 255,
+      "OutputTokens": 42,
+      "TotalTokens": 297
     }
   }
 ]

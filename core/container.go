@@ -1868,3 +1868,20 @@ func (expect ReturnTypes) ReturnCodes() []int {
 		return nil
 	}
 }
+
+type TerminalLegacy struct{}
+
+func (*TerminalLegacy) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Terminal",
+		NonNull:   true,
+	}
+}
+
+func (*TerminalLegacy) TypeDescription() string {
+	return "An interactive terminal that clients can connect to."
+}
+
+func (*TerminalLegacy) Evaluate(ctx context.Context) (*buildkit.Result, error) {
+	return nil, nil
+}
