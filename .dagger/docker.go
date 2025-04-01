@@ -96,6 +96,9 @@ func (e LoadedEngine) Start(
 
 	// +optional
 	debug bool,
+
+	// +optional
+	extraHosts []string,
 ) error {
 	loader := e.Loader
 
@@ -125,6 +128,10 @@ func (e LoadedEngine) Start(
 	}
 	if debug {
 		args = append(args, "-p", "6060:6060")
+	}
+
+	if len(extraHosts) > 0 {
+		args = append(args, "--add-host", strings.Join(extraHosts, ","))
 	}
 
 	args = append(args, []string{
