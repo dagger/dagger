@@ -1,6 +1,0 @@
-kind: Fixed
-body: Fixed executing a dagger shell script from the root command
-time: 2025-03-31T16:11:42.624426Z
-custom:
-    Author: helderco
-    PR: "10020"

@@ -1,6 +1,0 @@
-kind: Changed
-body: use dockerignore files during docker build
-time: 2025-03-21T16:27:27.871323+05:30
-custom:
-    Author: rajatjindal
-    PR: "9857"
