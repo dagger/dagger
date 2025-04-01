@@ -96,9 +96,9 @@ dagger functions
 
 You should see information about two auto-generated Dagger Functions: `container-echo` and `grep-dir`.
 
-## Install the agent environment module
+## Install a dependency with useful tools
 
-An agent needs an environment in which to operate. The agent uses this environment to solve the assignment given to it. This environment is a Dagger module, which you can either create yourself or use from elsewhere.
+An agent needs tools to complete its tasks. The agent uses this module to solve the assignment given to it. Agents can use any Dagger module as tools, which you can either create yourself or use from elsewhere.
 
 This quickstart uses a pre-created Dagger module, which must be installed as a dependency:
 
@@ -106,7 +106,7 @@ This quickstart uses a pre-created Dagger module, which must be installed as a d
 dagger install github.com/shykes/toy-programmer/toy-workspace
 ```
 
-Here, `toy-workspace` is a Dagger module that provides a simple environment for the agent. It has a `Container` object and functions to read, write, and build the code produced by the agent.
+Here, `toy-workspace` is a Dagger module that provides a simple set of tools for the agent. It has a `Container` object and functions to read, write, and build the code produced by the agent. The `toy-workspace` is provided as an input to the environment of the LLM.
 
 :::tip
 Learn more about [agent environments](../../api/llm.mdx#environments-and-tools).
@@ -161,10 +161,10 @@ Edit the agent (`.dagger/src/main/java/io/dagger/modules/codingagent/CodingAgent
 
 This code creates a Dagger Function called `go-program` that takes an assignment as input and returns a `Container` with the result of the assignment.
 
-- The `ToyWorkspace` module is given to the LLM as an environment. It contains various Dagger Functions to write and validate code.
-- A pre-defined prompt is also given to the LLM as input. The assigment is interpolated into the prompt.
+- The `ToyWorkspace` module is given to the LLM in an environment. It contains various Dagger Functions to write and validate code.
+- A pre-defined prompt is also given to the LLM as input. The description of assigment is a way of providing usage for the input.
 - The LLM will use the Dagger Functions in the `ToyWorkspace` module as tools to write code, validate it, and loop until the code passes validation.
-- Once complete, the `ToyWorkspace` is returned by the LLM with the solution. The container with the LLM's solution can then be obtained by chaining calls to `llm -> toy-workspace -> container`.
+- Once complete, a `ToyWorkspace` is returned by the LLM with the solution. The container with the LLM's solution can then be obtained by chaining calls to `toy-workspace -> container`.
 
 ## Run the agent
 
@@ -198,7 +198,7 @@ If you signed up for Dagger Cloud, the output of the previous command would have
 
 If the agent fails to write code that passes validation, try adding more helpful guidance to the prompt.
 
-Once the agent has successfully returned a `Container`, open an interactive terminal in the container so that you can inspect its work and run the generated code:
+Once the agent has successfully returned a `Container`, open an interactive terminal in the container so that you can inspect its work and run the generated code. Notice that the solution is not recomputed since it is still cached from the previous execution:
 
 ```shell
 go-program "write a curl clone" | terminal
@@ -210,8 +210,10 @@ Run the program and confirm that it works. This will look slightly different dep
 ```shell
 > ls
 # should see a main.go and a go.mod, maybe other files
-> go run main.go https://dagger.io
+> go run main.go https://example.com
 ```
+
+If the program does not look or function as you expect, try adjusting the prompt and input descriptions until you get the desired result.
 
 ## Next steps
 
