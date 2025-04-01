@@ -614,8 +614,8 @@ func (fe *frontendPretty) Render(out TermOutput) error {
 	var countOut TermOutput = NewOutput(below, termenv.WithProfile(fe.profile))
 
 	if fe.activePrompt != nil {
-		fmt.Fprintln(countOut)
 		fmt.Fprint(countOut, fe.viewPrompt(countOut))
+		fmt.Fprintln(countOut)
 	}
 
 	if fe.shell == nil {
