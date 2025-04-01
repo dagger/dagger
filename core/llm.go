@@ -560,6 +560,23 @@ func (llm *LLM) WithSystemPrompt(prompt string) *LLM {
 	return llm
 }
 
+// Append a system prompt message to the history
+func (llm *LLM) WithMCP(ctx context.Context, ctr *Container, srv *dagql.Server) (*LLM, error) {
+	llm = llm.Clone()
+	bk, err := llm.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	_, err = bk.MCPClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to instantiate MCP Client", err)
+	}
+
+	llm.env.mcpServers = append(llm.env.mcpServers)
+	llm.dirty = true
+	return llm, nil
+}
+
 // Return the last message sent by the agent
 func (llm *LLM) LastReply(ctx context.Context, dag *dagql.Server) (string, error) {
 	if err := llm.Sync(ctx, dag); err != nil {

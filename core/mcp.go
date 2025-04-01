@@ -16,6 +16,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/mark3labs/mcp-go/client"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
@@ -48,6 +49,8 @@ type MCP struct {
 	functionMask map[string]bool
 	// Indicates that the model has returned
 	returned bool
+	// attached MCP Servers... TODO: namespace collision really hurts here
+	mcpServers []*MCPClient
 }
 
 func NewMCP(endpoint *LLMEndpoint) *MCP {
@@ -118,14 +121,32 @@ func (m *MCP) Tools(srv *dagql.Server) ([]LLMTool, error) {
 	if err != nil {
 		return nil, err
 	}
+	mcpTools, err := m.MCPServerTools(srv)
+	if err != nil {
+		return nil, err
+	}
+	tools := append(builtins, mcpTools...)
+
 	if m.Current() == nil {
-		return builtins, nil
+		return tools, nil
 	}
 	objTools, err := m.tools(srv, m.Current().Type().Name())
 	if err != nil {
 		return nil, err
 	}
-	return append(builtins, objTools...), nil
+	return append(tools, objTools...), nil
+}
+
+func (m *MCP) MCPServerTools(srv *dagql.Server) ([]LLMTool, error) {
+	var tools []LLMTool
+	for _, mcpServer := range m.mcpServers {
+		serverTools, err := mcpServer.Tools()
+		if err != nil {
+			return nil, err
+		}
+		tools = append(tools, serverTools...)
+	}
+	return tools, nil
 }
 
 // ToolFunc reuses our regular GraphQL args handling sugar for tools.
@@ -549,6 +570,22 @@ Each parameter corresponds to a named result with a specific purpose. Do not cal
 			return "ok", nil
 		},
 	}
+}
+
+type MCPClient struct {
+	client.MCPClient
+	ctr *Container
+}
+
+func NewMCPClient(ctr *Container, srv *dagql.Server) (*MCPClient, error) {
+
+	return &MCPClient{
+		ctr: ctr,
+	}, nil
+}
+
+func (ms *MCPClient) Tools() ([]LLMTool, error) {
+	return []LLMTool{}, nil
 }
 
 func (m *MCP) Builtins(srv *dagql.Server) ([]LLMTool, error) {
