@@ -64,6 +64,7 @@ func (env *Env) WithInput(key string, val dagql.Typed, description string) *Env 
 func (env *Env) WithOutput(key string, expectedType dagql.Type, description string) *Env {
 	env = env.Clone()
 	env.outputsByName[key] = &Binding{
+		Key:          key,
 		Value:        nil,
 		expectedType: expectedType,
 		Description:  description,
