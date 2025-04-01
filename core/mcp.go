@@ -495,15 +495,16 @@ func (m *MCP) returnBuiltin() LLMTool {
 		props[name] = map[string]any{
 			"type":           "string",
 			"pattern":        idPattern(typeName),
-			"description":    fmt.Sprintf("%s ID in \"%s#number\" format. %s", typeName, typeName, b.Description),
+			"description":    fmt.Sprintf("%s ID observed from a tool result, in \"%s#number\" format. %s", typeName, typeName, b.Description),
 			jsonSchemaIDAttr: typeName,
 		}
 	}
 	return LLMTool{
-		Name: "return",
-		Description: `Call this tool when you have gathered all required values and are ready to return them to the user.
-
-Each parameter corresponds to a named result with a specific purpose. Do not call this tool until all values are ready.`,
+		Name: "submitFinalResult",
+		Description: `Call this tool to submit your final answer to the user.
+You must call this tool once their request is fulfilled.
+Do not end your turn without calling it. If you don’t, the user will receive nothing.
+Direct output is not shown to the user — only tool calls are.`,
 		Schema: map[string]any{
 			"type":                 "object",
 			"properties":           props,
