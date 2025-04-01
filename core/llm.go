@@ -644,6 +644,11 @@ func (llm *LLM) loop(ctx context.Context, dag *dagql.Server) error {
 
 		res, err := llm.Endpoint.Client.SendQuery(ctx, llm.messagesWithSystemPrompt(), tools)
 		if err != nil {
+			var finished *ModelFinishedError
+			if errors.As(err, &finished) {
+				// model finished
+				break
+			}
 			return err
 		}
 
