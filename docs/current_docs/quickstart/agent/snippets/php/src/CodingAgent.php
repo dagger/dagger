@@ -21,16 +21,17 @@ class CodingAgent
     {
         $workspace = dag()->toyWorkspace();
         $environment = dag()->env()
-            ->withToyWorkspaceInput("before", $workspace, "these are the tools to complete the task")
-            ->withStringInput("assignment", $assignment, "this is the assignment, complete it")
-            ->withToyWorkspaceOutput("after", "the ToyWorkspace with the completed assignment");
+            ->withToyWorkspaceInput("before", $workspace, "tools to complete the assignment")
+            ->withStringInput("assignment", $assignment, "the assignment to complete)
+            ->withToyWorkspaceOutput("after", "the completed assignment");
         return dag()
             ->llm()
             ->withEnv($environment)
             ->withPrompt("
             You are an expert go programmer. You have access to a workspace.
 			Use the default directory in the workspace.
-			Do not stop until the code builds.")
+			Do not stop until the code builds.
+			Your assignment is: $assignment")
             ->env()
             ->output("after")
             ->asToyWorkspace()

@@ -15,11 +15,11 @@ class CodingAgent:
         environment = (
             dag.env()
             .with_toy_workspace_input(
-                "before", workspace, "these are the tools to complete the task"
+                "before", workspace, "tools to complete the assignment"
             )
-            .with_string_input("assignment", assignment, "this is the assignment, complete it")
+            .with_string_input("assignment", assignment, "the assignment to complete")
             .with_toy_workspace_output(
-                "after", "the ToyWorkspace with the completed assignment"
+                "after", "the completed assignment"
             )
         )
 
@@ -30,7 +30,8 @@ class CodingAgent:
                 """
             You are an expert go programmer. You have access to a workspace.
             Use the default directory in the workspace.
-            Do not stop until the code builds."""
+            Do not stop until the code builds.
+            Your assignment is: $assignment"""
             )
             .env()
             .output("after")

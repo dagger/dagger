@@ -16,9 +16,9 @@ public class CodingAgent {
   public Container goProgram(String assignment) {
     ToyWorkspace workspace = dag.toyWorkspace();
     Env environment = dag.env()
-        .withToyWorkspaceInput("before", workspace, "these are the tools to complete the task")
-        .withStringInput("assignment", assignment, "this is the assignment, complete it")
-        .withStringOutput("after", "the ToyWorkspace with the completed assignment");
+        .withToyWorkspaceInput("before", workspace, "tools to complete the assignment")
+        .withStringInput("assignment", assignment, "the assignment to complete")
+        .withStringOutput("after", "the completed assignment");
     return dag()
       .llm()
       .withEnv(environment)
@@ -26,6 +26,7 @@ public class CodingAgent {
         You are an expert go programmer. You have access to a workspace.
         Use the default directory in the workspace.
         Do not stop until the code builds.
+        Your assignment is: $assignment
         """)
       .env()
       .output("after")

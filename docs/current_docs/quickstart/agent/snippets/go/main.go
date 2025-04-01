@@ -13,16 +13,17 @@ func (m *CodingAgent) GoProgram(
 ) *dagger.Container {
 	workspace := dag.ToyWorkspace()
 	environment := dag.Env().
-		WithToyWorkspaceInput("before", workspace, "these are the tools to complete the task").
-		WithStringInput("assignment", assignment, "this is the assignment, complete it").
-		WithToyWorkspaceOutput("after", "the ToyWorkspace with the completed assignment")
+		WithToyWorkspaceInput("before", workspace, "tools to complete the assignment").
+		WithStringInput("assignment", assignment, "the assignment to complete").
+		WithToyWorkspaceOutput("after", "the completed assignment")
 
 	return dag.LLM().
 		WithEnv(environment).
 		WithPrompt(`
 			You are an expert go programmer. You have access to a workspace.
 			Use the default directory in the workspace.
-			Do not stop until the code builds.`).
+			Do not stop until the code builds.
+			Your assignment is: $assignment`).
 		Env().
 		Output("after").
 		AsToyWorkspace().

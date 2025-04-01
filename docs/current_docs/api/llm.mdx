@@ -100,7 +100,7 @@ To get the complete message history, use the `LLM.History()` API method.
 
 Dagger [modules](../features/modules.mdx) are collections of Dagger Functions. When you give a Dagger module to the `LLM` core type, every Dagger Function is turned into a tool that the LLM can call.
 
-Environments configure a number of inputs and outputs for the LLM. For example, an environment might provide a `Directory`, a `Container`, and a `string` variable. The LLM can use the scalars and the functions of these objects to complete the assigned task.
+Environments configure any number of inputs and outputs for the LLM. For example, an environment might provide a `Directory`, a `Container`, a custom module, and a `string` variable. The LLM can use the scalars and the functions of these objects to complete the assigned task.
 
 The documentation for the modules are provided to the LLM, so make sure to provide helpful documentation in your Dagger Functions. The LLM should be able to figure out how to use the tools on its own. Don't worry about describing the objects too much in your prompts because it will be redundant with this automatic documentation.
 
@@ -129,6 +129,6 @@ Consider the following Dagger Function:
 </TabItem>
 </Tabs>
 
-Here, the `ToyWorkspace` is given as an input to the `Env`. It contains a number of Dagger Functions: `Read()`, `Write()`, and `Build()`. When this environment is attached to an `LLM`, the LLM can call any of these Dagger Functions to change the state of the `ToyWorkspace` and complete the assigned task.
+Here, an instance of the `ToyWorkspace` module is attached as an input to the `Env` environment. The `ToyWorkspace` module contains a number of Dagger Functions for developing code: `Read()`, `Write()`, and `Build()`. When this environment is attached to an `LLM`, the LLM can call any of these Dagger Functions to change the state of the `ToyWorkspace` and complete the assigned task.
 
-In the `Env`, a `ToyWorkspace` called `after` is specified as a desired output of the LLM. This means that the LLM should return the `ToyWorkspace` object as a result of completing its task. The resulting `ToyWorkspace` object is then available for further processing or for use in other Dagger Functions.
+In the `Env`, a `ToyWorkspace` instance called `after` is specified as a desired output of the LLM. This means that the LLM should return the `ToyWorkspace` module instance as a result of completing its task. The resulting `ToyWorkspace` object is then available for further processing or for use in other Dagger Functions.
