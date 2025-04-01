@@ -441,6 +441,7 @@ func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int) (*
 		Endpoint:    endpoint,
 		maxAPICalls: maxAPICalls,
 		mcp:         NewMCP(endpoint),
+		once:        &sync.Once{},
 	}, nil
 }
 
