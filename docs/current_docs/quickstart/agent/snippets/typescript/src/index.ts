@@ -1,4 +1,3 @@
-
 import { dag, object, func, Container } from "@dagger.io/dagger"
 
 @object()
@@ -27,8 +26,7 @@ export class CodingAgent {
     return dag
       .llm()
       .withEnv(environment)
-      .withPrompt(`
-			You are an expert go programmer. You have access to a workspace.
+      .withPrompt(`You are an expert go programmer. You have access to a workspace.
 			Use the default directory in the workspace.
 			Do not stop until the code builds.
 			Your assignment is: $assignment`)

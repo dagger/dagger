@@ -18,9 +18,7 @@ class CodingAgent:
                 "before", workspace, "tools to complete the assignment"
             )
             .with_string_input("assignment", assignment, "the assignment to complete")
-            .with_toy_workspace_output(
-                "after", "the completed assignment"
-            )
+            .with_toy_workspace_output("after", "the completed assignment")
         )
 
         return (
