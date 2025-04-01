@@ -22,6 +22,10 @@ type Env struct {
 	typeCount map[string]int
 	// The LLM-friendly ID ("Container#123") for each object
 	idByHash map[digest.Digest]string
+	// An optional root object
+	// Can be used to give the environment ambient access to the
+	// dagger core API, possibly extended by a module
+	root dagql.Object
 }
 
 func (*Env) Type() *ast.Type {
@@ -41,6 +45,11 @@ func NewEnv() *Env {
 	}
 }
 
+// Expose this environment for LLM consumption via MCP.
+func (env *Env) MCP(endpoint *LLMEndpoint) *MCP {
+	return newMCP(env, endpoint)
+}
+
 func (env *Env) Clone() *Env {
 	cp := *env
 	cp.inputsByName = cloneMap(cp.inputsByName)
@@ -49,6 +58,20 @@ func (env *Env) Clone() *Env {
 	cp.typeCount = cloneMap(cp.typeCount)
 	cp.idByHash = cloneMap(cp.idByHash)
 	return &cp
+}
+
+// Set a root object.
+// Can be used to give the environment ambient access to
+// the dagger core API, possibly extended by a module
+func (env *Env) WithRoot(root dagql.Object) *Env {
+	env = env.Clone()
+	env.root = root
+	return env
+}
+
+// Return the root object, or nil if no root object is set
+func (env *Env) Root() dagql.Object {
+	return env.root
 }
 
 // Add an input (read-only) binding to the environment

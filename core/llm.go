@@ -440,7 +440,7 @@ func NewLLM(ctx context.Context, query *Query, model string, maxAPICalls int) (*
 		Query:       query,
 		Endpoint:    endpoint,
 		maxAPICalls: maxAPICalls,
-		mcp:         NewMCP(endpoint),
+		mcp:         NewEnv().MCP(endpoint),
 		once:        &sync.Once{},
 	}, nil
 }
@@ -492,6 +492,7 @@ func (llm *LLM) ToolsDoc(ctx context.Context, srv *dagql.Server) (string, error)
 }
 
 func (llm *LLM) WithModel(ctx context.Context, model string, srv *dagql.Server) (*LLM, error) {
+	// FIXME: mcp implementation takes hints from endpoint: reconfigure it
 	llm = llm.Clone()
 	router, err := NewLLMRouter(ctx, srv)
 	if err != nil {
@@ -846,7 +847,7 @@ func (llm *LLM) HistoryJSON(ctx context.Context, dag *dagql.Server) (string, err
 
 func (llm *LLM) WithEnv(env *Env) *LLM {
 	llm = llm.Clone()
-	llm.mcp.env = env
+	llm.mcp = env.MCP(llm.Endpoint)
 	return llm
 }
 
