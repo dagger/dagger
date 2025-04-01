@@ -500,11 +500,10 @@ func (m *MCP) returnBuiltin() LLMTool {
 		}
 	}
 	return LLMTool{
-		Name: "submitFinalResult",
-		Description: `Call this tool to submit your final answer to the user.
-You must call this tool once their request is fulfilled.
-Do not end your turn without calling it. If you don’t, the user will receive nothing.
-Direct output is not shown to the user — only tool calls are.`,
+		Name: "return",
+		Description: `Call this tool when you have gathered all required values and are ready to return them to the user.
+
+Each parameter corresponds to a named result with a specific purpose. Do not call this tool until all values are ready.`,
 		Schema: map[string]any{
 			"type":                 "object",
 			"properties":           props,
