@@ -245,10 +245,10 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
+                    <a href="../Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_environment">environment</a>()
+                    <a href="#method_env">env</a>()
         
                                             <p><p>Initialize a new environment</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -435,22 +435,22 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadEnvFromID">loadEnvFromID</a>(<abbr title="Dagger\EnvId|Dagger\Env">Env</abbr> $id)
+        
+                                            <p><p>Load a Env from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/EnvVariable.html"><abbr title="Dagger\EnvVariable">EnvVariable</abbr></a>
                 </div>
                 <div class="col-md-8">
                     <a href="#method_loadEnvVariableFromID">loadEnvVariableFromID</a>(<abbr title="Dagger\EnvVariableId|Dagger\EnvVariable">EnvVariable</abbr> $id)
         
                                             <p><p>Load a EnvVariable from its ID.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_loadEnvironmentFromID">loadEnvironmentFromID</a>(<abbr title="Dagger\EnvironmentId|Dagger\Environment">Environment</abbr> $id)
-        
-                                            <p><p>Load a Environment from its ID.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -1285,10 +1285,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_environment">
+                    <h3 id="method_env">
         <div class="location">at line 102</div>
-        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
-    <strong>environment</strong>()
+        <code>                    <a href="../Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a>
+    <strong>env</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -1304,7 +1304,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
+            <td><a href="../Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -2098,8 +2098,50 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_loadEnvVariableFromID">
+                    <h3 id="method_loadEnvFromID">
         <div class="location">at line 316</div>
+        <code>                    <a href="../Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a>
+    <strong>loadEnvFromID</strong>(<abbr title="Dagger\EnvId|Dagger\Env">Env</abbr> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a Env from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><abbr title="Dagger\EnvId|Dagger\Env">Env</abbr></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadEnvVariableFromID">
+        <div class="location">at line 326</div>
         <code>                    <a href="../Dagger/EnvVariable.html"><abbr title="Dagger\EnvVariable">EnvVariable</abbr></a>
     <strong>loadEnvVariableFromID</strong>(<abbr title="Dagger\EnvVariableId|Dagger\EnvVariable">EnvVariable</abbr> $id)
         </code>
@@ -2128,48 +2170,6 @@
                     <table class="table table-condensed">
         <tr>
             <td><a href="../Dagger/EnvVariable.html"><abbr title="Dagger\EnvVariable">EnvVariable</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_loadEnvironmentFromID">
-        <div class="location">at line 326</div>
-        <code>                    <a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a>
-    <strong>loadEnvironmentFromID</strong>(<abbr title="Dagger\EnvironmentId|Dagger\Environment">Environment</abbr> $id)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Load a Environment from its ID.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td><abbr title="Dagger\EnvironmentId|Dagger\Environment">Environment</abbr></td>
-                <td>$id</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Environment.html"><abbr title="Dagger\Environment">Environment</abbr></a></td>
             <td></td>
         </tr>
     </table>
