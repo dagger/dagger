@@ -5,8 +5,8 @@ go 1.23.0
 toolchain go1.23.6
 
 require (
-	dagger.io/dagger v0.17.2
-	github.com/dagger/dagger/engine/distconsts v0.17.2
+	dagger.io/dagger v0.18.0
+	github.com/dagger/dagger/engine/distconsts v0.18.0
 	github.com/moby/buildkit v0.16.0-rc2.0.20240917172113-e15601a00fbe // https://github.com/moby/buildkit/commit/e15601a00fbef2805db1ed87be7bb88628ae926b
 )
 

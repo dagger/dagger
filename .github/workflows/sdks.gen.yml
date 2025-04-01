@@ -19,7 +19,7 @@ concurrency:
 jobs:
     dotnet-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-17-2-8c-dind' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-8c-dind' || 'ubuntu-24.04' }}
         name: dotnet-dev
         steps:
             - name: Checkout
@@ -258,7 +258,7 @@ jobs:
         timeout-minutes: 20
     elixir-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-17-2-8c-dind' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-8c-dind' || 'ubuntu-24.04' }}
         name: elixir-dev
         steps:
             - name: Checkout
@@ -497,7 +497,7 @@ jobs:
         timeout-minutes: 20
     go-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-17-2-8c-dind' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-8c-dind' || 'ubuntu-24.04' }}
         name: go-dev
         steps:
             - name: Checkout
@@ -736,7 +736,7 @@ jobs:
         timeout-minutes: 20
     java-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-17-2-8c-dind' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-8c-dind' || 'ubuntu-24.04' }}
         name: java-dev
         steps:
             - name: Checkout
@@ -975,7 +975,7 @@ jobs:
         timeout-minutes: 20
     php-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-17-2-8c-dind' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-8c-dind' || 'ubuntu-24.04' }}
         name: php-dev
         steps:
             - name: Checkout
@@ -1214,7 +1214,7 @@ jobs:
         timeout-minutes: 20
     python-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-17-2-8c-dind' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-8c-dind' || 'ubuntu-24.04' }}
         name: python-dev
         steps:
             - name: Checkout
@@ -1453,7 +1453,7 @@ jobs:
         timeout-minutes: 20
     rust-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-17-2-8c-dind' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-8c-dind' || 'ubuntu-24.04' }}
         name: rust-dev
         steps:
             - name: Checkout
@@ -1692,7 +1692,7 @@ jobs:
         timeout-minutes: 20
     typescript-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-17-2-8c-dind' || 'ubuntu-24.04' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g3-v0-18-0-8c-dind' || 'ubuntu-24.04' }}
         name: typescript-dev
         steps:
             - name: Checkout
