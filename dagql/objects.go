@@ -441,7 +441,8 @@ func (r Instance[T]) preselect(ctx context.Context, sel Selector) (map[string]In
 	if field.CacheSpec.GetCacheConfig != nil {
 		origDgst := newID.Digest()
 
-		cacheCfg, err := field.CacheSpec.GetCacheConfig(ctx, r, inputArgs, CacheConfig{
+		idCtx := idToContext(ctx, newID)
+		cacheCfg, err := field.CacheSpec.GetCacheConfig(idCtx, r, inputArgs, CacheConfig{
 			Digest: origDgst,
 		})
 		if err != nil {
@@ -511,38 +512,38 @@ func (r Instance[T]) call(
 	if doNotCache {
 		callCacheKey = ""
 	}
-	res, err := s.Cache.GetOrInitializeWithCallbacks(ctx, callCacheKey, func(ctx context.Context) (_ *CacheValWithCallbacks, innerErr error) {
-		var innerVal Typed
-		if s.telemetry != nil {
-			wrappedCtx, done := s.telemetry(ctx, r, newID)
-			defer func() { done(innerVal, false, innerErr) }()
-			ctx = wrappedCtx
-		}
 
-		valWithCallbacks, innerErr := r.Class.Call(ctx, r, newID.Field(), newID.View(), inputArgs)
-		if innerErr != nil {
-			return nil, innerErr
+	var opts []CacheCallOpt
+	if s.telemetry != nil {
+		opts = append(opts, WithTelemetry(func(ctx context.Context) (context.Context, func(Typed, bool, error)) {
+			return s.telemetry(ctx, r, newID)
+		}))
+	}
+	res, err := s.Cache.GetOrInitializeWithCallbacks(ctx, callCacheKey, func(ctx context.Context) (*CacheValWithCallbacks, error) {
+		valWithCallbacks, err := r.Class.Call(ctx, r, newID.Field(), newID.View(), inputArgs)
+		if err != nil {
+			return nil, err
 		}
-		innerVal = valWithCallbacks.Value
+		val := valWithCallbacks.Value
 
-		if n, ok := innerVal.(Derefable); ok {
-			innerVal, ok = n.Deref()
+		if n, ok := val.(Derefable); ok {
+			val, ok = n.Deref()
 			if !ok {
 				return nil, nil
 			}
 		}
 		nth := int(newID.Nth())
 		if nth != 0 {
-			enum, ok := innerVal.(Enumerable)
+			enum, ok := val.(Enumerable)
 			if !ok {
-				return nil, fmt.Errorf("cannot sub-select %dth item from %T", nth, innerVal)
+				return nil, fmt.Errorf("cannot sub-select %dth item from %T", nth, val)
 			}
-			innerVal, innerErr = enum.Nth(nth)
-			if innerErr != nil {
-				return nil, innerErr
+			val, err = enum.Nth(nth)
+			if err != nil {
+				return nil, err
 			}
-			if n, ok := innerVal.(Derefable); ok {
-				innerVal, ok = n.Deref()
+			if n, ok := val.(Derefable); ok {
+				val, ok = n.Deref()
 				if !ok {
 					return nil, nil
 				}
@@ -550,11 +551,12 @@ func (r Instance[T]) call(
 		}
 
 		return &CacheValWithCallbacks{
-			Value:     innerVal,
+			Value:     val,
 			PostCall:  valWithCallbacks.PostCall,
 			OnRelease: valWithCallbacks.OnRelease,
 		}, nil
-	})
+	}, opts...)
+
 	if err != nil {
 		return nil, nil, err
 	}

@@ -8,7 +8,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/server/resource"
-	"github.com/dagger/dagger/engine/slog"
 )
 
 func (srv *Server) AddClientResourcesFromID(ctx context.Context, id *resource.ID, sourceClientID string, skipTopLevel bool) error {
@@ -70,27 +69,21 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 	}
 
 	if len(secretIDs) > 0 {
-		secrets, err := dagql.LoadIDs(ctx, srcDag, secretIDs)
+		secrets, err := dagql.LoadIDInstances(ctx, srcDag, secretIDs)
 		if err != nil && !id.Optional {
 			return fmt.Errorf("failed to load secrets: %w", err)
 		}
 		for _, secret := range secrets {
-			if secret == nil {
+			if secret.Self == nil {
 				continue
 			}
-			if id.Optional && !srcClient.secretStore.HasSecret(secret.IDDigest) {
+			if id.Optional && !srcClient.secretStore.HasSecret(secret.ID().Digest()) {
 				// don't attempt to add the secret if it doesn't exist and was optional
 				continue
 			}
-			if err := destClient.secretStore.AddSecretFromOtherStore(secret, srcClient.secretStore); err != nil {
+			if err := destClient.secretStore.AddSecret(secret); err != nil {
 				return fmt.Errorf("failed to add secret from source client %s: %w", srcClient.clientID, err)
 			}
-
-			name, _ := destClient.secretStore.GetSecretNameOrURI(secret.IDDigest)
-			slog.ExtraDebug("transferred secret",
-				"secret", name,
-				"src", srcClient.clientID,
-				"dest", destClient.clientID)
 		}
 	}
 

@@ -2,7 +2,6 @@ package cache
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 )
@@ -29,12 +28,16 @@ type Cache[K comparable, V any] interface {
 		K,
 		func(context.Context) (*ValueWithCallbacks[V], error),
 	) (Result[K, V], error)
+
+	// Returns the number of entries in the cache.
+	Size() int
 }
 
 type Result[K comparable, V any] interface {
 	Result() V
 	Release(context.Context) error
 	PostCall(context.Context) error
+	HitCache() bool
 }
 
 type PostCallFunc = func(context.Context) error
@@ -61,6 +64,8 @@ type cache[K comparable, V any] struct {
 	calls map[K]*result[K, V]
 }
 
+var _ Cache[int, int] = &cache[int, int]{}
+
 type result[K comparable, V any] struct {
 	cache *cache[K, V]
 
@@ -71,16 +76,38 @@ type result[K comparable, V any] struct {
 	postCall  PostCallFunc
 	onRelease OnReleaseFunc
 
-	done    chan struct{}
+	waitCh  chan struct{}
 	cancel  context.CancelCauseFunc
 	waiters int
 
 	refCount int
 }
 
+// perCallResult wraps result with metadata that is specific to a single call,
+// as opposed to the shared metadata for all instances of a result. e.g. whether
+// the result was returned from cache or new.
+type perCallResult[K comparable, V any] struct {
+	*result[K, V]
+
+	hitCache bool
+}
+
+func (r *perCallResult[K, V]) HitCache() bool {
+	return r.hitCache
+}
+
+var _ Result[int, int] = &perCallResult[int, int]{}
+
 type cacheContextKey[K comparable, V any] struct {
 	key   K
 	cache *cache[K, V]
+}
+
+func (c *cache[K, V]) Size() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return len(c.calls)
 }
 
 func (c *cache[K, V]) GetOrInitializeValue(
@@ -119,7 +146,7 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 		if err != nil {
 			return nil, err
 		}
-		res := &result[K, V]{}
+		res := &perCallResult[K, V]{result: &result[K, V]{}}
 		if valWithCallbacks != nil {
 			res.val = valWithCallbacks.Value
 			res.postCall = valWithCallbacks.PostCall
@@ -152,13 +179,13 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 
 		key: key,
 
-		done:    make(chan struct{}),
+		waitCh:  make(chan struct{}),
 		cancel:  cancel,
 		waiters: 1,
 	}
 	c.calls[key] = res
 	go func() {
-		defer close(res.done)
+		defer close(res.waitCh)
 		valWithCallbacks, err := fn(callCtx)
 		res.err = err
 		if valWithCallbacks != nil {
@@ -169,17 +196,35 @@ func (c *cache[K, V]) GetOrInitializeWithCallbacks(
 	}()
 
 	c.mu.Unlock()
-	return c.wait(ctx, key, res)
+	perCallRes, err := c.wait(ctx, key, res)
+	if err != nil {
+		return nil, err
+	}
+	// ensure that this is never marked as hit cache, even in the case
+	// where fn returned very quickly and was done by the time wait got
+	// called
+	perCallRes.hitCache = false
+	return perCallRes, nil
 }
 
-func (c *cache[K, V]) wait(ctx context.Context, key K, res *result[K, V]) (*result[K, V], error) {
-	// wait for either the call to be done or the caller's ctx to be canceled
+func (c *cache[K, V]) wait(ctx context.Context, key K, res *result[K, V]) (*perCallResult[K, V], error) {
+	var hitCache bool
 	var err error
+
+	// first check just if the call is done already, if it is we consider it a cache hit
 	select {
-	case <-res.done:
+	case <-res.waitCh:
+		hitCache = true
 		err = res.err
-	case <-ctx.Done():
-		err = context.Cause(ctx)
+	default:
+		// call wasn't done in fast path check, wait for either the call to
+		// be done or the caller's ctx to be canceled
+		select {
+		case <-res.waitCh:
+			err = res.err
+		case <-ctx.Done():
+			err = context.Cause(ctx)
+		}
 	}
 
 	c.mu.Lock()
@@ -193,7 +238,10 @@ func (c *cache[K, V]) wait(ctx context.Context, key K, res *result[K, V]) (*resu
 
 	if err == nil {
 		res.refCount++
-		return res, nil
+		return &perCallResult[K, V]{
+			result:   res,
+			hitCache: hitCache,
+		}, nil
 	}
 
 	if res.refCount == 0 {
@@ -204,6 +252,10 @@ func (c *cache[K, V]) wait(ctx context.Context, key K, res *result[K, V]) (*resu
 }
 
 func (res *result[K, V]) Result() V {
+	if res == nil {
+		var zero V
+		return zero
+	}
 	return res.val
 }
 
@@ -234,72 +286,4 @@ func (res *result[K, V]) PostCall(ctx context.Context) error {
 		return nil
 	}
 	return res.postCall(ctx)
-}
-
-type CacheWithResults[K comparable, V any] struct {
-	cache   Cache[K, V]
-	results []Result[K, V]
-	mu      sync.Mutex
-}
-
-var _ Cache[int, int] = &CacheWithResults[int, int]{}
-
-func NewCacheWithResults[K comparable, V any](baseCache Cache[K, V]) *CacheWithResults[K, V] {
-	return &CacheWithResults[K, V]{
-		cache: baseCache,
-	}
-}
-
-func (c *CacheWithResults[K, V]) GetOrInitializeValue(
-	ctx context.Context,
-	key K,
-	val V,
-) (Result[K, V], error) {
-	return c.GetOrInitialize(ctx, key, func(_ context.Context) (V, error) {
-		return val, nil
-	})
-}
-
-func (c *CacheWithResults[K, V]) GetOrInitialize(
-	ctx context.Context,
-	key K,
-	fn func(context.Context) (V, error),
-) (Result[K, V], error) {
-	return c.GetOrInitializeWithCallbacks(ctx, key, func(ctx context.Context) (*ValueWithCallbacks[V], error) {
-		val, err := fn(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return &ValueWithCallbacks[V]{Value: val}, nil
-	})
-}
-
-func (c *CacheWithResults[K, V]) GetOrInitializeWithCallbacks(
-	ctx context.Context,
-	key K,
-	fn func(context.Context) (*ValueWithCallbacks[V], error),
-) (Result[K, V], error) {
-	res, err := c.cache.GetOrInitializeWithCallbacks(ctx, key, fn)
-
-	var zeroKey K
-	if res != nil && key != zeroKey {
-		c.mu.Lock()
-		c.results = append(c.results, res)
-		c.mu.Unlock()
-	}
-
-	return res, err
-}
-
-func (c *CacheWithResults[K, V]) ReleaseAll(ctx context.Context) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	var rerr error
-	for _, res := range c.results {
-		rerr = errors.Join(rerr, res.Release(ctx))
-	}
-	c.results = nil
-
-	return rerr
 }

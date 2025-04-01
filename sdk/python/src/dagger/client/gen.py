@@ -5197,6 +5197,9 @@ class Host(Type):
 
         The file is limited to a size of 512000 bytes.
 
+        .. deprecated::
+            setSecretFile is superceded by secret(uri: "file://<path>")
+
         Parameters
         ----------
         name:
@@ -5204,6 +5207,11 @@ class Host(Type):
         path:
             Location of the file to set as a secret.
         """
+        warnings.warn(
+            'Method "set_secret_file" is deprecated: setSecretFile is superceded by secret(uri: "file://<path>")',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("name", name),
             Arg("path", path),
@@ -9678,20 +9686,6 @@ class Client(Root):
             Arg("id", id),
         ]
         _ctx = self._select("loadSecretFromID", _args)
-        return Secret(_ctx)
-
-    def load_secret_from_name(
-        self,
-        name: str,
-        *,
-        accessor: str | None = None,
-    ) -> "Secret":
-        """Load a Secret from its Name."""
-        _args = [
-            Arg("name", name),
-            Arg("accessor", accessor, None),
-        ]
-        _ctx = self._select("loadSecretFromName", _args)
         return Secret(_ctx)
 
     def load_service_from_id(self, id: ServiceID) -> "Service":

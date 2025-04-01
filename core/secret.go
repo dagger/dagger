@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/client/secretprovider"
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/secrets"
@@ -18,9 +19,17 @@ import (
 type Secret struct {
 	Query *Query
 
-	// The digest of the DagQL ID that accessed this secret, used as its identifier
-	// in secret stores.
-	IDDigest digest.Digest
+	// The URI of the secret, if it's stored in a remote store.
+	URI string
+
+	// The id of the buildkit session the secret will be retrieved through.
+	BuildkitSessionID string
+
+	// The user-designated name of the secret, if created by setSecret
+	Name string
+
+	// The secret plaintext, if created by setSecret
+	Plaintext []byte `json:"-"` // we shouldn't be json marshalling this, but disclude just in case
 }
 
 func (*Secret) Type() *ast.Type {
@@ -39,111 +48,37 @@ func (secret *Secret) Clone() *Secret {
 	return &cp
 }
 
-func (secret *Secret) LLBID() string {
-	return string(secret.IDDigest)
-}
-
 type SecretStore struct {
 	bkSessionManager *bksession.Manager
-	secrets          map[digest.Digest]*storedSecret
+	secrets          map[digest.Digest]dagql.Instance[*Secret]
 	mu               sync.RWMutex
-}
-
-// storedSecret has the actual metadata of the Secret. The Secret type is just it's key into the
-// SecretStore, which allows us to pass it around but still more easily enforce that any code that
-// wants to access it has to go through the SecretStore. So storedSecret has all the actual data
-// once you've asked for the secret from the store.
-type storedSecret struct {
-	*Secret
-
-	// The user-designated name of the secret.
-	Name string
-
-	// The plaintext value of the secret.
-	Plaintext []byte
-
-	// The URI of the secret, if it's stored in a remote store.
-	URI string
-
-	// The id of the buildkit session the secret will be retrieved through.
-	BuildkitSessionID string
-}
-
-func (s *storedSecret) Clone() *storedSecret {
-	cp := *s
-	cp.Secret = s.Secret.Clone()
-	return &cp
 }
 
 func NewSecretStore(bkSessionManager *bksession.Manager) *SecretStore {
 	return &SecretStore{
-		secrets:          map[digest.Digest]*storedSecret{},
+		secrets:          map[digest.Digest]dagql.Instance[*Secret]{},
 		bkSessionManager: bkSessionManager,
 	}
 }
 
-func (store *SecretStore) AddSecret(secret *Secret, name string, plaintext []byte) error {
-	if secret == nil {
+func (store *SecretStore) AddSecret(secret dagql.Instance[*Secret]) error {
+	if secret.Self == nil {
 		return fmt.Errorf("secret must not be nil")
 	}
-	if secret.Query == nil {
+	if secret.Self.Query == nil {
 		return fmt.Errorf("secret must have a query")
 	}
-	if secret.IDDigest == "" {
-		return fmt.Errorf("secret must have an ID digest")
+
+	if secret.Self.URI != "" {
+		_, _, err := secretprovider.ResolverForID(secret.Self.URI)
+		if err != nil {
+			return err
+		}
 	}
 
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	store.secrets[secret.IDDigest] = &storedSecret{
-		Secret:    secret,
-		Name:      name,
-		Plaintext: plaintext,
-	}
-	return nil
-}
-
-func (store *SecretStore) NewSecret(secret *Secret, buildkitSessionID, uri string) error {
-	if secret == nil {
-		return fmt.Errorf("secret must not be nil")
-	}
-	if secret.Query == nil {
-		return fmt.Errorf("secret must have a query")
-	}
-	if secret.IDDigest == "" {
-		return fmt.Errorf("secret must have an ID digest")
-	}
-
-	_, _, err := secretprovider.ResolverForID(uri)
-	if err != nil {
-		return err
-	}
-
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	store.secrets[secret.IDDigest] = &storedSecret{
-		Secret:            secret,
-		BuildkitSessionID: buildkitSessionID,
-		URI:               uri,
-	}
-	return nil
-}
-
-func (store *SecretStore) AddSecretFromOtherStore(secret *Secret, otherStore *SecretStore) error {
-	otherStore.mu.RLock()
-	secretVals, ok := otherStore.secrets[secret.IDDigest]
-	otherStore.mu.RUnlock()
-	if !ok {
-		return fmt.Errorf("secret %s not found in other store", secret.IDDigest)
-	}
-
-	secretVals = secretVals.Clone()
-	secretVals.Secret = secret
-
-	store.mu.Lock()
-	store.secrets[secret.IDDigest] = secretVals
-	store.mu.Unlock()
-
+	store.secrets[secret.ID().Digest()] = secret
 	return nil
 }
 
@@ -154,6 +89,16 @@ func (store *SecretStore) HasSecret(idDgst digest.Digest) bool {
 	return ok
 }
 
+func (store *SecretStore) GetSecret(idDgst digest.Digest) (inst dagql.Instance[*Secret], ok bool) {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	secret, ok := store.secrets[idDgst]
+	if !ok {
+		return inst, false
+	}
+	return secret, true
+}
+
 func (store *SecretStore) GetSecretName(idDgst digest.Digest) (string, bool) {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
@@ -161,7 +106,7 @@ func (store *SecretStore) GetSecretName(idDgst digest.Digest) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	return secret.Name, true
+	return secret.Self.Name, true
 }
 
 func (store *SecretStore) GetSecretURI(idDgst digest.Digest) (string, bool) {
@@ -171,7 +116,7 @@ func (store *SecretStore) GetSecretURI(idDgst digest.Digest) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	return secret.URI, true
+	return secret.Self.URI, true
 }
 
 func (store *SecretStore) GetSecretNameOrURI(idDgst digest.Digest) (string, bool) {
@@ -181,11 +126,11 @@ func (store *SecretStore) GetSecretNameOrURI(idDgst digest.Digest) (string, bool
 	if !ok {
 		return "", false
 	}
-	if secret.URI != "" {
-		return secret.URI, true
+	if secret.Self.URI != "" {
+		return secret.Self.URI, true
 	}
-	if secret.Name != "" {
-		return secret.Name, true
+	if secret.Self.Name != "" {
+		return secret.Self.Name, true
 	}
 	return "", true
 }
@@ -199,11 +144,11 @@ func (store *SecretStore) GetSecretPlaintext(ctx context.Context, idDgst digest.
 	}
 
 	// If the secret is stored locally (setSecret), return the plaintext.
-	if secret.URI == "" {
-		return secret.Plaintext, nil
+	if len(secret.Self.Plaintext) > 0 {
+		return secret.Self.Plaintext, nil
 	}
 
-	buildkitSessionID := secret.BuildkitSessionID
+	buildkitSessionID := secret.Self.BuildkitSessionID
 	if buildkitSessionID == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "missing buildkit session id")
 	}
@@ -213,7 +158,7 @@ func (store *SecretStore) GetSecretPlaintext(ctx context.Context, idDgst digest.
 	}
 
 	resp, err := secrets.NewSecretsClient(caller.Conn()).GetSecret(ctx, &secrets.GetSecretRequest{
-		ID: secret.URI,
+		ID: secret.Self.URI,
 	})
 	if err != nil {
 		return nil, err
